@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 
 const script = path.resolve(import.meta.dirname, "../../scripts/check-public-claims.mjs");
 
-function probe(html: string): { ok: boolean; out: string } {
+function probe(html: string, rel = ""): { ok: boolean; out: string } {
   try {
-    const out = execFileSync(process.execPath, [script, "--probe", html], { encoding: "utf8" });
+    const args = [script, "--probe", html];
+    if (rel) args.push(rel);
+    const out = execFileSync(process.execPath, args, { encoding: "utf8" });
     return { ok: true, out };
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string };
@@ -148,5 +150,197 @@ describe("public marketing claims", () => {
     const result = probe("Best protection");
     expect(result.ok).toBe(false);
     expect(result.out).toMatch(/best protection/);
+  });
+
+  it("flags in seconds, including a zero-width split", () => {
+    const result = probe("serve a customer in&#8203;seconds");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in seconds/);
+  });
+
+  it("flags in N seconds, including a soft hyphen", () => {
+    const result = probe("done in 4&shy;seconds");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in N seconds/);
+  });
+
+  it("flags in N minutes, including a soft hyphen", () => {
+    const result = probe("ready in 4&shy;minutes");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in N minutes/);
+  });
+
+  it("flags a minutes duration, including a zero-width split", () => {
+    const result = probe("wait 15&#8203;minutes");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/minutes/);
+  });
+
+  it("flags a few minutes", () => {
+    const result = probe("within a few minutes");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/minutes/);
+  });
+
+  it("flags N seconds, including a written number", () => {
+    const result = probe("ninety seconds");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/N seconds/);
+  });
+
+  it("flags same afternoon, including a zero-width split", () => {
+    const result = probe("live the same&#8203;afternoon");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/same afternoon/);
+  });
+
+  it("flags same day, including a dotted split", () => {
+    const result = probe("usually the s.a.m.e day");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/same day/);
+  });
+
+  it("flags about a week, including a soft hyphen", () => {
+    const result = probe("about a&shy;week");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/about a week/);
+  });
+
+  it("flags within a week, including an entity split", () => {
+    const result = probe("within&#8203;a week");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/within a week/);
+  });
+
+  it("flags an N-minute compound, including a hyphen entity", () => {
+    const result = probe("a 10&#45;minute setup");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/N-minute/);
+  });
+
+  it("flags same-day, including a hyphen entity", () => {
+    const result = probe("same&#45;day answers");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/same-day/);
+  });
+
+  it("flags a fortnight, including a zero-width split", () => {
+    const result = probe("within a fort&#8203;night");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/fortnight/);
+  });
+
+  it("flags within N hours, including a zero-width split", () => {
+    const result = probe("ready within 24&#8203;hours");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/within N hours/);
+  });
+
+  it("flags in N hours, including a soft hyphen", () => {
+    const result = probe("back in 2&shy;hours");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/in N hours/);
+  });
+
+  it("flags 24/7, including a slash entity", () => {
+    const result = probe("open 24&#47;7");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/24\/7/);
+  });
+
+  it("flags real-time, including a hyphen entity", () => {
+    const result = probe("real&#45;time rates");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/real-time/);
+  });
+
+  it("flags live rates, including a soft hyphen", () => {
+    const result = probe("live&shy;rates on the board");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/live rates/);
+  });
+
+  it("flags same-day, ten-minute and real-time when the hyphen is a dash variant", () => {
+    const dashes = ["&#8208;", "&#8209;", "&#8210;", "&#8211;", "&#8212;", "&#8213;", "&#8722;"];
+    for (const dash of dashes) {
+      const result = probe(`same${dash}day setup, a ten${dash}minute wait, real${dash}time rates`);
+      expect(result.ok).toBe(false);
+      expect(result.out).toMatch(/same-day/);
+      expect(result.out).toMatch(/N-minute/);
+      expect(result.out).toMatch(/real-time/);
+    }
+  });
+
+  it("flags 48h and Nh, including a zero-width split", () => {
+    const result = probe("ready within 48&#8203;h");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/Nh/);
+  });
+
+  it("flags N hrs, including a soft hyphen", () => {
+    const result = probe("back in 2&shy;hrs");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/N hrs/);
+  });
+
+  it("flags under N hours, including a zero-width split", () => {
+    const result = probe("in under 2&#8203;hours");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/under N hours/);
+  });
+
+  it("flags replying today, including a soft hyphen", () => {
+    const result = probe("replying&shy;today");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/replying today/);
+  });
+
+  it("flags live rates in a meta description", () => {
+    const result = probe('<meta name="description" content="live rates, till and ledger">');
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/live rates/);
+  });
+
+  it("allows the product name Live rate board and still flags live rates", () => {
+    expect(probe("Live rate board").ok).toBe(true);
+    expect(probe("Every plan includes the live rate board.").ok).toBe(true);
+    const rates = probe("the live rate board shows live rates");
+    expect(rates.ok).toBe(false);
+    expect(rates.out).toMatch(/live rates/);
+  });
+
+  it("flags handling real work, see it live, and a live board", () => {
+    const work = probe("The service is live and handling real work");
+    expect(work.ok).toBe(false);
+    expect(work.out).toMatch(/handling real work/);
+    const demo = probe("See it&shy;live");
+    expect(demo.ok).toBe(false);
+    expect(demo.out).toMatch(/see it live/);
+    const board = probe("A live&#8203;board, built from market rates");
+    expect(board.ok).toBe(false);
+    expect(board.out).toMatch(/live board/);
+    expect(probe("Live rate board").ok).toBe(true);
+    expect(probe("Every plan includes the live rate board.").ok).toBe(true);
+  });
+
+  it("allows an exact regulator deadline only on the compliance and FAQ pages", () => {
+    const line = "SMR within 24 hours for terrorism financing. LCTR within 15 calendar days. SAR within 30 days. Cash is added across a static 24 hours. A worksheet within 3 business days.";
+    expect(probe(line).ok).toBe(false);
+    expect(probe(line, "web/index.html").ok).toBe(false);
+    expect(probe(line, "web/compliance.html").ok).toBe(true);
+    expect(probe(line, "web/faq.html").ok).toBe(true);
+  });
+
+  it("does not let a later report name allow a deadline", () => {
+    for (const line of ["Onboard within 2 hours, STR ready.", "in 2 hours (CTR included)"]) {
+      expect(probe(line).ok).toBe(false);
+      expect(probe(line, "web/compliance.html").ok).toBe(false);
+      expect(probe(line, "web/faq.html").ok).toBe(false);
+    }
+  });
+
+  it("allows the moment a deal is written and an untimed launch", () => {
+    const result = probe("the second it happens. a second shop. an on-site launch week. We have not timed it.");
+    expect(result.ok).toBe(true);
   });
 });

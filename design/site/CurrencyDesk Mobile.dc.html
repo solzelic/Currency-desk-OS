@@ -64,22 +64,21 @@
       <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(14,12,9,0.62) 0%, rgba(14,12,9,0.18) 32%, rgba(14,12,9,0.82) 76%, #0E0C09 100%);"></div>
 
       <div style="position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding: 22px 20px 52px;">
-        <div style="align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.18); font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #F1EEE8; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright); animation: cdLive 2s infinite;"></span>Live in Canada</div>
+        <div style="align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.18); font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #F1EEE8; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright); animation: cdLive 2s infinite;"></span>Available in Canada (early access)</div>
         <h1 style="font-family: var(--serif); font-weight: 400; font-size: 52px; line-height: 0.94; letter-spacing: -0.028em; margin: 16px 0 0; color: #FBF9F4; text-wrap: pretty; text-shadow: 0 2px 30px rgba(0,0,0,0.4);">More trades.<br>Less paperwork.</h1>
         <p style="font-size: 15.5px; line-height: 1.5; color: rgba(251,249,244,0.78); margin: 14px 0 0; max-width: 330px;">One desk for the whole shop — rates, till, ledger, clients and compliance.</p>
       </div>
     </div>
 
-    <div data-hscroll="true" style="display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; border-top: 1px solid rgba(255,255,255,0.12); border-bottom: 1px solid rgba(255,255,255,0.12);">
-      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
-        <div style="flex: none; min-width: 108px; padding: 12px 16px; border-right: 1px solid rgba(255,255,255,0.09);">
-          <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; color: rgba(251,249,244,0.5);">{{ r.code }}</div>
-          <div key="{{ r.flipKey }}" style="font-family: var(--m); font-size: 15px; font-weight: 600; color: #7fe3ab; margin-top: 5px; animation: cdFlip 0.4s ease;">{{ r.sell }}</div>
-        </div>
-      </sc-for>
-      <div style="flex: none; display: flex; align-items: center; gap: 7px; padding: 12px 18px;">
-        <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright); animation: cdLive 1.9s infinite;"></span>
-        <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(251,249,244,0.55);">Your board · {{ clock }}</span>
+    <div data-hero-rates="strip" style="border-top: 1px solid rgba(255,255,255,0.12); border-bottom: 1px solid rgba(255,255,255,0.12);">
+      <div data-sample-label style="padding: 10px 16px 0; font-family: var(--m); font-size: 11px; line-height: 1.2; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: #F4F0E6;">Sample rates</div>
+      <div data-hscroll="true" style="display: flex; gap: 0; overflow-x: auto; scrollbar-width: none;">
+        <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+          <div style="flex: none; min-width: 108px; padding: 8px 16px 12px; border-right: 1px solid rgba(255,255,255,0.09);">
+            <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; color: rgba(251,249,244,0.5);">{{ r.code }}</div>
+            <div style="font-family: var(--m); font-size: 15px; font-weight: 600; color: #7fe3ab; margin-top: 5px;">{{ r.sell }}</div>
+          </div>
+        </sc-for>
       </div>
     </div>
 
@@ -235,7 +234,7 @@
       <div style="position: relative;">
         <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">Apply for early access</div>
         <h2 style="font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.02; letter-spacing: -0.02em; margin: 12px 0 0;">Become a Founding Operator.</h2>
-        <p style="font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,0.88); margin: 12px 0 0;">Reserve your workspace and lock founding pricing. Ninety seconds — no card, no commitment.</p>
+        <p style="font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,0.88); margin: 12px 0 0;">Reserve your workspace and lock founding pricing. No card, no commitment.</p>
         <a href="CurrencyDesk Early Access.dc.html" style="display: flex; align-items: center; justify-content: center; gap: 9px; height: 52px; margin-top: 20px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;">Get early access<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
         <div style="margin-top: 14px; font-family: var(--m); font-size: 10.5px; color: rgba(255,255,255,0.84);">Early access is open</div>
       </div>
@@ -261,7 +260,7 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 440, &quot;height&quot;: 900}}">
 class Component extends DCLogic {
-  state = { tick: 0, clock: '', term: 'mo', jur: 0, faq: 0, feat: 0, featPlay: 0 };
+  state = { term: 'mo', jur: 0, faq: 0, feat: 0, featPlay: 0 };
 
   /* Long enough to read the label, the title, and the line under the photo.
      Inside the 6–7s window. Autoplay uses this; the bar fill uses it too. */
@@ -281,7 +280,7 @@ class Component extends DCLogic {
     { src: '../photos/reports-ledger.jpg', kicker: 'Reports', title: 'Figures from the book', body: 'Takings and margin from deals already written. The desk does not write a regulator report on request.' },
     { src: '../photos/cheque-cashing.jpg', kicker: 'Cheques', title: 'Fee and hold, worked out', body: 'Cash a cheque and the desk logs it — payer, amount, fee and hold, all filed against the client.' },
     { src: '../photos/vault-count.jpg', kicker: 'Vault', title: 'Know what is in the safe', body: 'Every count signed and timed, so you always know the position and who was last in it.' },
-    { src: '../photos/ai-copilot-guilloche.jpg', kicker: 'Copilot', title: 'Ask your business', body: 'Which currency earned this month? Which teller is fastest? Ask in plain words and get a straight answer.' }
+    { src: '../photos/ai-copilot-guilloche.jpg', kicker: 'Planned', title: 'Ask your business', body: 'Which currency earned this month? Which teller is fastest? Ask in plain words and get a straight answer.' }
   ];
 
   JURS = [
@@ -307,8 +306,7 @@ class Component extends DCLogic {
       { name: 'Records', spec: '5 years', tag: 'Planned' } ] },
     { name: 'Australia', tag: 'AUSTRAC', live: false, status: 'Mid 2027', rules: [
       { name: 'Threshold', spec: 'TTR · A$10,000 in or out', tag: 'Planned' },
-      { name: 'Value transfer', spec: 'IVTS · every transfer', tag: 'Planned' },
-      { name: 'Suspicious', spec: 'SMR · 24h or 3 business days', tag: 'Planned' } ] },
+      { name: 'Value transfer', spec: 'IVTS · every transfer', tag: 'Planned' } ] },
     { name: 'India', tag: 'FIU-IND', live: false, status: 'Not live', rules: [
       { name: 'Cash report', spec: 'CTR, a single cash deal over ₹10 lakh. Connected deals in a month are not summed yet.', tag: 'Mapped' },
       { name: 'Suspicious', spec: 'STR within 7 working days of concluding suspicion. The desk does not file it.', tag: 'Mapped' } ] },
@@ -338,15 +336,12 @@ class Component extends DCLogic {
     { q: 'Is CurrencyDesk live yet?', a: 'Yes, in Canada. Canada is the only country live. We are onboarding the first desks now. FINTRAC\'s rulebook is listed. Early access is open to the first hundred desks.' },
     { q: 'What do I need to run it?', a: 'A computer or tablet with a browser. No servers, no installs, no new hardware at the counter — your note counter and printer keep working exactly as they do now.' },
     { q: 'Do you take a cut of my trades?', a: 'Never. A flat monthly price, no percentage, no per-transaction fee, no share of your spread. We do not touch your money.' },
-    { q: 'How long until my desk is running?', a: 'Rates and your public board can be live the same afternoon. A full desk usually takes about a week, and we do it with you rather than handing you a manual.' },
+    { q: 'How long until my desk is running?', a: 'We are onboarding the first desks now, so this has not been timed. We set the desk up with you.' },
     { q: 'Can I bring my existing records across?', a: 'We help you enter clients, rates and history by hand during setup. There is no import.' },
     { q: 'When will you support my country?', a: 'Serbia is not live. A pack is drafted. Exchange identification is 5,000 EUR or more when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it. Still being mapped: United States early 2027, United Kingdom and Australia mid-2027, European Union late 2027, UAE early 2028, Singapore and Hong Kong through 2028. India is not live. The India rules are mapped. The desk does not file to FIU-IND. The Philippines is not live. Those rules are mapped. The desk does not file to the AMLC.' }
   ];
 
   componentDidMount() {
-    this._clk = setInterval(() => this.setState({ clock: this.clk() }), 1000);
-    this._tk = setInterval(() => this.setState(s => ({ tick: s.tick + 1 })), 2600);
-    this.setState({ clock: this.clk() });
     this._reduce = false;
     this._touching = false;
     this._hidden = typeof document !== 'undefined' && document.hidden;
@@ -364,7 +359,7 @@ class Component extends DCLogic {
     this.bindSwipe();
   }
   componentWillUnmount() {
-    clearInterval(this._clk); clearInterval(this._tk); clearTimeout(this._sw); clearTimeout(this._auto);
+    clearTimeout(this._sw); clearTimeout(this._auto);
     if (this._io) this._io.disconnect();
     if (this._onVis) document.removeEventListener('visibilitychange', this._onVis);
     if (this._mq && this._onMq) this._mq.removeEventListener('change', this._onMq);
@@ -447,10 +442,6 @@ class Component extends DCLogic {
     }, this.FEAT_MS);
   }
 
-  clk() {
-    const d = new Date();
-    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-  }
   step = (dir) => this.setState(s => {
     const n = this.FEATURES.length;
     return { feat: (s.feat + dir + n) % n };
@@ -475,12 +466,7 @@ class Component extends DCLogic {
     const F = this.FEATURES[s.feat] || this.FEATURES[0];
 
     return {
-      clock: s.clock,
-      rows: this.RATES.map((r, i) => {
-        const wob = 1 + (((s.tick + i) % 5) - 2) * 0.0007;
-        const sell = r.mid * 1.02 * wob;
-        return { code: r.code, sell: sell >= 1 ? sell.toFixed(4) : sell.toFixed(4), flipKey: r.code + '-' + s.tick };
-      }),
+      rows: this.RATES.map((r) => ({ code: r.code, sell: (r.mid * 1.02).toFixed(4) })),
 
       featNum: String(s.feat + 1).padStart(2, '0'),
       featKey: 'f' + s.feat,

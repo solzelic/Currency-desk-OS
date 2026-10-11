@@ -457,8 +457,8 @@ const BRIDGE = `<script>
         /* THE LINK OPENS AT THE BEGINNING, NOT WHERE THEY STOPPED.
 
            s.at is the screen they last saved on, and restoring it meant
-           the button in the invitation — "Set up your desk, takes about
-           ten minutes" — dropped somebody straight onto "Confirm your
+           the button in the invitation, "Set up your desk", dropped
+           somebody straight onto "Confirm your
            email" with no idea how they got there and nothing they could
            check. An email that promises a beginning has to open on one.
 
@@ -610,7 +610,7 @@ patch(
   "cdIdHint: (() => { const s = window.__cdOnb ? window.__cdOnb.refState(d.cdId) : (this.cdIdValid(d.cdId) ? 'ok' : 'empty');\n" +
   "        if (s === 'ok') return 'This is how you\\u2019ll sign in from now on. It stays yours.';\n" +
   "        if (s === 'checking') return 'Just checking that one\\u2026';\n" +
-  "        if (s === 'slow') return 'Too many tries from this connection. Wait a few minutes and try again \\u2014 your ID is probably fine.';\n" +
+  "        if (s === 'slow') return 'Too many tries from this connection. Wait, then try again. Your ID is probably fine.';\n" +
   "        if (s === 'no') return 'We don\\u2019t have that ID. Check the email we sent you \\u2014 or reply to it and we\\u2019ll look you up.';\n" +
   "        return 'We emailed it to you when you were approved. Can\\u2019t find it? Search your inbox for CurrencyDesk.'; })(),",
 );
@@ -803,7 +803,7 @@ patch(
 patch(
   "the browser-only promo message — it claimed a three-month offer was applied",
   "R.promoMsg = pOk ? ('\\u2713 ' + pCode + ' applied — your first three months are on us.') : 'That code isn\\u2019t recognised. Check the invite email we sent you.';",
-  "R.promoMsg = 'Offers are applied securely at Stripe Checkout.';",
+  "R.promoMsg = 'Stripe checkout is not connected yet.';",
 );
 
 /* ------------------------------------------------------------------
@@ -853,6 +853,107 @@ patch(
   "the service agreement link — /legal is a real page",
   'href="CurrencyDesk Legal.dc.html"',
   'href="/legal"',
+);
+
+/* The after-activation desk was a 24-hour clock, a LIVE pill, and a
+   ticker of hard-coded rates with up and down marks. None of that is a
+   live feed. The clock and the interval that only painted it go away.
+   The pill becomes a fixed Sample rates tag. The figures stay the
+   design's rates, without a change mark. */
+patch(
+  "the landing menubar clock",
+  '<span style="font-family: var(--m); font-size: 12px; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 12px;">{{ clock }}</span>\n        ',
+  "",
+);
+patch(
+  "the landing LIVE pill on the rate ticker",
+  '<span style="display: inline-flex; align-items: center; gap: 7px; font-family: var(--m); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: #fff; background: var(--green-live); padding: 6px 12px; border-radius: 999px; flex: none;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: cdLive 1.8s ease-out infinite;"></span>LIVE</span>',
+  '<span data-sample-label style="flex: none; display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 7px; background: #17140F; color: #F4F0E6; font-family: var(--m); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;">Sample rates</span>',
+);
+patch(
+  "the ticker row is the surface the sample label sits on",
+  '<div style="height: 54px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: rgba(255,255,255,0.44);',
+  '<div data-hero-rates="onboarding" style="height: 54px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: rgba(255,255,255,0.44);',
+);
+patch(
+  "the landing clock in component state",
+  "termsRead: false, clock: this.nowStr(), landKey: 0",
+  "termsRead: false, landKey: 0",
+);
+patch(
+  "nowStr only existed to paint the landing clock",
+  "nowStr() { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }\n\n  ",
+  "",
+);
+patch(
+  "the 20 second interval that refreshed the landing clock",
+  "this._clk = setInterval(() => this.setState({ clock: this.nowStr() }), 20000);\n    ",
+  "",
+);
+patch(
+  "clearing a clock interval that no longer exists",
+  "componentWillUnmount() { clearInterval(this._clk); }",
+  "componentWillUnmount() {}",
+);
+patch(
+  "the render value for the landing clock",
+  "clock: this.state.clock,\n      ",
+  "",
+);
+patch(
+  "the website add-on said the rates it wires in are live",
+  "desc:'We build your site and wire your live rates in by hand.'",
+  "desc:'We build your site and wire your rate board in by hand.'",
+);
+patch(
+  "the board preview was a pulsing live label",
+  '<span style="width: 7px; height: 7px; border-radius: 50%; background: var(--green-live); animation: cdLive 1.9s infinite;"></span>\n                    <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;">Live board preview</span>',
+  '<span data-sample-label style="font-family: var(--m); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: #F4F0E6;">Board preview (sample)</span>',
+);
+patch(
+  "the website offer said the board built in is live",
+  "your live board built in",
+  "your rate board on the page",
+);
+patch(
+  "the recap said the embed is a live board",
+  "Live board embed ready",
+  "Rate board embed ready",
+);
+patch(
+  "the pay screen said switching on means you are trading today",
+  "you're trading today",
+  "you're ready to trade once your desk is set up",
+);
+patch(
+  "the last screen greeted them as live",
+  "You\\u2019re live, ",
+  "Your desk is set up, ",
+);
+patch(
+  "the publish step said the public page goes live",
+  "Your public page goes live at your own address",
+  "Your public page uses your own address",
+);
+patch(
+  "the rate board step said it goes live the moment the desk does",
+  "This goes live the moment your desk does \u2014 nothing to install, nothing to ask anyone for.",
+  "This is ready once your desk is set up. Nothing to install, nothing to ask anyone for.",
+);
+patch(
+  "the opening card said to push rates live",
+  "Push your opening rates live on ",
+  "Publish your opening rates on ",
+);
+patch(
+  "the website add-on said someone calls after you go live",
+  "Someone will call after you go live to walk through it",
+  "Someone will call after your desk is set up to walk through it",
+);
+patch(
+  "the ticker change marks made frozen rates look like a live feed",
+  "const up = k % 2 === 0; const chg = (0.03 + (k % 5) * 0.04).toFixed(2);\n      return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate),\n        React.createElement('span', { key: 'g', style: { fontFamily: 'var(--m)', fontSize: '9.5px', fontWeight: 700, color: up ? 'var(--green-live)' : 'var(--flag)' } }, (up ? '▲' : '▼') + chg + '%')\n      ]);",
+  "return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate)\n      ]);",
 );
 
 /* Two preview links are deliberately left pointing at design documents:
