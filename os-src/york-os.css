@@ -1680,3 +1680,140 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 @container (max-width: 520px) {
   .cd-honest-tiles { grid-template-columns: 1fr; }
 }
+
+/* New transaction is a 940px dialog with a 320px ticket beside the
+   fields. Under 600px that rail leaves the customer and the amount
+   about 20px wide. Stack the rail under the form, and let the rail
+   shrink so the post button stays at the bottom of the dialog.
+   The fields go full width. 16px text is the size a phone will focus
+   without zooming the page. 600px and wider, including the 1280 desk,
+   is outside this query, so the dialog there is unchanged. */
+@media (max-width: 599px) {
+  .cd-tx, .cd-tx * { box-sizing: border-box; }
+  .cd-tx {
+    overflow: hidden !important;
+    max-width: 100%;
+  }
+  .cd-tx-head {
+    min-width: 0;
+    gap: 8px;
+  }
+  .cd-tx-head > div:first-child {
+    min-width: 0;
+  }
+  /* Six type buttons in one row force the grid wider than a phone.
+     minmax(0, 1fr) is what lets a column shrink. Three across keeps
+     each label on the button. */
+  .cd-tx-types {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .cd-tx-types button {
+    min-width: 0;
+    min-height: 44px;
+  }
+  .cd-tx-types button span {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .cd-tx-body {
+    flex-direction: column !important;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .cd-tx-form {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line);
+  }
+  .cd-tx-form .flex,
+  .cd-tx-person {
+    flex-wrap: wrap;
+    max-width: 100%;
+    row-gap: 8px;
+  }
+  .cd-tx-person > .flex-1 {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+  /* Rate beside fee, and the other pairs, are under 200px once the
+     dialog is a phone wide. One column makes each of them the form. */
+  .cd-tx .grid-cols-2,
+  .cd-tx-stats {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cd-tx-stats > * + * {
+    border-left: 0 !important;
+    border-top: 1px solid var(--line);
+  }
+  .cd-tx-pair {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .cd-tx-pair > input {
+    width: 100%;
+    min-width: 0;
+  }
+  .cd-tx-form input,
+  .cd-tx-form select,
+  .cd-tx-form textarea {
+    font-size: 16px;
+    min-height: 44px;
+    max-width: 100%;
+  }
+  .cd-tx-customer {
+    min-height: 44px;
+  }
+  /* The currency code sat in the same row as the amount and took the
+     width the cashier needs. It takes the row above. flex-basis 100%
+     is the wrap; a column flex would give the amount a zero height. */
+  .cd-money {
+    flex-wrap: wrap !important;
+    min-height: 44px;
+  }
+  .cd-money > button,
+  .cd-money > div:first-child {
+    flex: 1 0 100% !important;
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 44px;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line);
+    box-sizing: border-box;
+    justify-content: space-between;
+  }
+  .cd-money > input,
+  .cd-money > .flex-1 {
+    flex: 1 0 100% !important;
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 44px;
+  }
+  /* The ticket stays under the fields. It may scroll. The post
+     button is the footer of this column, so it stays on screen
+     while the form above it scrolls. */
+  .cd-tx-rail {
+    flex: 0 1 auto !important;
+    width: 100% !important;
+    max-width: 100%;
+    max-height: 42%;
+    min-height: 0;
+  }
+  .cd-tx-rail-scroll {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  .cd-tx-actions {
+    flex: none;
+  }
+  .cd-tx-actions button {
+    min-height: 44px;
+  }
+}

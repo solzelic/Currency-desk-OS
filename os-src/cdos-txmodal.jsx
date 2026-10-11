@@ -200,7 +200,7 @@
 
   function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus }) {
     return (
-      <div className="flex items-stretch" style={{ border: `1px solid ${readOnly ? CD.line : CD.ink}`, borderRadius: 9, overflow: 'hidden', background: readOnly ? 'var(--cd-paper-soft)' : 'var(--cd-panel)' }}>
+      <div className="cd-money flex items-stretch" style={{ border: `1px solid ${readOnly ? CD.line : CD.ink}`, borderRadius: 9, overflow: 'hidden', background: readOnly ? 'var(--cd-paper-soft)' : 'var(--cd-panel)' }}>
         <CcyPicker value={ccy} onChange={onCcy} disabled={!onCcy} />
         {readOnly
           ? <div className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right" style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
@@ -219,7 +219,7 @@
       <div>
         <Lbl hint={hint}>{label}</Lbl>
         <div ref={wrap} className="relative">
-          <div className="flex items-center gap-2 px-2.5 py-2" style={inSty}>
+          <div className="cd-tx-customer flex items-center gap-2 px-2.5 py-2" style={inSty}>
             <Ic n="search" s={15} c={CD.mute} />
             <input value={query} onFocus={() => setOpen(true)} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
             {query && <button onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
@@ -270,7 +270,7 @@
     const lastLbl = s.days == null ? 'First visit' : s.days === 0 ? 'In today already' : s.days === 1 ? 'Yesterday' : `${s.days} days ago`;
     return (
       <div className="mt-2 overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: 'var(--cd-panel)' }}>
-        <div className="flex items-center gap-3 px-3.5 py-2.5" style={{ background: CD.lineSoft, borderBottom: `1px solid ${CD.line}` }}>
+        <div className="cd-tx-person flex items-center gap-3 px-3.5 py-2.5" style={{ background: CD.lineSoft, borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 34, height: 34, borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 13 }}>{initials}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2"><span className="font-semibold truncate" style={{ color: CD.ink }}>{name}</span>{s.count >= 3 && <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 999, fontWeight: 600 }}><Ic n="star" s={10} c="var(--cd-brass-text)" /> Regular</span>}</div>
@@ -278,7 +278,7 @@
           </div>
           <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
         </div>
-        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+        <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
           <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
           <CCstat label={`Last ${s.winDays}d`} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
           <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
@@ -902,16 +902,16 @@
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk) ? undefined : onClose}>
-        <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
+        <div onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
-          <div className="flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+          <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {TODAY}</div></div></div>
             <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
           {/* type selector */}
           <div className="flex-none px-5 pt-3.5 pb-3" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-            <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+            <div className="cd-tx-types grid gap-1.5" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
               {TYPE_LIST.map(t => { const on = type === t; const m = TYPE_META[t]; return (
                 <button key={t} onClick={() => setType(t)} className="flex flex-col items-center gap-1.5 py-2.5 px-1" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 10, transition: 'all .12s' }}>
                   <Ic n={m.icon} s={18} c={on ? 'var(--cd-on-ink)' : CD.mute} />
@@ -921,10 +921,13 @@
             <div className="text-[12px] mt-2.5 flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n={meta.icon} s={13} c={CD.mute} /> {meta.blurb}</div>
           </div>
 
-          {/* body: form | rail */}
-          <div className="flex-1 min-h-0 flex">
+          {/* body: form | rail.
+              The cd-tx-* classes are how a phone stacks this. Under 600px,
+              york-os.css puts the rail under the form. Wider than that
+              the classes do not change the row. */}
+          <div className="cd-tx-body flex-1 min-h-0 flex">
             {/* LEFT — the form */}
-            <div className="flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
+            <div className="cd-tx-form flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
               {/* customer (sender/purchaser/payer) */}
               <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
               {window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && (
@@ -967,7 +970,7 @@
                 <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <Lbl>Customer pays in</Lbl>
                   <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
-                  <div className="flex items-center justify-center gap-2 py-2">
+                  <div className="cd-tx-rate-line flex items-center justify-center gap-2 py-2">
                     <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
                     <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {shownRate(rateN)} {outCcy}</span>
                     <button onClick={swap} title="Swap" className="p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
@@ -975,8 +978,8 @@
                   <Lbl>Customer receives</Lbl>
                   <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : shownRate(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
-                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : shownRate(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? num(pricing.deskRate) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                     {!tq ? <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>
@@ -1104,10 +1107,10 @@
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {regime.largeCode}</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture now while the customer is here — it pre-fills the filing.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                   <div><Lbl>Acting for someone else?</Lbl>
-                    <div className="flex items-center gap-2">
+                    <div className="cd-tx-pair flex items-center gap-2">
                       <div className="inline-flex flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{[['no', 'No'], ['yes', 'Yes']].map(([v, l], i) => { const on = (cap.thirdParty ? 'yes' : 'no') === v; return <button key={v} onClick={() => setCap(s => ({ ...s, thirdParty: v === 'yes' }))} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none' }}>{l}</button>; })}</div>
                       {cap.thirdParty && <input value={cap.thirdPartyName} onChange={e => setCap(s => ({ ...s, thirdPartyName: e.target.value }))} placeholder="Name of that person / entity" className="flex-1 min-w-0 text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.thirdPartyName.trim() ? CD.line : CD.flag }} />}
                     </div>
@@ -1119,8 +1122,8 @@
                 <div className="p-3.5 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center gap-1.5"><Ic n="shield" s={14} c={CD.green} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Authoritative ledger record</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>Required for server posting and the permanent audit trail.</div>
-                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
-                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="e.g. vacation funds, invoice settlement" className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: purpose.trim() ? CD.line : CD.flag }} /></div>
+                  <div><Lbl>Source of funds</Lbl><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, savings" className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></div>
                 </div>
               )}
 
@@ -1138,8 +1141,8 @@
             </div>
 
             {/* RIGHT — ticket + checklist */}
-            <div className="flex-none flex flex-col" style={{ width: 320, background: 'var(--cd-chip)' }}>
-              <div className="flex-1 overflow-auto p-4 space-y-3">
+            <div className="cd-tx-rail flex-none flex flex-col" style={{ width: 320, background: 'var(--cd-chip)' }}>
+              <div className="cd-tx-rail-scroll flex-1 overflow-auto p-4 space-y-3">
                 {/* deal ticket */}
                 <div style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>
                   <div className="flex items-center justify-between" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)', paddingBottom: 10 }}>
@@ -1188,7 +1191,7 @@
               </div>
 
               {/* rail footer actions */}
-              <div className="flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+              <div className="cd-tx-actions flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
                 {(isExchange || isSend) && <button onClick={() => setPresent(true)} disabled={!(amtN > 0 && rateN > 0)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: (amtN > 0 && rateN > 0) ? CD.ink : CD.faint }}><Ic n="smartphone" s={15} /> Show customer the quote</button>}
                 {/* A refusal from the ledger, wherever it came from. The
                     exchange path has its own copy inside the branch

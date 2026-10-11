@@ -32690,7 +32690,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     autoFocus
   }) {
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-stretch",
+      className: "cd-money flex items-stretch",
       style: {
         border: `1px solid ${readOnly ? CD.line : CD.ink}`,
         borderRadius: 9,
@@ -32752,7 +32752,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ref: wrap,
       className: "relative"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-2.5 py-2",
+      className: "cd-tx-customer flex items-center gap-2 px-2.5 py-2",
       style: inSty
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "search",
@@ -32927,7 +32927,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: 'var(--cd-panel)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-3 px-3.5 py-2.5",
+      className: "cd-tx-person flex items-center gap-3 px-3.5 py-2.5",
       style: {
         background: CD.lineSoft,
         borderBottom: `1px solid ${CD.line}`
@@ -32980,7 +32980,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 12,
       c: badge.c
     }), " ", badge.t)), /*#__PURE__*/React.createElement("div", {
-      className: "grid",
+      className: "cd-tx-stats grid",
       style: {
         gridTemplateColumns: '1fr 1fr 1fr'
       }
@@ -34210,7 +34210,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onMouseDown: addFlow || quickChk ? undefined : onClose
     }, /*#__PURE__*/React.createElement("div", {
       onMouseDown: e => e.stopPropagation(),
-      className: "w-full flex flex-col",
+      className: "cd-tx w-full flex flex-col",
       style: {
         maxWidth: 940,
         maxHeight: 'calc(100vh - 32px)',
@@ -34221,7 +34221,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between px-5 py-3.5",
+      className: "cd-tx-head flex-none flex items-center justify-between px-5 py-3.5",
       style: {
         borderBottom: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
@@ -34267,7 +34267,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: 'var(--cd-panel)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "grid gap-1.5",
+      className: "cd-tx-types grid gap-1.5",
       style: {
         gridTemplateColumns: 'repeat(6, 1fr)'
       }
@@ -34305,9 +34305,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }), " ", meta.blurb)), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 min-h-0 flex"
+      className: "cd-tx-body flex-1 min-h-0 flex"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4",
+      className: "cd-tx-form flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4",
       style: {
         borderRight: `1px solid ${CD.line}`
       }
@@ -34423,7 +34423,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       big: true,
       autoFocus: true
     }), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-center gap-2 py-2"
+      className: "cd-tx-rate-line flex items-center justify-center gap-2 py-2"
     }, /*#__PURE__*/React.createElement("span", {
       className: "text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
       style: {
@@ -34485,7 +34485,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       },
       inputMode: "decimal",
       title: "Type to hand-price this deal",
-      className: "w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent",
+      className: "cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink,
@@ -34506,7 +34506,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onChange: e => setFee(e.target.value),
       inputMode: "decimal",
       placeholder: "0.00",
-      className: "w-full text-sm px-2.5 py-2 outline-none text-right",
+      className: "cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right",
       style: {
         ...inSty,
         fontVariantNumeric: 'tabular-nums'
@@ -35035,7 +35035,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       value: purpose,
       onChange: e => setPurpose(e.target.value),
       placeholder: "e.g. vacation funds, invoice settlement",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
+      className: "cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
         borderColor: purpose.trim() ? CD.line : CD.flag
@@ -35047,13 +35047,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         source: e.target.value
       })),
       placeholder: "e.g. employment income, savings",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
+      className: "cd-tx-source w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
         borderColor: cap.source.trim() ? CD.line : CD.flag
       }
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Acting for someone else?"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2"
+      className: "cd-tx-pair flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("div", {
       className: "inline-flex flex-none",
       style: {
@@ -35115,7 +35115,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       value: purpose,
       onChange: e => setPurpose(e.target.value),
       placeholder: "e.g. vacation funds, invoice settlement",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
+      className: "cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
         borderColor: purpose.trim() ? CD.line : CD.flag
@@ -35127,7 +35127,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         source: e.target.value
       })),
       placeholder: "e.g. employment income, savings",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
+      className: "cd-tx-source w-full text-sm px-2.5 py-2 outline-none",
       style: {
         ...inSty,
         borderColor: cap.source.trim() ? CD.line : CD.flag
@@ -35179,13 +35179,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "w-full text-sm px-2.5 py-2 outline-none",
       style: inSty
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex flex-col",
+      className: "cd-tx-rail flex-none flex flex-col",
       style: {
         width: 320,
         background: 'var(--cd-chip)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto p-4 space-y-3"
+      className: "cd-tx-rail-scroll flex-1 overflow-auto p-4 space-y-3"
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         background: CD.ink,
@@ -35350,7 +35350,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: single ? CD.flag : 'var(--cd-brass-text)'
     }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none p-3 space-y-2",
+      className: "cd-tx-actions flex-none p-3 space-y-2",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
