@@ -691,8 +691,11 @@ server summary, or it is omitted.
 AmountField, and StepHeader live in `os-src/phone/` with NavRow,
 ProfileRow, Toggle, FullScreenSheet, PinPad, and Toast. They are
 styled in `os-src/phone-shell.css` with `tokens.css` variables.
-SummaryList is read-only and omits a row with an empty value.
-A sheet and a toast stay hidden above 430px. Contract:
+SummaryList is read-only, omits a row with an empty value, and can
+mark one figure to read out loud. AmountField can show a fee line
+under the number: with `onFee` that line is a 44px button, and
+`autoFocus` opens the keypad. Leaving those off keeps the plain
+amount field. A sheet and a toast stay hidden above 430px. Contract:
 `docs/PHONE_SHELL.md`.
 
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
