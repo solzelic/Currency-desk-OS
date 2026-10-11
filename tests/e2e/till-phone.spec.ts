@@ -164,7 +164,7 @@ test("the difference is in words, and a double tap saves once", async ({ page })
       if (req.method() === "POST" && req.url().includes("/api/ledger/till-counts")) posts += 1;
     };
     page.on("request", countPosts);
-    await page.locator(".phone-sticky-btn").evaluate((el) => {
+    await page.locator(".till-phone .phone-sticky-btn").evaluate((el) => {
       (el as HTMLButtonElement).click();
       (el as HTMLButtonElement).click();
     });
@@ -227,7 +227,7 @@ test("loading and no open till are honest", async ({ page }) => {
   await dismissTour(page);
   await settled(page);
   await openPhoneTill(page);
-  await expect(page.locator(".phone-empty")).toContainText("This till is not open");
+  await expect(page.locator(".till-phone .phone-empty")).toContainText("This till is not open");
   await expect(page.locator(".till-phone")).not.toContainText("$");
   await expect(page.getByRole("button", { name: "Open the till" })).toBeVisible();
   await phoneSweep(page, { roots: SWEEP });
@@ -251,7 +251,7 @@ test("loading and no open till are honest", async ({ page }) => {
   await dismissTour(page);
   await settled(page);
   await openPhoneTill(page);
-  await expect(page.locator(".phone-error")).toContainText("The till book did not load.");
+  await expect(page.locator(".till-phone .phone-error")).toContainText("The till book did not load.");
   await expect(page.locator(".till-den-row")).toHaveCount(0);
   await phoneSweep(page, { roots: SWEEP });
   await page.unroute("**/api/ledger/till-balances");
@@ -316,8 +316,8 @@ test("count, coins, the till sheet, reconcile, and hand off pass the phone sweep
   await page.getByRole("button", { name: "Close till list" }).click();
 
   await page.locator(".till-den-qty").first().fill("1");
-  await page.locator(".phone-sticky-btn").click();
-  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible({ timeout: 15_000 });
+  await page.locator(".till-phone .phone-sticky-btn").click();
+  await expect(page.locator(".till-phone").getByRole("button", { name: "Saved" })).toBeVisible({ timeout: 15_000 });
   await shotBoth(page, "saved");
 
   await page.getByRole("tab", { name: "Reconcile and close" }).click();
@@ -325,7 +325,7 @@ test("count, coins, the till sheet, reconcile, and hand off pass the phone sweep
   await expect(cad).toContainText(/Expected /);
   await expect(cad).toContainText(/Counted [\d,]+(\.\d+)? CAD|Not counted yet/);
   await expect(cad).toContainText(/Matches the book|CAD over|CAD short|Not counted yet/);
-  await expect(page.locator(".phone-sticky-btn")).toHaveText("Close the till");
+  await expect(page.locator(".till-phone .phone-sticky-btn")).toHaveText("Close the till");
   await expect(page.locator(".till-phone")).not.toContainText("$");
   await shotBoth(page, "reconcile");
   await phoneSweep(page, { roots: SWEEP });

@@ -193,7 +193,7 @@ async function postFortyCad(page: Page, key: string) {
 async function closeTheDay(page: Page) {
   await clickDrawerTab(page, /Reconcile & close/i);
   if (await page.locator(".till-phone").isVisible()) {
-    await press(page.locator(".phone-sticky-btn", { hasText: /Close till/i }));
+    await press(page.locator(".till-phone .phone-sticky-btn", { hasText: /Close the till/i }));
     const confirm = page.locator(".till-sheet .till-save");
     await expect(confirm).toBeVisible();
     await press(confirm);

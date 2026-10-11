@@ -3121,7 +3121,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 14px; padding: 4px 12px 8px; margin-bottom: 4px;
   }
   .till-phone-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
-  .till-phone-k { font-size: 12px; line-height: 16px; color: var(--cd-mute, #555); }
+  .till-phone-k { font-size: 12px; line-height: 16px; color: var(--gray-700, #3D3A35); }
   .till-phone-amount, .till-phone-counted {
     font-variant-numeric: tabular-nums; font-weight: 700; color: var(--cd-ink, #111);
   }
@@ -3206,7 +3206,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: block;
     padding: 0 !important;
     box-sizing: border-box;
-    background: transparent !important;
+    background: #fff !important;
     border-top: 0;
   }
   .till-phone .phone-sticky { background: #fff; }
@@ -3218,7 +3218,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-foot-sum { flex: 1 1 auto; min-width: 0; }
   .till-foot-exp {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
-    font-size: 13px; line-height: 18px; color: var(--cd-mute, #555);
+    font-size: 13px; line-height: 18px; color: var(--gray-700, #3D3A35);
   }
   .till-foot-exp > span { white-space: nowrap; }
   .till-diff { font-weight: 700; color: var(--cd-ink, #111); }
@@ -3237,7 +3237,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-error button { margin-left: auto; min-height: 44px; border: 0; background: transparent; font-weight: 700; }
   .till-phone-empty { text-align: center; padding: 28px 12px; }
   .till-phone-empty h2 { margin: 0 0 8px; font-size: 20px; line-height: 28px; }
-  .till-phone-empty p, .till-phone-note { font-size: 14px; line-height: 20px; color: var(--cd-mute, #555); }
+  .till-phone-empty p, .till-phone-note { font-size: 14px; line-height: 20px; color: var(--gray-700, #3D3A35); }
   .till-sheet-line {
     display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
     padding: 10px 0; border-top: 1px solid var(--color-border, #E2DFD8);
