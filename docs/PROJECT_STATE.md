@@ -418,6 +418,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, Sign-in on a phone. The platform sign-in card at `/admin`
+fits at 390px and at 360px. The page does not scroll sideways. The
+desk sign-in at `/login` asks for an email, a staff ID, or a
+CurrencyDesk ID, which is what the server accepts.
+
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered
 and keeps it until the day is closed or the count is cleared, so a

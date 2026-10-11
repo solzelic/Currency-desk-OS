@@ -59161,23 +59161,22 @@ ${snap}`;
         color: 'var(--si-mute)',
         marginBottom: 6
       }
-    }, "CURRENCYDESK ID"), /*#__PURE__*/React.createElement("input", {
+    }, "EMAIL OR ID"), /*#__PURE__*/React.createElement("input", {
       value: idInput,
       onChange: e => {
         setIdInput(e.target.value);
         setErr('');
       },
       autoFocus: true,
-      placeholder: "your-staff-id",
+      placeholder: "email, staff ID, or CD-ID",
       style: {
         width: '100%',
         boxSizing: 'border-box',
         textAlign: 'center',
         fontFamily: MONO,
-        fontSize: 18,
+        fontSize: 15,
         fontWeight: 700,
-        letterSpacing: '0.1em',
-        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
         padding: '13px 12px',
         border: '1px solid var(--si-line)',
         borderRadius: 11,
@@ -59229,7 +59228,7 @@ ${snap}`;
         marginTop: 10,
         lineHeight: 1.5
       }
-    }, "The email address you set the desk up with, or the ID whoever runs your desk gave you."), !known && examples.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, "Your email address, the staff ID your desk gave you, or your CurrencyDesk ID (CD-YORK-0042)."), !known && examples.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         alignItems: 'center',
