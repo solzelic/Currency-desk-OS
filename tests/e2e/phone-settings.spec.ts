@@ -78,7 +78,7 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await expect(root.getByText("PIN and sign-in")).toBeVisible();
     await expect(root.getByText("This shop. Change on a computer")).toBeVisible();
     await expect(root.getByRole("button", { name: /Shop details/ })).toBeVisible();
-    await expect(root.getByText("Other apps (owner only)")).toBeVisible();
+    await expect(root.getByText("Other apps. Change on a computer")).toBeVisible();
     await expect(root.getByText("Example data")).toHaveCount(0);
     for (const gone of ["Texts", "Receipts", "Billing and plan", "Ticker tape", "Role presets"]) {
       await expect(root.getByText(gone, { exact: true })).toHaveCount(0);
@@ -232,7 +232,7 @@ test("a teller sees only their own settings", async ({ page }) => {
     await expect(root.locator('[data-phone-row="signout"]')).toBeVisible();
     await expect(root.getByText("This shop. Change on a computer")).toHaveCount(0);
     await expect(root.getByText("Shop details")).toHaveCount(0);
-    await expect(root.getByText("Other apps (owner only)")).toHaveCount(0);
+    await expect(root.getByText("Other apps. Change on a computer")).toHaveCount(0);
     await page.screenshot({ path: shot(`settings_list-teller_${width}.png`) });
   }
 });
