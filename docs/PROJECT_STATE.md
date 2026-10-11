@@ -746,6 +746,18 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, ledger customer ID status. `POST` and `PUT
+/api/ledger/customers` do not take an ID standing from the body. A
+request that carries `idStatus`, `id_status`, `kycStatus`, a verified
+flag, or the same claim nested under identity or KYC is refused with
+422 for a teller and for an owner. A new customer is stored as
+missing. An update does not rewrite the column. The posting gate, on
+a deal that needs ID, reads a typed identity document on the linked
+client (type and number, primary not past its expiry). A row already
+stored as verified with no document is left as it is and is not ID
+on file. `scripts/audit-ledger-id-without-document.mjs` lists those
+rows and does not change them.
+
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only an environment variable name. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 
 **2026-10-24**, sandbox identity start. `POST /api/idv/start-check` is the caller's shop only. Checks stay off until `idv_shop_config` says otherwise. The route calls the registry provider. Missing Persona key or template answers not connected. A per-shop advisory lock keeps the in-progress cap under parallel starts. Migration 051 adds inquiry status. No credit ledger was added. This stacks on #267. 049 is on main. 050 is the shop config.

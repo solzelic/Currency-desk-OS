@@ -185,7 +185,7 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
       const made = await fetch("/api/ledger/customers", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ externalRef: "eur-sell-seam", name: "Unidentified Seller", risk: "normal", idStatus: "missing" }),
+        body: JSON.stringify({ externalRef: "eur-sell-seam", name: "Unidentified Seller", risk: "normal" }),
       }).then((r) => r.json());
       const quote = async (inputAmount: string, from: string) => {
         const res = await fetch("/api/quotes", {

@@ -33,6 +33,10 @@ import {
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
+import {
+  ID_STATUS_NOT_CLIENT_MESSAGE,
+  requestCarriesIdStatus,
+} from "./id-on-file.js";
 
 /* ============================================================
    A CURRENCY ON A MONEY ROUTE
@@ -77,11 +81,14 @@ const postBody = z.object({
   .refine((value) => !value.thirdParty || !!value.thirdPartyName, { message: "Third-party name is required.", path: ["thirdPartyName"] })
   .refine((value) => value.thirdParty || !value.thirdPartyName, { message: "Third-party name requires third-party status.", path: ["thirdPartyName"] });
 const reverseBody = z.object({ idempotencyKey: z.string().min(1).max(200), reason: z.string().trim().min(1).max(1000) });
+/* Name and risk only. ID standing is not a field of this body. A
+   request that carries one is refused before this schema runs, with
+   a sentence, including a nested or snake_case spelling that `.strict()`
+   would otherwise reject as an unknown key with no explanation. */
 const customerBody = z.object({
   externalRef: z.string().trim().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
   risk: z.enum(["normal", "enhanced", "high"]),
-  idStatus: z.enum(["verified", "pending", "missing", "expired"]),
 }).strict();
 /* A map keyed by currency — a drawer count, an opening position, the unit
    costs beside one.
@@ -582,43 +589,48 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.post("/api/ledger/customers", async (req, reply) => {
-    const parsed = customerBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
-    }
     try {
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply
-            .code(201)
-            .send(
-              await provisioning.saveCustomer(
-                actor,
-                parsed.data as CustomerInput,
-              ),
-            )
-        : undefined;
+      if (!actor) return undefined;
+      if (requestCarriesIdStatus(req.body)) {
+        return reply.code(422).send({
+          code: "ID_STATUS_NOT_CLIENT_SET",
+          message: ID_STATUS_NOT_CLIENT_MESSAGE,
+        });
+      }
+      const parsed = customerBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ code: "INVALID_REQUEST" });
+      }
+      return reply
+        .code(201)
+        .send(await provisioning.saveCustomer(actor, parsed.data as CustomerInput));
     } catch (error) {
       return failure(reply, error);
     }
   });
 
   app.put("/api/ledger/customers/:customerId", async (req, reply) => {
-    const parsed = customerBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
-    }
     try {
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.send(
-            await provisioning.saveCustomer(
-              actor,
-              parsed.data as CustomerInput,
-              (req.params as { customerId: string }).customerId,
-            ),
-          )
-        : undefined;
+      if (!actor) return undefined;
+      if (requestCarriesIdStatus(req.body)) {
+        return reply.code(422).send({
+          code: "ID_STATUS_NOT_CLIENT_SET",
+          message: ID_STATUS_NOT_CLIENT_MESSAGE,
+        });
+      }
+      const parsed = customerBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ code: "INVALID_REQUEST" });
+      }
+      return reply.send(
+        await provisioning.saveCustomer(
+          actor,
+          parsed.data as CustomerInput,
+          (req.params as { customerId: string }).customerId,
+        ),
+      );
     } catch (error) {
       return failure(reply, error);
     }

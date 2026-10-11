@@ -142,7 +142,7 @@ test("a Serbia desk identifies at 5,000 EUR and shows the airside switch", async
       const made = await fetch("/api/ledger/customers", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ externalRef: "serbia-seam", name: "Unidentified Seller", risk: "normal", idStatus: "missing" }),
+        body: JSON.stringify({ externalRef: "serbia-seam", name: "Unidentified Seller", risk: "normal" }),
       }).then((r) => r.json());
       const quote = async (inputAmount: string) => {
         const res = await fetch("/api/quotes", {

@@ -13,8 +13,8 @@ created by the Quote Service and posted through frozen quote terms.
 | `GET` | `/api/health` | none | Readiness: 200 if a trivial database read succeeds, 503 `{ ok: false, error: "database" }` if it does not. |
 | `GET` | `/api/ledger/readiness` | session cookie + `ledger:view` | Reports whether the active workspace has customers and till balances. |
 | `GET` | `/api/ledger/customers` | session cookie + `customer:view` | Lists relational customers in the active workspace. |
-| `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. |
-| `PUT` | `/api/ledger/customers/:customerId` | session cookie + `customer:write` | Updates a customer in the active workspace. |
+| `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. ID status is not a field of the body. |
+| `PUT` | `/api/ledger/customers/:customerId` | session cookie + `customer:write` | Updates name and risk in the active workspace. ID status is not a field of the body. |
 | `GET` | `/api/ledger/till-balances` | session cookie + `ledger:view` | Returns authoritative balances for the active till. |
 | `POST` | `/api/ledger/opening-balances` | manager/supervisor + `till:initialize` | Sets opening balances exactly once, before ledger activity. |
 | `GET` | `/api/ledger/transactions?limit=100` | session cookie + `ledger:view` | Returns newest authoritative transactions and reversal state. |
@@ -64,7 +64,7 @@ intentional rather than inferred.
 `SCOPE_DENIED` is returned when a valid session is outside tenant, legal
 entity, branch, workspace, or till scope. `AUTHORIZATION_DENIED` is returned
 when the authenticated staff role lacks the named permission.
-`INVALID_REQUEST`, `CUSTOMER_NOT_FOUND`, `COMPLIANCE_BLOCKED`,
+`INVALID_REQUEST`, `ID_STATUS_NOT_CLIENT_SET`, `CUSTOMER_NOT_FOUND`, `COMPLIANCE_BLOCKED`,
 `INSUFFICIENT_TILL_LIQUIDITY`, `RATE_NOT_AVAILABLE`,
 `IDEMPOTENCY_IN_PROGRESS`, `TRANSACTION_NOT_FOUND`, `REVERSAL_NOT_ALLOWED`,
 `REVERSAL_ALREADY_EXISTS`, `CUSTOMER_EXTERNAL_REF_CONFLICT`,
@@ -78,8 +78,23 @@ See [server/README.md](../server/README.md) for isolated PostgreSQL startup, mig
 
 ## Limitations
 
-No live KYC provider is connected, so `idStatus` is still a staff-attested
-record. Opening balances are initialization, not an adjustment mechanism;
+No live KYC provider is connected. `POST` and `PUT /api/ledger/customers`
+do not accept an ID standing. A body that carries `idStatus`, `id_status`,
+`kycStatus`, `kyc_status`, a `verified` flag, or the same claim nested
+under `identity`, `kyc`, or `id` is **422** `ID_STATUS_NOT_CLIENT_SET`.
+Teller and owner are the same caller. A new customer is stored as
+`missing`. An update does not rewrite `ledger_customers.id_status`.
+
+The value the API returns, and the value a deal is judged against, is
+derived from the identity documents on the linked client. A typed
+document (type and number, not the placeholder "Not stated", primary
+not past its expiry) is ID on file. An approved provider document would
+be a row in that same table; none is connected. A customer already
+stored as `verified` with no such document is left in the table and is
+not ID on file. A read-only list of those rows is
+`scripts/audit-ledger-id-without-document.mjs`.
+
+Opening balances are initialization, not an adjustment mechanism;
 after activity begins, differences must use a future counted-reconciliation
 workflow. (This table documents the core posting surface; the full ledger
 API has grown well beyond it — routes register in

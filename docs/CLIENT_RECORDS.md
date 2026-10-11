@@ -67,6 +67,11 @@ workspace-scoped because the posting path is. It gained one column,
 second customer concept. One client has as many counter records as the
 entity has tills; every one of them points at the same person.
 
+The posting gate does not read `ledger_customers.id_status`. ID on file
+is a typed row in `desk_client_identity_documents` (or an approved
+document in that table). `POST` and `PUT /api/ledger/customers` refuse
+a standing sent on the body. See `docs/LEDGER_POSTING_API.md`.
+
 ## Identifying and signal
 
 Every field is on one of two sides of a line, and the split is
