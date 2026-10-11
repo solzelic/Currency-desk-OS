@@ -62,6 +62,11 @@ import {
   standingForVerdict,
   type ClientIdFile,
 } from "../ledger/id-on-file.js";
+import {
+  displayDocumentType,
+  HEALTH_CARD_REFUSAL,
+  isHealthCardType,
+} from "../ledger/id-document-types.mjs";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -548,6 +553,12 @@ export class ClientRecordService {
         [clientId, ...entityScope(actor)],
       );
       if (!owned.rowCount) throw notFound();
+      /* A health card is not an identity document. Refuse the write
+         before any row changes. A card already stored is not touched
+         by this check. */
+      if (isHealthCardType(input.docType)) {
+        throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
+      }
       const documentId = `doc_${randomUUID()}`;
       /* Exactly one document drives the desk's KYC standing. The old
          shape let a top-level "primary" ID and an array entry both claim
@@ -610,6 +621,11 @@ export class ClientRecordService {
         [documentId, clientId, ...entityScope(actor)],
       );
       if (!found.rowCount) throw documentNotFound();
+      /* Changing a document into a health card is the same refusal as
+         filing a new one. The row stays as it was. */
+      if (input.docType !== undefined && isHealthCardType(input.docType)) {
+        throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
+      }
       const columns: Record<string, unknown> = {};
       if (input.docType !== undefined) columns.doc_type = input.docType.trim();
       if (input.docNumber !== undefined) columns.doc_number = blank(input.docNumber);
@@ -767,7 +783,7 @@ export class ClientRecordService {
       return {
         clientId,
         documentId,
-        docType: row.doc_type as string,
+        docType: displayDocumentType(row.doc_type),
         contentType: row.content_type as string,
         byteSize: row.byte_size as number,
         sha256: row.sha256 as string,
@@ -1316,7 +1332,7 @@ function clientJson(
        somebody clicks, which is what makes the audit row meaningful. */
     documents: documents.map((document) => ({
       documentId: document.document_id,
-      docType: document.doc_type,
+      docType: displayDocumentType(document.doc_type),
       docNumber: document.doc_number ?? null,
       issuingJurisdiction: document.issuing_jurisdiction ?? null,
       issuedOn: isoDate(document.issued_on),

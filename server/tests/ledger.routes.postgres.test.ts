@@ -1215,24 +1215,83 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
   });
 
-  it("never accepts a health card as ID on file", async () => {
+  it("leaves a health card already on file readable, and not ID on file", async () => {
     const cookies = await cookie();
-    const client = await openClient(cookies, "Health card only");
-    const filed = await fileDocument(cookies, client.clientId, {
-      docType: "Health Card",
-      docNumber: "HC-1",
-      expiresOn: "2031-05-01",
+    const client = await openClient(cookies, "Health card already filed");
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+       SELECT $2, client_id, tenant_id, legal_entity_id, 'Health Card', 'HC-1', '2031-05-01', true
+         FROM desk_clients WHERE client_id = $1`,
+      [client.clientId, `doc_hc_${client.clientId}`],
+    );
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/clients/${client.clientId}`,
+      cookies,
     });
-    expect(filed.idStanding).toEqual({
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().documents).toEqual([
+      expect.objectContaining({ docType: "Health Card", docNumber: "HC-1" }),
+    ]);
+    expect(read.json().idStanding).toEqual({
       status: "missing",
       label: "Missing ID",
       detail: ID_PHOTO_NEEDED_REASON,
       reason: ID_PHOTO_NEEDED_REASON,
       tone: "warning",
     });
-    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "health-card-only");
+    const stored = await pool.query(
+      "SELECT doc_type, doc_number FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(stored.rows).toEqual([{ doc_type: "Health Card", doc_number: "HC-1" }]);
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "health-card-stored");
     expect(posted.statusCode, posted.body).toBe(422);
     expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("refuses a new health card and a change of type to a health card", async () => {
+    const cookies = await cookie();
+    const HEALTH_CARD = "Health cards can't be used as ID. Record a current photo ID.";
+    const client = await openClient(cookies, "Health card refused");
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/clients/${client.clientId}/documents`,
+      cookies,
+      payload: { docType: "Health Card", docNumber: "HC-NEW", expiresOn: "2031-05-01" },
+    });
+    expect(created.statusCode, created.body).toBe(422);
+    expect(created.json().message).toBe(HEALTH_CARD);
+    const none = await pool.query(
+      "SELECT count(*)::int AS n FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(none.rows[0]!.n).toBe(0);
+
+    await fileDocument(cookies, client.clientId, {
+      docType: "Passport",
+      docNumber: "HC-PASSPORT",
+      expiresOn: "2031-05-01",
+    });
+    const found = await pool.query(
+      "SELECT document_id, doc_type FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(found.rows).toEqual([{ document_id: expect.any(String), doc_type: "Passport" }]);
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/clients/${client.clientId}/documents/${found.rows[0]!.document_id}`,
+      cookies,
+      payload: { docType: "Health Card" },
+    });
+    expect(updated.statusCode, updated.body).toBe(422);
+    expect(updated.json().message).toBe(HEALTH_CARD);
+    const kept = await pool.query(
+      "SELECT doc_type, doc_number FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(kept.rows).toEqual([{ doc_type: "Passport", doc_number: "HC-PASSPORT" }]);
   });
 
   it("does not treat a generic citizenship card as a photo ID", async () => {
@@ -1253,6 +1312,18 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       reason: ID_PHOTO_NEEDED_REASON,
       tone: "warning",
     });
+    /* The row keeps the name it was filed under. The label the desk
+       is given is the paper certificate. */
+    const shown = filed as typeof filed & { documents: { docType: string }[] };
+    expect(shown.documents.map((document) => document.docType)).toEqual([
+      "Citizenship certificate (2012 or later, no photo)",
+    ]);
+    expect(filed.displayedDocument?.docType).toBe("Citizenship certificate (2012 or later, no photo)");
+    const stored = await pool.query(
+      "SELECT doc_type FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(stored.rows.map((row) => row.doc_type)).toEqual(["Citizenship Card"]);
     const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "citizenship-card-generic");
     expect(posted.statusCode, posted.body).toBe(422);
     expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);

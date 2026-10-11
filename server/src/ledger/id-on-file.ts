@@ -3,6 +3,7 @@ import { branchBusinessDate } from "./canada-rules.js";
 import {
   currentNonPhotoSql,
   currentPhotoSql,
+  displayDocumentType,
   expiredPhotoSql,
   idDocumentTypeJoinSql,
   nonPhotoSql,
@@ -360,7 +361,7 @@ export async function displayedDocuments(
   for (const row of found.rows) {
     const expires = row.expires_on;
     out.set(row.client_id as string, {
-      docType: String(row.doc_type ?? ""),
+      docType: displayDocumentType(row.doc_type),
       docNumber: row.doc_number == null ? null : String(row.doc_number),
       expiresOn: expires == null ? null : new Date(expires as string | Date).toISOString().slice(0, 10),
       isPrimary: row.is_primary === true,
