@@ -112,18 +112,23 @@ client id cannot see the documents, and a large deal is refused.
 
 The client record and the ledger customer both return `idStanding`
 and `displayedDocument` (the primary document, or the earliest
-document when none is primary). `idStanding` is `{ label, reason,
-tone }`. `label` is `Identified`, `Expired`, or `Missing ID`.
-`reason` is the sentence the desk shows, in this order once every
-document has been read: a current document is "An identity document
-with a number is on file, and it has not expired."; otherwise a
-dated document before the business date is "An identity document
-on this file is past its expiry. The till will not treat this
-customer as identified."; otherwise a blank or missing expiry is
-"ID has no expiry date"; otherwise a number that does not survive
-the strip is "No ID number"; otherwise a type that is empty or
-"Not stated" is "ID type not stated"; otherwise "No ID on file".
-`tone` is `ok` only for Identified, and `warning` otherwise.
+document when none is primary). `idStanding` is `{ status, label,
+detail, reason, tone }`, the same shape `displayIdStanding` returns
+for a document. `status` is `identified`, `expired`, or `missing`.
+`label` is `Identified`, `Expired`, or `Missing ID`. `detail` and
+`reason` are the same sentence, and that sentence is copied from
+`displayIdStanding`. The two copies have to stay the same. In this
+order once every document has been read: a current document is
+"An identity document with a number is on file, and it has not
+expired."; otherwise a dated document before the business date is
+"An identity document on this file is past its expiry. The till
+will not treat this customer as identified."; otherwise a blank or
+missing expiry is "ID has no expiry date"; otherwise a number that
+does not survive the strip is "No ID number"; otherwise a type that
+is empty or "Not stated" is "ID type not stated"; otherwise "No ID
+on file". `tone` is `ok` only for Identified, and `warning`
+otherwise. The helper's provider path, label `Verified`, is not
+returned here.
 `idStatus` on the ledger customer remains the gate's word
 (`verified`, `expired`, `missing`); Identified is `verified`.
 
