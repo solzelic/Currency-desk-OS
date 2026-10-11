@@ -22,6 +22,11 @@
   --glass-win: rgba(255,255,255,0.44);
   --blur: saturate(190%) blur(40px);
   --win-shadow: 0 24px 60px -14px rgba(10,10,10,0.32), 0 6px 16px -8px rgba(10,10,10,0.18), 0 0 0 1px rgba(10,10,10,0.06);
+  /* tokens.css is not on this base. These four are that file's values. */
+  --color-sell: #7A3E96;
+  --color-sell-bg: #F3EAF7;
+  --color-buy: #1E5AA8;
+  --color-buy-bg: #E8F0FB;
 }
 
 * { box-sizing: border-box; }
@@ -2105,5 +2110,50 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-tx-record select {
     font-size: 16px;
     min-height: 44px;
+  }
+  /* tokens.css: --color-sell / --color-sell-bg, --color-buy / --color-buy-bg.
+     --color-text is the light text colour from that file; the ink is the
+     stand-in until tokens.css is on this base. */
+  .cd-tx-side {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 12px !important;
+    line-height: 16px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+  .cd-tx-side[data-side="sell"] {
+    color: var(--color-sell) !important;
+    background-color: var(--color-sell-bg) !important;
+  }
+  .cd-tx-side[data-side="buy"] {
+    color: var(--color-buy) !important;
+    background-color: var(--color-buy-bg) !important;
+  }
+  .cd-tx-receive {
+    color: var(--color-text, var(--ink, #0a0a0a)) !important;
+  }
+  .cd-tx-ticket-get {
+    color: #fff !important;
+  }
+  .cd-tx-kicker {
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
+    font-size: 13px !important;
+    line-height: 16px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+  .cd-tx-check-go {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
 }

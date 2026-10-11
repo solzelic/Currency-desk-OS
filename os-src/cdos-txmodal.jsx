@@ -208,12 +208,12 @@
     </>);
   }
 
-  function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus }) {
+  function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus, mark }) {
     return (
       <div className="cd-money flex items-stretch" style={{ border: `1px solid ${readOnly ? CD.line : CD.ink}`, borderRadius: 9, overflow: 'hidden', background: readOnly ? 'var(--cd-paper-soft)' : 'var(--cd-panel)' }}>
         <CcyPicker value={ccy} onChange={onCcy} disabled={!onCcy} />
         {readOnly
-          ? <div className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right" style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
+          ? <div className={'flex-1 min-w-0 px-3 py-2.5 font-semibold text-right' + (mark ? ' ' + mark : '')} style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
           : <input value={value} onChange={e => onChange(e.target.value)} inputMode="decimal" autoFocus={autoFocus} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontSize: big ? 22 : 16 }} />}
       </div>
     );
@@ -338,17 +338,22 @@
   }
 
   /* ---------- checklist row ---------- */
-  function Check({ ok, warn, label, sub, action, mark }) {
+  function Check({ ok, warn, label, sub, action, mark, onActivate }) {
+    const copy = (
+      <>
+        <div className="text-[12.5px] leading-tight" style={{ color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute, fontWeight: ok ? 500 : 400 }}>{label}</div>
+        {sub && <div className="text-[11px] mt-0.5 leading-snug" style={{ color: warn ? CD.amber : CD.faint }}>{sub}</div>}
+        {action}
+      </>
+    );
     return (
       <div className={'flex items-start gap-2 py-1.5' + (mark ? ' cd-tx-missing' : '')}>
         <span className="flex-none grid place-items-center" style={{ width: 18, height: 18, borderRadius: '50%', border: ok ? 'none' : `1.5px solid ${warn ? CD.amber : CD.line}`, background: ok ? CD.green : 'transparent', marginTop: 1 }}>
           {ok ? <Ic n="check" s={11} c="var(--cd-on-ink)" /> : warn ? <Ic n="alert" s={11} c={CD.amber} /> : null}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[12.5px] leading-tight" style={{ color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute, fontWeight: ok ? 500 : 400 }}>{label}</div>
-          {sub && <div className="text-[11px] mt-0.5 leading-snug" style={{ color: warn ? CD.amber : CD.faint }}>{sub}</div>}
-          {action}
-        </div>
+        {onActivate
+          ? <button type="button" onClick={onActivate} className="cd-tx-check-go min-w-0 flex-1">{copy}</button>
+          : <div className="min-w-0 flex-1">{copy}</div>}
       </div>
     );
   }
@@ -717,7 +722,7 @@
     const aeCdd = aeV2 && isExchange && !unpriced && (inCadEquiv >= 35000 || (TH != null && TH > 0 && inCadEquiv >= TH));
     if (serverBacked && isExchange && !single && !noStatutoryCashReport && (!aeV2 || aeCdd)) {
       const serverFactsOk = purpose.trim() && cap.source.trim();
-      reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: 'Ledger facts captured', sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null });
+      reqs.push({ key: 'server-facts', ok: serverFactsOk, warn: !serverFactsOk, label: phoneSheet ? 'Purpose and source of funds' : 'Ledger facts captured', sub: !serverFactsOk ? (phoneSheet ? 'Needed for this amount' : 'Purpose and source of funds are required for an authoritative post') : null });
     }
     if (needOverride) reqs.push({ key: 'mgn', ok: marginAck && marginReason.trim(), warn: true, label: 'Below-floor margin — needs a reason', sub: marginAck && marginReason.trim() ? null : 'Acknowledge & give a reason below' });
 
@@ -734,6 +739,12 @@
       const field = first.key === 'id' ? (customer ? 'id' : 'cust') : (first.key === 'cap' || first.key === 'server-facts') ? 'facts' : first.key;
       const el = document.querySelector('.cd-tx [data-req-field="' + field + '"]');
       if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    };
+    const focusFacts = () => {
+      const card = document.querySelector('.cd-tx [data-req-field="facts"]');
+      if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const purpose = document.querySelector('.cd-tx .cd-tx-purpose');
+      if (purpose && purpose.focus) purpose.focus();
     };
 
     // ---- actions ----
@@ -1131,14 +1142,14 @@
                   <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
                   </div>
                   <div className="cd-tx-rate-line flex items-center justify-center gap-2 py-2">
-                    <span className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? (phoneSheet ? `WE BUY ${inCcy}` : `We buy ${inCcy}`) : pricing.side === 'sell' ? (phoneSheet ? `WE SELL ${outCcy}` : `We sell ${outCcy}`) : 'Cross'}</span>
-                    <span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {rateShown(rateN)} {outCcy}</span>
+                    <span data-side={pricing.side || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
+                    <span className="cd-tx-kicker text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {rateShown(rateN)} {outCcy}</span>
                     <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                   </div>
                   <Lbl>Customer receives</Lbl>
-                  <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} big />
+                  <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : rateShown(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? (phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate)) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : rateShown(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? (phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate)) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
@@ -1307,7 +1318,7 @@
                 {/* deal ticket */}
                 <div className="cd-tx-ticket" style={{ background: CD.ink, borderRadius: 12, padding: 16, color: 'var(--cd-on-ink)' }}>
                   <div className="flex items-center justify-between" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)', paddingBottom: 10 }}>
-                    <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{meta.short}</span>
+                    <span className="cd-tx-kicker" style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{meta.short}</span>
                     <Ic n={meta.icon} s={14} c="var(--cd-on-ink-soft)" />
                   </div>
                   <div style={{ padding: '12px 0' }}>
@@ -1317,10 +1328,10 @@
                   {(isExchange || isSend || isCheque) && <div className="flex items-center gap-2 py-1" style={{ color: 'var(--cd-on-ink-faint)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><Ic n="arrowdown" s={13} c="var(--cd-on-ink-soft)" /><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
                   <div style={{ paddingTop: 8 }}>
                     <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'}</div>
-                    <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : <>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
+                    <div className="cd-tx-ticket-get" style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : <>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
                   </div>
                   <div className="flex items-center justify-between" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
-                    <span>{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                    <span className="cd-tx-kicker">{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
                     <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
                   </div>
                 </div>
@@ -1328,7 +1339,7 @@
                 {/* margin chip (exchange/send only) */}
                 {(isExchange || isSend) && amtN > 0 && (
                   <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-panel)', border: `1px solid ${belowFloor ? CD.flag : CD.line}`, borderRadius: 10 }}>
-                    <span className="text-[11px] flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="activity" s={12} c={belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber} /> MARGIN</span>
+                    <span className="cd-tx-kicker text-[11px] flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="activity" s={12} c={belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber} /> {phoneSheet ? 'Margin' : 'MARGIN'}</span>
                     <span className="text-[12px] font-bold" style={{ color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber, fontVariantNumeric: 'tabular-nums' }}>{fmt(profitCad, home)} · {marginPct.toFixed(2)}%</span>
                   </div>
                 )}
@@ -1336,10 +1347,10 @@
                 {/* the checklist */}
                 <div className="px-3.5 py-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
-                    <span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? 'READY' : `${remaining} LEFT`}</span>
+                    <span className="cd-tx-kicker text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
+                    <span className="cd-tx-kicker text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
-                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
+                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
 
                 {/* compliance note */}

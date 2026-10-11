@@ -33001,7 +33001,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     big,
     readOnly,
     accent,
-    autoFocus
+    autoFocus,
+    mark
   }) {
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-money flex items-stretch",
@@ -33016,7 +33017,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onChange: onCcy,
       disabled: !onCcy
     }), readOnly ? /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 min-w-0 px-3 py-2.5 font-semibold text-right",
+      className: 'flex-1 min-w-0 px-3 py-2.5 font-semibold text-right' + (mark ? ' ' + mark : ''),
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: accent || CD.ink,
@@ -33506,8 +33507,21 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     label,
     sub,
     action,
-    mark
+    mark,
+    onActivate
   }) {
+    const copy = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] leading-tight",
+      style: {
+        color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute,
+        fontWeight: ok ? 500 : 400
+      }
+    }, label), sub && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-0.5 leading-snug",
+      style: {
+        color: warn ? CD.amber : CD.faint
+      }
+    }, sub), action);
     return /*#__PURE__*/React.createElement("div", {
       className: 'flex items-start gap-2 py-1.5' + (mark ? ' cd-tx-missing' : '')
     }, /*#__PURE__*/React.createElement("span", {
@@ -33528,20 +33542,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "alert",
       s: 11,
       c: CD.amber
-    }) : null), /*#__PURE__*/React.createElement("div", {
+    }) : null), onActivate ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onActivate,
+      className: "cd-tx-check-go min-w-0 flex-1"
+    }, copy) : /*#__PURE__*/React.createElement("div", {
       className: "min-w-0 flex-1"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px] leading-tight",
-      style: {
-        color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute,
-        fontWeight: ok ? 500 : 400
-      }
-    }, label), sub && /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-0.5 leading-snug",
-      style: {
-        color: warn ? CD.amber : CD.faint
-      }
-    }, sub), action));
+    }, copy));
   }
 
   /* =====================================================================
@@ -34039,8 +34046,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         key: 'server-facts',
         ok: serverFactsOk,
         warn: !serverFactsOk,
-        label: 'Ledger facts captured',
-        sub: !serverFactsOk ? 'Purpose and source of funds are required for an authoritative post' : null
+        label: phoneSheet ? 'Purpose and source of funds' : 'Ledger facts captured',
+        sub: !serverFactsOk ? phoneSheet ? 'Needed for this amount' : 'Purpose and source of funds are required for an authoritative post' : null
       });
     }
     if (needOverride) reqs.push({
@@ -34066,6 +34073,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         block: 'center',
         inline: 'nearest'
       });
+    };
+    const focusFacts = () => {
+      const card = document.querySelector('.cd-tx [data-req-field="facts"]');
+      if (card && card.scrollIntoView) card.scrollIntoView({
+        block: 'center',
+        inline: 'nearest'
+      });
+      const purpose = document.querySelector('.cd-tx .cd-tx-purpose');
+      if (purpose && purpose.focus) purpose.focus();
     };
 
     // ---- actions ----
@@ -34900,6 +34916,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     })), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rate-line flex items-center justify-center gap-2 py-2"
     }, /*#__PURE__*/React.createElement("span", {
+      "data-side": pricing.side || '',
       className: "cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
       style: {
         borderRadius: 5,
@@ -34907,8 +34924,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, pricing.side === 'buy' ? phoneSheet ? `WE BUY ${inCcy}` : `We buy ${inCcy}` : pricing.side === 'sell' ? phoneSheet ? `WE SELL ${outCcy}` : `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+    }, pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-kicker text-[11px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
@@ -34935,10 +34952,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       },
       readOnly: true,
       accent: CD.green,
+      mark: "cd-tx-receive",
       big: true
     }), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-2 mt-3"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, {
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-rate-field"
+    }, /*#__PURE__*/React.createElement(Lbl, {
       hint: override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'
     }, "Rate"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center",
@@ -35683,6 +35703,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         paddingBottom: 10
       }
     }, /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-kicker",
       style: {
         fontFamily: 'Space Mono, monospace',
         fontSize: 10,
@@ -35746,6 +35767,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-on-ink-soft)'
       }
     }, isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'), /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-ticket-get",
       style: {
         fontWeight: 800,
         fontSize: 26,
@@ -35769,7 +35791,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, /*#__PURE__*/React.createElement("span", null, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-kicker"
+    }, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
@@ -35777,7 +35801,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 10
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px] flex items-center gap-1.5",
+      className: "cd-tx-kicker text-[11px] flex items-center gap-1.5",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
@@ -35786,7 +35810,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "activity",
       s: 12,
       c: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber
-    }), " MARGIN"), /*#__PURE__*/React.createElement("span", {
+    }), " ", phoneSheet ? 'Margin' : 'MARGIN'), /*#__PURE__*/React.createElement("span", {
       className: "text-[12px] font-bold",
       style: {
         color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber,
@@ -35802,26 +35826,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between mb-1"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] uppercase tracking-wider font-semibold",
+      className: "cd-tx-kicker text-[10px] uppercase tracking-wider font-semibold",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
     }, "Before you post"), /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5",
+      className: "cd-tx-kicker text-[10px] px-1.5 py-0.5",
       style: {
         borderRadius: 999,
         background: allGreen ? CD.greenSoft : CD.lineSoft,
         color: allGreen ? CD.green : CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, allGreen ? 'READY' : `${remaining} LEFT`)), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
+    }, allGreen ? phoneSheet ? 'Ready' : 'READY' : phoneSheet ? `${remaining} left` : `${remaining} LEFT`)), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
       key: r.key,
       ok: r.ok,
       warn: r.warn && !r.ok,
       label: r.label,
       sub: !r.ok ? r.sub : null,
       mark: phoneSheet && missKey === r.key,
+      onActivate: phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined,
       action: phoneSheet && r.key === 'id' && !r.ok && customer ? /*#__PURE__*/React.createElement("button", {
         type: "button",
         onClick: () => setRecordId(true),

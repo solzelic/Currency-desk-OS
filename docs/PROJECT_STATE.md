@@ -104,12 +104,18 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   left" and stays tappable; tapping it scrolls to the first missing
   item and marks it. The checklist says "ID not recorded yet" and
   offers Record the ID. Rates show four decimals. Ticket amounts
-  include the currency code, and the amount the customer receives
-  stays green. Purpose and source of funds stay in the ordinary
+  include the currency code. The amount the customer receives is
+  the text colour in the field and white on the dark ticket. Green
+  stays on the margin. Purpose and source of funds stay in the ordinary
   border until the cashier leaves an empty field. The "Authoritative
   ledger record" heading is hidden; the two fields stay, because
-  the server still requires them. The buy and sell badge reads
-  WE BUY or WE SELL in the flag and green colours. A date reads
+  the server still requires them. The checklist names them "Purpose
+  and source of funds" with "Needed for this amount", and tapping
+  that line scrolls to the fields and focuses the first. The buy
+  and sell badge reads "We buy" or "We sell", blue on pale blue and
+  purple on pale purple. Exchange, Margin, Before you post, the
+  steps-left count, and the rate line are 13px sans, sentence case.
+  Mono stays on references. A date reads
   like "Oct 11, 2026", including the header and an ID expiry. The
   amount field keeps what was typed. The customer stats read ID ON FILE
   and LAST {n}D. The type row keeps a 16px inset and fades the pills
@@ -600,7 +606,13 @@ an incomplete deal says "N steps left" and stays tappable. Tapping
 it marks the first missing item. The checklist says "ID not
 recorded yet". Text quote is hidden unless SMS is configured, and
 the verify nudge is hidden while Persona is off. Rates show four
-decimals. Ticket amounts include the currency code. Purpose and
+decimals. Ticket amounts include the currency code. The amount
+the customer receives is the text colour in the field and white
+on the ticket. The badge reads "We sell" or "We buy" in the sell
+and buy colours. Exchange, Margin, Before you post, and the rate
+line are sentence case in the sans face. The checklist says
+"Purpose and source of funds" and "Needed for this amount", and
+tapping it scrolls to those fields. Purpose and
 source borders turn red only after an empty field is left. The
 ledger-record heading is hidden. The type row keeps a 16px inset
 and fades at the right edge. Record the ID is one column, and its subtitle is "Type, number and expiry".

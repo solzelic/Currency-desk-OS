@@ -286,7 +286,48 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expect(page.locator(".cd-tx")).not.toContainText("$6.99");
     await expect(page.getByRole("button", { name: /^Text quote$/ })).toHaveCount(0);
     await expect(page.locator(".cd-tx-rate-line")).toContainText(/\d\.\d{4}/);
-    await expect(page.locator(".cd-tx-side")).toContainText(/WE (BUY|SELL) [A-Z]{3}/);
+    await expect(page.locator(".cd-tx-side")).toContainText(/We (buy|sell) [A-Z]{3}/);
+    const sidePaint = await page.locator(".cd-tx-side").evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { color: s.color, bg: s.backgroundColor, size: s.fontSize, lh: s.lineHeight, weight: s.fontWeight, transform: s.textTransform };
+    });
+    expect(sidePaint, `sell badge at ${width}`).toEqual({
+      color: "rgb(122, 62, 150)",
+      bg: "rgb(243, 234, 247)",
+      size: "12px",
+      lh: "16px",
+      weight: "600",
+      transform: "none",
+    });
+    const receive = await page.locator(".cd-tx-receive").evaluate((el) => getComputedStyle(el).color);
+    expect(receive, `receive field at ${width}`).toBe("rgb(10, 10, 10)");
+    const ticketGet = await page.locator(".cd-tx-ticket-get").evaluate((el) => getComputedStyle(el).color);
+    expect(ticketGet, `ticket receive at ${width}`).toBe("rgb(255, 255, 255)");
+    const kicker = await page.locator(".cd-tx-kicker").first().evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { size: s.fontSize, lh: s.lineHeight, weight: s.fontWeight, transform: s.textTransform, mono: /mono/i.test(s.fontFamily) };
+    });
+    expect(kicker, `kicker at ${width}`).toEqual({ size: "13px", lh: "16px", weight: "500", transform: "none", mono: false });
+    await expect(page.getByText("Margin", { exact: true })).toBeVisible();
+    await expect(page.getByText("Before you post", { exact: true })).toBeVisible();
+    if (hasLedger) {
+      const jump = page.getByRole("button", { name: /Purpose and source of funds/ });
+      await expect(jump).toContainText("Needed for this amount");
+      await page.locator(".cd-tx-scroll").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+      await jump.scrollIntoViewIfNeeded();
+      const before = await page.locator(".cd-tx-scroll").evaluate((el) => el.scrollTop);
+      await jump.click();
+      await expect(page.locator(".cd-tx-purpose")).toBeFocused();
+      const after = await page.locator(".cd-tx-scroll").evaluate((el) => el.scrollTop);
+      expect(after, `checklist scrolls to the fields at ${width}`).toBeLessThan(before);
+      const view = page.viewportSize();
+      for (const sel of [".cd-tx-purpose", ".cd-tx-source"]) {
+        const box = await page.locator(sel).boundingBox();
+        expect(box, sel).toBeTruthy();
+        expect(box!.y, sel).toBeGreaterThanOrEqual(0);
+        expect(box!.y + box!.height, sel).toBeLessThanOrEqual(view!.height);
+      }
+    }
     await expect(page.locator(".cd-tx-ticket")).toContainText(/\d[\d,]*\.\d{2} [A-Z]{3}/);
     await expect(page.locator(".cd-tx").getByText("ID not recorded yet")).toBeVisible();
     await expect(page.locator(".cd-tx").getByText(/Their ID is/)).toHaveCount(0);
@@ -469,10 +510,17 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   await expect(page.getByRole("button", { name: /steps left/ })).toHaveCount(0);
   await expect(page.locator(".cd-tx-go")).toBeDisabled();
   await expect(page.locator(".cd-tx-go")).toContainText(/to complete/);
+  const side = page.locator(".cd-tx-side");
+  await expect(side).toContainText(/We (buy|sell)/);
+  expect(await side.evaluate((el) => getComputedStyle(el).textTransform), "desk badge").toBe("uppercase");
+  expect(await page.locator(".cd-tx-receive").evaluate((el) => getComputedStyle(el).color), "desk receive").toBe("rgb(31, 138, 76)");
+  expect(await page.locator(".cd-tx-ticket-get").evaluate((el) => getComputedStyle(el).color), "desk ticket").toBe("rgb(127, 209, 163)");
   if (hasLedger) {
     await expect(page.locator(".cd-tx-purpose")).toBeAttached();
     const border = await page.locator(".cd-tx-purpose").evaluate((el) => getComputedStyle(el).borderTopColor);
     expect(border, "desk purpose border").toBe("rgb(192, 57, 43)");
     await expect(page.locator(".cd-tx-facts-intro").first()).toBeVisible();
+    await expect(page.getByText("Ledger facts captured")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Purpose and source of funds/ })).toHaveCount(0);
   }
 });
