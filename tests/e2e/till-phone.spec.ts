@@ -209,26 +209,31 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await expect(page.locator(".till-coins")).toBeHidden();
     await page.locator(".till-coins-btn").click();
     await expect(page.locator(".till-coins")).toBeVisible();
-    const spins = await page.locator(".till-den-qty").evaluateAll((inputs) => inputs.map((el) => {
-      const field = getComputedStyle(el);
-      const inner = getComputedStyle(el, "::-webkit-inner-spin-button");
-      const outer = getComputedStyle(el, "::-webkit-outer-spin-button");
-      return {
-        moz: field.getPropertyValue("-moz-appearance"),
-        inner: inner.getPropertyValue("-webkit-appearance"),
-        outer: outer.getPropertyValue("-webkit-appearance"),
-        innerDisplay: inner.display,
-        outerDisplay: outer.display,
+    /* Chromium reports the spin-button pseudos as the input's
+       appearance, so the hide is checked on the rule itself and on
+       the field: textfield is what drops the arrows. */
+    const spins = await page.evaluate(() => {
+      const hits: string[] = [];
+      const walk = (rules: CSSRuleList) => {
+        for (const rule of rules) {
+          if ("cssRules" in rule && rule.cssRules) walk(rule.cssRules as CSSRuleList);
+          const styleRule = rule as CSSStyleRule;
+          if (styleRule.selectorText && styleRule.selectorText.includes(".till-den-qty")) hits.push(styleRule.cssText);
+        }
       };
-    }));
-    expect(spins.length, "note and coin counts").toBeGreaterThan(0);
-    for (const spin of spins) {
-      expect(spin.moz).toBe("textfield");
-      expect(spin.inner).toBe("none");
-      expect(spin.outer).toBe("none");
-      expect(spin.innerDisplay).toBe("none");
-      expect(spin.outerDisplay).toBe("none");
-    }
+      for (const sheet of document.styleSheets) {
+        try { walk(sheet.cssRules); } catch { /* a cross-origin sheet is not the till CSS */ }
+      }
+      const fields = [...document.querySelectorAll(".till-den-qty")].map((el) => getComputedStyle(el).appearance);
+      return { hits, fields };
+    });
+    expect(spins.fields.length, "note and coin counts").toBeGreaterThan(0);
+    expect(spins.fields.every((appearance) => appearance === "textfield")).toBe(true);
+    const declared = spins.hits.join("\n");
+    expect(declared).toContain(".till-den-qty::-webkit-inner-spin-button");
+    expect(declared).toContain(".till-den-qty::-webkit-outer-spin-button");
+    expect(declared).toContain("appearance: none");
+    expect(declared).toContain("display: none");
     await page.locator(".till-coins-btn").click();
 
     await countCad(page);
