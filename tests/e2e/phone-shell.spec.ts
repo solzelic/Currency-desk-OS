@@ -223,7 +223,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
   await page.locator('#phonebar [data-phone-app="clients"]').click();
   await dismissTour(page);
   await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "clients");
-  const clients = await accentOf(page, "clients", "New contact");
+  const clients = await accentOf(page, "clients", "Add client");
   expect(clients.appAttr).toBe("clients");
   expect(clients.brand).toBe(ACCENT.clients);
   expect(clients.button.split("|")).toEqual([ACCENT.clients]);
