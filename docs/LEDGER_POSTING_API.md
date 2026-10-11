@@ -111,10 +111,21 @@ different client. The till sends this. An `os:<slug>` row with no
 client id cannot see the documents, and a large deal is refused.
 
 The client record and the ledger customer both return `idStanding`
-(`on_file`, `missing`, or `expired`) and `displayedDocument` (the
-primary document, or the earliest document when none is primary).
+and `displayedDocument` (the primary document, or the earliest
+document when none is primary). `idStanding` is `{ label, reason,
+tone }`. `label` is `Identified`, `Expired`, or `Missing ID`.
+`reason` is the sentence the desk shows, in this order once every
+document has been read: a current document is "An identity document
+with a number is on file, and it has not expired."; otherwise a
+dated document before the business date is "An identity document
+on this file is past its expiry. The till will not treat this
+customer as identified."; otherwise a blank or missing expiry is
+"ID has no expiry date"; otherwise a number that does not survive
+the strip is "No ID number"; otherwise a type that is empty or
+"Not stated" is "ID type not stated"; otherwise "No ID on file".
+`tone` is `ok` only for Identified, and `warning` otherwise.
 `idStatus` on the ledger customer remains the gate's word
-(`verified`, `expired`, `missing`); `on_file` is `verified`.
+(`verified`, `expired`, `missing`); Identified is `verified`.
 
 A deal that needs identification and does not have it is
 `COMPLIANCE_BLOCKED` with the message "ID needed for this amount.

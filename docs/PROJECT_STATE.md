@@ -764,7 +764,14 @@ expired when at least one document is dated before the business
 date and none is dated on or after it. The primary document is
 only what is shown.
 Client and ledger customer responses carry `idStanding`
-(`on_file`, `missing`, `expired`) and `displayedDocument`. A deal
+(`{ label, reason, tone }`) and `displayedDocument`. The label is
+Identified, Expired, or Missing ID. The reason is one of "An
+identity document with a number is on file, and it has not
+expired.", "An identity document on this file is past its expiry.
+The till will not treat this customer as identified.", "ID has no
+expiry date", "No ID number", "ID type not stated", or "No ID on
+file". A current document wins, then a dated expiry, then a blank
+expiry, then a missing number, then a type that was not stated. A deal
 that needs ID and does not have it is refused with "ID needed for
 this amount. Record the customer's ID." A row already stored as
 verified with no such document is left as it is and is not ID on

@@ -554,6 +554,8 @@ test("the operator files a paper on the customer and can search the folder", asy
     return views.length;
   }).toBeGreaterThanOrEqual(1);
 
-  await expect(page.getByText("Where they are")).toBeVisible();
-  await expect(page.getByText("Not identified")).toBeVisible();
+  const standing = page.locator("[data-tour='identification']");
+  await expect(standing.getByText("Where they are")).toBeVisible();
+  await expect(standing.getByText("Missing ID")).toBeVisible();
+  await expect(standing.getByText("No ID on file")).toBeVisible();
 });

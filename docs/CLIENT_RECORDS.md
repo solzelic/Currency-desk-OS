@@ -74,8 +74,11 @@ is one rule, computed on the server from
 invisible characters, and an expiry on or after the branch's business
 date. A blank or missing expiry does not count. The primary document is what
 the desk shows (`displayedDocument`); it is not what decides the
-standing. The client response carries `idStanding` (`on_file`,
-`missing`, `expired`). `POST` and `PUT /api/ledger/customers` refuse
+standing. The client response carries `idStanding` as
+`{ label, reason, tone }`: Identified, Expired, or Missing ID,
+with the reason the desk shows ("ID has no expiry date", "No ID
+number", "ID type not stated", "No ID on file", or the identified
+and expired sentences). `POST` and `PUT /api/ledger/customers` refuse
 a standing sent on the body, and accept `clientId` so the till's
 customer points at this file. See `docs/LEDGER_POSTING_API.md`.
 

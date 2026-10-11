@@ -102,6 +102,7 @@ import { branchBusinessDate } from "../ledger/canada-rules.js";
 import {
   documentStandingSql,
   idFileForClients,
+  standingForVerdict,
   type ClientIdFile,
 } from "../ledger/id-on-file.js";
 
@@ -1457,7 +1458,7 @@ function clientJson(
     /* The posting gate's answer, not a second reading of the primary
        document. The displayed document is the primary when one is
        marked, otherwise the earliest. */
-    idStanding: idFile?.idStanding ?? "missing",
+    idStanding: idFile?.idStanding ?? standingForVerdict("no_id"),
     displayedDocument: idFile?.displayedDocument ?? null,
     verifiedAt: row.verified_at ? new Date(row.verified_at as string | Date).toISOString() : null,
     screeningOutcome: row.screening_outcome ?? null,

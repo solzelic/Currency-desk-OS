@@ -65,13 +65,58 @@ export function requestCarriesIdStatus(body: unknown, parent = ""): boolean {
 
 export type DerivedIdStatus = "verified" | "expired" | "missing";
 
-/* The word the client file and the ledger customer both return.
-   `verified` stays the posting gate's word; the screen says on_file
-   so it cannot be confused with a provider check nobody ran. */
-export type IdStanding = "on_file" | "missing" | "expired";
+/* The words the client file and the ledger customer both return.
+   The posting gate still uses verified | expired | missing. The
+   screen does not: it shows this object as it arrives. The label
+   and the reason are the same sentences displayIdStanding uses,
+   so a desk that prefers the server's object says the same thing
+   the helper would have said. `tone` is what that helper uses to
+   decide whether the checklist is clear. */
+export type IdStanding = {
+  label: "Identified" | "Expired" | "Missing ID";
+  reason: string;
+  tone: "ok" | "warning";
+};
 
-export function toIdStanding(status: DerivedIdStatus): IdStanding {
-  return status === "verified" ? "on_file" : status;
+export const ID_IDENTIFIED_REASON =
+  "An identity document with a number is on file, and it has not expired.";
+export const ID_EXPIRED_REASON =
+  "An identity document on this file is past its expiry. The till will not treat this customer as identified.";
+export const ID_NO_EXPIRY_REASON = "ID has no expiry date";
+export const ID_NO_NUMBER_REASON = "No ID number";
+export const ID_TYPE_NOT_STATED_REASON = "ID type not stated";
+export const ID_NO_ID_REASON = "No ID on file";
+
+/* The finer word the document query returns. The gate folds the
+   four missing words into `missing`. The response keeps them, so
+   the screen can say which one. */
+export type IdVerdict =
+  | "identified"
+  | "expired"
+  | "no_expiry"
+  | "no_number"
+  | "type_not_stated"
+  | "no_id";
+
+export function standingForVerdict(verdict: string): IdStanding {
+  if (verdict === "identified") {
+    return { label: "Identified", reason: ID_IDENTIFIED_REASON, tone: "ok" };
+  }
+  if (verdict === "expired") {
+    return { label: "Expired", reason: ID_EXPIRED_REASON, tone: "warning" };
+  }
+  const reason =
+    verdict === "no_expiry" ? ID_NO_EXPIRY_REASON
+    : verdict === "no_number" ? ID_NO_NUMBER_REASON
+    : verdict === "type_not_stated" ? ID_TYPE_NOT_STATED_REASON
+    : ID_NO_ID_REASON;
+  return { label: "Missing ID", reason, tone: "warning" };
+}
+
+export function verdictToGate(verdict: string): DerivedIdStatus {
+  if (verdict === "identified") return "verified";
+  if (verdict === "expired") return "expired";
+  return "missing";
 }
 
 export type DisplayedDocument = {
@@ -92,40 +137,28 @@ function strippedNumber(column: string): string {
   return `regexp_replace(coalesce(${column}, ''), '${NUMBER_STRIP_CLASS}', '', 'g')`;
 }
 
-/* One document counts when it has a real type, a number that is
-   still non-empty after the strip above, and an expiry that is a
-   real date. A blank or missing expiry does not count. It is not
-   on file, and it is not an expired document either: the same skip
-   a desk makes when the expiry field is empty.
-
-   `current` asks for that date on or after the business date.
-   Otherwise the predicate asks for a date before it. NULL fails
-   both comparisons, so a cleared expiry cannot satisfy either.
-   The date placeholder is referenced on both legs. Dropping the
-   comparison drops the bind, and the query fails closed.
-
-   is_primary is not in this predicate. It chooses which document
-   is shown. Every other document still counts. A current secondary
-   document is ID on file even when the primary is expired, blank,
-   "Not stated", or absent. */
-function qualifyingDocument(where: string, businessDateParam: string, current: boolean): string {
-  const expiry = current
-    ? `d.expires_on >= ${businessDateParam}::date`
-    : `d.expires_on < ${businessDateParam}::date`;
+/* A document the standing will read. A real type is present and is
+   not "Not stated". The number has survived the strip. is_primary
+   is not here. It chooses which document is shown. */
+function countedDocument(where: string): string {
   return `SELECT 1 FROM desk_client_identity_documents d
     WHERE ${where}
       AND coalesce(btrim(d.doc_type), '') <> ''
       AND lower(btrim(d.doc_type)) <> 'not stated'
-      AND length(${strippedNumber("d.doc_number")}) > 0
-      AND ${expiry}`;
+      AND length(${strippedNumber("d.doc_number")}) > 0`;
 }
 
-/* Standing of every document on one client. A current document wins.
-   Dated documents that are all before the business date are expired.
-   Anything else — nothing filed, or only a blank expiry — is missing.
-   `businessDateParam` is a bound placeholder (`$4`), never a date
-   spliced in from the request. */
-export function documentStandingSql(
+/* The same order displayIdStanding uses after it has looked at
+   every document. A current document wins. A dated document that
+   is before the business date wins over a blank expiry. A blank
+   expiry then wins over a missing number, which wins over a type
+   that was not stated. Anything else is no ID on file.
+
+   The business-date placeholder is on the first two legs. A blank
+   expiry is NULL, so it fails both comparisons and lands on
+   no_expiry. `businessDateParam` is a bound placeholder, never a
+   date spliced in from the request. */
+export function documentVerdictSql(
   clientIdExpr: string,
   tenantExpr: string,
   entityExpr: string,
@@ -135,13 +168,53 @@ export function documentStandingSql(
     `d.client_id = ${clientIdExpr}
         AND d.tenant_id = ${tenantExpr}
         AND d.legal_entity_id = ${entityExpr}`;
+  const counted = countedDocument(where);
   return `CASE
     WHEN EXISTS (
-      ${qualifyingDocument(where, businessDateParam, true)}
-    ) THEN 'verified'
+      ${counted}
+        AND d.expires_on >= ${businessDateParam}::date
+    ) THEN 'identified'
     WHEN EXISTS (
-      ${qualifyingDocument(where, businessDateParam, false)}
+      ${counted}
+        AND d.expires_on < ${businessDateParam}::date
     ) THEN 'expired'
+    WHEN EXISTS (
+      ${counted}
+        AND d.expires_on IS NULL
+    ) THEN 'no_expiry'
+    WHEN EXISTS (
+      SELECT 1 FROM desk_client_identity_documents d
+       WHERE ${where}
+         AND coalesce(btrim(d.doc_type), '') <> ''
+         AND lower(btrim(d.doc_type)) <> 'not stated'
+         AND length(${strippedNumber("d.doc_number")}) = 0
+    ) THEN 'no_number'
+    WHEN EXISTS (
+      SELECT 1 FROM desk_client_identity_documents d
+       WHERE ${where}
+         AND (
+           lower(btrim(d.doc_type)) = 'not stated'
+           OR (
+             coalesce(btrim(d.doc_type), '') = ''
+             AND length(${strippedNumber("d.doc_number")}) > 0
+           )
+         )
+    ) THEN 'type_not_stated'
+    ELSE 'no_id'
+  END`;
+}
+
+/* The posting word. identified is verified. The four missing
+   verdicts are missing. */
+export function documentStandingSql(
+  clientIdExpr: string,
+  tenantExpr: string,
+  entityExpr: string,
+  businessDateParam: string,
+): string {
+  return `CASE (${documentVerdictSql(clientIdExpr, tenantExpr, entityExpr, businessDateParam)})
+    WHEN 'identified' THEN 'verified'
+    WHEN 'expired' THEN 'expired'
     ELSE 'missing'
   END`;
 }
@@ -149,15 +222,23 @@ export function documentStandingSql(
 /* The posting word for a ledger customer. The stored id_status
    column is not read. A row with no client_id cannot see a
    document, so it is missing even when the column says verified. */
-export function derivedIdStatusSql(alias: string, businessDateParam: string): string {
+export function derivedIdVerdictSql(alias: string, businessDateParam: string): string {
   return `CASE
-    WHEN ${alias}.client_id IS NULL THEN 'missing'
-    ELSE ${documentStandingSql(
+    WHEN ${alias}.client_id IS NULL THEN 'no_id'
+    ELSE ${documentVerdictSql(
       `${alias}.client_id`,
       `${alias}.tenant_id`,
       `${alias}.legal_entity_id`,
       businessDateParam,
     )}
+  END`;
+}
+
+export function derivedIdStatusSql(alias: string, businessDateParam: string): string {
+  return `CASE (${derivedIdVerdictSql(alias, businessDateParam)})
+    WHEN 'identified' THEN 'verified'
+    WHEN 'expired' THEN 'expired'
+    ELSE 'missing'
   END`;
 }
 
@@ -168,6 +249,43 @@ export function derivedIdStatusSql(alias: string, businessDateParam: string): st
  * taken from, so a test can stand on either side of midnight in the
  * branch zone. The desk's own calls pass the clock.
  */
+/**
+ * The verdict the response may show for this customer.
+ *
+ * Does not update the row. `at` is the instant the business date is
+ * taken from. The desk's own calls pass the clock.
+ */
+export async function derivedIdVerdict(
+  client: pg.PoolClient,
+  customerId: string,
+  tenantId: string,
+  legalEntityId: string,
+  branchId: string,
+  at: Date = new Date(),
+): Promise<IdVerdict> {
+  const businessDate = await branchBusinessDate(client, branchId, at);
+  const found = await client.query(
+    `SELECT ${derivedIdVerdictSql("lc", "$4")} AS id_verdict
+       FROM ledger_customers lc
+      WHERE lc.customer_id = $1
+        AND lc.tenant_id = $2
+        AND lc.legal_entity_id = $3`,
+    [customerId, tenantId, legalEntityId, businessDate],
+  );
+  const verdict = found.rows[0]?.id_verdict;
+  if (
+    verdict === "identified" ||
+    verdict === "expired" ||
+    verdict === "no_expiry" ||
+    verdict === "no_number" ||
+    verdict === "type_not_stated" ||
+    verdict === "no_id"
+  ) {
+    return verdict;
+  }
+  return "no_id";
+}
+
 export async function derivedIdStatus(
   client: pg.PoolClient,
   customerId: string,
@@ -240,7 +358,7 @@ export async function idFileForClients(
   const businessDate = await branchBusinessDate(client, branchId, at);
   const standing = await client.query(
     `SELECT c.client_id,
-            ${documentStandingSql("c.client_id", "c.tenant_id", "c.legal_entity_id", "$2")} AS id_status
+            ${documentVerdictSql("c.client_id", "c.tenant_id", "c.legal_entity_id", "$2")} AS id_verdict
        FROM desk_clients c
       WHERE c.client_id = ANY($1::text[])`,
     [clientIds, businessDate],
@@ -248,19 +366,14 @@ export async function idFileForClients(
   const displayed = await displayedDocuments(client, clientIds);
   for (const id of clientIds) {
     out.set(id, {
-      idStanding: "missing",
+      idStanding: standingForVerdict("no_id"),
       displayedDocument: displayed.get(id) ?? null,
     });
   }
   for (const row of standing.rows) {
-    const status = row.id_status;
-    const idStanding: IdStanding =
-      status === "verified" || status === "expired" || status === "missing"
-        ? toIdStanding(status)
-        : "missing";
     const id = row.client_id as string;
     out.set(id, {
-      idStanding,
+      idStanding: standingForVerdict(String(row.id_verdict ?? "")),
       displayedDocument: displayed.get(id) ?? null,
     });
   }
