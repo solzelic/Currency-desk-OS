@@ -1051,8 +1051,8 @@
           </div>
           )}
           </div>
-          {/* Phone only: the height of the floating + plus a gap, so the
-              last denomination can scroll clear of that button. */}
+          {/* Phone only. The spacer is the count panel plus 16px, so the
+              last denomination can scroll clear of the panel. */}
           <div className="till-scroll-pad" />
           {/* per-currency footer — counted (typeable), expected, then the grand total */}
           <div className="till-count-foot" style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>

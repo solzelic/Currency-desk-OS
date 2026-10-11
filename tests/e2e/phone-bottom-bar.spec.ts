@@ -490,3 +490,73 @@ test("the selected tab takes that app's colour", async ({ page }) => {
   expect(opened.barLine).toBe(opened.expected);
   expect(opened.expected).not.toBe(previous);
 });
+
+/* The window glass is 44% white. Opening Clients used to leave the
+   Ledger row readable between the client cards. */
+for (const size of [
+  { width: 360, height: 780 },
+  { width: 390, height: 844 },
+]) {
+  test(`the window behind stays hidden at ${size.width}x${size.height}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await atDesk(page);
+    await page.locator('#phonebar [data-phone-app="ledger"]').click();
+    await dismissTour(page);
+    await settled(page);
+    await expect(page.locator('.win.show.active [data-screen-label="Ledger"]')).toBeVisible();
+    await page.locator('#phonebar [data-phone-app="clients"]').click();
+    await dismissTour(page);
+    await settled(page);
+    await expect(page.locator(".win.show.active .win-title")).toContainText(/Clients/);
+
+    const ledger = page.locator(".win").filter({ has: page.locator('[data-screen-label="Ledger"]') });
+    await expect(ledger).toBeHidden();
+
+    const bleed = await page.evaluate(() => {
+      const ledgerWin = [...document.querySelectorAll(".win")].find((win) =>
+        win.querySelector('[data-screen-label="Ledger"]'),
+      );
+      const active = document.querySelector(".win.active");
+      if (!(ledgerWin instanceof HTMLElement) || !(active instanceof HTMLElement)) return { missing: true };
+      const opaque = (color) => {
+        const match = color.match(/rgba?\(([^)]+)\)/);
+        if (!match) return false;
+        const parts = match[1].split(",").map((part) => part.trim());
+        return parts.length < 4 || Number(parts[3]) >= 1;
+      };
+      const background = getComputedStyle(active).backgroundColor;
+      const body = active.querySelector(".win-body");
+      const bodyBackground = getComputedStyle(body || active).backgroundColor;
+      const visible: string[] = [];
+      const hits: string[] = [];
+      const nodes = [ledgerWin, ...ledgerWin.querySelectorAll("*")];
+      for (const el of nodes) {
+        if (!(el instanceof HTMLElement)) continue;
+        const style = getComputedStyle(el);
+        const box = el.getBoundingClientRect();
+        const onScreen = style.display !== "none"
+          && style.visibility !== "hidden"
+          && box.width > 0
+          && box.height > 0;
+        if (onScreen) visible.push((el.innerText || el.textContent || "").trim().slice(0, 40));
+        if (box.width < 1 || box.height < 1) continue;
+        const x = Math.min(window.innerWidth - 1, Math.max(0, box.left + box.width / 2));
+        const y = Math.min(window.innerHeight - 1, Math.max(0, box.top + Math.min(box.height / 2, 8)));
+        const top = document.elementFromPoint(x, y);
+        if (top && ledgerWin.contains(top)) hits.push((top.textContent || "").trim().slice(0, 40));
+      }
+      return {
+        background,
+        bodyBackground,
+        opaque: opaque(background) && opaque(bodyBackground),
+        visible: visible.slice(0, 6),
+        hits: hits.slice(0, 6),
+      };
+    });
+    expect(bleed.missing).toBeFalsy();
+    expect(bleed.visible).toEqual([]);
+    expect(bleed.hits).toEqual([]);
+    expect(bleed.opaque).toBe(true);
+    expect(bleed.background).toBe("rgb(255, 255, 255)");
+  });
+}
