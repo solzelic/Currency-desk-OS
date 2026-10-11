@@ -1,7 +1,7 @@
 /* Phone Pricing. The list, the spread sheet, and publish.
-   The desktop window is compared to a screenshot taken from the
-   shell before this screen, so a phone rule that leaks is a failed
-   pixel, not a comment. */
+   The desktop picture is the GitHub Actions rendering of the wide
+   Pricing window. maxDiffPixels stays 0, so a layout change fails.
+   A different font rasterizer will not match that file. */
 import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
