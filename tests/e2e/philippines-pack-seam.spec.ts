@@ -108,7 +108,9 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   expect(words).not.toMatch(/Not on this desk/);
   expect(bannedNameHits(words)).toEqual([]);
 
-  await page.locator('[data-app="compliance"]').click();
+  /* The dock button. The open window carries the same data-app, so an
+     unscoped click hits both once the window exists. */
+  await page.locator('#appbar [data-app="compliance"]').click();
   const screening = page.getByTestId("sanctions-not-connected");
   await expect(screening).toBeVisible();
   const screeningWords = await screening.innerText();
@@ -126,15 +128,15 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   await expect(tile).toContainText("Not connected");
   await expect(tile).not.toContainText("0");
 
-  await page.locator('[data-app="dashboard"]').click();
+  await page.locator('#appbar [data-app="dashboard"]').click();
   const dashboard = page.locator(".win.show.active");
   await expect(dashboard.getByText(/Cash position/i)).toBeVisible();
   const dashTile = dashboard.getByTestId("dashboard-sanctions-tile");
   await expect(dashTile).toContainText("Not connected");
   expect(await dashTile.innerText()).not.toMatch(/\d/);
 
-  await page.locator('[data-app="compliance"]').click();
+  await page.locator('#appbar [data-app="compliance"]').click();
 
-  await page.locator("button.fld-tab").filter({ hasText: /Not filed/ }).click();
+  await page.locator(".win.show.active button.fld-tab").filter({ hasText: /Not filed/ }).click();
   await expect(page.getByText("The desk does not file. The owner files in the AMLC portal. A single deal over the line is flagged. Deals in one banking day are not summed.")).toBeVisible();
 });

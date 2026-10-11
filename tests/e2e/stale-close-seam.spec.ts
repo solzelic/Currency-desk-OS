@@ -16,13 +16,17 @@ const MESSAGE = "Money moved since you counted. Count again.";
 async function settleCashDrawerChrome(page: Page) {
   await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/server balances live/i)).toBeVisible();
-  const scroller = page.locator(".win-body .overflow-auto").first();
+  /* On a phone the other windows stay in the document and are hidden.
+     The first tab bar in the document is one of those. The bar that
+     has to be on screen is the one in the open window. */
+  const win = page.locator(".win.show.active");
+  const scroller = win.locator(".win-body .overflow-auto").first();
   if (await scroller.count()) {
     await scroller.evaluate((el) => {
       el.scrollTop = 0;
     });
   }
-  const tabBar = page.locator(".win-body .fld-bar").first();
+  const tabBar = win.locator(".win-body .fld-bar").first();
   await expect(tabBar).toBeVisible();
   await expect(tabBar).not.toHaveClass(/fld-hidden/);
 }
