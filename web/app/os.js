@@ -22735,9 +22735,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     /* The server's standing, when the file came from it. A primary
        that says "Not stated", or a current document that is not the
        primary, must not be re-judged from the flattened fields. */
-    if (rec && rec.idStanding === 'missing') return ['Missing ID', CD.flag, CD.flagSoft];
-    if (rec && rec.idStanding === 'expired') return ['ID expired', CD.flag, CD.flagSoft];
-    if (rec && rec.idStanding === 'on_file') {
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.tone !== 'ok') return [rec.idStanding.label, CD.flag, CD.flagSoft];
+    if (rec && rec.idStanding && rec.idStanding.label === 'Identified') {
       const shown = rec.displayedDocument || null;
       const shownExpiry = shown ? shown.expiresOn : rec.idExpiry;
       const warn = settings && +settings.idExpiryWarnDays;
@@ -22745,7 +22744,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const days = (new Date(shownExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
         if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
       }
-      return ['ID on hand', CD.amber, CD.amberSoft];
+      return [rec.idStanding.label, CD.green, CD.greenSoft];
     }
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
@@ -24363,18 +24362,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     rec,
     settings
   }) {
-    if (rec && (rec.idStanding === 'on_file' || rec.idStanding === 'missing' || rec.idStanding === 'expired')) {
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.reason) {
       const idLine = window.CDOS.identificationLimit(settings);
       const reportLine = window.CDOS.reportingLimit(settings);
-      const standing = {
-        on_file: ['ID on file', 'At least one identity document has a type, a number, and an expiry on or after the business date. The primary document is the one shown.'],
-        missing: ['Not identified', 'No identity document on this file has a type, a number, and an expiry. A blank expiry is not on file.'],
-        expired: ['ID expired', 'Every dated identity document is past its expiry. A blank expiry is not a current document. The till will not treat this customer as identified.']
-      }[rec.idStanding];
+      const standing = [rec.idStanding.label, rec.idStanding.reason];
       const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
       const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
-      const tone = rec.idStanding === 'on_file' ? CD.green : CD.flag;
-      const soft = rec.idStanding === 'on_file' ? CD.greenSoft : CD.flagSoft;
+      const tone = rec.idStanding.tone === 'ok' ? CD.green : CD.flag;
+      const soft = rec.idStanding.tone === 'ok' ? CD.greenSoft : CD.flagSoft;
       return /*#__PURE__*/React.createElement("div", {
         "data-tour": "identification",
         className: "mb-3 p-3.5",
@@ -32882,9 +32877,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           return false;
         }
       })();
-      const st = c.idStanding === 'on_file' ? 'ID on file' : c.idStanding === 'expired' ? 'ID expired' : c.idStanding === 'missing' ? 'missing ID' : !c.idType ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file';
-      const ok = st === 'verified';
-      const onfile = st === 'ID on file';
+      const standing = c.idStanding && c.idStanding.label ? c.idStanding : null;
+      const st = standing ? standing.label : !c.idType ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file';
+      const ok = standing ? standing.tone === 'ok' : st === 'verified';
+      const onfile = standing ? false : st === 'ID on file';
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onMouseDown: e => e.preventDefault(),
@@ -33529,7 +33525,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     /* A server-backed file uses the server's standing. Reading the
        primary document here is how a secondary passport, or a primary
        that only says "Not stated", used to disagree with the gate. */
-    const kyc = rec && rec.idStanding === 'on_file' ? 'ok' : rec && rec.idStanding === 'expired' ? 'expired' : rec && rec.idStanding === 'missing' ? 'missing' : !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
+    /* The server's object, when the file came from it. The checklist
+       shows its reason in those words. A record with no object still
+       falls through to the fields on the screen. */
+    const standing = rec && rec.idStanding && rec.idStanding.label ? rec.idStanding : null;
+    const kyc = standing ? standing.tone === 'ok' ? 'ok' : standing.label === 'Expired' ? 'expired' : 'missing' : !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
@@ -33663,12 +33663,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
     const serverNeedsId = serverError === ID_NEEDED;
+    const blockedReason = standing && standing.reason ? standing.reason : ID_NEEDED;
     if (idRequired) reqs.push({
       key: 'id',
       ok: !!customer && idOk && !serverNeedsId,
       warn: !!customer && (!idOk || serverNeedsId),
-      label: `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk || serverNeedsId ? ID_NEEDED : null
+      label: standing && !idOk ? standing.label : `${custLabel} identified`,
+      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk || serverNeedsId ? blockedReason : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),

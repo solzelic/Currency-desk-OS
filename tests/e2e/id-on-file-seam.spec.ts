@@ -20,7 +20,7 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no 
 const RUN = Date.now().toString(36).slice(-6).toUpperCase();
 const IDENTIFIED = `Nadia Passport ${RUN}`;
 const NO_ID = `No Id Client ${RUN}`;
-const ID_NEEDED = "ID needed for this amount. Record the customer's ID.";
+const NO_ID_REASON = "No ID on file";
 
 async function ensureTill(page: Page) {
   const status = await page.evaluate(async () => {
@@ -153,7 +153,7 @@ test("an identified client posts 3000 CAD, and a client with no ID is told to re
   await again.locator('input[placeholder="0.00"]').first().fill("3000");
   await again.getByPlaceholder("e.g. vacation funds, invoice settlement").fill("Travel");
   await again.getByPlaceholder("e.g. employment income, savings").fill("Salary");
-  await expect(again.getByText(ID_NEEDED)).toBeVisible();
+  await expect(again.getByText(NO_ID_REASON)).toBeVisible();
   await expect(again.getByText("READY")).toHaveCount(0);
   await expect(again.getByText(/Run verify check/)).toHaveCount(0);
   await again.getByTestId("record-id").click();

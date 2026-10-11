@@ -6,12 +6,12 @@ import { withSerializationRetry } from "./retry.js";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
 import { branchBusinessDate } from "./canada-rules.js";
 import {
-  derivedIdStatus,
-  derivedIdStatusSql,
+  derivedIdVerdict,
+  derivedIdVerdictSql,
   displayedDocuments,
-  toIdStanding,
+  standingForVerdict,
+  verdictToGate,
   type DisplayedDocument,
-  type IdStanding,
 } from "./id-on-file.js";
 
 const scope = (actor: LedgerActor) => [
@@ -43,7 +43,7 @@ export class LedgerProvisioningService {
       const businessDate = await branchBusinessDate(client, actor.branchId);
       const result = await client.query(
         `SELECT customer_id,external_ref,name,risk,client_id,
-                ${derivedIdStatusSql("ledger_customers", "$5")} AS id_status,
+                ${derivedIdVerdictSql("ledger_customers", "$5")} AS id_verdict,
                 created_at,updated_at
            FROM ledger_customers
           WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4
@@ -184,13 +184,14 @@ export class LedgerProvisioningService {
           "That till reference is already linked to a different client.",
         );
       }
-      const idStatus = await derivedIdStatus(
+      const verdict = await derivedIdVerdict(
         client,
         row.customer_id as string,
         actor.tenantId,
         actor.legalEntityId,
         actor.branchId,
       );
+      const idStatus = verdictToGate(verdict);
       const shown = row.client_id
         ? (await displayedDocuments(client, [row.client_id as string])).get(row.client_id as string) ?? null
         : null;
@@ -211,7 +212,7 @@ export class LedgerProvisioningService {
         ],
       );
       await client.query("COMMIT");
-      return customerJson({ ...row, id_status: idStatus }, shown);
+      return customerJson({ ...row, id_status: idStatus, id_verdict: verdict }, shown);
     } catch (error) {
       await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "23505") {
@@ -503,11 +504,9 @@ export class LedgerProvisioningService {
 }
 
 function customerJson(row: Record<string, unknown>, displayed: DisplayedDocument | null = null) {
-  const idStatus = row.id_status as "verified" | "expired" | "missing";
-  const idStanding: IdStanding =
-    idStatus === "verified" || idStatus === "expired" || idStatus === "missing"
-      ? toIdStanding(idStatus)
-      : "missing";
+  const verdict = String(row.id_verdict ?? "");
+  const idStatus = verdict ? verdictToGate(verdict) : (row.id_status as "verified" | "expired" | "missing");
+  const idStanding = standingForVerdict(verdict || (idStatus === "verified" ? "identified" : idStatus === "expired" ? "expired" : "no_id"));
   return {
     customerId: row.customer_id,
     externalRef: row.external_ref ?? null,

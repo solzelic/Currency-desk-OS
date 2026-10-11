@@ -517,14 +517,13 @@
     /* The server's standing, when the file came from it. A primary
        that says "Not stated", or a current document that is not the
        primary, must not be re-judged from the flattened fields. */
-    if (rec && rec.idStanding === 'missing') return ['Missing ID', CD.flag, CD.flagSoft];
-    if (rec && rec.idStanding === 'expired') return ['ID expired', CD.flag, CD.flagSoft];
-    if (rec && rec.idStanding === 'on_file') {
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.tone !== 'ok') return [rec.idStanding.label, CD.flag, CD.flagSoft];
+    if (rec && rec.idStanding && rec.idStanding.label === 'Identified') {
       const shown = rec.displayedDocument || null;
       const shownExpiry = shown ? shown.expiresOn : rec.idExpiry;
       const warn = settings && +settings.idExpiryWarnDays;
       if (warn && shownExpiry) { const days = (new Date(shownExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
-      return ['ID on hand', CD.amber, CD.amberSoft];
+      return [rec.idStanding.label, CD.green, CD.greenSoft];
     }
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
@@ -1061,20 +1060,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      set — never a figure typed into this screen. A utility bill in the
      folder below does not move this. */
   function ProcessStanding({ rec, settings }) {
-    if (rec && (rec.idStanding === 'on_file' || rec.idStanding === 'missing' || rec.idStanding === 'expired')) {
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.reason) {
       const idLine = window.CDOS.identificationLimit(settings);
       const reportLine = window.CDOS.reportingLimit(settings);
-      const standing = {
-        on_file: ['ID on file', 'At least one identity document has a type, a number, and an expiry on or after the business date. The primary document is the one shown.'],
-        missing: ['Not identified', 'No identity document on this file has a type, a number, and an expiry. A blank expiry is not on file.'],
-        expired: ['ID expired', 'Every dated identity document is past its expiry. A blank expiry is not a current document. The till will not treat this customer as identified.'],
-      }[rec.idStanding];
+      const standing = [rec.idStanding.label, rec.idStanding.reason];
       const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
       const rule = stated
         ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
         : 'This desk has no identification or reporting line stated, so neither number is shown here.';
-      const tone = rec.idStanding === 'on_file' ? CD.green : CD.flag;
-      const soft = rec.idStanding === 'on_file' ? CD.greenSoft : CD.flagSoft;
+      const tone = rec.idStanding.tone === 'ok' ? CD.green : CD.flag;
+      const soft = rec.idStanding.tone === 'ok' ? CD.greenSoft : CD.flagSoft;
       return (<div data-tour="identification" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
         <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
         <div className="flex items-center gap-2 flex-wrap">
