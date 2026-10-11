@@ -9,8 +9,8 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, crossRate } = window.CDOS;
-  const ACC = '#8A4B2F', ACCSOFT = '#F2E6DD';
+  const { CD, Ic, fmt, num, crossRate, APP_ACCENT } = window.CDOS;
+  const ACC = APP_ACCENT.telegraph, ACCSOFT = '#F2E6DD';
   const TGKEY = 'cdos_tg_settings_v1', RKEY = 'cdos_tg_requests_v2', CKEY2 = 'cdos_tg_contacts_v2', BKEY2 = 'cdos_tg_broadcasts_v1', SKEY2 = 'cdos_tg_sites_v2', LKEY = 'cdos_tg_log_v2';
   const load = (k, d) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; } catch (e) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
@@ -725,7 +725,7 @@
             {openSettings && <button onClick={openSettings} className="p-2" style={{ borderRadius: 8, border: `1px solid ${CD.line}` }} title="Number, websites & defaults — in Settings › Texts"><Ic n="gearsettings" s={14} c={CD.mute} /></button>}
           </div>
         </div>
-        <div className="fld-bar" style={{ '--ft': ACC, margin: '2px -16px 0', padding: '0 16px' }}>
+        <div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic]) => (<button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}>
             <Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}
             {id === 'requests' && waiting > 0 && <span className="text-[9px] px-1 py-0.5" style={{ background: CD.flag, color: 'var(--cd-on-ink)', borderRadius: 4, fontFamily: 'Space Mono', marginLeft: 2 }}>{waiting}</span>}

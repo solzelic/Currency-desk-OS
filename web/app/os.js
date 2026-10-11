@@ -171,6 +171,10 @@
     coins: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
     scroll: '<path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
     ledgerbook: '<g transform="translate(-3 -3) scale(1.25)" stroke-width="1.6"><path d="M12 5.5 C10.2 4.2 7.5 4 4.5 4.8 V18.6 C7.5 17.8 10.2 18 12 19.2 C13.8 18 16.5 17.8 19.5 18.6 V4.8 C16.5 4 13.8 4.2 12 5.5 Z" stroke="#17140F"/><path d="M12 5.5 V19.2" stroke="#17140F"/><path d="M7.5 9 H9.5 M14.5 9 H16.5 M7.5 12.5 H9.5 M14.5 12.5 H16.5" stroke="#17140F"/><path d="M16 4.4 V8.6 L17.4 7.5 L18.8 8.6 V4.6" stroke="#1D6B45"/></g>',
+    /* Phone bar only. The desktop book keeps its green ribbon.
+       That ribbon is artwork, not a count of anything, so the
+       bar draws the book in the tab colour and leaves it off. */
+    ledgerbookbar: '<g transform="translate(-3 -3) scale(1.25)" stroke-width="1.6"><path d="M12 5.5 C10.2 4.2 7.5 4 4.5 4.8 V18.6 C7.5 17.8 10.2 18 12 19.2 C13.8 18 16.5 17.8 19.5 18.6 V4.8 C16.5 4 13.8 4.2 12 5.5 Z"/><path d="M12 5.5 V19.2"/><path d="M7.5 9 H9.5 M14.5 9 H16.5 M7.5 12.5 H9.5 M14.5 12.5 H16.5"/></g>',
     gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     id: '<rect width="18" height="14" x="3" y="5" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M15 11h3M14 15h4M6 15h6"/>',
     printer: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>',
@@ -180,6 +184,7 @@
     clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     bars: '<line x1="4" x2="4" y1="20" y2="10"/><line x1="10" x2="10" y1="20" y2="4"/><line x1="16" x2="16" y1="20" y2="13"/><line x1="2" x2="22" y1="20" y2="20"/>',
     rateboard: '<g transform="translate(-2.16 -2.16) scale(1.18)" stroke-width="1.7"><rect x="3" y="3.5" width="18" height="13" rx="1.5" stroke="#17140F"/><path d="M9 20.5 L10.8 16.5 M15 20.5 L13.2 16.5" stroke="#17140F"/><path d="M6.5 13 V10.5 M10.2 13 V11.2 M13.8 13 V10" stroke="#17140F"/><path d="M6.5 8.5 L10.2 7 L13.8 8 L17.5 5.8" stroke="#1D6B45"/></g>',
+    rateboardbar: '<g transform="translate(-2.16 -2.16) scale(1.18)" stroke-width="1.7"><rect x="3" y="3.5" width="18" height="13" rx="1.5"/><path d="M9 20.5 L10.8 16.5 M15 20.5 L13.2 16.5"/><path d="M6.5 13 V10.5 M10.2 13 V11.2 M13.8 13 V10"/><path d="M6.5 8.5 L10.2 7 L13.8 8 L17.5 5.8"/></g>',
     telegraphbubble: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><path d="M6.5 4.5 H17.5 A3 3 0 0 1 20.5 7.5 V12 A3 3 0 0 1 17.5 15 H10.5 L6.5 19 L8 15 H6.5 A3 3 0 0 1 3.5 12 V7.5 A3 3 0 0 1 6.5 4.5 Z" stroke="#17140F"/><path d="M8 9.75 H8.02 M12 9.75 H12.02 M16 9.75 H16.02" stroke="#1D6B45"/></g>',
     minus: '<path d="M5 12h14"/>',
     grip: '<line x1="4" x2="20" y1="8" y2="8"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="16" y2="16"/>',
@@ -201,12 +206,16 @@
     transferarrows: '<g transform="translate(-3 -3) scale(1.25)" stroke-width="1.6"><path d="M4.5 8 H19.5 M16 4.5 L19.5 8 L16 11.5" stroke="#17140F"/><path d="M19.5 16 H4.5 M8 12.5 L4.5 16 L8 19.5" stroke="#1D6B45"/></g>',
     cheque: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><rect x="3.5" y="6" width="17" height="12.5" rx="1.5" stroke="#17140F"/><path d="M7 10 H14 M16.5 10 H17.5" stroke="#17140F"/><path d="M6.8 15.4 C7.8 13.2 9.6 13.4 10.1 15 C10.6 16.6 12.2 16.4 13.2 14.6" stroke="#1D6B45"/></g>',
     clientskyc: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><circle cx="9" cy="7.8" r="3.1" stroke="#17140F"/><path d="M3.5 19 C3.5 15.4 5.9 13.4 9 13.4 C12.1 13.4 14.5 15.4 14.5 19" stroke="#17140F"/><circle cx="16.8" cy="8.8" r="2.4" stroke="#1D6B45"/><path d="M15.6 13.2 C18.4 13 20.5 14.8 20.5 18" stroke="#1D6B45"/></g>',
+    clientskycbar: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><circle cx="9" cy="7.8" r="3.1"/><path d="M3.5 19 C3.5 15.4 5.9 13.4 9 13.4 C12.1 13.4 14.5 15.4 14.5 19"/><circle cx="16.8" cy="8.8" r="2.4"/><path d="M15.6 13.2 C18.4 13 20.5 14.8 20.5 18"/></g>',
     complianceshield: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><path d="M12 3.5 L19.5 6.2 V11.5 C19.5 16.3 16.3 19.5 12 20.7 C7.7 19.5 4.5 16.3 4.5 11.5 V6.2 Z" stroke="#17140F"/><path d="M8.3 11.9 L11 14.6 L15.7 9.4" stroke="#1D6B45"/></g>',
     reportsdoc: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><rect x="5.5" y="3.5" width="13" height="17" rx="1.5" stroke="#17140F"/><path d="M8.5 7.5 H15.5 M8.5 10.5 H13" stroke="#17140F"/><path d="M8.8 17 V15 M15.2 17 V15.8" stroke="#17140F"/><path d="M12 17 V13.2" stroke="#1D6B45"/></g>',
     pricingpercent: '<g transform="translate(-3 -3) scale(1.25)" stroke-width="1.6"><path d="M5 19 L19 5" stroke="#1D6B45"/><circle cx="7.2" cy="7.2" r="2.7" stroke="#17140F"/><circle cx="16.8" cy="16.8" r="2.7" stroke="#17140F"/></g>',
     dashboardgrid: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><rect x="4" y="4" width="7" height="7" rx="1" stroke="#17140F"/><rect x="13" y="4" width="7" height="7" rx="1" stroke="#17140F"/><rect x="4" y="13" width="7" height="7" rx="1" stroke="#17140F"/><rect x="13" y="13" width="7" height="7" rx="1" stroke="#1D6B45"/></g>',
     aispark: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><path d="M12 4 C12.5 8 16 11.5 20 12 C16 12.5 12.5 16 12 20 C11.5 16 8 12.5 4 12 C8 11.5 11.5 8 12 4 Z" stroke="#17140F"/></g>',
     tilldrawer: '<g transform="translate(-2.16 -2.16) scale(1.18)" stroke-width="1.7"><rect x="3.5" y="10" width="17" height="9.5" rx="1.5" stroke="#17140F"/><path d="M5.5 10 V7.5 A1.5 1.5 0 0 1 7 6 H15" stroke="#17140F"/><path d="M9.5 14.5 H14.5" stroke="#17140F"/><circle cx="18" cy="5" r="2.8" stroke="#1D6B45"/><path d="M18 3.8 V6.2" stroke="#1D6B45"/></g>',
+    /* Phone bar only. The circle on the desktop drawer is artwork.
+       It does not read the session. The header dot does. */
+    tilldrawerbar: '<g transform="translate(-2.16 -2.16) scale(1.18)" stroke-width="1.7"><rect x="3.5" y="10" width="17" height="9.5" rx="1.5"/><path d="M5.5 10 V7.5 A1.5 1.5 0 0 1 7 6 H15"/><path d="M9.5 14.5 H14.5"/></g>',
     vaultsafe: '<g transform="translate(-1.8 -1.8) scale(1.15)" stroke-width="1.74"><rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke="#17140F"/><circle cx="12" cy="12" r="4.6" stroke="#17140F"/><path d="M12 7.4 V5.8 M12 16.6 V18.2 M7.4 12 H5.8 M16.6 12 H18.2" stroke="#17140F"/><path d="M12 12 L14.8 9.8" stroke="#1D6B45"/><circle cx="12" cy="12" r="0.9" stroke="#1D6B45"/></g>',
     branchnet: '<g transform="translate(-1.2 -1.2) scale(1.1)" stroke-width="1.82"><circle cx="12" cy="5.9" r="2.6" stroke="#1D6B45"/><path d="M12 8.5 V13.5 M5.5 13.5 H18.5 M5.5 13.5 V15.3 M18.5 13.5 V15.3" stroke="#17140F"/><circle cx="5.5" cy="17.9" r="2.6" stroke="#17140F"/><circle cx="18.5" cy="17.9" r="2.6" stroke="#17140F"/></g>',
     audittrail: '<g transform="translate(-3 -3) scale(1.25)" stroke-width="1.6"><path d="M4.5 4.8 V8.5 H8.2" stroke="#17140F"/><path d="M5.2 8.5 A7.5 7.5 0 1 1 4.5 12.5" stroke="#17140F"/><path d="M12 8.6 V12 L14.7 13.5" stroke="#1D6B45"/></g>',
@@ -13120,7 +13129,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const cnt = parseInt((counts[ccy] || {})[d.i], 10) || 0;
     const sub = d.v * cnt;
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 py-1.5",
+      className: "till-den-row flex items-center gap-2 py-1.5",
       style: {
         borderTop: `1px solid ${CD.lineSoft}`
       }
@@ -13535,6 +13544,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
+    const tillRootRef = useRef(null);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -14421,8 +14431,47 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedEarnedWhy = dayBook.error || day.summary && day.summary.earnedWhy || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+
+    /* The phone count panel covers the bottom of the scrolling
+       column. Its height is the pad that lets the last denomination
+       scroll clear of it. */
+    useEffect(() => {
+      const root = document.documentElement;
+      const phone = window.matchMedia('(max-width: 430px)');
+      const clear = () => root.style.removeProperty('--till-panel-h');
+      const host = tillRootRef.current;
+      const win = host && host.closest('.win');
+      const foot = host && host.querySelector('.till-count-foot');
+      if (!phone.matches || tab !== 'count' || !(foot instanceof HTMLElement) || !(win instanceof HTMLElement)) {
+        clear();
+        return undefined;
+      }
+      const apply = () => {
+        if (!phone.matches || tab !== 'count' || !win.classList.contains('active')) {
+          clear();
+          return;
+        }
+        root.style.setProperty('--till-panel-h', foot.offsetHeight + 'px');
+      };
+      apply();
+      const sizes = new ResizeObserver(apply);
+      sizes.observe(foot);
+      const classes = new MutationObserver(apply);
+      classes.observe(win, {
+        attributes: true,
+        attributeFilter: ['class']
+      });
+      phone.addEventListener('change', apply);
+      return () => {
+        sizes.disconnect();
+        classes.disconnect();
+        phone.removeEventListener('change', apply);
+        clear();
+      };
+    }, [tab]);
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-col",
+      ref: tillRootRef,
+      className: "till-screen flex flex-col",
       style: {
         height: '100%',
         background: CD.paper,
@@ -14435,9 +14484,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         background: CD.panel
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2.5 pb-3"
+      className: "till-head flex items-center gap-2.5 pb-3"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center",
+      className: "till-mark grid place-items-center",
       style: {
         width: 30,
         height: 30,
@@ -14450,23 +14499,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 17,
       c: "var(--cd-on-ink)"
     })), /*#__PURE__*/React.createElement("div", {
-      className: "min-w-0"
+      className: "till-id min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "font-semibold leading-tight",
+      className: "till-name font-semibold leading-tight",
       style: {
         color: CD.ink
       }
     }, "Cash Drawer"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] flex items-center gap-1 flex-wrap",
+      className: "till-meta text-[11px] flex items-center gap-1 flex-wrap",
       style: {
         color: CD.mute
       }
     }, stationName ? /*#__PURE__*/React.createElement("b", {
+      className: "till-station",
       style: {
         color: CD.ink
       }
-    }, stationName) : null, stationName ? /*#__PURE__*/React.createElement("span", null, "\xB7") : null, tillOptions.length ? /*#__PURE__*/React.createElement("span", {
+    }, stationName) : null, stationName ? /*#__PURE__*/React.createElement("span", {
+      className: "till-dot"
+    }, "\xB7") : null, tillOptions.length ? /*#__PURE__*/React.createElement("span", {
       ref: tillMenuRef,
+      className: "till-pick",
       style: {
         position: 'relative',
         display: 'inline-flex'
@@ -14575,10 +14628,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 10,
       c: CD.faint
     }), " To change store, sign out & back in."))) : stationTill ? /*#__PURE__*/React.createElement("b", {
+      className: "till-pick",
       style: {
         color: CD.ink
       }
-    }, stationTill) : null, /*#__PURE__*/React.createElement("span", null, "\xB7 ", serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
+      className: "till-statusline"
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
       }
@@ -14592,8 +14648,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace',
         color: ledgerAmbiguous ? CD.brass : CD.mute
       }
-    }, ledgerTill.tillId)))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-1.5 flex-none ml-auto"
+    }, ledgerTill.tillId))))), /*#__PURE__*/React.createElement("div", {
+      className: "till-actions flex items-center gap-1.5 flex-none ml-auto"
     }, (() => {
       // the drawer's rail balance — changes the moment cash is issued or returned.
       // floats are ISSUED AT THE VAULT (Vault / Branch Network), never from here:
@@ -14603,7 +14659,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       // the local rail figure is a demo store and would quietly disagree
       const _tc = serverBacked ? serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null : _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
       return /*#__PURE__*/React.createElement(React.Fragment, null, _tc != null && /*#__PURE__*/React.createElement("span", {
-        className: "flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]",
+        className: "till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]",
         style: {
           border: `1px solid ${CD.lineSoft}`,
           borderRadius: 8,
@@ -14624,7 +14680,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           tId: station && station.tillId
         }),
         title: "Issue a float from the vault, or return cash to it \u2014 recorded on the ledger",
-        className: "flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium",
+        className: "till-move flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 8,
@@ -14638,7 +14694,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }), " Move cash"), /*#__PURE__*/React.createElement("button", {
         onClick: () => onOpenVault && onOpenVault(),
         title: "Floats are issued & returned at the vault",
-        className: "flex items-center gap-1 text-[11px] px-2.5 py-1.5",
+        className: "till-vault flex items-center gap-1 text-[11px] px-2.5 py-1.5",
         style: {
           color: CD.mute,
           border: 0,
@@ -14650,9 +14706,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         c: CD.mute
       }), " Vault \u203A"));
     })())), /*#__PURE__*/React.createElement("div", {
+      className: "till-tabwrap"
+    }, /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#17140F',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -14665,8 +14722,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: ic,
       s: 13,
       c: tab === id ? 'var(--cd-on-ink)' : CD.mute
-    }), " ", label)))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
+    }), " ", label))))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && /*#__PURE__*/React.createElement("div", {
+      className: "till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
       style: {
         background: CD.brassSoft,
         borderBottom: `1px solid ${CD.line}`,
@@ -14758,7 +14815,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: "var(--cd-on-ink)"
     }), " ", tillBusy === 'open' ? 'Opening…' : 'Open the till')), serverSession && sessionOpen && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
+      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`,
@@ -14936,7 +14993,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
-      className: "p-4 pb-0"
+      className: "till-count-sheet p-4 pb-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-denom"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5 mb-3"
     }, CCYS.map(c => {
@@ -15067,7 +15126,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       ccy: ccy,
       counts: counts,
       setCount: setCount
-    })))), /*#__PURE__*/React.createElement("div", {
+    }))))), /*#__PURE__*/React.createElement("div", {
+      className: "till-scroll-pad"
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "till-count-foot",
       style: {
         position: 'sticky',
         bottom: 0,
@@ -15080,14 +15142,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         borderTop: `1px solid ${CD.line}`
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-count-main min-w-0"
+    }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
     }, ccy, " counted"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
+      className: "till-counted flex items-center",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 8,
@@ -15175,7 +15239,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 11,
       c: CD.faint
     })), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-1",
+      className: "till-counted-when text-[11px] mt-1",
       style: {
         color: CD.faint
       }
@@ -15188,14 +15252,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, sinceLabel(ts)), " \xB7 ", atLabel(ts)) : /*#__PURE__*/React.createElement("span", null, "Not counted yet today");
     })())), /*#__PURE__*/React.createElement("div", {
-      className: "text-right flex-none"
+      className: "text-right flex-none till-grand"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest",
+      className: "till-grand-label text-[10px] uppercase tracking-widest",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
     }, "Total drawer", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("div", {
+      className: "till-grand-num",
+      "data-absent": grandHome == null ? '1' : undefined,
       style: {
         fontSize: 24,
         fontWeight: 800,
@@ -15203,7 +15269,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1
       },
-      title: grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''
+      title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
     }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
       onClick: saveSnapshot,
       disabled: saved || !sessionOpen || tillBusy === 'count',
@@ -15221,7 +15287,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 15,
       c: "var(--cd-on-ink)"
     }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px] py-2",
+      className: "till-count-hint text-[10.5px] py-2",
       style: {
         color: CD.faint
       }
@@ -18857,7 +18923,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }))))))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#17140F',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -20819,7 +20884,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, activeBranch.name), " \xB7 ", activeTill.name), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#17140F',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -24736,7 +24800,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 flex-wrap"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "text-[20px] font-bold",
+      className: "client-file-name text-[20px] font-bold",
       style: {
         color: CD.ink
       }
@@ -28704,7 +28768,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       toS = row.notes || 'Biller';
     }
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-stretch gap-2"
+      className: "tx-flow flex items-stretch gap-2"
     }, /*#__PURE__*/React.createElement(FlowCard, {
       label: fromL,
       amount: fromV,
@@ -29615,17 +29679,27 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         transition: 'transform .22s ease, opacity .2s ease'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-3 px-5 py-3 flex-none",
+      className: "tx-detail-head flex items-center gap-3 px-5 py-3 flex-none",
       style: {
         background: CD.panel,
         borderBottom: `1px solid ${CD.line}`
       }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "min-w-0"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-tx-back",
+      "aria-label": "Back to records",
+      title: "Back to records",
+      onClick: onClose
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "arrowleft",
+      s: 18,
+      c: CD.ink
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "tx-detail-id min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "font-semibold text-lg",
+      className: "tx-detail-ref font-semibold text-lg",
       style: {
         color: CD.ink,
         fontFamily: 'Space Mono, monospace',
@@ -29656,7 +29730,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: CD.mute
       }
     }, row.date, " ", row.time, " \xB7 ", row.teller)), /*#__PURE__*/React.createElement("div", {
-      className: "ml-auto flex items-center gap-1.5 flex-none"
+      className: "tx-detail-actions ml-auto flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => onReceipt(row),
       className: "flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium",
@@ -31319,6 +31393,14 @@ td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}
 .mut{color:#999;}.b{font-weight:600;}.grn{color:#1f8a4c;}
 tr.void td{opacity:.5;text-decoration:line-through;}
 .ft{margin-top:14px;font-size:10px;color:#999;}
+@media (max-width:430px){
+  body{padding:16px;}
+  .hd{flex-direction:column;gap:10px;}
+  .meta{text-align:left;}
+  .kpis{grid-template-columns:1fr;}
+  table{display:block;overflow-x:auto;max-width:100%;}
+  th,td{white-space:nowrap;}
+}
 @page{margin:13mm;}
 </style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Ledger Report</div></div>
@@ -31363,10 +31445,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "fld-bar fld-pinned",
-      style: {
-        '--ft': '#1D6B45'
-      }
+      className: "fld-bar fld-pinned"
     }, [['records', 'Records', 'scroll'], ['compliance', 'Compliance', 'shield']].map(([id, label, ic]) => {
       const on = section === id;
       const badge = id === 'compliance' ? compCount : 0;
@@ -32548,7 +32627,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     hint
   }) {
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between mb-1"
+      className: "tx-lbl flex items-center justify-between mb-1"
     }, /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
@@ -39484,7 +39563,6 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), " New transfer")), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#1F7269',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -41384,7 +41462,6 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), " Cash a cheque")), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#8F6410',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -45870,7 +45947,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     }))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': '#6B2E54',
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -55047,9 +55123,10 @@ ${snap}`;
     Ic,
     fmt,
     num,
-    crossRate
+    crossRate,
+    APP_ACCENT
   } = window.CDOS;
-  const ACC = '#8A4B2F',
+  const ACC = APP_ACCENT.telegraph,
     ACCSOFT = '#F2E6DD';
   const TGKEY = 'cdos_tg_settings_v1',
     RKEY = 'cdos_tg_requests_v2',
@@ -58435,7 +58512,6 @@ ${snap}`;
     })))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
-        '--ft': ACC,
         margin: '2px -16px 0',
         padding: '0 16px'
       }
@@ -61822,6 +61898,65 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }
   };
   const APP_ORDER = ['rates', 'telegraph', 'ledger', 'transfers', 'cheques', 'clients', 'compliance', 'reports', 'pricing', 'dashboard', 'assistant', 'till', 'vault', 'branches', 'audit', 'calc', 'loan', 'tagged', 'settings'];
+  /* Phone bottom bar. The four desks open the apps the dock already
+     calls by these ids. More is every other app the role can open. */
+  /* Bar icons are one colour, the tab colour. The desktop icons
+     keep their two-tone drawing. Ledger's green ribbon and Till's
+     green circle are that drawing: neither one is a live state. */
+  const PHONE_TABS = [{
+    id: 'rates',
+    label: 'Rates',
+    icon: 'rateboardbar'
+  }, {
+    id: 'ledger',
+    label: 'Ledger',
+    icon: 'ledgerbookbar'
+  }, {
+    id: 'clients',
+    label: 'Clients',
+    icon: 'clientskycbar'
+  }, {
+    id: 'till',
+    label: 'Till',
+    icon: 'tilldrawerbar'
+  }];
+  const PHONE_MORE = [{
+    id: 'telegraph',
+    label: 'Texts'
+  }, {
+    id: 'transfers',
+    label: 'Transfers'
+  }, {
+    id: 'cheques',
+    label: 'Cheques'
+  }, {
+    id: 'compliance',
+    label: 'Compliance'
+  }, {
+    id: 'reports',
+    label: 'Reports'
+  }, {
+    id: 'vault',
+    label: 'Vault'
+  }, {
+    id: 'branches',
+    label: 'Branches'
+  }, {
+    id: 'audit',
+    label: 'Audit trail'
+  }, {
+    id: 'calc',
+    label: 'Calculator'
+  }, {
+    id: 'loan',
+    label: 'Loan centre'
+  }, {
+    id: 'tagged',
+    label: 'Tagged'
+  }, {
+    id: 'settings',
+    label: 'Settings'
+  }];
   // the storefront opens as a window
   APPMETA.store = {
     title: 'Store',
@@ -61954,7 +62089,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         top: win.y,
         width: win.w,
         height: win.h,
-        zIndex: win.z
+        zIndex: win.z,
+        '--c': meta.accent || 'var(--cd-ink)',
+        '--ft': meta.accent || 'var(--cd-ink)'
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "win-bar",
@@ -64915,6 +65052,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [removingApps, setRemovingApps] = useState([]);
     const [editApps, setEditApps] = useState(false);
     const [chromeCollapsed, setChromeCollapsed] = useState(false); // click the CurrencyDesk logo to hide the tenant + app rows for more desktop room
+    const [phoneMore, setPhoneMore] = useState(false);
     const [dragApp, setDragApp] = useState(null);
     const appbarRef = useRef(null);
     const orderedRef = useRef([]);
@@ -65020,7 +65158,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     useEffect(() => {
       if (!acctMenu) return;
       const h = e => {
-        if (acctRef.current && !acctRef.current.contains(e.target)) setAcctMenu(false);
+        if (e.target && e.target.closest && e.target.closest('.mb-acct-wrap')) return;
+        setAcctMenu(false);
       };
       document.addEventListener('mousedown', h);
       return () => document.removeEventListener('mousedown', h);
@@ -65437,6 +65576,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       } : w));
     }
     function openApp(id) {
+      setPhoneMore(false);
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) {
         openSettingsTab('billing');
         return;
@@ -66790,6 +66930,91 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           return null;
       }
     }
+    const phonePrimary = new Set(PHONE_TABS.map(t => t.id));
+    const phoneMoreNamed = new Set(PHONE_MORE.map(t => t.id));
+    const phoneMoreApps = PHONE_MORE.filter(t => visibleApps.includes(t.id)).concat(visibleApps.filter(id => !phonePrimary.has(id) && !phoneMoreNamed.has(id)).map(id => ({
+      id,
+      label: APPMETA[id] && APPMETA[id].title || id
+    })));
+    const phoneOn = phoneMore ? 'more' : phonePrimary.has(activeBase) ? activeBase : activeBase ? 'more' : '';
+    /* The selected tab borrows the app's existing accent (--c on the
+       dock). More has none of its own: the sheet uses the same ink as
+       Till (#17140F), and an app opened from More lends More that
+       app's accent. --cd-ink is #0A0A0A, which is not that ink. */
+    const phoneTabColour = id => {
+      if (id === 'more') {
+        if (!phoneMore && activeBase && !phonePrimary.has(activeBase)) return APP_ACCENT[activeBase] || '#17140F';
+        return '#17140F';
+      }
+      return APP_ACCENT[id] || '#17140F';
+    };
+    /* The header dot is the window-title dot. The title bar is hidden
+       on a phone, so the dot sits by the shop name and follows the
+       full-screen app. More's own sheet has no accent, so it uses the ink. */
+    const phoneChrome = phoneMore || !activeBase ? 'var(--cd-ink)' : APP_ACCENT[activeBase] || 'var(--cd-ink)';
+    const shopName = settings.operatingName || settings.bizName || 'Exchange house';
+    const profileButton = slot => /*#__PURE__*/React.createElement("div", {
+      className: "mb-acct-wrap",
+      ref: slot === 'desk' ? acctRef : undefined
+    }, /*#__PURE__*/React.createElement("button", {
+      className: 'mb-acct' + (acctMenu ? ' on' : ''),
+      "aria-expanded": acctMenu,
+      title: "Account & profile",
+      onClick: () => setAcctMenu(o => !o)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "mb-acct-av"
+    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
+      className: "mb-acct-id"
+    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("i", null, me.role)), /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 13
+    })), acctMenu && /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu acct-menu mb-menu-solid",
+      role: "menu"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu-head"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-av"
+    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-id"
+    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("span", null, me.role, " \xB7 ", stationName, stationTill ? ' · ' + stationTill.replace(/\s+—.*/, '') : ''))), /*#__PURE__*/React.createElement("button", {
+      className: "mb-menu-row",
+      onClick: () => {
+        openSettingsTab('account');
+        setAcctMenu(false);
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "id",
+      s: 16
+    }), " ", /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-lbl"
+    }, "View profile")), canSettings && /*#__PURE__*/React.createElement("button", {
+      className: "mb-menu-row",
+      onClick: () => {
+        openApp('settings');
+        setAcctMenu(false);
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "gear",
+      s: 16
+    }), " ", /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-lbl"
+    }, "Account settings")), /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu-div"
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "mb-menu-cap"
+    }, "Switch account"), (settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => /*#__PURE__*/React.createElement("button", {
+      key: s.name,
+      className: 'mb-menu-row' + (s.name === me.name ? ' active' : ''),
+      onClick: () => switchTo(s)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-dot"
+    }, inits(s.name)), /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-lbl"
+    }, s.name, " ", /*#__PURE__*/React.createElement("i", null, "\xB7 ", s.role)), s.name === me.name && /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 13
+    })))));
     return /*#__PURE__*/React.createElement("div", {
       id: "os"
     }, deskLocked && ReactDOM.createPortal(/*#__PURE__*/React.createElement(LockDesk, {
@@ -67100,68 +67325,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hour12: false
     }))), /*#__PURE__*/React.createElement("span", {
       className: "mb-op-div"
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "mb-acct-wrap",
-      ref: acctRef
-    }, /*#__PURE__*/React.createElement("button", {
-      className: 'mb-acct' + (acctMenu ? ' on' : ''),
-      "aria-expanded": acctMenu,
-      title: "Account & profile",
-      onClick: () => setAcctMenu(o => !o)
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "mb-acct-av"
-    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
-      className: "mb-acct-id"
-    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("i", null, me.role)), /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 13
-    })), acctMenu && /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu acct-menu mb-menu-solid",
-      role: "menu"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu-head"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-av"
-    }, inits(me.name)), /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-id"
-    }, /*#__PURE__*/React.createElement("b", null, me.name), /*#__PURE__*/React.createElement("span", null, me.role, " \xB7 ", stationName, stationTill ? ' · ' + stationTill.replace(/\s+—.*/, '') : ''))), /*#__PURE__*/React.createElement("button", {
-      className: "mb-menu-row",
-      onClick: () => {
-        openSettingsTab('account');
-        setAcctMenu(false);
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 16
-    }), " ", /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-lbl"
-    }, "View profile")), canSettings && /*#__PURE__*/React.createElement("button", {
-      className: "mb-menu-row",
-      onClick: () => {
-        openApp('settings');
-        setAcctMenu(false);
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "gear",
-      s: 16
-    }), " ", /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-lbl"
-    }, "Account settings")), /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu-div"
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "mb-menu-cap"
-    }, "Switch account"), (settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => /*#__PURE__*/React.createElement("button", {
-      key: s.name,
-      className: 'mb-menu-row' + (s.name === me.name ? ' active' : ''),
-      onClick: () => switchTo(s)
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-dot"
-    }, inits(s.name)), /*#__PURE__*/React.createElement("span", {
-      className: "mb-menu-lbl"
-    }, s.name, " ", /*#__PURE__*/React.createElement("i", null, "\xB7 ", s.role)), s.name === me.name && /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 13
-    }))))), /*#__PURE__*/React.createElement("div", {
+    }), profileButton('desk'), /*#__PURE__*/React.createElement("div", {
       className: "mb-power-wrap",
       ref: opMenuRef
     }, /*#__PURE__*/React.createElement("button", {
@@ -67315,7 +67479,23 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       locked: locked,
       cfg: tickerCfg,
       book: lockedBook
-    }))), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement("header", {
+      className: "phone-head",
+      style: {
+        '--c': phoneChrome
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-shop"
+    }, /*#__PURE__*/React.createElement("i", {
+      className: "phone-appdot",
+      "aria-hidden": "true"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "phone-shop-name"
+    }, shopName)), /*#__PURE__*/React.createElement("div", {
+      className: 'phone-till' + (day.closed ? ' is-closed' : '')
+    }, /*#__PURE__*/React.createElement("i", {
+      className: "phone-till-dot"
+    }), /*#__PURE__*/React.createElement("span", null, day.closed ? 'Till closed' : 'Till open')), profileButton('phone')), /*#__PURE__*/React.createElement("div", {
       id: "appbar",
       ref: appbarRef,
       className: (editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')
@@ -67420,7 +67600,62 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onResize: sizeWin,
       onSnap: snapWin,
       onAdd: duplicateWin
-    }, renderApp(w.id)))), receipt && /*#__PURE__*/React.createElement(ReceiptModal, {
+    }, renderApp(w.id))), phoneMore && /*#__PURE__*/React.createElement("div", {
+      id: "phone-more",
+      role: "dialog",
+      "aria-label": "More"
+    }, phoneMoreApps.length === 0 && /*#__PURE__*/React.createElement("p", {
+      className: "phone-more-empty"
+    }, "No other apps for this role."), phoneMoreApps.map(a => /*#__PURE__*/React.createElement("button", {
+      key: a.id,
+      type: "button",
+      className: "phone-more-row",
+      "data-phone-app": a.id,
+      onClick: () => openApp(a.id)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "phone-more-ico"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: APPMETA[a.id] && APPMETA[a.id].icon || 'grid4',
+      s: 22
+    })), /*#__PURE__*/React.createElement("span", {
+      className: "phone-more-name"
+    }, a.label))))), /*#__PURE__*/React.createElement("div", {
+      id: "phone-dock"
+    }, /*#__PURE__*/React.createElement("nav", {
+      id: "phonebar",
+      "aria-label": "Desk"
+    }, PHONE_TABS.map(t => /*#__PURE__*/React.createElement("button", {
+      key: t.id,
+      type: "button",
+      className: 'phone-tab' + (phoneOn === t.id ? ' is-on' : ''),
+      "data-phone-app": t.id,
+      "aria-current": phoneOn === t.id ? 'page' : undefined,
+      style: {
+        '--c': phoneTabColour(t.id),
+        '--brand-primary': phoneTabColour(t.id)
+      },
+      onClick: () => openApp(t.id)
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: t.icon || APPMETA[t.id].icon,
+      s: 22
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "lbl"
+    }, t.label))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: 'phone-tab' + (phoneOn === 'more' ? ' is-on' : ''),
+      "data-phone-app": "more",
+      "aria-current": phoneOn === 'more' ? 'page' : undefined,
+      style: {
+        '--c': phoneTabColour('more'),
+        '--brand-primary': phoneTabColour('more')
+      },
+      onClick: () => setPhoneMore(v => !v)
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "grid4",
+      s: 22
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "lbl"
+    }, "More")))), receipt && /*#__PURE__*/React.createElement(ReceiptModal, {
       row: receipt,
       settings: settings,
       onClose: () => setReceipt(null)

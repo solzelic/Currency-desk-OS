@@ -72,16 +72,58 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
-  the desk instead of floating as a desktop panel. The menu bar keeps
-  the icon buttons and drops the wordmark, the clock, and the account
-  name. A window header puts the title on one line and the buttons
-  on the next row, wrapping. A card that holds a table scrolls
-  sideways, and the right edge fades. Folder tabs and the module
-  tab bar scroll the same way, with that fade, and the module bar
-  still ends before the store and ID buttons. Rounded clips, photos,
-  and bars stay clipped. Settings stacks its list above the form.
-  Sign-in and the station picker stay on the screen. The window
-  dots stay 12px, so the title stays readable.
+  the desk instead of floating as a desktop panel. A compact header
+  shows the shop name, whether the till is open, and the profile
+  button. With no shop logo set, that header has no placeholder box.
+  A bottom bar opens Rates, Ledger, Clients, Till, and More.
+  The active window is solid. Any window that is not the active one
+  is not shown, so the app behind does not read through the cards.
+  An unselected tab is #6B6760, 12px on a 16px line, weight 500.
+  The selected tab is that app's colour at weight 700, with a 32px
+  marker along the top of the tab. The bar is 64px, white, with a
+  1px top border and no shadow. A phone draws no
+  desktop window chrome: no traffic lights, no title bar, no
+  window-title dot, no top icon menu, no logo or store row, no
+  dashed Your logo box, and no resize grip. The till line keeps its own open or closed mark.
+  More uses the colour of the app it
+  opened. When More itself is showing, that colour is #17140F. More lists the other apps that role can already open. There is no
+  floating + on a phone. New transaction stays on the ledger, and
+  New contact stays where it already was. The header till dot is
+  the open session: 8px, #157A3E, with a 2px white ring. The green
+  marks drawn into the Ledger and Till icons are artwork, and the
+  phone tabs do not use them. The
+  module tabs, the menu bar, the shop row, and the store and ID
+  rail are hidden. The wordmark, the clock, and the account name
+  stay off the phone. A card that holds a table scrolls sideways,
+  and the right edge fades. Rounded clips,
+  photos, and bars stay clipped. Settings stacks its list above the
+  form. Sign-in and the station picker stay on the screen. The window
+  title bar is hidden, so the app uses that room. In-app tabs stay.
+  A dialog keeps its own header and close, and on a phone it stops
+  above the bottom bar. The New transaction sheet is the exception:
+  it fills the phone and covers the bar, and the post button stays
+  on the sheet. The Cash Drawer header stacks: the title
+  and the till on one line, the status under that, the amount, then
+  Move cash and Vault. Its tabs scroll, with a fade where the last
+  one continues. A ledger reference and a client name stay on one
+  line, and their buttons move to the next row. A wide table keeps
+  each cell on one line and scrolls inside its card. The desktop
+  resize grip is hidden. The rate board leads with its currency rows,
+  already drawn. The cash-drawer count keeps its currency chips and
+  Save count on screen. The whole Cash drawer scrolls as one column,
+  so the header, the session line, and the hand-off scroll away and
+  the denomination rows use that room. The count panel stays a solid
+  sticky panel pinned directly above the bottom bar, with nothing
+  drawn behind it. The list ends with room for that panel, the
+  bar, and 16px, so the last denomination can scroll clear of the
+  panel. An uncounted drawer says "Not counted"
+  rather than a lone dash — the ledger amount stays on the "In drawer"
+  pill, because a zero would claim the drawer was counted empty.
+  The ledger search is one line, with its help mark in that line.
+  The compliance header stacks Screening, Reportable, and Structuring.
+  Screening reads Not connected. Wider than 430px, the desk is
+  unchanged: the dots stay 12px, and the module tab bar ends before
+  the store and ID buttons.
 - **New transaction on a phone.** Under 600px the dialog is a
   full-screen sheet, one column. The type names are one scrolling
   row of pills, and the selected pill is in view when the sheet
@@ -503,6 +545,65 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, phone bottom bar. At 430px and under, the header is the
+shop name, a till dot that reads Till open or Till closed, and the
+profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
+Till, More. More is the other apps that role can open. There is no
+floating +. New transaction stays on the ledger, and that sheet
+covers the bar. The window title
+bar is hidden; the app fills that space and scrolls under the
+56px header and the 64px bar. The active window is solid, and a
+window that is not active is not shown. In-app tabs stay. A ledger record
+has its own Back, because that was the one action that lived only
+in the title bar. The bar includes the iPhone safe area.
+The Cash Drawer header stacks down the screen instead of collapsing
+the title into a narrow column. A ledger reference
+and a client name stay on one line. A wide table scrolls inside its
+card instead of breaking each column into single words. An unselected
+tab is #6B6760, 12px on a 16px line, weight 500. The selected tab is
+that app's colour at weight 700, with a 32px marker along the top of
+the tab, and so is the open in-app folder tab. The window-title dot stays off the phone
+header. A phone shows no desktop window chrome: no traffic lights,
+title bar, top icon menu, logo or store row, dashed Your logo box, or
+resize grip. With no shop logo set, the phone header is the shop name.
+The till line keeps its open or closed mark: an 8px #157A3E dot
+with a 2px white ring while the session is open. On the cash
+drawer the whole column scrolls, and the count panel is a solid
+sticky panel pinned to the bar. More uses the colour of the app it opened, or the ink when
+More itself is showing. Wider than 430px, the desk is unchanged. Rate rows lead the
+rate board. The drawer count keeps its chips and Save count in view,
+and says "Not counted" until a currency is counted. The ledger search
+stays one line. Screening reads Not connected. This sits on the phone
+layout that landed with the desk-fits-a-phone change.
+
+**2026-10-11**, public site claims, fourteenth pass. Only
+the exact names "24-hour rule" and "24-hour aggregation rule"
+are kept. A 24-hour setup fails. Spaced 48 hour and 2 hour,
+two-hour, less than two hours, over-night, and replies today
+fail. A comma after the SMR terrorism-financing clause does
+not keep the deadline.
+
+**2026-10-11**, public site claims, thirteenth pass. The
+SMR terrorism-financing deadline is allowed only as that whole
+clause, on the compliance page and the FAQ. A longer sentence
+does not borrow it, and the clause fails on the homepage. A
+hyphenated live-rates, a dash entity, and en, em, and hair
+spaces cannot hide a timing claim. 2-hour, within the hour,
+next-day, reply today, and a board that moves with the market
+fail. The contact page still says a reply within one business
+day, so that phrase is not banned.
+
+**2026-10-11**, public site claims, twelfth pass. The
+claims check allows a regulator clause only when that clause is
+the whole clause, and only when the clause itself contains a
+banned pattern. The kept clause is the Australia SMR terrorism
+financing deadline. US CTR and SAR phrases are not on the list.
+A tag inside a word, an unquoted meta value, a hyphen entity, a
+thin space, and a fullwidth dash cannot hide a phrase. 48-hour,
+less than an hour, overnight, every second, always current, and
+plenty of shops fail. The publish step no longer says the board
+is always current. The legal page says early access once.
+
 **2026-10-11**, public site claims, eleventh pass. The
 onboarding greeting says the desk is set up. The homepage and the
 mobile page say available in Canada, early access, where they used
@@ -637,7 +738,9 @@ stay on screen for the whole sheet, including with the keyboard
 open, and the last field can scroll clear of them. The X is 44px.
 If anything has been entered, it asks "Discard this deal?" with
 Discard and Keep editing. Swap, Override, and Text quote are 44px
-targets. Wider than 600px, including 1280, the dialog matches main.
+targets. With the bottom bar on the phone, the sheet covers the
+bar, so the post button is not under it. Other dialogs still stop
+above the bar. Wider than 600px, including 1280, the dialog matches main.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered

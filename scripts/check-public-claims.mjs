@@ -5,31 +5,37 @@
    a non-breaking space cannot hide a phrase. A soft hyphen or a
    zero-width character is read twice: deleted, so it cannot split a
    word, and replaced with a space, so it cannot hide a gap. A phrase
-   on either reading fails. Timing phrases are included: a visit in
+   on any reading fails. Timing phrases are included: a visit in
    seconds, a count of minutes, an N-minute compound, the same
    afternoon or day (including same-day), a fortnight, about a week,
    within a week, within N hours, in N hours, 48h, Nh, N hrs, under
    N hours, replying today, 24/7, real-time, and live rates.
 
    Every dash variant (U+2010, U+2011, U+2012 to U+2015, U+2212,
-   and the named en dash, em dash, and minus) folds to an ASCII
-   hyphen before the two readings. A phrase on either reading fails.
-   Meta description content is read too. A tag no longer hides it.
+   fullwidth and small hyphens, and the named en dash, em dash,
+   minus, and hyphen) folds to an ASCII hyphen. A thin space is a
+   space. A phrase on any reading fails. Meta content is read when
+   it is quoted or unquoted, and leftover words in the tag are kept.
+   A tag inside a word is read again with the tag deleted, so it
+   cannot split the word.
 
    "Live rate board" is the Rates plan's name. That exact phrase is
-   allowed. "live rates" anywhere else, including a meta description,
-   still fails. "handling real work", "see it live", and "live board"
-   fail. The product-name exception is removed before those checks,
-   so "live rate board" does not hide "live board".
+   allowed.    "live rates" anywhere else, including a hyphen and a meta
+   description, still fails. "updated every second" still fails
+   beside the name. A sentence that says the board moves with the
+   market still fails. The plural "live rate boards" is not the name.
+   "handling real work", "see it live", "live board", "always current",
+   "plenty of shops", "48-hour", "less than an hour", and "overnight"
+   fail. The product-name exception is removed before those checks.
 
    A regulator deadline is allowed only on the compliance and FAQ
-   pages, and only as one of the exact phrases those pages cite.
-   Each phrase starts with the report name: "LCTR within 15 calendar
-   days", "CTR within 15 days", "SAR within 30 days", "CTR within 5
-   working days", "STR within 7 working days", "SMR within 24 hours".
-   A report name later in the sentence does not allow a different
-   deadline. "static 24 hours" and "within 3 business days" are not
-   a banned pattern. */
+   pages, and only when the allowed clause is the whole clause.
+   The only clause that suppresses a banned pattern is "SMR within
+   24 hours for terrorism financing". A longer sentence that merely
+   contains those words does not pass. Deadlines in days do not
+   match a banned pattern, so they are not listed. US CTR and SAR
+   phrases are not listed. "static 24 hours" and "within 3 business
+   days" are not a banned pattern. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,10 +87,25 @@ const phrases = [
   [/\bfortnights?\b/, "fortnight"],
   [/\b24\s*\/\s*7\b/, "24/7"],
   [/\breal[-\s]time\b/, "real-time"],
-  [/\blive rates\b/, "live rates"],
+  [/\blive[-\s]rates\b/, "live rates"],
   [/handling real work/, "handling real work"],
   [/see it live/, "see it live"],
   [/\blive board\b/, "live board"],
+  [/\b48-hours?\b/, "48-hour"],
+  [/\b(?:2|48) hours?\b/, "N hour"],
+  [/\b\d{1,3}-hours?\b/, "N-hour"],
+  [/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)-hours?\b/, "two-hour"],
+  [/\bwithin the hour\b/, "within the hour"],
+  [/\bnext[-\s]days?\b/, "next-day"],
+  [/\breply today\b/, "reply today"],
+  [/\breplies today\b/, "replies today"],
+  [/\blive rate boards\b/, "live rate boards"],
+  [/\bas the market moves\b/, "as the market moves"],
+  [/\bless than (?:an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety|\d+) hours?\b/, "less than an hour"],
+  [/\bover-?nights?\b/, "overnight"],
+  [/\bevery second\b/, "every second"],
+  [/plenty of shops/, "plenty of shops"],
+  [/\balways current\b/, "always current"],
   [/\breplying today\b/, "replying today"],
   [/\babout a week\b/, "about a week"],
   [/\bwithin a week\b/, "within a week"],
@@ -98,19 +119,25 @@ const UNDER_HOURS = new RegExp(`\\bunder ${HOUR_WORD} hours?\\b`, "g");
 const NH = /(?<![a-z0-9+/=])\d{1,3}\s*h\b/g;
 const NHRS = new RegExp(`\\b(?:\\d+|${HOUR_WORD}) hrs?\\b`, "g");
 
-/* Exact deadlines cited on the compliance and FAQ pages. Each one
-   starts with the report name. Blanked only on those two pages. */
+/* Clauses that contain a banned pattern and are cited as a whole
+   clause on the compliance and FAQ pages. Blanked only there, and
+   only when punctuation bounds the clause. */
 const REGULATOR_PAGES = new Set(["web/compliance.html", "web/faq.html"]);
-const REGULATOR_PHRASES = [
-  "lctr within 15 calendar days",
-  "ctr within 15 days",
-  "sar within 30 days",
-  "ctr within 5 working days",
-  "str within 7 working days",
-  "smr within 24 hours",
+const REGULATOR_CLAUSES = [
+  "smr within 24 hours for terrorism financing, otherwise 3 business days",
+  "smr within 24 hours for terrorism financing",
+];
+/* A comma does not end the clause, so ", guaranteed" cannot borrow it.
+   A closing quote does: the deadline is a script string. */
+const CLAUSE_BEFORE = "(?:^|[.!?;:\\u00b7\\n])";
+const CLAUSE_AFTER = "(?=$|[.!?;:\\u00b7\\n'\"])";
+/* The FINTRAC window name. Anything else with 24-hour still fails. */
+const HOUR_RULES = [
+  "24-hour aggregation rule",
+  "24-hour rule",
 ];
 
-function normalize(html, invisible) {
+function normalize(html, invisible, tags = " ") {
   let text = String(html);
   const decodeNumeric = (value) =>
     value
@@ -130,6 +157,12 @@ function normalize(html, invisible) {
     ndash: "-",
     mdash: "-",
     minus: "-",
+    hyphen: "-",
+    dash: "-",
+    thinsp: " ",
+    ensp: " ",
+    emsp: " ",
+    hairsp: " ",
   };
   text = text.replace(/&([a-z]+);/gi, (all, name) =>
     Object.prototype.hasOwnProperty.call(named, name.toLowerCase()) ? named[name.toLowerCase()] : all,
@@ -138,19 +171,25 @@ function normalize(html, invisible) {
   text = decodeNumeric(text);
   text = text.replace(/&(?:shy|zwnj|zwj);/gi, invisible);
   text = text.replace(/&nbsp;/gi, " ");
-  text = text.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-");
+  text = text.replace(/[\u2002\u2003\u2009\u200A\u202F]/g, " ");
+  text = text.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D\u2E3A\u2E3B]/g, "-");
   text = text.replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, invisible);
-  text = text.replace(/<meta\b[^>]*>/gi, (tag) => {
-    const quoted = tag.match(/\bcontent\s*=\s*"([^"]*)"/i);
-    if (quoted) return ` ${quoted[1]} `;
-    const single = tag.match(/\bcontent\s*=\s*'([^']*)'/i);
-    return single ? ` ${single[1]} ` : " ";
-  });
-  text = text.replace(/<[^>]*>/g, " ");
+  text = text.replace(/<meta\b[^>]*>/gi, readMeta);
+  text = text.replace(/<[^>]*>/g, tags);
   text = text.replace(/\s+/g, " ").trim().toLowerCase();
   /* O.F.A.C. and U.N. become ofac and un before the phrase match. */
   text = text.replace(/(?:[a-z]\.){2,}[a-z]?/g, (match) => match.replace(/\./g, ""));
   return text;
+}
+
+function readMeta(tag) {
+  const values = [];
+  const attrs = /\b([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+  const rest = tag.replace(/<\/?meta\b/i, " ").replace(/>/g, " ").replace(attrs, (_, name, dq, sq, uq) => {
+    if (String(name).toLowerCase() === "content") values.push(dq ?? sq ?? uq ?? "");
+    return " ";
+  });
+  return ` ${values.join(" ")} ${rest} `;
 }
 
 export function visibleText(html) {
@@ -173,8 +212,12 @@ function nearby(text, needle, other, span) {
 
 function withoutAllowed(text, rel) {
   let scanned = text.replace(/\blive rate board\b/g, " ");
+  for (const name of HOUR_RULES) scanned = scanned.replaceAll(name, " ");
   if (!REGULATOR_PAGES.has(rel)) return scanned;
-  for (const phrase of REGULATOR_PHRASES) scanned = scanned.split(phrase).join(" ");
+  for (const phrase of REGULATOR_CLAUSES) {
+    const re = new RegExp(`${CLAUSE_BEFORE}\\s*${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*${CLAUSE_AFTER}`, "g");
+    scanned = scanned.replace(re, " ");
+  }
   return scanned;
 }
 
@@ -214,14 +257,20 @@ function claimsIn(text, problems, rel) {
 }
 
 export function findClaims(html, rel = "") {
-  const text = visibleText(html);
-  const spaced = normalize(html, " ");
+  const readings = [];
+  for (const invisible of ["", " "]) {
+    for (const tags of [" ", ""]) {
+      const text = normalize(html, invisible, tags);
+      if (!readings.includes(text)) readings.push(text);
+    }
+  }
   const problems = [];
+  const deleted = normalize(html, "", " ");
+  const spaced = normalize(html, " ", " ");
   /* "sanc&shy;tions" joins to "sanctions" only when the mark is
      deleted. A page that writes the word normally is left alone. */
-  if (text.includes("sanctions") && !spaced.includes("sanctions")) problems.push("sanctions");
-  claimsIn(text, problems, rel);
-  if (spaced !== text) claimsIn(spaced, problems, rel);
+  if (deleted.includes("sanctions") && !spaced.includes("sanctions")) problems.push("sanctions");
+  for (const text of readings) claimsIn(text, problems, rel);
   return [...new Set(problems)];
 }
 
