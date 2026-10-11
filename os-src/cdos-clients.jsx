@@ -1398,6 +1398,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const [profile, setProfile] = useState(null);
     const [highlightTx, setHighlightTx] = useState(null);
     const [adding, setAdding] = useState(false);
+    const [recordId, setRecordId] = useState(null);
     const clickTimer = useRef(null);
     // external request (e.g. from a ledger transaction's KYC flag) to open a profile
     const lastSig = useRef(0);
@@ -1477,7 +1478,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     if (phone) {
       return (
         <>
-          <window.CDOS.PhoneClients rows={rows} clients={clients} canEdit={canEdit} store={store} reload={reload} saveErr={saveErr} onOpen={(name) => { setQuick(null); setHighlightTx(null); setProfile(name); }} onAdd={() => setAdding(true)} />
+          <window.CDOS.PhoneClients rows={rows} clients={clients} canEdit={canEdit} store={store} reload={reload} saveErr={saveErr} onOpen={(name) => { setQuick(null); setHighlightTx(null); setProfile(name); }} onRecordId={(name) => setRecordId(name)} onAdd={() => setAdding(true)} />
+          {recordId && <RecordIdSheet name={recordId} rec={clients[recordId] || null} setClients={setClients} log={log} onClose={() => setRecordId(null)} onDone={async () => { setRecordId(null); try { await reload(true); } catch (e) { setSaveErr((e && e.message) || 'CurrencyDesk could not refresh the client list.'); } }} />}
           {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} reload={reload} /></Portal>}
           {adding && (window.CDOS.KYC && window.CDOS.KYC.NewContactFlow
             ? <window.CDOS.KYC.NewContactFlow by={me && me.name} setClients={setClients} onClose={() => setAdding(false)} onDone={async (n) => { setAdding(false); try { await reload(true); } catch (e) { setSaveErr((e && e.message) || 'CurrencyDesk could not refresh the client list.'); } setProfile(n); }} />

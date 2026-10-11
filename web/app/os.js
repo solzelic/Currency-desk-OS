@@ -25596,6 +25596,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const [profile, setProfile] = useState(null);
     const [highlightTx, setHighlightTx] = useState(null);
     const [adding, setAdding] = useState(false);
+    const [recordId, setRecordId] = useState(null);
     const clickTimer = useRef(null);
     // external request (e.g. from a ledger transaction's KYC flag) to open a profile
     const lastSig = useRef(0);
@@ -25736,7 +25737,22 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           setHighlightTx(null);
           setProfile(name);
         },
+        onRecordId: name => setRecordId(name),
         onAdd: () => setAdding(true)
+      }), recordId && /*#__PURE__*/React.createElement(RecordIdSheet, {
+        name: recordId,
+        rec: clients[recordId] || null,
+        setClients: setClients,
+        log: log,
+        onClose: () => setRecordId(null),
+        onDone: async () => {
+          setRecordId(null);
+          try {
+            await reload(true);
+          } catch (e) {
+            setSaveErr(e && e.message || 'CurrencyDesk could not refresh the client list.');
+          }
+        }
       }), profile && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(Profile, {
         name: profile,
         rec: profileRec,
@@ -63268,11 +63284,12 @@ window.CDOS_PERSIST = (function () {
     };
   }
 
-  /* Line 2 of a row. Kind, then the last-deal words the book already
-     computed ("2 deals · Today", or "No deals yet"). */
+  /* Line 2 is the last deal ("2 deals · Today", or "No deals yet").
+     "Individual" is not said. A business says Business in front. */
   function rowSubtitle(person) {
-    const kind = person.rec.kind === "corporate" || person.rec.kind === "business" ? "Business" : "Individual";
-    return kind + " · " + (person.deal.meta || "No deals yet");
+    const rest = person.deal.meta || "No deals yet";
+    const business = person.rec.kind === "corporate" || person.rec.kind === "business";
+    return business ? "Business · " + rest : rest;
   }
   function peopleOf(rows, clients, store) {
     const mode = store.mode();
@@ -63322,6 +63339,7 @@ window.CDOS_PERSIST = (function () {
     store,
     reload,
     onOpen,
+    onRecordId,
     onAdd,
     saveErr
   }) {
@@ -63370,22 +63388,25 @@ window.CDOS_PERSIST = (function () {
       const list = filter === "all" ? matched : matched.filter(person => person.standing.status === filter);
       return list.slice().sort((a, b) => (b.deal.key || "").localeCompare(a.deal.key || "") || a.name.localeCompare(b.name));
     }, [matched, filter]);
+
+    /* A failed load has no trustworthy counts. "All 0" would read as
+       an empty book. The words stay; the numbers wait for the server. */
     const chips = [{
       id: "all",
       label: "All",
-      count: counts.all
+      count: loadFailed ? undefined : counts.all
     }, {
       id: "missing",
       label: "Missing ID",
-      count: counts.missing
+      count: loadFailed ? undefined : counts.missing
     }, {
       id: "expired",
       label: "Expired",
-      count: counts.expired
+      count: loadFailed ? undefined : counts.expired
     }, {
       id: "identified",
       label: "Identified",
-      count: counts.identified
+      count: loadFailed ? undefined : counts.identified
     }];
     const showingLocal = loadFailed && people.length > 0;
     let state = "list";
@@ -63452,22 +63473,27 @@ window.CDOS_PERSIST = (function () {
     }), state === "list" && /*#__PURE__*/React.createElement(Phone.ListSection, {
       title: shown.length === 1 ? "1 contact" : shown.length + " contacts",
       meta: "Last deal"
-    }, shown.map(person => /*#__PURE__*/React.createElement(Phone.ListRow, {
-      key: person.name,
-      className: "phone-client-row id-" + person.standing.status,
-      title: person.name,
-      subtitle: rowSubtitle(person),
-      amount: person.deal.amount || undefined,
-      badge: {
-        tone: person.standing.tone === "pos" ? "pos" : "warn",
-        label: person.standing.label
-      },
-      leading: /*#__PURE__*/React.createElement("span", {
-        className: "phone-ini",
-        "aria-hidden": "true"
-      }, initials(person.name)),
-      onClick: () => onOpen(person.name)
-    }))));
+    }, shown.map(person => {
+      const needsId = person.standing.status === "missing" || person.standing.status === "expired";
+      const fixId = needsId && canEdit && typeof onRecordId === "function";
+      return /*#__PURE__*/React.createElement(Phone.ListRow, {
+        key: person.name,
+        className: "phone-client-row id-" + person.standing.status + (fixId ? " has-chevron" : ""),
+        title: person.name,
+        subtitle: rowSubtitle(person),
+        amount: person.deal.amount || undefined,
+        badge: {
+          tone: person.standing.tone === "pos" ? "pos" : "warn",
+          label: person.standing.label
+        },
+        leading: /*#__PURE__*/React.createElement("span", {
+          className: "phone-ini",
+          "aria-hidden": "true"
+        }, initials(person.name)),
+        chevron: fixId,
+        onClick: () => fixId ? onRecordId(person.name) : onOpen(person.name)
+      });
+    })));
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     usePhoneWidth,

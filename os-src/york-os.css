@@ -3127,6 +3127,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      chip back to the screen edge. Spacers are real flex items, so
      the first chip stays 16px in, the last has 16px after it, and
      the fade stays on the right edge. */
+  .phone-clients .phone-chip { min-width: 44px; }
   .phone-clients .phone-chips {
     padding-left: 0;
     padding-right: 0;
@@ -3142,8 +3143,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     scroll-snap-align: none;
   }
   /* Foundation ListRow. Line 1 is the name and the last-deal amount.
-     Line 2 is "Individual · 2 deals · Today" and the ID badge.
-     About 72px, so six rows fit at 390. */
+     Line 2 is "2 deals · Today" and the ID badge. A missing or
+     expired row adds a chevron. About 72px, so six rows fit at 390. */
   .phone-shell.phone-clients .phone-row.phone-client-row {
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) auto;
@@ -3185,6 +3186,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     grid-column: 3;
     grid-row: 2;
     justify-self: end;
+  }
+  .phone-client-row.has-chevron {
+    grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  }
+  .phone-client-row > .phone-row-chev {
+    grid-column: 4;
+    grid-row: 1 / span 2;
+    align-self: center;
   }
   .phone-clients .phone-stale {
     margin: 0 0 8px;

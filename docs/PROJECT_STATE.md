@@ -201,26 +201,30 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 - **Phone Clients.** At 430px and under, Clients is a list a cashier
   can search before anything else. Chips are All, Missing ID, Expired,
   and Identified — the same words as the row badge. A row is about
-  72px and the whole row opens the file. Line 1 is the name and the
-  last-deal amount. Line 2 is the kind, the deal count, and when
-  (`Individual · 2 deals · Today`), with the ID badge on the right.
-  That standing is read from the document on file — type, number, and
-  expiry — and a stored “verified” word is ignored, because ID checks
-  are not connected. The one primary button is Add client. There is
-  no centre plus in the tab bar and no floating New transaction on
-  this screen. An amount goes through `formatPhoneMoney` and reads
+  72px. Line 1 is the name and the last-deal amount. Line 2 is the
+  deal count and when (`2 deals · Today`). A business says Business
+  in front of that. An individual does not say Individual. The ID
+  badge sits on the right of that line. That standing is read from
+  the document on file — type, number, and expiry — and a stored
+  “verified” word is ignored, because ID checks are not connected.
+  A Missing ID or Expired row has a chevron, and the tap opens the
+  same Record the ID sheet New transaction uses. An identified row
+  opens the client file. The one primary button is Add client. There
+  is no centre plus in the tab bar and no floating New transaction
+  on this screen. An amount goes through `formatPhoneMoney` and reads
   with its currency code last (`1,765.05 CAD`). A figure the book
   cannot answer is absent. A failed load with nothing cached says
   "Couldn't load clients" and "Check the connection and try again."
-  Add client is disabled until that load succeeds, so it cannot save
-  a client that exists only in this browser. If this phone is showing
-  the copy it already held, the list stays and a line above it says
-  "Showing the copy on this phone. It may be out of date." Tapping a
-  row opens the existing client file full screen. Add client opens
-  the existing add flow full screen. Wider than 430px, Clients is the
-  desktop list it already was, including New contact. Desktop still
-  leaves New contact enabled on that failure and can write the
-  browser's own copy; the phone does not.
+  The chips keep their words and drop the counts, so a zero does not
+  read as an empty book. Add client is disabled until that load
+  succeeds, so it cannot save a client that exists only in this
+  browser. If this phone is showing the copy it already held, the
+  list stays and a line above it says "Showing the copy on this
+  phone. It may be out of date." Add client opens the existing add
+  flow full screen. Wider than 430px, Clients is the desktop list it
+  already was, including New contact. Desktop still leaves New
+  contact enabled on that failure and can write the browser's own
+  copy; the phone does not.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -736,13 +740,13 @@ the first chip sit 16px in, the same inset as the search field. The
 chip row scrolls, fades at the right, and leaves 16px after the last
 chip. The screen is the flat surface token, not the desktop gradient.
 A row is about 72px. Line 1 is the name and the last-deal amount.
-Line 2 is `Individual · 2 deals · Today` with the ID badge on the
-right. Chips and badges use the same words: Missing ID, Expired,
-Identified, read from the document on file. A failed load with
-nothing cached uses that short error, and Add client stays disabled.
-A cached list says it is the copy on this phone. Amounts go through
-`formatPhoneMoney`. The client file and the add flow are the existing
-screens, full screen. Wider than 430px, the Clients window is unchanged.
+Line 2 is `2 deals · Today`, with Business only when the client is a
+business, and the ID badge on the right. A Missing ID or Expired row
+opens Record the ID. Chips and badges use the same words. A failed
+load drops the chip counts, uses the short error, and leaves Add
+client disabled. A cached list says it is the copy on this phone.
+Amounts go through `formatPhoneMoney`. Wider than 430px, the Clients
+window is unchanged.
 
 **2026-10-11**, phone ledger and chip colour. Under 430px the ledger
 uses the phone shell. Selected filter chips are gray-900. Primary

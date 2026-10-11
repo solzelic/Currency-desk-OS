@@ -117,11 +117,12 @@
     return { amount, meta: when ? deals + " · " + when : deals, when, key: (last.date || "") + " " + (last.time || "") };
   }
 
-  /* Line 2 of a row. Kind, then the last-deal words the book already
-     computed ("2 deals · Today", or "No deals yet"). */
+  /* Line 2 is the last deal ("2 deals · Today", or "No deals yet").
+     "Individual" is not said. A business says Business in front. */
   function rowSubtitle(person) {
-    const kind = person.rec.kind === "corporate" || person.rec.kind === "business" ? "Business" : "Individual";
-    return kind + " · " + (person.deal.meta || "No deals yet");
+    const rest = person.deal.meta || "No deals yet";
+    const business = person.rec.kind === "corporate" || person.rec.kind === "business";
+    return business ? "Business · " + rest : rest;
   }
 
   function peopleOf(rows, clients, store) {
@@ -157,7 +158,7 @@
     return out;
   }
 
-  function PhoneClients({ rows, clients, canEdit, store, reload, onOpen, onAdd, saveErr }) {
+  function PhoneClients({ rows, clients, canEdit, store, reload, onOpen, onRecordId, onAdd, saveErr }) {
     const Phone = shell();
     const [q, setQ] = useState("");
     const [filter, setFilter] = useState("all");
@@ -198,11 +199,13 @@
       return list.slice().sort((a, b) => (b.deal.key || "").localeCompare(a.deal.key || "") || a.name.localeCompare(b.name));
     }, [matched, filter]);
 
+    /* A failed load has no trustworthy counts. "All 0" would read as
+       an empty book. The words stay; the numbers wait for the server. */
     const chips = [
-      { id: "all", label: "All", count: counts.all },
-      { id: "missing", label: "Missing ID", count: counts.missing },
-      { id: "expired", label: "Expired", count: counts.expired },
-      { id: "identified", label: "Identified", count: counts.identified },
+      { id: "all", label: "All", count: loadFailed ? undefined : counts.all },
+      { id: "missing", label: "Missing ID", count: loadFailed ? undefined : counts.missing },
+      { id: "expired", label: "Expired", count: loadFailed ? undefined : counts.expired },
+      { id: "identified", label: "Identified", count: loadFailed ? undefined : counts.identified },
     ];
 
     const showingLocal = loadFailed && people.length > 0;
@@ -268,18 +271,23 @@
         )}
         {state === "list" && (
           <Phone.ListSection title={shown.length === 1 ? "1 contact" : shown.length + " contacts"} meta="Last deal">
-            {shown.map(person => (
-              <Phone.ListRow
-                key={person.name}
-                className={"phone-client-row id-" + person.standing.status}
-                title={person.name}
-                subtitle={rowSubtitle(person)}
-                amount={person.deal.amount || undefined}
-                badge={{ tone: person.standing.tone === "pos" ? "pos" : "warn", label: person.standing.label }}
-                leading={<span className="phone-ini" aria-hidden="true">{initials(person.name)}</span>}
-                onClick={() => onOpen(person.name)}
-              />
-            ))}
+            {shown.map(person => {
+              const needsId = person.standing.status === "missing" || person.standing.status === "expired";
+              const fixId = needsId && canEdit && typeof onRecordId === "function";
+              return (
+                <Phone.ListRow
+                  key={person.name}
+                  className={"phone-client-row id-" + person.standing.status + (fixId ? " has-chevron" : "")}
+                  title={person.name}
+                  subtitle={rowSubtitle(person)}
+                  amount={person.deal.amount || undefined}
+                  badge={{ tone: person.standing.tone === "pos" ? "pos" : "warn", label: person.standing.label }}
+                  leading={<span className="phone-ini" aria-hidden="true">{initials(person.name)}</span>}
+                  chevron={fixId}
+                  onClick={() => (fixId ? onRecordId(person.name) : onOpen(person.name))}
+                />
+              );
+            })}
           </Phone.ListSection>
         )}
       </Phone.Screen>

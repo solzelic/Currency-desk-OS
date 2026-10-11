@@ -120,6 +120,7 @@ test.describe("phone clients", () => {
       await openClients(page);
       await expect(page.getByRole("heading", { name: "Couldn't load clients" })).toBeVisible();
       await expect(page.getByText("Check the connection and try again.")).toBeVisible();
+      await expect(page.locator(".phone-clients .phone-chip")).toHaveText(["All", "Missing ID", "Expired", "Identified"]);
       await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
       await expect(page.locator(".phone-client-row")).toHaveCount(0);
       await expect(page.locator(".phone-clients")).not.toContainText("browser");
@@ -236,7 +237,8 @@ test.describe("phone clients", () => {
       expect(inset.row).toBeLessThanOrEqual(80);
       expect(inset.badgeBeside).toBe(true);
       expect(inset.titleAbove).toBe(true);
-      expect(inset.line).toMatch(/^Individual · /);
+      expect(inset.line).toBe("No deals yet");
+      expect(inset.line).not.toContain("Individual");
       if (width === 390) expect(inset.visible).toBeGreaterThanOrEqual(6);
       expect(inset.image).toBe("none");
       expect(inset.bg).toBe("rgb(255, 255, 255)");
@@ -279,17 +281,25 @@ test.describe("phone clients", () => {
       await expect(page.locator(".phone-client-row")).toHaveCount(1);
       await expect(page.locator(".phone-client-row.id-missing .phone-badge")).toHaveText("Missing ID");
       await expect(page.locator(".phone-client-row")).toContainText(names.none);
+      await expect(page.locator(".phone-client-row .phone-row-chev")).toHaveCount(1);
+      await page.locator(".phone-client-row").click();
+      await expect(page.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
+      await expect(page.locator(".client-file")).toHaveCount(0);
+      await page.getByRole("button", { name: "Back to the deal" }).last().click();
+      await expect(page.getByRole("dialog", { name: "Record the ID" })).toHaveCount(0);
       await sweep(page, width);
       await shot(page, `clients_filtered_${width}`);
 
       await page.getByRole("tab", { name: /^Expired/ }).click();
       await expect(page.locator(".phone-client-row")).toHaveCount(1);
       await expect(page.locator(".phone-client-row.id-expired .phone-badge")).toHaveText("Expired");
+      await expect(page.locator(".phone-client-row .phone-row-chev")).toHaveCount(1);
       await expect(page.locator(".phone-client-row")).toContainText(names.expired);
 
       await page.getByRole("tab", { name: /^Identified/ }).click();
       await expect(page.locator(".phone-client-row")).toHaveCount(1);
       await expect(page.locator(".phone-client-row .phone-badge")).toHaveText("Identified");
+      await expect(page.locator(".phone-client-row .phone-row-chev")).toHaveCount(0);
 
       await page.locator(".phone-client-row").click();
       await expect(page.locator(".client-file")).toBeVisible();
