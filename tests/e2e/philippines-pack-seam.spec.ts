@@ -8,6 +8,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { test, expect, hasLedger, landOnDesktop, rendered, codeFor, logSize } from "./fixtures";
+import { bannedNameHits } from "../../scripts/check-sanctions-phrases.mjs";
 import type { Page } from "@playwright/test";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
@@ -105,12 +106,7 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   expect(words).toMatch(/Not connected/);
   expect(words).not.toMatch(/No sanctions list is loaded/);
   expect(words).not.toMatch(/Not on this desk/);
-  expect(words).not.toMatch(/\bOFAC\b/);
-  expect(words).not.toMatch(/\bOSFI\b/);
-  expect(words).not.toMatch(/\bUN\b/);
-  expect(words).not.toMatch(/United Nations/);
-  expect(words).not.toMatch(/UNSC/);
-  expect(words).not.toMatch(/Wei Lin/);
+  expect(bannedNameHits(words)).toEqual([]);
 
   await page.locator('[data-app="compliance"]').click();
   const screening = page.getByTestId("sanctions-not-connected");
@@ -118,11 +114,7 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   const screeningWords = await screening.innerText();
   expect(screeningWords).toMatch(/Sanctions screening is not connected yet/);
   expect(screeningWords).toMatch(/ATC list/);
-  expect(screeningWords).not.toMatch(/\bOFAC\b/);
-  expect(screeningWords).not.toMatch(/\bOSFI\b/);
-  expect(screeningWords).not.toMatch(/\bUN\b/);
-  expect(screeningWords).not.toMatch(/UNSC/);
-  expect(screeningWords).not.toMatch(/Wei Lin/);
+  expect(bannedNameHits(screeningWords)).toEqual([]);
   expect(screeningWords).toMatch(/freeze without delay/);
   expect(screeningWords).toMatch(/tell the AMLC the same day/);
   expect(screeningWords).toMatch(/file an STR/);

@@ -22686,11 +22686,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     return a;
   };
 
-  // The highest verification a contact has actually PAID FOR through the provider.
-  // Reads the KYC check history — never inferred from typed-in ID fields.
-  //   plus   → Verified Plus  (ID + biometric + deep DB)
-  //   verify → Verified       (ID authenticated + screened)
-  //   quick  → Screened       (name/DOB watchlist screen — NOT identity verification)
+  // Highest approved check on file for this name, read from the KYC
+  // history, never from typed-in ID fields. Nothing here approves a
+  // check: the store is wiped on load and resolve() leaves the decision
+  // at not_run. These branches still return a tier if an approved check
+  // is already on the file.
+  //   plus   → Verified Plus
+  //   verify → Verified
+  //   quick  → Screened
   function kycTier(name) {
     if (!name) return null;
     try {
@@ -22702,9 +22705,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     } catch (e) {}
     return null;
   }
-  // Badge ladder:  Missing ID → ID on hand → Screened → Verified → Verified Plus.
-  // "ID on hand" is a NEUTRAL state: the desk holds an ID but has not run a provider
-  // verification. Only a $6.99+ inquiry that returns approved earns the green "Verified".
+  // Badge ladder: Missing ID → ID on hand → Screened → Verified → Verified Plus.
+  // With no approved check, the badge is the ID the desk is holding
+  // (Missing ID, ID expired, ID expiring, or ID on hand).
+  // Screened, Verified, and Verified Plus are returned only when kycTier
+  // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
     /* Has this document expired? A question about the calendar, so the
@@ -22712,10 +22717,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        the page loaded, which on a desk left open overnight went on saying
        an ID expiring at midnight was still valid. */
     const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // provider-verified identity — the only true KYC states
+    // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // watchlist screen only — clean name, but identity NOT verified under FINTRAC
+    // An approved quick check on file. Nothing writes one now.
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
     // no provider check on file — judge by the ID the desk is holding
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
@@ -45371,20 +45376,18 @@ ${(filing.map || []).map(blockHTML).join('')}
 /* ---- os-src/cdos-kyc.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — KYC / identity verification
-   A paid, partner-powered verification rail. The desk sends a
-   subject (client, business or beneficiary) off to the verification
-   provider (Persona) for ID + biometric + database checks. Each
-   verification is billed to the exchange house's account — this is
-   a revenue line for CurrencyDesk.
+   Persona is not connected. This module does not send a subject
+   to a provider, does not bill a check, and does not read a list.
+   Anything already stored under the KYC key is wiped on load.
+   resolve() leaves the decision at not_run unless screen() returns
+   hit, review, or clear, and screen() returns unavailable, so a
+   check is not approved and is not written to report History.
 
    One self-contained module, used in two places:
      • Clients ▸ contact profile  → SubjectPanel at the bottom
      • Compliance ▸ Screening      → PickerModal + per-row Verify
 
-   Lifecycle is time-based so it survives reloads: a sent check sits
-   in "processing" until its dueMs, then reconciles to a result that
-   is consistent with the live sanctions screening. Completed checks
-   are written to the universal report History.
+   The chooser still lists three tiers. None of them runs.
    ============================================================ */
 (function () {
   const {
@@ -45479,16 +45482,13 @@ ${(filing.map || []).map(blockHTML).join('')}
     return h.toString(36).toUpperCase().padStart(5, '0').slice(-5);
   };
 
-  // Three tiers, each a real check that bills every time it runs — the desk is
-  // meant to run one on (nearly) every transaction. NONE smart-skip: even a
-  // fully verified customer can be re-screened with a Quick check at the counter.
-  //   • Quick check ($3.99) — a name and date of birth. Persona is not connected, so this does not screen a list.
-  //     No document authentication; instant. This is NOT identity verification —
-  //     it confirms the name is clean, not that the ID is genuine.
-  //   • Verified ($6.99) — government ID document authentication + the same
-  //     sanctions & PEP screening. This is what earns the "Verified" badge.
-  //   • Verified Plus ($14.99) — fresh ID, biometric selfie / liveness match and a
-  //     deep database inquiry (adverse media, ongoing monitoring). Always runs fresh.
+  // The chooser still lists three tiers. Persona is not connected, so
+  // none of them is sent, none of them is billed, and none of them
+  // earns a badge. resolve() does not approve a check while screen()
+  // returns unavailable.
+  //   • quick  — name and date of birth only. No list is read.
+  //   • verify — does not authenticate an ID.
+  //   • plus   — does not run a biometric or a database inquiry.
   const TEMPLATES = [{
     id: 'quick',
     label: 'Quick check',
@@ -46646,15 +46646,16 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
 
   /* ====================================================================
-     VERIFICATION NUDGE — the occasional “run a quick check” recommendation.
-     Two levels:
-       • reco  (dismissible) — it has been ≥ recheckDays (default 180) since the
-         last provider check, or the subject has never been screened. A gentle
-         prompt to run a $3.99 Quick check so the file stays current.
-       • force (not dismissible) — the ID on file has EXPIRED. Pushes a full
-         re-verify. This is the forcing function.
-     Shown on the contact profile and inside the New-Transaction modal. Returns
-     null on a healthy, recently-checked file, so it never nags without cause.
+     VERIFICATION NUDGE — shown on the contact profile and inside the
+     New Transaction modal.
+     Two levels. Both look at the ID on the file and at approved checks.
+     The KYC store is wiped on load and resolve() does not approve a
+     check, so a file this desk just opened has no last check.
+       • reco  (dismissible) — the house recheck window has passed, or
+         there is no approved full check on the file.
+       • force (not dismissible) — the ID on file has expired, or house
+         policy stops a large deal.
+     Returns null when the file is inside the window.
      ==================================================================== */
   function daysAgo(ms) {
     return Math.floor((Date.now() - ms) / 86400000);

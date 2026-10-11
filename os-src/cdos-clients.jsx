@@ -477,11 +477,14 @@
   const initials = (n) => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = (dob) => { if (!dob) return null; const d = new Date(dob); if (isNaN(d)) return null; const t = new Date(window.CDOS.wallClock()); let a = t.getFullYear() - d.getFullYear(); const m = t.getMonth() - d.getMonth(); if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--; return a; };
 
-  // The highest verification a contact has actually PAID FOR through the provider.
-  // Reads the KYC check history — never inferred from typed-in ID fields.
-  //   plus   → Verified Plus  (ID + biometric + deep DB)
-  //   verify → Verified       (ID authenticated + screened)
-  //   quick  → Screened       (name/DOB watchlist screen — NOT identity verification)
+  // Highest approved check on file for this name, read from the KYC
+  // history, never from typed-in ID fields. Nothing here approves a
+  // check: the store is wiped on load and resolve() leaves the decision
+  // at not_run. These branches still return a tier if an approved check
+  // is already on the file.
+  //   plus   → Verified Plus
+  //   verify → Verified
+  //   quick  → Screened
   function kycTier(name) {
     if (!name) return null;
     try {
@@ -493,9 +496,11 @@
     } catch (e) {}
     return null;
   }
-  // Badge ladder:  Missing ID → ID on hand → Screened → Verified → Verified Plus.
-  // "ID on hand" is a NEUTRAL state: the desk holds an ID but has not run a provider
-  // verification. Only a $6.99+ inquiry that returns approved earns the green "Verified".
+  // Badge ladder: Missing ID → ID on hand → Screened → Verified → Verified Plus.
+  // With no approved check, the badge is the ID the desk is holding
+  // (Missing ID, ID expired, ID expiring, or ID on hand).
+  // Screened, Verified, and Verified Plus are returned only when kycTier
+  // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
     /* Has this document expired? A question about the calendar, so the
@@ -503,10 +508,10 @@
        the page loaded, which on a desk left open overnight went on saying
        an ID expiring at midnight was still valid. */
     const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // provider-verified identity — the only true KYC states
+    // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // watchlist screen only — clean name, but identity NOT verified under FINTRAC
+    // An approved quick check on file. Nothing writes one now.
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
     // no provider check on file — judge by the ID the desk is holding
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
@@ -1236,7 +1241,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <div className="flex items-center gap-2.5"><span className="grid place-items-center flex-none" style={{ width: 32, height: 32, borderRadius: 9, background: CD.lineSoft }}><Ic n="shield" s={16} c={CD.mute} /></span><div><div className="flex items-center gap-1.5"><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>Risk rating</div><window.CDOS.InfoTip title="Risk rating" body="Your own read on how much scrutiny a client needs. Setting it puts your judgment on the file — proof to examiners you run an active, risk-based program. It sharpens what the desk recommends, but never replaces the checks themselves: you still verify ID and file the reports required by law. You do your part — CurrencyDesk does the rest." lines={[{k:'Low · Normal',v:'standard handling'},{k:'Medium',v:'a closer watch'},{k:'High',v:'auto-deepens the ID check'}]} /></div><div className="text-[11px]" style={{ color: CD.mute }}>Your own compliance rating for this profile.</div></div></div>
             <div className="inline-flex items-stretch flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, overflow: 'hidden', opacity: canEdit ? 1 : 0.65 }}>{RISK.map((r, i) => { const on = normalizeRisk(rec.risk) === r; const tn = riskTone(r); return <button key={r} type="button" disabled={!canEdit} onClick={() => set('risk', r)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ background: on ? tn.bg : 'transparent', color: on ? tn.c : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none', cursor: canEdit ? 'pointer' : 'default' }}><span style={{ width: 6, height: 6, borderRadius: 999, background: tn.c, flex: 'none' }} />{r}</button>; })}</div>
           </div>
-          {/* identity verification — partner KYC / sanctions screening (compliance) */}
+          {/* identity section — Persona is not connected */}
           {/* A refused scan has to say so. The whole reason the ceiling
               exists is that oversized images used to be accepted and then
               silently lost when the desk's state would not save. */}

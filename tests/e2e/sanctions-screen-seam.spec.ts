@@ -8,6 +8,7 @@
    ============================================================ */
 import type { Page } from "@playwright/test";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
+import { bannedNameHits } from "../../scripts/check-sanctions-phrases.mjs";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
@@ -16,12 +17,7 @@ function expectHonestScreening(text: string) {
   expect(text).toMatch(/Sanctions screening is not connected yet/);
   expect(text).toMatch(/Check clients against your government's official lists yourself/);
   expect(text).not.toMatch(/Every client and beneficiary screened against/i);
-  expect(text).not.toMatch(/\bOFAC\b/);
-  expect(text).not.toMatch(/\bOSFI\b/);
-  expect(text).not.toMatch(/\bUN\b/);
-  expect(text).not.toMatch(/United Nations/);
-  expect(text).not.toMatch(/UNSC/);
-  expect(text).not.toMatch(/Wei Lin/);
+  expect(bannedNameHits(text)).toEqual([]);
   expect(text).not.toMatch(/Lin Wei/);
   expect(text).not.toMatch(/Brooke Lawson/);
   expect(text).not.toMatch(/Maria Carter/);
@@ -115,10 +111,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await expect(file.getByText(/screened against/i)).toHaveCount(0);
   await expect(file.getByText(/Verify identity/i)).toHaveCount(0);
   const fileWords = await file.innerText();
-  expect(fileWords).not.toMatch(/\bOFAC\b/);
-  expect(fileWords).not.toMatch(/\bOSFI\b/);
-  expect(fileWords).not.toMatch(/\bUN\b/);
-  expect(fileWords).not.toMatch(/Wei Lin/);
+  expect(bannedNameHits(fileWords)).toEqual([]);
   expect(fileWords).not.toMatch(/Sanctions hits/);
 });
 
@@ -153,5 +146,5 @@ test("a teller sees the same not-connected screening state", async ({ page }) =>
   await compliance.locator(".fld-tab", { hasText: "Filings" }).click();
   const filings = await compliance.innerText();
   expect(filings).not.toMatch(/Wei Lin|Lin Wei|Brooke Lawson|Maria Carter|Rohan Miller|TR-260617-019|Sanctions hits/i);
-  expect(filings).not.toMatch(/\bOFAC\b|\bOSFI\b|\bUN\b|United Nations|UNSC/);
+  expect(bannedNameHits(filings)).toEqual([]);
 });
