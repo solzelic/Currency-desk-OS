@@ -331,6 +331,48 @@ describe("public marketing claims", () => {
     expect(probe(line, "web/faq.html").ok).toBe(true);
   });
 
+  it("does not let a longer sentence borrow the SMR clause", () => {
+    const line = "We file your SMR within 24 hours";
+    expect(probe(line).ok).toBe(false);
+    expect(probe(line, "web/compliance.html").ok).toBe(false);
+    expect(probe(line, "web/faq.html").ok).toBe(false);
+  });
+
+  it("flags 48-hour, less than an hour, overnight, always current, and plenty of shops", () => {
+    expect(probe("a 48-hour setup").out).toMatch(/48-hour/);
+    expect(probe("ready in less than an hour").out).toMatch(/less than an hour/);
+    expect(probe("set up overnight").out).toMatch(/overnight/);
+    expect(probe("the board is always current").out).toMatch(/always current/);
+    expect(probe("plenty of shops run on it").out).toMatch(/plenty of shops/);
+    expect(probe("24-hour rule").ok).toBe(true);
+    expect(probe("not an hour with a calculator").ok).toBe(true);
+  });
+
+  it("flags a hyphen entity, a thin space, and a fullwidth dash", () => {
+    expect(probe("same&hyphen;day setup").out).toMatch(/same-day/);
+    expect(probe("live&thinsp;rates on the board").out).toMatch(/live rates/);
+    expect(probe("real\uFF0Dtime rates").out).toMatch(/real-time/);
+  });
+
+  it("flags every second beside the Live rate board name", () => {
+    expect(probe("Live rate board").ok).toBe(true);
+    const line = probe("Live rate board, updated every second");
+    expect(line.ok).toBe(false);
+    expect(line.out).toMatch(/every second/);
+  });
+
+  it("flags an unquoted meta attribute", () => {
+    const result = probe("<meta name=description content=live rates>");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/live rates/);
+  });
+
+  it("flags a tag inside a word", () => {
+    const result = probe("li<b>ve rates</b> on the board");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/live rates/);
+  });
+
   it("does not let a later report name allow a deadline", () => {
     for (const line of ["Onboard within 2 hours, STR ready.", "in 2 hours (CTR included)"]) {
       expect(probe(line).ok).toBe(false);
