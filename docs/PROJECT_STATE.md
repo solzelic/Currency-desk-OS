@@ -449,6 +449,40 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, fourth pass. The onboarding
+line about a rate board no longer says plenty of shops run on it.
+It says you can run on that alone and add a site whenever you want
+one. The claims check reads each page twice, once with zero-width
+characters and soft hyphens deleted and once with them turned into
+spaces, and a banned phrase on either reading fails. It also rejects
+"UN list", "United Nations list", and "best protection". `check:parse`
+and `check:sanctions` both stay.
+
+**2026-10-11**, public site claims, third pass. The onboarding
+agreement does not say client verification is billed. The site does not
+name a most-chosen or most-popular plan, and it does not give a measured
+time for closing the day or for a repeat deal. Per-tier KYC prices are
+off the public pages. One planned price remains: from $3.99 a check,
+and nothing is charged today. The claims check also rejects dotted
+acronyms, OSFI, a singular real shop, invisible splits, "screened
+against", and "sanctions screening" except the sentence that it is not
+connected.
+
+**2026-10-11**, public site claims, second pass. There are no shops on
+the product yet. Canada is the only live country. Serbia, India and the
+Philippines are marked not live, and their rule tags no longer say they
+are on the desk. The site does not say deals are running in real shops,
+that a first shop exists, that anything was measured at the counter, or
+that history is imported. History is entered by hand. ID verification is
+not billed. The only service providers named are Render (hosting, United
+States) and Neon (database). Hero and feature amounts that are not a
+regulatory threshold are labelled sample figures. A large cash worksheet
+can be prepared from the book and is not sent. The 24-hour window on the
+server starts at midnight in the branch time zone. Screening is not
+connected. Texting is not connected. The site does not claim encryption
+at rest, and it does not claim data is held in the region where the desk
+operates. Subscription prices printed on the site are unchanged.
+
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered
 and keeps it until the day is closed or the count is cleared, so a
