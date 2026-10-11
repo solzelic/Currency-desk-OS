@@ -12,6 +12,7 @@ import rawBody from "fastify-raw-body";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { Writable } from "node:stream";
 import { schema, type Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStaffRoutes } from "./routes/staff.js";
@@ -63,11 +64,40 @@ const isPhone = (ua: string | undefined): boolean =>
    that root wholesale: it also contains server source, deployment config,
    Git metadata, and local environment files. Keep the static plugin on a
    small, explicit allow-list; route handlers below still serve the app shells
-   with reply.sendFile. */
-const isPublicAsset = (pathname: string): boolean => {
+   with reply.sendFile.
+
+   The hand-written shells (CurrencyDesk OS.html, admin.html) and the JSX
+   under os-src/ are how the desk boots when the compiled shells in web/app
+   are missing — a deploy that skipped `npm run build:os`. Once those
+   compiled shells are in STATIC_DIR, /login, /app and /admin serve them,
+   and the old files are source. They stay on the list below for that
+   fallback only. When the compiled replacement is actually on disk, a
+   direct fetch is a 404, not the file and not the marketing page. In
+   production a missing shell is logged at boot, naming the file: the
+   fallback still serves, and the warning is the signal that the
+   uncompiled shell and os-src are public again.
+
+   One file under os-src/ is still part of the compiled desk.
+   web/app/index.html links os-src/york-os.css, and /login and /app fetch
+   it. That stylesheet stays public either way. */
+const retiredUncompiledDesk = (
+  pathname: string,
+  compiled: { os: boolean; admin: boolean },
+): boolean => {
+  const file = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  if (file === "/os-src/york-os.css") return false;
+  if (compiled.os && (file === "/CurrencyDesk OS.html" || file.startsWith("/os-src/"))) {
+    return true;
+  }
+  if (compiled.admin && file === "/admin.html") return true;
+  return false;
+};
+
+const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean }): boolean => {
   // Wildcard requests arrive with a leading slash; reply.sendFile receives a
   // relative file path. Apply the same boundary to both paths.
   const file = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  if (retiredUncompiledDesk(file, compiled)) return false;
   return (
     file === "/CurrencyDesk OS.html" ||
     file === "/admin.html" ||
@@ -111,9 +141,15 @@ const wantsPage = (req: { headers: Record<string, unknown> }): boolean => {
   return accept.includes("text/html");
 };
 
-export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise<FastifyInstance> {
+/* logStream lets a test read app.log. Production omits it, and Fastify
+   keeps the logger it uses for every other warning. */
+export async function buildApp(
+  db: Db,
+  growth: GrowthDependencies = {},
+  logStream?: Writable,
+): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: process.env.NODE_ENV !== "test",
+    logger: logStream ? { stream: logStream } : process.env.NODE_ENV !== "test",
     // a customer domain pointed at us serves that customer's hosted site
     rewriteUrl: (req) => rewriteHostToSite(req.headers.host, req.url ?? "/"),
   });
@@ -222,6 +258,28 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
     const compiled = (built: string, source: string): string =>
       existsSync(path.join(staticDir, built)) ? built : source;
     const indexFile = compiled("web/app/index.html", process.env.STATIC_INDEX ?? "CurrencyDesk OS.html");
+    /* Same files `compiled()` looks for. The allow-list refuses the
+       uncompiled desk only when these are present. */
+    const compiledShells = {
+      os: existsSync(path.join(staticDir, "web/app/index.html")),
+      admin: existsSync(path.join(staticDir, "web/app/admin.html")),
+    };
+    /* Checked once, at boot: the files do not change under a running
+       process. The fallback below stays, so a skipped build still brings
+       the desk up. In production that also publishes the uncompiled shell
+       and os-src, and a silent boot would hide it. */
+    if (process.env.NODE_ENV === "production") {
+      if (!compiledShells.os) {
+        app.log.warn(
+          "web/app/index.html is missing; the uncompiled shell and os-src are being served publicly",
+        );
+      }
+      if (!compiledShells.admin) {
+        app.log.warn(
+          "web/app/admin.html is missing; the uncompiled shell and os-src are being served publicly",
+        );
+      }
+    }
     // the public front door. When SITE_INDEX is present in the static dir the
     // marketing site serves at "/" and the OS moves to "/app"; without it the
     // OS keeps the root, so a deploy that ships only the app still works.
@@ -241,7 +299,7 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
       dotfiles: "deny",
       // Hosted storefront routes pass their own dedicated root to sendFile;
       // this guard applies only to requests served from the repository root.
-      allowedPath: (pathname, root) => root !== staticDir || isPublicAsset(pathname),
+      allowedPath: (pathname, root) => root !== staticDir || isPublicAsset(pathname, compiledShells),
     });
     app.get("/", (req, reply) => {
       if (!hasMobile) return reply.sendFile(rootFile);
@@ -288,7 +346,28 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
       /* Only a page gets a page. A missing script, stylesheet, image or
          iframe source is a 404 — saying otherwise hands the caller HTML
          where it expected code and turns a one-line mistake into an hour of
-         wondering why the product is showing the marketing site. */
+         wondering why the product is showing the marketing site.
+
+         The old shells are the exception that has to be said out loud.
+         Taking them off the allow-list is not enough on its own: a browser
+         navigation is a page request, and the branch below would answer it
+         with the marketing site. When the compiled shells are present that
+         navigation is a 404. */
+      const rawPath = req.url.split("?")[0] ?? req.url;
+      let asked = rawPath;
+      try {
+        asked = decodeURIComponent(rawPath);
+      } catch {
+        /* A stray % or a truncated % sequence throws. Keep the raw path:
+           it is the request as it arrived, and it is not a filename on
+           disk (nothing in STATIC_DIR is named with a broken escape). The
+           allow-list compares that string as written, so the miss still
+           refuses the file. Guessing a decoding would invent a path. */
+        asked = rawPath;
+      }
+      if (retiredUncompiledDesk(asked, compiledShells)) {
+        return reply.code(404).send({ error: "not_found" });
+      }
       if (req.method === "GET" && !req.url.startsWith("/api/") && wantsPage(req)) {
         // unknown paths under /app belong to the OS; everything else lands on
         // the public site (or the OS, when no site is deployed)

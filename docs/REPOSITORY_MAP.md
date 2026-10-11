@@ -64,6 +64,8 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 
+The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `admin.html`, and `/os-src/` so a deploy that skipped `npm run build:os` can boot the hand-written shells. When `web/app/index.html` is in `STATIC_DIR`, a direct fetch of `/CurrencyDesk OS.html` or of anything under `/os-src/` except `/os-src/york-os.css` is a 404, including a browser navigation — it is not answered with the marketing page. When `web/app/admin.html` is present, `/admin.html` is a 404 the same way. The compiled desk links `/os-src/york-os.css`, so that stylesheet stays public either way. `/assets/`, `/YorkFX/`, `/web/`, `/yorkfx.css`, and `/yorkfx-converter.js` are unchanged. The two shells are gated separately: a half-built `web/app` hides only the file whose compiled replacement is on disk. When `NODE_ENV` is `production` and `web/app/index.html` or `web/app/admin.html` is missing at boot, the process logs a warning naming that file and saying the uncompiled shell and `os-src` are being served publicly. The fallback itself stays, so a skipped build does not take the desk down.
+
 ## Databases
 
 - App tables: Drizzle; embedded PGlite (dev/test) or Postgres (`DATABASE_URL`).
@@ -157,10 +159,13 @@ These four look out of place and are deliberately still there:
   `web/app/index.html` is absent. `render.yaml` still names it in
   `STATIC_INDEX`, but that variable is a fallback only: the server serves
   the compiled app whenever it is present, so a stale dashboard copy of
-  the variable cannot put Babel back on `/login` or `/app`. Moving the
-  file still needs the Render environment updated in the same motion.
+  the variable cannot put Babel back on `/login` or `/app`. While that
+  compiled shell is on disk, fetching `/CurrencyDesk OS.html` itself is a
+  404. Moving the file still needs the Render environment updated in the
+  same motion.
 - `admin.html` — the OS shell's twin (same build input, same fallback, same
-  allow-list block). It could move alone, but splitting the pair helps
+  allow-list block). While `web/app/admin.html` is on disk, fetching
+  `/admin.html` is a 404. It could move alone, but splitting the pair helps
   nobody; it moves in the same job as the OS shell.
 - `yorkfx.css`, `yorkfx-converter.js` — served at **two public URLs each**
   (`/yorkfx*` for the app door, `/sites/yorkfx*` for the storefront door via
