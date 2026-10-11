@@ -244,7 +244,8 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
     await dismissTour(page);
     for (const id of SCREENS) {
       await openOnPhone(page, id);
-      await expect(page.locator(".win.show.active").first()).toBeVisible();
+      /* An inactive window stays in the DOM and is not shown. */
+      await expect(page.locator(".win.show.active")).toBeVisible();
       await dismissTour(page);
       await settledWindow(page);
       expect(await overflowPast(page), `${id} at ${width}px`).toEqual([]);
@@ -255,7 +256,7 @@ test("key desk screens stay inside a phone width", async ({ page }) => {
     await signInAtDesk(page, "j.masri");
     await dismissTour(page);
     await openOnPhone(page, "settings");
-    await expect(page.locator(".win.show.active").first()).toBeVisible();
+    await expect(page.locator(".win.show.active")).toBeVisible();
     await dismissTour(page);
     await settledWindow(page);
     expect(await overflowPast(page), `settings at ${width}px`).toEqual([]);
