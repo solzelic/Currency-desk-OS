@@ -88,11 +88,19 @@ async function ensureDrawer(page: Page) {
 
 async function openTill(page: Page) {
   await ensureDrawer(page);
-  await page.getByText(/Cash Drawer/i).first().click();
-  await expect(page.getByText(/Cash drawer/i).first()).toBeVisible();
+  /* The menu's active-app label is the first "Cash Drawer" in the
+     document, and on a phone that label is hidden. The dock tab stays
+     on screen. Read the window title, not the menu label. */
+  const tab = page.locator('#appbar [data-app="till"]');
+  await tab.scrollIntoViewIfNeeded();
+  await tab.click();
+  await expect(page.locator(".win.show.active .win-title", { hasText: /Cash drawer/i })).toBeVisible();
   await settleCashDrawerChrome(page);
   const openButton = page.getByRole("button", { name: /Open the till/i }).first();
-  if (await openButton.isVisible().catch(() => false)) {
+  /* isVisible answers this instant. A till that is already open has
+     no button, which is false, not an error. A throw is a broken
+     page and the check should fail on it. */
+  if (await openButton.isVisible()) {
     await clickWhenStable(openButton);
     await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 15_000 });
   }
