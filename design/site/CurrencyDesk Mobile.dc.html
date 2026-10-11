@@ -21,8 +21,13 @@
     [data-hscroll]::-webkit-scrollbar { display: none; }
     @keyframes cdLive { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.5); } 70% { box-shadow: 0 0 0 7px rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
     @keyframes cdFlip { from { opacity: 0.4; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
-    @keyframes cdRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; } }
+    @keyframes cdRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes cdFeatFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    @keyframes cdFeatFill2 { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
+      [data-feat-caption], [data-feat-body] { animation: none !important; opacity: 1 !important; transform: none !important; }
+    }
   </style>
   <meta name="ext-resource-dependency" content="../photos/rate-board-storefront.jpg">
   <meta name="ext-resource-dependency" content="../photos/sms-storefront.jpg">
@@ -106,9 +111,9 @@
         <sc-for list="{{ featLayers }}" as="l" hint-placeholder-count="9">
           <img src="{{ l.src }}" alt="{{ l.title }}" loading="lazy" style="{{ l.style }}">
         </sc-for>
-        <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, transparent 46%, rgba(14,12,9,0.86) 100%); pointer-events: none;"></div>
-        <div style="position: absolute; left: 20px; right: 20px; bottom: 26px; pointer-events: none;">
-          <div key="{{ featKey }}" style="animation: cdRise 0.45s cubic-bezier(0.2,0.8,0.2,1);">
+        <div aria-hidden="true" style="position: absolute; inset: 0; z-index: 3; background: linear-gradient(180deg, transparent 40%, rgba(14,12,9,0.42) 62%, rgba(14,12,9,0.82) 84%, rgba(14,12,9,0.92) 100%); pointer-events: none;"></div>
+        <div style="position: absolute; left: 20px; right: 20px; bottom: 26px; z-index: 4; pointer-events: none;">
+          <div data-feat-caption="true" key="{{ featKey }}" style="opacity: 1; animation: cdRise 360ms cubic-bezier(0.2,0.8,0.2,1) both;">
             <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #7fe3ab; font-weight: 600;">{{ featKicker }}</div>
             <div style="font-family: var(--serif); font-size: 30px; line-height: 1.05; letter-spacing: -0.015em; color: #FBF9F4; margin-top: 6px;">{{ featTitle }}</div>
           </div>
@@ -116,7 +121,7 @@
       </div>
 
       <div style="padding: 16px 20px 0; min-height: 74px;">
-        <p key="{{ featKey }}" style="font-size: 15px; line-height: 1.55; color: var(--mute); margin: 0; animation: cdRise 0.45s cubic-bezier(0.2,0.8,0.2,1);">{{ featBody }}</p>
+        <p data-feat-body="true" key="{{ featKey }}" style="font-size: 15px; line-height: 1.55; color: var(--mute); margin: 0; opacity: 1; animation: cdRise 360ms cubic-bezier(0.2,0.8,0.2,1) both;">{{ featBody }}</p>
       </div>
     </div>
 
@@ -124,7 +129,7 @@
       <button type="button" onClick="{{ onPrev }}" aria-label="Previous" style="{{ prevStyle }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></button>
       <div style="flex: 1; display: flex; gap: 4px;">
         <sc-for list="{{ featDots }}" as="d" hint-placeholder-count="9">
-          <button type="button" onClick="{{ d.onClick }}" aria-label="{{ d.label }}" style="{{ d.style }}"></button>
+          <button type="button" onClick="{{ d.onClick }}" aria-label="{{ d.label }}" aria-current="{{ d.current }}" style="{{ d.style }}"><span aria-hidden="true" style="{{ d.fill }}"></span></button>
         </sc-for>
       </div>
       <button type="button" onClick="{{ onNext }}" aria-label="Next" style="{{ nextStyle }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
@@ -260,7 +265,11 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 440, &quot;height&quot;: 900}}">
 class Component extends DCLogic {
-  state = { tick: 0, clock: '', term: 'mo', jur: 0, faq: 0, feat: 0 };
+  state = { tick: 0, clock: '', term: 'mo', jur: 0, faq: 0, feat: 0, featPlay: 0 };
+
+  /* Long enough to read the label, the title, and the line under the photo.
+     Inside the 6–7s window. Autoplay uses this; the bar fill uses it too. */
+  FEAT_MS = 6500;
 
   RATES = [
     { code: 'USD', mid: 1.3707 }, { code: 'EUR', mid: 1.4758 }, { code: 'GBP', mid: 1.7548 },
@@ -343,30 +352,104 @@ class Component extends DCLogic {
     this._clk = setInterval(() => this.setState({ clock: this.clk() }), 1000);
     this._tk = setInterval(() => this.setState(s => ({ tick: s.tick + 1 })), 2600);
     this.setState({ clock: this.clk() });
+    this._reduce = false;
+    this._touching = false;
+    this._hidden = typeof document !== 'undefined' && document.hidden;
+    this._offscreen = true;
+    this._playing = false;
+    this._gen = 0;
+    try {
+      this._mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+      this._reduce = !!this._mq.matches;
+      this._onMq = (e) => { this._reduce = !!e.matches; this.armAuto(true); };
+      this._mq.addEventListener('change', this._onMq);
+    } catch (e) {}
+    this._onVis = () => { this._hidden = document.hidden; this.armAuto(true); };
+    document.addEventListener('visibilitychange', this._onVis);
     this.bindSwipe();
   }
-  componentWillUnmount() { clearInterval(this._clk); clearInterval(this._tk); clearTimeout(this._sw); }
+  componentWillUnmount() {
+    clearInterval(this._clk); clearInterval(this._tk); clearTimeout(this._sw); clearTimeout(this._auto);
+    if (this._io) this._io.disconnect();
+    if (this._onVis) document.removeEventListener('visibilitychange', this._onVis);
+    if (this._mq && this._onMq) this._mq.removeEventListener('change', this._onMq);
+    if (this._root && this._hold) this._root.removeEventListener('pointerdown', this._hold);
+    if (this._release) {
+      window.removeEventListener('pointerup', this._release);
+      window.removeEventListener('pointercancel', this._release);
+    }
+  }
 
   bindSwipe() {
     const el = document.querySelector('[data-feat-card]');
     if (!el) { this._sw = setTimeout(() => this.bindSwipe(), 400); return; }
+    el.setAttribute('data-feat-ms', String(this.FEAT_MS));
+    const section = document.querySelector('#product');
+    this._root = section || el;
+    this._hold = () => { this._touching = true; this.armAuto(false); };
+    this._release = () => {
+      if (!this._touching) return;
+      this._touching = false;
+      this.armAuto(true);
+    };
+    this._root.addEventListener('pointerdown', this._hold);
+    window.addEventListener('pointerup', this._release);
+    window.addEventListener('pointercancel', this._release);
+    if (typeof IntersectionObserver !== 'undefined') {
+      this._io = new IntersectionObserver((entries) => {
+        this._offscreen = !entries.some((e) => e.isIntersecting);
+        this.armAuto(this._offscreen);
+      }, { threshold: 0.25 });
+      this._io.observe(el);
+    } else {
+      this._offscreen = false;
+      this.armAuto(true);
+    }
     let x0 = 0, y0 = 0, live = false;
     el.addEventListener('touchstart', (e) => {
       const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; live = true;
+      this._touching = true; this.armAuto(false);
     }, { passive: true });
     el.addEventListener('touchend', (e) => {
       if (!live) return; live = false;
       const t = e.changedTouches[0];
       const dx = t.clientX - x0, dy = t.clientY - y0;
+      this._touching = false;
       if (Math.abs(dx) > 44 && Math.abs(dx) > Math.abs(dy) * 1.4) this.step(dx < 0 ? 1 : -1);
+      this.armAuto(true);
     }, { passive: true });
+    el.addEventListener('touchcancel', () => { this._touching = false; this.armAuto(true); }, { passive: true });
     let px = 0;
     el.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') px = e.clientX; });
     el.addEventListener('pointerup', (e) => {
       if (e.pointerType !== 'mouse' || !px) return;
       const dx = e.clientX - px; px = 0;
-      if (Math.abs(dx) > 44) this.step(dx < 0 ? 1 : -1);
+      if (Math.abs(dx) > 44) { this.step(dx < 0 ? 1 : -1); this.armAuto(true); }
     });
+  }
+
+  /* Start, or restart, the dwell. A forced call (arrow, swipe, the section
+     coming back) begins the 6.5s again. A quiet call leaves a running dwell alone. */
+  armAuto(force) {
+    const blocked = this._reduce || this._touching || this._hidden || this._offscreen;
+    if (blocked) {
+      clearTimeout(this._auto);
+      this._playing = false;
+      if (this.state.featPlay !== 0) this.setState({ featPlay: 0 });
+      return;
+    }
+    if (this._playing && !force) return;
+    clearTimeout(this._auto);
+    this._playing = true;
+    this._gen += 1;
+    const gen = this._gen;
+    this.setState({ featPlay: gen });
+    this._auto = setTimeout(() => {
+      if (this._gen !== gen) return;
+      this._playing = false;
+      this.step(1);
+      this.armAuto(true);
+    }, this.FEAT_MS);
   }
 
   clk() {
@@ -377,7 +460,8 @@ class Component extends DCLogic {
     const n = this.FEATURES.length;
     return { feat: (s.feat + dir + n) % n };
   });
-  goFeat = (i) => () => this.setState({ feat: i });
+  nudge = (dir) => { this.step(dir); this._touching = false; this.armAuto(true); };
+  goFeat = (i) => () => { this.setState({ feat: i }); this._touching = false; this.armAuto(true); };
   pickJur = (i) => () => this.setState({ jur: i });
   setTerm = (t) => () => this.setState({ term: t });
   toggleFaq = (i) => () => this.setState(s => ({ faq: s.faq === i ? -1 : i }));
@@ -414,12 +498,18 @@ class Component extends DCLogic {
       })),
       featDots: this.FEATURES.map((f, i) => {
         const on = i === s.feat;
-        return { onClick: this.goFeat(i), label: f.title,
-          style: 'appearance:none;cursor:pointer;flex:1;height:26px;padding:0;border:0;background:none;position:relative;' +
-                 'background-image:linear-gradient(' + (on ? 'var(--green),var(--green)' : 'var(--line),var(--line)') + ');background-size:100% 3px;background-position:center;background-repeat:no-repeat;border-radius:2px;transition:background-image .3s ease;' };
+        const playing = on && s.featPlay > 0;
+        const fillName = s.featPlay % 2 ? 'cdFeatFill' : 'cdFeatFill2';
+        return { onClick: this.goFeat(i), label: f.title, current: on ? 'true' : 'false',
+          style: 'appearance:none;cursor:pointer;flex:1;height:26px;padding:0;border:0;background:none;position:relative;overflow:hidden;' +
+                 'background-image:linear-gradient(var(--line),var(--line));background-size:100% 3px;background-position:center;background-repeat:no-repeat;border-radius:2px;',
+          fill: on
+            ? 'position:absolute;left:0;right:0;top:50%;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--green);transform-origin:left center;' +
+              (playing ? 'transform:scaleX(0);animation:' + fillName + ' ' + this.FEAT_MS + 'ms linear both;' : 'transform:scaleX(1);')
+            : 'display:none;' };
       }),
-      onPrev: () => this.step(-1),
-      onNext: () => this.step(1),
+      onPrev: () => this.nudge(-1),
+      onNext: () => this.nudge(1),
       prevStyle: this.arrow(true),
       nextStyle: this.arrow(true),
 
