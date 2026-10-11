@@ -33,8 +33,41 @@ test("flags the other spellings the seam used to miss", () => {
   assert.ok(bannedNameHits("OFAC\u00A0list").some((hit) => hit.name === "OFAC"));
 });
 
+test("flags un followed by list, sanctions, or security council", () => {
+  for (const text of [
+    "un list",
+    "un sanctions",
+    "un security council",
+    "UN  sanctions",
+    "Un\nlist",
+    "un security  council",
+    "uN\tLiSt",
+    "un\u00A0security\u00A0council",
+    "un\nsecurity\ncouncil",
+  ]) {
+    assert.ok(bannedNameHits(text).some((hit) => hit.name === "UN"), text);
+  }
+});
+
 test("allows words that merely contain those letters", () => {
-  for (const text of ["unit", "under", "UNIT PRICE", "UNDER REVIEW", "until", "function", "country", "Fund", "Lin Wei", "undefined", "run", "const un = !net", "un-patched"]) {
+  for (const text of [
+    "unit",
+    "under",
+    "UNIT PRICE",
+    "UNDER REVIEW",
+    "until",
+    "function",
+    "country",
+    "Fund",
+    "Lin Wei",
+    "undefined",
+    "run",
+    "const un = !net && !asg.length",
+    "un-patched",
+    "unlisted",
+    "un security",
+    "security council",
+  ]) {
     assert.deepEqual(bannedNameHits(text), [], text);
   }
 });

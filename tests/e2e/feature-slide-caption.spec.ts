@@ -52,7 +52,7 @@ test("feature slide captions stay visible on a phone", async ({ page }) => {
   await expectCaptionHeld(page);
 
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(caption).toContainText("Bring them back");
+  await expect(caption).toContainText("Texting is not connected");
   await page.waitForTimeout(3000);
   await expectCaptionHeld(page);
 });
@@ -81,12 +81,12 @@ test("feature slides advance on their own after the dwell", async ({ page }) => 
   await page.waitForTimeout(Math.round(dwell / 2));
   await expect(caption).toContainText("Your board, everywhere");
 
-  await expect(caption).toContainText("Bring them back", { timeout: dwell });
+  await expect(caption).toContainText("Texting is not connected", { timeout: dwell });
   const elapsed = Date.now() - started;
   expect(elapsed).toBeGreaterThanOrEqual(dwell - 1500);
   expect(elapsed).toBeLessThan(dwell + 3000);
 
   await expect.poll(async () => caption.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   await expectCaptionHeld(page);
-  await expect(page.locator('#product button[aria-current="true"]')).toHaveAttribute("aria-label", "Bring them back");
+  await expect(page.locator('#product button[aria-current="true"]')).toHaveAttribute("aria-label", "Texting is not connected");
 });

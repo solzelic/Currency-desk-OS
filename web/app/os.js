@@ -48557,8 +48557,8 @@ ${snap}`;
     id: 'compliance_pro',
     title: 'Compliance AI Pro',
     icon: 'shield',
-    desc: 'Live sanctions / PEP screening and auto-LCTR filing.',
-    eta: 'Next'
+    desc: 'Sanctions and PEP screening, and automatic LCTR filing. Not connected yet.',
+    eta: 'Planned'
   }, {
     id: 'sms',
     title: 'SMS & 2FA',

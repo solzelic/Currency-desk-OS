@@ -44,32 +44,8 @@ const SITE_ORIGIN = "https://www.currencydeskos.com";
 const PAGES = {
   "CurrencyDesk Site":         { out: "index.html",  route: "/",  home: true,
     title: "CurrencyDesk — more trades, less paperwork",
-    description: "One desk for the whole shop: live rates, till and ledger, clients and KYC, and your regulator's rulebook carried for you. Live in Canada.",
-    /* The hero counter ticks up to the number of desks claimed. The design
-       animates to a fixed 64; wait for the real figure and animate to that,
-       and hold the design's number if the call fails so the hero never shows
-       a zero it doesn't mean. The bar reads out of the cohort size rather
-       than assuming it is 100. */
-    inject: [[
-      "    if (reduce) { this.setState({ claimed: 64 }); return; }\n" +
-        "    this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= 64) clearInterval(this._cc); return { claimed: Math.min(n, 64) }; }), 26);",
-      "    window.claimedCount.then(d => {\n" +
-        "      const target = d ? d.claimed : 64;\n" +
-        "      this.setState({ cap: d ? d.cap : 100 });\n" +
-        "      if (reduce || target <= 0) { this.setState({ claimed: target }); return; }\n" +
-        "      this._cc = setInterval(() => this.setState(s => { const n = s.claimed + 1; if (n >= target) clearInterval(this._cc); return { claimed: Math.min(n, target) }; }), Math.max(12, Math.round(1650 / target)));\n" +
-        "    });",
-    ], [
-      "      claimed: s.claimed, claimedPct: s.claimed + '%',",
-      "      claimed: s.claimed, claimedCap: s.cap || 100,\n" +
-        "      claimedPct: Math.min(100, Math.round((s.claimed / (s.cap || 100)) * 100)) + '%',",
-    ], [
-      "state = { showAll: false, detected: '', term: 'monthly', clock: this.clk(), tick: 0, claimed: 0,",
-      "state = { showAll: false, detected: '', term: 'monthly', clock: this.clk(), tick: 0, claimed: 0, cap: 100,",
-    ], [
-      '<span style="color: #fff; font-weight: 600; font-size: 13px;">{{ claimed }}</span> / 100 desks claimed',
-      '<span style="color: #fff; font-weight: 600; font-size: 13px;">{{ claimed }}</span> / {{ claimedCap }} desks claimed',
-    ]] },
+    description: "One desk for the whole shop: live rates, till and ledger, and clients. Canada is the only Live country.",
+  },
   "CurrencyDesk Mobile":       { out: "mobile.html", route: "/m", home: true, noindex: true,
     title: "CurrencyDesk — more trades, less paperwork",
     description: "One desk for the whole shop — rates, till, ledger, clients and compliance.",
@@ -82,16 +58,6 @@ const PAGES = {
       ">Privacy &amp; Terms</a>",
       ">Privacy &amp; Terms</a>\n      " +
         '<a href="/login" style="font-size: 13.5px; color: var(--mute);">Sign in</a>',
-    ], [
-      // the same live count as the front page, in both places it appears
-      ">64 of 100 desks claimed</span>",
-      "><span data-cd-claimed>64</span> of <span data-cd-cap>100</span> desks claimed</span>",
-    ], [
-      'border-radius: 999px; overflow: hidden;"><div style="height: 100%; width: 64%; background: #fff;',
-      'border-radius: 999px; overflow: hidden;"><div data-cd-bar style="height: 100%; width: 64%; background: #fff;',
-    ], [
-      '<b style="color: #fff;">64</b> / 100 claimed',
-      '<b style="color: #fff;" data-cd-claimed>64</b> / <span data-cd-cap>100</span> claimed',
     ]] },
   "CurrencyDesk Legal":        { out: "legal.html",  route: "/legal", anchor: "#company",
     title: "Privacy Policy and Terms of Service — CurrencyDesk",
@@ -101,7 +67,7 @@ const PAGES = {
     description: "What CurrencyDesk costs, what it runs on, how long setup takes, and when it reaches your country." },
   "CurrencyDesk Compliance":   { out: "compliance.html", route: "/compliance", anchor: "#compliance",
     title: "Compliance — CurrencyDesk",
-    description: "Your regulator's rulebook loads first: thresholds watched, reports prepared, records kept." },
+    description: "Your regulator's rulebook, as the product stands. Cash thresholds watched from the book. The desk does not send a report." },
   "CurrencyDesk Contact":      { out: "contact.html", route: "/contact", anchor: "#company",
     title: "Contact — CurrencyDesk",
     description: "Talk to the people building the desk. No ticket queue, no phone tree.",
@@ -249,17 +215,6 @@ const PAGES = {
       // has nothing to light up
       "    const pager = [0, 1, 2, 3, 4, 5, 6].map((i) => ({",
       "    const pager = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({",
-    ], [
-      // the cohort meter, live. The bar ANIMATES to its width, so the keyframe
-      // has to end on the real figure too — hence the custom property.
-      "@keyframes cdFill { from { width: 0; } to { width: 64%; } }",
-      "@keyframes cdFill { from { width: 0; } to { width: var(--cd-fill, 64%); } }",
-    ], [
-      '<div style="height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1D6B45, #2EA36B); width: 64%; animation: cdFill',
-      '<div data-cd-bar style="height: 100%; border-radius: 3px; background: linear-gradient(90deg, #1D6B45, #2EA36B); width: 64%; animation: cdFill',
-    ], [
-      ">64 / 100 desks claimed</div>",
-      "><span data-cd-claimed>64</span> / <span data-cd-cap>100</span> desks claimed</div>",
     ]] },
   // the way back in — always the live route, never a page. A designed sign-in
   // should restyle the OS's real one, not sit in front of it doing nothing.
