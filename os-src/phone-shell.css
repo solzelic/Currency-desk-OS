@@ -589,6 +589,76 @@
     color: var(--color-text, #161513);
     font-weight: 500;
   }
+  /* ChoiceTiles, AmountField, StepHeader. Colour comes from tokens.css.
+     --brand-primary already defaults to --brand-green. Focus is --color-focus.
+     The step line uses --font-ui and a normal word space. */
+  .phq-steps-t {
+    margin-bottom: 8px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 16px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    letter-spacing: normal;
+  }
+  .phq-steps-t b { color: var(--brand-primary, var(--brand-green)); letter-spacing: normal; }
+  .phq-bar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin-bottom: 16px; }
+  .phq-bar i { display: block; height: 4px; border-radius: 2px; background: var(--color-border); }
+  .phq-bar i.is-on { background: var(--brand-primary, var(--brand-green)); }
+  .phq-label { display: block; margin: 0 0 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: normal; }
+  .phq-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .phq-tile {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 56px;
+    padding: 8px 12px;
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+  }
+  .phq-tile b { font-size: 15px; line-height: 20px; letter-spacing: normal; }
+  .phq-tile small { display: block; font-size: 12px; line-height: 16px; color: var(--color-text-muted); }
+  .phq-tile.is-on { border: 2px solid var(--brand-primary, var(--brand-green)); background: var(--brand-primary-soft); padding: 7px 11px; }
+  .phq-amt {
+    display: block;
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+  .phq-amt:focus-within { border: 2px solid var(--color-focus); padding: 11px 15px; }
+  .phq-amt-k { display: block; font-size: 13px; color: var(--color-text-muted); }
+  .phq-amt-v { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .phq-amt-n {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 30px;
+    line-height: 38px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .phq-amt-c {
+    display: inline-flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 10px;
+    flex: none;
+    border-radius: var(--radius-md);
+    background: var(--gray-100);
+    color: var(--gray-700);
+    font-weight: 600;
+  }
 }
 
 /* Shared pieces: NavRow, ProfileRow, Toggle, FullScreenSheet, PinPad, Toast.
@@ -839,4 +909,39 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pin-dots.shake { animation: none; }
+}
+
+/* SummaryList. Read-only label and value. Not a form. */
+@media (max-width: 430px) {
+  .phone-summary {
+    margin: 0 0 8px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .phone-summary > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .phone-summary > div:last-child { border-bottom: 0; }
+  .phone-summary dt {
+    margin: 0;
+    font: var(--text-small);
+    color: var(--color-text-muted);
+  }
+  .phone-summary dd {
+    margin: 0;
+    font: var(--text-small);
+    font-weight: 600;
+    text-align: right;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .phone-summary > div.is-big dd { font: var(--text-title-2); }
+  .phone-summary dd.is-pos { color: var(--color-positive); }
 }

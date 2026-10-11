@@ -110,7 +110,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   first filter chip sits 16px in, and the
   chip row fades at the right. Under 430px the ledger is the phone shell: title, summary cards,
   search, filter chips, list rows, and a sticky New transaction. The
-  desktop ledger is unchanged. The bar is five
+  desktop ledger is unchanged. ChoiceTiles, AmountField, SummaryList,
+  and StepHeader are on `window.CDOS`. The props are in
+  `docs/PHONE_SHELL.md`. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -580,14 +582,13 @@ authenticated narrative dashboard.
 above the sticky action, inset 16px, `--radius-md`, `--gray-900`
 with white 14/20 text. It leaves after 4 seconds. `role="status"`.
 
-**2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
-FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are
-styled in `os-src/phone-shell.css` with `tokens.css` variables. A
-sheet and a toast stay hidden above 430px. A row’s second line
-starts at the title’s left edge. The phone header initials and a
-profile avatar use the same sans. ChoiceTiles, AmountField,
-SummaryList, and StepHeader are the next shared files, added on
-top of these six. Contract: `docs/PHONE_SHELL.md`.
+**2026-10-12**, shared phone step widgets. SummaryList, ChoiceTiles,
+AmountField, and StepHeader live in `os-src/phone/` with NavRow,
+ProfileRow, Toggle, FullScreenSheet, PinPad, and Toast. They are
+styled in `os-src/phone-shell.css` with `tokens.css` variables.
+SummaryList is read-only and can mark one figure to read out loud.
+A sheet and a toast stay hidden above 430px. They sit on the
+foundation head. Contract: `docs/PHONE_SHELL.md`.
 
 **2026-10-12**, desktop cheque number. The Cheques picture missed
 by 29 pixels on both attempts of Actions run 38193394311, and by

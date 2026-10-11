@@ -5032,6 +5032,139 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   });
 })();
 
+/* ---- os-src/phone/SummaryList.jsx ---- */
+/* SummaryList — read-only facts the screen already has.
+   Label and value. No fields, no save. A row with no value is
+   left out, so a missing figure is absent rather than a blank.
+   big is the figure to read out loud. tone "pos" is a positive
+   amount. mark is written to data-phone-cheque.
+   See docs/PHONE_SHELL.md. */
+(function () {
+  function SummaryList({
+    rows
+  }) {
+    const shown = (rows || []).filter(row => row && row.label && row.value);
+    if (!shown.length) return null;
+    return /*#__PURE__*/React.createElement("dl", {
+      className: "phone-summary"
+    }, shown.map(row => /*#__PURE__*/React.createElement("div", {
+      key: row.label,
+      className: row.big ? 'is-big' : undefined
+    }, /*#__PURE__*/React.createElement("dt", null, row.label), /*#__PURE__*/React.createElement("dd", {
+      className: row.tone === 'pos' ? 'is-pos' : undefined,
+      "data-phone-cheque": row.mark || undefined
+    }, row.value))));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    SummaryList
+  });
+})();
+
+/* ---- os-src/phone/ChoiceTiles.jsx ---- */
+/* ChoiceTiles. Two columns. Each tile is at least 56px. The selected
+   tile uses the app colour. This is the phone contract. See
+   docs/PHONE_SHELL.md.
+
+   options: [{ id, label, detail }]
+   value: selected id
+   onChange(id)
+   label: the listbox name */
+(function () {
+  function ChoiceTiles({
+    options,
+    value,
+    onChange,
+    label
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phq-tiles",
+      role: "listbox",
+      "aria-label": label || 'Choose one'
+    }, (options || []).map(function (opt) {
+      const on = value === opt.id;
+      return /*#__PURE__*/React.createElement("button", {
+        key: opt.id,
+        type: "button",
+        role: "option",
+        "aria-selected": on,
+        className: 'phq-tile' + (on ? ' is-on' : ''),
+        onClick: function () {
+          onChange && onChange(opt.id);
+        }
+      }, /*#__PURE__*/React.createElement("b", null, opt.label), opt.detail ? /*#__PURE__*/React.createElement("small", null, opt.detail) : null);
+    }));
+  }
+  window.CDOS = window.CDOS || {};
+  window.CDOS.ChoiceTiles = ChoiceTiles;
+})();
+
+/* ---- os-src/phone/AmountField.jsx ---- */
+/* AmountField. A large number the cashier types, with the currency
+   code beside it as text. The field does not format the number.
+   See docs/PHONE_SHELL.md.
+
+   label, value, onChange(string), currency */
+(function () {
+  function AmountField({
+    label,
+    value,
+    onChange,
+    currency
+  }) {
+    return /*#__PURE__*/React.createElement("label", {
+      className: "phq-amt"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "phq-amt-k"
+    }, label), /*#__PURE__*/React.createElement("span", {
+      className: "phq-amt-v"
+    }, /*#__PURE__*/React.createElement("input", {
+      className: "phq-amt-n",
+      inputMode: "decimal",
+      autoComplete: "off",
+      placeholder: "0.00",
+      "aria-label": label,
+      value: value,
+      onChange: function (e) {
+        onChange && onChange(e.target.value);
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "phq-amt-c"
+    }, currency)));
+  }
+  window.CDOS = window.CDOS || {};
+  window.CDOS.AmountField = AmountField;
+})();
+
+/* ---- os-src/phone/StepHeader.jsx ---- */
+/* StepHeader. "Step 2 of 3: cheque details" plus a bar of `total`
+   segments. The title keeps a normal word space. See docs/PHONE_SHELL.md.
+
+   step, total, label */
+(function () {
+  function StepHeader({
+    step,
+    total,
+    label
+  }) {
+    const n = total || 3;
+    const bars = [];
+    for (let i = 1; i <= n; i++) bars.push(/*#__PURE__*/React.createElement("i", {
+      key: i,
+      className: i <= step ? 'is-on' : ''
+    }));
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phq-steps"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phq-steps-t"
+    }, "Step ", /*#__PURE__*/React.createElement("b", null, step, " of ", n), ": ", label), /*#__PURE__*/React.createElement("div", {
+      className: "phq-bar",
+      "aria-hidden": "true"
+    }, bars));
+  }
+  window.CDOS = window.CDOS || {};
+  window.CDOS.StepHeader = StepHeader;
+})();
+
 /* ---- os-src/cdos-settings.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Settings
