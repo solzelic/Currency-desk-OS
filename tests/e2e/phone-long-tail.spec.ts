@@ -117,9 +117,9 @@ test("desktop vault and audit trail have no phone template at 1280", async ({ pa
   await page.locator('#appbar [data-app="vault"]').click();
   await settled(page);
   await expect(page.locator(".longtail")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Move cash" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Order" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Position" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Move cash", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Order", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Position", exact: true })).toBeVisible();
   await page.locator('#appbar [data-app="audit"]').click();
   await settled(page);
   await expect(page.locator(".longtail")).toHaveCount(0);
