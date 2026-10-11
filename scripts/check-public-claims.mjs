@@ -2,7 +2,8 @@
 /* Fails if a served public page repeats a claim the live product does
    not make. Tags are stripped, entities decoded, whitespace collapsed
    and the text lowercased before a match, so a tag, a line break or
-   a non-breaking space cannot hide a phrase. */
+   a non-breaking space cannot hide a phrase. A soft hyphen or a
+   zero-width character is deleted, so it cannot split a word. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,9 +40,12 @@ const phrases = [
   [/screened against/, "screened against"],
   [/most popular/, "most popular"],
   [/most chosen/, "most chosen"],
+  [/\bun list\b/, "UN list"],
+  [/united nations list/, "United Nations list"],
+  [/best protection/, "best protection"],
 ];
 
-export function visibleText(html) {
+function normalize(html, invisible) {
   let text = String(html);
   const decodeNumeric = (value) =>
     value
@@ -50,9 +54,9 @@ export function visibleText(html) {
   text = decodeNumeric(text);
   const named = {
     nbsp: " ",
-    shy: " ",
-    zwnj: " ",
-    zwj: " ",
+    shy: invisible,
+    zwnj: invisible,
+    zwj: invisible,
     amp: "&",
     lt: "<",
     gt: ">",
@@ -64,14 +68,21 @@ export function visibleText(html) {
   );
   /* A second pass catches &amp;nbsp; and &amp;shy; once the amp is decoded. */
   text = decodeNumeric(text);
-  text = text.replace(/&(?:nbsp|shy);/gi, " ");
-  /* Invisible breaks and the soft hyphen, so a split word still matches. */
-  text = text.replace(/[\u200B-\u200D\u2060\u00AD]/g, " ");
+  text = text.replace(/&(?:shy|zwnj|zwj);/gi, invisible);
+  text = text.replace(/&nbsp;/gi, " ");
+  text = text.replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, invisible);
   text = text.replace(/<[^>]*>/g, " ");
   text = text.replace(/\s+/g, " ").trim().toLowerCase();
   /* O.F.A.C. and U.N. become ofac and un before the phrase match. */
   text = text.replace(/(?:[a-z]\.){2,}[a-z]?/g, (match) => match.replace(/\./g, ""));
   return text;
+}
+
+/* Invisible characters are deleted, so a soft hyphen cannot split a
+   banned word. The spaced copy is only there to tell a split word
+   from the same word written normally. */
+export function visibleText(html) {
+  return normalize(html, "");
 }
 
 function nearby(text, needle, other, span) {
@@ -90,7 +101,11 @@ function nearby(text, needle, other, span) {
 
 export function findClaims(html) {
   const text = visibleText(html);
+  const spaced = normalize(html, " ");
   const problems = [];
+  /* "sanc&shy;tions" joins to "sanctions". A page that writes the
+     word normally is left alone. */
+  if (text.includes("sanctions") && !spaced.includes("sanctions")) problems.push("sanctions");
   for (const [re, label] of phrases) {
     if (re.test(text)) problems.push(label);
     re.lastIndex = 0;

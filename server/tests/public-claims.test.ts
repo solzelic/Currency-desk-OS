@@ -73,16 +73,16 @@ describe("public marketing claims", () => {
     expect(result.out).toMatch(/real shop/);
   });
 
-  it("flags a zero-width space inside real shops", () => {
-    const result = probe("real&#8203;shops");
+  it("flags a soft hyphen inside OFAC", () => {
+    const result = probe("O&shy;FAC");
     expect(result.ok).toBe(false);
-    expect(result.out).toMatch(/real shop/);
+    expect(result.out).toMatch(/OFAC/);
   });
 
-  it("flags a soft hyphen inside real shops", () => {
-    const result = probe("real&shy;shops");
+  it("flags a soft hyphen inside sanctions", () => {
+    const result = probe("sanc&shy;tions");
     expect(result.ok).toBe(false);
-    expect(result.out).toMatch(/real shop/);
+    expect(result.out).toMatch(/sanctions/);
   });
 
   it("flags sanctions screening when it is not the honest negation", () => {
@@ -118,5 +118,23 @@ describe("public marketing claims", () => {
     const result = probe("billed separately per file");
     expect(result.ok).toBe(false);
     expect(result.out).toMatch(/billed separately/);
+  });
+
+  it("flags a UN list", () => {
+    const result = probe("checked on the UN list");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/UN list/);
+  });
+
+  it("flags a United Nations list", () => {
+    const result = probe("the United Nations list");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/United Nations list/);
+  });
+
+  it("flags best protection", () => {
+    const result = probe("Best protection");
+    expect(result.ok).toBe(false);
+    expect(result.out).toMatch(/best protection/);
   });
 });
