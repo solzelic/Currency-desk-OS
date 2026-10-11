@@ -246,9 +246,17 @@ export class LedgerProvisioningService {
           ORDER BY currency`,
         scope(actor),
       );
+      const mark = await client.query(
+        `SELECT generation::text AS generation
+           FROM ledger_till_balance_generations
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5`,
+        scope(actor),
+      );
       await client.query("COMMIT");
       return {
         tillId: actor.tillId,
+        balanceGeneration: mark.rows[0]?.generation ?? "0",
         balances: Object.fromEntries(
           result.rows.map((row) => [row.currency.trim(), row.available_amount]),
         ),

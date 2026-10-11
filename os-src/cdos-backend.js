@@ -275,6 +275,7 @@
           return {
             tillId: results[0].tillId || null,
             balances: results[0].balances || {},
+            balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
           };

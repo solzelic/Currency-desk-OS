@@ -777,7 +777,9 @@
       const synced = await window.CDOS.Backend.syncCustomer(customer.trim(), rec);
       setClients(list => ({ ...list, [customer]: { ...(list[customer] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
       const posted = await book.cashCheque({
-        idempotencyKey: `web-chq:${synced.customerId}:${chequeNumber.trim()}:${window.CDOS.Backend.asMoney(amtN)}:${Date.now()}`,
+        /* This ticket's key, not the clock. Two taps are one cashing.
+           See attemptKey above — the same rule as a money order. */
+        idempotencyKey: 'web-chq:' + attemptKey(),
         customerId: synced.customerId,
         chequeNumber: chequeNumber.trim(),
         maker: maker.trim(),

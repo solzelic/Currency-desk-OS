@@ -1,5 +1,6 @@
 /* Product-demo seeder posts through the real quote / ledger / client
    services, only on York FX, and is a no-op the second time. */
+import Decimal from "decimal.js";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
@@ -10,7 +11,9 @@ import {
   quoteDirectionForPair,
   resolveDemoPack,
 } from "../src/demo-desk.js";
+import { ensureLedgerPrincipal } from "../src/ledger/principal.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
+import { TillControlService } from "../src/ledger/till-control.js";
 import { eq } from "drizzle-orm";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -256,6 +259,97 @@ postgres("York FX demo desk seeder", () => {
     expect(second.customers).toBe(4);
     expect((await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1", [DEMO.tenantId])).rows[0].n).toBe(6);
     expect((await pool.query("SELECT count(*)::int AS n FROM desk_clients WHERE tenant_id=$1", [DEMO.tenantId])).rows[0].n).toBe(4);
+  });
+
+  it("gives the safe an opening count, and a float takes that cash out of it", async () => {
+    const populated = await populateDemoDesk(pool, handle.db);
+    expect(populated.status).toBe("populated");
+    const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId];
+    const vaultCad = async () => {
+      const row = await pool.query(
+        `SELECT available_amount
+           FROM ledger_vault_balances
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND btrim(currency)='CAD'`,
+        scope,
+      );
+      return row.rows[0]?.available_amount as string | undefined;
+    };
+    const tillCad = async () => {
+      const row = await pool.query(
+        `SELECT available_amount
+           FROM ledger_till_balances
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id='till-01' AND btrim(currency)='CAD'`,
+        [...scope, DEMO.workspaceId],
+      );
+      return row.rows[0].available_amount as string;
+    };
+
+    const vaultBefore = await vaultCad();
+    const tillBefore = await tillCad();
+    expect(vaultBefore).toBe("40000.00");
+
+    const floater: LedgerActor = {
+      userId: `${DEMO.tenantId}:a.singh`,
+      tenantId: DEMO.tenantId,
+      legalEntityId: DEMO.legalEntityId,
+      branchId: DEMO.branchId,
+      workspaceId: DEMO.workspaceId,
+      tillId: "till-01",
+      role: "supervisor",
+      authorizedBranchIds: [DEMO.branchId],
+    };
+    await ensureLedgerPrincipal(pool, floater);
+    await new TillControlService(pool).moveCash(floater, {
+      idempotencyKey: "demo-vault-float",
+      direction: "in",
+      currency: "CAD",
+      amount: "500.00",
+      counterpartyType: "vault",
+      counterpartyRef: `${DEMO.branchId}:vault`,
+      reason: "issue a float from the safe",
+    });
+
+    const vaultAfter = await vaultCad();
+    const tillAfter = await tillCad();
+    expect(new Decimal(vaultBefore!).minus(vaultAfter!).toFixed(2)).toBe("500.00");
+    expect(new Decimal(tillAfter).minus(tillBefore).toFixed(2)).toBe("500.00");
+
+    /* A later boot must not add the opening count again. */
+    await populateDemoDesk(pool, handle.db);
+    expect(await vaultCad()).toBe(vaultAfter);
+  });
+
+  it("states the vault opening on a demo book that already exists and was never counted", async () => {
+    const first = await populateDemoDesk(pool, handle.db);
+    expect(first.status).toBe("populated");
+    /* The live desk was populated before this opening existed.
+       Take the count back off and leave the six deals. */
+    await pool.query("DELETE FROM ledger_vault_balances WHERE tenant_id=$1", [DEMO.tenantId]);
+    const empty = await pool.query(
+      "SELECT count(*)::int AS n FROM ledger_vault_balances WHERE tenant_id=$1",
+      [DEMO.tenantId],
+    );
+    expect(empty.rows[0].n).toBe(0);
+
+    const again = await populateDemoDesk(pool, handle.db);
+    expect(again.status).toBe("already");
+    expect(again.posted).toBe(0);
+    expect(again.reused).toBe(6);
+    const rows = await pool.query(
+      `SELECT btrim(currency) AS currency, available_amount
+         FROM ledger_vault_balances
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+        ORDER BY currency`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId],
+    );
+    expect(rows.rows).toEqual([
+      { currency: "CAD", available_amount: "40000.00" },
+      { currency: "EUR", available_amount: "10000.00" },
+      { currency: "GBP", available_amount: "5000.00" },
+      { currency: "USD", available_amount: "20000.00" },
+    ]);
   });
 
   it("does not write customers, sessions, or transactions on any other tenant", async () => {

@@ -31,7 +31,7 @@
    figure is shown as absent, per docs/ABSENT_FIGURES.md.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useEffect } = React;
+  const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, crossRate, Absent, businessDate, useDeskFacts, STAFF, deskPack, reportingLimit } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY. The ledger's `position` and `vault` reads
@@ -326,9 +326,9 @@
     // vault → till: real cash, so the modal only closes once the movement has
     // actually been taken (by the ledger on a server-backed desk, locally
     // otherwise). A refusal comes back to the modal and stays on screen.
-    const doIssueTill = async (tId, opening) => {
+    const doIssueTill = async (tId, opening, keys) => {
       if (!onIssueTill) { setAssigning(false); return { ok: true }; }
-      const result = await onIssueTill(tId, opening);
+      const result = await onIssueTill(tId, opening, keys);
       if (result && result.ok === false) return result;
       setAssigning(false);
       return { ok: true };
@@ -465,6 +465,18 @@
      as a recommendation from the software about a drawer it knows
      nothing about. */
   function AssignModal({ tellers, tills, branchCode, fc, vaultTracked, vaultAvailOf, onClose, onAssign, onIssueTill }) {
+    /* One key per currency, minted when this form opens and reused on
+       every retry. Each currency is its own movement, so each needs its
+       own key — one key for the whole float would replay the first
+       currency as the second. */
+    const keys = useRef({});
+    const keyFor = (ccy) => {
+      if (!keys.current[ccy])
+        keys.current[ccy] = (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return keys.current[ccy];
+    };
     const [target, setTarget] = useState('person');   // 'person' = accountability · 'till' = cash moves on the rail
     const [teller, setTeller] = useState(tellers[0] ? tellers[0].name : '');
     const [tillId, setTillId] = useState(tills && tills[0] ? tills[0].id : '');
@@ -485,7 +497,9 @@
       if (target !== 'till') { onAssign(teller, opening); return; }
       setIssuing(true); setIssueErr('');
       try {
-        const result = await onIssueTill(tillId, opening);
+        const keyMap = {};
+        fc.forEach(c => { if ((+opening[c] || 0) > 0) keyMap[c] = 'web-move:' + keyFor(c); });
+        const result = await onIssueTill(tillId, opening, keyMap);
         if (result && result.ok === false) setIssueErr(result.message || 'That float was refused.');
       } catch (e) {
         setIssueErr((e && e.message) || 'That float was refused.');
@@ -618,6 +632,16 @@
   /* one modal, two outcomes: Place order (pending) or Order received (posts).
      Placing is optional — you can record a received order directly. */
   function OrderModal({ init, onClose, onPlace, onReceive }) {
+    /* One key for this delivery. Marking the same order received again
+       after a lost answer must not credit the vault a second time. */
+    const attempt = useRef(null);
+    const attemptKey = () => {
+      if (!attempt.current)
+        attempt.current = (window.crypto && window.crypto.randomUUID)
+          ? window.crypto.randomUUID()
+          : 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      return attempt.current;
+    };
     const src = (init && init.order) || null;     // receiving an existing pending order
     const receiveOnly = !!src;
     const [ccy, setCcy] = useState((src && src.ccy) || (init && init.ccy) || 'USD');
@@ -626,6 +650,7 @@
     const [supplier, setSupplier] = useState((src && src.supplier) || 'Bank of Montreal — Wholesale Notes');
     const [receiveNow, setReceiveNow] = useState(false);   // "cash already in hand" — opt in
     const [done, setDone] = useState(false);               // green-confirm latch (also blocks double-click)
+    const [err, setErr] = useState('');
     const u = +units || 0, cc = +costCad || 0;
     const unitCost = u ? cc / u : 0;
     const mkt = cadPer(ccy);
@@ -634,13 +659,28 @@
     const receiving = receiveOnly || receiveNow;
     const ready = receiving ? (u > 0 && cc > 0) : (u > 0);
     // press → flash green + lock, then commit a beat later so the confirm is seen
-    const fire = () => {
+    const fire = async () => {
       if (done || !ready) return;
+      setErr('');
+      if (!receiving) {
+        setDone(true);
+        setTimeout(() => onPlace({ ccy, units: u, supplier }), 480);
+        return;
+      }
       setDone(true);
-      setTimeout(() => {
-        if (receiving) onReceive({ id: src ? src.id : null, ccy, units: u, costCad: cc, supplier });
-        else onPlace({ ccy, units: u, supplier });
-      }, 480);
+      try {
+        const result = await onReceive({
+          id: src ? src.id : null, ccy, units: u, costCad: cc, supplier,
+          idempotencyKey: 'web-rcpt:' + attemptKey(),
+        });
+        if (result && result.ok === false) {
+          setDone(false);
+          setErr(result.message || 'That delivery was refused.');
+        }
+      } catch (e) {
+        setDone(false);
+        setErr((e && e.message) || 'That delivery was refused.');
+      }
     };
     return (<Modal onClose={done ? undefined : onClose} icon={receiving ? 'checkcircle' : 'plus'} title={receiveOnly ? 'Receive order' : 'New banknote order'} sub={receiveOnly ? 'Confirm what arrived and what you paid — this posts the cash into inventory.' : 'Record a wholesale order. You’ll mark it received when the cash arrives.'}>
       <div className="mb-3">
@@ -674,6 +714,7 @@
 
       <div className="text-[10.5px] px-3 py-2 mb-3 flex items-start gap-1.5" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="info" s={13} c={CD.brass} /><span>Orders aren’t sent to a wholesaler from the app yet — this records the order. Receiving is what posts the cash to inventory.</span></div>
 
+      {err && <div className="flex items-start gap-2 text-[11.5px] px-3 py-2 mb-3" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={13} c={CD.flag} /><span>{err}</span></div>}
       <div className="flex items-center justify-end">
         <button disabled={!ready || done} onClick={fire} className="till-save flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white" style={{ background: done ? CD.green : (!ready ? CD.faint : CD.ink), borderRadius: 10, cursor: (!ready || done) ? 'default' : 'pointer', transition: 'background .25s ease, transform .12s ease', minWidth: 168, justifyContent: 'center' }}>
           <Ic n={done ? 'checkcircle' : (receiving ? 'checkcircle' : 'plus')} s={15} c="var(--cd-on-ink)" />
@@ -841,8 +882,17 @@
       log && log('Order placed', `${num(units)} ${p.ccy} from ${ord.supplier} — on order`);
       setOrdering(null); setTab('receive');
     };
-    const onReceive = (p) => {
-      const units = +p.units || 0, costCad = +p.costCad || 0; if (!units || !costCad) return;
+    const onReceive = async (p) => {
+      const units = +p.units || 0, costCad = +p.costCad || 0;
+      if (!units || !costCad) return { ok: false, message: 'Nothing to receive.' };
+      /* The ledger first. A delivery the server refused, or whose answer
+         was lost, stays on this form so the same key can be sent again.
+         Marking it received in the list before that answer arrives is how
+         a second tap became a second credit. */
+      if (onOrderReceived) {
+        const posted = await onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes', p.idempotencyKey);
+        if (posted && posted.ok === false) return posted;
+      }
       const unitCost = +(costCad / units).toFixed(6);
       if (p.id) {
         setReceipts(list => (list || []).map(o => o.id === p.id ? { ...o, ccy: p.ccy, units, costCad, unitCost, supplier: p.supplier, status: 'received', date: businessDate(), receivedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '') } : o));
@@ -851,8 +901,8 @@
         setReceipts(list => [rec, ...(list || [])]);
       }
       log && log('Order received', `${num(units)} ${p.ccy} @ ${fmtHome(unitCost)} · ${fmtHome(costCad)} posted to inventory`);
-      onOrderReceived && onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes');   // the notes physically land in THIS branch's vault
       setOrdering(null); setTab('receive');
+      return { ok: true };
     };
     const onCancel = (id) => { setReceipts(list => (list || []).filter(o => o.id !== id)); log && log('Order cancelled', 'Pending banknote order removed'); };
 

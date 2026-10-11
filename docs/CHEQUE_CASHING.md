@@ -137,6 +137,43 @@ the customer a thousand Canadian dollars.
 The capture screen offers no currency field and never has, so nothing
 regresses. The refusal exists for the day somebody adds one.
 
+## One cashing per piece of paper
+
+The cashing form keeps **one idempotency key for as long as that form
+is open**. A retry and a second tap send the same key, the way a money
+order and a transfer already do. The key used to be built from the
+clock, so two taps were two keys: cheque 1002841 (face 40.00, fee 1.00)
+was paid twice and 78.00 left the drawer.
+
+The key is not the whole guard. A second form, or a second till, can
+still mint a new key. The server then refuses a second **live** cheque
+at the same branch with the same number and payer, and the same bank
+when both sides stored one. A missing bank matches either way — a blank
+is not a different cheque. A different bank is different paper. The
+refusal is `CHEQUE_ALREADY_HELD`: "This cheque is already cashed and
+still outstanding. Nothing was paid again." A unique index on the live
+row (`039_live_cheque_paper`) is what makes two concurrent cashes of
+that exact paper lose. Two that arrive together where one stored a
+bank and the other left it blank can both pass that index; the read
+catches them when they are not simultaneous. A cheque that has
+cleared, been returned, or been reversed is not live, so the number
+can be cashed again.
+
+A book that already holds two live copies of the same cheque still
+boots. The migration leaves the older copy on the book — the cash is
+still out — and sets `paper_guard` false so that row is not in the
+unique index. The newest held copy keeps `paper_guard` true and is
+the row the index watches. Rows set aside are:
+
+```sql
+SELECT cheque_id, cheque_ref, cheque_number, maker, drawee_bank, created_at
+  FROM ledger_cheques
+ WHERE paper_guard = false;
+```
+
+A new cashing defaults `paper_guard` to true, so the index still
+refuses a second live copy.
+
 ## Where a cheque lives
 
 On the ledger. `cdos_cheques_v1` in the browser is a **cache** of it,
