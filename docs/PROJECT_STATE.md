@@ -105,10 +105,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   after it mounts, and an action toast stays while that action has
   focus. The keypad takes a hardware key and a paste, and it says
   “N of 4 digits”. The sheet keeps focus inside. Escape closes it and
-  returns focus to the control that opened it. A screen uses those.
+  returns focus to the control that opened it.   A screen uses those.
   It does not keep a local copy. ChoiceTiles,
-  AmountField, SummaryList, and StepHeader are the next shared files,
-  added on top of these six. The phone header initials and a profile
+  AmountField, SummaryList, and StepHeader live in the same folder.
+  The phone header initials and a profile
   avatar use the same sans. Each phone window
   sets `data-app`. On a phone a legacy primary button uses that app's
   accent. A selected filter chip, legacy or new, is gray-900 with white
@@ -118,7 +118,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   first filter chip sits 16px in, and the
   chip row fades at the right. Under 430px the ledger is the phone shell: title, summary cards,
   search, filter chips, list rows, and a sticky New transaction. The
-  desktop ledger is unchanged. The bar is five
+  desktop ledger is unchanged. ChoiceTiles, AmountField, SummaryList,
+  and StepHeader are on `window.CDOS`. The props are in
+  `docs/PHONE_SHELL.md`. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -685,14 +687,13 @@ query. They are rendered in the seam job from main
 reads), not from `9f1efb8`. The phone ledger's day fee is the
 server summary, or it is omitted.
 
-**2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
-FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are
-styled in `os-src/phone-shell.css` with `tokens.css` variables. A
-sheet and a toast stay hidden above 430px. A row’s second line
-starts at the title’s left edge. The phone header initials and a
-profile avatar use the same sans. ChoiceTiles, AmountField,
-SummaryList, and StepHeader are the next shared files, added on
-top of these six. Contract: `docs/PHONE_SHELL.md`.
+**2026-10-12**, shared phone step widgets. SummaryList, ChoiceTiles,
+AmountField, and StepHeader live in `os-src/phone/` with NavRow,
+ProfileRow, Toggle, FullScreenSheet, PinPad, and Toast. They are
+styled in `os-src/phone-shell.css` with `tokens.css` variables.
+SummaryList is read-only and omits a row with an empty value.
+A sheet and a toast stay hidden above 430px. Contract:
+`docs/PHONE_SHELL.md`.
 
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
 uppercase suffix (`3:02 PM`). A form date stays `Jun 18, 2026`.

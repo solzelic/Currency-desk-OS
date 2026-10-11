@@ -486,12 +486,6 @@ pixels alone.
     It covers the tab bar. A confirm uses `Phone.ConfirmSheet` and
     stays above the bar.
 
-## Not in this foundation
-
-The next shared files add these. Do not build them here.
-
-ChoiceTiles, AmountField, SummaryList, StepHeader.
-
 ## Shared pieces
 
 These live in `os-src/phone/` and are on `window.CDOS`, not
@@ -553,6 +547,17 @@ is a live region, “N of 4 digits”. `busy` replaces the dots with
 `passwordMode` replaces the keypad with a password field and Next.
 `data-pin-step` is the step number.
 
+### SummaryList
+
+`os-src/phone/SummaryList.jsx`. Read-only. `rows` is
+`{ label, value, big?, tone?, mark? }`. A row with an empty value is
+omitted, so a missing figure is absent rather than a blank. It is
+not a form and it does not save. `big` is the figure to read out loud.
+`tone: 'pos'` marks a positive amount with `--color-positive`. `mark`
+is written to `data-phone-cheque` so a test can read that figure.
+The label and the value sit on one row, so a long label such as
+"Give the customer" still has room.
+
 ### Toast
 
 `os-src/phone/toast.jsx`. One line, portaled to `document.body`.
@@ -571,6 +576,43 @@ does not keep it on screen.
 
 FullScreenSheet is one of those. When a screen builds it, the sheet
 is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
+
+### ChoiceTiles
+
+`os-src/phone/ChoiceTiles.jsx`. `options` array of `{ id, label, detail }`.
+`value` is the selected id. `onChange(id)`. `label` is the listbox name.
+Two columns. Each tile is at least 56px. The selected tile uses
+`--brand-primary`.
+
+### AmountField
+
+`os-src/phone/AmountField.jsx`. `label`, `value`, `onChange(string)`,
+`currency`. The currency is text beside the number, not a picker. The
+cashier types the amount. The field does not format it. Focus uses
+`--color-focus`.
+
+### StepHeader
+
+`os-src/phone/StepHeader.jsx`. `step`, `total`, `label`. Renders
+`Step 2 of 3: cheque details` and a bar of `total` segments. The line
+uses `--font-ui` from `os-src/tokens.css` and a normal word space.
+
+ChoiceTiles, AmountField, SummaryList, and StepHeader are on
+`window.CDOS`, in `os-src/phone/`, loaded with the other shared pieces.
+A screen uses them. It does not ship a second copy. Amounts are still
+`formatPhoneMoney`. These four do not format money. Their CSS is in
+`os-src/phone-shell.css`, inside `max-width: 430px`. Selected colour is
+`--brand-primary`, whose default is `--brand-green`.
+
+Transfers (#113, `feat/phone-transfers`) still defines the same four
+names with different props (`title` not `label`, `amount` not `value`,
+a fee control on the amount, and `tone` as a CSS colour) and assigns
+over `window.CDOS`. That screen adopts this API. A second definition
+cannot merge.
+
+Phone text uses `--font-ui` from `os-src/tokens.css`. The desk loads
+that face (Inter) with Archivo and Space Mono. The phone query does not
+replace `--font-ui`.
 
 More is one proof screen. The ledger is the other. Under 430px the
 ledger window is a `Phone.Screen`: title, Records and Compliance,
