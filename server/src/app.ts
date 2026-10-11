@@ -12,6 +12,7 @@ import rawBody from "fastify-raw-body";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { Writable } from "node:stream";
 import { schema, type Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStaffRoutes } from "./routes/staff.js";
@@ -71,7 +72,10 @@ const isPhone = (ua: string | undefined): boolean =>
    compiled shells are in STATIC_DIR, /login, /app and /admin serve them,
    and the old files are source. They stay on the list below for that
    fallback only. When the compiled replacement is actually on disk, a
-   direct fetch is a 404, not the file and not the marketing page.
+   direct fetch is a 404, not the file and not the marketing page. In
+   production a missing shell is logged at boot, naming the file: the
+   fallback still serves, and the warning is the signal that the
+   uncompiled shell and os-src are public again.
 
    One file under os-src/ is still part of the compiled desk.
    web/app/index.html links os-src/york-os.css, and /login and /app fetch
@@ -137,9 +141,15 @@ const wantsPage = (req: { headers: Record<string, unknown> }): boolean => {
   return accept.includes("text/html");
 };
 
-export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise<FastifyInstance> {
+/* logStream lets a test read app.log. Production omits it, and Fastify
+   keeps the logger it uses for every other warning. */
+export async function buildApp(
+  db: Db,
+  growth: GrowthDependencies = {},
+  logStream?: Writable,
+): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: process.env.NODE_ENV !== "test",
+    logger: logStream ? { stream: logStream } : process.env.NODE_ENV !== "test",
     // a customer domain pointed at us serves that customer's hosted site
     rewriteUrl: (req) => rewriteHostToSite(req.headers.host, req.url ?? "/"),
   });
@@ -254,6 +264,22 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
       os: existsSync(path.join(staticDir, "web/app/index.html")),
       admin: existsSync(path.join(staticDir, "web/app/admin.html")),
     };
+    /* Checked once, at boot: the files do not change under a running
+       process. The fallback below stays, so a skipped build still brings
+       the desk up. In production that also publishes the uncompiled shell
+       and os-src, and a silent boot would hide it. */
+    if (process.env.NODE_ENV === "production") {
+      if (!compiledShells.os) {
+        app.log.warn(
+          "web/app/index.html is missing; the uncompiled shell and os-src are being served publicly",
+        );
+      }
+      if (!compiledShells.admin) {
+        app.log.warn(
+          "web/app/admin.html is missing; the uncompiled shell and os-src are being served publicly",
+        );
+      }
+    }
     // the public front door. When SITE_INDEX is present in the static dir the
     // marketing site serves at "/" and the OS moves to "/app"; without it the
     // OS keeps the root, so a deploy that ships only the app still works.
@@ -332,6 +358,11 @@ export async function buildApp(db: Db, growth: GrowthDependencies = {}): Promise
       try {
         asked = decodeURIComponent(rawPath);
       } catch {
+        /* A stray % or a truncated % sequence throws. Keep the raw path:
+           it is the request as it arrived, and it is not a filename on
+           disk (nothing in STATIC_DIR is named with a broken escape). The
+           allow-list compares that string as written, so the miss still
+           refuses the file. Guessing a decoding would invent a path. */
         asked = rawPath;
       }
       if (retiredUncompiledDesk(asked, compiledShells)) {
