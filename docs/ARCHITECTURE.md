@@ -221,10 +221,10 @@ browser, never the panel.** Stripe keys, the Resend key, the database URL.
 No screen displays one of those, including to us. Rotation happens in the
 host; nothing in Git ever needs to change. The operator's own authenticator
 secret is the exception that has to be shown once, at enrollment, so they
-can put it in an app. It is not shown again. Server errors are sent to
-Sentry only when `SENTRY_DSN` is set in that same host environment; bodies,
-cookies, authorization, names, identity numbers, and amounts are stripped
-(`docs/MONITORING.md`).
+can put it in an app. It is not shown again. Server errors, and a scrubbed desk-browser report posted to
+`POST /api/client-errors`, are sent to Sentry only when `SENTRY_DSN` is
+set in that same host environment; bodies, cookies, authorization, names,
+identity numbers, and amounts are stripped (`docs/MONITORING.md`).
 
 **The deploy is an attack surface.** CI rebuilds `web/` and fails if the
 committed output differs, so what a customer runs is what the sources say.

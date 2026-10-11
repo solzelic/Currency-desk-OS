@@ -24,8 +24,11 @@ it does today.
 ## What gets sent
 
 Server errors: a 5xx response, or a crash the process did not catch.
-Each event is tagged with the environment and, when Render has it, the
-git SHA.
+Desk browser errors: `window.onerror` and `unhandledrejection` post to
+`POST /api/client-errors`. The report is four fields — message, stack,
+app version, and the path (not the query, and not what was typed into a
+form). Each event is tagged with the environment and, when Render has
+it, the git SHA. With no DSN, that post is one line in the server log.
 
 ## What is never sent
 
@@ -36,4 +39,5 @@ The deep health body is `ok`, `service`, `migrations`, `version`, and
 
 `GET /api/health/deep` checks that the database answers one read, and
 reports how many checksummed migrations are applied. On a database that
-has never run them the count is null, not zero. The check is rate-limited.
+has never run them the count is null, not zero. The check is rate-limited,
+as is `POST /api/client-errors`.

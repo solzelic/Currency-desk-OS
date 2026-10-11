@@ -12,7 +12,7 @@ import {
   sentryIntegrations,
   useTestTransport,
 } from "../src/monitoring/sentry.js";
-import { DEEP_HEALTH_LIMIT, resetRateLimits } from "../src/monitoring/routes.js";
+import { CLIENT_ERROR_LIMIT, DEEP_HEALTH_LIMIT, resetRateLimits } from "../src/monitoring/routes.js";
 
 const FAKE_DSN = "https://public@sentry.invalid/1";
 const COMMIT = "0123456789abcdef";
@@ -97,6 +97,73 @@ describe("monitoring with no DSN", () => {
     expect(blocked.statusCode).toBe(429);
     expect(blocked.json()).toEqual({ ok: false, error: "rate_limited" });
     expect(blocked.headers["retry-after"]).toBeTruthy();
+  });
+
+  it("logs one structured line for a scrubbed browser report", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const res = await quietApp.inject({
+        method: "POST",
+        url: "/api/client-errors",
+        payload: { message: "till failed to open", stack: "Error: till failed to open", version: "0.1.0", route: "/app" },
+      });
+      expect(res.statusCode).toBe(204);
+      const lines = info.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("\"event\":\"client-error\""));
+      expect(lines).toEqual([
+        JSON.stringify({ event: "client-error", message: "till failed to open", route: "/app", version: "0.1.0", stack: "Error: till failed to open" }),
+      ]);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("rejects an invalid report and does not log it", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const extra = await quietApp.inject({
+        method: "POST",
+        url: "/api/client-errors",
+        payload: { message: "boom", amount: AMOUNT, customerName: CUSTOMER },
+      });
+      expect(extra.statusCode).toBe(400);
+      expect(extra.json()).toEqual({ error: "invalid_report" });
+      expect(extra.body).not.toContain(AMOUNT);
+      expect(extra.body).not.toContain(CUSTOMER);
+      const missing = await quietApp.inject({ method: "POST", url: "/api/client-errors", payload: {} });
+      expect(missing.statusCode).toBe(400);
+      const logged = info.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("client-error"));
+      expect(logged).toEqual([]);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("rejects an oversized body", async () => {
+    const res = await quietApp.inject({
+      method: "POST",
+      url: "/api/client-errors",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({ message: "x".repeat(5000) }),
+    });
+    expect(res.statusCode).toBe(413);
+  });
+
+  it("rate-limits client reports", async () => {
+    for (let i = 0; i < CLIENT_ERROR_LIMIT; i++) {
+      const ok = await quietApp.inject({
+        method: "POST",
+        url: "/api/client-errors",
+        payload: { message: "till failed to open" },
+      });
+      expect(ok.statusCode).toBe(204);
+    }
+    const blocked = await quietApp.inject({
+      method: "POST",
+      url: "/api/client-errors",
+      payload: { message: "till failed to open" },
+    });
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toEqual({ error: "rate_limited" });
   });
 });
 
@@ -187,6 +254,26 @@ describe("monitoring with a fake DSN", () => {
     expect(res.statusCode).toBe(404);
     await flush(2000);
     expect(envelopes.join("\n")).not.toContain("missing teller");
+  });
+
+  it("forwards a browser report and does not also log it", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/client-errors",
+        payload: { message: "rate board failed", route: "/app", version: "0.1.0" },
+      });
+      expect(res.statusCode).toBe(204);
+      await flush(2000);
+      const sent = envelopes.join("\n");
+      expect(sent).toContain("rate board failed");
+      expect(sent).toContain(COMMIT);
+      const logged = info.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("client-error"));
+      expect(logged).toEqual([]);
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("does not put the DSN on the deep health body", async () => {

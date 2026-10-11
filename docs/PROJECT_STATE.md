@@ -406,6 +406,7 @@ points at `/api/health`. Free-tier sleep after idle is unchanged — that
 is a hosting step, not this probe. `/api/admin/health` remains the
 authenticated narrative dashboard. Error tracking stays off until
 `SENTRY_DSN` is set (`docs/MONITORING.md`); `GET /api/health` is unchanged.
+The desk posts a scrubbed browser error to `POST /api/client-errors`.
 
 ## Next engineering priorities (ordered)
 
@@ -420,9 +421,10 @@ authenticated narrative dashboard. Error tracking stays off until
 ## Last reviewed
 
 **2026-10-11**, Production monitoring. Sentry receives server 5xx errors and
-uncaught failures only when `SENTRY_DSN` is set. `GET /api/health/deep`
-reports a database read, the migration count, and the commit.
-`GET /api/health` is still the probe uptime monitors use.
+uncaught failures only when `SENTRY_DSN` is set. The desk posts a scrubbed
+browser error to `POST /api/client-errors`. `GET /api/health/deep` reports
+a database read, the migration count, and the commit. `GET /api/health`
+is still the probe uptime monitors use.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered

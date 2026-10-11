@@ -1,19 +1,30 @@
-/* Deep health is for an operator, not a teller, and it is public so an
-   uptime check could call it. It is rate-limited so it cannot be used to
-   hammer the database. Render runs one instance; a restart forgetting
-   the count is a few extra reads, not a second book. The key is the TCP
-   peer (request.ip). A forwarded header can be spoofed, and trusting it
-   would make the limit optional. */
+/* Public monitoring routes. Neither asks for a session: a desk reports
+   an error when the session itself is what broke, and the deep check is
+   for an operator. Both are rate-limited in process memory. Render runs
+   one instance; a restart forgetting the count is a few extra reports,
+   not a second book. The key is the TCP peer (request.ip). A forwarded
+   header can be spoofed, and trusting it would make the limit optional. */
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { sql } from "drizzle-orm";
 import { createRequire } from "node:module";
+import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { captureClientReport, errorTrackingEnabled } from "./sentry.js";
 
 const { version: SERVER_VERSION } = createRequire(import.meta.url)("../../package.json") as { version: string };
 
+export const CLIENT_ERROR_LIMIT = 30;
 export const DEEP_HEALTH_LIMIT = 30;
 const WINDOW_MS = 60_000;
+const CLIENT_ERROR_BODY_LIMIT = 4096;
+
+const clientErrorBody = z.object({
+  message: z.string().trim().min(1).max(500),
+  stack: z.string().max(2000).optional(),
+  version: z.string().max(40).optional(),
+  route: z.string().max(200).optional(),
+}).strict();
 
 type Bucket = { resetAt: number; count: number };
 const buckets = new Map<string, Bucket>();
@@ -71,6 +82,27 @@ async function migrationCount(db: Db): Promise<number | null> {
 }
 
 export function registerMonitoringRoutes(app: FastifyInstance, db: Db): void {
+  app.post("/api/client-errors", { bodyLimit: CLIENT_ERROR_BODY_LIMIT }, async (request, reply) => {
+    const limit = take(`client-error:${peer(request)}`, CLIENT_ERROR_LIMIT);
+    if (!limit.ok) return reply.code(429).header("retry-after", String(limit.retryAfter)).send({ error: "rate_limited" });
+    const parsed = clientErrorBody.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_report" });
+    const report = parsed.data;
+    if (errorTrackingEnabled()) {
+      await captureClientReport(report);
+    } else {
+      // One line. Only the four fields the desk is allowed to send.
+      console.info(JSON.stringify({
+        event: "client-error",
+        message: report.message,
+        route: report.route ?? null,
+        version: report.version ?? null,
+        stack: report.stack ?? null,
+      }));
+    }
+    return reply.code(204).send();
+  });
+
   app.get("/api/health/deep", async (request, reply) => {
     const limit = take(`deep-health:${peer(request)}`, DEEP_HEALTH_LIMIT);
     if (!limit.ok) return reply.code(429).header("retry-after", String(limit.retryAfter)).send({ ok: false, error: "rate_limited" });

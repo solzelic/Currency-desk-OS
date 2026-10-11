@@ -219,3 +219,16 @@ export async function armServerErrorCapture(app: FastifyInstance): Promise<void>
     }
   });
 }
+
+/** A desk report is four fields. Anything else was rejected before this runs. */
+export async function captureClientReport(report: { message: string; stack?: string; route?: string; version?: string }): Promise<void> {
+  if (!errorTrackingEnabled()) return;
+  const sentry = await import("@sentry/node");
+  sentry.withScope((scope) => {
+    scope.setTag("source", "browser");
+    if (report.route) scope.setTag("route", report.route);
+    if (report.version) scope.setTag("app_version", report.version);
+    scope.addEventProcessor((event) => scrubEvent(event, []));
+    sentry.captureMessage(report.message, { level: "error", extra: report.stack ? { stack: report.stack } : undefined });
+  });
+}
