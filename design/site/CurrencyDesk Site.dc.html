@@ -250,7 +250,7 @@
               <div style="flex: 1;"></div>
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hair);">
                 <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.04em; color: var(--faint);">In the desk · {{ detailKicker }}</span>
-                <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--green); color: #fff; border-radius: 11px; font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600;" style-hover="background: var(--green-deep); color: #fff;">See it live<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+                <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--green); color: #fff; border-radius: 11px; font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600;" style-hover="background: var(--green-deep); color: #fff;">See a demo<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
               </div>
             </div>
           </sc-if>
@@ -1324,12 +1324,12 @@ class Component extends DCLogic {
       detailIcon: s.detail !== null ? this.ic(defs[s.detail].icon, 13, '#fff', 2) : null,
       closeDetail: this.closeDetail,
       problems: [
-        { idx: '01', icon: this.ic('whiteboard', 20, 'currentColor', 1.8), tag: 'Manual', title: 'Rates live on a whiteboard', body: 'Customers call to ask today\u2019s number. Nothing online, nothing that updates itself.', fix: 'A live board, built from market rates', wrap: probWrap },
+        { idx: '01', icon: this.ic('whiteboard', 20, 'currentColor', 1.8), tag: 'Manual', title: 'Rates live on a whiteboard', body: 'Customers call to ask today\u2019s number. Nothing online, nothing that updates itself.', fix: 'A rate board built from market rates', wrap: probWrap },
         { idx: '02', icon: this.ic('paper', 20, 'currentColor', 1.8), tag: 'Risk', title: 'Compliance by shoebox', body: 'ID photocopies in a drawer and a spreadsheet only you understand when the regulator asks.', fix: 'Every ID and report, on the record', wrap: probWrap },
         { idx: '03', icon: this.ic('offline', 20, 'currentColor', 1.8), tag: 'Blind', title: 'The float is a guess', body: 'No live view of what\u2019s in the till, what you made today, or which currency is running low.', fix: 'Live float and daily margin', wrap: probWrap }
       ],
       steps: [
-        { n: '1', icon: this.ic('board', 22), title: 'Set your rates', body: 'Pull live market rates, add your spread, and your buy/sell board builds itself.', wrap: stepWrap },
+        { n: '1', icon: this.ic('board', 22), title: 'Set your rates', body: 'Pull mid-market rates, add your spread, and your buy/sell board builds itself.', wrap: stepWrap },
         { n: '2', icon: this.ic('till', 22), title: 'Trade at the till', body: 'The desk logs the deal, updates the float and flags ID when the law needs it.', wrap: stepWrap },
         { n: '3', icon: this.ic('globe', 22), title: 'Publish everywhere', body: 'One tap pushes your board to your website and window — always current, never touched twice.', wrap: stepWrap }
       ],

@@ -18,7 +18,9 @@
 
    "Live rate board" is the Rates plan's name. That exact phrase is
    allowed. "live rates" anywhere else, including a meta description,
-   still fails.
+   still fails. "handling real work", "see it live", and "live board"
+   fail. The product-name exception is removed before those checks,
+   so "live rate board" does not hide "live board".
 
    A regulator deadline is allowed only on the compliance and FAQ
    pages, and only as one of the exact phrases those pages cite.
@@ -80,6 +82,9 @@ const phrases = [
   [/\b24\s*\/\s*7\b/, "24/7"],
   [/\breal[-\s]time\b/, "real-time"],
   [/\blive rates\b/, "live rates"],
+  [/handling real work/, "handling real work"],
+  [/see it live/, "see it live"],
+  [/\blive board\b/, "live board"],
   [/\breplying today\b/, "replying today"],
   [/\babout a week\b/, "about a week"],
   [/\bwithin a week\b/, "within a week"],

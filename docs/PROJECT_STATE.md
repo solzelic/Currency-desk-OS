@@ -455,6 +455,18 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, public site claims, tenth pass. The homepage
+says a rate board built from market rates, and the setup step says
+mid-market rates. The legal page says the service is in early access
+in Canada. Onboarding says you are ready to trade once the desk is
+set up. The homepage button says See a demo. The FAQ no longer says
+the software is handling live money, or that a market is going live.
+The early-access question asks when you want to start. Onboarding no
+longer says the public page goes live, that rates are pushed live, or
+that someone calls after you go live. The claims check rejects
+handling real work, see it live, and live board. Live rate board
+stays the plan name.
+
 **2026-10-11**, public site claims, ninth pass. The pricing
 point says mid-market rates are refreshed regularly. The server
 pulls them on `RATES_SYNC_MINUTES`, 60 minutes unless that is set

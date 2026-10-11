@@ -309,6 +309,20 @@ describe("public marketing claims", () => {
     expect(rates.out).toMatch(/live rates/);
   });
 
+  it("flags handling real work, see it live, and a live board", () => {
+    const work = probe("The service is live and handling real work");
+    expect(work.ok).toBe(false);
+    expect(work.out).toMatch(/handling real work/);
+    const demo = probe("See it&shy;live");
+    expect(demo.ok).toBe(false);
+    expect(demo.out).toMatch(/see it live/);
+    const board = probe("A live&#8203;board, built from market rates");
+    expect(board.ok).toBe(false);
+    expect(board.out).toMatch(/live board/);
+    expect(probe("Live rate board").ok).toBe(true);
+    expect(probe("Every plan includes the live rate board.").ok).toBe(true);
+  });
+
   it("allows an exact regulator deadline only on the compliance and FAQ pages", () => {
     const line = "SMR within 24 hours for terrorism financing. LCTR within 15 calendar days. SAR within 30 days. Cash is added across a static 24 hours. A worksheet within 3 business days.";
     expect(probe(line).ok).toBe(false);

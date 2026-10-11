@@ -921,6 +921,31 @@ patch(
   "Rate board embed ready",
 );
 patch(
+  "the pay screen said switching on means you are trading today",
+  "you're trading today",
+  "you're ready to trade once your desk is set up",
+);
+patch(
+  "the publish step said the public page goes live",
+  "Your public page goes live at your own address",
+  "Your public page uses your own address",
+);
+patch(
+  "the rate board step said it goes live the moment the desk does",
+  "This goes live the moment your desk does \u2014 nothing to install, nothing to ask anyone for.",
+  "This is ready once your desk is set up. Nothing to install, nothing to ask anyone for.",
+);
+patch(
+  "the opening card said to push rates live",
+  "Push your opening rates live on ",
+  "Publish your opening rates on ",
+);
+patch(
+  "the website add-on said someone calls after you go live",
+  "Someone will call after you go live to walk through it",
+  "Someone will call after your desk is set up to walk through it",
+);
+patch(
   "the ticker change marks made frozen rates look like a live feed",
   "const up = k % 2 === 0; const chg = (0.03 + (k % 5) * 0.04).toFixed(2);\n      return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate),\n        React.createElement('span', { key: 'g', style: { fontFamily: 'var(--m)', fontSize: '9.5px', fontWeight: 700, color: up ? 'var(--green-live)' : 'var(--flag)' } }, (up ? '▲' : '▼') + chg + '%')\n      ]);",
   "return React.createElement('span', { key: k, style: { display: 'inline-flex', alignItems: 'center', gap: '7px' } }, [\n        this.flag(this.CC[c.code], 18),\n        React.createElement('b', { key: 'c', style: { fontFamily: 'var(--m)', fontSize: '11px', fontWeight: 700 } }, c.code),\n        React.createElement('span', { key: 'r', style: { fontFamily: 'var(--m)', fontSize: '11px', color: 'var(--ink)' } }, rate)\n      ]);",
