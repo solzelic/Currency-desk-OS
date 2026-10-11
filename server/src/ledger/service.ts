@@ -5,6 +5,7 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
+import { now as clockNow } from "./clock.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   acquire,
@@ -935,7 +936,7 @@ export class LedgerService {
             quantity: basis.quantity,
             avgCost: null,
             actorId: actor.userId,
-            now: new Date(),
+            now: clockNow(),
             sourceKind: "quote",
             sourceId: quote.quoteId,
           },
@@ -958,7 +959,7 @@ export class LedgerService {
             quantity: acquiredBasis.quantity,
             avgCost: null,
             actorId: actor.userId,
-            now: new Date(),
+            now: clockNow(),
             sourceKind: "quote",
             sourceId: quote.quoteId,
           },
@@ -976,7 +977,7 @@ export class LedgerService {
       const proceedsHome = disposing ? inputHome : null;   // they paid us this
       const paidHome = acquiring ? outputCad : null;      // we paid them this
 
-      const now = new Date(),
+      const now = clockNow(),
         transactionId = `tx_${randomUUID()}`,
         transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
 
@@ -1470,7 +1471,7 @@ export class LedgerService {
           "JOURNAL_UNBALANCED",
           "Authoritative journal is unbalanced.",
         );
-      const now = new Date();
+      const now = clockNow();
       const transactionId = `tx_${randomUUID()}`;
       const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
       const response = {
@@ -1695,7 +1696,7 @@ export class LedgerService {
         [transactionId],
       );
       const reversalId = `rv_${randomUUID()}`;
-      const now = new Date();
+      const now = clockNow();
       for (const movement of movements.rows) {
         const value = new Decimal(movement.amount);
         const direction = movement.direction === "in" ? "out" : "in";

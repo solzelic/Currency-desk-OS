@@ -49,7 +49,6 @@
    see `CHEQUE_CURRENCY_NOT_HOME` below — rather than mis-posted quietly.
    ============================================================ */
 import { randomUUID } from "node:crypto";
-import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
@@ -63,6 +62,7 @@ import {
 } from "./philippines-pack.js";
 import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
+import { readDateOnly } from "./business-date.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   LedgerError,
@@ -158,11 +158,7 @@ const money = (value: string, minimum: Decimal.Value) => {
 const fixed = (value: Decimal.Value, places = 2) =>
   new Decimal(value).toDecimalPlaces(places).toFixed(places);
 
-const dateOnly = (value: unknown) => {
-  const day = civilDate(value);
-  if (!day) throw new Error("A cheque date is missing");
-  return day;
-};
+const dateOnly = (value: unknown) => readDateOnly(value);
 
 /** One cheque, in the shape the desk's screens already speak. */
 const chequeJson = (row: Record<string, any>) => ({

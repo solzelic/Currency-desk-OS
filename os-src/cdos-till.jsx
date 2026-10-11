@@ -229,6 +229,8 @@
        matches and the close is refused. */
     const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
+    const [serverDay, setServerDay] = useState(null);
+    const [sessionLoaded, setSessionLoaded] = useState(false);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
 
@@ -299,6 +301,8 @@
     const applySession = (result) => {
       const session = (result && result.session) || null;
       setServerSession(session);
+      setServerDay((result && result.day) || null);
+      setSessionLoaded(true);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
@@ -308,12 +312,17 @@
        the one the ledger holds for the day that was just closed. */
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) { setDayBook({ loading: false, summary: null, error: 'this desk is not on the ledger' }); return; }
+      if (!sessionLoaded) return;
+      if (!serverDay || !serverDay.from || !serverDay.to) {
+        setDayBook({ loading: false, summary: null, error: serverSession ? 'the till session did not name its trading day' : 'no till session' });
+        return;
+      }
       let live = true;
-      window.CDOS.Backend.loadLedgerSummary(window.CDOS.businessDayWindow(1))
+      window.CDOS.Backend.loadLedgerSummary({ from: serverDay.from, to: serverDay.to })
         .then(summary => { if (live) setDayBook({ loading: false, summary, error: '' }); })
         .catch(error => { if (live) setDayBook({ loading: false, summary: null, error: (error && error.message) || 'the ledger could not be reached' }); });
       return () => { live = false; };
-    }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
+    }, [serverBacked, deskFacts, sessionLoaded, serverSession, serverDay && serverDay.from, serverDay && serverDay.to]);
     const applyBook = (result) => {
       setServerBalances((result && result.balances) || {});
       /* A count in progress keeps the mark it started on. Adopting the
@@ -337,6 +346,8 @@
         setServerBalances(null);
         setBalanceGeneration(null);
         setServerSession(null);
+        setServerDay(null);
+        setSessionLoaded(false);
         setServerBalanceError('');
         return;
       }
@@ -352,6 +363,8 @@
           setServerBalances(null);
           setBalanceGeneration(null);
           setServerSession(null);
+          setServerDay(null);
+          setSessionLoaded(true);
           setServerBalanceError(error.message || 'Server balances unavailable');
         });
       return () => { active = false; };

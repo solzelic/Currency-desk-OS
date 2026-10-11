@@ -31,6 +31,7 @@ import {
   type ChequeReturnInput,
 } from "./cheques.js";
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
+import { bindTestClock } from "./clock.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
 
@@ -327,6 +328,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
+  bindTestClock(app);
 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
     const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
@@ -393,7 +395,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "OBLIGATION_NOT_OPEN" ||
                 error.code === "OPENING_BALANCES_ALREADY_SET" ||
                 error.code === "PACK_OPT_IN_REFUSED" ||
-                error.code === "JURISDICTION_PACK_CONFLICT" ? 409
+                error.code === "JURISDICTION_PACK_CONFLICT" ||
+                error.code === "BRANCH_TIMEZONE_UNSET" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
   }

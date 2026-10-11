@@ -348,11 +348,11 @@
     } catch (e) { /* no session, no server, or not signed in: the clock stands in */ }
     return businessDate();
   }
-  /* The window a "today" figure covers, as two instants, from the desk's
-     own midnight. The server deliberately refuses to guess this — see the
-     note on LedgerReportingService.summary — because a business day
-     belongs to a branch's clock and this browser is standing in the
-     branch. `days` looks back that many days from the business date. */
+  /* A browser-local window, for screens that ask "the last N days" and
+     are not the signed close-out. It reads midnight on THIS machine.
+     The end-of-day sign-off does not use it. That sheet asks for the
+     window the till session returns (`day.from`, `day.to`), which the
+     server computed in the branch's time zone. */
   function businessDayWindow(days) {
     const end = new Date(businessDate() + 'T00:00:00');
     end.setDate(end.getDate() + 1);
