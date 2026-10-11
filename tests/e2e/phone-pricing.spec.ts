@@ -1,10 +1,6 @@
 /* Phone Pricing. The list, the spread sheet, and publish.
-   The desktop picture checked in CI is the GitHub Actions rendering
-   of the wide Pricing window. maxDiffPixels stays 0. On one machine,
-   that window on feat/phone-shell-foundation and on this head is 0
-   pixels apart, including antialiasing. Actions differs from this
-   machine only because Google Fonts are stubbed and the fallback
-   font's antialiasing is not the same. A layout change still fails. */
+   Desktop pixels belong to tests/e2e/desktop-unchanged.spec.ts.
+   This file does not add or replace a 1280 baseline. */
 import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
@@ -64,7 +60,9 @@ function ratesGet(url: string, method: string): boolean {
   return method === "GET" && path === "/api/rates";
 }
 
-test("desktop pricing is unchanged at 1280", async ({ page }) => {
+/* The pixel proof is desktop-unchanged.spec.ts. This only checks
+   that the phone column is not what a wide window mounts. */
+test("desktop pricing does not mount the phone screen", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await atDesk(page, "j.masri");
   await page.locator('#appbar [data-app="pricing"]').click();
@@ -76,18 +74,6 @@ test("desktop pricing is unchanged at 1280", async ({ page }) => {
   const button = win.getByRole("button", { name: "Publish to Rate Board" });
   const height = await button.evaluate((el) => el.getBoundingClientRect().height);
   expect(height).toBeLessThan(40);
-  /* The "2m ago" label is a clock. Freeze the words so the picture
-     is the layout, not the minute the test happened to run. */
-  await win.getByText(/refreshed/).evaluate((el) => {
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    let node = walker.nextNode();
-    while (node) {
-      if (node.textContent && node.textContent.indexOf("refreshed") >= 0) {
-        node.textContent = node.textContent.replace(/refreshed .+/, "refreshed 2m ago");
-      }
-      node = walker.nextNode();
-    }
-  });
   try {
     mkdirSync(SHOTS, { recursive: true });
     await page.screenshot({ path: `${SHOTS}/pricing_desktop_1280.png` });
@@ -95,11 +81,6 @@ test("desktop pricing is unchanged at 1280", async ({ page }) => {
   } catch (err) {
     console.error("pricing desktop screenshot skipped", err);
   }
-  await expect(win).toHaveScreenshot("desktop-pricing-1280.png", {
-    maxDiffPixels: 0,
-    animations: "disabled",
-    caret: "hide",
-  });
 });
 
 for (const width of [360, 390]) {
