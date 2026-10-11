@@ -2406,6 +2406,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding-top: 6px !important;
     padding-bottom: 6px !important;
   }
+  .till-scope-note > .flex-1,
+  .till-scope-note > .flex-1 * {
+    white-space: normal !important;
+  }
   .till-scope-note > .flex-1 {
     flex: 1 1 0%;
     width: auto;
