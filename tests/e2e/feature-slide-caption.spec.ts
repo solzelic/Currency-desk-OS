@@ -56,3 +56,37 @@ test("feature slide captions stay visible on a phone", async ({ page }) => {
   await page.waitForTimeout(3000);
   await expectCaptionHeld(page);
 });
+
+/* Nothing is tapped. The card publishes its dwell on data-feat-ms (6.5s).
+   Autoplay stays paused until the card is actually on screen, so the
+   clock starts once the fill on the current segment is running. */
+test("feature slides advance on their own after the dwell", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("What the desk does")).toBeVisible();
+  const card = page.locator("[data-feat-card]");
+  await card.evaluate((el) => el.scrollIntoView({ block: "center", inline: "nearest" }));
+
+  await expect.poll(async () => card.getAttribute("data-feat-ms")).toMatch(/^[6-7]\d{3}$/);
+  const dwell = Number(await card.getAttribute("data-feat-ms"));
+  expect(dwell).toBeGreaterThanOrEqual(6000);
+  expect(dwell).toBeLessThanOrEqual(7000);
+
+  const caption = page.locator("[data-feat-caption]");
+  await expect(caption).toContainText("Your board, everywhere");
+  await expect.poll(async () => {
+    return page.locator('#product button[aria-current="true"] span').evaluate((el) => getComputedStyle(el).animationName);
+  }).toMatch(/cdFeatFill/);
+  const started = Date.now();
+
+  await page.waitForTimeout(Math.round(dwell / 2));
+  await expect(caption).toContainText("Your board, everywhere");
+
+  await expect(caption).toContainText("Bring them back", { timeout: dwell });
+  const elapsed = Date.now() - started;
+  expect(elapsed).toBeGreaterThanOrEqual(dwell - 1500);
+  expect(elapsed).toBeLessThan(dwell + 3000);
+
+  await expect.poll(async () => caption.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  await expectCaptionHeld(page);
+  await expect(page.locator('#product button[aria-current="true"]')).toHaveAttribute("aria-label", "Bring them back");
+});
