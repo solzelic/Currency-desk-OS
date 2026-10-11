@@ -3141,47 +3141,56 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 1px;
     scroll-snap-align: none;
   }
-  /* The badge used to sit beside the name and cut it off. The name
-     takes the row, up to two lines. The last deal, then the badge,
-     sit under it. */
+  /* Foundation ListRow. Line 1 is the name and the last-deal amount.
+     Line 2 is "Individual · 2 deals · Today" and the ID badge.
+     About 72px, so six rows fit at 390. */
   .phone-shell.phone-clients .phone-row.phone-client-row {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
     column-gap: 12px;
-    row-gap: 6px;
-    align-items: start;
-    min-height: 84px;
+    row-gap: 2px;
+    align-items: center;
+    min-height: 72px;
     height: auto;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
   .phone-client-row > .phone-ini {
     grid-column: 1;
     grid-row: 1 / span 2;
-    align-self: start;
   }
-  .phone-client-row > .phone-row-main {
-    grid-column: 2;
-    grid-row: 1;
-    min-width: 0;
-  }
+  .phone-client-row > .phone-row-main,
   .phone-client-row > .phone-row-end {
-    grid-column: 2;
-    grid-row: 2;
-    max-width: none;
-    width: 100%;
-    align-items: flex-end;
-    gap: 2px;
+    display: contents;
   }
   .phone-client-row .phone-row-title {
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    overflow: hidden;
+    grid-column: 2;
+    grid-row: 1;
   }
-  .phone-client-row .phone-row-amt { order: 1; }
-  .phone-client-row .phone-row-meta { order: 2; }
-  .phone-client-row .phone-badge { order: 3; }
+  .phone-client-row:not(:has(.phone-row-amt)) .phone-row-title {
+    grid-column: 2 / 4;
+  }
+  .phone-client-row .phone-row-amt {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    white-space: nowrap;
+  }
+  .phone-client-row .phone-row-sub {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .phone-client-row .phone-badge {
+    grid-column: 3;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .phone-clients .phone-stale {
+    margin: 0 0 8px;
+    font: var(--text-small);
+    color: var(--color-text-muted, #6B6760);
+  }
   .phone-ini {
     width: 44px;
     height: 44px;

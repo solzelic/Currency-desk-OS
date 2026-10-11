@@ -200,22 +200,27 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   dialog.
 - **Phone Clients.** At 430px and under, Clients is a list a cashier
   can search before anything else. Chips are All, Missing ID, Expired,
-  and Identified — the same words as the row badge. A row is at least
-  84px and the whole row opens
-  the file. The row says the name, the last deal (not a lifetime
-  total), and the ID standing in words: Missing ID, Expired, or
-  Identified. That standing is read from the document on file — type,
-  number, and expiry — and a stored “verified” word is ignored,
-  because ID checks are not connected. The one primary button is Add
-  client. There is no centre plus in the tab bar and no floating New
-  transaction on this screen. An amount goes through `formatPhoneMoney`
-  and reads with its currency code last (`1,765.05 CAD`). A figure the book
-  cannot answer is absent. Empty, loading, and a failed load are said
-  in words, and a failed load does not fill the list with names this
-  browser happens to have. Tapping a row opens the existing client
-  file full screen. Add client opens the existing add flow full
-  screen. Wider than 430px, Clients is the desktop list it already
-  was, including New contact.
+  and Identified — the same words as the row badge. A row is about
+  72px and the whole row opens the file. Line 1 is the name and the
+  last-deal amount. Line 2 is the kind, the deal count, and when
+  (`Individual · 2 deals · Today`), with the ID badge on the right.
+  That standing is read from the document on file — type, number, and
+  expiry — and a stored “verified” word is ignored, because ID checks
+  are not connected. The one primary button is Add client. There is
+  no centre plus in the tab bar and no floating New transaction on
+  this screen. An amount goes through `formatPhoneMoney` and reads
+  with its currency code last (`1,765.05 CAD`). A figure the book
+  cannot answer is absent. A failed load with nothing cached says
+  "Couldn't load clients" and "Check the connection and try again."
+  Add client is disabled until that load succeeds, so it cannot save
+  a client that exists only in this browser. If this phone is showing
+  the copy it already held, the list stays and a line above it says
+  "Showing the copy on this phone. It may be out of date." Tapping a
+  row opens the existing client file full screen. Add client opens
+  the existing add flow full screen. Wider than 430px, Clients is the
+  desktop list it already was, including New contact. Desktop still
+  leaves New contact enabled on that failure and can write the
+  browser's own copy; the phone does not.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -730,10 +735,12 @@ the shared phone column: search, then chips, then rows. The title and
 the first chip sit 16px in, the same inset as the search field. The
 chip row scrolls, fades at the right, and leaves 16px after the last
 chip. The screen is the flat surface token, not the desktop gradient.
-A name uses the full row, up to two lines. The last deal sits under
-the name, and the ID badge sits under that deal. Chips and badges
-use the same words: Missing ID, Expired, Identified, read from the
-document on file. Add client is the StickyAction. Amounts go through
+A row is about 72px. Line 1 is the name and the last-deal amount.
+Line 2 is `Individual · 2 deals · Today` with the ID badge on the
+right. Chips and badges use the same words: Missing ID, Expired,
+Identified, read from the document on file. A failed load with
+nothing cached uses that short error, and Add client stays disabled.
+A cached list says it is the copy on this phone. Amounts go through
 `formatPhoneMoney`. The client file and the add flow are the existing
 screens, full screen. Wider than 430px, the Clients window is unchanged.
 

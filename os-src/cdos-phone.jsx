@@ -249,10 +249,11 @@
     return <div className="phone-loading" role="status" aria-label={text}><p className="phone-loading-label">{text}</p>{items}</div>;
   }
 
-  function ErrorState({ message, onRetry }) {
+  function ErrorState({ title, message, onRetry }) {
     const copy = message || 'Something went wrong. Try again.';
     return (
       <div className="phone-error" role="alert">
+        {title ? <h2>{title}</h2> : null}
         <p>{copy}</p>
         {onRetry ? <button type="button" className="phone-text-btn" onClick={onRetry}>Try again</button> : null}
       </div>

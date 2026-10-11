@@ -62794,6 +62794,7 @@ window.CDOS_PERSIST = (function () {
     }, text), items);
   }
   function ErrorState({
+    title,
     message,
     onRetry
   }) {
@@ -62801,7 +62802,7 @@ window.CDOS_PERSIST = (function () {
     return /*#__PURE__*/React.createElement("div", {
       className: "phone-error",
       role: "alert"
-    }, /*#__PURE__*/React.createElement("p", null, copy), onRetry ? /*#__PURE__*/React.createElement("button", {
+    }, title ? /*#__PURE__*/React.createElement("h2", null, title) : null, /*#__PURE__*/React.createElement("p", null, copy), onRetry ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-text-btn",
       onClick: onRetry
@@ -63266,9 +63267,19 @@ window.CDOS_PERSIST = (function () {
       key: (last.date || "") + " " + (last.time || "")
     };
   }
+
+  /* Line 2 of a row. Kind, then the last-deal words the book already
+     computed ("2 deals · Today", or "No deals yet"). */
+  function rowSubtitle(person) {
+    const kind = person.rec.kind === "corporate" || person.rec.kind === "business" ? "Business" : "Individual";
+    return kind + " · " + (person.deal.meta || "No deals yet");
+  }
   function peopleOf(rows, clients, store) {
     const mode = store.mode();
-    if (mode === "unknown" || store.trouble()) return [];
+    if (mode === "unknown") return [];
+    /* A failed load does not invent people from the ledger. The only
+       list it may show is the client blob this phone already held. */
+    const sourceRows = store.trouble() ? [] : rows;
     const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
     const out = [];
     const seen = {};
@@ -63293,7 +63304,7 @@ window.CDOS_PERSIST = (function () {
         });
       });
     }
-    (rows || []).forEach(row => {
+    (sourceRows || []).forEach(row => {
       const name = row.customer;
       if (!name || name === "—" || row.status === "void" || seen[name]) return;
       seen[name] = true;
@@ -63323,7 +63334,9 @@ window.CDOS_PERSIST = (function () {
     const mode = store.mode();
     const trouble = store.trouble();
     const loading = mode === "unknown";
-    const failed = !!(trouble || retryErr || saveErr);
+    /* A 5xx, or a reload that threw, is a failed load. A desk that was
+       never server-backed is not: that mode has an empty trouble string. */
+    const loadFailed = mode !== "server" && !!(trouble || retryErr);
     const people = useMemo(() => peopleOf(rows, clients, store).map(person => {
       const standing = phoneIdStanding(person.rec, today);
       const deal = lastDeal(rows, person.name, home, today);
@@ -63374,20 +63387,25 @@ window.CDOS_PERSIST = (function () {
       label: "Identified",
       count: counts.identified
     }];
+    const showingLocal = loadFailed && people.length > 0;
     let state = "list";
-    if (loading) state = "loading";else if (failed && mode !== "server") state = "error";else if (!q && filter === "all" && people.length === 0) state = "empty";else if (shown.length === 0) state = "nomatch";
+    if (loading) state = "loading";else if (loadFailed && people.length === 0) state = "error";else if (!q && filter === "all" && people.length === 0) state = "empty";else if (shown.length === 0) state = "nomatch";
     const retry = async () => {
       setRetryErr("");
       try {
         await reload(true);
       } catch (e) {
-        setRetryErr(e && e.message || "CurrencyDesk could not load clients.");
+        setRetryErr(e && e.message || "Couldn't load clients.");
       }
     };
-    const fault = trouble || retryErr || saveErr;
+    const addClient = () => {
+      if (!loadFailed) onAdd();
+    };
     const sticky = canEdit && state !== "loading" && state !== "empty" ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
       label: "Add client",
-      onClick: onAdd
+      onClick: addClient,
+      disabled: loadFailed,
+      disabledReason: loadFailed ? "Couldn't load clients. Try again before adding someone." : ""
     }) : null;
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "clients",
@@ -63412,17 +63430,21 @@ window.CDOS_PERSIST = (function () {
       rows: 4,
       label: "Loading clients"
     }), state === "error" && /*#__PURE__*/React.createElement(Phone.ErrorState, {
-      message: fault || "CurrencyDesk could not load clients.",
+      title: "Couldn't load clients",
+      message: "Check the connection and try again.",
       onRetry: retry
     }), state === "empty" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No clients yet",
       message: "Add a client the first time they deal with you. Their ID stays on their file for next time.",
       actionLabel: canEdit ? "Add client" : undefined,
       onAction: canEdit ? onAdd : undefined
-    }), fault && state !== "error" && state !== "loading" && /*#__PURE__*/React.createElement(Phone.ErrorState, {
-      message: fault,
-      onRetry: retry
-    }), state === "nomatch" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+    }), showingLocal && /*#__PURE__*/React.createElement("p", {
+      className: "phone-stale",
+      role: "status"
+    }, "Showing the copy on this phone. It may be out of date."), saveErr && state !== "loading" && /*#__PURE__*/React.createElement("p", {
+      className: "phone-stale",
+      role: "alert"
+    }, saveErr), state === "nomatch" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: q.trim() ? "No match for " + q.trim() : "No one in this filter",
       message: q.trim() ? "Nothing in this list has that name, phone, or ID." : "Nothing in this list is in that group.",
       actionLabel: q.trim() ? "Clear search" : undefined,
@@ -63434,9 +63456,8 @@ window.CDOS_PERSIST = (function () {
       key: person.name,
       className: "phone-client-row id-" + person.standing.status,
       title: person.name,
-      subtitle: person.rec.kind === "corporate" ? "Business" : "Individual",
+      subtitle: rowSubtitle(person),
       amount: person.deal.amount || undefined,
-      meta: person.deal.meta,
       badge: {
         tone: person.standing.tone === "pos" ? "pos" : "warn",
         label: person.standing.label

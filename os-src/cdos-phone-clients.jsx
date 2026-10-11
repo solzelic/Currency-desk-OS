@@ -117,9 +117,19 @@
     return { amount, meta: when ? deals + " · " + when : deals, when, key: (last.date || "") + " " + (last.time || "") };
   }
 
+  /* Line 2 of a row. Kind, then the last-deal words the book already
+     computed ("2 deals · Today", or "No deals yet"). */
+  function rowSubtitle(person) {
+    const kind = person.rec.kind === "corporate" || person.rec.kind === "business" ? "Business" : "Individual";
+    return kind + " · " + (person.deal.meta || "No deals yet");
+  }
+
   function peopleOf(rows, clients, store) {
     const mode = store.mode();
-    if (mode === "unknown" || store.trouble()) return [];
+    if (mode === "unknown") return [];
+    /* A failed load does not invent people from the ledger. The only
+       list it may show is the client blob this phone already held. */
+    const sourceRows = store.trouble() ? [] : rows;
     const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
     const out = [];
     const seen = {};
@@ -138,7 +148,7 @@
         out.push({ name, rec: clients[name] || {} });
       });
     }
-    (rows || []).forEach(row => {
+    (sourceRows || []).forEach(row => {
       const name = row.customer;
       if (!name || name === "—" || row.status === "void" || seen[name]) return;
       seen[name] = true;
@@ -157,7 +167,9 @@
     const mode = store.mode();
     const trouble = store.trouble();
     const loading = mode === "unknown";
-    const failed = !!(trouble || retryErr || saveErr);
+    /* A 5xx, or a reload that threw, is a failed load. A desk that was
+       never server-backed is not: that mode has an empty trouble string. */
+    const loadFailed = mode !== "server" && !!(trouble || retryErr);
 
     const people = useMemo(() => peopleOf(rows, clients, store).map(person => {
       const standing = phoneIdStanding(person.rec, today);
@@ -193,21 +205,23 @@
       { id: "identified", label: "Identified", count: counts.identified },
     ];
 
+    const showingLocal = loadFailed && people.length > 0;
+
     let state = "list";
     if (loading) state = "loading";
-    else if (failed && mode !== "server") state = "error";
+    else if (loadFailed && people.length === 0) state = "error";
     else if (!q && filter === "all" && people.length === 0) state = "empty";
     else if (shown.length === 0) state = "nomatch";
 
     const retry = async () => {
       setRetryErr("");
       try { await reload(true); }
-      catch (e) { setRetryErr((e && e.message) || "CurrencyDesk could not load clients."); }
+      catch (e) { setRetryErr((e && e.message) || "Couldn't load clients."); }
     };
 
-    const fault = trouble || retryErr || saveErr;
+    const addClient = () => { if (!loadFailed) onAdd(); };
     const sticky = canEdit && state !== "loading" && state !== "empty"
-      ? <Phone.StickyAction label="Add client" onClick={onAdd} />
+      ? <Phone.StickyAction label="Add client" onClick={addClient} disabled={loadFailed} disabledReason={loadFailed ? "Couldn't load clients. Try again before adding someone." : ""} />
       : null;
 
     return (
@@ -227,7 +241,9 @@
       >
         <span className="phone-clients-state" data-phone-state={state} hidden />
         {state === "loading" && <Phone.LoadingState rows={4} label="Loading clients" />}
-        {state === "error" && <Phone.ErrorState message={fault || "CurrencyDesk could not load clients."} onRetry={retry} />}
+        {state === "error" && (
+          <Phone.ErrorState title="Couldn't load clients" message="Check the connection and try again." onRetry={retry} />
+        )}
         {state === "empty" && (
           <Phone.EmptyState
             title="No clients yet"
@@ -236,8 +252,11 @@
             onAction={canEdit ? onAdd : undefined}
           />
         )}
-        {fault && state !== "error" && state !== "loading" && (
-          <Phone.ErrorState message={fault} onRetry={retry} />
+        {showingLocal && (
+          <p className="phone-stale" role="status">Showing the copy on this phone. It may be out of date.</p>
+        )}
+        {saveErr && state !== "loading" && (
+          <p className="phone-stale" role="alert">{saveErr}</p>
         )}
         {state === "nomatch" && (
           <Phone.EmptyState
@@ -254,9 +273,8 @@
                 key={person.name}
                 className={"phone-client-row id-" + person.standing.status}
                 title={person.name}
-                subtitle={person.rec.kind === "corporate" ? "Business" : "Individual"}
+                subtitle={rowSubtitle(person)}
                 amount={person.deal.amount || undefined}
-                meta={person.deal.meta}
                 badge={{ tone: person.standing.tone === "pos" ? "pos" : "warn", label: person.standing.label }}
                 leading={<span className="phone-ini" aria-hidden="true">{initials(person.name)}</span>}
                 onClick={() => onOpen(person.name)}

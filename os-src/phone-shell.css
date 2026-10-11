@@ -386,15 +386,20 @@
   .phone-empty,
   .phone-error { padding: 28px 8px; text-align: center; }
   .phone-empty h2,
-  .phone-error p {
+  .phone-error h2 {
     margin: 0;
     font: var(--text-body-strong);
     color: var(--color-text, #161513);
   }
-  .phone-empty p {
+  .phone-empty p,
+  .phone-error p {
     margin: 6px 0 0;
     font: var(--text-small);
     color: var(--color-text-muted, #6B6760);
+  }
+  .phone-error .phone-text-btn {
+    background: var(--brand-primary, #161513);
+    color: var(--brand-on-primary, #fff);
   }
   .phone-text-btn {
     margin-top: 12px;

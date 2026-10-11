@@ -252,8 +252,9 @@ the button will not go.
 
 ### ErrorState
 
-`message` string. `onRetry` optional. `role="alert"`. The button says
-"Try again".
+`title` optional string. `message` string. `onRetry` optional.
+`role="alert"`. The title is the heading. The message is the body under
+it. The button says "Try again" and uses the open app's accent.
 
 ### Screen
 

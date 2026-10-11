@@ -118,12 +118,32 @@ test.describe("phone clients", () => {
       await landOnDesktop(page);
       await dismissTour(page);
       await openClients(page);
-      await expect(page.getByText(/could not load/i)).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Couldn't load clients" })).toBeVisible();
+      await expect(page.getByText("Check the connection and try again.")).toBeVisible();
       await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
       await expect(page.locator(".phone-client-row")).toHaveCount(0);
+      await expect(page.locator(".phone-clients")).not.toContainText("browser");
+      await expect(page.locator(".phone-clients")).not.toContainText("Showing the copy");
       await expect(page.locator(".phone-clients")).not.toContainText("Verified");
+      await expect(page.getByRole("button", { name: "Add client" })).toBeDisabled();
       await sweep(page, width);
       await shot(page, `clients_error_${width}`);
+
+      /* A copy this phone already held stays on the list, and says so.
+         Add client still does not write another browser-only record. */
+      await page.evaluate(() => {
+        localStorage.setItem("cdos_clients_v1", JSON.stringify({ "Mara Local": { kind: "individual" } }));
+      });
+      await page.reload();
+      await landOnDesktop(page);
+      await dismissTour(page);
+      await openClients(page);
+      await expect(page.getByText("Showing the copy on this phone. It may be out of date.")).toBeVisible();
+      await expect(page.locator(".phone-client-row")).toContainText("Mara Local");
+      await expect(page.getByRole("heading", { name: "Couldn't load clients" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Add client" })).toBeDisabled();
+      await page.getByRole("button", { name: "Add client" }).click({ force: true });
+      await expect(page.locator(".add-contact-sheet")).toHaveCount(0);
     });
 
     test(`search, chips, and ID standing at ${width}`, async ({ page }) => {
@@ -182,29 +202,42 @@ test.describe("phone clients", () => {
         const chip = document.querySelector(".phone-clients .phone-chip");
         const shell = document.querySelector(".phone-clients");
         const row = document.querySelector(".phone-client-row");
-        const name = row && row.querySelector(".phone-row-main");
         const badge = row && row.querySelector(".phone-badge");
         const box = (el: Element | null) => el ? el.getBoundingClientRect() : null;
         const titleBox = box(title);
         const chipBox = box(chip);
         const rowBox = box(row);
-        const nameBox = box(name);
+        const sub = row && row.querySelector(".phone-row-sub");
         const badgeBox = box(badge);
+        const subBox = box(sub);
+        const titleLine = box(row && row.querySelector(".phone-row-title"));
+        const scroll = document.querySelector(".phone-clients .phone-scroll");
+        const header = document.querySelector(".phone-clients .phone-sec");
+        const rowH = rowBox ? rowBox.height : 0;
+        const view = scroll ? scroll.getBoundingClientRect().height : 0;
+        const headerH = header ? header.getBoundingClientRect().height : 0;
         const bg = shell ? getComputedStyle(shell).backgroundColor : "";
         const image = shell ? getComputedStyle(shell).backgroundImage : "";
         return {
           title: titleBox ? Math.round(titleBox.left) : -1,
           chip: chipBox ? Math.round(chipBox.left) : -1,
-          nameRight: nameBox && rowBox ? Math.round(rowBox.right - nameBox.right) : -1,
-          badgeBelow: badgeBox && nameBox ? badgeBox.top >= nameBox.bottom - 1 : false,
+          row: rowH,
+          visible: rowH ? Math.floor((view - headerH) / rowH) : 0,
+          badgeBeside: !!(badgeBox && subBox && badgeBox.left >= subBox.right - 2 && Math.abs(badgeBox.top - subBox.top) < 12),
+          titleAbove: !!(titleLine && subBox && titleLine.bottom <= subBox.top + 4),
+          line: sub ? (sub.textContent || "") : "",
           bg,
           image,
         };
       });
       expect(inset.title).toBeGreaterThanOrEqual(16);
       expect(inset.chip).toBeGreaterThanOrEqual(16);
-      expect(inset.badgeBelow).toBe(true);
-      expect(inset.nameRight).toBeLessThanOrEqual(24);
+      expect(inset.row).toBeGreaterThanOrEqual(64);
+      expect(inset.row).toBeLessThanOrEqual(80);
+      expect(inset.badgeBeside).toBe(true);
+      expect(inset.titleAbove).toBe(true);
+      expect(inset.line).toMatch(/^Individual · /);
+      if (width === 390) expect(inset.visible).toBeGreaterThanOrEqual(6);
       expect(inset.image).toBe("none");
       expect(inset.bg).toBe("rgb(255, 255, 255)");
       await root.getByLabel("Search clients").fill(tag);
@@ -214,8 +247,6 @@ test.describe("phone clients", () => {
       await expect(root.getByRole("button", { name: "New transaction" })).toHaveCount(0);
       await expect(page.locator("#phone-fab")).toHaveCount(0);
       await expect(page.locator("#phonebar button")).toHaveCount(5);
-      const rowHeight = await page.locator(".phone-client-row").first().evaluate((el) => el.getBoundingClientRect().height);
-      expect(rowHeight).toBeGreaterThanOrEqual(84);
       await sweep(page, width);
 
       const money = await page.evaluate(() => {
