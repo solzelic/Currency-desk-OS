@@ -106,16 +106,21 @@ test("the unopened-vault refusal is readable on a phone", async ({ page }, testI
 
     /* The menu label "Cash Drawer" is hidden with the menu. The
        bottom bar's Till tab is the way into the drawer. */
+    const before = await book.till();
     await page.locator('#phonebar [data-phone-app="till"]').click();
     const openTill = page.getByRole("button", { name: /Open the till/i }).first();
     /* isVisible answers this instant. A till that is already open
        has no button, which is false, not an error. A throw is a
        broken page and the check should fail on it. */
     if (await openTill.isVisible()) await openTill.click();
-    await page.getByRole("button", { name: /^Move cash$/i }).first().click();
-    await page.locator('input[placeholder="0"]').last().fill("50");
-    await page.getByRole("button", { name: /Issue float/i }).last().click();
-    await expect(page.getByText("Open the vault with a starting count first.")).toBeVisible();
+    /* Move cash on a phone is the desktop float form. The phone
+       says so and does not post. The desktop test above is the one
+       that drives the form and reads the vault refusal. */
+    await page.locator(".till-phone").getByRole("button", { name: /^Move cash$/i }).click();
+    await expect(page.getByRole("heading", { name: "Open this on a computer" })).toBeVisible();
+    await expect(page.locator(".till-phone")).toContainText("That form is a desktop panel.");
+    await expect(page.getByRole("button", { name: /Issue float/i })).toHaveCount(0);
+    expect(await book.till()).toEqual(before);
 
     await page.screenshot({ path: testInfo.outputPath("vault-not-open-390.png") });
   } finally {
