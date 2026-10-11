@@ -62,6 +62,7 @@ import {
 } from "./philippines-pack.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
+import { derivedIdStatus } from "./id-on-file.js";
 import {
   LedgerError,
   requireIdentification,
@@ -397,7 +398,7 @@ export class ChequeService {
         actor,
         pack,
         face,
-        customer.rows[0].id_status,
+        await derivedIdStatus(client, input.customerId, actor.tenantId, actor.legalEntityId),
         {
           kind: "cheque_cashing",
           cash: true,

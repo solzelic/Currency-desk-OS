@@ -154,7 +154,6 @@ test("a new GB desk opens on pack-gb-v2, an older desk opts in, and the transfer
         externalRef: `uk-seam-${Date.now()}`,
         name: "UK Seam Walk-in",
         risk: "normal",
-        idStatus: "missing",
       }),
     });
     const customer = await made.json().catch(() => ({}));

@@ -117,7 +117,6 @@ async function walkInCustomer(page: Page) {
         externalRef: `thr-seam-${Date.now()}`,
         name: "Threshold Seam Walk-in",
         risk: "normal",
-        idStatus: "missing",
       }),
     });
     return { status: answer.status, body: await answer.json().catch(() => ({})) };

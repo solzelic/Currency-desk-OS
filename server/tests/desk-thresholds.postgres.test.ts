@@ -33,6 +33,7 @@ import { buildApp } from "../src/app.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { readDeskThresholds } from "../src/ledger/thresholds.js";
 import { provisionDesk } from "../src/onboarding/provision.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -404,6 +405,7 @@ async function gateReset(packId: string) {
        ('cust-known',$1,$2,$3,$4,'Regular','Normal','verified')`,
     gateScope.slice(0, 4),
   );
+  await fileTypedId(pool, "cust-known");
   /* Rates against the book's own currency, which is GBP here — the column
      is called units_per_cad because renaming it is not free. */
   await pool.query(
@@ -468,6 +470,9 @@ postgres("the identification gate refuses at the desk's own number", () => {
   });
 
   afterAll(async () => {
+    /* fileTypedId leaves a client on this entity. The document rows
+       follow the client; the entity cannot go while the client remains. */
+    await pool.query("DELETE FROM desk_clients WHERE legal_entity_id=$1", [GATE_ENTITY]);
     await pool.query("DELETE FROM legal_entities WHERE id=$1", [GATE_ENTITY]);
     await handle.close();
     await pool.end();

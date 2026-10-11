@@ -17,6 +17,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerError, LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { ObligationService } from "../src/ledger/obligations.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -96,6 +97,7 @@ async function reset() {
   await pool.query(
     "INSERT INTO ledger_customers VALUES ('customer-1','tenant-1','le-1','branch-1','workspace-1','Rachel Carter','normal','verified'),('customer-2','tenant-1','le-1','branch-1','workspace-1','Walk-in','normal','missing')",
   );
+  await fileTypedId(pool, "customer-1");
   await pool.query(
     "INSERT INTO ledger_rates VALUES ('tenant-1','le-1','branch-1','workspace-1','CAD',1),('tenant-1','le-1','branch-1','workspace-1','USD',0.731)",
   );

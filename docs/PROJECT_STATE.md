@@ -455,6 +455,18 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, ledger customer ID status. `POST` and `PUT
+/api/ledger/customers` do not take an ID standing from the body. A
+request that carries `idStatus`, `id_status`, `kycStatus`, a verified
+flag, or the same claim nested under identity or KYC is refused with
+422 for a teller and for an owner. A new customer is stored as
+missing. An update does not rewrite the column. The posting gate, on
+a deal that needs ID, reads a typed identity document on the linked
+client (type and number, primary not past its expiry). A row already
+stored as verified with no document is left as it is and is not ID
+on file. `scripts/audit-ledger-id-without-document.mjs` lists those
+rows and does not change them.
+
 **2026-10-11**, public site claims, fourth pass. The onboarding
 line about a rate board no longer says plenty of shops run on it.
 It says you can run on that alone and add a site whenever you want

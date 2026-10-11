@@ -13,6 +13,7 @@ import { ObligationService } from "../src/ledger/obligations.js";
 import { requireIdentification, type LedgerActor } from "../src/ledger/service.js";
 import { ThresholdService } from "../src/ledger/threshold-control.js";
 import type { IdentificationDeal } from "../src/ledger/canada-rules.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -616,6 +617,9 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
   it("stores the beneficiary on a version 2 remittance at the line, and not before", async () => {
     const teller = actor(V2, "teller", `ca2-teller-${V2}`);
     const known = `ca2-known-${V2}`;
+    /* The column still says verified. The gate reads the document. */
+    await fileTypedId(pool, known);
+    await fileTypedId(pool, `ca2-known-${V1}`);
     const base = {
       customerId: known,
       payoutCurrency: "PHP",

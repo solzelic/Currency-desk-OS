@@ -149,7 +149,6 @@ test("a customer the desk has never seen is put on file", async ({ page }) => {
     externalRef: `day-${Date.now()}`,
     name: "Priya Raman",
     risk: "normal",
-    idStatus: "verified",
   });
   expect(made.status, `the customer could not be created: ${JSON.stringify(made.body)}`)
     .toBe(201);
@@ -282,7 +281,6 @@ test("the desk refuses what it should, and says why", async ({ page }) => {
     externalRef: `stranger-${Date.now()}`,
     name: "Walk In",
     risk: "normal",
-    idStatus: "missing",
   });
   expect(stranger.status).toBe(201);
 

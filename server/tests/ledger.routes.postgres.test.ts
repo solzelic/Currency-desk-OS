@@ -6,6 +6,8 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { ID_STATUS_NOT_CLIENT_MESSAGE } from "../src/ledger/id-on-file.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -151,10 +153,10 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:jakob-miller",
         name: "Jakob Miller",
         risk: "normal",
-        idStatus: "verified",
       },
     });
     expect(created.statusCode).toBe(201);
+    expect(created.json().idStatus).toBe("missing");
     const synced = await app.inject({
       method: "POST",
       url: "/api/ledger/customers",
@@ -163,13 +165,12 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:jakob-miller",
         name: "Jakob Miller",
         risk: "enhanced",
-        idStatus: "pending",
       },
     });
     expect(synced.json().customerId).toBe(created.json().customerId);
     expect(synced.json()).toMatchObject({
       risk: "enhanced",
-      idStatus: "pending",
+      idStatus: "missing",
     });
     const updated = await app.inject({
       method: "PUT",
@@ -179,7 +180,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:jakob-miller",
         name: "Jakob Miller",
         risk: "normal",
-        idStatus: "verified",
       },
     });
     expect(updated.statusCode).toBe(200);
@@ -213,7 +213,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:second",
         name: "Second Customer",
         risk: "normal",
-        idStatus: "missing",
       },
     });
     expect(
@@ -226,7 +225,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
             externalRef: "local:jakob-miller",
             name: "Second Customer",
             risk: "normal",
-            idStatus: "missing",
           },
         })
       ).statusCode,
@@ -263,7 +261,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
           payload: {
             name: "Changed",
             risk: "normal",
-            idStatus: "verified",
           },
         })
       ).statusCode,
@@ -726,7 +723,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
           payload: {
             name: "",
             risk: "made-up",
-            idStatus: "verified",
           },
         })
       ).statusCode,
@@ -750,5 +746,138 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         })
       ).statusCode,
     ).toBe(400);
+  });
+
+  /* ID standing is the server's. A teller and an owner are the same
+     caller here: neither may name it, in any spelling. */
+  const idStatusVariants = [
+    { label: "camelCase idStatus", body: { idStatus: "verified" } },
+    { label: "camelCase kycStatus", body: { kycStatus: "verified" } },
+    { label: "snake_case id_status", body: { id_status: "verified" } },
+    { label: "snake_case kyc_status", body: { kyc_status: "verified" } },
+    { label: "nested identity status", body: { identity: { status: "verified" } } },
+    { label: "nested kyc id_status", body: { kyc: { id_status: "verified" } } },
+    { label: "verified flag", body: { verified: true } },
+    { label: "idVerified flag", body: { idVerified: true } },
+  ];
+
+  for (const role of [
+    { staffId: "a.singh", name: "teller" },
+    { staffId: "j.masri", name: "owner" },
+  ]) {
+    for (const method of ["POST", "PUT"] as const) {
+      for (const variant of idStatusVariants) {
+        it(`rejects ${variant.label} on ${method} for a ${role.name}`, async () => {
+          const cookies = await cookie(role.staffId);
+          const response = await app.inject({
+            method,
+            url: method === "POST" ? "/api/ledger/customers" : "/api/ledger/customers/customer-demo",
+            cookies,
+            payload: {
+              name: "Demo Customer",
+              risk: "normal",
+              ...variant.body,
+            },
+          });
+          expect(response.statusCode, response.body).toBe(422);
+          expect(response.json()).toMatchObject({
+            code: "ID_STATUS_NOT_CLIENT_SET",
+            message: ID_STATUS_NOT_CLIENT_MESSAGE,
+          });
+          const stored = await pool.query(
+            "SELECT id_status FROM ledger_customers WHERE customer_id='customer-demo'",
+          );
+          expect(stored.rows[0].id_status).toBe("verified");
+        });
+      }
+    }
+  }
+
+  it("treats a typed identity document as ID on file for a large deal", async () => {
+    const cookies = await cookie();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/ledger/customers",
+      cookies,
+      payload: { name: "Ada Conductor", risk: "normal" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json().idStatus).toBe("missing");
+    const customerId = created.json().customerId as string;
+    await pool.query(
+      "INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT DO NOTHING",
+      [DEMO.tenantId],
+    );
+    await pool.query(
+      `INSERT INTO legal_entities
+         (id, tenant_id, name, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+       VALUES ($1, $2, 'York', 'CAD', 'pack-ca-v1', 1)
+       ON CONFLICT (id) DO NOTHING`,
+      [DEMO.legalEntityId, DEMO.tenantId],
+    );
+    await fileTypedId(pool, customerId);
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/ledger/customers",
+      cookies,
+    });
+    const row = listed.json().customers.find(
+      (customer: { customerId: string }) => customer.customerId === customerId,
+    );
+    expect(row.idStatus).toBe("verified");
+
+    const posted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/exchanges",
+      cookies,
+      payload: {
+        idempotencyKey: "typed-id-large",
+        customerId,
+        from: "CAD",
+        to: "USD",
+        inputAmount: "3000.00",
+        feeCad: "0.00",
+        purpose: "Travel",
+        sourceOfFunds: "Salary",
+        thirdParty: false,
+      },
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+  });
+
+  it("refuses a large deal with no document even when the client sent idStatus verified", async () => {
+    const cookies = await cookie();
+    const poisoned = await app.inject({
+      method: "PUT",
+      url: "/api/ledger/customers/customer-demo",
+      cookies,
+      payload: { name: "Demo Customer", risk: "normal", idStatus: "verified" },
+    });
+    expect(poisoned.statusCode, poisoned.body).toBe(422);
+    expect(poisoned.json().code).toBe("ID_STATUS_NOT_CLIENT_SET");
+    /* The seeded row already says verified and has no document. That is
+       an existing customer, and the gate must not honour the column. */
+    const posted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/exchanges",
+      cookies,
+      payload: {
+        idempotencyKey: "no-document-large",
+        customerId: "customer-demo",
+        from: "CAD",
+        to: "USD",
+        inputAmount: "3000.00",
+        feeCad: "0.00",
+        purpose: "Travel",
+        sourceOfFunds: "Salary",
+        thirdParty: false,
+      },
+    });
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().code).toBe("COMPLIANCE_BLOCKED");
+    const booked = await pool.query(
+      "SELECT count(*)::int AS n FROM ledger_transactions WHERE customer_id='customer-demo'",
+    );
+    expect(booked.rows[0].n).toBe(0);
   });
 });

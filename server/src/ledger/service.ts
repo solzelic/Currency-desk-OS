@@ -24,6 +24,7 @@ import {
   type ComplianceStamp,
 } from "./compliance-gate.js";
 import { holdSerbiaSuspicion, SERBIA_SUSPICION_HELD, serbiaExchangeFacts } from "./serbia.js";
+import { derivedIdStatus } from "./id-on-file.js";
 import { euAmlrDuty, loadEuAmlrLines } from "./eu-amlr.js";
 import {
   INDIA_PACK_ID,
@@ -826,12 +827,18 @@ export class LedgerService {
         purpose: quote.purpose,
         sourceOfFunds: quote.sourceOfFunds,
       });
+      const idStatus = await derivedIdStatus(
+        client,
+        quote.customerId,
+        actor.tenantId,
+        actor.legalEntityId,
+      );
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
         phValue ? phValue.pesos : inputHome,
-        customer.rows[0].id_status,
+        idStatus,
         {
           kind: "exchange",
           cash: true,
@@ -856,7 +863,7 @@ export class LedgerService {
           kind: "exchange",
           cash: true,
           customerName: String(customer.rows[0].name ?? ""),
-          idStatus: customer.rows[0].id_status,
+          idStatus,
           rate: fixed(rate, 12),
         },
         compliance.identificationRequired,
@@ -1378,12 +1385,18 @@ export class LedgerService {
         purpose: request.purpose,
         sourceOfFunds: request.sourceOfFunds,
       });
+      const idStatus = await derivedIdStatus(
+        client,
+        request.customerId,
+        actor.tenantId,
+        actor.legalEntityId,
+      );
       const compliance = await this.requireIdentification(
         client,
         actor,
         pack,
         phValue ? phValue.pesos : inputHome,
-        customer.rows[0].id_status,
+        idStatus,
         {
           kind: "exchange",
           cash: true,
@@ -1408,7 +1421,7 @@ export class LedgerService {
           kind: "exchange",
           cash: true,
           customerName: String(customer.rows[0].name ?? ""),
-          idStatus: customer.rows[0].id_status,
+          idStatus,
           rate: fixed(rate, 12),
         },
         compliance.identificationRequired,

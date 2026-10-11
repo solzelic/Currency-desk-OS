@@ -65,6 +65,7 @@ import Decimal from "decimal.js";
 import pg from "pg";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
+import { derivedIdStatus } from "./id-on-file.js";
 import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.js";
 import { beneficiaryRecordGap } from "./canada-rules.js";
 import { holdSerbiaSuspicion, SERBIA_PACK_ID, SERBIA_SUSPICION_HELD } from "./serbia.js";
@@ -681,7 +682,7 @@ export class ObligationService {
         actor,
         pack,
         amountHome,
-        customer.rows[0].id_status,
+        await derivedIdStatus(client, spec.customerId, actor.tenantId, actor.legalEntityId),
         {
           kind: spec.dealKind,
           cash: true,
