@@ -123,10 +123,11 @@ async function openTill(page: Page) {
 
 async function countTheBook(page: Page, balances: Record<string, string>) {
   await clickDrawerTab(page, /Cash drawer/i);
+  const drawer = page.locator(".win.show.active");
   for (const [ccy, amount] of Object.entries(balances)) {
-    await press(page.locator(`button:has-text("${ccy}")`).first());
-    await press(page.getByRole("button", { name: /Enter total/i }).first());
-    await page.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
+    await press(drawer.locator(`button.till-chip:has-text("${ccy}")`).first());
+    await press(drawer.getByRole("button", { name: /Enter total/i }).first());
+    await drawer.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
   }
   await saveDrawerCount(page);
 }
@@ -178,8 +179,11 @@ test("a close after money moved is refused, on screen and in the book", async ({
 test("the stale-close refusal is readable on a phone", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signInAtDesk(page);
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
   const book = ledger(page);
   await openTill(page);
+  if (await skip.isVisible({ timeout: 1_000 }).catch(() => false)) await skip.click();
 
   const before = await book.till();
   await countTheBook(page, before);
