@@ -86,7 +86,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   window-title dot, no top icon menu, no logo or store row, no
   dashed Your logo box, and no resize grip. The till line keeps its own open or closed mark.
   More uses the colour of the app it
-  opened, or the ink when More itself is showing. More lists the other apps that role can already open. There is no
+  opened. When More itself is showing, that colour is #17140F. More lists the other apps that role can already open. There is no
   floating + on a phone. New transaction stays on the ledger, and
   New contact stays where it already was. The header till dot is
   the open session: 8px, #157A3E, with a 2px white ring. The green

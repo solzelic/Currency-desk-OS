@@ -86,6 +86,59 @@ test("the bar shows on a phone and is hidden on the desktop", async ({ page }) =
   await expect(page.locator("#menubar .mb-brand")).toBeVisible();
 });
 
+test("unselected tabs stay quiet and every tab carries a top marker", async ({ page }) => {
+  for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    await atDesk(page);
+    for (const id of ["rates", "ledger", "clients", "till", "more"]) {
+      await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
+      await dismissTour(page);
+      await settled(page);
+      const mark = await page.locator(`#phonebar [data-phone-app="${id}"]`).evaluate((el) => {
+        const after = getComputedStyle(el, "::after");
+        const label = el.querySelector(".lbl");
+        const svg = el.querySelector("svg");
+        return {
+          top: after.top,
+          width: after.width,
+          height: after.height,
+          bg: after.backgroundColor,
+          weight: label ? getComputedStyle(label).fontWeight : "",
+          borderBottom: getComputedStyle(el).borderBottomWidth,
+          artwork: svg ? /1D6B45/i.test(svg.innerHTML) : true,
+        };
+      });
+      expect(mark.top, `${size.width} ${id} marker`).toBe("0px");
+      expect(mark.width, `${size.width} ${id} marker`).toBe("32px");
+      expect(mark.height, `${size.width} ${id} marker`).toBe("3px");
+      expect(mark.borderBottom, `${size.width} ${id} underline`).toBe("0px");
+      expect(mark.weight, `${size.width} ${id}`).toBe("700");
+      expect(mark.artwork, `${size.width} ${id} badge`).toBe(false);
+      if (id === "till" || id === "more") expect(mark.bg, `${size.width} ${id}`).toBe("rgb(23, 20, 15)");
+      const idle = await page.locator("#phonebar .phone-tab:not(.is-on)").evaluateAll((els) => els.map((el) => {
+        const label = el.querySelector(".lbl");
+        const svg = el.querySelector("svg");
+        const text = label ? getComputedStyle(label) : null;
+        const icon = svg ? getComputedStyle(svg) : null;
+        return {
+          id: el.getAttribute("data-phone-app"),
+          color: text ? text.color : "",
+          weight: text ? text.fontWeight : "",
+          stroke: icon ? icon.stroke : "",
+          artwork: svg ? /1D6B45/i.test(svg.innerHTML) : true,
+        };
+      }));
+      for (const tab of idle) {
+        expect(tab.color, `${size.width} ${tab.id}`).toBe("rgb(107, 103, 96)");
+        expect(tab.weight, `${size.width} ${tab.id}`).toBe("500");
+        expect(tab.stroke, `${size.width} ${tab.id}`).toBe("rgb(107, 103, 96)");
+        expect(tab.artwork, `${size.width} ${tab.id} badge`).toBe(false);
+      }
+    }
+    expect(await floatingPlus(page), `${size.width} floating plus`).toBe(0);
+  }
+});
+
 test("each tab opens that app", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
@@ -157,12 +210,33 @@ test("a teller only sees the apps a teller can open", async ({ page }) => {
   }
 });
 
+/* A round plus that floats over the screen. The denomination
+   stepper is a small square control in the row, and the desktop
+   menu plus sits in the menu bar. Neither is this. */
+async function floatingPlus(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    return [...document.querySelectorAll("button, a")].filter((el) => {
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+      const box = el.getBoundingClientRect();
+      if (box.width < 36 || box.height < 36 || box.bottom < 0 || box.top > window.innerHeight) return false;
+      const fixed = style.position === "fixed" || style.position === "absolute";
+      const round = parseFloat(style.borderRadius) >= Math.min(box.width, box.height) / 2 - 2;
+      const plus = el.id === "phone-fab" || el.classList.contains("phone-fab") || /M5 12h14/.test(el.innerHTML);
+      return fixed && round && plus;
+    }).length;
+  });
+}
+
 test("a phone has no floating plus", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
   await expect(page.locator("#phone-fab")).toHaveCount(0);
-  await page.setViewportSize({ width: 599, height: 800 });
-  await expect(page.locator("#phone-fab")).toHaveCount(0);
+  for (const width of [360, 390, 599]) {
+    await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
+    expect(await floatingPlus(page), `${width} floating plus`).toBe(0);
+    await expect(page.locator("#phone-fab")).toHaveCount(0);
+  }
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator("#menubar")).toBeVisible();
   await page.setViewportSize(PHONE);
@@ -177,10 +251,10 @@ test("a phone has no floating plus", async ({ page }) => {
 });
 
 /* The cash drawer is one scrolling column. On first load at least
-   three denomination rows sit fully above the count panel. After
-   scrolling, every row from $100 down to the coins can sit fully
-   above that panel. The + floats over the rows and does not cover
-   an input or Save count. */
+   three denomination rows sit fully above the count panel, and
+   those rows are the thing under the pointer between Count
+   denominations and CAD counted. After scrolling, every row from
+   $100 down to the coins can sit fully above that panel. */
 async function countGeometry(page: Page): Promise<{
   rowCount: number;
   fullyVisible: number;
@@ -251,6 +325,25 @@ async function placeEveryRow(page: Page): Promise<{ placed: number; blocked: num
   });
 }
 
+/* The labels are the ones a person reads. A row counts only when
+   it sits between them and the pointer lands on the row, not on
+   the count panel painted over it. */
+async function rowsBetweenLabels(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const heading = [...document.querySelectorAll("button")].find((el) => (el.textContent || "").trim() === "Count denominations");
+    const counted = [...document.querySelectorAll("div")].find((el) => el.childElementCount === 0 && (el.textContent || "").trim() === "CAD counted");
+    if (!heading || !counted) return -1;
+    const top = heading.getBoundingClientRect().bottom;
+    const bottom = counted.getBoundingClientRect().top;
+    return [...document.querySelectorAll(".till-den-row")].filter((row) => {
+      const box = row.getBoundingClientRect();
+      if (box.height < 8 || box.top < top - 1 || box.bottom > bottom + 1) return false;
+      const hit = document.elementFromPoint(box.left + 20, box.top + box.height / 2);
+      return !!(hit && row.contains(hit));
+    }).length;
+  });
+}
+
 /* A fresh book has no open session, and that banner takes the
    rows. Counting starts once the till is open, so the first load
    this checks is that screen. */
@@ -304,6 +397,11 @@ test("an owner can bring every denomination fully above the count panel", async 
     const first = await countGeometry(page);
     expect(first.rowCount, `${size.width} rows`).toBe(10);
     expect(first.fullyVisible, `${size.width} first load`).toBeGreaterThanOrEqual(3);
+    /* A box above the panel can still be the panel, if the panel
+       paints over it. The row has to be the thing under the pointer,
+       and it has to sit between the two labels. */
+    const readable = await rowsBetweenLabels(page);
+    expect(readable, `${size.width} rows between the labels`).toBeGreaterThanOrEqual(3);
     expect(first.panelOpaque, `${size.width} panel`).toBe(true);
     expect(first.panelOnBar, `${size.width} panel on the bar`).toBe(true);
     expect(first.pad, `${size.width} scroll pad`).toBeGreaterThanOrEqual(16);

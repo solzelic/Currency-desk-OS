@@ -2285,14 +2285,15 @@
     );
     const phoneOn = phoneMore ? 'more' : (phonePrimary.has(activeBase) ? activeBase : (activeBase ? 'more' : ''));
     /* The selected tab borrows the app's existing accent (--c on the
-       dock). More has none of its own: the sheet uses the ink, and an
-       app opened from More lends More that app's accent. */
+       dock). More has none of its own: the sheet uses the same ink as
+       Till (#17140F), and an app opened from More lends More that
+       app's accent. --cd-ink is #0A0A0A, which is not that ink. */
     const phoneTabColour = (id) => {
       if (id === 'more') {
-        if (!phoneMore && activeBase && !phonePrimary.has(activeBase)) return APP_ACCENT[activeBase] || 'var(--cd-ink)';
-        return 'var(--cd-ink)';
+        if (!phoneMore && activeBase && !phonePrimary.has(activeBase)) return APP_ACCENT[activeBase] || '#17140F';
+        return '#17140F';
       }
-      return APP_ACCENT[id] || 'var(--cd-ink)';
+      return APP_ACCENT[id] || '#17140F';
     };
     /* The header dot is the window-title dot. The title bar is hidden
        on a phone, so the dot sits by the shop name and follows the
