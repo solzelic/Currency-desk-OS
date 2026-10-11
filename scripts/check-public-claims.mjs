@@ -20,8 +20,10 @@
    cannot split the word.
 
    "Live rate board" is the Rates plan's name. That exact phrase is
-   allowed. "live rates" anywhere else, including a meta description,
-   still fails. "updated every second" still fails beside the name.
+   allowed.    "live rates" anywhere else, including a hyphen and a meta
+   description, still fails. "updated every second" still fails
+   beside the name. A sentence that says the board moves with the
+   market still fails. The plural "live rate boards" is not the name.
    "handling real work", "see it live", "live board", "always current",
    "plenty of shops", "48-hour", "less than an hour", and "overnight"
    fail. The product-name exception is removed before those checks.
@@ -85,11 +87,17 @@ const phrases = [
   [/\bfortnights?\b/, "fortnight"],
   [/\b24\s*\/\s*7\b/, "24/7"],
   [/\breal[-\s]time\b/, "real-time"],
-  [/\blive rates\b/, "live rates"],
+  [/\blive[-\s]rates\b/, "live rates"],
   [/handling real work/, "handling real work"],
   [/see it live/, "see it live"],
   [/\blive board\b/, "live board"],
   [/\b48-hours?\b/, "48-hour"],
+  [/\b(?!24-)\d{1,3}-hours?\b/, "N-hour"],
+  [/\bwithin the hour\b/, "within the hour"],
+  [/\bnext[-\s]days?\b/, "next-day"],
+  [/\breply today\b/, "reply today"],
+  [/\blive rate boards\b/, "live rate boards"],
+  [/\bas the market moves\b/, "as the market moves"],
   [/\bless than (?:an|a|one|\d+) hours?\b/, "less than an hour"],
   [/\bovernight\b/, "overnight"],
   [/\bevery second\b/, "every second"],
@@ -139,7 +147,11 @@ function normalize(html, invisible, tags = " ") {
     mdash: "-",
     minus: "-",
     hyphen: "-",
+    dash: "-",
     thinsp: " ",
+    ensp: " ",
+    emsp: " ",
+    hairsp: " ",
   };
   text = text.replace(/&([a-z]+);/gi, (all, name) =>
     Object.prototype.hasOwnProperty.call(named, name.toLowerCase()) ? named[name.toLowerCase()] : all,
@@ -148,7 +160,7 @@ function normalize(html, invisible, tags = " ") {
   text = decodeNumeric(text);
   text = text.replace(/&(?:shy|zwnj|zwj);/gi, invisible);
   text = text.replace(/&nbsp;/gi, " ");
-  text = text.replace(/[\u2009\u200A\u202F]/g, " ");
+  text = text.replace(/[\u2002\u2003\u2009\u200A\u202F]/g, " ");
   text = text.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D\u2E3A\u2E3B]/g, "-");
   text = text.replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, invisible);
   text = text.replace(/<meta\b[^>]*>/gi, readMeta);
