@@ -13527,6 +13527,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        outside-click listener: that listener would close the sheet on the
        tap that chose a till. */
     const [phoneTillOpen, setPhoneTillOpen] = useState(false);
+    /* The desktop header already has a button titled "Switch till at
+       this location". A second one inside the who-line, even while that
+       line is hidden, is still in the document, and the desktop seam
+       test then finds two. This control exists only while the phone
+       layout is the one on screen. */
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhoneLayout(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    useEffect(() => {
+      if (!phoneLayout) setPhoneTillOpen(false);
+    }, [phoneLayout]);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -14431,7 +14447,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-phone-bit"
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-phone-chunk"
-    }, drawerRole)) : null, phoneTillLabel ? tillOptions.length > 1 ? /*#__PURE__*/React.createElement("button", {
+    }, drawerRole)) : null, phoneTillLabel ? phoneLayout && tillOptions.length > 1 ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-phone-bit till-phone-till",
       title: "Switch till at this location",
@@ -14451,7 +14467,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-phone-bit"
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-phone-chunk"
-    }, phoneTillLabel)) : null), phoneTillOpen && tillOptions.length > 1 && /*#__PURE__*/React.createElement("div", {
+    }, phoneTillLabel)) : null), phoneTillOpen && phoneLayout && tillOptions.length > 1 && /*#__PURE__*/React.createElement("div", {
       className: "till-sheet-scrim",
       onMouseDown: () => setPhoneTillOpen(false)
     }, /*#__PURE__*/React.createElement("div", {

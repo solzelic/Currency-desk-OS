@@ -149,7 +149,16 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     await expect(page.locator(".till-phone-who")).toContainText("On the drawer");
     await expect(page.locator(".till-phone-who")).toContainText("A. Singh");
     await expect(page.locator(".till-phone-who")).toContainText("Senior teller");
-    await expect(page.locator(".till-phone-who")).toContainText("Till 1");
+    /* One till keeps the plain local name. The day-at-the-desk spec
+       leaves its own till on this branch, so a full-suite run already
+       has a switcher here and the name is the ledger till. */
+    const switcher = page.locator(".till-phone-till");
+    if (await switcher.count()) {
+      await expect(switcher).toContainText("till-01");
+    } else {
+      await expect(page.locator(".till-phone-who")).toContainText("Till 1");
+      await expect(switcher).toHaveCount(0);
+    }
     const whoLine = await page.locator(".till-phone-bit").evaluateAll((els) => {
       const tops = els.map((el) => Math.round(el.getBoundingClientRect().top));
       const host = els[0]?.parentElement;
@@ -160,7 +169,6 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     });
     expect(new Set(whoLine.tops).size, "the who-line wraps onto a second line").toBe(1);
     expect(whoLine.clipped, "the who-line clips").toBe(false);
-    await expect(page.locator(".till-phone-till")).toHaveCount(0);
 
     const session = page.locator(".till-session");
     await expect(session).toBeVisible();
@@ -291,6 +299,8 @@ test("the desktop cash drawer is unchanged", async ({ page }) => {
   await expect(page.locator(".win.show.active .win-bar")).toBeVisible();
   await expect(page.locator(".win.show.active .win-resize")).toBeVisible();
   await expect(page.locator(".till-session")).toBeVisible();
+  /* Mounted only at phone width, so a wide window still has the one
+     header switcher. */
   await expect(page.locator(".till-phone-till")).toHaveCount(0);
 });
 
@@ -333,8 +343,15 @@ test("a long who-line stays on a 360px screen", async ({ page }) => {
   const who = page.locator(".till-phone-who");
   await expect(who).toContainText("Alexandra Konstantinou");
   await expect(who).toContainText("Assistant branch manager");
-  await expect(who).toContainText("Till 12");
   await expect(who).toContainText("On the drawer");
+  /* Till 12 is the local name, and it shows when this branch has one
+     till. Another till already on the book replaces it with the
+     ledger id, which is the name the switcher opens. */
+  if (await page.locator(".till-phone-till").count()) {
+    await expect(page.locator(".till-phone-till")).toBeVisible();
+  } else {
+    await expect(who).toContainText("Till 12");
+  }
   const laid = await who.evaluate((host) => {
     const hostBox = host.getBoundingClientRect();
     const bits = [...host.querySelectorAll(".till-phone-bit")];

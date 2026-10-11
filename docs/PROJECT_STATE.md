@@ -96,7 +96,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and Hand off / Save count at the thumb. The who-line wraps at the
   dots. A name that does not fit on the line ellipsizes. When the
   branch has another till, that till name opens the same switcher the
-  desktop header uses. A note that the branch has more than one till
+  desktop header uses. That control is mounted only at this width, so
+  a wide window still has the one header button. A note that the branch has more than one till
   scrolls with the count and points at that name. Reconcile and History scroll inside their tables. Wider
   than 430px the drawer is unchanged. A ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
@@ -440,7 +441,7 @@ selector, a who-line, the session line, big denomination steppers,
 and Hand off / Save count at the thumb. The who-line wraps at the
 dots, and a long name ellipsizes. Another till at the branch is
 reached from that till name, through the same switch the desktop
-header uses. A multi-till note scrolls with the count. Reconcile
+header uses. That control is mounted only at phone width. A multi-till note scrolls with the count. Reconcile
 and History only scroll. Wider than 430px the drawer is unchanged.
 
 **2026-10-10**, phone bottom bar. At 430px and under, the header is the

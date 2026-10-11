@@ -205,6 +205,20 @@
        outside-click listener: that listener would close the sheet on the
        tap that chose a till. */
     const [phoneTillOpen, setPhoneTillOpen] = useState(false);
+    /* The desktop header already has a button titled "Switch till at
+       this location". A second one inside the who-line, even while that
+       line is hidden, is still in the document, and the desktop seam
+       test then finds two. This control exists only while the phone
+       layout is the one on screen. */
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhoneLayout(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    useEffect(() => { if (!phoneLayout) setPhoneTillOpen(false); }, [phoneLayout]);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -807,7 +821,7 @@
             </span>
           </span>
           {drawerRole ? <span className="till-phone-bit"><span className="till-phone-chunk">{drawerRole}</span></span> : null}
-          {phoneTillLabel ? (tillOptions.length > 1 ? (
+          {phoneTillLabel ? (phoneLayout && tillOptions.length > 1 ? (
             <button type="button" className="till-phone-bit till-phone-till" title="Switch till at this location" aria-haspopup="dialog" aria-expanded={phoneTillOpen ? 'true' : 'false'} onClick={() => setPhoneTillOpen(true)}>
               <span className="till-phone-chunk">{phoneTillLabel}</span>
               <span className="till-phone-chev" aria-hidden="true"><Ic n="chev" s={11} c="currentColor" /></span>
@@ -816,7 +830,7 @@
             <span className="till-phone-bit"><span className="till-phone-chunk">{phoneTillLabel}</span></span>
           )) : null}
         </div>
-        {phoneTillOpen && tillOptions.length > 1 && (
+        {phoneTillOpen && phoneLayout && tillOptions.length > 1 && (
           <div className="till-sheet-scrim" onMouseDown={() => setPhoneTillOpen(false)}>
             <div className="till-sheet" role="dialog" aria-label="Switch till" onMouseDown={e => e.stopPropagation()}>
               <div className="till-pick-kicker">{(onLedgerTills && ledgerTill && ledgerTill.branchName) || (_ab ? _ab.name : '')} · switch till</div>
