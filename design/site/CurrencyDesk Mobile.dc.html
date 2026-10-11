@@ -172,7 +172,7 @@
     <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">The payoff</div>
     <h2 style="font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.04; letter-spacing: -0.018em; margin: 12px 0 0;">More trades. Less paperwork.</h2>
     <div style="margin-top: 20px; border-radius: 16px; overflow: hidden; border: 1px solid var(--line);">
-      <sc-for list="{{ proof }}" as="p" hint-placeholder-count="6">
+      <sc-for list="{{ proof }}" as="p" hint-placeholder-count="5">
         <div style="display: flex; align-items: baseline; gap: 12px; padding: 14px 16px; background: var(--panel); border-top: 1px solid var(--hair);">
           <span style="{{ p.nStyle }}">{{ p.n }}</span>
           <span style="flex: 1;">
@@ -210,7 +210,7 @@
         </div>
       </sc-for>
     </div>
-    <p style="font-size: 12.5px; line-height: 1.55; color: var(--faint); margin: 16px 0 0;">Client verification is billed per file, from $3.99. <a href="CurrencyDesk Compliance.dc.html#kyc" style="color: var(--green); font-weight: 600;">See KYC pricing</a></p>
+    <p style="font-size: 12.5px; line-height: 1.55; color: var(--faint); margin: 16px 0 0;">ID verification is coming and is not billed yet. A planned price is listed from $3.99. <a href="CurrencyDesk Compliance.dc.html#kyc" style="color: var(--green); font-weight: 600;">See KYC pricing</a></p>
   </div>
 
   <div style="padding: 40px 20px;">
@@ -291,7 +291,7 @@ class Component extends DCLogic {
       { name: 'Fund transfer', spec: 'In the pack, not from the book', tag: 'In the pack' },
       { name: 'Suspicious', spec: 'Not drafted or sent', tag: 'In the pack' },
       { name: 'Records', spec: 'Kept 5 years. Nothing is deleted', tag: 'Kept' } ] },
-    { name: 'Serbia', tag: 'APML', live: false, status: 'Available', rules: [
+    { name: 'Serbia', tag: 'APML', live: false, status: 'Not live', rules: [
       { name: 'Exchange ID', spec: '5,000 EUR, NBS rate', tag: 'Assisted' },
       { name: 'Cash report', spec: '15,000 EUR to APML', tag: 'Prepared' },
       { name: 'Suspicion', spec: 'Teller can save a draft', tag: 'Assisted' },
@@ -311,8 +311,8 @@ class Component extends DCLogic {
       { name: 'Value transfer', spec: 'IVTS · every transfer', tag: 'Planned' },
       { name: 'Suspicious', spec: 'SMR · 24h or 3 business days', tag: 'Planned' } ] },
     { name: 'India', tag: 'FIU-IND', live: false, status: 'Not live', rules: [
-      { name: 'Cash report', spec: 'CTR, a single cash deal over ₹10 lakh. Connected deals in a month are not summed yet.', tag: 'On the desk' },
-      { name: 'Suspicious', spec: 'STR within 7 working days', tag: 'On the desk' } ] },
+      { name: 'Cash report', spec: 'CTR, a single cash deal over ₹10 lakh. Connected deals in a month are not summed yet.', tag: 'Mapped' },
+      { name: 'Suspicious', spec: 'STR within 7 working days of concluding suspicion. The desk does not file it.', tag: 'Mapped' } ] },
     { name: 'UAE', tag: 'CBUAE', live: false, status: 'Early 2028', rules: [
       { name: 'FX identification', spec: 'AED 3,500', tag: 'Planned' },
       { name: 'Suspicious', spec: 'goAML STR', tag: 'Planned' } ] }
@@ -329,20 +329,19 @@ class Component extends DCLogic {
 
   PROOF = [
     { n: 'More', h: 'Customers who find you', t: 'Your rates are on the web where people search, not only on the wall.' },
-    { n: 'More', h: 'Repeat business', t: 'Texting is not connected, so a text does not bring a client back.' },
     { n: 'More', h: 'Margin kept', t: 'Every ticket prices at your spread — never eyeballed, never given away.' },
     { n: 'Less', h: 'Time on the books', t: 'The day closes with till, ledger and drawer already agreeing.' },
     { n: 'Less', h: 'Filing to chase', t: 'Cash thresholds are watched. The desk does not draft a regulator report as the deal is written.' },
-    { n: 'Less', h: 'Training to do', t: 'A new teller runs their first deal alone, in the first ten minutes.' }
+    { n: 'Less', h: 'Training to do', t: 'The screen asks for the same steps on every deal. Nothing here was timed.' }
   ];
 
   FAQS = [
-    { q: 'Is CurrencyDesk live yet?', a: 'Yes — in Canada, running real deals in real shops today with FINTRAC’s rulebook built in. We are opening it to the first hundred desks as early access.' },
+    { q: 'Is CurrencyDesk live yet?', a: 'Yes, in Canada. Canada is the only country live. We are onboarding the first desks now. FINTRAC\'s rulebook is listed. Early access is open to the first hundred desks.' },
     { q: 'What do I need to run it?', a: 'A computer or tablet with a browser. No servers, no installs, no new hardware at the counter — your note counter and printer keep working exactly as they do now.' },
     { q: 'Do you take a cut of my trades?', a: 'Never. A flat monthly price, no percentage, no per-transaction fee, no share of your spread. We do not touch your money.' },
     { q: 'How long until my desk is running?', a: 'Rates and your public board can be live the same afternoon. A full desk usually takes about a week, and we do it with you rather than handing you a manual.' },
-    { q: 'Can I bring my existing records across?', a: 'Yes. We move your clients, rates and history in during setup, so day one on the desk is not day one of your records.' },
-    { q: 'When will you support my country?', a: 'Serbia is available for new desks. Exchange identification is 5,000 EUR or more when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it. Still being mapped: United States early 2027, United Kingdom and Australia mid-2027, European Union late 2027, UAE early 2028, Singapore and Hong Kong through 2028. A new India desk opens with the India rules. Filing to FIU-IND is not live. A new Philippines desk opens on these rules. Filing to the AMLC is not live.' }
+    { q: 'Can I bring my existing records across?', a: 'We help you enter clients, rates and history by hand during setup. There is no import.' },
+    { q: 'When will you support my country?', a: 'Serbia is not live. A pack is drafted. Exchange identification is 5,000 EUR or more when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it. Still being mapped: United States early 2027, United Kingdom and Australia mid-2027, European Union late 2027, UAE early 2028, Singapore and Hong Kong through 2028. India is not live. The India rules are mapped. The desk does not file to FIU-IND. The Philippines is not live. Those rules are mapped. The desk does not file to the AMLC.' }
   ];
 
   componentDidMount() {
