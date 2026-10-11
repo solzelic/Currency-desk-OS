@@ -105,7 +105,7 @@
 
         <div style="padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--green-soft);">
           <div style="font-family: var(--serif); font-size: 21px; line-height: 1.1; letter-spacing: -0.01em;">Still stuck on something?</div>
-          <p style="font-size: 12.5px; line-height: 1.5; color: var(--mute); margin: 8px 0 0;">Ask a founder directly. We answer every message ourselves, usually the same day.</p>
+          <p style="font-size: 12.5px; line-height: 1.5; color: var(--mute); margin: 8px 0 0;">Ask a founder directly. We answer every message ourselves. We have not timed how soon.</p>
           <a href="/contact" style="display: inline-flex; align-items: center; gap: 7px; margin-top: 13px; padding: 10px 15px; border-radius: 10px; background: var(--green); color: #fff; font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700;" style-hover="background: var(--green-deep); color: #fff;">Ask us<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
         </div>
       </div>
@@ -174,11 +174,11 @@ class Component extends DCLogic {
     return [
       { cat:'Getting started', q:'Is CurrencyDesk live yet?', a:'Yes, in Canada. Canada is the only country live. We are onboarding the first desks now. FINTRAC\'s rulebook is listed. Early access is open to the first hundred desks, which is why the price you lock now is the price you keep.' },
       { cat:'Getting started', q:'What do I need to run it?', a:'A computer or tablet with a browser. No servers, no installs, no new hardware at the counter — your note counter and printer keep working exactly as they do now.' },
-      { cat:'Getting started', q:'How long until my desk is running?', a:'Rates and your public board can be live the same afternoon. A full desk, with the ledger, clients and compliance, usually takes about a week, and we do it with you rather than handing you a manual. History is entered by hand. There is no import.' },
+      { cat:'Getting started', q:'How long until my desk is running?', a:'We are onboarding the first desks now, so this has not been timed. We set the desk up with you, including the ledger, clients and compliance. History is entered by hand. There is no import.' },
       { cat:'Getting started', q:'Does my shop stay open during setup?', a:'Yes. You keep trading the way you do now and we bring the desk up alongside you, then move over on a quiet morning once your team is comfortable.' },
       { cat:'Getting started', q:'Does it change how a deal is done?', a:'The order stays exactly as it is — quote, count, hand over, record. The desk replaces the writing-down part, and does it while the customer is still at the window.' },
       { cat:'Getting started', q:'Can I bring my existing records across?', a:'We help you enter clients, rates and history by hand during setup. There is no import.' },
-      { cat:'Getting started', q:'Can I keep my old books?', a:'Keep them as long as you like. Nothing is deleted and nothing depends on them once you are running — most owners keep the ledgers in the drawer for a season and stop reaching for them within a fortnight.' },
+      { cat:'Getting started', q:'Can I keep my old books?', a:'Keep them as long as you like. Nothing is deleted and nothing depends on them once you are running. The aim is that the old ledgers stay in the drawer and you stop reaching for them.' },
 
       { cat:'At the counter', q:'How fast is a deal at the window?', a:'Faster than paper. A repeat client reuses the file already on the desk. We have not timed it.' },
       { cat:'At the counter', q:'Can I still use my note counter and receipt printer?', a:'Yes. The desk does not replace your hardware, and nothing at the counter needs rewiring.' },
@@ -212,7 +212,7 @@ class Component extends DCLogic {
       { cat:'Compliance', q:'Can I still keep paper copies?', a:'Of course. Print whatever you want to hold. The difference is that the paper is no longer the only copy.' },
 
       { cat:'Where it works', q:'When will you support my country?', a:'Serbia is not live. A pack is drafted. Exchange offices identify at 5,000 EUR or more, and a transfer over 1,000 EUR, when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML within 3 days. The desk does not send it. A teller can stop a suspicious attempt and save a draft. The desk does not spot suspicion on its own. Records are kept 5 years. Nothing is removed on a schedule. The rulebooks still being mapped are dated: United States early 2027, United Kingdom and Australia mid-2027, European Union late 2027, UAE early 2028, Singapore and Hong Kong through 2028. India is not live. The India rules are mapped. The desk does not file to FIU-IND. The Philippines is not live. Those rules are mapped. The desk does not file to the AMLC. Early-access members move their market up the queue.' },
-      { cat:'Where it works', q:'Can I use it outside Canada today?', a:'You can run rates, your public board, clients and your ledger anywhere. What waits for your market going live is the compliance layer — the thresholds and reports specific to your regulator.' },
+      { cat:'Where it works', q:'Can I use it outside Canada today?', a:'You can run rates, your public board, clients and your ledger anywhere. What waits until that market is supported is the compliance layer: the thresholds and reports specific to your regulator.' },
       { cat:'Where it works', q:'What if I open a shop in another country?', a:'The desk carries the rules with you. Add the location and it loads that regulator’s rulebook underneath your team — same screens, different thresholds and reports.' },
 
       { cat:'Your data', q:'Who can see my numbers?', a:'Only you and the staff you name. We do not sell data, we do not pool your rates into a market feed, and we do not share anything with other shops.' },
@@ -226,7 +226,7 @@ class Component extends DCLogic {
       { cat:'Getting found', q:'Can I text clients without giving out my number?', a:'No. Texting is not connected yet. The desk does not send a message, and replies do not land on the desk.' },
       { cat:'Getting found', q:'What can I send clients?', a:'Nothing by text. Texting is not connected yet.' },
 
-      { cat:'Early access', q:'What does early access actually mean?', a:'You are among the first hundred desks: founding pricing held for the life of the account, a direct line to the people building it, and real influence over what ships next. The software itself is handling live money at counters now.' },
+      { cat:'Early access', q:'What does early access actually mean?', a:'You are among the first hundred desks: founding pricing held for the life of the account, a direct line to the people building it, and real influence over what ships next. The software is in early access in Canada.' },
       { cat:'Early access', q:'How much am I committing to?', a:'Very little. Monthly is month to month, cancel when you like; annual is simply a discount for paying up front. There is no contract to break and no exit fee.' },
       { cat:'Early access', q:'Can I see it before I decide?', a:'Yes. Apply and we walk your desk through the real software on a call — no slides. If it is not right for your shop we will say so.' },
       { cat:'Early access', q:'What do you want from founding members?', a:'Honesty about what is missing. The nine things on the desk today are there because operators told us what their day actually looks like, and the next nine will come the same way.' }
