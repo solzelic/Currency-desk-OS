@@ -2,8 +2,23 @@
    steppers, and a thumb footer. At 1280 the drawer is the desktop
    one: folder tabs, small steppers, coins open, no phone selector.
    The count still posts to the ledger. */
+import { createRequire } from "node:module";
+import path from "node:path";
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
+
+/* The second drawer is inserted the same way the till-switch seam does,
+   and removed afterwards, because a branch left with two tills changes
+   what an unscoped ledger call means for every later spec. */
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as {
+  Pool: new (c: { connectionString: string }) => {
+    query: (sql: string, params?: unknown[]) => Promise<unknown>;
+    end: () => Promise<void>;
+  };
+};
+const SECOND_WORKSPACE = "ws-seam-till-02";
+const SECOND_TILL = "till-02";
 
 const PHONE = [
   { width: 390, height: 844 },
@@ -145,6 +160,22 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     });
     expect(new Set(whoLine.tops).size, "the who-line wraps onto a second line").toBe(1);
     expect(whoLine.clipped, "the who-line clips").toBe(false);
+    await expect(page.locator(".till-phone-till")).toHaveCount(0);
+
+    const session = page.locator(".till-session");
+    await expect(session).toBeVisible();
+    await expect(session).toContainText(/Session #\d+/);
+    await expect(session).toContainText("open");
+    await expect(session).toContainText("opened by");
+    const sessionCut = await session.evaluate((el) => {
+      const over = (node: Element | null) => !!node && (node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
+      return {
+        line: over(el.querySelector(".till-session-line")),
+        tally: over(el.querySelector(".till-session-tally")),
+        box: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
+      };
+    });
+    expect(sessionCut, "the session line is cut off at " + size.width).toEqual({ line: false, tally: false, box: false });
     await expect(page.locator(".till-pill")).toBeVisible();
     const pillClipped = await page.locator(".till-pill").evaluate((el) => el.scrollWidth > el.clientWidth + 1);
     expect(pillClipped, "In drawer wraps or clips").toBe(false);
@@ -259,4 +290,189 @@ test("the desktop cash drawer is unchanged", async ({ page }) => {
   expect(Math.round(step?.height || 0)).toBe(28);
   await expect(page.locator(".win.show.active .win-bar")).toBeVisible();
   await expect(page.locator(".win.show.active .win-resize")).toBeVisible();
+  await expect(page.locator(".till-session")).toBeVisible();
+  await expect(page.locator(".till-phone-till")).toHaveCount(0);
+});
+
+/* The who-line used to be one nowrap row, so a long name ran off a
+   360px screen. The bits wrap at the dots. The name ellipsizes only
+   when that one bit is wider than the screen. */
+test("a long who-line stays on a 360px screen", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await atDesk(page);
+  await tillOpen(page);
+  await page.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem("cdos_settings") || "{}");
+    const employees = Array.isArray(settings.employees) ? settings.employees : [];
+    settings.employees = employees.map((employee: { code?: string; staffId?: string; name?: string }) => {
+      if (employee.code === "a.singh" || employee.staffId === "a.singh" || employee.name === "A. Singh") {
+        return { ...employee, name: "Alexandra Konstantinou", role: "Assistant branch manager" };
+      }
+      return employee;
+    });
+    localStorage.setItem("cdos_settings", JSON.stringify(settings));
+    const branches = JSON.parse(localStorage.getItem("cdos_stations_v2") || "null");
+    if (Array.isArray(branches)) {
+      for (const branch of branches) {
+        for (const till of branch.tills || []) {
+          if (till.id === "b01t1") {
+            till.name = "Till 12";
+            till.teller = "Alexandra Konstantinou";
+          }
+        }
+      }
+      localStorage.setItem("cdos_stations_v2", JSON.stringify(branches));
+    }
+  });
+  await page.reload();
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await settled(page);
+  await openTill(page, true);
+
+  const who = page.locator(".till-phone-who");
+  await expect(who).toContainText("Alexandra Konstantinou");
+  await expect(who).toContainText("Assistant branch manager");
+  await expect(who).toContainText("Till 12");
+  await expect(who).toContainText("On the drawer");
+  const laid = await who.evaluate((host) => {
+    const hostBox = host.getBoundingClientRect();
+    const bits = [...host.querySelectorAll(".till-phone-bit")];
+    const lineStarts = bits.filter((bit) => bit.getBoundingClientRect().left <= hostBox.left + 2);
+    const dotInside = bits.map((bit) => {
+      const box = bit.getBoundingClientRect();
+      const style = getComputedStyle(bit, "::before");
+      if (!style.content || style.content === "none" || style.content === "normal") return false;
+      const left = box.left + (parseFloat(style.left) || 0);
+      const right = left + (parseFloat(style.width) || 0);
+      const startsLine = box.left <= hostBox.left + 2;
+      return startsLine && right > hostBox.left + 1;
+    });
+    const name = host.querySelector(".till-phone-name");
+    const lead = host.querySelector(".till-phone-lead");
+    return {
+      bits: bits.length,
+      lineStarts: lineStarts.map((bit) => (bit.textContent || "").trim()),
+      dotInside,
+      nameCut: !!name && name.scrollWidth > name.clientWidth + 1 && getComputedStyle(name).textOverflow !== "ellipsis",
+      leadCut: !!lead && lead.scrollWidth > lead.clientWidth + 1,
+      hostCut: host.scrollWidth > host.clientWidth + 1,
+    };
+  });
+  expect(laid.bits).toBe(3);
+  expect(laid.lineStarts.every((text) => !text.startsWith("·") && !text.endsWith("·"))).toBe(true);
+  expect(laid.dotInside.every((inside) => inside === false)).toBe(true);
+  expect(laid.nameCut, "the name is clipped without an ellipsis").toBe(false);
+  expect(laid.leadCut, "On the drawer is clipped").toBe(false);
+  expect(laid.hostCut, "the who-line clips").toBe(false);
+  const past = await overflowPast(page);
+  expect(past, "horizontal overflow").toEqual([]);
+});
+
+test("a phone shows a closed session in full", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await atDesk(page);
+  await tillOpen(page);
+  await openTill(page, true);
+  const closed = await page.evaluate(async () => {
+    const balances = await fetch("/api/ledger/till-balances", { credentials: "same-origin" }).then((r) => r.json());
+    const current = await fetch("/api/ledger/till-session", { credentials: "same-origin" }).then((r) => r.json());
+    const res = await fetch("/api/ledger/till-sessions/" + encodeURIComponent(current.session.sessionId) + "/close", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        idempotencyKey: "phone-layout-close-" + Date.now(),
+        counts: balances.balances,
+        note: "Counted and locked for the night",
+      }),
+    });
+    return { status: res.status, text: res.ok ? "" : await res.text() };
+  });
+  expect(closed.status, closed.text).toBe(200);
+  await page.reload();
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await settled(page);
+  await openTill(page, true);
+  const session = page.locator(".till-session");
+  await expect(session).toBeVisible();
+  await expect(session).toContainText(/Session #\d+/);
+  await expect(session).toContainText("closed by");
+  await expect(session).toContainText("Counted and locked for the night");
+  const cut = await session.evaluate((el) => {
+    const line = el.querySelector(".till-session-line");
+    return {
+      line: !!line && (line.scrollWidth > line.clientWidth + 1 || line.scrollHeight > line.clientHeight + 1),
+      box: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
+    };
+  });
+  expect(cut, "the closed session is cut off").toEqual({ line: false, box: false });
+  const past = await overflowPast(page);
+  expect(past, "horizontal overflow").toEqual([]);
+  await page.evaluate(async () => {
+    await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: "{}",
+    });
+  });
+});
+
+test("a phone can move to the other till", async ({ page }) => {
+  test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the second till is a ledger workspace");
+  test.setTimeout(180_000);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await pool.query(
+      `INSERT INTO workspaces (id,tenant_id,legal_entity_id,branch_id,till_id)
+       VALUES ($1,'tnt-yorkfx','le-yorkfx-canada','br-yorkville',$2) ON CONFLICT DO NOTHING`,
+      [SECOND_WORKSPACE, SECOND_TILL],
+    );
+    for (const size of PHONE) {
+      await page.setViewportSize({ width: size.width, height: size.height });
+      await atDesk(page);
+      await tillOpen(page);
+      const seeded = await page.evaluate(async (workspaceId) => {
+        const r = await fetch("/api/ledger/opening-balances", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-workspace-id": workspaceId },
+          credentials: "same-origin",
+          body: JSON.stringify({ balances: { CAD: "9000.00" } }),
+        });
+        return r.status;
+      }, SECOND_WORKSPACE);
+      expect([201, 409]).toContain(seeded);
+      await openTill(page, true);
+
+      await expect(page.locator(".till-ambiguous-inscroll")).toContainText("Tap the till name");
+      await expect(page.locator(".till-ambiguous-inscroll b")).toHaveText("till-01");
+      const opener = page.locator(".till-phone-till");
+      await expect(opener).toBeVisible();
+      await expect(opener).toContainText("till-01");
+      await opener.click();
+      const sheet = page.getByRole("dialog", { name: "Switch till" });
+      await expect(sheet).toBeVisible();
+      await expect(sheet.getByRole("button", { name: /till-01/ })).toBeVisible();
+      await expect(sheet.getByRole("button", { name: /till-02/ })).toBeVisible();
+      await sheet.getByRole("button", { name: /till-02/ }).click();
+      await page.getByRole("button", { name: /^Switch till$/ }).click();
+
+      await expect(page.locator(".till-phone-till")).toContainText(SECOND_TILL);
+      await expect(page.locator(".till-ambiguous-inscroll b")).toHaveText(SECOND_TILL);
+      await expect(page.getByText(/Now counting till-02/)).toBeVisible();
+      await expect.poll(async () => page.evaluate(async () => {
+        const r = await fetch("/api/ledger/till-balances", { credentials: "same-origin" });
+        const body = await r.json();
+        return body.tillId as string;
+      })).toBe(SECOND_TILL);
+      const past = await overflowPast(page);
+      expect(past, "horizontal overflow at " + size.width).toEqual([]);
+    }
+  } finally {
+    await pool.query("DELETE FROM sessions WHERE workspace_id = $1", [SECOND_WORKSPACE]);
+    await pool.query("DELETE FROM workspaces WHERE id = $1", [SECOND_WORKSPACE]);
+    await pool.end();
+  }
 });

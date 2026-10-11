@@ -91,10 +91,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
   above the bottom bar.   On a phone the Cash Drawer count is one selector for Cash drawer,
-  Reconcile & close, and History, then who is on the drawer, the
-  amount, denomination steppers, and Hand off / Save count at the
-  thumb. A note that the branch has more than one till scrolls with
-  the count. Reconcile and History scroll inside their tables. Wider
+  Reconcile & close, and History, then who is on the drawer, whether
+  the session is open or closed, the amount, denomination steppers,
+  and Hand off / Save count at the thumb. The who-line wraps at the
+  dots. A name that does not fit on the line ellipsizes. When the
+  branch has another till, that till name opens the same switcher the
+  desktop header uses. A note that the branch has more than one till
+  scrolls with the count and points at that name. Reconcile and History scroll inside their tables. Wider
   than 430px the drawer is unchanged. A ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. On a wide window the
@@ -432,11 +435,13 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-10**, phone cash drawer. At 430px and under, the count is a
-selector, a who-line, big denomination steppers, and Hand off / Save
-count at the thumb. A multi-till note scrolls with that count.
-Reconcile and History only scroll. Wider than 430px the drawer is
-unchanged.
+**2026-10-11**, phone cash drawer. At 430px and under, the count is a
+selector, a who-line, the session line, big denomination steppers,
+and Hand off / Save count at the thumb. The who-line wraps at the
+dots, and a long name ellipsizes. Another till at the branch is
+reached from that till name, through the same switch the desktop
+header uses. A multi-till note scrolls with the count. Reconcile
+and History only scroll. Wider than 430px the drawer is unchanged.
 
 **2026-10-10**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

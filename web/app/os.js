@@ -13521,6 +13521,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const [tab, setTab] = useState('count');
     const [tabSheet, setTabSheet] = useState(false);
     const [coinsOpen, setCoinsOpen] = useState(false);
+    /* The desktop till menu sits in .till-meta, and a phone hides that
+       whole line. This sheet is the same list of tills, opened from the
+       till name in the who-line. It is not wired to the desktop menu's
+       outside-click listener: that listener would close the sheet on the
+       tap that chose a till. */
+    const [phoneTillOpen, setPhoneTillOpen] = useState(false);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -13786,6 +13792,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const activeOption = tillOptions.find(o => o.on) || null;
     const pickTill = key => {
       setTillMenu(false);
+      setPhoneTillOpen(false);
       if (activeOption && key === activeOption.key) return;
       setPendingTill(key);
     };
@@ -14378,6 +14385,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const drawerName = named && named.name || drawerId || me && me.name || '—';
     const drawerRole = current && current.role || named && named.role || '';
     const tillShort = String(stationTill || activeOption && activeOption.name || 'Till').replace(/\s+—.*/, '');
+    /* One till stays the plain local name. With another till to move to,
+       the name is the one the desktop switcher shows, so picking a drawer
+       renames this line the same way it renames that button. */
+    const phoneTillLabel = tillOptions.length > 1 ? activeOption && activeOption.name || (onLedgerTills ? 'Till' : stationTill || 'Till') : tillShort;
     const tabNow = (TABS.find(t => t[0] === tab) || TABS[0])[1];
     return /*#__PURE__*/React.createElement("div", {
       className: "till-root flex flex-col",
@@ -14410,11 +14421,68 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-phone-who"
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-phone-bit"
-    }, "On the drawer ", drawerName), drawerRole ? /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-person"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-lead"
+    }, "On the drawer "), /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-name"
+    }, drawerName))), drawerRole ? /*#__PURE__*/React.createElement("span", {
       className: "till-phone-bit"
-    }, drawerRole) : null, tillShort ? /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-chunk"
+    }, drawerRole)) : null, phoneTillLabel ? tillOptions.length > 1 ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-phone-bit till-phone-till",
+      title: "Switch till at this location",
+      "aria-haspopup": "dialog",
+      "aria-expanded": phoneTillOpen ? 'true' : 'false',
+      onClick: () => setPhoneTillOpen(true)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-chunk"
+    }, phoneTillLabel), /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-chev",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 11,
+      c: "currentColor"
+    }))) : /*#__PURE__*/React.createElement("span", {
       className: "till-phone-bit"
-    }, tillShort) : null), tabSheet && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-chunk"
+    }, phoneTillLabel)) : null), phoneTillOpen && tillOptions.length > 1 && /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-scrim",
+      onMouseDown: () => setPhoneTillOpen(false)
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet",
+      role: "dialog",
+      "aria-label": "Switch till",
+      onMouseDown: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-pick-kicker"
+    }, onLedgerTills && ledgerTill && ledgerTill.branchName || (_ab ? _ab.name : ''), " \xB7 switch till"), tillOptions.map(o => /*#__PURE__*/React.createElement("button", {
+      key: o.key,
+      type: "button",
+      className: 'till-sheet-tab' + (o.on ? ' is-on' : ''),
+      onClick: () => pickTill(o.key)
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "wallet",
+      s: 18,
+      c: o.on ? '#fff' : 'currentColor'
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "till-pick-name"
+    }, o.name, o.on ? /*#__PURE__*/React.createElement("span", null, " \xB7 you") : o.occupant ? /*#__PURE__*/React.createElement("span", null, " \xB7 ", o.occupant, " on now") : o.note ? /*#__PURE__*/React.createElement("span", null, " \xB7 ", o.note) : null), o.on && /*#__PURE__*/React.createElement(Ic, {
+      n: "check",
+      s: 16,
+      c: "#fff"
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "till-pick-foot"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "logout",
+      s: 14,
+      c: "currentColor"
+    }), " To change store, sign out & back in."))), tabSheet && /*#__PURE__*/React.createElement("div", {
       className: "till-sheet-scrim",
       onMouseDown: () => setTabSheet(false)
     }, /*#__PURE__*/React.createElement("div", {
@@ -14780,13 +14848,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         background: CD.green,
         flex: 'none'
       }
-    }), /*#__PURE__*/React.createElement("span", null, "Session ", /*#__PURE__*/React.createElement("b", {
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "till-session-line"
+    }, "Session ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
     }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
-      className: "ml-auto flex-none",
+      className: "till-session-tally ml-auto flex-none",
       style: {
         color: CD.faint
       }
@@ -14801,7 +14871,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "lock",
       s: 12,
       c: "#3a7a56"
-    }), /*#__PURE__*/React.createElement("span", null, "Session ", /*#__PURE__*/React.createElement("b", {
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "till-session-line"
+    }, "Session ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono, monospace'
       }
@@ -14971,7 +15043,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, " Use the till name in the header to move to another drawer; the ledger moves with it."))), /*#__PURE__*/React.createElement("div", {
+    }, " Tap the till name to move to another drawer; the ledger moves with it."))), /*#__PURE__*/React.createElement("div", {
       className: "till-chips flex flex-wrap gap-1.5 mb-3"
     }, CCYS.map(c => {
       const on = c === ccy;

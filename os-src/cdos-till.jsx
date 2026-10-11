@@ -199,6 +199,12 @@
     const [tab, setTab] = useState('count');
     const [tabSheet, setTabSheet] = useState(false);
     const [coinsOpen, setCoinsOpen] = useState(false);
+    /* The desktop till menu sits in .till-meta, and a phone hides that
+       whole line. This sheet is the same list of tills, opened from the
+       till name in the who-line. It is not wired to the desktop menu's
+       outside-click listener: that listener would close the sheet on the
+       tap that chose a till. */
+    const [phoneTillOpen, setPhoneTillOpen] = useState(false);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -408,7 +414,7 @@
           on: !!(station && station.tillId === t.id),
         }));
     const activeOption = tillOptions.find(o => o.on) || null;
-    const pickTill = (key) => { setTillMenu(false); if (activeOption && key === activeOption.key) return; setPendingTill(key); };
+    const pickTill = (key) => { setTillMenu(false); setPhoneTillOpen(false); if (activeOption && key === activeOption.key) return; setPendingTill(key); };
     const confirmPickTill = async () => {
       const key = pendingTill;
       setPendingTill(null);
@@ -778,6 +784,12 @@
     const drawerName = (named && named.name) || drawerId || (me && me.name) || '—';
     const drawerRole = (current && current.role) || (named && named.role) || '';
     const tillShort = String(stationTill || (activeOption && activeOption.name) || 'Till').replace(/\s+—.*/, '');
+    /* One till stays the plain local name. With another till to move to,
+       the name is the one the desktop switcher shows, so picking a drawer
+       renames this line the same way it renames that button. */
+    const phoneTillLabel = tillOptions.length > 1
+      ? ((activeOption && activeOption.name) || (onLedgerTills ? 'Till' : stationTill || 'Till'))
+      : tillShort;
     const tabNow = (TABS.find(t => t[0] === tab) || TABS[0])[1];
 
     return (<div className="till-root flex flex-col" data-till-screen={tab} style={{ height: '100%', background: CD.paper, position: 'relative' }}>
@@ -788,10 +800,37 @@
           <span className="till-phone-alts">{TABS.filter(t => t[0] !== tab).map(([, label]) => <span key={label} className="till-phone-alt">{label}</span>)}</span>
         </button>
         <div className="till-phone-who">
-          <span className="till-phone-bit">On the drawer {drawerName}</span>
-          {drawerRole ? <span className="till-phone-bit">{drawerRole}</span> : null}
-          {tillShort ? <span className="till-phone-bit">{tillShort}</span> : null}
+          <span className="till-phone-bit">
+            <span className="till-phone-person">
+              <span className="till-phone-lead">On the drawer </span>
+              <span className="till-phone-name">{drawerName}</span>
+            </span>
+          </span>
+          {drawerRole ? <span className="till-phone-bit"><span className="till-phone-chunk">{drawerRole}</span></span> : null}
+          {phoneTillLabel ? (tillOptions.length > 1 ? (
+            <button type="button" className="till-phone-bit till-phone-till" title="Switch till at this location" aria-haspopup="dialog" aria-expanded={phoneTillOpen ? 'true' : 'false'} onClick={() => setPhoneTillOpen(true)}>
+              <span className="till-phone-chunk">{phoneTillLabel}</span>
+              <span className="till-phone-chev" aria-hidden="true"><Ic n="chev" s={11} c="currentColor" /></span>
+            </button>
+          ) : (
+            <span className="till-phone-bit"><span className="till-phone-chunk">{phoneTillLabel}</span></span>
+          )) : null}
         </div>
+        {phoneTillOpen && tillOptions.length > 1 && (
+          <div className="till-sheet-scrim" onMouseDown={() => setPhoneTillOpen(false)}>
+            <div className="till-sheet" role="dialog" aria-label="Switch till" onMouseDown={e => e.stopPropagation()}>
+              <div className="till-pick-kicker">{(onLedgerTills && ledgerTill && ledgerTill.branchName) || (_ab ? _ab.name : '')} · switch till</div>
+              {tillOptions.map(o => (
+                <button key={o.key} type="button" className={'till-sheet-tab' + (o.on ? ' is-on' : '')} onClick={() => pickTill(o.key)}>
+                  <Ic n="wallet" s={18} c={o.on ? '#fff' : 'currentColor'} />
+                  <span className="till-pick-name">{o.name}{o.on ? <span> · you</span> : (o.occupant ? <span> · {o.occupant} on now</span> : (o.note ? <span> · {o.note}</span> : null))}</span>
+                  {o.on && <Ic n="check" s={16} c="#fff" />}
+                </button>
+              ))}
+              <div className="till-pick-foot"><Ic n="logout" s={14} c="currentColor" /> To change store, sign out &amp; back in.</div>
+            </div>
+          </div>
+        )}
         {tabSheet && (
           <div className="till-sheet-scrim" onMouseDown={() => setTabSheet(false)}>
             <div className="till-sheet" role="dialog" aria-label="Cash drawer" onMouseDown={e => e.stopPropagation()}>
@@ -895,14 +934,14 @@
         {serverSession && sessionOpen && (
           <div className="till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: CD.green, flex: 'none' }}></span>
-            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
-            <span className="ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
+            <span className="till-session-line">Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
+            <span className="till-session-tally ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
           </div>
         )}
         {sessionClosed && (
           <div className="till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
             <Ic n="lock" s={12} c="#3a7a56" />
-            <span>Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {clockOf(new Date(serverSession.closedAt).getTime())}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
+            <span className="till-session-line">Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {clockOf(new Date(serverSession.closedAt).getTime())}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
           </div>
         )}
         {(sessionErr || serverBalanceError) && (
@@ -962,7 +1001,7 @@
               <span className="flex-1 min-w-0">
                 This branch has {ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
                 {ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : ''}.
-                <span style={{ color: CD.mute }}> Use the till name in the header to move to another drawer; the ledger moves with it.</span>
+                <span style={{ color: CD.mute }}> Tap the till name to move to another drawer; the ledger moves with it.</span>
               </span>
             </div>
           )}
