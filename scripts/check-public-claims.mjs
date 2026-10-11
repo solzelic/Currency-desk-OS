@@ -92,14 +92,17 @@ const phrases = [
   [/see it live/, "see it live"],
   [/\blive board\b/, "live board"],
   [/\b48-hours?\b/, "48-hour"],
-  [/\b(?!24-)\d{1,3}-hours?\b/, "N-hour"],
+  [/\b(?:2|48) hours?\b/, "N hour"],
+  [/\b\d{1,3}-hours?\b/, "N-hour"],
+  [/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)-hours?\b/, "two-hour"],
   [/\bwithin the hour\b/, "within the hour"],
   [/\bnext[-\s]days?\b/, "next-day"],
   [/\breply today\b/, "reply today"],
+  [/\breplies today\b/, "replies today"],
   [/\blive rate boards\b/, "live rate boards"],
   [/\bas the market moves\b/, "as the market moves"],
-  [/\bless than (?:an|a|one|\d+) hours?\b/, "less than an hour"],
-  [/\bovernight\b/, "overnight"],
+  [/\bless than (?:an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety|\d+) hours?\b/, "less than an hour"],
+  [/\bover-?nights?\b/, "overnight"],
   [/\bevery second\b/, "every second"],
   [/plenty of shops/, "plenty of shops"],
   [/\balways current\b/, "always current"],
@@ -121,10 +124,18 @@ const NHRS = new RegExp(`\\b(?:\\d+|${HOUR_WORD}) hrs?\\b`, "g");
    only when punctuation bounds the clause. */
 const REGULATOR_PAGES = new Set(["web/compliance.html", "web/faq.html"]);
 const REGULATOR_CLAUSES = [
+  "smr within 24 hours for terrorism financing, otherwise 3 business days",
   "smr within 24 hours for terrorism financing",
 ];
+/* A comma does not end the clause, so ", guaranteed" cannot borrow it.
+   A closing quote does: the deadline is a script string. */
 const CLAUSE_BEFORE = "(?:^|[.!?;:\\u00b7\\n])";
-const CLAUSE_AFTER = "(?=$|[.!?;:,\\u00b7\\n])";
+const CLAUSE_AFTER = "(?=$|[.!?;:\\u00b7\\n'\"])";
+/* The FINTRAC window name. Anything else with 24-hour still fails. */
+const HOUR_RULES = [
+  "24-hour aggregation rule",
+  "24-hour rule",
+];
 
 function normalize(html, invisible, tags = " ") {
   let text = String(html);
@@ -201,6 +212,7 @@ function nearby(text, needle, other, span) {
 
 function withoutAllowed(text, rel) {
   let scanned = text.replace(/\blive rate board\b/g, " ");
+  for (const name of HOUR_RULES) scanned = scanned.replaceAll(name, " ");
   if (!REGULATOR_PAGES.has(rel)) return scanned;
   for (const phrase of REGULATOR_CLAUSES) {
     const re = new RegExp(`${CLAUSE_BEFORE}\\s*${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*${CLAUSE_AFTER}`, "g");
