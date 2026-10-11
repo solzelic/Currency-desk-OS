@@ -54,7 +54,7 @@
     if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || '';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const parts = String(iso).split('-');
-    return Number(parts[2]) + ' ' + months[Number(parts[1]) - 1] + ' ' + parts[0];
+    return months[Number(parts[1]) - 1] + ' ' + Number(parts[2]) + ', ' + parts[0];
   };
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
@@ -1041,7 +1041,7 @@
         <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {TODAY}</div></div></div>
+            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {phoneSheet ? phoneDay(TODAY) : TODAY}</div></div></div>
             <button type="button" onClick={requestClose} aria-label="Close" className="cd-tx-x p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 

@@ -60,6 +60,12 @@ async function openNewTransaction(page: Page): Promise<void> {
   await dismissTour(page);
 }
 
+async function expectPhoneDate(page: Page): Promise<void> {
+  const head = page.locator(".cd-tx-head");
+  await expect(head).not.toContainText(/\d{4}-\d{2}-\d{2}/);
+  await expect(head).toContainText(/[A-Z][a-z]{2} \d{1,2}, \d{4}/);
+}
+
 /* The post button, measured where it is. Do not scroll it into view:
    the failure this catches is a footer that only appears after a scroll. */
 async function expectPrimaryInViewport(page: Page): Promise<void> {
@@ -156,6 +162,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await signInAtDesk(page, "m.costa");
     await dismissTour(page);
     await openNewTransaction(page);
+    await expectPhoneDate(page);
 
     const typeButtons = page.locator(".cd-tx-types button");
     expect(await typeButtons.count()).toBe(6);
@@ -231,6 +238,8 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(await horizontalProblems(page), `customer at ${width}`).toEqual([]);
 
     await page.locator(".cd-money input").first().fill("3000");
+    await page.locator(".cd-money input").first().blur();
+    await expect(page.locator(".cd-money input").first()).toHaveValue("3000");
     await page.locator(".cd-money input").first().focus();
     await expectPrimaryInViewport(page);
     if (width === 360) {
@@ -360,6 +369,11 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await record.click();
   const sheet = page.locator(".cd-tx-record");
   await expect(sheet.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
+  const subtitle = sheet.locator(".cd-tx-record-sub-short");
+  await expect(subtitle).toHaveText("Type, number and expiry");
+  const clipped = await subtitle.evaluate((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
+  expect(clipped, "ID subtitle clipped").toBe(false);
+  await expect(sheet.locator(".cd-tx-record-sub-long")).toBeHidden();
   const idType = sheet.locator("select").first();
   const typeBox = await idType.boundingBox();
   expect(typeBox!.width, "ID type width").toBeGreaterThanOrEqual(240);
@@ -377,10 +391,10 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await saved;
   await expect(sheet).toBeHidden();
   await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
-  await expect(page.locator(".cd-tx-id-need")).toContainText("1 Apr 2030");
+  await expect(page.locator(".cd-tx-id-need")).toContainText("Apr 1, 2030");
   await expect(page.locator(".cd-tx-stats")).toContainText("ID ON FILE");
   await expect(page.locator(".cd-tx-stats")).toContainText(/LAST \d+D/);
-  await expect(page.locator(".cd-tx-stats")).toContainText("1 Apr 2030");
+  await expect(page.locator(".cd-tx-stats")).toContainText("Apr 1, 2030");
   const document = await page.evaluate(async (who) => {
     const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));
     const body = await res.json();
@@ -448,6 +462,7 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   expect(rail.width).toBeLessThan(340);
   expect(rail.x).toBeGreaterThanOrEqual(form.x + form.width - 2);
   expect(form.y).toBeLessThanOrEqual(rail.y + 2);
+  await expect(page.locator(".cd-tx-head")).toContainText(/\d{4}-\d{2}-\d{2}/);
   await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Anything worth keeping on the record…");
   await expect(page.locator(".cd-tx-cancel")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Text quote$/ })).toBeVisible();

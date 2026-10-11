@@ -1688,6 +1688,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .cd-tx-scroll { display: contents; }
 .cd-tx-customer-icon { display: contents; }
 .cd-tx-id-need { display: none; }
+.cd-tx-record-sub-short { display: none; }
 
 /* New transaction is a 940px dialog with a 320px ticket beside the
    fields. Under 600px that rail leaves the customer and the amount
@@ -2081,6 +2082,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-height: none !important;
     border-radius: 0 !important;
   }
+  .cd-tx-record-sub-long { display: none !important; }
+  .cd-tx-record-sub-short { display: block; }
   .cd-tx-record .grid-cols-2 {
     grid-template-columns: minmax(0, 1fr) !important;
   }

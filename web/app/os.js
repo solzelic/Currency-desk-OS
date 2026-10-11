@@ -26158,11 +26158,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.ink
       }
     }, "Record the ID"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px] truncate",
+      className: "cd-tx-record-sub min-w-0",
       style: {
         color: CD.mute
       }
-    }, name, " \xB7 type, number, and expiry go on their file")), /*#__PURE__*/React.createElement("button", {
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-record-sub-long text-[11.5px] truncate"
+    }, name, " \xB7 type, number, and expiry go on their file"), /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-record-sub-short text-[11.5px]"
+    }, "Type, number and expiry"))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
       "aria-label": "Back to the deal",
@@ -32346,7 +32350,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || '';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const parts = String(iso).split('-');
-    return Number(parts[2]) + ' ' + months[Number(parts[1]) - 1] + ' ' + parts[0];
+    return months[Number(parts[1]) - 1] + ' ' + Number(parts[2]) + ', ' + parts[0];
   };
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
@@ -34693,7 +34697,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, meta.short, " \xB7 ", me.name, " \xB7 ", TODAY))), /*#__PURE__*/React.createElement("button", {
+    }, meta.short, " \xB7 ", me.name, " \xB7 ", phoneSheet ? phoneDay(TODAY) : TODAY))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: requestClose,
       "aria-label": "Close",
