@@ -12,11 +12,17 @@ export const ID_DOCUMENT_TYPES = [
   { name: "Passport", photo: true, noExpiryAllowed: false, accepted: true },
   { name: "Driver's Licence", photo: true, noExpiryAllowed: false, accepted: true },
   { name: "Driver licence", photo: true, noExpiryAllowed: false, accepted: true },
+  { name: "Driver's License", photo: true, noExpiryAllowed: false, accepted: true },
   { name: "Provincial ID", photo: true, noExpiryAllowed: false, accepted: true },
   { name: "PR Card", photo: true, noExpiryAllowed: false, accepted: true },
   { name: "Permanent Resident Card", photo: true, noExpiryAllowed: false, accepted: true },
-  { name: "Citizenship Card", photo: true, noExpiryAllowed: false, accepted: true },
+  /* Since February 2012 IRCC has issued a paper certificate with no
+     photograph. This generic name is that paper. It does not identify
+     a client. Only the pre-2012 card below does. */
+  { name: "Citizenship Card", photo: false, noExpiryAllowed: false, accepted: true },
+  { name: "Citizenship certificate (2012 or later, no photo)", photo: false, noExpiryAllowed: false, accepted: true },
   { name: "Canadian citizenship card (pre-2012)", photo: true, noExpiryAllowed: true, accepted: true },
+  { name: "Secure Certificate of Indian Status", photo: true, noExpiryAllowed: false, accepted: true },
   { name: "Health Card", photo: false, noExpiryAllowed: false, accepted: false },
   { name: "Birth certificate", photo: false, noExpiryAllowed: false, accepted: true },
 ];

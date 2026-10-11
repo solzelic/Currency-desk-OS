@@ -1284,6 +1284,85 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
   });
 
+  it("does not treat a generic citizenship card as a photo ID", async () => {
+    const cookies = await cookie();
+    /* IRCC has issued a paper certificate with no photograph since
+       February 2012. A future date on the generic name does not
+       identify the client. */
+    const client = await openClient(cookies, "Paper citizenship");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Citizenship Card",
+      docNumber: "CIT-PAPER",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: ID_PHOTO_NEEDED_REASON,
+      reason: ID_PHOTO_NEEDED_REASON,
+      tone: "warning",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "citizenship-card-generic");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("treats a current Secure Certificate of Indian Status as ID on file, and an expired one as not", async () => {
+    const cookies = await cookie();
+    const current = await openClient(cookies, "Status card current");
+    const filed = await fileDocument(cookies, current.clientId, {
+      docType: "Secure Certificate of Indian Status",
+      docNumber: "SCIS-1",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "identified",
+      label: "Identified",
+      detail: ID_IDENTIFIED_REASON,
+      reason: ID_IDENTIFIED_REASON,
+      tone: "ok",
+    });
+    const posted = await exchange(cookies, await counterId(current.clientId), "3000.00", "scis-current");
+    expect(posted.statusCode, posted.body).toBe(201);
+
+    const old = await openClient(cookies, "Status card expired");
+    const expired = await fileDocument(cookies, old.clientId, {
+      docType: "Secure Certificate of Indian Status",
+      docNumber: "SCIS-OLD",
+      expiresOn: "2001-01-01",
+    });
+    expect(expired.idStanding).toEqual({
+      status: "expired",
+      label: "Expired",
+      detail: ID_EXPIRED_REASON,
+      reason: ID_EXPIRED_REASON,
+      tone: "warning",
+    });
+    const refused = await exchange(cookies, await counterId(old.clientId), "3000.00", "scis-expired");
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("does not treat a laminated Certificate of Indian Status as a photo ID", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Laminated status");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Certificate of Indian Status",
+      docNumber: "CIS-1",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: ID_PHOTO_NEEDED_REASON,
+      reason: ID_PHOTO_NEEDED_REASON,
+      tone: "warning",
+    });
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "laminated-status");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
   it("treats a pre-2012 citizenship card with no expiry as ID on file", async () => {
     const cookies = await cookie();
     const client = await openClient(cookies, "Citizenship card");
