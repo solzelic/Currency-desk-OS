@@ -49,9 +49,15 @@ async function press(locator: Locator) {
   }
 }
 
+/* A phone hides every window but the active one. The first CAD
+   button in the document can be the rate board, which is not shown. */
+function till(page: Page): Locator {
+  return page.locator(".win.show.active");
+}
+
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
-  const tab = page.locator(".win.show.active").getByRole("button", { name }).first();
+  const tab = till(page).getByRole("button", { name }).first();
   try {
     await clickWhenStable(tab);
   } catch {
@@ -63,8 +69,8 @@ async function clickDrawerTab(page: Page, name: RegExp) {
 }
 
 async function saveDrawerCount(page: Page) {
-  await press(page.locator(".win.show.active").getByRole("button", { name: /Save count/i }).first());
-  await expect(page.locator(".win.show.active").getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
+  await press(till(page).getByRole("button", { name: /Save count/i }).first());
+  await expect(till(page).getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
     timeout: 15_000,
   });
   await settleCashDrawerChrome(page);
@@ -109,8 +115,8 @@ async function openTill(page: Page) {
     await expect(title).toBeVisible();
   }
   await settleCashDrawerChrome(page);
-  const openButton = page.getByRole("button", { name: /Open the till/i }).first();
-  const sessionLine = page.getByText(/Session #\d+ open/);
+  const openButton = till(page).getByRole("button", { name: /Open the till/i }).first();
+  const sessionLine = till(page).getByText(/Session #\d+ open/);
   /* The drawer paints "Open the till" while the session is still
      arriving, then takes the button away once the book says the till
      is open. Wait until that line is on screen. A click that lands
@@ -159,9 +165,8 @@ async function postFortyCad(page: Page, key: string) {
 
 async function closeTheDay(page: Page) {
   await clickDrawerTab(page, /Reconcile & close/i);
-  const drawer = page.locator(".win.show.active");
-  await press(drawer.getByRole("button", { name: /Close day & lock book/i }).first());
-  await press(drawer.getByRole("button", { name: /Close day & lock book/i }).last());
+  await press(till(page).getByRole("button", { name: /Close day & lock book/i }).first());
+  await press(till(page).getByRole("button", { name: /Close day & lock book/i }).last());
 }
 
 test("a close after money moved is refused, on screen and in the book", async ({ page }, testInfo) => {
@@ -175,7 +180,7 @@ test("a close after money moved is refused, on screen and in the book", async ({
   await postFortyCad(page, "stale-close-seam-1280");
   await closeTheDay(page);
 
-  await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
+  await expect(till(page).getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
   expect((await book.session())?.status).toBe("open");
   expect(Number((await book.till()).CAD)).toBe(Number(before.CAD) + 40);
 
@@ -196,7 +201,7 @@ test("the stale-close refusal is readable on a phone", async ({ page }, testInfo
   await postFortyCad(page, "stale-close-seam-390");
   await closeTheDay(page);
 
-  await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
+  await expect(till(page).getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: testInfo.outputPath("stale-close-390.png") });
 });
 
@@ -221,7 +226,7 @@ test("a refresh in the middle of a count still closes against the mark it starte
   await settleCashDrawerChrome(page);
   await closeTheDay(page);
 
-  await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
+  await expect(till(page).getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
   expect((await book.session())?.status).toBe("open");
   expect(Number((await book.till()).CAD)).toBe(Number(before.CAD) + 40);
 });
