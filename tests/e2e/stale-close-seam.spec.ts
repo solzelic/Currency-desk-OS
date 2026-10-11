@@ -22,6 +22,8 @@ async function settleCashDrawerChrome(page: Page) {
       el.scrollTop = 0;
     });
   }
+  /* An inactive phone window is not shown. The bar that matters is
+     the one in the window that is open. */
   const tabBar = page.locator(".win.show.active .win-body .fld-bar").first();
   await expect(tabBar).toBeVisible();
   await expect(tabBar).not.toHaveClass(/fld-hidden/);

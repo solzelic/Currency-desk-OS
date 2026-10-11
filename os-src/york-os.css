@@ -3229,7 +3229,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-settings .phone-search input {
     flex: 1;
+    align-self: stretch;
     min-width: 0;
+    min-height: 44px;
     border: 0;
     outline: none;
     background: transparent;

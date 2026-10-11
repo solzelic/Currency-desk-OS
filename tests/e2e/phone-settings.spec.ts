@@ -3,6 +3,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
 import { mkdirSync } from "node:fs";
+import { phoneSweep } from "./helpers/phone-sweep";
 
 const SHOTS = "/opt/cursor/artifacts/screenshots";
 
@@ -164,6 +165,24 @@ test("a teller sees only their own settings", async ({ page }) => {
     await expect(root.getByText("Other apps (owner only)")).toHaveCount(0);
     await page.screenshot({ path: shot(`settings_list-teller_${width}.png`) });
   }
+});
+
+test("settings passes the phone sweep", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "j.masri");
+  await openSettings(page);
+  await phoneSweep(page, {
+    roots: ["[data-phone-settings]", ".phone-head", "#phone-dock"],
+  });
+  await page.getByRole("button", { name: "PIN and sign-in" }).click();
+  await expect(page.getByRole("heading", { name: "PIN and sign-in" })).toBeVisible();
+  await phoneSweep(page, {
+    roots: ["[data-phone-settings]", ".phone-head", "#phone-dock"],
+  });
+  await page.getByRole("button", { name: /my PIN/ }).click();
+  await expect(page.locator(".sheet")).toBeVisible();
+  await phoneSweep(page, { roots: [".sheet"] });
 });
 
 test("desktop settings is the rail, with a 0-pixel phone diff", async ({ page }) => {
