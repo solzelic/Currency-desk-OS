@@ -488,8 +488,65 @@ pixels alone.
 
 Screen PRs add these in their own files. Do not build them here.
 
-NavRow, ProfileRow, Toggle, FullScreenSheet, PinPad, Toast, ChoiceTiles,
-AmountField, SummaryList, StepHeader.
+ChoiceTiles, AmountField, SummaryList, StepHeader.
+
+## Shared pieces
+
+These live in `os-src/phone/` and are on `window.CDOS`, not
+`window.CDOS.Phone`. Reports and the other screens use these files.
+Do not copy them into a screen. Above 430px `os-src/phone-shell.css`
+hides every surface they draw. The hide rule sits outside the phone
+query and before the query that shows them. A later unconditional
+`display: none` would hide them on a phone too. A sheet is portaled
+to `document.body`, so that hide covers a node outside the window.
+
+### NavRow
+
+`os-src/phone/nav-row.jsx`. One row, at least 56px, and the whole row
+is the target. `icon` is an `Ic` name or a node. `title` and `detail`
+are the two lines. `value` and `valueTone` (`warn`) are a short status.
+`badge` and `badgeTone` (`pos`, `neutral`, `warn`) replace the value.
+`onClick` makes the row a button. `danger` is the red sign-out row and
+has no chevron. `switchOn` draws the toggle and sets `role="switch"`
+on the row. The pill does not take the click. Omit `onClick` and
+`switchOn` for a row that states a fact and is not a control.
+`rowId` is `data-phone-row`.
+
+### ProfileRow
+
+`os-src/phone/profile-row.jsx`. The signed-in person. A 48px avatar,
+the name, a role line, and a chevron. The row is 76px.
+`data-phone-row` is `profile`.
+
+### Toggle
+
+`os-src/phone/toggle.jsx`. The 51×31 pill. Presentational. `on` fills
+it. It is `aria-hidden`. The row carries the switch role.
+
+### FullScreenSheet
+
+`os-src/phone/full-screen-sheet.jsx`. A dialog portaled to
+`document.body`, so a transformed window cannot trap it above the
+bottom bar. It covers the bar. Escape and the close button call
+`onClose`. The close button’s name is “Close without changing”.
+`title` is the bar. `label` is the dialog’s accessible name when the
+title is not the question. `.sheet` is `display: none` above 430px,
+so a resize does not leave the dialog up.
+
+### PinPad
+
+`os-src/phone/pin-pad.jsx`. One question, four dots, a keypad. The
+parent decides what four digits means. Delete removes one digit.
+`busy` replaces the dots with “Saving...” and locks the keys.
+`locked` locks them too. `passwordMode` replaces the keypad with a
+password field and Next. `data-pin-step` is the step number.
+
+### Toast
+
+`os-src/phone/toast.jsx`. One line, portaled, `aria-live="polite"`.
+It leaves after 3 seconds and calls `onDone`. The timer follows the
+text, not the callback, so a parent re-render does not keep it on
+screen.
 
 FullScreenSheet is one of those. When a screen builds it, the sheet
 is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.

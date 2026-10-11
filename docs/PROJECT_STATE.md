@@ -96,7 +96,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   as well as the name. Amounts, clocks, and calendar days on a phone
   go through `os-src/phone/format.js`: `1,765.05 CAD`, `3:02 PM`,
   `Jun 18, 2026`. A list group for the business day is `Today, Oct 11`. A `YYYY-MM-DD` string stays on that calendar day
-  (`docs/PHONE_SHELL.md`). Each phone window
+  (`docs/PHONE_SHELL.md`). Shared rows, a profile row, a toggle, a
+  full-screen sheet, a PIN keypad, and a toast live in `os-src/phone/`.
+  A screen uses those. It does not keep a local copy. Each phone window
   sets `data-app`. On a phone a legacy primary button uses that app's
   accent. A selected filter chip, legacy or new, is gray-900 with white
   text. The phone screen paints the flat surface token. The big title
@@ -654,6 +656,12 @@ query. They are rendered in the seam job from main
 `5216ef4780b750c2dcce5847296288920d63b443` (the teller-earnings
 reads), not from `9f1efb8`. The phone ledger's day fee is the
 server summary, or it is omitted.
+
+**2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
+FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are
+styled in `os-src/phone-shell.css`. A sheet and a toast stay hidden
+above 430px. Reports and the other screens use these files.
+Contract: `docs/PHONE_SHELL.md`.
 
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
 uppercase suffix (`3:02 PM`). A form date stays `Jun 18, 2026`.
