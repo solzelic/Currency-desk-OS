@@ -93,7 +93,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   list. Your session holds Lock the desk, Hand over the desk, and
   Sign out, and Sign out asks before it runs. Search matches the job
   as well as the name. Amounts on a phone go through one formatter
-  and show the currency code (`docs/PHONE_SHELL.md`). The bar is five
+  and show the currency code (`docs/PHONE_SHELL.md`). Each phone window
+  sets `data-app`, and on a phone a legacy ink button or selected chip
+  uses that app's accent. Filter chips in the new shell stay near-black
+  when selected. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -527,6 +530,10 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone shell colour and sweep. A phone window sets
+`data-app`. Legacy ink buttons and selected chips use that accent.
+The shared phone sweep lives in `tests/e2e/helpers/phone-sweep.ts`.
 
 **2026-10-11**, phone shell. The desk shell still owns the one header and
 the five-tab bar. More is the shared phone column: grouped apps,

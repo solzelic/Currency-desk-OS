@@ -119,7 +119,7 @@
       window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
     };
     return (
-      <div className={'win' + (shown ? ' show' : '') + (active ? ' active' : '') + (win.max ? ' max' : '') + (barHidden ? ' bar-hidden' : '')} onPointerDown={() => onFocus(win.id)}
+      <div className={'win' + (shown ? ' show' : '') + (active ? ' active' : '') + (win.max ? ' max' : '') + (barHidden ? ' bar-hidden' : '')} data-app={String(win.id).split('~')[0]} onPointerDown={() => onFocus(win.id)}
         style={{ left: win.x, top: win.y, width: win.w, height: win.h, zIndex: win.z, '--c': meta.accent || 'var(--cd-ink)', '--ft': meta.accent || 'var(--cd-ink)' }}>
         <div className="win-bar" onPointerDown={startDrag} onDoubleClick={(e) => { if (!e.target.closest('.win-tb-btn') && !e.target.closest('.win-back') && !e.target.closest('.win-rtools')) onZoom(win.id); }}>
           <div className="win-lights">
