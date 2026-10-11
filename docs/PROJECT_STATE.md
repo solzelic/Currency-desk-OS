@@ -90,15 +90,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   form. Sign-in and the station picker stay on the screen. The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
-  above the bottom bar.   On a phone the Cash Drawer count is one selector for Cash drawer,
-  Reconcile & close, and History, then who is on the drawer, whether
-  the session is open or closed, the amount, denomination steppers,
-  and Hand off / Save count at the thumb. The who-line wraps at the
-  dots. A name that does not fit on the line ellipsizes. When the
-  branch has another till, that till name opens the same switcher the
-  desktop header uses. That control is mounted only at this width, so
-  a wide window still has the one header button. A note that the branch has more than one till
-  scrolls with the count and points at that name. Reconcile and History scroll inside their tables. Wider
+  above the bottom bar.   On a phone the Cash Drawer count is one selector: the
+  open tab, then the other names with a spaced dot between them. Under
+  that is who is on the drawer (a space after "On the drawer"), whether
+  the session is open or closed, the amount in the drawer, Move cash and
+  Vault as matching outline buttons, then a 4-up grid of currency chips,
+  the notes across the full card, and Hand off / Save count stuck at the
+  thumb. The notes scroll with the window, not in an inner box. The
+  who-line wraps at the dots. A name that does not fit on the line
+  ellipsizes. When the branch has another till, that till name opens the
+  same switcher the desktop header uses, as a sheet on the bottom of the
+  window with a dim backdrop. That control is mounted only at this width,
+  so a wide window still has the one header button. A note that the
+  branch has more than one till scrolls with the count and points at
+  that name. Reconcile and History scroll inside their tables. Wider
   than 430px the drawer is unchanged. A ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. On a wide window the
@@ -437,12 +442,17 @@ authenticated narrative dashboard.
 ## Last reviewed
 
 **2026-10-11**, phone cash drawer. At 430px and under, the count is a
-selector, a who-line, the session line, big denomination steppers,
-and Hand off / Save count at the thumb. The who-line wraps at the
-dots, and a long name ellipsizes. Another till at the branch is
-reached from that till name, through the same switch the desktop
-header uses. That control is mounted only at phone width. A multi-till note scrolls with the count. Reconcile
-and History only scroll. Wider than 430px the drawer is unchanged.
+selector (the other tab names keep a spaced dot), a who-line with a
+space after "On the drawer", the session line, Move cash and Vault at
+the same height, a 4-up grid of currency chips, notes across the full
+card, and Hand off / Save count stuck at the thumb. The notes scroll
+with the window. The who-line wraps at the dots, and a long name
+ellipsizes. Expected, the blurred figure, and Show stay on one line.
+Another till at the branch opens from that till name as a sheet on
+the bottom of the window, through the same switch the desktop header
+uses. That control is mounted only at phone width. A multi-till note
+scrolls with the count. Reconcile and History only scroll. Wider
+than 430px the drawer is unchanged.
 
 **2026-10-10**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

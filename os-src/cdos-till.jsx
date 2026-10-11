@@ -7,7 +7,7 @@
    Day Close is folded in here as the "Reconcile & close" tab.
    ============================================================ */
 (function () {
-  const { useState, useMemo, useEffect, useRef } = React;
+  const { useState, useMemo, useEffect, useLayoutEffect, useRef } = React;
   /* `TODAY` is deliberately not imported here. It is a wall-clock snapshot
      taken when the page loaded, and every date on this screen is a TRADING
      DAY — the till session's `business_date`, which the server decides. A
@@ -789,6 +789,41 @@
     const closedTxns = closedBook ? closedBook.posted : (day.summary && day.summary.txns != null ? day.summary.txns : null);
 
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    /* The other tab names sit on one line, separated by " · ". A name
+       that wraps takes a break before it, and loses the dot, so a line
+       neither starts nor ends on the dot. Same rule as the new-transaction
+       type line. */
+    const altRestRef = useRef(null);
+    const [altBreaks, setAltBreaks] = useState([]);
+    useLayoutEffect(() => {
+      if (!phoneLayout) {
+        setAltBreaks(prev => (prev.length ? [] : prev));
+        return undefined;
+      }
+      const root = altRestRef.current;
+      if (!root) return undefined;
+      const apply = () => {
+        const items = [...root.querySelectorAll(':scope > .till-phone-alt')];
+        const breaks = [...root.querySelectorAll(':scope > .till-phone-break')];
+        breaks.forEach(el => { el.hidden = true; });
+        items.forEach(el => el.classList.remove('is-linestart'));
+        const next = [];
+        let prevTop = null;
+        items.forEach(el => {
+          const top = el.offsetTop;
+          if (prevTop != null && top > prevTop + 1) next.push(el.getAttribute('data-alt'));
+          prevTop = top;
+        });
+        const want = new Set(next);
+        items.forEach(el => el.classList.toggle('is-linestart', want.has(el.getAttribute('data-alt'))));
+        breaks.forEach(el => { el.hidden = !want.has(el.getAttribute('data-alt')); });
+        setAltBreaks(prev => (prev.join('\n') === next.join('\n') ? prev : next));
+      };
+      apply();
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(apply) : null;
+      if (ro) ro.observe(root);
+      return () => { if (ro) ro.disconnect(); };
+    }, [phoneLayout, tab]);
     /* The phone header reads the same people and the same till the
        desktop already shows. A session stores the staff id; the roster
        already has that person's name and role. */
@@ -811,12 +846,18 @@
       <div data-tour="till" className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <button type="button" className="till-phone-select" aria-haspopup="dialog" aria-expanded={tabSheet ? 'true' : 'false'} onClick={() => setTabSheet(true)}>
           <span className="till-phone-current">{tabNow}</span>
-          <span className="till-phone-alts">{TABS.filter(t => t[0] !== tab).map(([, label]) => <span key={label} className="till-phone-alt">{label}</span>)}</span>
+          <span className="till-phone-alts" ref={altRestRef}>{TABS.filter(t => t[0] !== tab).map(([, label]) => {
+            const broken = altBreaks.indexOf(label) >= 0;
+            return [
+              broken ? <br key={label + '-br'} className="till-phone-break" data-alt={label} /> : null,
+              <span key={label} data-alt={label} className={'till-phone-alt' + (broken ? ' is-linestart' : '')}>{label}</span>,
+            ];
+          })}</span>
         </button>
         <div className="till-phone-who">
           <span className="till-phone-bit">
             <span className="till-phone-person">
-              <span className="till-phone-lead">On the drawer </span>
+              <span className="till-phone-lead">On the drawer</span>
               <span className="till-phone-name">{drawerName}</span>
             </span>
           </span>
@@ -948,8 +989,8 @@
         {serverSession && sessionOpen && (
           <div className="till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: CD.green, flex: 'none' }}></span>
-            <span className="till-session-line">Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
-            <span className="till-session-tally ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
+            <span className="till-session-line">Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open<span className="till-session-date"> · {serverSession.businessDate}</span> · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
+            <span className="till-session-tally ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted<span className="till-session-date-phone"> · {serverSession.businessDate}</span></span>
           </div>
         )}
         {sessionClosed && (

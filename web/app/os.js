@@ -12994,6 +12994,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     useState,
     useMemo,
     useEffect,
+    useLayoutEffect,
     useRef
   } = React;
   /* `TODAY` is deliberately not imported here. It is a wall-clock snapshot
@@ -14393,6 +14394,47 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedEarnedWhy = dayBook.error || day.summary && day.summary.earnedWhy || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    /* The other tab names sit on one line, separated by " · ". A name
+       that wraps takes a break before it, and loses the dot, so a line
+       neither starts nor ends on the dot. Same rule as the new-transaction
+       type line. */
+    const altRestRef = useRef(null);
+    const [altBreaks, setAltBreaks] = useState([]);
+    useLayoutEffect(() => {
+      if (!phoneLayout) {
+        setAltBreaks(prev => prev.length ? [] : prev);
+        return undefined;
+      }
+      const root = altRestRef.current;
+      if (!root) return undefined;
+      const apply = () => {
+        const items = [...root.querySelectorAll(':scope > .till-phone-alt')];
+        const breaks = [...root.querySelectorAll(':scope > .till-phone-break')];
+        breaks.forEach(el => {
+          el.hidden = true;
+        });
+        items.forEach(el => el.classList.remove('is-linestart'));
+        const next = [];
+        let prevTop = null;
+        items.forEach(el => {
+          const top = el.offsetTop;
+          if (prevTop != null && top > prevTop + 1) next.push(el.getAttribute('data-alt'));
+          prevTop = top;
+        });
+        const want = new Set(next);
+        items.forEach(el => el.classList.toggle('is-linestart', want.has(el.getAttribute('data-alt'))));
+        breaks.forEach(el => {
+          el.hidden = !want.has(el.getAttribute('data-alt'));
+        });
+        setAltBreaks(prev => prev.join('\n') === next.join('\n') ? prev : next);
+      };
+      apply();
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(apply) : null;
+      if (ro) ro.observe(root);
+      return () => {
+        if (ro) ro.disconnect();
+      };
+    }, [phoneLayout, tab]);
     /* The phone header reads the same people and the same till the
        desktop already shows. A session stores the staff id; the roster
        already has that person's name and role. */
@@ -14429,11 +14471,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-phone-current"
     }, tabNow), /*#__PURE__*/React.createElement("span", {
-      className: "till-phone-alts"
-    }, TABS.filter(t => t[0] !== tab).map(([, label]) => /*#__PURE__*/React.createElement("span", {
-      key: label,
-      className: "till-phone-alt"
-    }, label)))), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-alts",
+      ref: altRestRef
+    }, TABS.filter(t => t[0] !== tab).map(([, label]) => {
+      const broken = altBreaks.indexOf(label) >= 0;
+      return [broken ? /*#__PURE__*/React.createElement("br", {
+        key: label + '-br',
+        className: "till-phone-break",
+        "data-alt": label
+      }) : null, /*#__PURE__*/React.createElement("span", {
+        key: label,
+        "data-alt": label,
+        className: 'till-phone-alt' + (broken ? ' is-linestart' : '')
+      }, label)];
+    }))), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-who"
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-phone-bit"
@@ -14441,7 +14492,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-phone-person"
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-phone-lead"
-    }, "On the drawer "), /*#__PURE__*/React.createElement("span", {
+    }, "On the drawer"), /*#__PURE__*/React.createElement("span", {
       className: "till-phone-name"
     }, drawerName))), drawerRole ? /*#__PURE__*/React.createElement("span", {
       className: "till-phone-bit"
@@ -14871,12 +14922,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
+    }, "#", serverSession.sessionNumber), " open", /*#__PURE__*/React.createElement("span", {
+      className: "till-session-date"
+    }, " \xB7 ", serverSession.businessDate), " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
       className: "till-session-tally ml-auto flex-none",
       style: {
         color: CD.faint
       }
-    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted", /*#__PURE__*/React.createElement("span", {
+      className: "till-session-date-phone"
+    }, " \xB7 ", serverSession.businessDate))), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,

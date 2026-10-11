@@ -1584,6 +1584,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .till-count-body { display: contents; }
 .till-expected-fig.is-blind,
 .till-var.is-blind { filter: blur(6px); }
+/* The business date stays in the session sentence on a wide window.
+   On a phone it moves to the tally line so the sentence fits. */
+.till-session-date-phone { display: none; }
 
 /* ============================================================
    PHONE BOTTOM BAR
@@ -1863,17 +1866,19 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   [data-tour="till"] {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px 8px !important;
+    gap: 2px;
+    padding: 2px 12px 0 !important;
   }
   .till-phone-select {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     width: 100%;
     min-height: 44px;
     margin: 0;
-    padding: 10px 12px;
+    padding: 6px 10px;
     border: 1px solid var(--line, rgba(23, 20, 15, 0.16));
     border-radius: 12px;
     background: #fff;
@@ -1885,22 +1890,39 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 16px;
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.15;
+    flex: none;
     color: var(--ft, #17140F);
   }
   .till-phone-alts {
-    margin-top: 2px;
+    margin-top: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: right;
+    max-width: 100%;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 13px;
     font-weight: 500;
-    line-height: 1.35;
+    line-height: 1.2;
     color: var(--ft, #17140F);
+    white-space: normal;
   }
-  /* Each other name is an inline-block. The dot is the ::before of
-     every name after the first, with a space on both sides, so a
-     wrapped line neither starts nor ends on the dot. */
-  .till-phone-alt { display: inline-block; }
-  .till-phone-alt + .till-phone-alt::before { content: " \00b7 "; }
+  /* Each other name is an inline-block. The dot is a prefix on every
+     name after the first, padded so it reads " · ". A name that starts
+     a line has no prefix, so the line does not open or close on a dot.
+     Same rule as the new-transaction type line. A plain space in
+     content collapses inside this button, so the gap is padding. */
+  .till-phone-alt {
+    display: inline-block;
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+  .till-phone-alt:not(:first-child):not(.is-linestart)::before {
+    content: "\00b7";
+    display: inline-block;
+    padding: 0 0.45em;
+    white-space: pre;
+  }
   /* Bits wrap onto the next line. The dot sits in the gap before
      the next bit, not in the text, so a wrapped line does not start
      or end on it. A bit that starts a line puts that dot outside the
@@ -1954,10 +1976,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-phone-person {
     display: flex;
+    column-gap: 0.25em;
     min-width: 0;
     max-width: 100%;
   }
-  .till-phone-lead { flex: none; }
+  /* A trailing space inside a flex item is discarded, so "On the
+     drawer" ran into the name. The gap is one space. */
+  .till-phone-lead { flex: none; white-space: pre; }
   .till-phone-name {
     min-width: 0;
     overflow: hidden;
@@ -2050,15 +2075,17 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     margin-left: 0 !important;
     display: grid !important;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 4px;
   }
   [data-tour="till"] .till-pill {
     grid-column: 1 / -1;
     width: 100%;
-    min-height: 44px;
+    min-height: 32px;
     box-sizing: border-box;
     justify-content: space-between;
     white-space: nowrap;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
     font-size: 15px !important;
   }
@@ -2073,17 +2100,26 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     box-sizing: border-box;
     justify-content: center;
     white-space: nowrap;
+    border: 1.5px solid var(--ft, #17140F) !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    color: var(--ft, #17140F) !important;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
     font-size: 15px !important;
+    font-weight: 700 !important;
   }
+  /* The sheet lives in the till header, and the window body is a
+     backdrop-filter, so fixed is the window — which already stops
+     above the dock. Inset 0 covers that window. A second dock inset
+     left the sheet in the middle with the count showing under it. */
   .till-sheet-scrim {
     display: flex;
     position: fixed;
-    z-index: 80;
+    z-index: 40;
     left: 0;
     right: 0;
     top: 0;
-    bottom: var(--phone-dock-h, 0px);
+    bottom: 0;
     align-items: flex-end;
     background: rgba(23, 20, 15, 0.42);
   }
@@ -2119,13 +2155,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-root .till-chips {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    gap: 4px;
+    margin-bottom: 2px !important;
   }
   .till-root .till-chip {
     flex-wrap: nowrap !important;
     justify-content: center;
+    box-sizing: border-box;
     min-height: 44px;
-    padding: 8px 4px !important;
+    height: 44px;
+    padding: 0 4px !important;
     font-family: "Space Mono", monospace !important;
     font-size: 15px !important;
     white-space: nowrap;
@@ -2162,11 +2201,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: flex !important;
     flex-wrap: wrap !important;
     align-items: flex-start !important;
-    row-gap: 2px;
+    row-gap: 1px;
     max-width: 100%;
     white-space: normal !important;
-    line-height: 1.35;
+    line-height: 1.15 !important;
+    padding: 2px 12px !important;
   }
+  .till-session-date { display: none !important; }
+  .till-session-date-phone { display: inline !important; }
   .till-session-line {
     flex: 1 1 0 !important;
     min-width: 0;
@@ -2195,6 +2237,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-root .flex.gap-3 > .flex-1 {
     white-space: normal !important;
   }
+  .till-modebar { margin-bottom: 0 !important; }
   .till-modebar > button {
     min-height: 44px;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
@@ -2218,26 +2261,38 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-coins { display: none; }
   .till-coins.is-open { display: block; margin-top: 4px; }
+  .till-denoms,
+  .till-notes,
+  .till-coins.is-open { width: 100%; min-width: 0; }
   .till-den {
     display: grid !important;
-    grid-template-columns: auto auto auto;
-    justify-content: start;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    justify-content: stretch;
     align-items: center;
-    column-gap: 10px;
-    width: fit-content;
+    column-gap: 8px;
+    box-sizing: border-box;
+    width: 100% !important;
     max-width: 100%;
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
+    min-height: 44px;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    border-top: 0 !important;
+    box-shadow: inset 0 1px 0 var(--lineSoft, rgba(23, 20, 15, 0.08));
   }
   .till-den-kind { display: none !important; }
   .till-den-face {
     width: auto !important;
-    min-width: 44px;
+    min-width: 0;
+    justify-self: start;
     justify-content: flex-start !important;
     font-family: "Space Mono", monospace !important;
     font-size: 16px !important;
   }
-  .till-den-stepper { margin-left: 0 !important; }
+  .till-den-stepper {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    justify-self: center;
+  }
   .till-den .till-step {
     width: 44px !important;
     height: 44px !important;
@@ -2252,7 +2307,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-den-sub {
     width: auto !important;
-    min-width: 64px;
+    min-width: 0;
+    justify-self: end;
+    text-align: right !important;
     font-family: "Space Mono", monospace !important;
     font-size: 15px !important;
   }
@@ -2261,60 +2318,74 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: "Space Mono", monospace !important;
     font-size: 28px !important;
   }
-  .win-body:has(.till-root[data-till-screen="count"]) { overflow: hidden; }
+  /* The count scrolls with the window. The footer sticks to the
+     bottom of that window, above the dock. There is no second
+     scroller around the notes. */
+  .win-body:has(.till-root[data-till-screen="count"]) { overflow: auto; }
   .till-root[data-till-screen="count"] {
-    min-height: 0;
-    overflow: hidden;
+    height: auto !important;
+    min-height: 100%;
+    overflow: visible !important;
   }
   .till-foot {
-    position: relative !important;
+    position: sticky !important;
     left: auto !important;
     right: auto !important;
-    bottom: auto !important;
+    bottom: 0 !important;
     z-index: 2;
     flex: none;
     box-sizing: border-box;
-    width: calc(100% + 32px);
+    width: calc(100% + 24px);
     max-width: none;
-    margin: 8px -16px 0 !important;
-    padding: 10px 12px 12px !important;
+    margin: 0 -12px 0 !important;
+    padding: 10px 12px 4px !important;
     background: var(--cd-paper, #f7f6f3) !important;
     box-shadow: 0 -1px 0 var(--hair, rgba(23, 20, 15, 0.12));
   }
   .till-root[data-till-screen="count"] > .overflow-auto {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
+    display: block;
+    flex: none;
+    height: auto;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible !important;
   }
   .till-root[data-till-screen="count"] .till-count {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
+    display: block;
+    height: auto;
     min-height: 0;
-    overflow: hidden;
-    padding-bottom: 0 !important;
+    overflow: visible;
+    padding: 2px 12px 0 !important;
   }
   .till-count-body {
     display: block;
-    flex: 1;
+    height: auto;
     min-height: 0;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
   }
   .till-expected {
     display: flex !important;
-    flex-wrap: wrap;
+    flex-wrap: nowrap !important;
     align-items: center;
+    width: 100%;
     max-width: 100%;
-    row-gap: 2px;
-    column-gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+    column-gap: 6px;
   }
-  .till-expected-row { max-width: 100%; }
+  .till-expected-row { max-width: 100%; min-width: 0; }
   .till-foot-figures { max-width: 100%; min-width: 0; }
   .till-expected b.is-blind,
-  .till-expected .till-var.is-blind { filter: blur(9px); }
+  .till-expected .till-var.is-blind {
+    filter: blur(5px);
+    display: inline-block;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+  }
   .till-foot-main {
     display: block !important;
     border-top: 0 !important;
@@ -2347,29 +2418,36 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-counted-input {
     width: auto !important;
     min-width: 4ch;
+    height: 22px;
     padding: 0 !important;
     font-family: "Space Mono", monospace !important;
-    font-size: 20px !important;
+    font-size: 18px !important;
+    line-height: 22px !important;
     text-align: left !important;
   }
   .till-expected-row {
     display: flex !important;
-    margin-top: 4px !important;
+    flex-wrap: nowrap !important;
+    margin-top: 0 !important;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
     font-size: 15px !important;
   }
   .till-expected {
-    min-height: 44px;
+    min-height: 0;
     font-size: 15px !important;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+    flex-wrap: nowrap !important;
   }
+  .till-expected > span:first-child { flex: none; white-space: nowrap; }
   .till-expected-fig {
     font-family: "Space Mono", monospace !important;
     font-size: 15px;
   }
   .till-show-word {
     display: inline !important;
-    margin-left: 8px;
+    flex: none;
+    margin-left: 2px;
+    white-space: nowrap;
     font-family: var(--f-display, "Archivo", system-ui, sans-serif);
     font-size: 15px;
     font-weight: 700;
@@ -2382,13 +2460,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 4px;
   }
   .till-handoff-phone {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 48px;
+    min-height: 44px;
     border: 1.5px solid var(--ft, #17140F);
     border-radius: 10px;
     background: #fff;
@@ -2400,7 +2478,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-foot .till-save {
     width: 100%;
-    min-height: 48px;
+    min-height: 44px;
     margin: 0 !important;
     justify-content: center;
     border-radius: 10px !important;
