@@ -62,6 +62,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
+| Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
 
 ## Production/build surfaces
 
@@ -518,6 +519,11 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, sign-off business date. The sheet's trading day is the
+open till session's business date in the branch time zone, and the
+figures are the ledger totals for the window that session returns.
+A desk still open after midnight stays on the date it opened on.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

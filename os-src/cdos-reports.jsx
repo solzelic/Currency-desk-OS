@@ -291,12 +291,35 @@
       backend.loadLedgerPosition()
         .then(position => { if (live) setHeld({ loading: false, position, error: '' }); })
         .catch(error => { if (live) setHeld({ loading: false, position: null, error: (error && error.message) || 'the ledger could not be reached' }); });
-      backend.loadLedgerSummary(window.CDOS.businessDayWindow(1))
-        .then(summary => { if (live) setDayBook({ loading: false, summary, error: '' }); })
-        .catch(error => { if (live) setDayBook({ loading: false, summary: null, error: (error && error.message) || 'the ledger could not be reached' }); });
+      /* The session first, then the book for the window the session
+         names. The two used to start together, and the book was asked
+         for a window this browser built from its own midnight. Just
+         after midnight, in a zone ahead of UTC, that window was
+         yesterday and the sheet printed 0. */
       backend.loadTillSession()
-        .then(answer => { if (live) setTillDay({ loading: false, session: (answer && answer.session) || null, counts: (answer && answer.latestCounts) || {}, error: '' }); })
-        .catch(error => { if (live) setTillDay({ loading: false, session: null, counts: {}, error: (error && error.message) || 'the ledger could not be reached' }); });
+        .then(answer => {
+          if (!live) return null;
+          const session = (answer && answer.session) || null;
+          const day = (answer && answer.day) || null;
+          setTillDay({ loading: false, session, day, counts: (answer && answer.latestCounts) || {}, error: '' });
+          if (session && session.businessDate) window.CDOS.setBusinessDate(session.businessDate);
+          if (!day || !day.from || !day.to) {
+            setDayBook({
+              loading: false,
+              summary: null,
+              error: session ? 'the till session did not name its trading day' : 'no till session',
+            });
+            return null;
+          }
+          return backend.loadLedgerSummary({ from: day.from, to: day.to });
+        })
+        .then(summary => { if (live && summary) setDayBook({ loading: false, summary, error: '' }); })
+        .catch(error => {
+          if (!live) return;
+          const message = (error && error.message) || 'the ledger could not be reached';
+          setDayBook({ loading: false, summary: null, error: message });
+          setTillDay(current => current.session || current.error ? current : { loading: false, session: null, counts: {}, error: message });
+        });
       return () => { live = false; };
     }, [deskFacts]);
     const [active, setActive] = useState(null);
@@ -569,7 +592,10 @@
            replaces "Day 1", which was a counter kept in the browser. */
         const sheetDate = (tillDay.session && tillDay.session.businessDate) || businessDate();
         const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
-        const longDate = (() => { try { return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
+        /* Noon UTC, then formatted in UTC, so the heading is the calendar
+           date the server named. Local midnight would move it a day on a
+           browser whose zone is not the branch's. */
+        const longDate = (() => { try { return new Date(sheetDate + 'T12:00:00Z').toLocaleDateString('en-CA', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return (<div>
           <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} />

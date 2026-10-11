@@ -61,6 +61,7 @@ import {
   philippinesPurposeRequired,
 } from "./philippines-pack.js";
 import { authorizeLedgerActor } from "./principal.js";
+import { readDateOnly } from "./business-date.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   LedgerError,
@@ -158,7 +159,7 @@ const fixed = (value: Decimal.Value, places = 2) =>
 
 const dateOnly = (value: unknown) =>
   value instanceof Date
-    ? value.toISOString().slice(0, 10)
+    ? readDateOnly(value)
     : String(value).slice(0, 10);
 
 /** One cheque, in the shape the desk's screens already speak. */
