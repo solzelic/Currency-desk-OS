@@ -64,7 +64,7 @@ const UNCOMPILED_FILES: Record<string, string> = {
 const MISSING_OS =
   "web/app/index.html is missing; the uncompiled shell and os-src are being served publicly";
 const MISSING_ADMIN =
-  "web/app/admin.html is missing; the uncompiled shell and os-src are being served publicly";
+  "web/app/admin.html is missing; the uncompiled admin shell is being served publicly";
 
 function expectNotSource(body: string) {
   for (const marker of SOURCE_MARKERS) {
@@ -114,29 +114,36 @@ function rawGet(
   });
 }
 
-/* Boot against a planted static dir. productionLogs turns the real Fastify
-   logger on (NODE_ENV=production) and returns what app.log wrote. */
+/* Boot against a planted static dir.
+   "production" | "test" | "unset" turns the Fastify logger on into the
+   returned text and sets NODE_ENV to that value (delete it for "unset"),
+   so a test can read app.log. Omitted, the runner's NODE_ENV stays and
+   the logger stays off. */
 async function withDesk(
   files: Record<string, string>,
   run: (desk: FastifyInstance) => Promise<void>,
-  productionLogs = false,
+  env?: "production" | "test" | "unset",
 ): Promise<string> {
   const tmp = path.join(ROOT, "server", "tmp-uncompiled-desk");
   writeTree(tmp, files);
   const previousDir = process.env.STATIC_DIR;
+  const hadEnv = Object.prototype.hasOwnProperty.call(process.env, "NODE_ENV");
   const previousEnv = process.env.NODE_ENV;
   const sink = logSink();
   process.env.STATIC_DIR = tmp;
-  if (productionLogs) process.env.NODE_ENV = "production";
+  if (env === "production") process.env.NODE_ENV = "production";
+  else if (env === "test") process.env.NODE_ENV = "test";
+  else if (env === "unset") delete process.env.NODE_ENV;
   let desk: FastifyInstance | undefined;
   try {
-    desk = await buildApp(handle.db, {}, productionLogs ? sink.stream : undefined);
+    desk = await buildApp(handle.db, {}, env ? sink.stream : undefined);
     await run(desk);
     return sink.text();
   } finally {
     if (desk) await desk.close();
     process.env.STATIC_DIR = previousDir;
-    process.env.NODE_ENV = previousEnv;
+    if (hadEnv) process.env.NODE_ENV = previousEnv;
+    else delete process.env.NODE_ENV;
     rmSync(tmp, { recursive: true, force: true });
   }
 }
@@ -257,20 +264,41 @@ describe("a half-built web/app hides only the shell that was built", () => {
 });
 
 describe("a missing compiled shell warns in production", () => {
-  it("names each missing shell and says the uncompiled desk is public", async () => {
-    const logs = await withDesk(UNCOMPILED_FILES, async () => {}, true);
+  it("names each missing shell for what that shell exposes", async () => {
+    const logs = await withDesk(UNCOMPILED_FILES, async () => {}, "production");
     expect(logs).toContain(MISSING_OS);
     expect(logs).toContain(MISSING_ADMIN);
+    const adminLine = logs.split("\n").find((line) => line.includes("web/app/admin.html"));
+    expect(adminLine).toBeTruthy();
+    expect(adminLine).not.toContain("os-src");
   });
 
-  it("names only the shell that is actually missing", async () => {
+  it("does not say os-src is public when only the admin shell is missing", async () => {
     const logs = await withDesk(
       { ...UNCOMPILED_FILES, "web/app/index.html": "<html>compiled os</html>" },
       async () => {},
-      true,
+      "production",
     );
     expect(logs).not.toContain(MISSING_OS);
     expect(logs).toContain(MISSING_ADMIN);
+    expect(logs).not.toContain("os-src");
+  });
+
+  it("names the uncompiled shell and os-src when only the OS shell is missing", async () => {
+    const logs = await withDesk(
+      { ...UNCOMPILED_FILES, "web/app/admin.html": "<html>compiled admin</html>" },
+      async () => {},
+      "production",
+    );
+    expect(logs).toContain(MISSING_OS);
+    expect(logs).not.toContain("web/app/admin.html");
+    expect(logs).not.toContain("uncompiled admin shell");
+  });
+
+  it.each(["test", "unset"] as const)("does not warn when NODE_ENV is %s", async (env) => {
+    const logs = await withDesk(UNCOMPILED_FILES, async () => {}, env);
+    expect(logs).not.toContain("is missing");
+    expect(logs).not.toContain("being served publicly");
   });
 
   it("stays quiet when both compiled shells are present", async () => {

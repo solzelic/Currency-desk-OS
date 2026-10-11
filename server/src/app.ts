@@ -73,9 +73,10 @@ const isPhone = (ua: string | undefined): boolean =>
    and the old files are source. They stay on the list below for that
    fallback only. When the compiled replacement is actually on disk, a
    direct fetch is a 404, not the file and not the marketing page. In
-   production a missing shell is logged at boot, naming the file: the
-   fallback still serves, and the warning is the signal that the
-   uncompiled shell and os-src are public again.
+   production a missing shell is logged at boot, and the warning names
+   only what that shell puts back in public: a missing OS shell means
+   CurrencyDesk OS.html and os-src; a missing admin shell means
+   admin.html, not os-src. Outside production the same boot is quiet.
 
    One file under os-src/ is still part of the compiled desk.
    web/app/index.html links os-src/york-os.css, and /login and /app fetch
@@ -266,8 +267,11 @@ export async function buildApp(
     };
     /* Checked once, at boot: the files do not change under a running
        process. The fallback below stays, so a skipped build still brings
-       the desk up. In production that also publishes the uncompiled shell
-       and os-src, and a silent boot would hide it. */
+       the desk up. Each warning names only what that missing shell
+       exposes. The OS shell publishes CurrencyDesk OS.html and os-src.
+       The admin shell publishes admin.html and does not publish os-src,
+       even when the OS shell is also missing. Outside production this
+       stays quiet: a test boot is not a deploy. */
     if (process.env.NODE_ENV === "production") {
       if (!compiledShells.os) {
         app.log.warn(
@@ -276,7 +280,7 @@ export async function buildApp(
       }
       if (!compiledShells.admin) {
         app.log.warn(
-          "web/app/admin.html is missing; the uncompiled shell and os-src are being served publicly",
+          "web/app/admin.html is missing; the uncompiled admin shell is being served publicly",
         );
       }
     }
