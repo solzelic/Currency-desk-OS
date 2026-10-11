@@ -334,6 +334,21 @@ function phoneProblems(): { overflow: boolean; narrow: string[]; under: string[]
     if (clippedAboveDock(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.bottom < dockTop + 8) continue;
+    /* The column scrolls under the bar. A control that is under the
+       bar on this scroll position, and that the scrollport can still
+       bring fully above the bar, is not hidden. */
+    const need = r.bottom - dockTop;
+    let scroller: HTMLElement | null = el.parentElement;
+    let canClear = false;
+    while (scroller && scroller !== document.body) {
+      const oy = getComputedStyle(scroller).overflowY;
+      if (oy === "auto" || oy === "scroll") {
+        const room = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+        if (room + 1 >= need) { canClear = true; break; }
+      }
+      scroller = scroller.parentElement;
+    }
+    if (canClear) continue;
     const y = Math.min(r.bottom - 2, dockTop + 16);
     if (y <= r.top) continue;
     const x = Math.min(Math.max(r.left + Math.min(20, r.width / 2), 2), innerWidth - 2);
