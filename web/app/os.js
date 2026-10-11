@@ -4699,6 +4699,339 @@
   });
 })();
 
+/* ---- os-src/phone/nav-row.jsx ---- */
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/* NavRow — one settings row on a phone.
+   The whole row is the target, at least 56px tall. A switch, when
+   one is passed, is only the picture: the row itself is the switch
+   so the hit area is the row, not the 51px pill. */
+(function () {
+  const {
+    Ic
+  } = window.CDOS;
+  function NavRow({
+    icon,
+    title,
+    detail,
+    value,
+    valueTone,
+    badge,
+    badgeTone,
+    onClick,
+    danger,
+    switchOn,
+    switchLabel,
+    rowId
+  }) {
+    const interactive = typeof onClick === 'function' || switchOn !== undefined;
+    const Tag = interactive ? 'button' : 'div';
+    const switched = switchOn !== undefined;
+    return /*#__PURE__*/React.createElement(Tag, _extends({}, interactive ? {
+      type: 'button',
+      onClick
+    } : {}, switched ? {
+      role: 'switch',
+      'aria-checked': !!switchOn,
+      'aria-label': switchLabel || title
+    } : {}, {
+      className: 'nrow' + (danger ? ' danger' : '') + (interactive ? '' : ' static'),
+      "data-phone-row": rowId || undefined
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "ic",
+      "aria-hidden": "true"
+    }, typeof icon === 'string' ? /*#__PURE__*/React.createElement(Ic, {
+      n: icon,
+      s: 20
+    }) : icon), /*#__PURE__*/React.createElement("span", {
+      className: "tx"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "t"
+    }, title), detail ? /*#__PURE__*/React.createElement("span", {
+      className: "d wrap"
+    }, detail) : null), badge ? /*#__PURE__*/React.createElement("span", {
+      className: 'badge ' + (badgeTone || 'neutral')
+    }, badge) : /*#__PURE__*/React.createElement("span", {
+      className: 'v' + (valueTone ? ' is-' + valueTone : '')
+    }, value || ''), switched ? window.CDOS.Toggle ? /*#__PURE__*/React.createElement(window.CDOS.Toggle, {
+      on: !!switchOn
+    }) : /*#__PURE__*/React.createElement("span", {
+      className: 'switch' + (switchOn ? ' on' : ''),
+      "aria-hidden": "true"
+    }) : interactive && !danger ? /*#__PURE__*/React.createElement("span", {
+      className: "cv",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 20
+    })) : /*#__PURE__*/React.createElement("span", null));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    NavRow
+  });
+})();
+
+/* ---- os-src/phone/profile-row.jsx ---- */
+/* ProfileRow — the signed-in person at the top of Settings.
+   48px avatar, name, role line, chevron. The row is 76px and the
+   whole of it opens My details. */
+(function () {
+  const {
+    Ic
+  } = window.CDOS;
+  function ProfileRow({
+    initials,
+    name,
+    detail,
+    onClick
+  }) {
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "me",
+      onClick: onClick,
+      "data-phone-row": "profile"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "av",
+      "aria-hidden": "true"
+    }, initials), /*#__PURE__*/React.createElement("span", {
+      className: "tx"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "t"
+    }, name), /*#__PURE__*/React.createElement("span", {
+      className: "d"
+    }, detail)), /*#__PURE__*/React.createElement("span", {
+      className: "cv",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 20
+    })));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    ProfileRow
+  });
+})();
+
+/* ---- os-src/phone/toggle.jsx ---- */
+/* Toggle — the 51×31 pill. It does not take the click.
+   NavRow puts role="switch" on the row, because a 31px pill is
+   smaller than a thumb. Use this when a row needs the picture. */
+(function () {
+  function Toggle({
+    on
+  }) {
+    return /*#__PURE__*/React.createElement("span", {
+      className: 'switch' + (on ? ' on' : ''),
+      "aria-hidden": "true"
+    });
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    Toggle
+  });
+})();
+
+/* ---- os-src/phone/full-screen-sheet.jsx ---- */
+/* FullScreenSheet — a dialog that covers the phone, including the
+   bottom bar. Portaled to the body so a transformed window cannot
+   trap it above the bar. Hidden above 430px by the stylesheet, so
+   a resize back to the desktop does not leave it on screen. */
+(function () {
+  const {
+    Ic
+  } = window.CDOS;
+  function FullScreenSheet({
+    title,
+    label,
+    onClose,
+    children
+  }) {
+    React.useEffect(() => {
+      const onKey = e => {
+        if (e.key === 'Escape') onClose();
+      };
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+    }, [onClose]);
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "sheet",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": label || title
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "sheet-h"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-sheet-x",
+      "aria-label": "Close without changing",
+      onClick: onClose
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "x",
+      s: 22
+    })), /*#__PURE__*/React.createElement("h2", null, title), /*#__PURE__*/React.createElement("span", null)), children), document.body);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    FullScreenSheet
+  });
+})();
+
+/* ---- os-src/phone/pin-pad.jsx ---- */
+/* PinPad — one question, four dots, a keypad. The parent decides
+   when four digits is enough. This only draws the step and reports
+   each key. Delete removes one digit. The keypad locks while a
+   save is in flight so the last digit cannot submit twice. */
+(function () {
+  const {
+    Ic
+  } = window.CDOS;
+  const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
+  function PinPad({
+    step,
+    steps,
+    question,
+    hint,
+    digits,
+    error,
+    shake,
+    busy,
+    locked,
+    passwordMode,
+    password,
+    onPassword,
+    onPasswordNext,
+    onDigit,
+    onDelete,
+    forgotLabel,
+    onForgot,
+    retryLabel,
+    onRetry
+  }) {
+    const filled = Math.min(4, (digits || '').length);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "pinpad",
+      "data-pin-step": step
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "steps",
+      "aria-label": 'Step ' + step + ' of ' + steps
+    }, Array.from({
+      length: steps
+    }, (_, i) => /*#__PURE__*/React.createElement("i", {
+      key: i,
+      className: i < step ? 'on' : ''
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "pin-q"
+    }, question), hint ? /*#__PURE__*/React.createElement("div", {
+      className: "pin-s"
+    }, hint) : null, passwordMode ? /*#__PURE__*/React.createElement("label", {
+      className: "pin-pw"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "sr"
+    }, "Sign-in password"), /*#__PURE__*/React.createElement("input", {
+      type: "password",
+      autoComplete: "current-password",
+      autoFocus: true,
+      value: password || '',
+      disabled: locked || busy,
+      onChange: e => onPassword(e.target.value),
+      onKeyDown: e => {
+        if (e.key === 'Enter') onPasswordNext();
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-btn primary",
+      disabled: locked || busy,
+      onClick: onPasswordNext
+    }, "Next")) : busy ? /*#__PURE__*/React.createElement("div", {
+      className: "pin-saving",
+      role: "status"
+    }, "Saving...") : /*#__PURE__*/React.createElement("div", {
+      className: 'pin-dots' + (shake ? ' shake' : ''),
+      "aria-label": filled + ' of 4 digits entered'
+    }, [0, 1, 2, 3].map(i => /*#__PURE__*/React.createElement("i", {
+      key: i,
+      className: i < filled ? 'on' : ''
+    }))), error ? /*#__PURE__*/React.createElement("p", {
+      className: "pin-err",
+      role: "alert"
+    }, error) : null, onForgot ? /*#__PURE__*/React.createElement("div", {
+      className: "forgot"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-text",
+      onClick: onForgot
+    }, forgotLabel)) : null, onRetry ? /*#__PURE__*/React.createElement("div", {
+      className: "forgot"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-btn secondary",
+      onClick: onRetry
+    }, retryLabel || 'Try again')) : null, passwordMode ? null : /*#__PURE__*/React.createElement("div", {
+      className: "keypad"
+    }, KEYS.map(k => k === '' ? /*#__PURE__*/React.createElement("button", {
+      key: "blank",
+      type: "button",
+      className: "blank",
+      tabIndex: -1,
+      "aria-hidden": "true"
+    }) : k === 'del' ? /*#__PURE__*/React.createElement("button", {
+      key: "del",
+      type: "button",
+      className: "del",
+      "aria-label": "Delete last digit",
+      disabled: busy || locked,
+      onClick: onDelete
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "del",
+      s: 26
+    })) : /*#__PURE__*/React.createElement("button", {
+      key: k,
+      type: "button",
+      disabled: busy || locked,
+      onClick: () => onDigit(k)
+    }, k))));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    PinPad
+  });
+})();
+
+/* ---- os-src/phone/toast.jsx ---- */
+/* Toast — one line after a save. It sits at the top, says the
+   thing that happened, and leaves after 3 seconds. aria-live so
+   a screen reader hears it without the cashier hunting for it. */
+(function () {
+  const {
+    Ic
+  } = window.CDOS;
+  function Toast({
+    text,
+    onDone
+  }) {
+    const done = React.useRef(onDone);
+    done.current = onDone;
+    /* Depend on the text, not the callback. A parent re-render would
+       otherwise restart the three seconds and the toast would stick. */
+    React.useEffect(() => {
+      if (!text) return undefined;
+      const t = setTimeout(() => {
+        if (done.current) done.current();
+      }, 3000);
+      return () => clearTimeout(t);
+    }, [text]);
+    if (!text) return null;
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "phone-toast",
+      role: "status",
+      "aria-live": "polite"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "check",
+      s: 16,
+      c: "#fff"
+    }), /*#__PURE__*/React.createElement("span", null, text)), document.body);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    Toast
+  });
+})();
+
 /* ---- os-src/cdos-settings.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Settings
