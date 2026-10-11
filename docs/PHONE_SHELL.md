@@ -504,9 +504,22 @@ one screen for the apps under More. It is `Phone.Screen` plus the
 components above: a title, `SummaryCards`, a segmented control when
 there are two to four sub-views (otherwise `FilterChips`), `Search`,
 the list, and one `StickyAction`. A read-only app omits the button.
-Vault and Audit trail are the first callers. Dashboard, Calculator,
-Loan calculator, Tagged, and Store should be thin callers of this
-same component. Do not build a second template.
+Vault (`os-src/cdos-phone-vault.jsx`) and Audit trail
+(`os-src/cdos-phone-audit.jsx`) are the first callers. Dashboard,
+Calculator, Loan calculator, Tagged, and Store should be thin callers
+of this same component. Do not build a second template.
+
+A primary button on these screens is `.phone-sticky-btn`. Its fill is
+`var(--brand-primary)`, which `data-app` on the phone shell sets from
+`tokens.css`. Vault, Audit trail, and Calculator's locked accent is
+ink (`#17140F`). The body text uses the `tokens.css` `--font-ui` stack
+(`Inter`, then the system list). The shell's 430px rule sets
+`--font-ui` to Archivo on `:root`; these screens set it back. Inter
+is loaded on the desk.
+
+The float sheet's cashier, till, and "Add a currency" controls are
+native selects. The shared full-screen picker is a separate change
+and is not on this branch. Copying it here would fork that work.
 
 `usePhone()` is the 430px hook. Call it unconditionally, and do not
 mount the screen when it is false. Above 430px the desktop DOM is the

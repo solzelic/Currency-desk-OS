@@ -198,15 +198,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   row, the discard question, and the phone footer are not on that
   dialog.
 - **Long-tail phone template.** At 430px and under, Vault and Audit
-  trail use one screen (`LongTailScreen` in `os-src/cdos-longtail.jsx`,
-  written up in `docs/PHONE_SHELL.md`): a title, one headline, sub-view
-  tabs or chips, search, a list, and one main button. Audit trail is
-  read-only, so it has no button, and the caption says the list is
-  actions on this device. It reads the on-device log, not
-  `ledger_audit_events`. The desktop audit reads that same log.
-  Amounts on that screen carry the currency code. Times on the phone
-  use `formatPhoneTime` (`3:02 pm`), added in the phone shell because
-  it had no shared clock. There is no "Example data" tag. Vault's
+  trail use one screen (`LongTailScreen` in `os-src/cdos-longtail.jsx`;
+  the callers are `os-src/cdos-phone-vault.jsx` and
+  `os-src/cdos-phone-audit.jsx`, written up in `docs/PHONE_SHELL.md`):
+  a title, one headline, sub-view tabs or chips, search, a list, and
+  one main button. Audit trail is read-only, so it has no button, and
+  the caption says the list is actions on this device. It reads the
+  on-device log, not `ledger_audit_events`. The desktop audit reads
+  that same log. Amounts on that screen carry the currency code.
+  Times on the phone use `formatPhoneTime` (`3:02 pm`) from
+  `os-src/phone/format.js`. That file is not part of the phone shell.
+  The foundation takes it over. There is no "Example data" tag. A
+  primary button uses `var(--brand-primary)` from `data-app`. Vault,
+  Audit trail, and Calculator's locked accent is ink. Body text uses
+  the `tokens.css` font stack. Vault's
   "Give out a float" posts through the existing till-movement
   endpoint, with one key per currency, and only after the vault has
   a starting count. The opening count is the existing
@@ -741,7 +746,9 @@ Contract: `docs/PHONE_SHELL.md`.
 
 **2026-10-11**, long-tail phone template. Vault and Audit trail, at
 430px and under, are `LongTailScreen` in `os-src/cdos-longtail.jsx`.
-Audit trail has no main button. Amounts use `formatPhoneMoney`.
+The screens are `os-src/cdos-phone-vault.jsx` and
+`os-src/cdos-phone-audit.jsx`. Audit trail has no main button.
+Amounts use `formatPhoneMoney`. Times use `os-src/phone/format.js`.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

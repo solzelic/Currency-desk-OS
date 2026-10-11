@@ -63243,6 +63243,28 @@ window.CDOS_PERSIST = (function () {
       label: props.searchPlaceholder || 'Search'
     }), ready ? props.children : null);
   }
+  window.CDOS.LongTail = {
+    usePhone,
+    LongTailScreen,
+    money,
+    ccyName
+  };
+})();
+
+/* ---- os-src/cdos-phone-vault.jsx ---- */
+/* Phone vault. Caller of LongTailScreen. The ledger still owns
+   the position, the opening count, and the till movement. */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useRef
+  } = React;
+  const {
+    LongTailScreen,
+    money,
+    ccyName
+  } = window.CDOS.LongTail;
 
   /* ---- Vault ---------------------------------------------------------- */
 
@@ -63705,6 +63727,18 @@ window.CDOS_PERSIST = (function () {
       }), detailNode)
     }, body);
   }
+  window.CDOS.LongTail.PhoneVault = PhoneVault;
+})();
+
+/* ---- os-src/cdos-phone-audit.jsx ---- */
+/* Phone audit trail. Read-only. This list is the on-device log. */
+(function () {
+  const {
+    useState
+  } = React;
+  const {
+    LongTailScreen
+  } = window.CDOS.LongTail;
 
   /* ---- Audit trail (read-only) --------------------------------------- */
 
@@ -63861,13 +63895,7 @@ window.CDOS_PERSIST = (function () {
       onClick: () => setOpen(a)
     })))));
   }
-  window.CDOS.LongTail = {
-    usePhone,
-    LongTailScreen,
-    PhoneVault,
-    PhoneAudit,
-    money
-  };
+  window.CDOS.LongTail.PhoneAudit = PhoneAudit;
 })();
 
 /* ---- os-src/cdos-os.jsx ---- */

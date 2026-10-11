@@ -267,8 +267,10 @@ test.describe("vault on a phone", () => {
       if (!["CAD", "USD", "EUR", "GBP"].includes(issued) && issued !== "CAD") {
         await sheet.getByLabel("Add a currency").selectOption(issued);
       }
-      await sheet.getByLabel(`${issued} amount`).fill("1.00");
+      /* The amount starts empty, placeholder 0.00. The test types 1.00
+         after the shot so the till movement can be checked. */
       await shot(page, `longtail_float_${width}`);
+      await sheet.getByLabel(`${issued} amount`).fill("1.00");
       const give = sheet.getByRole("button", { name: /Give float to / });
       await give.dblclick();
       await expect(page.getByRole("status").filter({ hasText: "Float given to" })).toBeVisible({ timeout: 20_000 });
