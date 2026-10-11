@@ -51,9 +51,13 @@ async function press(locator: Locator) {
   }
 }
 
+function openWindow(page: Page) {
+  return page.locator(".win.show.active");
+}
+
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
-  const tab = page.getByRole("button", { name }).first();
+  const tab = openWindow(page).getByRole("button", { name }).first();
   try {
     await clickWhenStable(tab);
   } catch {
@@ -65,8 +69,9 @@ async function clickDrawerTab(page: Page, name: RegExp) {
 }
 
 async function saveDrawerCount(page: Page) {
-  await press(page.getByRole("button", { name: /Save count/i }).first());
-  await expect(page.getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
+  const win = openWindow(page);
+  await press(win.getByRole("button", { name: /Save count/i }).first());
+  await expect(win.getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
     timeout: 15_000,
   });
   await settleCashDrawerChrome(page);
@@ -111,7 +116,7 @@ async function openTill(page: Page) {
     await expect(title).toBeVisible();
   }
   await settleCashDrawerChrome(page);
-  const openButton = page.getByRole("button", { name: /Open the till/i }).first();
+  const openButton = openWindow(page).getByRole("button", { name: /Open the till/i }).first();
   const sessionLine = page.getByText(/Session #\d+ open/);
   /* The drawer paints "Open the till" while the session is still
      arriving, then takes the button away once the book says the till
@@ -127,10 +132,11 @@ async function openTill(page: Page) {
 
 async function countTheBook(page: Page, balances: Record<string, string>) {
   await clickDrawerTab(page, /Cash drawer/i);
+  const win = openWindow(page);
   for (const [ccy, amount] of Object.entries(balances)) {
-    await press(page.locator(`button:has-text("${ccy}")`).first());
-    await press(page.getByRole("button", { name: /Enter total/i }).first());
-    await page.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
+    await press(win.locator(`button:has-text("${ccy}")`).first());
+    await press(win.getByRole("button", { name: /Enter total/i }).first());
+    await win.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
   }
   await saveDrawerCount(page);
 }
