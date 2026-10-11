@@ -550,6 +550,13 @@ and says "Not counted" until a currency is counted. The ledger search
 stays one line. Screening reads Not connected. This sits on the phone
 layout that landed with the desk-fits-a-phone change.
 
+**2026-10-11**, public site claims, fourteenth pass. Only
+the exact names "24-hour rule" and "24-hour aggregation rule"
+are kept. A 24-hour setup fails. Spaced 48 hour and 2 hour,
+two-hour, less than two hours, over-night, and replies today
+fail. A comma after the SMR terrorism-financing clause does
+not keep the deadline.
+
 **2026-10-11**, public site claims, thirteenth pass. The
 SMR terrorism-financing deadline is allowed only as that whole
 clause, on the compliance page and the FAQ. A longer sentence
