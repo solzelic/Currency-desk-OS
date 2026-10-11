@@ -794,6 +794,7 @@
        neither starts nor ends on the dot. Same rule as the new-transaction
        type line. */
     const altRestRef = useRef(null);
+    const footRef = useRef(null);
     const [altBreaks, setAltBreaks] = useState([]);
     useLayoutEffect(() => {
       if (!phoneLayout) {
@@ -824,6 +825,29 @@
       if (ro) ro.observe(root);
       return () => { if (ro) ro.disconnect(); };
     }, [phoneLayout, tab]);
+    /* The sticky footer cuts whatever row happens to sit on it. Pad it
+       up so that cut lands on a row boundary: a sliver of the next note
+       is covered, and a note that is already clear stays clear. Desktop
+       never sets the pad. */
+    useLayoutEffect(() => {
+      const foot = footRef.current;
+      if (!foot || !phoneLayout) return undefined;
+      const fit = () => {
+        foot.style.setProperty('padding-top', '0px', 'important');
+        const root = foot.closest('.till-root') || document;
+        const rows = [...root.querySelectorAll('.till-notes .till-den, .till-coins-btn, .till-coins.is-open .till-den')];
+        const top = foot.getBoundingClientRect().top;
+        const cut = rows.map(row => row.getBoundingClientRect()).find(b => b.height > 8 && b.top < top - 0.5 && b.bottom > top + 0.5);
+        if (!cut) return;
+        foot.style.setProperty('padding-top', Math.ceil(top - cut.top) + 'px', 'important');
+      };
+      fit();
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+      const body = foot.closest('.win-body');
+      if (ro && body) ro.observe(body);
+      window.addEventListener('resize', fit);
+      return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', fit); };
+    }, [phoneLayout, tab, coinsOpen, ccy, mode]);
     /* The phone header reads the same people and the same till the
        desktop already shows. A session stores the staff id; the roster
        already has that person's name and role. */
@@ -989,14 +1013,14 @@
         {serverSession && sessionOpen && (
           <div className="till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: CD.green, flex: 'none' }}></span>
-            <span className="till-session-line">Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open<span className="till-session-date"> · {serverSession.businessDate}</span> · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
+            <span className="till-session-line">Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open<span className="till-session-date"> · {serverSession.businessDate}</span> · opened by {personOf(serverSession.openedBy)}<span className="till-session-when"> at {clockOf(new Date(serverSession.openedAt).getTime())}</span></span>
             <span className="till-session-tally ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted<span className="till-session-date-phone"> · {serverSession.businessDate}</span></span>
           </div>
         )}
         {sessionClosed && (
           <div className="till-session flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
             <Ic n="lock" s={12} c="#3a7a56" />
-            <span className="till-session-line">Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {clockOf(new Date(serverSession.closedAt).getTime())}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
+            <span className="till-session-line">Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)}<span className="till-session-when"> at {clockOf(new Date(serverSession.closedAt).getTime())}</span>{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
           </div>
         )}
         {(sessionErr || serverBalanceError) && (
@@ -1081,9 +1105,9 @@
           {ccyMode(ccy) === 'total' ? (
             <div className="till-total-card p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
               <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Skip the breakdown — just enter the total {ccy} you counted in the drawer.</div>
-              <div className="flex items-center" style={{ border: `1px solid ${CD.ink}`, borderRadius: 10, maxWidth: 340 }}>
+              <div className="till-total-field flex items-center" style={{ border: `1px solid ${CD.ink}`, borderRadius: 10, maxWidth: 340 }}>
                 <span className="px-3 text-sm" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderRight: `1px solid ${CD.line}` }}>{ccy}</span>
-                <input type="number" autoFocus value={quick[ccy] ?? ''} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
+                <input type="number" inputMode="decimal" autoFocus value={quick[ccy] ?? ''} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
               </div>
               {ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>≈ {fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy)}</div>}
             </div>
@@ -1102,7 +1126,7 @@
           )}
           </div>
           {/* per-currency footer — counted (typeable), expected, then the grand total */}
-          <div className="till-foot" style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
+          <div className="till-foot" ref={footRef} style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
             <div className="till-foot-main flex items-end justify-between gap-4 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
               <div className="till-foot-figures">
                 <div className="till-counted-k text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>

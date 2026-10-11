@@ -256,15 +256,22 @@ test("a phone can count, save, and reach every till tab", async ({ page }) => {
     expect(hand && hand.height).toBeGreaterThanOrEqual(44);
     expect(saveBox && saveBox.height).toBeGreaterThanOrEqual(44);
     expect(hand && saveBox && Math.abs(hand.y - saveBox.y)).toBeLessThan(8);
-    const fabBox = await page.locator("#phone-fab").boundingBox();
-    const hits =
-      !!saveBox &&
-      !!fabBox &&
-      saveBox.x < fabBox.x + fabBox.width - 1 &&
-      saveBox.x + saveBox.width > fabBox.x + 1 &&
-      saveBox.y < fabBox.y + fabBox.height - 1 &&
-      saveBox.y + saveBox.height > fabBox.y + 1;
-    expect(hits, "Save count collides with the round +").toBe(false);
+    /* The round + is hidden on Till. The footer sits on the tab bar. */
+    await expect(page.locator("#phone-fab")).toBeHidden();
+    const footerGap = await page.evaluate(() => {
+      const foot = document.querySelector(".till-foot");
+      const bar = document.querySelector("#phonebar");
+      if (!(foot instanceof HTMLElement) || !(bar instanceof HTMLElement)) return null;
+      return Math.round(bar.getBoundingClientRect().top - foot.getBoundingClientRect().bottom);
+    });
+    expect(footerGap, "Hand off / Save count sits on the bottom bar").toBeGreaterThanOrEqual(0);
+    expect(footerGap, "Hand off / Save count sits on the bottom bar").toBeLessThanOrEqual(2);
+    const timeLines = await page.locator(".till-session-when").evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const line = parseFloat(getComputedStyle(el).lineHeight) || 20;
+      return box.height <= line * 1.4;
+    });
+    expect(timeLines, "the session clock breaks onto its own line").toBe(true);
 
     const expected = page.locator(".till-expected-fig");
     const blurred = await expected.evaluate((el) => getComputedStyle(el).filter.includes("blur"));

@@ -14399,6 +14399,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        neither starts nor ends on the dot. Same rule as the new-transaction
        type line. */
     const altRestRef = useRef(null);
+    const footRef = useRef(null);
     const [altBreaks, setAltBreaks] = useState([]);
     useLayoutEffect(() => {
       if (!phoneLayout) {
@@ -14435,6 +14436,32 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         if (ro) ro.disconnect();
       };
     }, [phoneLayout, tab]);
+    /* The sticky footer cuts whatever row happens to sit on it. Pad it
+       up so that cut lands on a row boundary: a sliver of the next note
+       is covered, and a note that is already clear stays clear. Desktop
+       never sets the pad. */
+    useLayoutEffect(() => {
+      const foot = footRef.current;
+      if (!foot || !phoneLayout) return undefined;
+      const fit = () => {
+        foot.style.setProperty('padding-top', '0px', 'important');
+        const root = foot.closest('.till-root') || document;
+        const rows = [...root.querySelectorAll('.till-notes .till-den, .till-coins-btn, .till-coins.is-open .till-den')];
+        const top = foot.getBoundingClientRect().top;
+        const cut = rows.map(row => row.getBoundingClientRect()).find(b => b.height > 8 && b.top < top - 0.5 && b.bottom > top + 0.5);
+        if (!cut) return;
+        foot.style.setProperty('padding-top', Math.ceil(top - cut.top) + 'px', 'important');
+      };
+      fit();
+      const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+      const body = foot.closest('.win-body');
+      if (ro && body) ro.observe(body);
+      window.addEventListener('resize', fit);
+      return () => {
+        if (ro) ro.disconnect();
+        window.removeEventListener('resize', fit);
+      };
+    }, [phoneLayout, tab, coinsOpen, ccy, mode]);
     /* The phone header reads the same people and the same till the
        desktop already shows. A session stores the staff id; the roster
        already has that person's name and role. */
@@ -14924,7 +14951,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, "#", serverSession.sessionNumber), " open", /*#__PURE__*/React.createElement("span", {
       className: "till-session-date"
-    }, " \xB7 ", serverSession.businessDate), " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
+    }, " \xB7 ", serverSession.businessDate), " \xB7 opened by ", personOf(serverSession.openedBy), /*#__PURE__*/React.createElement("span", {
+      className: "till-session-when"
+    }, " at ", clockOf(new Date(serverSession.openedAt).getTime()))), /*#__PURE__*/React.createElement("span", {
       className: "till-session-tally ml-auto flex-none",
       style: {
         color: CD.faint
@@ -14948,7 +14977,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), " at ", clockOf(new Date(serverSession.closedAt).getTime()), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
+    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), /*#__PURE__*/React.createElement("span", {
+      className: "till-session-when"
+    }, " at ", clockOf(new Date(serverSession.closedAt).getTime())), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]",
       style: {
         background: CD.flagSoft,
@@ -15185,7 +15216,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "Skip the breakdown \u2014 just enter the total ", ccy, " you counted in the drawer."), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
+      className: "till-total-field flex items-center",
       style: {
         border: `1px solid ${CD.ink}`,
         borderRadius: 10,
@@ -15200,6 +15231,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, ccy), /*#__PURE__*/React.createElement("input", {
       type: "number",
+      inputMode: "decimal",
       autoFocus: true,
       value: quick[ccy] ?? '',
       onChange: e => {
@@ -15257,6 +15289,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setCount: setCount
     }))))), /*#__PURE__*/React.createElement("div", {
       className: "till-foot",
+      ref: footRef,
       style: {
         position: 'sticky',
         bottom: 0,
@@ -67006,7 +67039,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       s: 13
     })))));
     return /*#__PURE__*/React.createElement("div", {
-      id: "os"
+      id: "os",
+      className: phoneOn === 'till' ? 'phone-on-till' : undefined
     }, deskLocked && ReactDOM.createPortal(/*#__PURE__*/React.createElement(LockDesk, {
       operator: me,
       onUnlock: () => setDeskLocked(false),

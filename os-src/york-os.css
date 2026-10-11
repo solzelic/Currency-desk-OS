@@ -1766,6 +1766,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--ink, #111);
   }
 
+  /* On the Till screen the round + is spare: Hand off and Save
+     count are the actions, and the empty row under them was just
+     the button. The dock becomes the tab bar, and the window —
+     footer included — sits on it. Other screens keep the +. */
+  #os.phone-on-till {
+    --phone-dock-h: calc(58px + env(safe-area-inset-bottom, 0px));
+  }
+  #os.phone-on-till .phone-fab-row { display: none; }
+
   #phone-dock {
     display: flex;
     flex-direction: column;
@@ -2209,6 +2218,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-session-date { display: none !important; }
   .till-session-date-phone { display: inline !important; }
+  /* "a.m." was wrapping onto a line by itself. The clock stays
+     with "at", so the whole time moves together or stays put. */
+  .till-session-when {
+    display: inline-block;
+    white-space: nowrap;
+    /* The leading space is discarded at the start of an inline-block. */
+    margin-left: 0.25em;
+  }
   .till-session-line {
     flex: 1 1 0 !important;
     min-width: 0;
@@ -2313,18 +2330,49 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: "Space Mono", monospace !important;
     font-size: 15px !important;
   }
+  .till-total-card { min-width: 0; overflow: hidden; }
+  .till-total-field {
+    display: flex !important;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100% !important;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .till-total-field > span { flex: none; }
   .till-total-card input {
+    box-sizing: border-box;
+    flex: 1 1 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
     min-height: 44px;
+    padding-right: 12px !important;
+    text-align: right !important;
     font-family: "Space Mono", monospace !important;
     font-size: 28px !important;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .till-total-card input::-webkit-outer-spin-button,
+  .till-total-card input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+    display: none;
   }
   /* The count scrolls with the window. The footer sticks to the
      bottom of that window, above the dock. There is no second
      scroller around the notes. */
-  .win-body:has(.till-root[data-till-screen="count"]) { overflow: auto; }
+  .win-body:has(.till-root[data-till-screen="count"]) {
+    overflow: auto;
+    display: flex !important;
+    flex-direction: column;
+  }
   .till-root[data-till-screen="count"] {
+    flex: 1 0 auto;
     height: auto !important;
-    min-height: 100%;
+    min-height: 0;
+    display: flex !important;
+    flex-direction: column;
     overflow: visible !important;
   }
   .till-foot {
@@ -2337,20 +2385,25 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     box-sizing: border-box;
     width: calc(100% + 24px);
     max-width: none;
-    margin: 0 -12px 0 !important;
-    padding: 10px 12px 4px !important;
+    /* Short counts still sit on the bar. A long count keeps this at 0
+       and the sticky edge does the holding. */
+    margin: auto -12px 0 !important;
+    padding: 0 12px 0 !important;
     background: var(--cd-paper, #f7f6f3) !important;
     box-shadow: 0 -1px 0 var(--hair, rgba(23, 20, 15, 0.12));
   }
   .till-root[data-till-screen="count"] > .overflow-auto {
-    display: block;
-    flex: none;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
     height: auto;
     min-height: 0;
     overflow: visible !important;
   }
   .till-root[data-till-screen="count"] .till-count {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
     height: auto;
     min-height: 0;
     overflow: visible;
@@ -2460,7 +2513,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
-    margin-top: 4px;
+    margin-top: 0;
   }
   .till-handoff-phone {
     display: flex;

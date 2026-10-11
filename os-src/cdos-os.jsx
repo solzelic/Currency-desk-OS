@@ -2315,7 +2315,7 @@
       </div>
     );
 
-    return (<div id="os">
+    return (<div id="os" className={phoneOn === 'till' ? 'phone-on-till' : undefined}>
       {/* B · desk lock — session stays live behind a PIN. Portalled to body
           so the fixed overlay escapes the desktop's stacking context. */}
       {deskLocked && ReactDOM.createPortal(<LockDesk operator={me} onUnlock={() => setDeskLocked(false)}

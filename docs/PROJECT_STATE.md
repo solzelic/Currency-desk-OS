@@ -96,9 +96,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the session is open or closed, the amount in the drawer, Move cash and
   Vault as matching outline buttons, then a 4-up grid of currency chips,
   the notes across the full card, and Hand off / Save count stuck at the
-  thumb. The notes scroll with the window, not in an inner box. The
-  who-line wraps at the dots. A name that does not fit on the line
-  ellipsizes. When the branch has another till, that till name opens the
+  thumb, directly on the bottom bar. The round + is hidden on Till, so
+  that row is not an empty band under the footer. The notes scroll with
+  the window, not in an inner box. The who-line wraps at the dots. A
+  name that does not fit on the line ellipsizes. The session clock stays
+  with the word "at", so "a.m." is not left on a line by itself. Enter
+  total fits inside its card, with the figure right-aligned and no
+  spinner. When the branch has another till, that till name opens the
   same switcher the desktop header uses, as a sheet on the bottom of the
   window with a dim backdrop. That control is mounted only at this width,
   so a wide window still has the one header button. A note that the
@@ -445,9 +449,11 @@ authenticated narrative dashboard.
 selector (the other tab names keep a spaced dot), a who-line with a
 space after "On the drawer", the session line, Move cash and Vault at
 the same height, a 4-up grid of currency chips, notes across the full
-card, and Hand off / Save count stuck at the thumb. The notes scroll
+card, and Hand off / Save count stuck at the thumb, on the bottom
+bar. The round + is hidden on that screen. The notes scroll
 with the window. The who-line wraps at the dots, and a long name
-ellipsizes. Expected, the blurred figure, and Show stay on one line.
+ellipsizes. The session clock stays with "at". Enter total fits
+in its card. Expected, the blurred figure, and Show stay on one line.
 Another till at the branch opens from that till name as a sheet on
 the bottom of the window, through the same switch the desktop header
 uses. That control is mounted only at phone width. A multi-till note
