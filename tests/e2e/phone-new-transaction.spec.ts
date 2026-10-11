@@ -13,10 +13,25 @@ async function dismissTour(page: Page): Promise<void> {
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
+/* The New transaction button starts enabled from this browser's copy of
+   the day, then disables when the desk reads that the server has no open
+   till. Clicking in that window waits forever: the click is still in
+   progress when the button disables. Read the session first. Open it
+   when it is shut, and only then click, after the desk's own read of
+   that open session has landed. */
+async function tillSessionOpen(page: Page): Promise<boolean> {
+  return page.evaluate(async () => {
+    const res = await fetch("/api/ledger/till-session");
+    if (!res.ok) return false;
+    const body = await res.json();
+    return !!(body.session && body.session.status === "open");
+  });
+}
+
 async function openNewTransaction(page: Page): Promise<void> {
   const button = () => page.getByRole("button", { name: /^New transaction$/i }).first();
   await expect(button()).toBeVisible({ timeout: 30_000 });
-  if (await button().isDisabled()) {
+  if (!(await tillSessionOpen(page))) {
     const opened = await page.evaluate(async () => {
       const res = await fetch("/api/ledger/till-sessions/open", {
         method: "POST",
@@ -26,15 +41,37 @@ async function openNewTransaction(page: Page): Promise<void> {
       return res.ok || res.status === 409 ? "open" : await res.text();
     });
     expect(opened, "the till did not open").toBe("open");
+    const seen = page.waitForResponse((res) => {
+      const url = res.url();
+      return url.includes("/api/ledger/till-session")
+        && !url.includes("/till-sessions/")
+        && res.request().method() === "GET"
+        && res.ok();
+    });
     await page.reload();
+    await seen;
     await landOnDesktop(page);
     await dismissTour(page);
+    expect(await tillSessionOpen(page), "till session after open").toBe(true);
   }
-  await button().scrollIntoViewIfNeeded();
-  await expect(button()).toBeEnabled();
+  await expect(button()).toBeEnabled({ timeout: 30_000 });
   await button().click();
   await expect(page.locator(".cd-tx")).toBeVisible();
   await dismissTour(page);
+}
+
+/* The post button, measured where it is. Do not scroll it into view:
+   the failure this catches is a footer that only appears after a scroll. */
+async function expectPrimaryInViewport(page: Page): Promise<void> {
+  const box = await page.locator(".cd-tx-go").boundingBox();
+  const view = page.viewportSize();
+  expect(box, "primary button").toBeTruthy();
+  expect(view, "viewport").toBeTruthy();
+  expect(box!.x, "primary left").toBeGreaterThanOrEqual(-1);
+  expect(box!.y, "primary top").toBeGreaterThanOrEqual(-1);
+  expect(box!.x + box!.width, "primary right").toBeLessThanOrEqual(view!.width + 1);
+  expect(box!.y + box!.height, "primary bottom").toBeLessThanOrEqual(view!.height + 1);
+  expect(box!.height, "primary height").toBeGreaterThanOrEqual(44);
 }
 
 async function boxOf(page: Page, selector: string) {
@@ -160,6 +197,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(sheet.width, `sheet width at ${width}`).toBeGreaterThanOrEqual(width - 1);
     expect(sheet.height, `sheet height at ${width}`).toBeGreaterThanOrEqual(843);
     await expect(page.locator(".cd-tx").getByRole("button", { name: /^Cancel$/ })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Discard this deal?" })).toHaveCount(0);
 
     const form = await boxOf(page, ".cd-tx-form");
     const rail = await boxOf(page, ".cd-tx-rail");
@@ -185,6 +223,31 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(await horizontalProblems(page), `customer at ${width}`).toEqual([]);
 
     await page.locator(".cd-money input").first().fill("3000");
+    await page.locator(".cd-money input").first().focus();
+    await expectPrimaryInViewport(page);
+    if (width === 360) {
+      await page.setViewportSize({ width: 360, height: 780 });
+      await page.locator(".cd-money input").first().focus();
+      await expectPrimaryInViewport(page);
+      await page.setViewportSize({ width: 360, height: 500 });
+      await page.locator(".cd-money input").first().focus();
+      await expectPrimaryInViewport(page);
+      await page.setViewportSize({ width: 360, height: 844 });
+      await page.locator(".cd-tx-scroll").evaluate((el) => { el.scrollTop = 0; });
+    }
+    await expect(page.locator(".cd-tx-id-type")).toHaveCount(0);
+    await expect(page.locator(".cd-tx-id-num")).toHaveCount(0);
+    const idNeed = page.locator(".cd-tx-id-need");
+    await idNeed.scrollIntoViewIfNeeded();
+    await expect(idNeed).toBeVisible();
+    const idText = (await idNeed.innerText()).replace(/\s+/g, " ");
+    expect(
+      idText.includes("ID needed for this amount") || idText.includes("on file"),
+      `id row at ${width}: ${idText}`,
+    ).toBe(true);
+    if (idText.includes("ID needed for this amount")) {
+      await expect(idNeed.getByRole("button", { name: "Record the ID" })).toBeVisible();
+    }
     const idLine = page.locator(".cd-tx").getByText(/Customer identified|ID required/i).first();
     await idLine.scrollIntoViewIfNeeded();
     await expect(idLine).toBeVisible();
@@ -224,7 +287,73 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(ticket.y, `ticket top at ${width}`).toBeGreaterThanOrEqual(scroll.y - 1);
     expect(ticket.y + ticket.height, `ticket above the footer at ${width}`).toBeLessThanOrEqual(bar.y + 1);
     expect(await horizontalProblems(page), `action at ${width}`).toEqual([]);
+
+    const close = await boxOf(page, ".cd-tx-x");
+    expect(close.width, `close hit at ${width}`).toBeGreaterThanOrEqual(44);
+    expect(close.height, `close hit at ${width}`).toBeGreaterThanOrEqual(44);
+    const swap = page.locator(".cd-tx-rate-line .cd-tx-hit");
+    await swap.scrollIntoViewIfNeeded();
+    const swapBox = await swap.boundingBox();
+    expect(swapBox!.width, `swap hit at ${width}`).toBeGreaterThanOrEqual(44);
+    expect(swapBox!.height, `swap hit at ${width}`).toBeGreaterThanOrEqual(44);
+    const override = page.getByRole("button", { name: /^Override$/ });
+    await override.scrollIntoViewIfNeeded();
+    const overrideBox = await override.boundingBox();
+    expect(overrideBox!.width, `override hit at ${width}`).toBeGreaterThanOrEqual(44);
+    expect(overrideBox!.height, `override hit at ${width}`).toBeGreaterThanOrEqual(44);
+    const textQuote = page.getByRole("button", { name: /^Text quote$/ });
+    await textQuote.scrollIntoViewIfNeeded();
+    const textBox = await textQuote.boundingBox();
+    expect(textBox!.width, `text quote hit at ${width}`).toBeGreaterThanOrEqual(44);
+    expect(textBox!.height, `text quote hit at ${width}`).toBeGreaterThanOrEqual(44);
+
+    await page.locator(".cd-tx-x").click();
+    const discard = page.getByRole("dialog", { name: "Discard this deal?" });
+    await expect(discard).toBeVisible();
+    await expect(discard.getByRole("button", { name: "Discard" })).toBeVisible();
+    await discard.getByRole("button", { name: "Keep editing" }).click();
+    await expect(discard).toBeHidden();
+    await expect(page.locator(".cd-money input").first()).toHaveValue("3000");
+    await expect(page.locator(".cd-tx")).toBeVisible();
   }
+});
+
+test("recording an ID from the phone deal writes the document", async ({ page }) => {
+  test.skip(!hasLedger, "no ledger");
+  test.setTimeout(90_000);
+  const name = "Phone Id Rowan";
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.context().clearCookies();
+  await signInAtDesk(page, "m.costa");
+  await dismissTour(page);
+  await openNewTransaction(page);
+  await page.locator(".cd-tx-customer input").fill(name);
+  await page.locator(".cd-money input").first().click();
+  await page.locator(".cd-money input").first().fill("3000");
+  const record = page.getByRole("button", { name: "Record the ID" });
+  await record.scrollIntoViewIfNeeded();
+  await record.click();
+  const sheet = page.locator(".cd-tx-record");
+  await expect(sheet.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
+  await sheet.locator("select").first().selectOption("Driver's Licence");
+  await sheet.getByLabel("ID number").fill("DL-778899");
+  await sheet.getByLabel("Expiry").fill("2030-04-01");
+  const saved = page.waitForResponse((res) =>
+    /\/api\/clients\/[^/]+\/documents/.test(res.url()) && res.request().method() === "POST" && res.ok());
+  await sheet.getByRole("button", { name: "Save and return" }).click();
+  await saved;
+  await expect(sheet).toBeHidden();
+  await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
+  await expect(page.locator(".cd-tx-id-need")).toContainText("2030-04-01");
+  const document = await page.evaluate(async (who) => {
+    const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));
+    const body = await res.json();
+    const client = (body.clients || [])[0];
+    if (!client) return null;
+    const primary = (client.documents || []).find((d: { isPrimary?: boolean }) => d.isPrimary) || (client.documents || [])[0];
+    return primary ? { docType: primary.docType, docNumber: primary.docNumber, expiresOn: primary.expiresOn } : null;
+  }, name);
+  expect(document).toEqual({ docType: "Driver's Licence", docNumber: "DL-778899", expiresOn: "2030-04-01" });
 });
 
 test("new transaction stays two columns on a desk", async ({ page }) => {

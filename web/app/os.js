@@ -25937,6 +25937,281 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }))));
   }
 
+  /* The transaction sheet's "Record the ID" opens THIS editor — the same
+     type, number, issued, expiry, and scan the client file uses — and
+     the save goes through the client document API. A deal must not be
+     able to call a customer identified from fields that never left the
+     browser. */
+  function RecordIdSheet({
+    name,
+    rec,
+    setClients,
+    log,
+    onClose,
+    onDone
+  }) {
+    const [phase, setPhase] = useState('loading');
+    const [file, setFile] = useState(rec || {});
+    const [draft, setDraft] = useState({
+      idType: rec && rec.idType || '',
+      idNum: rec && rec.idNum || '',
+      idIssued: rec && rec.idIssued || '',
+      idExpiry: rec && rec.idExpiry || '',
+      photo: rec && rec.photo || null
+    });
+    const [err, setErr] = useState('');
+    const [leaving, setLeaving] = useState(false);
+    const set = (k, v) => setDraft(d => ({
+      ...d,
+      [k]: v
+    }));
+    const upload = async (k, fileIn) => {
+      const taken = await window.CDOS.intakeIdImage(fileIn);
+      if (!taken.ok) {
+        setErr(taken.why);
+        return;
+      }
+      setErr('');
+      set(k, taken.dataUrl);
+    };
+    useEffect(() => {
+      let live = true;
+      (async () => {
+        const shared = window.CDOS.ClientRecords;
+        if (!shared || !shared.serverBacked()) {
+          if (!live) return;
+          setFile(rec || {});
+          setPhase('edit');
+          return;
+        }
+        try {
+          await shared.load(true);
+          let serverRec = rec && rec.clientId ? shared.byId(rec.clientId) : null;
+          if (!serverRec) {
+            const matches = shared.byName(name);
+            if (matches.length > 1) {
+              if (!live) return;
+              setErr('More than one customer has this name. Open their file and record the ID there.');
+              setPhase('error');
+              return;
+            }
+            serverRec = matches[0] || null;
+          }
+          if (!live) return;
+          if (serverRec) {
+            const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+            const desk = api && api.toDeskRecord ? api.toDeskRecord(serverRec, rec || {}) : Object.assign({}, rec || {}, {
+              clientId: serverRec.clientId
+            });
+            setClients(prev => shared.project(prev));
+            setFile(desk);
+            setDraft({
+              idType: desk.idType || '',
+              idNum: desk.idNum || '',
+              idIssued: desk.idIssued || '',
+              idExpiry: desk.idExpiry || '',
+              photo: desk.photo || null
+            });
+          } else {
+            setFile(rec || {});
+          }
+          setPhase('edit');
+        } catch (e) {
+          if (!live) return;
+          setErr(e && e.message || 'CurrencyDesk could not open this customer.');
+          setPhase('error');
+        }
+      })();
+      return () => {
+        live = false;
+      };
+    }, [name]);
+    const ready = !!(draft.idType && String(draft.idNum || '').trim() && draft.idExpiry);
+    const save = async () => {
+      if (leaving || phase !== 'edit') return;
+      if (!ready) {
+        setErr('Type, number, and expiry are required.');
+        return;
+      }
+      setLeaving(true);
+      setErr('');
+      const payload = {
+        idType: draft.idType,
+        idNum: String(draft.idNum).trim(),
+        idIssued: draft.idIssued || null,
+        idExpiry: draft.idExpiry,
+        photo: draft.photo || null,
+        kind: file && file.kind || rec && rec.kind || 'individual'
+      };
+      try {
+        const shared = window.CDOS.ClientRecords;
+        if (shared && shared.serverBacked()) {
+          let clientId = file && file.clientId;
+          const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+          if (!clientId) {
+            const created = await shared.open(name, payload);
+            if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
+            clientId = created.clientId;
+          } else if (file.primaryDocumentId && api) {
+            await api.updateDocument(clientId, file.primaryDocumentId, {
+              docType: payload.idType,
+              docNumber: payload.idNum,
+              issuedOn: payload.idIssued,
+              expiresOn: payload.idExpiry,
+              ...(payload.photo ? {
+                scanDataUrl: payload.photo
+              } : {})
+            });
+            await shared.load(true);
+          } else {
+            await shared.record(clientId, payload);
+          }
+          setClients(prev => shared.project(prev));
+        } else {
+          const today = new Date().toISOString().slice(0, 10);
+          setClients(c => ({
+            ...c,
+            [name]: {
+              ...(c[name] || {}),
+              idType: payload.idType,
+              idNum: payload.idNum,
+              idIssued: payload.idIssued || '',
+              idExpiry: payload.idExpiry,
+              photo: payload.photo,
+              updatedAt: today
+            }
+          }));
+        }
+        log && log('ID document recorded', name + ' · ' + payload.idType);
+        onDone();
+      } catch (e) {
+        setErr(e && e.message || 'CurrencyDesk could not save that ID. Nothing was saved.');
+        setLeaving(false);
+      }
+    };
+    const shown = phase === 'edit' ? Object.assign({}, file, draft) : file;
+    return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-record fixed inset-0 flex items-center justify-center p-4",
+      style: {
+        background: 'var(--cd-scrim)',
+        zIndex: 9400
+      },
+      onMouseDown: onClose
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": "Record the ID",
+      onMouseDown: e => e.stopPropagation(),
+      className: "cd-tx-record-card w-full flex flex-col",
+      style: {
+        maxWidth: 520,
+        maxHeight: '92%',
+        background: CD.paper,
+        borderRadius: 16,
+        boxShadow: '0 24px 70px var(--cd-scrim)',
+        overflow: 'hidden'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-3 px-5 py-4 flex-none",
+      style: {
+        background: CD.panel,
+        borderBottom: `1px solid ${CD.line}`
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 38,
+        height: 38,
+        background: CD.ink,
+        borderRadius: 10
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "id",
+      s: 18,
+      c: "var(--cd-on-ink)"
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 min-w-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[15px] font-semibold leading-tight",
+      style: {
+        color: CD.ink
+      }
+    }, "Record the ID"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] truncate",
+      style: {
+        color: CD.mute
+      }
+    }, name, " \xB7 type, number, and expiry go on their file")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      "aria-label": "Back to the deal",
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 44,
+        height: 44,
+        borderRadius: 8,
+        color: CD.mute
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "x",
+      s: 18
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 overflow-auto px-5 py-4"
+    }, phase === 'loading' && /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] py-6 text-center",
+      style: {
+        color: CD.mute
+      }
+    }, "Opening the customer file\u2026"), phase === 'error' && /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] py-4",
+      style: {
+        color: CD.flag
+      }
+    }, err), phase === 'edit' && /*#__PURE__*/React.createElement(KycEditor, {
+      rec: shown,
+      set: set,
+      kind: file && file.kind || 'individual',
+      onUpload: upload,
+      canEdit: !leaving,
+      who: name,
+      log: log
+    }), phase === 'edit' && err && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "text-[12px] mt-3",
+      style: {
+        color: CD.flag
+      }
+    }, err)), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2 px-5 py-3.5 flex-none",
+      style: {
+        borderTop: `1px solid ${CD.line}`,
+        background: CD.panel
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      className: "px-3.5 py-2.5 text-sm font-medium",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9,
+        color: CD.mute,
+        minHeight: 44
+      }
+    }, "Back to the deal"), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1"
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: save,
+      disabled: !ready || leaving || phase !== 'edit',
+      className: "px-4 py-2.5 text-sm font-semibold",
+      style: {
+        background: ready && !leaving && phase === 'edit' ? CD.ink : CD.lineSoft,
+        color: ready && !leaving && phase === 'edit' ? 'var(--cd-on-ink)' : CD.faint,
+        borderRadius: 9,
+        minHeight: 44
+      }
+    }, leaving ? 'Saving…' : 'Save and return')))));
+  }
+
   /* `ClientIdViewer` is exported so the TRANSACTION screen can open a
      customer's ID without opening their file — which is where a teller
      actually is when the question comes up. One line, and the reveal it
@@ -25944,12 +26219,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         {customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log })}
       `ClientRecords` is exported for the new-contact flow in
      cdos-kyc.jsx, which can run from screens that never mount this
-     one. */
+     one. `RecordIdSheet` is that same identity editor, opened from a
+     deal that needs a document on the server. */
   window.CDOS = Object.assign(window.CDOS || {}, {
     Clients,
     ClientIdViewer,
     ClientRecords,
-    IdScan
+    IdScan,
+    RecordIdSheet
   });
 })();
 
@@ -32113,7 +32390,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   const stamp = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
-  const ID_TYPES = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Business Number'];
   const FLAG = {
     CAD: '🇨🇦',
     USD: '🇺🇸',
@@ -33306,7 +33582,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false); // launches the KYC scan-ID walk-through
+    const [recordId, setRecordId] = useState(false); // the client file's identity editor
+    const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
+    const sheetRef = useRef(null);
 
     // exchange
     const [inCcy, setInCcy] = useState(home);
@@ -33359,13 +33638,74 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [serverQuote, setServerQuote] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+
+    /* Anything the teller put on this ticket. Closing from the phone is
+       the X alone, so that gesture asks before it throws the ticket away.
+       An empty sheet still closes. The desk keeps the old close: Cancel
+       is still there, and this confirm is not on that dialog. */
+    const feeDefault = settings && settings.defaultFee != null ? String(settings.defaultFee) : '';
+    const dealDirty = !!(String(customer || '').trim() || String(query || '').trim() || String(inAmt || '').trim() || type !== 'Currency Exchange' || inCcy !== home || outCcy !== 'USD' || override || tq || String(purpose || '').trim() || String(memo || '').trim() || String(cap.source || '').trim() || cap.thirdParty || String(benName || '').trim() || String(recvRef || '').trim() || String(chequeNumber || '').trim() || String(maker || '').trim() || String(draweeBank || '').trim() || chequeImage || endorsed || String(payee || '').trim() || String(biller || '').trim() || String(account || '').trim() || String(fee || '') !== feeDefault || marginAck || String(marginReason || '').trim() || String(identityNumber || '').trim() || reportSuspicion || usdLargeNotes != null || String(usdSerials || '').trim());
+    const requestClose = () => {
+      if (phoneSheet && dealDirty) {
+        setDiscardAsk(true);
+        return;
+      }
+      onClose();
+    };
     useEffect(() => {
       const h = e => {
-        if (e.key === 'Escape' && !present) onClose();
+        if (e.key !== 'Escape' || present || addFlow || quickChk || recordId) return;
+        if (discardAsk) {
+          setDiscardAsk(false);
+          return;
+        }
+        if (phoneSheet && dealDirty) {
+          setDiscardAsk(true);
+          return;
+        }
+        onClose();
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
-    }, [onClose, present]);
+    }, [onClose, present, addFlow, quickChk, recordId, discardAsk, phoneSheet, dealDirty]);
+    /* The soft keyboard shrinks the visual viewport and leaves the layout
+       viewport tall, so a footer pinned to the layout bottom sits under
+       the keys. The sheet tracks the visual viewport, and the footer sits
+       on that bottom edge. */
+    useEffect(() => {
+      if (!phoneSheet) return undefined;
+      const el = sheetRef.current;
+      if (!el) return undefined;
+      const apply = () => {
+        const view = window.visualViewport;
+        const height = view ? view.height : window.innerHeight;
+        const offset = view ? view.offsetTop : 0;
+        const keyboard = Math.max(0, Math.round(window.innerHeight - height - offset));
+        el.style.setProperty('--cd-tx-vvh', Math.round(height) + 'px');
+        el.style.setProperty('--cd-tx-vvt', Math.round(offset) + 'px');
+        el.style.setProperty('--cd-tx-kb', keyboard + 'px');
+        const actions = el.querySelector('.cd-tx-actions');
+        if (actions) el.style.setProperty('--cd-tx-footer', actions.offsetHeight + 'px');
+      };
+      apply();
+      const view = window.visualViewport;
+      if (view) {
+        view.addEventListener('resize', apply);
+        view.addEventListener('scroll', apply);
+      }
+      window.addEventListener('resize', apply);
+      const actions = el.querySelector('.cd-tx-actions');
+      const observed = actions && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
+      if (observed && actions) observed.observe(actions);
+      return () => {
+        if (view) {
+          view.removeEventListener('resize', apply);
+          view.removeEventListener('scroll', apply);
+        }
+        window.removeEventListener('resize', apply);
+        if (observed) observed.disconnect();
+      };
+    }, [phoneSheet, type]);
     useEffect(() => {
       if (!lock) return;
       const t = setInterval(() => setNowMs(Date.now()), 1000);
@@ -34247,10 +34587,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-overlay fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
-        zIndex: addFlow || quickChk ? 8000 : 9200
+        zIndex: addFlow || quickChk || recordId ? 8000 : 9200
       },
-      onMouseDown: addFlow || quickChk ? undefined : onClose
+      onMouseDown: addFlow || quickChk || recordId ? undefined : requestClose
     }, /*#__PURE__*/React.createElement("div", {
+      ref: sheetRef,
       onMouseDown: e => e.stopPropagation(),
       className: "cd-tx w-full flex flex-col",
       style: {
@@ -34293,8 +34634,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute
       }
     }, meta.short, " \xB7 ", me.name, " \xB7 ", TODAY))), /*#__PURE__*/React.createElement("button", {
-      onClick: onClose,
-      className: "p-1.5",
+      type: "button",
+      onClick: requestClose,
+      "aria-label": "Close",
+      className: "cd-tx-x p-1.5",
       style: {
         borderRadius: 8
       }
@@ -34450,59 +34793,23 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       amountCad: inCadEquiv,
       idRequired: idRequired && kyc !== 'ok',
       onRun: tpl => setQuickChk(tpl)
-    }), idRequired && String(customer || '').trim() && /*#__PURE__*/React.createElement("div", {
-      className: "cd-tx-id p-3.5 space-y-2.5",
-      style: {
-        background: 'var(--cd-panel)',
-        border: `1px solid ${CD.line}`,
-        borderRadius: 12
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-1.5"
+    }), idRequired && String(customer || '').trim() && !idOk && /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-id-need"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-id-need-label"
+    }, "ID needed for this amount"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setRecordId(true),
+      className: "cd-tx-id-need-go"
+    }, "Record the ID")), idRequired && idOk && /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-id-need"
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
+      n: "checkcircle",
       s: 14,
-      c: CD.ink
+      c: CD.green
     }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[12px] font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, "Identification")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "ID type"), /*#__PURE__*/React.createElement("select", {
-      className: "cd-tx-id-type w-full text-sm px-2.5 py-2 outline-none",
-      value: rec && rec.idType || '',
-      onChange: e => {
-        const idType = e.target.value;
-        setClients(c => ({
-          ...c,
-          [customer]: {
-            ...(c[customer] || {}),
-            idType
-          }
-        }));
-      },
-      style: inSty
-    }, /*#__PURE__*/React.createElement("option", {
-      value: ""
-    }, "Choose an ID type"), ID_TYPES.map(o => /*#__PURE__*/React.createElement("option", {
-      key: o,
-      value: o
-    }, o)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "ID number"), /*#__PURE__*/React.createElement("input", {
-      className: "cd-tx-id-num w-full text-sm px-2.5 py-2 outline-none",
-      value: rec && rec.idNum || '',
-      onChange: e => {
-        const idNum = e.target.value;
-        setClients(c => ({
-          ...c,
-          [customer]: {
-            ...(c[customer] || {}),
-            idNum
-          }
-        }));
-      },
-      placeholder: "Document number",
-      style: inSty
-    }))), isExchange && /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-id-need-label"
+    }, rec && rec.idType || 'ID', " on file", rec && rec.idExpiry ? ` · exp ${rec.idExpiry}` : '')), isExchange && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
       style: {
         background: 'var(--cd-panel)',
@@ -34538,7 +34845,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "1 ", inCcy, " = ", shownRate(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
-      className: "p-1",
+      className: "cd-tx-hit p-1",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 7
@@ -34619,7 +34926,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setTqErr('');
       },
       title: "The customer got a quote by text \u2014 enter their ref and it fills this deal in",
-      className: "tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold",
+      className: "cd-tx-hit tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold",
       style: {
         border: '1px solid #8A4B2F',
         background: tqOpen ? '#F2E6DD' : '#8A4B2F',
@@ -34652,7 +34959,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       },
       title: override ? 'Back to the desk rate' : 'Hand-price this deal',
-      className: "flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium",
+      className: "cd-tx-hit flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium",
       style: {
         border: `1px solid ${override ? CD.ink : CD.line}`,
         background: override ? CD.ink : 'transparent',
@@ -35523,7 +35830,51 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, "Cancel")))))), present && /*#__PURE__*/React.createElement(PresentQuote, {
+    }, "Cancel"))))), discardAsk && /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-discard",
+      onMouseDown: e => {
+        e.stopPropagation();
+        setDiscardAsk(false);
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": "Discard this deal?",
+      onMouseDown: e => e.stopPropagation(),
+      className: "cd-tx-discard-sheet"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[15px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Discard this deal?"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mt-1",
+      style: {
+        color: CD.mute
+      }
+    }, "What you entered on this ticket will be lost."), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-col gap-2 mt-4"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      className: "cd-tx-discard-yes w-full text-sm font-semibold",
+      style: {
+        background: CD.flag,
+        color: '#fff',
+        borderRadius: 9,
+        minHeight: 44
+      }
+    }, "Discard"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setDiscardAsk(false),
+      className: "w-full text-sm font-medium",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9,
+        color: CD.ink,
+        background: 'var(--cd-panel)',
+        minHeight: 44
+      }
+    }, "Keep editing"))))), present && /*#__PURE__*/React.createElement(PresentQuote, {
       q: presentQ,
       onClose: () => setPresent(false)
     }), addFlow && window.CDOS.KYC && React.createElement(window.CDOS.KYC.NewContactFlow, {
@@ -35537,6 +35888,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setQuery(nm);
         setAddFlow(false);
       }
+    }), recordId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, {
+      name: String(customer || '').trim(),
+      rec: clients[customer] || null,
+      setClients,
+      log,
+      onClose: () => setRecordId(false),
+      onDone: () => setRecordId(false)
     }), quickChk && window.CDOS.KYC && React.createElement(window.CDOS.KYC.SendModal, {
       subject: customer,
       kind: clients[customer] && clients[customer].kind || 'individual',

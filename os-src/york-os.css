@@ -1681,20 +1681,23 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-honest-tiles { grid-template-columns: 1fr; }
 }
 
-/* The phone scroll wrapper and the identification block generate no
-   box at a desk width. display:contents lets the type bar and the
-   two-column body stay direct flex children of the dialog. */
+/* The phone scroll wrapper generates no box at a desk width.
+   display:contents lets the type bar and the two-column body stay
+   direct flex children of the dialog. The ID row is the phone's
+   link to the client file; it is not on the desk dialog. */
 .cd-tx-scroll { display: contents; }
 .cd-tx-customer-icon { display: contents; }
-.cd-tx-id { display: none; }
+.cd-tx-id-need { display: none; }
 
 /* New transaction is a 940px dialog with a 320px ticket beside the
    fields. Under 600px that rail leaves the customer and the amount
-   about 20px wide. The dialog becomes a full-screen sheet, one scroll
-   holds the type chips and the fields, and the post button sticks to
-   the bottom of that scroll. 16px text is the size a phone will focus
-   without zooming the page. 600px and wider, including the 1280 desk,
-   is outside this query, so the dialog there is unchanged.
+   about 20px wide. The dialog becomes a full-screen sheet. One scroll
+   holds the type chips and the fields. The quote and the post button
+   are a footer of the whole sheet, pinned to the visual viewport, so
+   they stay on screen while the teller fills the deal and while the
+   keyboard is open. 16px text is the size a phone will focus without
+   zooming the page. 600px and wider, including the 1280 desk, is
+   outside this query, so the dialog there is unchanged.
    --page-gutter, --color-border, --gray-900, and --control-h-sm are
    not in this repo yet. The literals below are those tokens. tokens.css
    lands in a later PR. */
@@ -1707,9 +1710,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .cd-tx-overlay.fixed.inset-0 > .cd-tx {
     position: fixed !important;
-    inset: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    /* The visual viewport. --cd-tx-vvt / --cd-tx-vvh are set from
+       visualViewport so a soft keyboard shortens the sheet instead of
+       covering the footer. 100dvh is the fallback before that runs. */
+    top: var(--cd-tx-vvt, 0px) !important;
+    bottom: auto !important;
     width: 100vw !important;
-    height: 100dvh !important;
+    height: var(--cd-tx-vvh, 100dvh) !important;
     max-width: none !important;
     max-height: none !important;
     border-radius: 0 !important;
@@ -1718,6 +1727,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     /* Notch only. The home-indicator inset is on the footer, so the
        two safe areas are not added together. */
     padding-top: env(safe-area-inset-top);
+  }
+  .cd-tx-x {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    padding: 0 !important;
+    display: grid !important;
+    place-items: center;
   }
   .cd-tx-head {
     min-width: 0;
@@ -1735,6 +1753,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
+    /* The footer is out of this scroll. The padding is its height, so
+       the note and the ticket can scroll clear of it. */
+    padding-bottom: var(--cd-tx-footer, 140px);
   }
   .cd-tx-types-bar {
     position: relative;
@@ -1869,7 +1890,43 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      every flex row was allowed to wrap and the input was width 100%.
      One row, about 48px. The icon is 15px and the input is 22px, and
      centering them puts their tops within 4px. */
-  .cd-tx-id { display: block; }
+  .cd-tx-id-need {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 8px 12px;
+    background: var(--cd-panel);
+    border: 1px solid var(--color-border, var(--line));
+    border-radius: 12px;
+  }
+  .cd-tx-id-need-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cd-ink, #0a0a0a);
+    line-height: 1.3;
+  }
+  .cd-tx-id-need-go {
+    flex: none;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 14px;
+    border-radius: 9px;
+    border: none;
+    background: var(--gray-900, #1A1917);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .cd-tx-hit {
+    position: relative;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    box-sizing: border-box;
+  }
   .cd-tx-customer {
     flex-wrap: nowrap !important;
     align-items: center !important;
@@ -1946,12 +2003,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     min-height: 0 !important;
     overflow: visible !important;
   }
-  /* Quote, then the primary. The X in the header closes the sheet,
-     so Cancel is not on the phone. 48px is the control height. */
+  /* Quote, then the primary. Fixed to the visual viewport, not stuck
+     inside the rail, so it is on screen for the whole sheet. --cd-tx-kb
+     is the keyboard inset (0 when the keyboard is closed). The X in
+     the header closes the sheet, so Cancel is not on the phone. */
   .cd-tx-actions {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--cd-tx-kb, 0px);
+    z-index: 6;
     flex: none;
     display: flex;
     flex-direction: column;
@@ -1971,4 +2032,35 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding-bottom: 0 !important;
   }
   .cd-tx-cancel { display: none !important; }
+  .cd-tx-discard {
+    position: fixed;
+    inset: 0;
+    z-index: 8;
+    background: var(--cd-scrim);
+    display: flex;
+    align-items: flex-end;
+  }
+  .cd-tx-discard-sheet {
+    width: 100%;
+    background: var(--cd-panel);
+    border-radius: 16px 16px 0 0;
+    padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  .cd-tx-record.fixed.inset-0 > .cd-tx-record-card {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: var(--cd-tx-vvh, 100dvh) !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+  }
+  .cd-tx-record .grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cd-tx-record input,
+  .cd-tx-record select {
+    font-size: 16px;
+    min-height: 44px;
+  }
 }
