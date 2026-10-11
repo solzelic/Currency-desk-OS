@@ -1,6 +1,7 @@
 /* Phone shell. More, the shared money formatter, and the five-tab bar. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
+import { phoneSweep } from "./helpers/phone-sweep";
 
 const PHONE = { width: 390, height: 844 };
 
@@ -109,6 +110,89 @@ test("cash finds the apps that handle cash", async ({ page }) => {
   await page.getByRole("textbox", { name: "Search apps" }).fill("cash");
   const cashier = await page.locator("#phone-more .phone-more-name").allTextContents();
   expect(cashier).toEqual(["Cheques", "Compliance", "Till"]);
+});
+
+const ACCENT: Record<string, string> = {
+  ledger: "rgb(29, 107, 69)",
+  clients: "rgb(60, 59, 120)",
+  transfers: "rgb(31, 114, 105)",
+};
+
+async function accentOf(page: Page, app: string, label: string): Promise<{ appAttr: string | null; button: string; brand: string; chip: string | null }> {
+  return page.evaluate(({ app, label }) => {
+    const win = document.querySelector(`.win.active[data-app="${app}"]`) || document.querySelector(`.win[data-app="${app}"]`);
+    if (!(win instanceof HTMLElement)) return { appAttr: null, button: "missing window", brand: "", chip: null };
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--brand-primary)";
+    win.appendChild(probe);
+    const brand = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    const visible = (el: Element) => {
+      const st = getComputedStyle(el);
+      if (st.display === "none" || st.visibility === "hidden") return false;
+      const box = el.getBoundingClientRect();
+      return box.width >= 1 && box.height >= 1;
+    };
+    const buttons = [...win.querySelectorAll("button")].filter((el) => visible(el) && (el.textContent || "").replace(/\s+/g, " ").includes(label));
+    const button = buttons.length
+      ? buttons.map((el) => getComputedStyle(el).backgroundColor).join("|")
+      : "missing button";
+    const chipEl = [...win.querySelectorAll("button")].find((el) => visible(el) && /^All\b/.test((el.innerText || "").trim()));
+    const chip = chipEl ? getComputedStyle(chipEl).backgroundColor : null;
+    return { appAttr: win.getAttribute("data-app"), button, brand, chip };
+  }, { app, label });
+}
+
+test("primary buttons use the open app's accent", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await dismissTour(page);
+  const ledger = await accentOf(page, "ledger", "New transaction");
+  expect(ledger.appAttr).toBe("ledger");
+  expect(ledger.brand).toBe(ACCENT.ledger);
+  expect(ledger.button.split("|")).toEqual([ACCENT.ledger]);
+
+  await page.locator('#phonebar [data-phone-app="clients"]').click();
+  await dismissTour(page);
+  const clients = await accentOf(page, "clients", "New contact");
+  expect(clients.appAttr).toBe("clients");
+  expect(clients.brand).toBe(ACCENT.clients);
+  expect(clients.button.split("|")).toEqual([ACCENT.clients]);
+  expect(clients.chip).toBe(ACCENT.clients);
+
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await page.locator('#phone-more [data-phone-app="transfers"]').click();
+  await dismissTour(page);
+  const transfers = await accentOf(page, "transfers", "New transfer");
+  expect(transfers.appAttr).toBe("transfers");
+  expect(transfers.brand).toBe(ACCENT.transfers);
+  for (const fill of transfers.button.split("|")) expect(fill).toBe(ACCENT.transfers);
+
+  await page.mouse.move(0, 0);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  /* The ink fill transitions off the phone accent. Read it once that
+     settles, and confirm the phone query is no longer matching. */
+  await expect.poll(async () => page.evaluate(() => {
+    const win = document.querySelector('.win[data-app="ledger"]');
+    const btn = win && [...win.querySelectorAll("button")].find((el) => (el.textContent || "").includes("New transaction"));
+    return {
+      bg: btn ? getComputedStyle(btn).backgroundColor : "missing",
+      media: window.matchMedia("(max-width: 430px)").matches,
+      width: window.innerWidth,
+    };
+  })).toEqual({ bg: "rgb(10, 10, 10)", media: false, width: 1280 });
+});
+
+test("More passes the phone sweep", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await expect(page.locator("#phone-more")).toBeVisible();
+  await phoneSweep(page, {
+    roots: ["#phone-more", ".phone-head", "#phone-dock"],
+  });
 });
 
 test("sign out asks first and the sticky action clears the last row", async ({ page }) => {

@@ -67,6 +67,18 @@ optional node pinned above the scroll. More uses it for search.
 opened from More paints the More tab in that app's accent. That colour is
 the existing tab logic, not a second one.
 
+Every phone window root (`.win`) sets `data-app` to the app id, including
+a duplicate window (`ledger~2` is still `ledger`). `Phone.Screen` sets it
+too. Inside that root, `--brand-primary` is that app's accent.
+
+On a phone, a legacy button whose fill is `var(--cd-ink)` paints with
+`--brand-primary`. That is the Ledger **New transaction** button, the
+Clients **New contact** button, a selected legacy chip such as **All**,
+and the same ink fill in other apps. `FilterChips` is not one of those.
+A selected `FilterChips` chip stays `--gray-900` with white text. The
+rule lives in `os-src/phone-shell.css` and only applies at
+`max-width: 430px`, so the desktop keeps the near-black ink.
+
 ## Components
 
 All of these are on `window.CDOS.Phone`.
@@ -102,7 +114,8 @@ for the input's accessible name. One row, 48px. The clear button calls
 `chips` array of `{ id, label, count? }`. `value` is the selected id.
 `onChange(id)`. One scrolling line, snap, no scrollbar. The chip face is
 36px inside a 44px hit. Selected is `--gray-900` with white text, not the
-app accent. The row fades at the right edge.
+app accent. That is deliberate: legacy selected chips take the accent,
+and `FilterChips` does not. The row fades at the right edge.
 
 ### ListRow
 
@@ -196,9 +209,45 @@ under "On the bottom bar". The browse list has no search footer. A query
 shows "Search looks at app names and what each app does." Nothing matches
 is an empty state. There is no "Example data" badge. That tag is mockups only.
 
+## Phone sweep
+
+Every phone screen PR imports `tests/e2e/helpers/phone-sweep.ts` and runs
+it on that screen. The helper sets 360×780 and 390×844 and checks each
+root:
+
+- Every visible interactive control is at least 44×44 CSS pixels.
+  Controls are `button`, `a[href]`, `input`, `select`, `textarea`,
+  `summary`, and `role` of button, tab, link, checkbox, switch, menuitem,
+  or option.
+- Visible text is at least 12px.
+- Text contrast is at least 4.5:1. Text that is 24px or larger, or at
+  least 18.66px and bold (weight 700), may be 3:1.
+- Visible text has no 24-hour time. The pattern is
+  `\b([01]?\d|2[0-3]):[0-5]\d\b`. A time with AM or PM beside it is allowed.
+- Visible text has no ISO date (`\d{4}-\d{2}-\d{2}`).
+
+```ts
+import { phoneSweep } from "./helpers/phone-sweep";
+
+await phoneSweep(page, {
+  roots: ["#phone-more", ".phone-head", "#phone-dock"],
+  exceptions: [
+    { rule: "date", text: "TX-2026-10-11-0041", reason: "Reference id, not a calendar date." },
+  ],
+});
+```
+
+`roots` are the screen's own nodes, so a window underneath is not part of
+this screen. An exception names the rule (`hit`, `size`, `contrast`,
+`time`, or `date`), a reason, and a text substring or a CSS selector.
+An exception that matches nothing fails the sweep. The shell runs this
+on More, the phone header, and the tab bar.
+
 ## Adopting the shell
 
-1. Render inside `Phone.Screen` with `app` set to the app id.
+1. Render inside `Phone.Screen` with `app` set to the app id. A window
+   the desk already opens gets `data-app` on `.win`. Do not leave a phone
+   screen without it.
 2. Pass real ledger and server data. Do not invent ids. Do not invent figures.
 3. Format every amount with `formatPhoneMoney` before it reaches a card,
    a row, or a button.
@@ -209,6 +258,7 @@ is an empty state. There is no "Example data" badge. That tag is mockups only.
    sideways to be read.
 6. A status badge has words. Do not communicate state by colour alone.
 7. Keep phone CSS inside `@media (max-width: 430px)`.
+8. Run `phoneSweep` on the screen at 360 and 390. See Phone sweep above.
 
 ## Not in this foundation
 

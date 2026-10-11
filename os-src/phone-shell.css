@@ -336,4 +336,21 @@
     outline: 2px solid var(--color-focus, #1E5AA8);
     outline-offset: 2px;
   }
+  .phone-search input::placeholder {
+    color: var(--color-text-muted, #6B6760);
+    opacity: 1;
+  }
+
+  /* Legacy fills that use the desk ink. On a phone they take the app
+     accent from data-app. FilterChips never use --cd-ink; a selected
+     one stays --gray-900. This query does not apply on the desktop,
+     so the same inline ink stays near-black there.
+     The semicolon keeps --cd-ink-soft from matching. */
+  .win[data-app] button[style*="background: var(--cd-ink);"],
+  .win[data-app] button[style*="background:var(--cd-ink);"],
+  .win[data-app] button[style*="background-color: var(--cd-ink);"],
+  .win[data-app] button[style*="background-color:var(--cd-ink);"] {
+    background-color: var(--brand-primary) !important;
+    border-color: var(--brand-primary) !important;
+  }
 }

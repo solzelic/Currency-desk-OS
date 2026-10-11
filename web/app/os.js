@@ -62084,6 +62084,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     };
     return /*#__PURE__*/React.createElement("div", {
       className: 'win' + (shown ? ' show' : '') + (active ? ' active' : '') + (win.max ? ' max' : '') + (barHidden ? ' bar-hidden' : ''),
+      "data-app": String(win.id).split('~')[0],
       onPointerDown: () => onFocus(win.id),
       style: {
         left: win.x,
