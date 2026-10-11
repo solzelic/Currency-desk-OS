@@ -1410,6 +1410,16 @@
     const [editApps, setEditApps] = useState(false);
     const [chromeCollapsed, setChromeCollapsed] = useState(false);   // click the CurrencyDesk logo to hide the tenant + app rows for more desktop room
     const [phoneMore, setPhoneMore] = useState(false);
+    /* The cashier Rates list replaces the Rate Board only on a phone.
+       Wider than 430px the window keeps the board iframe. */
+    const [phoneNarrow, setPhoneNarrow] = useState(() => window.matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhoneNarrow(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
     const [dragApp, setDragApp] = useState(null);
     const appbarRef = useRef(null);
     const orderedRef = useRef([]);
@@ -1920,7 +1930,15 @@
     };
     const toggleLock = () => {
       const next = !locked;
-      try { localStorage.setItem('yorkfx_rates_locked', next ? '1' : '0'); } catch (e) {}
+      try {
+        localStorage.setItem('yorkfx_rates_locked', next ? '1' : '0');
+        /* The phone status line names the moment of the lock. A time
+           we do not have is left off, rather than invented. */
+        if (next) localStorage.setItem('yorkfx_rates_locked_at', String(Date.now()));
+        else localStorage.removeItem('yorkfx_rates_locked_at');
+      } catch (e) {
+        console.error('Could not save the rate lock', e);
+      }
       if (next) {
         const snap = publishedBook();
         setLockedBook(snap);
@@ -2242,7 +2260,20 @@
 
     function renderApp(id) {
       switch (baseApp(id)) {
-        case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
+        case 'rates':
+          if (phoneNarrow && window.CDOS.PhoneRates) {
+            return React.createElement(window.CDOS.PhoneRates, {
+              settings, role: me.role, locked, rateVersion,
+              onNewDeal: quickNewDeal,
+              onQuoteDeal: (prefill) => {
+                if (day.closed) { quickNewDeal(); return; }
+                window.__cdosDealPrefill = prefill;
+                quickNewDeal();
+              },
+              onEditPricing: () => openApp('pricing'),
+            });
+          }
+          return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />

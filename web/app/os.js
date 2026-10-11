@@ -33388,7 +33388,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     clients,
     onAddNew,
     onClear,
-    idRequired
+    idRequired,
+    autoFocus
   }) {
     const [open, setOpen] = useState(false);
     const wrap = useRef(null);
@@ -33424,6 +33425,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.mute
     })), /*#__PURE__*/React.createElement("input", {
       value: query,
+      autoFocus: !!autoFocus,
+      "data-phone-client": "",
       onFocus: () => setOpen(true),
       onBlur: () => {
         requestAnimationFrame(() => {
@@ -33988,10 +33991,29 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
 
+    /* A phone quote hands this ticket its currency, side, and amount.
+       Read once, then drop it, so the next New transaction starts blank.
+       The rate is not applied as a hand price: this modal prices with
+       priceDeal, the same function the quote just showed. */
+    const dealSeed = useRef(window.__cdosDealPrefill || null);
+    useEffect(() => {
+      window.__cdosDealPrefill = null;
+    }, []);
     // exchange
-    const [inCcy, setInCcy] = useState(home);
-    const [outCcy, setOutCcy] = useState('USD');
-    const [inAmt, setInAmt] = useState('');
+    const [inCcy, setInCcy] = useState(() => {
+      const s = dealSeed.current;
+      if (!s || !s.currency) return home;
+      return s.side === 'customer-buys' ? home : s.currency;
+    });
+    const [outCcy, setOutCcy] = useState(() => {
+      const s = dealSeed.current;
+      if (!s || !s.currency) return 'USD';
+      return s.side === 'customer-buys' ? s.currency : home;
+    });
+    const [inAmt, setInAmt] = useState(() => {
+      const s = dealSeed.current;
+      return s && s.amount != null && s.amount !== '' ? String(s.amount) : '';
+    });
     const [override, setOverride] = useState(false);
     const [manualRate, setManualRate] = useState('');
     const [lock, setLock] = useState(null);
@@ -35139,7 +35161,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       clients: clients,
       onAddNew: onAddNew,
       onClear: onClear,
-      idRequired: idRequired
+      idRequired: idRequired,
+      autoFocus: !!dealSeed.current
     })), window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && /*#__PURE__*/React.createElement("div", {
       "data-testid": "serbia-receipt",
       className: "space-y-2"
@@ -35255,7 +35278,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         resetPricing();
       },
       big: true,
-      autoFocus: true
+      autoFocus: !dealSeed.current
     })), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rate-line flex items-center justify-center gap-2 py-2"
     }, /*#__PURE__*/React.createElement("span", {
@@ -62918,6 +62941,400 @@ window.CDOS_PERSIST = (function () {
   });
 })();
 
+/* ---- os-src/cdos-phone-rates.jsx ---- */
+/* ============================================================
+   Phone Rates — the cashier's board.
+
+   A customer at the counter asks one question: what do I get?
+   One row per currency, a quote when the row is tapped, and
+   Start this deal hands that quote to the existing New
+   transaction. Feed, margins and publish stay on the desktop
+   Rate Board and in Pricing.
+
+   The column, the search, the rows, the sticky button, the
+   loading / empty / error states, and the money line are the
+   shared phone shell (docs/PHONE_SHELL.md). This file does not
+   copy them. The quote sheet is screen-local: the shell does
+   not have one yet.
+
+   Phone only. The OS mounts this under 430px. Wider than that,
+   the Rate Board iframe is what the window still draws.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useMemo,
+    useRef
+  } = React;
+  const HOME_FALLBACK = 'CAD';
+  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  /* Named by the desk, and also any unit priced under 0.10 of home,
+     which is the same rule the board uses for a small currency. */
+  const PER_HUNDRED = {
+    INR: true,
+    PHP: true,
+    MXN: true
+  };
+  function homeCode() {
+    const fn = window.CDOS && window.CDOS.deskHomeCcy;
+    const code = fn ? fn() : HOME_FALLBACK;
+    return code || HOME_FALLBACK;
+  }
+
+  /* Money uses the shared formatter. A rate is not money: it stays
+     four decimals, and the code is written on the quote line. */
+  function amountLine(value, code) {
+    const shared = window.CDOS && window.CDOS.formatPhoneMoney;
+    if (typeof shared === 'function') return shared(value, code) || '—';
+    if (value == null || !isFinite(+value)) return '—';
+    const text = (+value).toLocaleString('en-CA', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    return text + ' ' + (code || HOME_FALLBACK);
+  }
+  function clock12(ms) {
+    return new Date(ms).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  }
+
+  /* Live only when a real provider snapshot is fresh. A locked board,
+     a stale pull, and the built-in rates each say so in words. */
+  function statusOf(feed, locked) {
+    if (locked) {
+      let at = null;
+      try {
+        at = localStorage.getItem('yorkfx_rates_locked_at');
+      } catch (e) {
+        at = null;
+      }
+      const time = at && !isNaN(+at) ? clock12(+at) : '';
+      return {
+        tone: 'locked',
+        text: time ? 'Rates locked at ' + time : 'Rates locked'
+      };
+    }
+    const provider = feed && feed.provider;
+    const at = feed && Number(feed.fetchedAt);
+    const live = provider === 'openexchangerates.org' || provider === 'open.er-api.com';
+    if (live && at > 0) {
+      const time = clock12(at);
+      if (Date.now() - at <= TWO_HOURS) return {
+        tone: 'live',
+        text: 'Live, updated ' + time
+      };
+      return {
+        tone: 'stale',
+        text: 'Rates not updated since ' + time + '. Ask the owner.'
+      };
+    }
+    return {
+      tone: 'saved',
+      text: 'Last updated — not a live feed'
+    };
+  }
+  function currencyName(code) {
+    const row = typeof CUR !== 'undefined' ? CUR.find(c => c.code === code) : null;
+    return row && row.name || code;
+  }
+  function perHundred(code, unit) {
+    return !!PER_HUNDRED[code] || unit > 0 && unit < 0.1;
+  }
+  function rateText(unit, hundred) {
+    const n = hundred ? unit * 100 : unit;
+    return (Math.round((n + Number.EPSILON) * 10000) / 10000).toFixed(4);
+  }
+
+  /* The same buy and sell the Calculator FX mode prices with.
+     A zero is not a rate: the row is left out. */
+  function buildRows(settings) {
+    const home = homeCode();
+    const order = (typeof CUR !== 'undefined' ? CUR : []).map(c => c.code).filter(c => c && c !== home);
+    let board = null;
+    try {
+      board = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+    } catch (e) {
+      board = null;
+    }
+    const rowsOf = board && board.rows || {};
+    const visible = [];
+    order.forEach(code => {
+      const published = rowsOf[code];
+      if (published && published.show === false) return;
+      const buy = window.CDOS.buyUnitCad(code, settings);
+      const sell = window.CDOS.sellUnitCad(code, settings);
+      if (!(buy > 0) || !(sell > 0)) return;
+      const mid = window.CDOS.unitCadMid ? window.CDOS.unitCadMid(code) : buy;
+      const hundred = perHundred(code, mid > 0 ? mid : buy);
+      visible.push({
+        code,
+        name: currencyName(code),
+        hundred,
+        buy: rateText(buy, hundred),
+        sell: rateText(sell, hundred)
+      });
+    });
+    const top = visible.slice(0, 6);
+    const rest = visible.slice(6).sort((a, b) => a.code.localeCompare(b.code));
+    return top.concat(rest);
+  }
+  function quoteOf(side, code, amount, settings) {
+    const home = homeCode();
+    const amt = parseFloat(amount);
+    const feeRaw = settings && settings.defaultFee != null && settings.defaultFee !== '' ? +settings.defaultFee : 0;
+    const fee = isFinite(feeRaw) ? feeRaw : 0;
+    const buy = window.CDOS.buyUnitCad(code, settings);
+    const sell = window.CDOS.sellUnitCad(code, settings);
+    const unit = side === 'buys' ? sell : buy;
+    const mid = window.CDOS.unitCadMid ? window.CDOS.unitCadMid(code) : unit;
+    const hundred = perHundred(code, mid > 0 ? mid : unit);
+    if (!(amt > 0) || !(unit > 0)) {
+      return {
+        home,
+        fee,
+        unit,
+        hundred,
+        gets: null,
+        getsCcy: side === 'buys' ? code : home
+      };
+    }
+    const deal = side === 'buys' ? window.CDOS.priceDeal({
+      inCcy: home,
+      outCcy: code,
+      inAmt: amt,
+      settings
+    }) : window.CDOS.priceDeal({
+      inCcy: code,
+      outCcy: home,
+      inAmt: amt,
+      settings
+    });
+    return {
+      home,
+      fee,
+      unit,
+      hundred,
+      gets: deal.outAmt,
+      getsCcy: side === 'buys' ? code : home
+    };
+  }
+  function PhoneRates({
+    settings,
+    role,
+    locked,
+    rateVersion,
+    onNewDeal,
+    onQuoteDeal,
+    onEditPricing
+  }) {
+    const Phone = window.CDOS.Phone;
+    const [phase, setPhase] = useState('loading');
+    const [feed, setFeed] = useState(null);
+    const [query, setQuery] = useState('');
+    const [quote, setQuote] = useState(null);
+    const [side, setSide] = useState('sells');
+    const [amount, setAmount] = useState('');
+    const [picking, setPicking] = useState(false);
+    const amountRef = useRef(null);
+    const canEdit = role === 'Owner' || role === 'Manager';
+    const load = () => {
+      setPhase('loading');
+      fetch('/api/rates/market', {
+        credentials: 'same-origin',
+        cache: 'no-store'
+      }).then(r => {
+        if (!r.ok) throw new Error('GET /api/rates/market answered ' + r.status);
+        return r.json();
+      }).then(data => {
+        setFeed(data || null);
+        setPhase('ready');
+      }).catch(err => {
+        console.error('Rates did not load', err);
+        setFeed(null);
+        setPhase('error');
+      });
+    };
+    useEffect(() => {
+      load();
+    }, []);
+    useEffect(() => {
+      if (quote && amountRef.current) amountRef.current.focus();
+    }, [quote && quote.code]);
+    const rows = useMemo(() => phase === 'ready' ? buildRows(settings) : [], [phase, settings, rateVersion, feed]);
+    const q = query.trim().toLowerCase();
+    const shown = rows.filter(r => !q || r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+    const status = statusOf(feed, locked);
+    const home = homeCode();
+    const priced = quote ? quoteOf(side, quote.code, amount, settings) : null;
+    const canStart = !!(priced && priced.gets != null);
+    const openQuote = row => {
+      setSide('sells');
+      setAmount('');
+      setPicking(false);
+      setQuote(row);
+    };
+    const startDeal = () => {
+      if (!canStart || !onQuoteDeal) return;
+      onQuoteDeal({
+        side: side === 'buys' ? 'customer-buys' : 'customer-sells',
+        currency: quote.code,
+        amount,
+        rate: priced.unit
+      });
+      setQuote(null);
+    };
+    const typeAmount = raw => {
+      const cleaned = String(raw || '').replace(/[^0-9.]/g, '');
+      const parts = cleaned.split('.');
+      setAmount(parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned);
+    };
+    const edit = canEdit ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-rates-edit",
+      onClick: onEditPricing
+    }, "Edit") : null;
+    const banner = /*#__PURE__*/React.createElement("div", {
+      "data-phone-rates": phase
+    }, /*#__PURE__*/React.createElement("p", {
+      className: 'phone-rates-status is-' + status.tone,
+      "data-phone-rates-status": status.tone
+    }, /*#__PURE__*/React.createElement("i", {
+      "aria-hidden": "true"
+    }), status.text), /*#__PURE__*/React.createElement(Phone.Search, {
+      value: query,
+      onChange: setQuery,
+      placeholder: "Find a currency",
+      label: "Find a currency"
+    }));
+    return /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: "rates",
+      className: "phone-rates",
+      title: "Rates",
+      action: edit,
+      banner: banner,
+      sticky: phase === 'ready' ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
+        label: "New deal",
+        onClick: onNewDeal
+      }) : null
+    }, phase === 'ready' && /*#__PURE__*/React.createElement("p", {
+      className: "phone-rates-explain"
+    }, "Prices in CAD for 1 unit (x100: for 100 units). ", /*#__PURE__*/React.createElement("b", {
+      className: "is-buy"
+    }, "We buy"), ": the customer gives us that currency. ", /*#__PURE__*/React.createElement("b", {
+      className: "is-sell"
+    }, "We sell"), ": the customer takes it."), phase === 'loading' && /*#__PURE__*/React.createElement(Phone.LoadingState, {
+      rows: 6,
+      label: "Loading rates"
+    }), phase === 'error' && /*#__PURE__*/React.createElement(Phone.ErrorState, {
+      message: "Rates did not load. Try again.",
+      onRetry: load
+    }), phase === 'ready' && rows.length === 0 && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "No rates yet",
+      message: "The desk has no currency to quote."
+    }), phase === 'ready' && rows.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "phone-rates-head"
+    }, /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("span", null, "We buy"), /*#__PURE__*/React.createElement("span", null, "We sell")), /*#__PURE__*/React.createElement("div", {
+      className: "phone-list"
+    }, shown.length === 0 && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "No currency matches."
+    }), shown.map(row => /*#__PURE__*/React.createElement(Phone.ListRow, {
+      key: row.code,
+      className: 'phone-rate code-' + row.code,
+      title: row.hundred ? row.code + ' x100' : row.code,
+      subtitle: row.name,
+      amount: row.buy,
+      meta: row.sell,
+      onClick: () => openQuote(row)
+    })))), quote && priced && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "phone-quote",
+      role: "dialog",
+      "aria-label": 'Quote ' + quote.name
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-bar"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        setQuote(null);
+        setPicking(false);
+      }
+    }, "Cancel"), /*#__PURE__*/React.createElement("h2", null, "Quote ", quote.name), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-body"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-seg",
+      role: "tablist"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "tab",
+      "aria-selected": side === 'sells',
+      className: side === 'sells' ? 'is-on' : '',
+      onClick: () => setSide('sells')
+    }, "Customer sells"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "tab",
+      "aria-selected": side === 'buys',
+      className: side === 'buys' ? 'is-on' : '',
+      onClick: () => setSide('buys')
+    }, "Customer buys")), /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-amt"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "k"
+    }, "Customer gives"), /*#__PURE__*/React.createElement("span", {
+      className: "v"
+    }, /*#__PURE__*/React.createElement("input", {
+      ref: amountRef,
+      value: amount,
+      onChange: e => typeAmount(e.target.value),
+      inputMode: "decimal",
+      "aria-label": "Customer gives",
+      placeholder: "0.00"
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "c",
+      onClick: () => setPicking(true),
+      "aria-label": 'Change currency, now ' + quote.code
+    }, side === 'buys' ? home : quote.code))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-gets"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "k"
+    }, "Customer gets"), /*#__PURE__*/React.createElement("b", {
+      "aria-live": "polite"
+    }, priced.gets == null ? '—' : amountLine(priced.gets, priced.getsCcy))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-kv"
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, priced.hundred ? 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ', for 100)' : 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'), /*#__PURE__*/React.createElement("b", {
+      className: side === 'buys' ? 'is-sell' : 'is-buy'
+    }, rateText(priced.unit, priced.hundred), " CAD")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Fee"), /*#__PURE__*/React.createElement("b", null, amountLine(priced.fee, home)))), /*#__PURE__*/React.createElement("p", {
+      className: "phone-quote-note"
+    }, "The fee is set in Pricing. The deal uses the rate showing when you post it."), picking && /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-pick",
+      role: "listbox",
+      "aria-label": "Currencies"
+    }, rows.map(row => /*#__PURE__*/React.createElement("button", {
+      key: row.code,
+      type: "button",
+      role: "option",
+      "aria-selected": row.code === quote.code,
+      onClick: () => {
+        setQuote(row);
+        setPicking(false);
+      }
+    }, /*#__PURE__*/React.createElement("b", null, row.code), /*#__PURE__*/React.createElement("span", null, row.name))))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-quote-foot"
+    }, /*#__PURE__*/React.createElement(Phone.StickyAction, {
+      label: "Start this deal",
+      onClick: startDeal,
+      disabled: !canStart,
+      disabledReason: canStart ? '' : 'Type what the customer gives.'
+    }))), document.body));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    PhoneRates
+  });
+})();
+
 /* ---- os-src/cdos-os.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
@@ -66237,6 +66654,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [editApps, setEditApps] = useState(false);
     const [chromeCollapsed, setChromeCollapsed] = useState(false); // click the CurrencyDesk logo to hide the tenant + app rows for more desktop room
     const [phoneMore, setPhoneMore] = useState(false);
+    /* The cashier Rates list replaces the Rate Board only on a phone.
+       Wider than 430px the window keeps the board iframe. */
+    const [phoneNarrow, setPhoneNarrow] = useState(() => window.matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhoneNarrow(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
     const [dragApp, setDragApp] = useState(null);
     const appbarRef = useRef(null);
     const orderedRef = useRef([]);
@@ -67229,7 +67656,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const next = !locked;
       try {
         localStorage.setItem('yorkfx_rates_locked', next ? '1' : '0');
-      } catch (e) {}
+        /* The phone status line names the moment of the lock. A time
+           we do not have is left off, rather than invented. */
+        if (next) localStorage.setItem('yorkfx_rates_locked_at', String(Date.now()));else localStorage.removeItem('yorkfx_rates_locked_at');
+      } catch (e) {
+        console.error('Could not save the rate lock', e);
+      }
       if (next) {
         const snap = publishedBook();
         setLockedBook(snap);
@@ -67785,6 +68217,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     function renderApp(id) {
       switch (baseApp(id)) {
         case 'rates':
+          if (phoneNarrow && window.CDOS.PhoneRates) {
+            return React.createElement(window.CDOS.PhoneRates, {
+              settings,
+              role: me.role,
+              locked,
+              rateVersion,
+              onNewDeal: quickNewDeal,
+              onQuoteDeal: prefill => {
+                if (day.closed) {
+                  quickNewDeal();
+                  return;
+                }
+                window.__cdosDealPrefill = prefill;
+                quickNewDeal();
+              },
+              onEditPricing: () => openApp('pricing')
+            });
+          }
           return /*#__PURE__*/React.createElement("iframe", {
             src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
             title: "Rate Board"

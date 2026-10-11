@@ -132,8 +132,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   one continues. A ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. The desktop
-  resize grip is hidden. The rate board leads with its currency rows,
-  already drawn. The cash-drawer count keeps its currency chips and
+  resize grip is hidden. At 430px, Rates is the cashier list: four decimals, We buy in
+  #1E5AA8 and We sell in #7A3E96, a quote, and one New deal button.
+  Wider than that, the Rate Board is unchanged. The cash-drawer count keeps its currency chips and
   Save count on screen. The whole Cash drawer scrolls as one column,
   so the header, the session line, and the hand-off scroll away and
   the denomination rows use that room. The count panel stays a solid
@@ -570,6 +571,21 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone Rates. At 430px and under, Rates is the cashier's
+list on the shared phone shell: search, one row per currency at four
+decimals, We buy in blue and We sell in purple, and x100 where the
+desk prices a currency per hundred. Tapping a row quotes it. Start
+this deal opens the existing New transaction with that currency,
+side, and amount, and the cursor on Client. New deal starts a deal
+with no quote. Amounts go through `formatPhoneMoney`. The status
+line says Live only for a real provider snapshot from the last two
+hours, with that snapshot's time. A lock says Rates locked. Anything
+else says when it was last updated, or that it is not a live feed.
+There is no Example data tag. Feed, margins, and publish stay on the
+desktop Rate Board and in Pricing. An owner or a manager gets an
+Edit link to Pricing. A cashier does not. Wider than 430px, the
+Rate Board iframe is unchanged.
 
 **2026-10-12**, desktop cheque number. The Cheques picture missed
 by 29 pixels on both attempts of Actions run 38193394311, and by

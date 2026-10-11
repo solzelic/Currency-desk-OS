@@ -220,7 +220,7 @@
   }
 
   /* ---------- customer combobox (search / add with inline KYC) ---------- */
-  function CustomerPicker({ label, hint, value, query, setQuery, onPick, names, clients, onAddNew, onClear, idRequired }) {
+  function CustomerPicker({ label, hint, value, query, setQuery, onPick, names, clients, onAddNew, onClear, idRequired, autoFocus }) {
     const [open, setOpen] = useState(false);
     const wrap = useRef(null);
     /* A tap on the amount used to leave this list open, because only a
@@ -242,7 +242,7 @@
             {/* display:contents on the desk, so this span is not a box
                 there. On a phone it is the icon's slot in the one row. */}
             <span className="cd-tx-customer-icon"><Ic n="search" s={15} c={CD.mute} /></span>
-            <input value={query} onFocus={() => setOpen(true)} onBlur={() => { requestAnimationFrame(() => { if (wrap.current && wrap.current.contains(document.activeElement)) return; setOpen(false); }); }} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
+            <input value={query} autoFocus={!!autoFocus} data-phone-client="" onFocus={() => setOpen(true)} onBlur={() => { requestAnimationFrame(() => { if (wrap.current && wrap.current.contains(document.activeElement)) return; setOpen(false); }); }} onChange={e => { setQuery(e.target.value); setOpen(true); }} placeholder="Type a name…" className="w-full outline-none text-sm bg-transparent" />
             {query && <button type="button" className="cd-tx-clear" aria-label="Clear customer" onClick={() => { onClear(); setOpen(false); }}><Ic n="x" s={14} c={CD.mute} /></button>}
           </div>
           {open && (
@@ -435,10 +435,27 @@
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
 
+    /* A phone quote hands this ticket its currency, side, and amount.
+       Read once, then drop it, so the next New transaction starts blank.
+       The rate is not applied as a hand price: this modal prices with
+       priceDeal, the same function the quote just showed. */
+    const dealSeed = useRef(window.__cdosDealPrefill || null);
+    useEffect(() => { window.__cdosDealPrefill = null; }, []);
     // exchange
-    const [inCcy, setInCcy] = useState(home);
-    const [outCcy, setOutCcy] = useState('USD');
-    const [inAmt, setInAmt] = useState('');
+    const [inCcy, setInCcy] = useState(() => {
+      const s = dealSeed.current;
+      if (!s || !s.currency) return home;
+      return s.side === 'customer-buys' ? home : s.currency;
+    });
+    const [outCcy, setOutCcy] = useState(() => {
+      const s = dealSeed.current;
+      if (!s || !s.currency) return 'USD';
+      return s.side === 'customer-buys' ? s.currency : home;
+    });
+    const [inAmt, setInAmt] = useState(() => {
+      const s = dealSeed.current;
+      return s && s.amount != null && s.amount !== '' ? String(s.amount) : '';
+    });
     const [override, setOverride] = useState(false);
     const [manualRate, setManualRate] = useState('');
     const [lock, setLock] = useState(null);
@@ -1081,7 +1098,7 @@
             <div className="cd-tx-form flex-1 min-w-0 overflow-auto px-5 py-4 space-y-4" style={{ borderRight: `1px solid ${CD.line}` }}>
               {/* customer (sender/purchaser/payer) */}
               <div data-req-field="cust" className={missField === 'cust' ? 'cd-tx-missing' : undefined}>
-              <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} />
+              <CustomerPicker label={custLabel} hint={idRequired ? 'ID required' : 'optional'} value={customer} query={query} setQuery={(v) => { setQuery(v); setCustomer(v); }} onPick={onPick} names={names} clients={clients} onAddNew={onAddNew} onClear={onClear} idRequired={idRequired} autoFocus={!!dealSeed.current} />
               </div>
               {window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId === 'pack-rs-v1' && type === 'Currency Exchange' && (
                 <div data-testid="serbia-receipt" className="space-y-2">
@@ -1139,7 +1156,7 @@
                 <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <Lbl>Customer pays in</Lbl>
                   <div data-req-field="amt" className={missField === 'amt' ? 'cd-tx-missing' : undefined}>
-                  <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
+                  <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus={!dealSeed.current} />
                   </div>
                   <div className="cd-tx-rate-line flex items-center justify-center gap-2 py-2">
                     <span data-side={pricing.side || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
