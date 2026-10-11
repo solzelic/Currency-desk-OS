@@ -398,7 +398,13 @@ export class ChequeService {
         actor,
         pack,
         face,
-        await derivedIdStatus(client, input.customerId, actor.tenantId, actor.legalEntityId),
+        await derivedIdStatus(
+          client,
+          input.customerId,
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+        ),
         {
           kind: "cheque_cashing",
           cash: true,

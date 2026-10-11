@@ -514,6 +514,18 @@
     // An approved quick check on file. Nothing writes one now.
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
     // no provider check on file — judge by the ID the desk is holding
+    /* The server's standing, when the file came from it. A primary
+       that says "Not stated", or a current document that is not the
+       primary, must not be re-judged from the flattened fields. */
+    if (rec && rec.idStanding === 'missing') return ['Missing ID', CD.flag, CD.flagSoft];
+    if (rec && rec.idStanding === 'expired') return ['ID expired', CD.flag, CD.flagSoft];
+    if (rec && rec.idStanding === 'on_file') {
+      const shown = rec.displayedDocument || null;
+      const shownExpiry = shown ? shown.expiresOn : rec.idExpiry;
+      const warn = settings && +settings.idExpiryWarnDays;
+      if (warn && shownExpiry) { const days = (new Date(shownExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
+      return ['ID on hand', CD.amber, CD.amberSoft];
+    }
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
@@ -629,7 +641,9 @@
     </div>);
   }
 
-  // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
+  // one ADDITIONAL identity document. The primary stays the flattened
+  // fields the desk shows. Standing is the server's idStanding, not
+  // which row is primary.
   function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
     const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
@@ -1047,6 +1061,29 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      set — never a figure typed into this screen. A utility bill in the
      folder below does not move this. */
   function ProcessStanding({ rec, settings }) {
+    if (rec && (rec.idStanding === 'on_file' || rec.idStanding === 'missing' || rec.idStanding === 'expired')) {
+      const idLine = window.CDOS.identificationLimit(settings);
+      const reportLine = window.CDOS.reportingLimit(settings);
+      const standing = {
+        on_file: ['ID on file', 'At least one identity document has a type, a number, and has not expired. The primary document is the one shown.'],
+        missing: ['Not identified', 'No identity document with a real type and a number is on this file.'],
+        expired: ['ID expired', 'Every identity document with a type and a number is past its expiry. The till will not treat this customer as identified.'],
+      }[rec.idStanding];
+      const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+      const rule = stated
+        ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
+        : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+      const tone = rec.idStanding === 'on_file' ? CD.green : CD.flag;
+      const soft = rec.idStanding === 'on_file' ? CD.greenSoft : CD.flagSoft;
+      return (<div data-tour="identification" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Pill text={standing[0]} c={tone} bg={soft} />
+          <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing[1]}</span>
+        </div>
+        <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+      </div>);
+    }
     const status = rec && rec.verificationStatus;
     if (!status) return null;
     const idLine = window.CDOS.identificationLimit(settings);
@@ -1135,8 +1172,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }
 
   /* ---------- FULL PROFILE (double click) ---------- */
-  function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload }) {
+  function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload, recordIdSignal }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
+    useEffect(() => { if (recordIdSignal) setEdit(true); }, [recordIdSignal]);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -1270,9 +1308,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 </div>
                 <ContactEditor rec={rec} set={set} kind={rec.kind || 'individual'} />
               </div>
-              <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+              <div className="p-4" data-testid="id-entry" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Identity documents</div>{canEdit && <button type="button" onClick={addId} className="flex items-center gap-1 text-[12px] font-medium" style={{ color: CD.ink }}><Ic n="plus" s={13} c={CD.ink} /> Add ID</button>}</div>
-                <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Primary ID · drives KYC status</div>
+                <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Primary ID · the document shown on the file</div>
                 <KycEditor rec={rec} set={set} kind={rec.kind || 'individual'} onUpload={upload} canEdit={canEdit} who={name} log={log} />
                 {(rec.ids || []).length > 0 && <div className="mt-3 space-y-3">{(rec.ids || []).map((d, i) => <IdEditorRow key={d.documentId || i} doc={d} i={i} kind={rec.kind || 'individual'} setId={setId} rmId={rmId} uploadId={uploadId} canEdit={canEdit} clientId={rec.clientId} who={name} log={log} />)}</div>}
               </div>
@@ -1395,12 +1433,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const [filter, setFilter] = useState('all');   // all | individual | corporate | verified | attention
     const [quick, setQuick] = useState(null);
     const [profile, setProfile] = useState(null);
+    const [recordIdSignal, setRecordIdSignal] = useState(0);
     const [highlightTx, setHighlightTx] = useState(null);
     const [adding, setAdding] = useState(false);
     const clickTimer = useRef(null);
     // external request (e.g. from a ledger transaction's KYC flag) to open a profile
     const lastSig = useRef(0);
-    useEffect(() => { if (openProfileSignal && openProfileSignal.n && openProfileSignal.n !== lastSig.current) { lastSig.current = openProfileSignal.n; setQuick(null); setProfile(openProfileSignal.name); setHighlightTx(openProfileSignal.txRef || null); } }, [openProfileSignal]);
+    useEffect(() => { if (openProfileSignal && openProfileSignal.n && openProfileSignal.n !== lastSig.current) { lastSig.current = openProfileSignal.n; setQuick(null); setProfile(openProfileSignal.name); setHighlightTx(openProfileSignal.txRef || null); setRecordIdSignal(openProfileSignal.recordId ? openProfileSignal.n : 0); } }, [openProfileSignal]);
 
     const list = useMemo(() => {
       const m = {};
@@ -1543,7 +1582,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       </div>
 
       {quick && <Portal><QuickCard name={quick} rec={quickRec} rows={rows} flags={computeFlags(rows, clients, settings)} settings={settings} me={me} canEdit={canEdit} beneficiaries={beneficiaries} corridors={corridors} setField={(k, v) => setField(quick, k, v)} onUpload={(k, f) => upload(quick, k, f)} onExpand={() => { setProfile(quick); setQuick(null); }} onOpenLedger={(n) => { setQuick(null); openLedgerForClient(n); }} onClose={() => setQuick(null)} /></Portal>}
-      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} reload={reload} /></Portal>}
+      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); setRecordIdSignal(0); }} log={log} highlightTx={highlightTx} reload={reload} recordIdSignal={recordIdSignal} /></Portal>}
       {/* The reload below is AWAITED before the profile opens. It was fired
           and forgotten, so the file that came up was whatever the browser
           happened to be holding — and the one fact a brand-new file has

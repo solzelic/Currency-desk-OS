@@ -682,7 +682,13 @@ export class ObligationService {
         actor,
         pack,
         amountHome,
-        await derivedIdStatus(client, spec.customerId, actor.tenantId, actor.legalEntityId),
+        await derivedIdStatus(
+          client,
+          spec.customerId,
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+        ),
         {
           kind: spec.dealKind,
           cash: true,

@@ -4,7 +4,15 @@ import { LedgerError, type LedgerActor } from "./service.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
-import { derivedIdStatus, derivedIdStatusSql } from "./id-on-file.js";
+import { branchBusinessDate } from "./canada-rules.js";
+import {
+  derivedIdStatus,
+  derivedIdStatusSql,
+  displayedDocuments,
+  toIdStanding,
+  type DisplayedDocument,
+  type IdStanding,
+} from "./id-on-file.js";
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -18,6 +26,10 @@ export type CustomerInput = {
   externalRef?: string;
   name: string;
   risk: "normal" | "enhanced" | "high";
+  /* The desk's client file. The till used to sync a ledger row under
+     `os:<slug>` with no client id, so the documents on the file were
+     invisible to the gate and an identified customer could not post. */
+  clientId?: string;
 };
 
 export class LedgerProvisioningService {
@@ -28,17 +40,24 @@ export class LedgerProvisioningService {
     try {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "customer:view");
+      const businessDate = await branchBusinessDate(client, actor.branchId);
       const result = await client.query(
-        `SELECT customer_id,external_ref,name,risk,
-                ${derivedIdStatusSql("ledger_customers")} AS id_status,
+        `SELECT customer_id,external_ref,name,risk,client_id,
+                ${derivedIdStatusSql("ledger_customers", "$5")} AS id_status,
                 created_at,updated_at
            FROM ledger_customers
           WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4
           ORDER BY name,customer_id`,
-        scope(actor).slice(0, 4),
+        [...scope(actor).slice(0, 4), businessDate],
+      );
+      const shown = await displayedDocuments(
+        client,
+        result.rows.map((row) => row.client_id).filter((id): id is string => !!id),
       );
       await client.query("COMMIT");
-      return result.rows.map(customerJson);
+      return result.rows.map((row) =>
+        customerJson(row, shown.get(row.client_id as string) ?? null),
+      );
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -62,23 +81,36 @@ export class LedgerProvisioningService {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "customer:write");
       const now = new Date();
+      if (input.clientId) await assertClientInEntity(client, actor, input.clientId);
       let result: pg.QueryResult;
+      /* A client file that already has a counter row in this workspace
+         is that row. Returning it is what lets the till post against
+         the customer whose documents the gate can see, instead of
+         opening a second row under os:<slug> with no client id. */
+      const linkedId = !customerId && input.clientId
+        ? await linkedCustomerId(client, actor, input.clientId)
+        : null;
       if (customerId) {
-        /* Name and risk only. The stored id_status column is left as it
-           was: this request is not allowed to change it, and rewriting
-           an old row here would be a migration wearing a save. */
+        /* Name and risk only, plus a client id when this row does not
+           have one yet. The stored id_status column is left as it was. */
         result = await client.query(
           `UPDATE ledger_customers
-              SET external_ref=$1,name=$2,risk=$3,updated_by=$4,updated_at=$5
-            WHERE customer_id=$6 AND tenant_id=$7 AND legal_entity_id=$8
-              AND branch_id=$9 AND workspace_id=$10
-          RETURNING customer_id,external_ref,name,risk,id_status,created_at,updated_at`,
+              SET external_ref=$1,name=$2,risk=$3,updated_by=$4,updated_at=$5,
+                  client_id=CASE
+                    WHEN $6::text IS NULL THEN client_id
+                    WHEN client_id IS NULL THEN $6
+                    ELSE client_id
+                  END
+            WHERE customer_id=$7 AND tenant_id=$8 AND legal_entity_id=$9
+              AND branch_id=$10 AND workspace_id=$11
+          RETURNING customer_id,external_ref,name,risk,id_status,client_id,created_at,updated_at`,
           [
             input.externalRef ?? null,
             input.name,
             input.risk,
             actor.userId,
             now,
+            input.clientId ?? null,
             customerId,
             ...scope(actor).slice(0, 4),
           ],
@@ -89,23 +121,37 @@ export class LedgerProvisioningService {
             "Customer is not in the active workspace.",
           );
         }
+      } else if (linkedId) {
+        result = await client.query(
+          `UPDATE ledger_customers
+              SET name=$1,risk=$2,updated_by=$3,updated_at=$4
+            WHERE customer_id=$5 AND tenant_id=$6 AND legal_entity_id=$7
+              AND branch_id=$8 AND workspace_id=$9
+          RETURNING customer_id,external_ref,name,risk,id_status,client_id,created_at,updated_at`,
+          [input.name, input.risk, actor.userId, now, linkedId, ...scope(actor).slice(0, 4)],
+        );
       } else if (input.externalRef) {
         result = await client.query(
           `INSERT INTO ledger_customers
             (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,
-             external_ref,name,risk,id_status,created_by,updated_by,created_at,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'missing',$9,$9,$10,$10)
+             external_ref,name,risk,id_status,client_id,created_by,updated_by,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'missing',$9,$10,$10,$11,$11)
            ON CONFLICT (tenant_id,legal_entity_id,branch_id,workspace_id,external_ref)
              WHERE external_ref IS NOT NULL
            DO UPDATE SET name=EXCLUDED.name,risk=EXCLUDED.risk,
+                         client_id=CASE
+                           WHEN ledger_customers.client_id IS NULL THEN EXCLUDED.client_id
+                           ELSE ledger_customers.client_id
+                         END,
                          updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at
-           RETURNING customer_id,external_ref,name,risk,id_status,created_at,updated_at`,
+           RETURNING customer_id,external_ref,name,risk,id_status,client_id,created_at,updated_at`,
           [
             `cust_${randomUUID()}`,
             ...scope(actor).slice(0, 4),
             input.externalRef,
             input.name,
             input.risk,
+            input.clientId ?? null,
             actor.userId,
             now,
           ],
@@ -117,26 +163,37 @@ export class LedgerProvisioningService {
         result = await client.query(
           `INSERT INTO ledger_customers
             (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,
-             name,risk,id_status,created_by,updated_by,created_at,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'missing',$8,$8,$9,$9)
-           RETURNING customer_id,external_ref,name,risk,id_status,created_at,updated_at`,
+             name,risk,id_status,client_id,created_by,updated_by,created_at,updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'missing',$8,$9,$9,$10,$10)
+           RETURNING customer_id,external_ref,name,risk,id_status,client_id,created_at,updated_at`,
           [
             `cust_${randomUUID()}`,
             ...scope(actor).slice(0, 4),
             input.name,
             input.risk,
+            input.clientId ?? null,
             actor.userId,
             now,
           ],
         );
       }
       const row = result.rows[0]!;
+      if (input.clientId && row.client_id && row.client_id !== input.clientId) {
+        throw new LedgerError(
+          "CUSTOMER_CLIENT_CONFLICT",
+          "That till reference is already linked to a different client.",
+        );
+      }
       const idStatus = await derivedIdStatus(
         client,
         row.customer_id as string,
         actor.tenantId,
         actor.legalEntityId,
+        actor.branchId,
       );
+      const shown = row.client_id
+        ? (await displayedDocuments(client, [row.client_id as string])).get(row.client_id as string) ?? null
+        : null;
       await client.query(
         `INSERT INTO ledger_audit_events
           (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
@@ -154,7 +211,7 @@ export class LedgerProvisioningService {
         ],
       );
       await client.query("COMMIT");
-      return customerJson({ ...row, id_status: idStatus });
+      return customerJson({ ...row, id_status: idStatus }, shown);
     } catch (error) {
       await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "23505") {
@@ -445,14 +502,57 @@ export class LedgerProvisioningService {
   }
 }
 
-function customerJson(row: Record<string, unknown>) {
+function customerJson(row: Record<string, unknown>, displayed: DisplayedDocument | null = null) {
+  const idStatus = row.id_status as "verified" | "expired" | "missing";
+  const idStanding: IdStanding =
+    idStatus === "verified" || idStatus === "expired" || idStatus === "missing"
+      ? toIdStanding(idStatus)
+      : "missing";
   return {
     customerId: row.customer_id,
     externalRef: row.external_ref ?? null,
+    clientId: row.client_id ?? null,
     name: row.name,
     risk: row.risk,
-    idStatus: row.id_status,
+    idStatus,
+    idStanding,
+    displayedDocument: displayed,
     createdAt: new Date(row.created_at as string | Date).toISOString(),
     updatedAt: new Date(row.updated_at as string | Date).toISOString(),
   };
+}
+
+/* The client has to belong to this tenant and legal entity. A client
+   id from another shop must not be written onto this till's customer. */
+async function assertClientInEntity(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  clientId: string,
+) {
+  const found = await client.query(
+    `SELECT client_id FROM desk_clients
+      WHERE client_id=$1 AND tenant_id=$2 AND legal_entity_id=$3`,
+    [clientId, actor.tenantId, actor.legalEntityId],
+  );
+  if (!found.rowCount) {
+    throw new LedgerError(
+      "CLIENT_NOT_IN_ENTITY",
+      "That client is not on this desk's records.",
+    );
+  }
+}
+
+async function linkedCustomerId(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  clientId: string,
+): Promise<string | null> {
+  const found = await client.query(
+    `SELECT customer_id FROM ledger_customers
+      WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4
+        AND client_id=$5
+      LIMIT 1`,
+    [...scope(actor).slice(0, 4), clientId],
+  );
+  return (found.rows[0]?.customer_id as string | undefined) ?? null;
 }
