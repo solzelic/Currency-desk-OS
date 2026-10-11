@@ -53209,7 +53209,9 @@ ${snap}`;
 (function () {
   const {
     useState,
-    useMemo
+    useMemo,
+    useEffect,
+    useRef
   } = React;
   const {
     CD,
@@ -53222,7 +53224,8 @@ ${snap}`;
     spreadOf,
     buyUnitCad,
     sellUnitCad,
-    roundPayout
+    roundPayout,
+    unitCadMid
   } = window.CDOS;
   const NAME = {
     CAD: 'Canadian Dollar',
@@ -53294,7 +53297,7 @@ ${snap}`;
       }, l);
     }));
   }
-  function Pricing({
+  function PricingDesk({
     settings,
     setSettings,
     me,
@@ -54281,6 +54284,679 @@ ${snap}`;
         color: CD.faint
       }
     }, "Priced exactly as the Ledger would, with your spreads & rounding above. Edit a spread and watch it move.")))));
+  }
+
+  /* Phone pricing is its own tree, mounted only at 430px. A wide
+     window keeps PricingDesk, so the desktop paint does not change.
+     NavRow, FullScreenSheet, and Toast belong to feat/phone-settings
+     and are not on the shell yet. The stand-ins below must not take
+     those names.
+     TODO: switch to them when that branch is the base, and delete
+     PricingSheet, the stepper, and PricingNote. */
+  function usePhone() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => !!(window.matchMedia && window.matchMedia(query).matches));
+    useEffect(() => {
+      if (!window.matchMedia) return undefined;
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
+  const PHONE_CCY = {
+    USD: 'US dollar',
+    EUR: 'Euro',
+    GBP: 'British pound',
+    INR: 'Indian rupee',
+    PHP: 'Philippine peso',
+    CNY: 'Chinese yuan',
+    MXN: 'Mexican peso',
+    AED: 'UAE dirham'
+  };
+  function homeOf() {
+    return window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+  }
+
+  /* Amounts go through the shell formatter. An empty string is an
+     absent figure, drawn as a dash, never as zero. */
+  function pricingMoney(n, ccy) {
+    const format = window.CDOS && window.CDOS.formatPhoneMoney;
+    if (typeof format !== 'function') throw new Error('Pricing: formatPhoneMoney did not load.');
+    return format(n, ccy) || '—';
+  }
+  function rate4(n, known) {
+    if (!known || n == null || !isFinite(+n)) return '—';
+    return (+n).toFixed(4);
+  }
+  function pctText(n) {
+    const x = +n;
+    return isFinite(x) ? (Math.round(x * 10) / 10).toFixed(1) + '%' : '—';
+  }
+  /* The mid a desktop Publish would write. The live preview does not
+     use a pin: priceDeal prices the next deal off the live mid. */
+  function spotFor(code, settings, home) {
+    const ov = settings && settings.spotOverride || {};
+    if (code === home) return 1;
+    if (ov[code] != null && ov[code] !== '' && isFinite(+ov[code])) return +ov[code];
+    if (home === 'CAD') return crossRate(code, 'CAD') || 0;
+    return window.CDOS.homePerUnit && window.CDOS.homePerUnit(code) || 0;
+  }
+  function withSpread(settings, code, spreadPct) {
+    const next = Object.assign({}, settings, {
+      spreads: Object.assign({}, settings && settings.spreads || {})
+    });
+    if (spreadPct == null || spreadPct === '' || !isFinite(+spreadPct)) delete next.spreads[code];else next.spreads[code] = spreadPct;
+    return next;
+  }
+  /* Same call the ledger makes. 500 units of this currency into home. */
+  function dealPreview(code, spreadPct, settings) {
+    const home = homeOf();
+    const next = withSpread(settings, code, spreadPct);
+    const mid = unitCadMid(code);
+    const known = mid > 0 && isFinite(mid);
+    if (!known) return {
+      home,
+      known: false,
+      mid: null,
+      buy: null,
+      sell: null,
+      out: null,
+      earn: null
+    };
+    const deal = priceDeal({
+      inCcy: code,
+      outCcy: home,
+      inAmt: 500,
+      settings: next
+    });
+    return {
+      home,
+      known: true,
+      mid,
+      buy: buyUnitCad(code, next),
+      sell: sellUnitCad(code, next),
+      out: deal.outAmt,
+      earn: deal.marginCad
+    };
+  }
+
+  /* TODO: FullScreenSheet. */
+  function PricingSheet({
+    title,
+    onCancel,
+    children,
+    footer
+  }) {
+    useEffect(() => {
+      const onKey = e => {
+        if (e.key === 'Escape') onCancel();
+      };
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+    }, [onCancel]);
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "pr-sheet",
+      "data-app": "pricing",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": title,
+      "data-pr": "sheet"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "pr-sheet-h"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onCancel
+    }, "Cancel"), /*#__PURE__*/React.createElement("h2", null, title), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
+      className: "pr-sheet-b"
+    }, children), footer ? /*#__PURE__*/React.createElement("div", {
+      className: "pr-sheet-f"
+    }, footer) : null), document.body);
+  }
+  function Stepper({
+    label,
+    value,
+    onChange,
+    step,
+    suffix
+  }) {
+    const [focus, setFocus] = useState(false);
+    const by = step || 0.1;
+    const bump = dir => {
+      const places = by < 1 ? 1 : 2;
+      const n = Math.round(((parseFloat(value) || 0) + dir * by) * 10 ** places) / 10 ** places;
+      onChange(String(Math.max(0, n)));
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "pr-field"
+    }, label ? /*#__PURE__*/React.createElement("div", {
+      className: "pr-label"
+    }, label) : null, /*#__PURE__*/React.createElement("div", {
+      className: "pr-step"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": 'Less, ' + by,
+      onClick: () => bump(-1),
+      disabled: (parseFloat(value) || 0) <= 0
+    }, "\u2212"), /*#__PURE__*/React.createElement("label", {
+      className: 'pr-amt' + (focus ? ' is-on' : '')
+    }, /*#__PURE__*/React.createElement("input", {
+      value: value,
+      inputMode: "decimal",
+      "aria-label": label || 'Amount',
+      onFocus: () => setFocus(true),
+      onBlur: () => setFocus(false),
+      onChange: e => onChange(e.target.value.replace(/[^0-9.]/g, ''))
+    }), suffix ? /*#__PURE__*/React.createElement("span", null, suffix) : null), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": 'More, ' + by,
+      onClick: () => bump(1)
+    }, "+")));
+  }
+  /* TODO: Toast. Four seconds, above the publish button, per the
+     pricing spec. The settings toast is three seconds at the top. */
+  function PricingNote({
+    text
+  }) {
+    if (!text) return null;
+    const tail = text.replace(/^Sent to the Rate Board\.\s*/, '');
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "pr-note",
+      role: "status",
+      "data-pr": "toast",
+      "aria-live": "polite"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "pr-note-ok",
+      "aria-hidden": "true"
+    }, "\u2713"), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Sent to the Rate Board."), " ", tail)), document.body);
+  }
+  function PhonePricing({
+    settings,
+    setSettings,
+    me,
+    log
+  }) {
+    const Phone = window.CDOS.Phone;
+    if (!Phone || !Phone.Screen || !Phone.ListRow || !Phone.StickyAction) {
+      throw new Error('Pricing: the phone shell did not load.');
+    }
+    const safe = settings || {};
+    const home = homeOf();
+    const book = window.CDOS.deskCurrencyList && window.CDOS.deskCurrencyList() || CCY;
+    const foreign = [];
+    (book || []).forEach(raw => {
+      const code = String(raw || '').toUpperCase();
+      if (code && code !== home && foreign.indexOf(code) < 0) foreign.push(code);
+    });
+    const defSpread = safe.defaultSpread != null && safe.defaultSpread !== '' && isFinite(+safe.defaultSpread) ? +safe.defaultSpread : 1.5;
+    const mFloor = safe.marginFloorPct != null && safe.marginFloorPct !== '' && isFinite(+safe.marginFloorPct) ? +safe.marginFloorPct : 0.5;
+    const mTarget = safe.marginTargetPct != null && safe.marginTargetPct !== '' && isFinite(+safe.marginTargetPct) ? +safe.marginTargetPct : 1;
+    const feeN = safe.defaultFee != null && safe.defaultFee !== '' && isFinite(+safe.defaultFee) ? +safe.defaultFee : 0;
+    const roundMode = safe.payoutRoundMode || 'nearest';
+    const roundLabel = roundMode === 'down' ? 'Down' : roundMode === 'up' ? 'Up' : 'Nearest';
+    /* rates:change is the owner and the branch manager. The desk
+       calls those Owner and Manager. A cashier cannot publish. */
+    const canPublish = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
+    const [feed, setFeed] = useState('loading');
+    const [attempt, setAttempt] = useState(0);
+    const [sheet, setSheet] = useState(null);
+    const [draft, setDraft] = useState('');
+    const [extra, setExtra] = useState(null);
+    const [phase, setPhase] = useState('idle');
+    const [toast, setToast] = useState('');
+    const [banner, setBanner] = useState('');
+    const busy = useRef(false);
+    const timers = useRef([]);
+    useEffect(() => () => {
+      timers.current.forEach(id => clearTimeout(id));
+    }, []);
+    useEffect(() => {
+      let gone = false;
+      setFeed('loading');
+      fetch('/api/rates', {
+        credentials: 'same-origin'
+      }).then(async res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await res.json();
+        if (!gone) setFeed('ready');
+      }).catch(err => {
+        if (gone) return;
+        setFeed('error');
+        if (log) log('Pricing', 'rate board did not load: ' + (err && err.message ? err.message : 'network'));
+      });
+      return () => {
+        gone = true;
+      };
+    }, [attempt]);
+    const set = (k, v, note) => {
+      setSettings(s => Object.assign({}, s, {
+        [k]: v
+      }));
+      if (note && log) log('Pricing updated', note);
+    };
+    const setSpread = (code, v) => setSettings(s => Object.assign({}, s, {
+      spreads: Object.assign({}, s && s.spreads || {}, {
+        [code]: v
+      })
+    }));
+    const clearSpread = code => setSettings(s => {
+      const sp = Object.assign({}, s && s.spreads || {});
+      delete sp[code];
+      return Object.assign({}, s, {
+        spreads: sp
+      });
+    });
+    const draftOk = draft !== '' && isFinite(+draft) && +draft >= 0;
+    function openSheet(kind, code) {
+      setBanner('');
+      if (kind === 'ccy') {
+        const sp = (safe.spreads || {})[code];
+        setDraft(String(sp != null && sp !== '' ? sp : defSpread));
+      } else if (kind === 'spread') setDraft(String(defSpread));else if (kind === 'fee') setDraft(String(feeN));else if (kind === 'floor') {
+        setDraft(String(mFloor));
+        setExtra({
+          target: String(mTarget),
+          enforce: safe.marginEnforce || 'block'
+        });
+      }
+      setSheet({
+        kind,
+        code: code || null
+      });
+    }
+    function saveCurrency(code) {
+      if (!draftOk) return;
+      const n = Math.round(+draft * 10) / 10;
+      if (n === +defSpread) clearSpread(code);else setSpread(code, n);
+      if (log) log('Pricing updated', code + ' spread ' + n + '%');
+      setSheet(null);
+    }
+    function useDefault(code) {
+      clearSpread(code);
+      setDraft(String(defSpread));
+      if (log) log('Pricing updated', code + ' spread cleared');
+    }
+    async function publish() {
+      if (busy.current || !canPublish || phase !== 'idle') return;
+      busy.current = true;
+      setPhase('publishing');
+      setBanner('');
+      const dflt = (defSpread || 1.5) / 100;
+      let cfg = {};
+      try {
+        cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || '{}') || {};
+      } catch (err) {
+        busy.current = false;
+        setPhase('idle');
+        setBanner('Not published. Try again.');
+        if (log) log('Rates not published', err && err.message ? err.message : 'saved board was not readable');
+        return;
+      }
+      cfg.rows = cfg.rows || {};
+      cfg.buyMargin = dflt;
+      cfg.sellMargin = dflt;
+      const rows = {};
+      foreign.forEach(code => {
+        const mid = spotFor(code, safe, home);
+        if (!(mid > 0) || !isFinite(mid)) return;
+        const prev = cfg.rows[code] || {};
+        const row = {
+          mid,
+          spread: spreadOf(code, safe),
+          show: prev.show !== false
+        };
+        cfg.rows[code] = Object.assign({}, prev, row);
+        rows[code] = row;
+      });
+      if (!Object.keys(rows).length) {
+        busy.current = false;
+        setPhase('idle');
+        setBanner('Not published. Try again.');
+        if (log) log('Rates not published', 'no live rate to send');
+        return;
+      }
+      let order;
+      try {
+        const raw = localStorage.getItem('yorkfx_board_order');
+        if (raw) order = JSON.parse(raw);
+        if (order == null) order = undefined;
+      } catch (err) {
+        order = undefined;
+        if (log) log('Pricing', 'board order was not readable: ' + (err && err.message ? err.message : 'parse'));
+      }
+      cfg.publishedAt = Date.now();
+      cfg.publishedBy = me && me.name ? me.name : 'owner';
+      try {
+        const res = await fetch('/api/rates/publish', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            buyMargin: cfg.buyMargin,
+            sellMargin: cfg.sellMargin,
+            rows,
+            order
+          })
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          let detail = 'HTTP ' + res.status;
+          try {
+            const body = JSON.parse(text);
+            detail = body.detail || body.error || detail;
+          } catch (err) {
+            detail = text ? text.slice(0, 180) : detail;
+          }
+          throw new Error(detail);
+        }
+      } catch (err) {
+        busy.current = false;
+        setPhase('idle');
+        setBanner('Not published. Try again.');
+        if (log) log('Rates not published', err && err.message ? err.message : 'publish failed');
+        return;
+      }
+      /* The server accepted the board. A copy on this phone is a
+         convenience; a storage failure does not unpublish it. */
+      try {
+        const str = JSON.stringify(cfg);
+        localStorage.setItem('yorkfx_rates_v1', str);
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'yorkfx_rates_v1',
+          newValue: str
+        }));
+      } catch (err) {
+        if (log) log('Pricing', err && err.message ? err.message : 'this phone did not keep a copy of the board');
+      }
+      const when = new Date().toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+      const sent = Object.keys(rows).length;
+      setToast('Sent to the Rate Board. ' + sent + ' currencies, ' + when + '.');
+      if (log) log('Rates published to board', sent + ' currencies · default ' + defSpread + '% · by ' + (me && me.name ? me.name : 'owner'));
+      setPhase('locked');
+      const hold = (fn, ms) => {
+        const id = setTimeout(fn, ms);
+        timers.current.push(id);
+      };
+      hold(() => setToast(''), 4000);
+      hold(() => {
+        busy.current = false;
+        setPhase('idle');
+      }, 3000);
+    }
+    const Row = Phone.ListRow;
+    let sheetEl = null;
+    if (sheet && sheet.kind === 'ccy') {
+      const code = sheet.code;
+      const view = dealPreview(code, draft, safe);
+      const pinned = (safe.spotOverride || {})[code] != null && (safe.spotOverride || {})[code] !== '';
+      const low = draftOk && +draft < mFloor;
+      sheetEl = /*#__PURE__*/React.createElement(PricingSheet, {
+        title: (PHONE_CCY[code] || code) + ' spread',
+        onCancel: () => setSheet(null),
+        footer: /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "pr-go",
+          disabled: !draftOk,
+          onClick: () => saveCurrency(code)
+        }, "Save ", pctText(draft), " for ", code)
+      }, /*#__PURE__*/React.createElement(Stepper, {
+        label: "Spread on each side",
+        value: draft,
+        onChange: setDraft,
+        suffix: "%"
+      }), /*#__PURE__*/React.createElement("p", {
+        className: "pr-hint"
+      }, "Default is ", pctText(defSpread), ". Live rate now: ", rate4(view.mid, view.known), " ", view.home, "."), pinned ? /*#__PURE__*/React.createElement("p", {
+        className: "pr-warn"
+      }, "Manual rate, feed paused for ", code, ".") : null, low ? /*#__PURE__*/React.createElement("p", {
+        className: "pr-warn"
+      }, "Below your ", pctText(mFloor), " warning") : null, /*#__PURE__*/React.createElement("div", {
+        className: "pr-prev"
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "We buy"), /*#__PURE__*/React.createElement("b", {
+        className: "pr-buy",
+        "data-pr": "buy"
+      }, rate4(view.buy, view.known))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Live"), /*#__PURE__*/React.createElement("b", {
+        "data-pr": "mid"
+      }, rate4(view.mid, view.known))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "We sell"), /*#__PURE__*/React.createElement("b", {
+        className: "pr-sell",
+        "data-pr": "sell"
+      }, rate4(view.sell, view.known)))), /*#__PURE__*/React.createElement("div", {
+        className: "pr-kv"
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Customer sells 500 ", code, ", gets"), /*#__PURE__*/React.createElement("b", {
+        "data-pr": "gets"
+      }, view.known ? pricingMoney(view.out, view.home) : '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "You earn on that deal"), /*#__PURE__*/React.createElement("b", {
+        "data-pr": "earn"
+      }, view.known ? pricingMoney(view.earn, view.home) : '—'))), /*#__PURE__*/React.createElement("p", {
+        className: "pr-hint"
+      }, "Nothing changes on the Rate Board until you tap Publish."), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "pr-link",
+        onClick: () => useDefault(code)
+      }, "Use the default (", pctText(defSpread), ")"));
+    } else if (sheet && sheet.kind === 'spread') {
+      sheetEl = /*#__PURE__*/React.createElement(PricingSheet, {
+        title: "Spread",
+        onCancel: () => setSheet(null),
+        footer: /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "pr-go",
+          disabled: !draftOk,
+          onClick: () => {
+            if (!draftOk) return;
+            set('defaultSpread', Math.round(+draft * 10) / 10, 'default spread ' + pctText(draft));
+            setSheet(null);
+          }
+        }, "Save ", pctText(draft), " for every currency")
+      }, /*#__PURE__*/React.createElement(Stepper, {
+        label: "Spread on each side",
+        value: draft,
+        onChange: setDraft,
+        suffix: "%"
+      }), /*#__PURE__*/React.createElement("p", {
+        className: "pr-hint"
+      }, "Added on each side of the live rate. A currency with its own spread keeps that."), draftOk && +draft < mFloor ? /*#__PURE__*/React.createElement("p", {
+        className: "pr-warn"
+      }, "Below your ", pctText(mFloor), " warning") : null);
+    } else if (sheet && sheet.kind === 'fee') {
+      sheetEl = /*#__PURE__*/React.createElement(PricingSheet, {
+        title: "Fee per deal",
+        onCancel: () => setSheet(null),
+        footer: /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "pr-go",
+          disabled: !draftOk,
+          onClick: () => {
+            if (!draftOk) return;
+            const n = Math.round(+draft * 100) / 100;
+            set('defaultFee', n, 'default fee ' + n);
+            setSheet(null);
+          }
+        }, "Save ", pricingMoney(draftOk ? +draft : null, home))
+      }, /*#__PURE__*/React.createElement(Stepper, {
+        label: "Fee per deal",
+        value: draft,
+        onChange: setDraft,
+        step: 1,
+        suffix: home
+      }), /*#__PURE__*/React.createElement("p", {
+        className: "pr-hint"
+      }, "Added to every new deal, on top of the spread."));
+    } else if (sheet && sheet.kind === 'floor' && extra) {
+      const targetOk = extra.target !== '' && isFinite(+extra.target) && +extra.target >= 0;
+      sheetEl = /*#__PURE__*/React.createElement(PricingSheet, {
+        title: "Low margin warning",
+        onCancel: () => setSheet(null),
+        footer: /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "pr-go",
+          disabled: !draftOk || !targetOk,
+          onClick: () => {
+            if (!draftOk || !targetOk) return;
+            set('marginFloorPct', Math.round(+draft * 10) / 10, 'margin floor ' + pctText(draft));
+            set('marginTargetPct', Math.round(+extra.target * 10) / 10, 'margin target ' + pctText(extra.target));
+            set('marginEnforce', extra.enforce, 'margin enforce ' + extra.enforce);
+            setSheet(null);
+          }
+        }, "Save warning")
+      }, /*#__PURE__*/React.createElement(Stepper, {
+        label: "Warn below",
+        value: draft,
+        onChange: setDraft,
+        suffix: "%"
+      }), /*#__PURE__*/React.createElement(Stepper, {
+        label: "Healthy target",
+        value: extra.target,
+        onChange: v => setExtra(x => Object.assign({}, x, {
+          target: v
+        })),
+        suffix: "%"
+      }), /*#__PURE__*/React.createElement("div", {
+        className: "pr-label"
+      }, "When a deal is below"), /*#__PURE__*/React.createElement("div", {
+        className: "pr-picks"
+      }, [['warn', 'Warn only'], ['block', 'Ask for a manager']].map(([v, label]) => /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        key: v,
+        className: 'pr-pick' + (extra.enforce === v ? ' is-on' : ''),
+        onClick: () => setExtra(x => Object.assign({}, x, {
+          enforce: v
+        }))
+      }, label))));
+    } else if (sheet && sheet.kind === 'round') {
+      sheetEl = /*#__PURE__*/React.createElement(PricingSheet, {
+        title: "Round payouts",
+        onCancel: () => setSheet(null)
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "pr-label"
+      }, "Cash you hand over"), /*#__PURE__*/React.createElement("div", {
+        className: "pr-picks"
+      }, [['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']].map(([v, label]) => /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        key: v,
+        className: 'pr-pick' + (roundMode === v ? ' is-on' : ''),
+        onClick: () => {
+          set('payoutRoundMode', v, 'rounding ' + v);
+          setSheet(null);
+        }
+      }, label))), /*#__PURE__*/React.createElement("p", {
+        className: "pr-hint"
+      }, "Down favours the desk. Up favours the customer. Nearest is neutral."));
+    } else if (sheet && sheet.kind === 'source') {
+      sheetEl = /*#__PURE__*/React.createElement(PricingSheet, {
+        title: "Rate source",
+        onCancel: () => setSheet(null)
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "pr-src is-on"
+      }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Open Exchange Rates"), /*#__PURE__*/React.createElement("small", null, "Hourly")), feed === 'error' ? /*#__PURE__*/React.createElement("span", null, "Not loaded") : /*#__PURE__*/React.createElement("span", {
+        className: "pr-live"
+      }, "Live")), ['OANDA', 'Bank of Canada', 'XE'].map(name => /*#__PURE__*/React.createElement("div", {
+        className: "pr-src",
+        key: name
+      }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, name)), /*#__PURE__*/React.createElement("span", null, "Not connected"))), /*#__PURE__*/React.createElement("p", {
+        className: "pr-hint"
+      }, "Only Open Exchange Rates is connected."));
+    }
+    const live = feed !== 'error';
+    const body = feed === 'loading' ? /*#__PURE__*/React.createElement("div", {
+      "data-pr": "loading"
+    }, /*#__PURE__*/React.createElement(Phone.LoadingState, {
+      rows: 6,
+      label: "Loading pricing"
+    })) : foreign.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      "data-pr": "empty"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "No currencies yet",
+      message: "This desk has no foreign currencies to price."
+    })) : /*#__PURE__*/React.createElement("div", {
+      "data-pr": "list"
+    }, /*#__PURE__*/React.createElement(Phone.ListSection, {
+      title: "For every currency"
+    }, /*#__PURE__*/React.createElement(Row, {
+      title: "Rate source",
+      subtitle: "Open Exchange Rates, hourly",
+      badge: live ? {
+        label: 'Live',
+        tone: 'pos'
+      } : null,
+      amount: live ? '' : 'Not loaded',
+      chevron: true,
+      onClick: () => openSheet('source')
+    }), /*#__PURE__*/React.createElement(Row, {
+      title: "Spread",
+      subtitle: "Added on each side of the live rate",
+      amount: pctText(defSpread),
+      chevron: true,
+      onClick: () => openSheet('spread')
+    }), /*#__PURE__*/React.createElement(Row, {
+      title: "Fee per deal",
+      subtitle: "Added to every new deal",
+      amount: pricingMoney(feeN, home),
+      chevron: true,
+      onClick: () => openSheet('fee')
+    }), /*#__PURE__*/React.createElement(Row, {
+      title: "Low margin warning",
+      subtitle: "Warn when a deal earns less than",
+      amount: pctText(mFloor),
+      chevron: true,
+      onClick: () => openSheet('floor')
+    }), /*#__PURE__*/React.createElement(Row, {
+      title: "Round payouts",
+      subtitle: "Cash you hand over",
+      amount: roundLabel,
+      chevron: true,
+      onClick: () => openSheet('round')
+    })), /*#__PURE__*/React.createElement(Phone.ListSection, {
+      title: "Spread by currency"
+    }, foreign.map(code => {
+      const sp = (safe.spreads || {})[code];
+      const custom = sp != null && sp !== '';
+      return /*#__PURE__*/React.createElement(Row, {
+        key: code,
+        title: code,
+        subtitle: PHONE_CCY[code] || code,
+        amount: pctText(custom ? sp : defSpread),
+        meta: custom ? 'custom' : 'default',
+        chevron: true,
+        onClick: () => openSheet('ccy', code)
+      });
+    })));
+    const showPublish = feed === 'loading' || foreign.length > 0;
+    let why = '';
+    if (!canPublish) why = 'Only an owner or a manager can publish.';else if (feed === 'loading') why = 'The Rate Board is still loading.';
+    const sticky = showPublish ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
+      label: phase === 'publishing' ? 'Publishing…' : 'Publish to Rate Board',
+      disabled: feed === 'loading' || !canPublish || phase !== 'idle',
+      disabledReason: why,
+      onClick: publish
+    }) : null;
+    const alerts = feed === 'error' || banner ? /*#__PURE__*/React.createElement(React.Fragment, null, feed === 'error' ? /*#__PURE__*/React.createElement(Phone.ErrorState, {
+      message: "The Rate Board didn't load.",
+      onRetry: () => setAttempt(n => n + 1)
+    }) : null, banner ? /*#__PURE__*/React.createElement("p", {
+      className: "pr-fail",
+      role: "alert"
+    }, banner) : null) : null;
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: "pricing",
+      className: "pr-phone",
+      title: "Pricing",
+      subtitle: "Changes save by themselves",
+      banner: alerts,
+      sticky: sticky
+    }, body), sheetEl, /*#__PURE__*/React.createElement(PricingNote, {
+      text: toast
+    }));
+  }
+  function Pricing(props) {
+    const phone = usePhone();
+    return phone ? /*#__PURE__*/React.createElement(PhonePricing, props) : /*#__PURE__*/React.createElement(PricingDesk, props);
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Pricing

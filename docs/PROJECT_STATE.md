@@ -71,6 +71,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Pricing on a phone.** At 430px and under, Pricing is the shared
+  phone column: global rows, one row per currency, and a full-screen
+  sheet to change a spread. The preview is `priceDeal` for 500 units
+  of that currency, the same call the desk uses. Publish calls
+  `POST /api/rates/publish` and says so only after the server accepts.
+  A second tap does nothing while that request is in flight or for
+  three seconds after. Owner and Manager can publish, because those
+  are the roles with `rates:change`. A cashier still opens Pricing
+  and sees the button switched off. The wide desk is the desktop
+  Pricing screen. `docs/PHONE_SHELL.md`.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -686,6 +697,14 @@ bottom sheet above the bar. The classes live on the shell.
 of every desktop app and the sign-in screen, at `maxDiffPixels: 0`.
 The pictures are the GitHub Actions render. A screen PR does not
 replace them. A failure means the desktop changed.
+
+**2026-10-11**, phone pricing. At 430px and under, Pricing lists the
+global settings and one spread per currency. A sheet steps the
+spread and previews the next 500-unit deal with `priceDeal`. Publish
+uses the existing rate-board endpoint, once, and a toast names how
+many currencies went up. A cashier can open the screen and cannot
+publish. Desktop Pricing is the shared 1280 baseline. This screen
+does not replace that picture.
 
 **2026-10-11**, phone top bar. The shop name is one line and ends in
 an ellipsis. The till line is one line. The desk name is cut first.
