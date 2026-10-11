@@ -129,6 +129,14 @@
   @media (max-width: 620px) {
     #dash h1 { font-size: 26px !important; }
   }
+  /* A phone shows the left of the rate grid and the rest scrolls.
+     A hard edge reads as the columns being cut off. */
+  @media (max-width: 430px) {
+    #edTable {
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+      mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+    }
+  }
 </style>
 </head>
 <body>

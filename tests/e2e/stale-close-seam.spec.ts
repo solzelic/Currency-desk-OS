@@ -88,14 +88,26 @@ async function ensureDrawer(page: Page) {
 
 async function openTill(page: Page) {
   await ensureDrawer(page);
-  await page.getByText(/Cash Drawer/i).first().click();
-  await expect(page.getByText(/Cash drawer/i).first()).toBeVisible();
+  /* The menu's active-app label is the first "Cash Drawer" in the
+     document, and on a phone that label is hidden. The dock tab stays
+     on screen. Read the window title, not the menu label. */
+  const tab = page.locator('#appbar [data-app="till"]');
+  await tab.scrollIntoViewIfNeeded();
+  await tab.click();
+  await expect(page.locator(".win.show.active .win-title", { hasText: /Cash drawer/i })).toBeVisible();
   await settleCashDrawerChrome(page);
   const openButton = page.getByRole("button", { name: /Open the till/i }).first();
-  if (await openButton.isVisible().catch(() => false)) {
-    await clickWhenStable(openButton);
-    await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 15_000 });
-  }
+  const sessionLine = page.getByText(/Session #\d+ open/);
+  /* The drawer paints "Open the till" while the session is still
+     arriving, then takes the button away once the book says the till
+     is open. Wait until that line is on screen. A click that lands
+     after the button has gone is retried; the line being there
+     already means there is nothing to open. */
+  await expect(async () => {
+    if (await sessionLine.isVisible()) return;
+    await openButton.click({ timeout: 1_000 });
+    await expect(sessionLine).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 async function countTheBook(page: Page, balances: Record<string, string>) {
