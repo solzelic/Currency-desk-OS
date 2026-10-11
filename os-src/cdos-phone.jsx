@@ -58,8 +58,8 @@
     return <span className="phone-tab-ico" dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
-  /* Station and till name are what get cut. The status is the
-     last segment and stays whole, so "Till open" never wraps. */
+  /* The desk name is cut first. The till name is next. The status
+     is the last segment and stays whole, so "Till closed" never wraps. */
   function deskLine(desk) {
     const parts = String(desk || '').trim().split(/\s*·\s*/).map((part) => part.trim()).filter(Boolean);
     const last = parts[parts.length - 1];
@@ -78,7 +78,7 @@
           <i className="phone-till-dot" />
           <span className="phone-till-line">
             {line.parts.map((part, i) => (
-              <span key={i} className="phone-till-part">
+              <span key={i} className={'phone-till-part' + (i === 0 ? ' is-desk' : '')}>
                 {i > 0 ? <span className="phone-till-sep"> · </span> : null}
                 <span className="phone-till-where">{part}</span>
               </span>

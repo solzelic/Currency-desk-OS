@@ -61939,8 +61939,8 @@ window.CDOS_PERSIST = (function () {
     });
   }
 
-  /* Station and till name are what get cut. The status is the
-     last segment and stays whole, so "Till open" never wraps. */
+  /* The desk name is cut first. The till name is next. The status
+     is the last segment and stays whole, so "Till closed" never wraps. */
   function deskLine(desk) {
     const parts = String(desk || '').trim().split(/\s*·\s*/).map(part => part.trim()).filter(Boolean);
     const last = parts[parts.length - 1];
@@ -61981,7 +61981,7 @@ window.CDOS_PERSIST = (function () {
       className: "phone-till-line"
     }, line.parts.map((part, i) => /*#__PURE__*/React.createElement("span", {
       key: i,
-      className: "phone-till-part"
+      className: 'phone-till-part' + (i === 0 ? ' is-desk' : '')
     }, i > 0 ? /*#__PURE__*/React.createElement("span", {
       className: "phone-till-sep"
     }, " \xB7 ") : null, /*#__PURE__*/React.createElement("span", {

@@ -98,10 +98,11 @@ The shop name is `.phone-shop-name`, one line. A long name ends in
 an ellipsis.
 
 The till line is a sibling, `.phone-till`, and it is one line. The
-station and the till name (`.phone-till-where`) shrink with an
-ellipsis. `Till open` and `Till closed` stay whole, in
-`.phone-till-state`, at the end of the line. The header stays 56px
-tall at 360 and at 390.
+desk name (the first segment, `.phone-till-part.is-desk`) is what
+the ellipsis cuts first. The till name is cut only after the desk
+name is gone. The dot and the words `Till open` or `Till closed`
+stay whole, in `.phone-till-state`, at the end of the line. The
+header stays 56px tall at 360 and at 390.
 
 ### Title
 

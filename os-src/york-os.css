@@ -1841,9 +1841,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     grid-row: 2;
     display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     gap: 6px;
     min-width: 0;
-    min-height: 18px;
+    height: 16px;
+    max-height: 16px;
     overflow: hidden;
     white-space: nowrap;
     font-family: var(--f-display);
@@ -1852,25 +1854,35 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text-muted, #6B6760);
     line-height: 16px;
   }
-  /* One line. The station and the till name ellipsize. The status
-     stays whole at the end: "Till open" or "Till closed". */
+  /* One line. The desk name (first segment) is cut first. The till
+     name is cut only after the desk name is gone. The dot and the
+     status stay whole: "Till open" or "Till closed". */
   .phone-till-line {
     display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     min-width: 0;
-    flex: 1;
+    flex: 1 1 auto;
     overflow: hidden;
+    white-space: nowrap;
   }
   .phone-till-part {
     display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     min-width: 0;
     flex: 0 1 auto;
     overflow: hidden;
+    white-space: nowrap;
+  }
+  /* A large shrink factor spends the spare width on the desk name
+     before the till name gives any up. */
+  .phone-till-part.is-desk {
+    flex-shrink: 1000;
   }
   .phone-till-sep,
   .phone-till-state {
-    flex: none;
+    flex: 0 0 auto;
     white-space: nowrap;
   }
   .phone-till-where {

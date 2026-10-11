@@ -241,9 +241,10 @@ test("the title and the first chip sit in from the edge", async ({ page }) => {
   }
 });
 
-/* A long station and till name used to wrap "open" onto a second
-   line at 360, so the header grew. The status stays whole. */
-async function seedLongDesk(page: Page): Promise<void> {
+/* A long station and till name used to wrap "open" or "closed"
+   onto a second line at 360, so the header grew. The desk name is
+   what gets cut. The status stays whole. */
+async function seedLongDesk(page: Page, closed = false): Promise<void> {
   await page.context().clearCookies();
   await page.goto("/app");
   await page.waitForFunction(() => {
@@ -262,6 +263,7 @@ async function seedLongDesk(page: Page): Promise<void> {
       branches,
       station: { branchId: branch.id, tillId: till.id },
       operatingName: "York Currency Exchange on Adelaide Street West",
+      closed,
     }));
   });
   await page.addInitScript(() => {
@@ -273,6 +275,9 @@ async function seedLongDesk(page: Page): Promise<void> {
     const settings = JSON.parse(localStorage.getItem("cdos_settings") || "{}");
     settings.operatingName = seed.operatingName;
     localStorage.setItem("cdos_settings", JSON.stringify(settings));
+    localStorage.setItem("cdos_day", JSON.stringify({
+      closed: !!seed.closed, closedAt: null, closedBy: null, summary: null, num: 1,
+    }));
   });
   await signInAtDesk(page, "a.singh");
   await dismissTour(page);
@@ -281,27 +286,41 @@ async function seedLongDesk(page: Page): Promise<void> {
 async function topBarMeasure(page: Page) {
   return page.locator(".phone-head").evaluate((head) => {
     const shop = head.querySelector(".phone-shop-name");
+    const till = head.querySelector(".phone-till");
     const line = head.querySelector(".phone-till-line");
     const state = head.querySelector(".phone-till-state");
+    const dot = head.querySelector(".phone-till-dot");
     const bell = head.querySelector(".phone-bell");
+    const desk = head.querySelector(".phone-till-part.is-desk .phone-till-where");
+    const tillName = head.querySelector(".phone-till-part:not(.is-desk) .phone-till-where");
     const wheres = [...head.querySelectorAll(".phone-till-where")];
-    if (!(shop instanceof HTMLElement) || !(line instanceof HTMLElement) || !(state instanceof HTMLElement) || !(bell instanceof HTMLElement)) {
+    if (!(shop instanceof HTMLElement) || !(till instanceof HTMLElement) || !(line instanceof HTMLElement) || !(state instanceof HTMLElement) || !(dot instanceof HTMLElement) || !(bell instanceof HTMLElement) || !(desk instanceof HTMLElement)) {
       return null;
     }
     const headBox = head.getBoundingClientRect();
     const stateBox = state.getBoundingClientRect();
     const bellBox = bell.getBoundingClientRect();
     const lineBox = line.getBoundingClientRect();
+    const dotBox = dot.getBoundingClientRect();
+    const clipped = (el: Element) => el instanceof HTMLElement && el.scrollWidth > el.clientWidth + 1;
+    const oneLine = (el: Element) => el.getClientRects().length === 1;
     return {
       height: Math.round(headBox.height),
       shopLines: shop.getClientRects().length,
       shopClipped: shop.scrollWidth > shop.clientWidth + 1,
       lineLines: line.getClientRects().length,
       lineClipped: line.scrollWidth > line.clientWidth + 1,
+      tillHeight: Math.round(till.getBoundingClientRect().height),
       middle: wheres.map((el) => el.textContent || "").join(" · "),
-      middleClipped: wheres.some((el) => el instanceof HTMLElement && el.scrollWidth > el.clientWidth + 1),
+      middleClipped: wheres.some((el) => clipped(el)),
+      deskClipped: clipped(desk),
+      deskOneLine: oneLine(desk),
+      tillName: tillName ? (tillName.textContent || "") : "",
+      tillNameWhole: tillName instanceof HTMLElement ? !clipped(tillName) && oneLine(tillName) : true,
       status: (state.textContent || "").replace(/^\s*·\s*/, ""),
-      statusWhole: state.scrollWidth <= state.clientWidth + 1 && stateBox.right <= bellBox.left + 1 && stateBox.right <= lineBox.right + 1,
+      statusLines: state.getClientRects().length,
+      statusWhole: state.scrollWidth <= state.clientWidth + 1 && stateBox.right <= bellBox.left + 1 && stateBox.right <= lineBox.right + 1 && stateBox.top >= lineBox.top - 1 && stateBox.bottom <= lineBox.bottom + 1,
+      dotVisible: dotBox.width >= 8 && dotBox.left >= headBox.left && dotBox.right <= lineBox.left + 1,
     };
   });
 }
@@ -322,13 +341,54 @@ test("the top bar is the same height at 360 and 390 with a long desk name", asyn
   expect(at360!.shopClipped).toBe(true);
   expect(at360!.lineLines).toBe(1);
   expect(at390!.lineLines).toBe(1);
+  expect(at360!.tillHeight).toBeLessThanOrEqual(16);
+  expect(at390!.tillHeight).toBeLessThanOrEqual(16);
   expect(at360!.middle).toContain("Front Desk 01");
   expect(at360!.middle).toContain("Wholesale desk");
   expect(at360!.status).toBe("Till open");
   expect(at390!.status).toBe("Till open");
+  expect(at360!.statusLines).toBe(1);
   expect(at360!.statusWhole).toBe(true);
   expect(at390!.statusWhole).toBe(true);
-  expect(at360!.middleClipped).toBe(true);
+  expect(at360!.deskClipped).toBe(true);
+  expect(at360!.deskOneLine).toBe(true);
+  expect(at360!.dotVisible).toBe(true);
+});
+
+/* "Till closed" is longer than "Till open". At 360 the word "closed"
+   used to drop onto its own line. Reports uses the same header. */
+test("the top bar is one line at 360 when the till is closed", async ({ page }) => {
+  await page.route("**/api/ledger/till-session", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ session: null }),
+    });
+  });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await seedLongDesk(page, true);
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await page.locator('#phone-more [data-phone-app="reports"]').click();
+  await expect(page.locator('.win.show.active[data-app="reports"]')).toBeVisible();
+  await expect(page.locator(".phone-till-state")).toHaveText(/Till closed/);
+  const bar = await topBarMeasure(page);
+  expect(bar).not.toBeNull();
+  expect(bar!.height).toBe(56);
+  expect(bar!.tillHeight).toBeLessThanOrEqual(16);
+  expect(bar!.lineLines).toBe(1);
+  expect(bar!.status).toBe("Till closed");
+  expect(bar!.statusLines).toBe(1);
+  expect(bar!.statusWhole).toBe(true);
+  expect(bar!.deskClipped).toBe(true);
+  expect(bar!.deskOneLine).toBe(true);
+  expect(bar!.tillName).toBe("Wholesale desk");
+  expect(bar!.tillNameWhole).toBe(true);
+  expect(bar!.dotVisible).toBe(true);
+  expect(bar!.shopLines).toBe(1);
 });
 
 test("Ledger passes the phone sweep", async ({ page }) => {
