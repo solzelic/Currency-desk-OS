@@ -306,17 +306,24 @@ function Login({
   const title = step === 'enroll' ? 'Set up your authenticator' : step === 'totp' ? 'Authenticator code' : 'Sign in';
   const blurb = step === 'enroll' ? 'Add CurrencyDesk to your authenticator, then enter the 6-digit code. Save the backup codes now — they are shown once, and each one works a single time. Starting over replaces them.' : step === 'totp' ? 'Enter the 6-digit code from your authenticator, or one backup code.' : 'Platform admin access only. An authenticator code is required.';
   const manualGroups = (manual || '').replace(/\s/g, '').match(/.{1,4}/g);
+  /* A fixed width plus max-width 100% does not shrink a grid item.
+     The item's minimum is its content (380px), so on a 390px phone the
+     card starts after the padding and ends at 404px. Width 100% with a
+     max lets the card sit inside the padding at 390 and at 360. */
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: '100vh',
+      width: '100%',
+      boxSizing: 'border-box',
       display: 'grid',
       placeItems: 'center',
-      padding: 24
+      padding: '24px 16px'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: step === 'enroll' ? 480 : 380,
-      maxWidth: '100%'
+      width: '100%',
+      maxWidth: step === 'enroll' ? 480 : 380,
+      minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -324,7 +331,8 @@ function Login({
       alignItems: 'center',
       gap: 10,
       justifyContent: 'center',
-      marginBottom: 22
+      marginBottom: 22,
+      flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement(Mark, {
     w: 30

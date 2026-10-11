@@ -135,9 +135,13 @@ function Login({ onIn }) {
       ? 'Enter the 6-digit code from your authenticator, or one backup code.'
       : 'Platform admin access only. An authenticator code is required.';
   const manualGroups = (manual || '').replace(/\s/g, '').match(/.{1,4}/g);
-  return (<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
-    <div style={{ width: step === 'enroll' ? 480 : 380, maxWidth: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 22 }}>
+  /* A fixed width plus max-width 100% does not shrink a grid item.
+     The item's minimum is its content (380px), so on a 390px phone the
+     card starts after the padding and ends at 404px. Width 100% with a
+     max lets the card sit inside the padding at 390 and at 360. */
+  return (<div style={{ minHeight: '100vh', width: '100%', boxSizing: 'border-box', display: 'grid', placeItems: 'center', padding: '24px 16px' }}>
+    <div style={{ width: '100%', maxWidth: step === 'enroll' ? 480 : 380, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 22, flexWrap: 'wrap' }}>
         <Mark w={30} /><span style={{ fontWeight: 800, fontSize: 20 }}>CurrencyDesk</span>
         <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.16em', color: 'var(--faint)', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 7px' }}>CONTROL</span>
       </div>

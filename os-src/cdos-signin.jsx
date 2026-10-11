@@ -324,9 +324,13 @@
       <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.34em', color: 'var(--si-primary)', margin: '8px 0 6px' }}>FAIR EXCHANGE</div>
       <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 2px' }}>Sign in</h1>
       <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.18em', color: 'var(--si-mute)', marginBottom: 18 }}>CURRENCYDESK OS</div>
-      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>CURRENCYDESK ID</div>
-      <input value={idInput} onChange={e => { setIdInput(e.target.value); setErr(''); }} autoFocus placeholder="your-staff-id"
-        style={{ width: '100%', boxSizing: 'border-box', textAlign: 'center', fontFamily: MONO, fontSize: 18, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+      <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>EMAIL OR ID</div>
+      {/* findStaffForLogin accepts three things: an email, a plain staff
+          id for this desk, or a CurrencyDesk ID (CD-YORK-0042). The server
+          uppercases a CurrencyDesk ID itself, so this field is not forced
+          into capitals — an email would otherwise read as YOU@SHOP.COM. */}
+      <input value={idInput} onChange={e => { setIdInput(e.target.value); setErr(''); }} autoFocus placeholder="email, staff ID, or CD-ID"
+        style={{ width: '100%', boxSizing: 'border-box', textAlign: 'center', fontFamily: MONO, fontSize: 15, fontWeight: 700, letterSpacing: '0.04em',
           padding: '13px 12px', border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }}
         onFocus={e => { e.target.style.borderColor = 'var(--si-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(29,107,69,0.14)'; }}
         onBlur={e => { e.target.style.borderColor = 'var(--si-line)'; e.target.style.boxShadow = 'none'; }} />
@@ -338,7 +342,7 @@
       )}
       {!known && examples.length === 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 10, lineHeight: 1.5 }}>
-          The email address you set the desk up with, or the ID whoever runs your desk gave you.
+          Your email address, the staff ID your desk gave you, or your CurrencyDesk ID (CD-YORK-0042).
         </div>
       )}
       {!known && examples.length > 0 && (
