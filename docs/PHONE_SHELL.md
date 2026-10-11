@@ -464,9 +464,9 @@ pixels alone.
 
 ## Not in this foundation
 
-Screen PRs add these in their own files. Do not build them here.
+The next shared files add these. Do not build them here.
 
-ChoiceTiles, AmountField, StepHeader.
+ChoiceTiles, AmountField, SummaryList, StepHeader.
 
 ## Shared pieces
 
@@ -477,6 +477,7 @@ hides every surface they draw. The hide rule sits outside the phone
 query and before the query that shows them. A later unconditional
 `display: none` would hide them on a phone too. A sheet is portaled
 to `document.body`, so that hide covers a node outside the window.
+Colours in this shared CSS are `tokens.css` variables.
 
 ### NavRow
 
@@ -518,12 +519,6 @@ parent decides what four digits means. Delete removes one digit.
 `busy` replaces the dots with “Saving...” and locks the keys.
 `locked` locks them too. `passwordMode` replaces the keypad with a
 password field and Next. `data-pin-step` is the step number.
-
-### SummaryList
-
-`os-src/phone/summary-list.jsx`. Read-only. `rows` is
-`{ label, value }`. A row with an empty value is omitted. It is
-not a form and it does not save.
 
 ### Toast
 

@@ -97,10 +97,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   go through `os-src/phone/format.js`: `1,765.05 CAD`, `3:02 PM`,
   `Jun 18, 2026`. A list group for the business day is `Today, Oct 11`. A `YYYY-MM-DD` string stays on that calendar day
   (`docs/PHONE_SHELL.md`). Shared rows, a profile row, a toggle, a
-  full-screen sheet, a PIN keypad, a toast, and a read-only summary
-  list live in `os-src/phone/`. A screen uses those. It does not keep
-  a local copy. The phone header initials and a profile avatar use
-  the same sans. Each phone window
+  full-screen sheet, a PIN keypad, and a toast live in `os-src/phone/`.
+  A screen uses those. It does not keep a local copy. ChoiceTiles,
+  AmountField, SummaryList, and StepHeader are the next shared files,
+  added on top of these six. The phone header initials and a profile
+  avatar use the same sans. Each phone window
   sets `data-app`. On a phone a legacy primary button uses that app's
   accent. A selected filter chip, legacy or new, is gray-900 with white
   text. The phone screen paints the flat surface token. The big title
@@ -576,12 +577,13 @@ authenticated narrative dashboard.
 ## Last reviewed
 
 **2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
-FullScreenSheet, PinPad, Toast, and SummaryList live in
-`os-src/phone/` and are styled in `os-src/phone-shell.css`. A sheet
-and a toast stay hidden above 430px. A row’s second line starts at
-the title’s left edge. The phone header initials and a profile
-avatar use the same sans. Reports and the other screens use these
-files. Contract: `docs/PHONE_SHELL.md`.
+FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are
+styled in `os-src/phone-shell.css` with `tokens.css` variables. A
+sheet and a toast stay hidden above 430px. A row’s second line
+starts at the title’s left edge. The phone header initials and a
+profile avatar use the same sans. ChoiceTiles, AmountField,
+SummaryList, and StepHeader are the next shared files, added on
+top of these six. Contract: `docs/PHONE_SHELL.md`.
 
 **2026-10-12**, desktop cheque number. The Cheques picture missed
 by 29 pixels on both attempts of Actions run 38193394311, and by
