@@ -5,8 +5,9 @@
    query, which is what keeps that desktop a 0-pixel change. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
+import { phoneSweep } from "./helpers/phone-sweep";
 
-const SHOTS = "/opt/cursor/artifacts/screenshots";
+const SHOTS = "/opt/cursor/artifacts/pr119";
 
 async function dismissTour(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
@@ -77,6 +78,7 @@ test("desktop Rates is the Rate Board, unchanged", async ({ page }) => {
   await expect(win.locator(".phone-rates")).toHaveCount(0);
   await expect(page.locator(".phone-rates")).toHaveCount(0);
   await expect(win).toHaveCSS("border-radius", "14px");
+  await page.screenshot({ path: `${SHOTS}/rates_desktop_1280.png` });
   const box = await win.boundingBox();
   expect(box).toBeTruthy();
   expect(box!.width).toBeLessThan(1200);
@@ -92,7 +94,9 @@ for (const width of [360, 390]) {
     await openRates(page);
     await expect(page.locator('[data-phone-rates="ready"]')).toBeVisible();
     await expect(page.locator(".phone-rates-edit")).toHaveCount(0);
+    await expect(page.locator(".phone-rates-explain")).toContainText("Prices in CAD");
     await expect(page.getByText("Example data")).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/rates_teller_${width}.png` });
     const status = page.locator("[data-phone-rates-status]");
     await expect(status).not.toContainText("Live, updated");
     await expect(status).not.toContainText("Example");
@@ -133,12 +137,19 @@ for (const width of [360, 390]) {
     await page.screenshot({ path: `${SHOTS}/rates_quote_${width}.png` });
     const quoted = (await gets.innerText()).replace(/\s*CAD\s*$/, "");
 
-    await sheet.getByRole("button", { name: "Start this deal" }).click();
-    await expect(page.getByText("New transaction")).toBeVisible();
+    const sells = sheet.getByRole("tab", { name: "Customer sells" });
+    expect(await sells.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(22, 21, 19)");
+    const start = sheet.getByRole("button", { name: "Start this deal" });
+    expect(await start.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(39, 75, 142)");
+
+    await start.click();
+    const modal = page.locator(".fixed.inset-0");
+    await expect(modal.getByText("New transaction", { exact: true })).toBeVisible();
     await expect(page.getByText("We buy USD")).toBeVisible();
     await expect(page.locator("[data-phone-client]")).toBeFocused();
     await expect(page.locator('.fixed.inset-0 input[inputmode="decimal"]').first()).toHaveValue("500");
     await expect(page.locator(".fixed.inset-0")).toContainText(quoted);
+    await page.screenshot({ path: `${SHOTS}/rates_deal_${width}.png` });
   });
 
   test(`rates loading at ${width}`, async ({ page }) => {
@@ -223,6 +234,61 @@ test("rates that fail to load say so, and do not keep old prices", async ({ page
   await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.locator('[data-phone-rates="ready"]')).toBeVisible();
   await expect(page.locator(".code-USD")).toBeVisible();
+});
+
+test("the rate list and the quote pass the phone sweep", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page);
+  await openRates(page);
+  await expect(page.locator('[data-phone-rates="ready"]')).toBeVisible();
+  await expect(page.locator(".code-USD")).toBeVisible();
+  await phoneSweep(page, { roots: [".phone-rates"] });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".code-USD").click();
+  const sheet = page.locator(".phone-quote");
+  await expect(sheet).toBeVisible();
+  await sheet.getByLabel("Customer gives").fill("500");
+  await phoneSweep(page, { roots: [".phone-quote"] });
+});
+
+/* The list is the desk's board, not the market snapshot. A currency
+   the board cannot price is left off. Zeroing the pricer is that
+   empty board. The published board is not written here: that key is
+   saved to the tenant, and this suite shares the desk. */
+test("an empty board says so, and passes the phone sweep", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page);
+  await page.evaluate(() => {
+    window.CDOS.buyUnitCad = () => 0;
+    window.CDOS.sellUnitCad = () => 0;
+  });
+  await openRates(page);
+  await expect(page.getByText("No rates yet")).toBeVisible();
+  await expect(page.getByText("The desk has no currency to quote.")).toBeVisible();
+  await expect(page.locator(".phone-rate")).toHaveCount(0);
+  for (const width of [360, 390]) {
+    await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
+    await page.screenshot({ path: `${SHOTS}/rates_empty_${width}.png` });
+  }
+  await phoneSweep(page, { roots: [".phone-rates"] });
+});
+
+test("a desk prices the list in its own currency", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page);
+  await page.evaluate(() => {
+    window.CDOS.setDeskPack({ id: "pack-ph-v1", homeCurrency: "PHP", country: "PH" });
+  });
+  await openRates(page);
+  await expect(page.locator(".phone-rates-explain")).toContainText("Prices in PHP");
+  const buy = parseFloat(await page.locator(".code-USD .phone-row-amt").innerText());
+  expect(buy).toBeGreaterThan(10);
+  await page.locator(".code-USD").click();
+  const sheet = page.locator(".phone-quote");
+  await sheet.getByLabel("Customer gives").fill("500");
+  await expect(sheet.locator(".phone-quote-gets b")).toContainText("PHP");
+  await expect(sheet.locator(".phone-quote-kv")).toContainText(/\d+\.\d{4} PHP/);
 });
 
 test("an owner reaches Pricing from Edit", async ({ page }) => {

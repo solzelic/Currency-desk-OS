@@ -69,8 +69,22 @@
     return (row && row.name) || code;
   }
 
-  function perHundred(code, unit) {
-    return !!PER_HUNDRED[code] || (unit > 0 && unit < 0.1);
+  /* x100 follows the CAD board: the named small units, and any
+     currency whose CAD mid is under 0.10. The mark is display-only. */
+  function perHundred(code, cadMid) {
+    return !!PER_HUNDRED[code] || (cadMid > 0 && cadMid < 0.1);
+  }
+
+  /* Home currency for 1 unit, from the same buy and sell priceDeal
+     uses. On a Canada desk the home leg is 1, so this is buyUnitCad
+     or sellUnitCad. Another desk gets that currency per unit. A CAD
+     figure is not relabelled as the home currency. */
+  function homePerOne(code, settings, which) {
+    const home = homeCode();
+    const leg = which === 'sell' ? window.CDOS.sellUnitCad(code, settings) : window.CDOS.buyUnitCad(code, settings);
+    const homeLeg = which === 'sell' ? window.CDOS.buyUnitCad(home, settings) : window.CDOS.sellUnitCad(home, settings);
+    if (!(leg > 0) || !(homeLeg > 0)) return 0;
+    return leg / homeLeg;
   }
 
   function rateText(unit, hundred) {
@@ -92,11 +106,11 @@
     order.forEach(code => {
       const published = rowsOf[code];
       if (published && published.show === false) return;
-      const buy = window.CDOS.buyUnitCad(code, settings);
-      const sell = window.CDOS.sellUnitCad(code, settings);
+      const buy = homePerOne(code, settings, 'buy');
+      const sell = homePerOne(code, settings, 'sell');
       if (!(buy > 0) || !(sell > 0)) return;
-      const mid = window.CDOS.unitCadMid ? window.CDOS.unitCadMid(code) : buy;
-      const hundred = perHundred(code, mid > 0 ? mid : buy);
+      const cadMid = window.CDOS.unitCadMid ? window.CDOS.unitCadMid(code) : 0;
+      const hundred = perHundred(code, cadMid);
       visible.push({
         code,
         name: currencyName(code),
@@ -115,11 +129,9 @@
     const amt = parseFloat(amount);
     const feeRaw = settings && settings.defaultFee != null && settings.defaultFee !== '' ? +settings.defaultFee : 0;
     const fee = isFinite(feeRaw) ? feeRaw : 0;
-    const buy = window.CDOS.buyUnitCad(code, settings);
-    const sell = window.CDOS.sellUnitCad(code, settings);
-    const unit = side === 'buys' ? sell : buy;
-    const mid = window.CDOS.unitCadMid ? window.CDOS.unitCadMid(code) : unit;
-    const hundred = perHundred(code, mid > 0 ? mid : unit);
+    const unit = homePerOne(code, settings, side === 'buys' ? 'sell' : 'buy');
+    const cadMid = window.CDOS.unitCadMid ? window.CDOS.unitCadMid(code) : 0;
+    const hundred = perHundred(code, cadMid);
     if (!(amt > 0) || !(unit > 0)) {
       return { home, fee, unit, hundred, gets: null, getsCcy: side === 'buys' ? code : home };
     }
@@ -138,6 +150,7 @@
     const [side, setSide] = useState('sells');
     const [amount, setAmount] = useState('');
     const [picking, setPicking] = useState(false);
+    const [homeTick, setHomeTick] = useState(0);
     const amountRef = useRef(null);
     const canEdit = role === 'Owner' || role === 'Manager';
 
@@ -157,10 +170,15 @@
     };
     useEffect(() => { load(); }, []);
     useEffect(() => {
+      const sync = () => setHomeTick(n => n + 1);
+      window.addEventListener('cdos-jurisdiction', sync);
+      return () => window.removeEventListener('cdos-jurisdiction', sync);
+    }, []);
+    useEffect(() => {
       if (quote && amountRef.current) amountRef.current.focus();
     }, [quote && quote.code]);
 
-    const rows = useMemo(() => (phase === 'ready' ? buildRows(settings) : []), [phase, settings, rateVersion, feed]);
+    const rows = useMemo(() => (phase === 'ready' ? buildRows(settings) : []), [phase, settings, rateVersion, feed, homeTick]);
     const q = query.trim().toLowerCase();
     const shown = rows.filter(r => !q || r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
     const status = statusOf(feed, locked);
@@ -205,7 +223,7 @@
         sticky={phase === 'ready' ? <Phone.StickyAction label="New deal" onClick={onNewDeal} /> : null}
       >
         {phase === 'ready' && (
-          <p className="phone-rates-explain">Prices in CAD for 1 unit (x100: for 100 units). <b className="is-buy">We buy</b>: the customer gives us that currency. <b className="is-sell">We sell</b>: the customer takes it.</p>
+          <p className="phone-rates-explain">Prices in {home} for 1 unit (x100: for 100 units). <b className="is-buy">We buy</b>: the customer gives us that currency. <b className="is-sell">We sell</b>: the customer takes it.</p>
         )}
         {phase === 'loading' && <Phone.LoadingState rows={6} label="Loading rates" />}
         {phase === 'error' && <Phone.ErrorState message="Rates did not load. Try again." onRetry={load} />}
@@ -253,7 +271,7 @@
                 <b aria-live="polite">{priced.gets == null ? '—' : amountLine(priced.gets, priced.getsCcy)}</b>
               </div>
               <div className="phone-quote-kv">
-                <div><span>{priced.hundred ? 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ', for 100)' : 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'}</span><b className={side === 'buys' ? 'is-sell' : 'is-buy'}>{rateText(priced.unit, priced.hundred)} CAD</b></div>
+                <div><span>{priced.hundred ? 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ', for 100)' : 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'}</span><b className={side === 'buys' ? 'is-sell' : 'is-buy'}>{rateText(priced.unit, priced.hundred)} {priced.home}</b></div>
                 <div><span>Fee</span><b>{amountLine(priced.fee, home)}</b></div>
               </div>
               <p className="phone-quote-note">The fee is set in Pricing. The deal uses the rate showing when you post it.</p>
