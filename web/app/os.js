@@ -63317,12 +63317,15 @@ window.CDOS_PERSIST = (function () {
     return deals;
   }
 
-  /* One short day, so the second line fits at 360. A same-day window
-     does not repeat the clock on the row. */
+  /* One short day, so the second line fits at 360. A window that
+     ends at the next midnight belongs to the day it started. */
   function windowWords(start, end) {
     const from = asDate(start);
-    const to = asDate(end);
+    let to = asDate(end);
     if (!from) return '';
+    if (to && to.getHours() === 0 && to.getMinutes() === 0 && to.getSeconds() === 0 && to.getMilliseconds() === 0 && to.getTime() > from.getTime()) {
+      to = shiftDay(to, -1);
+    }
     if (!to || sameDay(from, to)) return phoneDate(from);
     const left = phoneDate(from);
     const right = phoneDate(to);
