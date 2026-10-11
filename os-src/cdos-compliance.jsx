@@ -255,7 +255,7 @@
       largeCode: 'LCTR', largeLabel: 'Large Cash Transaction Report',
       wireCode: 'EFTR', wireLabel: 'Electronic Funds Transfer Report',
       strCode: 'STR', strLabel: 'Suspicious Transaction Report',
-      fileFormat: 'FWR JSON batch', watchlists: ['OSFI', 'UN', 'OFAC'],
+      fileFormat: 'FWR JSON batch', watchlists: [],
     },
     FINCEN: {
       id: 'FINCEN', authority: 'FinCEN', country: 'United States', flag: '🇺🇸', currency: 'USD',
@@ -263,7 +263,7 @@
       largeCode: 'CTR', largeLabel: 'Currency Transaction Report',
       wireCode: 'CTR-FT', wireLabel: 'CTR — funds transfer',
       strCode: 'SAR', strLabel: 'Suspicious Activity Report',
-      fileFormat: 'BSA E-Filing XML', watchlists: ['OFAC', 'UN'],
+      fileFormat: 'BSA E-Filing XML', watchlists: [],
     },
   };
   /* The engine's view of the rules in force, which every screen reads.
@@ -377,8 +377,10 @@
 
   /* ===================== SANCTIONS / WATCHLISTS =====================
      No list is loaded. A sample of ten names used to stand in for
-     OFAC, the UN list and OSFI, and a Canada desk showed those names
-     as hits. They were fiction. The screen says so.
+     official sanctions lists, and a Canada desk showed those names
+     as hits. They were fiction. The screen says screening is not
+     connected. It does not name a list, it does not show a count,
+     and it does not present a seeded subject as a result.
 
      sanctionsListShips is false for every pack, including the
      Philippines (pack-ph-v1), Singapore (pack-sg-v1) and Hong Kong
@@ -386,11 +388,12 @@
      one id without each screen growing its own pack check. */
   const WATCHLISTS = [];
   const NOT_CONNECTED = "Sanctions screening is not connected yet. Check clients against your government's official lists yourself.";
-  /* The duty those three packs already state, after the sentence above. */
+  /* The duty those three packs already state, after the sentence above.
+     The sentence does not name a sanctions list. */
   const PACK_DUTY = {
-    'pack-ph-v1': 'Philippine law requires the owner to screen clients and counterparties against the UNSC Consolidated List and the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.',
+    'pack-ph-v1': 'Philippine law requires the owner to screen clients and counterparties, including against the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.',
     'pack-sg-v1': 'Singapore law requires the owner to screen every customer against the MAS lists outside this desk for now. PSN01 paragraphs 7.51 to 7.53. This screen does not match names.',
-    'pack-hk-v1': 'Hong Kong law requires the owner to screen against designated persons under the United Nations Sanctions Ordinance (Cap. 537) and the United Nations (Anti-Terrorism Measures) Ordinance (Cap. 575). The owner does this outside the desk. This screen does not match names.',
+    'pack-hk-v1': 'Hong Kong law requires the owner to screen against designated persons under the local sanctions ordinances (Cap. 537 and Cap. 575). The owner does this outside the desk. This screen does not match names.',
   };
   function sanctionsListShips(pack) {
     const id = pack && (pack.packId || pack.id);

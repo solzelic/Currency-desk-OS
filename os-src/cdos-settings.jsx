@@ -1938,7 +1938,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   <div className="flex items-center gap-2"><span style={{ fontSize: 22 }}>{r.flag}</span><div><div className="text-[14px] font-semibold" style={{ color: CD.ink }}>{r.authority}</div><div className="text-[11px]" style={{ color: CD.mute }}>{r.country}</div></div></div>
                   {on ? <span className="text-[9px] px-2 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}><Ic n="check" s={10} c="var(--cd-on-ink)" /> ACTIVE</span> : <span className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Use this</span>}
                 </div>
-                <div className="text-[11px]" style={{ color: CD.mute }}>{fmt(r.threshold, r.currency)} · {r.aggHours}h rule · {r.largeCode}/{r.wireCode}/{r.strCode} · {r.watchlists.join('/')}</div>
+                <div className="text-[11px]" style={{ color: CD.mute }}>{fmt(r.threshold, r.currency)} · {r.aggHours}h rule · {r.largeCode}/{r.wireCode}/{r.strCode}</div>
               </button>); })}
           </div>}
           {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}

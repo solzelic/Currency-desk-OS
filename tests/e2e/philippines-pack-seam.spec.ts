@@ -94,10 +94,9 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   expect(words).toMatch(/not summed/i);
 
   /* Screening is not connected on this desk either. The copy still
-     states the owner's duty. It does not show the sample list, and
-     it does not show a count of zero. */
+     states the owner's duty. It does not name a sanctions list, it
+     does not show the sample names, and it does not show a count. */
   expect(words).toMatch(/Sanctions screening is not connected yet/);
-  expect(words).toMatch(/UNSC Consolidated List/);
   expect(words).toMatch(/ATC list/);
   expect(words).toMatch(/freeze without delay/);
   expect(words).toMatch(/tell the AMLC the same day/);
@@ -106,16 +105,24 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   expect(words).toMatch(/Not connected/);
   expect(words).not.toMatch(/No sanctions list is loaded/);
   expect(words).not.toMatch(/Not on this desk/);
-  expect(words).not.toMatch(/OFAC/);
-  expect(words).not.toMatch(/OSFI/);
+  expect(words).not.toMatch(/\bOFAC\b/);
+  expect(words).not.toMatch(/\bOSFI\b/);
+  expect(words).not.toMatch(/\bUN\b/);
+  expect(words).not.toMatch(/United Nations/);
+  expect(words).not.toMatch(/UNSC/);
+  expect(words).not.toMatch(/Wei Lin/);
 
   await page.locator('[data-app="compliance"]').click();
   const screening = page.getByTestId("sanctions-not-connected");
   await expect(screening).toBeVisible();
   const screeningWords = await screening.innerText();
   expect(screeningWords).toMatch(/Sanctions screening is not connected yet/);
-  expect(screeningWords).toMatch(/UNSC Consolidated List/);
   expect(screeningWords).toMatch(/ATC list/);
+  expect(screeningWords).not.toMatch(/\bOFAC\b/);
+  expect(screeningWords).not.toMatch(/\bOSFI\b/);
+  expect(screeningWords).not.toMatch(/\bUN\b/);
+  expect(screeningWords).not.toMatch(/UNSC/);
+  expect(screeningWords).not.toMatch(/Wei Lin/);
   expect(screeningWords).toMatch(/freeze without delay/);
   expect(screeningWords).toMatch(/tell the AMLC the same day/);
   expect(screeningWords).toMatch(/file an STR/);
