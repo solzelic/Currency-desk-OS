@@ -89,12 +89,23 @@ async function ensureDrawer(page: Page) {
 async function openTill(page: Page) {
   await ensureDrawer(page);
   /* The menu's active-app label is the first "Cash Drawer" in the
-     document, and on a phone that label is hidden. The dock tab stays
-     on screen. Read the window title, not the menu label. */
-  const tab = page.locator('#appbar [data-app="till"]');
-  await tab.scrollIntoViewIfNeeded();
-  await tab.click();
-  await expect(page.locator(".win.show.active .win-title", { hasText: /Cash drawer/i })).toBeVisible();
+     document, and on a phone that label is hidden with the menu.
+     Wider than 430px the dock tab is the way in, and the window
+     title has to be on screen. On a phone the bottom bar replaces
+     the dock and the window title bar is hidden, so the Till tab
+     is what has to be selected. isVisible answers this instant. A
+     hidden bar is false, not an error, so there is nothing to catch. */
+  const phoneTab = page.locator('#phonebar [data-phone-app="till"]');
+  const title = page.locator(".win.show.active .win-title", { hasText: /Cash drawer/i });
+  if (await phoneTab.isVisible()) {
+    await phoneTab.click();
+    await expect(phoneTab).toHaveClass(/is-on/);
+  } else {
+    const tab = page.locator('#appbar [data-app="till"]');
+    await tab.scrollIntoViewIfNeeded();
+    await tab.click();
+    await expect(title).toBeVisible();
+  }
   await settleCashDrawerChrome(page);
   const openButton = page.getByRole("button", { name: /Open the till/i }).first();
   const sessionLine = page.getByText(/Session #\d+ open/);

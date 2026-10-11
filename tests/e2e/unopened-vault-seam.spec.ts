@@ -104,9 +104,14 @@ test("the unopened-vault refusal is readable on a phone", async ({ page }, testI
     const book = ledger(page);
     expect((await book.vault()).tracked).toBe(false);
 
-    await page.getByText(/Cash Drawer/i).first().click();
+    /* The menu label "Cash Drawer" is hidden with the menu. The
+       bottom bar's Till tab is the way into the drawer. */
+    await page.locator('#phonebar [data-phone-app="till"]').click();
     const openTill = page.getByRole("button", { name: /Open the till/i }).first();
-    if (await openTill.isVisible().catch(() => false)) await openTill.click();
+    /* isVisible answers this instant. A till that is already open
+       has no button, which is false, not an error. A throw is a
+       broken page and the check should fail on it. */
+    if (await openTill.isVisible()) await openTill.click();
     await page.getByRole("button", { name: /^Move cash$/i }).first().click();
     await page.locator('input[placeholder="0"]').last().fill("50");
     await page.getByRole("button", { name: /Issue float/i }).last().click();

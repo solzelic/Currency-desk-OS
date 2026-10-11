@@ -96,7 +96,7 @@
   function DenRow({ d, ccy, counts, setCount }) {
     const cnt = parseInt((counts[ccy] || {})[d.i], 10) || 0;
     const sub = d.v * cnt;
-    return (<div className="flex items-center gap-2 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+    return (<div className="till-den-row flex items-center gap-2 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
       <span className="grid place-items-center flex-none" style={{ width: 44, fontFamily: 'Space Mono, monospace', fontSize: 12.5, fontWeight: 700, color: CD.ink }}>{ccy === 'CAD' || ccy === 'USD' || d.v >= 1 ? (d.v < 1 ? denLabel(d.v) : (['CAD', 'USD', 'GBP', 'EUR', 'AED'].includes(ccy) ? '$' : '') + denLabel(d.v)) : denLabel(d.v)}</span>
       <span className="text-[9px] px-1.5 py-0.5 flex-none" style={{ borderRadius: 4, background: d.t === 'bill' ? CD.lineSoft : 'transparent', border: d.t === 'coin' ? `1px solid ${CD.line}` : 'none', color: CD.mute, fontFamily: 'Space Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d.t}</span>
       <div className="flex items-center flex-none" style={{ marginLeft: 'auto' }}>
@@ -213,6 +213,7 @@
   function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope, onSelectLedgerTill }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
+    const tillRootRef = useRef(null);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -823,33 +824,69 @@
 
     const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
 
-    return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
+    /* On a phone the round + sits just above the count panel. The
+       panel's height is the lift. Off that screen the + sits on the bar. */
+    useEffect(() => {
+      const root = document.documentElement;
+      const phone = window.matchMedia('(max-width: 430px)');
+      const clear = () => root.style.removeProperty('--phone-fab-lift');
+      const host = tillRootRef.current;
+      const win = host && host.closest('.win');
+      const foot = host && host.querySelector('.till-count-foot');
+      if (!phone.matches || tab !== 'count' || !(foot instanceof HTMLElement) || !(win instanceof HTMLElement)) {
+        clear();
+        return undefined;
+      }
+      const apply = () => {
+        if (!phone.matches || tab !== 'count' || !win.classList.contains('active')) {
+          clear();
+          return;
+        }
+        root.style.setProperty('--phone-fab-lift', foot.offsetHeight + 'px');
+      };
+      apply();
+      const sizes = new ResizeObserver(apply);
+      sizes.observe(foot);
+      const classes = new MutationObserver(apply);
+      classes.observe(win, { attributes: true, attributeFilter: ['class'] });
+      phone.addEventListener('change', apply);
+      return () => {
+        sizes.disconnect();
+        classes.disconnect();
+        phone.removeEventListener('change', apply);
+        clear();
+      };
+    }, [tab]);
+
+    return (<div ref={tillRootRef} className="till-screen flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       {/* header + tabs */}
       <div data-tour="till" className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
-        <div className="flex items-center gap-2.5 pb-3">
-          <span className="grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="tilldrawer" s={17} c="var(--cd-on-ink)" /></span>
-          <div className="min-w-0"><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash Drawer</div><div className="text-[11px] flex items-center gap-1 flex-wrap" style={{ color: CD.mute }}>
-            {stationName ? <b style={{ color: CD.ink }}>{stationName}</b> : null}
-            {stationName ? <span>·</span> : null}
+        <div className="till-head flex items-center gap-2.5 pb-3">
+          <span className="till-mark grid place-items-center" style={{ width: 30, height: 30, background: '#fff', boxShadow: 'inset 0 0 0 1px ' + CD.line, borderRadius: 8 }}><Ic n="tilldrawer" s={17} c="var(--cd-on-ink)" /></span>
+          <div className="till-id min-w-0"><div className="till-name font-semibold leading-tight" style={{ color: CD.ink }}>Cash Drawer</div><div className="till-meta text-[11px] flex items-center gap-1 flex-wrap" style={{ color: CD.mute }}>
+            {stationName ? <b className="till-station" style={{ color: CD.ink }}>{stationName}</b> : null}
+            {stationName ? <span className="till-dot">·</span> : null}
             {/* The title of this window IS the ledger's name for the drawer
                 when there is a ledger. It used to be a local till name that
                 could — and did — say "Till 2 — Express" over Till 1's money. */}
-            {tillOptions.length ? (<span ref={tillMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
+            {tillOptions.length ? (<span ref={tillMenuRef} className="till-pick" style={{ position: 'relative', display: 'inline-flex' }}>
               <button onClick={() => setTillMenu(o => !o)} title="Switch till at this location" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, border: 0, background: tillMenu ? 'var(--cd-hover)' : 'transparent', borderRadius: 6, padding: '1px 5px', margin: '0 -3px', cursor: 'pointer', color: 'inherit', fontWeight: 600 }}>{(activeOption && activeOption.name) || (onLedgerTills ? 'Till' : stationTill || 'Till')}<span style={{ display: 'inline-flex', transform: 'rotate(90deg)' }}><Ic n="chev" s={10} c={CD.faint} /></span></button>
               {tillMenu && (<div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 5, width: 230, background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 11, boxShadow: '0 14px 36px var(--cd-shade)', zIndex: 9999, overflow: 'hidden' }}>
                 <div style={{ padding: '8px 11px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: CD.faint, fontFamily: 'Space Mono, monospace', borderBottom: `1px solid ${CD.lineSoft}` }}>{(onLedgerTills && ledgerTill && ledgerTill.branchName) || (_ab ? _ab.name : '')} · switch till</div>
                 {tillOptions.map(o => (<button key={o.key} onClick={() => pickTill(o.key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 11px', background: o.on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}><Ic n="wallet" s={12} c={o.on ? CD.ink : CD.mute} /><span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}{o.on ? <span style={{ color: CD.faint }}> · you</span> : (o.occupant ? <span style={{ color: CD.faint }}> · {o.occupant} on now</span> : (o.note ? <span style={{ color: CD.faint }}> · {o.note}</span> : null))}</span>{o.on && <Ic n="check" s={12} c={CD.ink} />}</button>))}
                 <div style={{ padding: '7px 11px', borderTop: `1px solid ${CD.lineSoft}`, fontSize: 10, color: CD.faint, display: 'flex', alignItems: 'center', gap: 5 }}><Ic n="logout" s={10} c={CD.faint} /> To change store, sign out &amp; back in.</div>
               </div>)}
-            </span>) : (stationTill ? <b style={{ color: CD.ink }}>{stationTill}</b> : null)}
-            <span>· {serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length} drawer(s) counted</span>
+            </span>) : (stationTill ? <b className="till-pick" style={{ color: CD.ink }}>{stationTill}</b> : null)}
+            <span className="till-statusline">
+            <span>{serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length} drawer(s) counted</span>
             {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute }}>· {serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
             {/* the ledger's own name for the drawer these figures belong to —
                 the picker to the left names a local till, which is a different
                 thing and can disagree */}
             {serverBacked && ledgerTill && <span title="The till the server ledger is answering for" style={{ color: ledgerAmbiguous ? CD.brass : CD.faint }}>· ledger till <b style={{ fontFamily: 'Space Mono, monospace', color: ledgerAmbiguous ? CD.brass : CD.mute }}>{ledgerTill.tillId}</b></span>}
+            </span>
           </div></div>
-          <div className="flex items-center gap-1.5 flex-none ml-auto">
+          <div className="till-actions flex items-center gap-1.5 flex-none ml-auto">
             {(() => {
               // the drawer's rail balance — changes the moment cash is issued or returned.
               // floats are ISSUED AT THE VAULT (Vault / Branch Network), never from here:
@@ -861,18 +898,18 @@
                 ? (serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null)
                 : (_tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null);
               return (<>
-                {_tc != null && <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: CD.mute }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmtHome(_tc)}</b></span>}
+                {_tc != null && <span className="till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: CD.mute }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmtHome(_tc)}</b></span>}
                 {/* the drawer's own end of the cash rail — same modal, same
                     ledger movement, preset to this branch and this till */}
-                {onMoveCash && <button onClick={() => onMoveCash({ kind: 'issue', bId: _ab && _ab.id, tId: station && station.tillId })} title="Issue a float from the vault, or return cash to it — recorded on the ledger" className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'var(--cd-panel)' }}><Ic n="swap" s={13} c={CD.mute} /> Move cash</button>}
-                <button onClick={() => onOpenVault && onOpenVault()} title="Floats are issued & returned at the vault" className="flex items-center gap-1 text-[11px] px-2.5 py-1.5" style={{ color: CD.mute, border: 0, background: 'transparent' }}><Ic n="vaultsafe" s={13} c={CD.mute} /> Vault ›</button>
+                {onMoveCash && <button onClick={() => onMoveCash({ kind: 'issue', bId: _ab && _ab.id, tId: station && station.tillId })} title="Issue a float from the vault, or return cash to it — recorded on the ledger" className="till-move flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'var(--cd-panel)' }}><Ic n="swap" s={13} c={CD.mute} /> Move cash</button>}
+                <button onClick={() => onOpenVault && onOpenVault()} title="Floats are issued & returned at the vault" className="till-vault flex items-center gap-1 text-[11px] px-2.5 py-1.5" style={{ color: CD.mute, border: 0, background: 'transparent' }}><Ic n="vaultsafe" s={13} c={CD.mute} /> Vault ›</button>
               </>);
             })()}
           </div>
         </div>
-        <div className="fld-bar" style={{ '--ft': '#17140F', margin: '2px -16px 0', padding: '0 16px' }}>
+        <div className="till-tabwrap"><div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic]) => <button key={id} data-tour={id === 'reconcile' ? 'till-reconcile-tab' : undefined} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}</button>)}
-        </div>
+        </div></div>
       </div>
 
       {/* ===== SESSION STRIP — the open-and-close, made visible =====
@@ -971,7 +1008,8 @@
       <div className="flex-1 overflow-auto">
 
         {/* ===== COUNT ===== */}
-        {tab === 'count' && (<div className="p-4 pb-0">
+        {tab === 'count' && (<div className="till-count-sheet p-4 pb-0">
+          <div className="till-denom">
           {/* currency chips */}
           <div className="flex flex-wrap gap-1.5 mb-3">
             {CCYS.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
@@ -1011,12 +1049,16 @@
             </div>
           </div>
           )}
+          </div>
+          {/* Phone only: the height of the floating + plus a gap, so the
+              last denomination can scroll clear of that button. */}
+          <div className="till-scroll-pad" />
           {/* per-currency footer — counted (typeable), expected, then the grand total */}
-          <div style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
+          <div className="till-count-foot" style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
             <div className="flex items-end justify-between gap-4 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
-              <div>
+              <div className="till-count-main min-w-0">
                 <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
-                <div className="flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
+                <div className="till-counted flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
                   <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : num(ccyTotal(ccy))} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
                   <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
                 </div>
@@ -1029,15 +1071,15 @@
                   </button>
                   {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
                 </div>
-                <div className="text-[11px] mt-1" style={{ color: CD.faint }}>{(() => { const ts = countedAt[ccy]; return ts ? <span>Last counted <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{sinceLabel(ts)}</b> · {atLabel(ts)}</span> : <span>Not counted yet today</span>; })()}</div>
+                <div className="till-counted-when text-[11px] mt-1" style={{ color: CD.faint }}>{(() => { const ts = countedAt[ccy]; return ts ? <span>Last counted <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{sinceLabel(ts)}</b> · {atLabel(ts)}</span> : <span>Not counted yet today</span>; })()}</div>
               </div>
-              <div className="text-right flex-none">
-                <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? 'This desk keeps its books in a currency the rate board cannot total against' : ''}>{fmtHome(grandHome)}</div>
+              <div className="text-right flex-none till-grand">
+                <div className="till-grand-label text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
+                <div className="till-grand-num" data-absent={grandHome == null ? '1' : undefined} style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? (canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against') : ''}>{fmtHome(grandHome)}</div>
                 <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
               </div>
             </div>
-            <div className="text-[10.5px] py-2" style={{ color: CD.faint }}>Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.</div>
+            <div className="till-count-hint text-[10.5px] py-2" style={{ color: CD.faint }}>Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.</div>
           </div>
         </div>)}
 

@@ -72,16 +72,51 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 ## Current active work
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
-  the desk instead of floating as a desktop panel. The menu bar keeps
-  the icon buttons and drops the wordmark, the clock, and the account
-  name. A window header puts the title on one line and the buttons
-  on the next row, wrapping. A card that holds a table scrolls
-  sideways, and the right edge fades. Folder tabs and the module
-  tab bar scroll the same way, with that fade, and the module bar
-  still ends before the store and ID buttons. Rounded clips, photos,
-  and bars stay clipped. Settings stacks its list above the form.
-  Sign-in and the station picker stay on the screen. The window
-  dots stay 12px, so the title stays readable.
+  the desk instead of floating as a desktop panel. A compact header
+  shows the shop name, whether the till is open, and the profile
+  button. With no shop logo set, that header has no placeholder box.
+  A bottom bar opens Rates, Ledger, Clients, Till, and More.
+  The selected tab's icon, label, and underline take that app's
+  colour, and so does the open in-app folder tab. A phone draws no
+  desktop window chrome: no traffic lights, no title bar, no
+  window-title dot, no top icon menu, no logo or store row, no
+  dashed Your logo box, and no resize grip. The till line keeps its own open or closed mark.
+  More uses the colour of the app it
+  opened, or the ink when More itself is showing. More lists the other apps that role can already open. A round +
+  starts a new transaction the same way the menu button does, on
+  every phone screen, including Till. The
+  module tabs, the menu bar, the shop row, and the store and ID
+  rail are hidden. The wordmark, the clock, and the account name
+  stay off the phone. A card that holds a table scrolls sideways,
+  and the right edge fades. Rounded clips,
+  photos, and bars stay clipped. Settings stacks its list above the
+  form. Sign-in and the station picker stay on the screen. The window
+  title bar is hidden, so the app uses that room. In-app tabs stay.
+  A dialog keeps its own header and close, and on a phone it stops
+  above the bottom bar. The Cash Drawer header stacks: the title
+  and the till on one line, the status under that, the amount, then
+  Move cash and Vault. Its tabs scroll, with a fade where the last
+  one continues. A ledger reference and a client name stay on one
+  line, and their buttons move to the next row. A wide table keeps
+  each cell on one line and scrolls inside its card. The desktop
+  resize grip is hidden. The rate board leads with its currency rows,
+  already drawn. The cash-drawer count keeps its currency chips and
+  Save count on screen. The whole Cash drawer scrolls as one column,
+  so the header, the session line, and the hand-off scroll away and
+  the denomination rows use that room. The count panel stays a solid
+  sticky panel pinned directly above the bottom bar, with nothing
+  drawn behind it. The round + floats over the rows just above that
+  panel and does not reserve a band of its own. The list's end is
+  padded by the + height plus a gap, so the last row can scroll
+  clear of the +, and the + does not cover a row's input or Save
+  count. An uncounted drawer says "Not counted"
+  rather than a lone dash — the ledger amount stays on the "In drawer"
+  pill, because a zero would claim the drawer was counted empty.
+  The ledger search is one line, with its help mark in that line.
+  The compliance header stacks Screening, Reportable, and Structuring.
+  Screening reads Not connected. Wider than 430px, the desk is
+  unchanged: the dots stay 12px, and the module tab bar ends before
+  the store and ID buttons.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -448,6 +483,35 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone bottom bar. At 430px and under, the header is the
+shop name, a till dot that reads Till open or Till closed, and the
+profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,
+Till, More. More is the other apps that role can open. The + above
+the bar opens New transaction. The window title bar is hidden; the
+app fills that space. In-app tabs stay. A ledger record has its own
+Back, because that was the one action that lived only in the title
+bar. The window stops above the bar, including the iPhone safe area.
+The Cash Drawer header stacks down the screen instead of collapsing
+the title into a narrow column, and a new-transaction dialog stacks
+its type buttons and its quote rail the same way. A ledger reference
+and a client name stay on one line. A wide table scrolls inside its
+card instead of breaking each column into single words. The selected
+tab's icon, label, and underline take that app's colour, and so does
+the open in-app folder tab. The window-title dot stays off the phone
+header. A phone shows no desktop window chrome: no traffic lights,
+title bar, top icon menu, logo or store row, dashed Your logo box, or
+resize grip. With no shop logo set, the phone header is the shop name.
+The till line keeps its open or closed mark. The round + is the New
+transaction control on every phone screen, including Till. On the
+cash drawer the whole column scrolls, the count panel is a solid
+sticky panel pinned to the bar, and the + floats just above that
+panel without a reserved band. More uses the colour of the app it opened, or the ink when
+More itself is showing. Wider than 430px, the desk is unchanged. Rate rows lead the
+rate board. The drawer count keeps its chips and Save count in view,
+and says "Not counted" until a currency is counted. The ledger search
+stays one line. Screening reads Not connected. This sits on the phone
+layout that landed with the desk-fits-a-phone change.
 
 **2026-10-10**, Till close. A close names the mark the count was taken
 against. The screen pins that mark when the first figure is entered

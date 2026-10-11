@@ -132,6 +132,17 @@
   /* A phone shows the left of the rate grid and the rest scrolls.
      A hard edge reads as the columns being cut off. */
   @media (max-width: 430px) {
+    /* The entrance fade holds the cards at nothing until it finishes,
+       and the margin editor sat above the rate rows, so the first
+       view was a washed-out card with no currencies. On a phone the
+       rows lead, fully drawn, and the margins follow. */
+    #dash > div,
+    #dash .card { animation: none !important; }
+    #dash { padding: 12px 12px 16px !important; }
+    #dash h1 { font-size: 22px !important; }
+    #edTable { order: 1; }
+    #dash .card:not(#edTable) { order: 2; }
+    #etBody { max-height: 280px !important; min-height: 0 !important; }
     #edTable {
       -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
       mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
