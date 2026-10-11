@@ -229,8 +229,33 @@ var RATE_CONFIG = null;      // last published config, if any
       .then(applyCatalog)
       .catch(function () {});
   }
-  tick();
-  setInterval(tick, 60000);
+  /* The staff shell at /login and /app has no session yet. Polling the
+     board there is a data call before anyone has signed in, and it is
+     not what a public window is for. A storefront, a hosted site, and
+     the customer's own domain keep polling immediately — they have no
+     sign-in, and the board is the page. This script does not ask
+     /api/auth/me itself. The desk announces a session with cdos-session
+     once it has one, and takes it back on sign-out. */
+  var staffShell = /^\/(app|login)(\/|$)/.test(window.location.pathname);
+  var timer = null;
+  function start() {
+    if (timer) return;
+    tick();
+    timer = setInterval(tick, 60000);
+  }
+  function stop() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+  }
+  if (!staffShell) {
+    start();
+  } else {
+    window.addEventListener('cdos-session', function (e) {
+      if (e.detail && e.detail.signedIn) start();
+      else stop();
+    });
+  }
 })();
 
 function cadValue(code) { return 1 / BY[code].perCad; }      // 1 unit -> CAD (mid)

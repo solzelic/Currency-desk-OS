@@ -1329,7 +1329,24 @@
       Deliberately NOT a hard dependency: a screen renders immediately with
      the wall-clock date and no threshold, and reportingLimit() reports "—"
      until the pack is known. A dash for half a second beats a Canadian
-     10,000 on a UAE desk forever. */
+     10,000 on a UAE desk forever.
+      These three reads need a server session. The lock screen mounts this
+     hook too — hooks run before the stage return — and asking the ledger
+     while signed out only produces 401s. noteSession is the one place that
+     says a session exists. A demo sign-in, which never gets a server user,
+     does not call it, so the book stays quiet. */
+  let _session = false;
+  function noteSession(on) {
+    const next = !!on;
+    if (next === _session) return _session;
+    _session = next;
+    window.dispatchEvent(new CustomEvent('cdos-session', {
+      detail: {
+        signedIn: _session
+      }
+    }));
+    return _session;
+  }
   function useDeskFacts() {
     const [version, setVersion] = React.useState(0);
     React.useEffect(() => {
@@ -1337,21 +1354,27 @@
       const bump = () => {
         if (live) setVersion(v => v + 1);
       };
+      const load = () => {
+        if (!_session) return;
+        Promise.all([refreshJurisdiction(),
+        /* The desk's own lines, alongside the pack that proposes them. A
+           screen that had the pack but not the override would print the
+           regulator's 10,000 at a desk that had deliberately moved to
+           7,500 — the exact class of disagreement this hook exists to
+           stop, so the two arrive together or the version does not move. */
+        refreshDeskThresholds(), refreshBusinessDate()]).then(bump, bump);
+      };
       window.addEventListener('cdos-jurisdiction', bump);
       window.addEventListener('cdos-thresholds', bump);
       window.addEventListener('cdos-business-date', bump);
-      Promise.all([refreshJurisdiction(),
-      /* The desk's own lines, alongside the pack that proposes them. A
-         screen that had the pack but not the override would print the
-         regulator's 10,000 at a desk that had deliberately moved to
-         7,500 — the exact class of disagreement this hook exists to
-         stop, so the two arrive together or the version does not move. */
-      refreshDeskThresholds(), refreshBusinessDate()]).then(bump, bump);
+      window.addEventListener('cdos-session', load);
+      load();
       return () => {
         live = false;
         window.removeEventListener('cdos-jurisdiction', bump);
         window.removeEventListener('cdos-thresholds', bump);
         window.removeEventListener('cdos-business-date', bump);
+        window.removeEventListener('cdos-session', load);
       };
     }, []);
     return version;
@@ -1898,6 +1921,7 @@
     setDeskPack,
     refreshJurisdiction,
     useDeskFacts,
+    noteSession,
     rulesNotice,
     rulesMissing,
     baselineNotice,
@@ -65139,8 +65163,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       let alive = true;
       const relock = () => {
         if (!alive) return;
+        /* The cookie is gone, so the book has to stop asking. noteSession
+           is a no-op when we were already signed out, which is the boot
+           case: one 401, and no ledger calls follow it. */
+        if (window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(false);
         setStage(cur => cur === 'lock' || cur === 'signup' || cur === 'verify' ? cur : 'lock');
       };
+      /* Coming back to the tab only checks that the session is still there.
+         It does not resume. Resuming on focus would pull a desk that was
+         left on the lock screen back into the desktop. */
       const check = () => {
         if (typeof fetch !== 'function') return;
         fetch('/api/auth/me', {
@@ -65156,15 +65187,30 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          own sign-in screen, so the very last thing that happened to somebody
          who had just typed a password was being asked for it again, for an
          account thirty seconds old. That is where the loop was breaking.
-          Only ever on the way IN. The relock check above still owns going the
+          One request does both jobs. A second /api/auth/me on the same boot
+         was only there to relock, and the lock screen has nothing to relock
+         from. A 401 still drops to the lock. A user still resumes, and only
+         from the lock screen.
+          Only ever on the way IN. The focus check above still owns going the
          other way, so an expired session drops to the lock screen exactly as
          before, and a desk left open does not resume itself. */
-      const resume = () => {
+      const boot = () => {
         if (typeof fetch !== 'function') return;
         fetch('/api/auth/me', {
           credentials: 'same-origin'
-        }).then(r => r.ok ? r.json() : null).then(async d => {
+        }).then(r => {
+          if (r.status === 401) {
+            relock();
+            return null;
+          }
+          return r.ok ? r.json() : null;
+        }).then(async d => {
           if (!alive || !d || !d.user) return;
+          /* A restored desktop is not on the lock screen, so the return
+             below would skip the resume. The session is still real, and
+             the screens already mounted need the pack and the trading day.
+             Say so before that return. */
+          if (window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
           /* Never yank somebody out of a screen they are mid-way through.
              Read the live stage rather than the one this effect closed over
              on mount — by the time the request comes back they may have
@@ -65210,7 +65256,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           routeAfterAuth(rec);
         }).catch(() => {});
       };
-      resume();
+      boot();
       const onFocus = () => {
         if (document.visibilityState === 'visible') check();
       };
@@ -65218,7 +65264,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         if (e.origin !== window.location.origin) return;
         if (e.data && e.data.type === 'cdos:session-expired') relock();
       };
-      check();
       document.addEventListener('visibilitychange', onFocus);
       window.addEventListener('message', onMessage);
       return () => {
@@ -66221,6 +66266,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       try {
         window.CDOS_PERSIST.end();
       } catch (e) {}
+      /* Sign-out does not pass through relock, so the book has to be told
+         here or the next screen keeps reading a session that just ended. */
+      if (window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(false);
       hydratedRef.current = false;
       srvUserRef.current = null;
       setSrvUser(null);
@@ -66264,6 +66312,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }));
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
+        /* A temporary password is still a server session. A demo sign-in
+           has no server user and must not open the book. */
+        if (srvUser && window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
         setUser(rec.code || rec.name);
         setAuthRec(rec);
         setPwTemp(temp || null);
@@ -66283,6 +66334,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }));
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
+        if (srvUser && window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
         setUser(rec.code || rec.name);
         setAuthRec(rec);
         await hydrateTenant();
@@ -66328,6 +66380,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }));
         srvUserRef.current = u && u.tenantId ? u : null;
         setSrvUser(u && u.tenantId ? u : null);
+        if (u && u.tenantId && window.CDOS && window.CDOS.noteSession) window.CDOS.noteSession(true);
         setUser(rec.code);
         setAuthRec(rec);
         await hydrateTenant();
