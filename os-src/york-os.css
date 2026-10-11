@@ -3107,7 +3107,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: 1 1 auto;
     min-height: 0;
   }
-  .phone-clients .phone-client-row { min-height: 84px; }
+  .phone-shell.phone-clients .phone-row.phone-client-row { min-height: 84px; }
   .phone-ini {
     width: 44px;
     height: 44px;
