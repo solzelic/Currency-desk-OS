@@ -243,7 +243,7 @@ ${snap}`;
   };
   // upcoming modules — informational roadmap, not buyable (mirrors the build plan)
   const COMING = [
-    { id: 'compliance_pro', title: 'Compliance AI Pro', icon: 'shield', desc: 'Live sanctions / PEP screening and auto-LCTR filing.', eta: 'Next' },
+    { id: 'compliance_pro', title: 'Compliance AI Pro', icon: 'shield', desc: 'Sanctions and PEP screening, and automatic LCTR filing. Not connected yet.', eta: 'Planned' },
     { id: 'sms', title: 'SMS & 2FA', icon: 'smartphone', desc: 'Real text verification and customer pickup alerts.', eta: 'Soon' },
     { id: 'gold', title: 'Gold & precious metals', icon: 'coins', desc: 'Buy and sell gold at spot, booked to the ledger with the right precious-metals reporting.', eta: 'Next' },
     { id: 'crypto', title: 'Crypto desk', icon: 'globe', desc: 'Virtual-currency trades as a separate plug-in, with their own VCTR reporting.', eta: 'Later' }
