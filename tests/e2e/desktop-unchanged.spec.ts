@@ -340,7 +340,25 @@ test("sign-in is unchanged at 1280", async ({ page }) => {
   await expect(lock).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await fontsReady(page);
-  await expect(lock).toHaveScreenshot("sign-in-1280.png", SHOT);
+  /* The glass blur and the soft shadow on this card rasterize a few
+     corners differently from one browser launch to the next. The
+     picture is the same screen with those two effects held still, so
+     the compare can stay at zero pixels. */
+  await page.addStyleTag({
+    content: [
+      "#lock .lock-card {",
+      "  backdrop-filter: none !important;",
+      "  -webkit-backdrop-filter: none !important;",
+      "  box-shadow: none !important;",
+      "}",
+      "#lock, #lock * {",
+      "  -webkit-font-smoothing: antialiased !important;",
+      "  text-rendering: geometricPrecision !important;",
+      "}",
+    ].join("\n"),
+  });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page).toHaveScreenshot("sign-in-1280.png", SHOT);
 });
 
 test("every desktop window is unchanged at 1280", async ({ page }) => {

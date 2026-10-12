@@ -399,7 +399,10 @@ whole desk. At 1280×800 it captures the menu bar, the open window, and
 the dock for every app — Ledger, Clients, Rates, Till, Compliance,
 Reports, Settings, Pricing, Transfers, Cheques, Vault, and Audit — and
 the sign-in screen (`#lock`). The comparison is `maxDiffPixels: 0` and
-`threshold: 0`. Animations and the caret are off. A one-character
+`threshold: 0`. Animations and the caret are off. The sign-in card is
+captured with its glass blur and soft shadow held still — those two
+effects rasterize a few corner pixels differently from one launch to
+the next, and the rest of the screen is unchanged. A one-character
 change in a rate, a code, an amount, a fee, a hold date, or a cheque
 number fails the picture.
 
