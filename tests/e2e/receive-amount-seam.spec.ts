@@ -2,7 +2,7 @@
    That figure has to be the amount the ledger posts. */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop, hasLedger } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -128,20 +128,23 @@ async function pinQaBoard(page: Page): Promise<void> {
   expect(published.status, published.body).toBe(200);
 }
 
-async function restoreBoard(page: Page): Promise<void> {
+async function restoreBoard(request: APIRequestContext): Promise<void> {
   if (!boardBefore) return;
   const saved = boardBefore;
-  boardBefore = null;
-  await page.evaluate(async () => {
-    const login = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" }),
-    });
-    if (!login.ok) throw new Error("restore login " + login.status);
+  const login = await request.post("/api/auth/login", {
+    data: { staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" },
   });
-  const restored = await publishBoard(page, saved);
-  expect(restored.status, restored.body).toBe(200);
+  expect(login.ok(), await login.text()).toBeTruthy();
+  const restored = await request.post("/api/rates/publish", {
+    data: {
+      buyMargin: saved.buyMargin,
+      sellMargin: saved.sellMargin,
+      rows: cleanRows(saved.rows),
+      ...(saved.order ? { order: saved.order } : {}),
+    },
+  });
+  expect(restored.status(), await restored.text()).toBe(200);
+  boardBefore = null;
 }
 
 async function quoteUsdToCad(page: Page, width: number): Promise<void> {
@@ -168,29 +171,15 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
     return { status: res.status, body: await res.json().catch(() => ({})) };
   });
   expect([201, 409], `opening balances: ${JSON.stringify(funded)}`).toContain(funded.status);
-  const yen = await page.evaluate(async () => {
-    const opened = await fetch("/api/ledger/till-sessions/open", {
+  const opened = await page.evaluate(async () => {
+    const res = await fetch("/api/ledger/till-sessions/open", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    if (!opened.ok && opened.status !== 409) return { step: "open", status: opened.status, body: await opened.text() };
-    const res = await fetch("/api/ledger/till-movements", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        idempotencyKey: "yen-float-receive-parity",
-        direction: "in",
-        currency: "JPY",
-        amount: "500000.00",
-        counterpartyType: "other",
-        counterpartyRef: "yen float",
-        reason: "Stock yen so a sale can be counted out",
-      }),
-    });
-    return { step: "float", status: res.status, body: await res.text() };
+    return { status: res.status, body: await res.text() };
   });
-  expect(yen.status, `yen float: ${yen.body}`).toBe(201);
+  expect([201, 409], `till open: ${opened.body}`).toContain(opened.status);
   await pinQaBoard(page);
   await signInAtDesk(page, "m.costa");
   await dismissTour(page);
@@ -238,7 +227,7 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   expect(row.outputAmount).toBe("4702.63");
 }
 
-test("desktop Customer receives is the posted amount for USD 3,500", async ({ page }) => {
+test("desktop Customer receives is the posted amount for USD 3,500", async ({ page, request }) => {
   try {
     await quoteUsdToCad(page, 1280);
     await openNewTransaction(page);
@@ -258,29 +247,88 @@ test("desktop Customer receives is the posted amount for USD 3,500", async ({ pa
     expect(sellRes.status(), JSON.stringify(sellPosted)).toBe(201);
     expect(sellPosted.outputAmount).toBe("2527.36");
   } finally {
-    await restoreBoard(page);
+    await restoreBoard(request);
   }
 });
 
-test("phone Customer receives is the posted amount for USD 3,500", async ({ page }) => {
+test("phone Customer receives is the posted amount for USD 3,500", async ({ page, request }) => {
   try {
     await quoteUsdToCad(page, 390);
   } finally {
-    await restoreBoard(page);
+    await restoreBoard(request);
   }
 });
 
-test("narrow phone Customer receives is the posted amount for USD 3,500", async ({ page }) => {
+test("narrow phone Customer receives is the posted amount for USD 3,500", async ({ page, request }) => {
   try {
     await quoteUsdToCad(page, 360);
   } finally {
-    await restoreBoard(page);
+    await restoreBoard(request);
   }
 });
 
+/* The menu closes itself on any scroll, including the scroll a click
+   uses to bring a lower currency into view. Fire the option's own
+   handler instead of scrolling the list. */
 async function chooseCurrency(page: Page, which: number, code: string): Promise<void> {
-  await page.locator(".cd-money").nth(which).locator("button").click();
-  await page.locator("button").filter({ hasText: new RegExp(`^${code}\\b`) }).last().click();
+  const trigger = page.locator(".cd-money").nth(which).locator("button");
+  const option = () => page.getByRole("button", { name: new RegExp(`^${code}\\b`) }).last();
+  await expect(async () => {
+    if ((await option().count()) === 0) await trigger.click();
+    await expect(option()).toBeAttached({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+  await option().evaluate((el: HTMLButtonElement) => el.click());
+  await expect(trigger).toContainText(code);
+}
+
+async function stockYen(page: Page): Promise<void> {
+  const yen = await page.evaluate(async () => {
+    const login = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" }),
+    });
+    if (!login.ok) return { status: login.status, body: await login.text() };
+    const res = await fetch("/api/ledger/till-movements", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: "yen-float-receive-parity",
+        direction: "in",
+        currency: "JPY",
+        amount: "500000.00",
+        counterpartyType: "other",
+        counterpartyRef: "yen float",
+        reason: "Stock yen so a sale can be counted out",
+      }),
+    });
+    return { status: res.status, body: await res.text() };
+  });
+  expect(yen.status, `yen float: ${yen.body}`).toBe(201);
+}
+
+async function drainYen(request: APIRequestContext): Promise<void> {
+  const login = await request.post("/api/auth/login", {
+    data: { staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" },
+  });
+  expect(login.ok(), await login.text()).toBeTruthy();
+  const held = await request.get("/api/ledger/till-balances");
+  expect(held.ok(), await held.text()).toBeTruthy();
+  const body = await held.json();
+  const amount = body.balances && body.balances.JPY;
+  if (!amount || Number(amount) === 0) return;
+  const moved = await request.post("/api/ledger/till-movements", {
+    data: {
+      idempotencyKey: `yen-float-drain-${amount}`,
+      direction: "out",
+      currency: "JPY",
+      amount,
+      counterpartyType: "other",
+      counterpartyRef: "yen float",
+      reason: "Return the yen float the parity seam stocked",
+    },
+  });
+  expect(moved.status(), await moved.text()).toBe(201);
 }
 
 async function postFrozen(page: Page, output: string, fee?: string): Promise<void> {
@@ -301,11 +349,22 @@ async function postFrozen(page: Page, output: string, fee?: string): Promise<voi
   if (fee) expect(row.feeCad).toBe(fee);
 }
 
-test("whole yen Customer receives is the posted amount", async ({ page }) => {
+test("whole yen Customer receives is the posted amount", async ({ page, request }) => {
   try {
     await quoteUsdToCad(page, 1280);
+    await stockYen(page);
+    await signInAtDesk(page, "m.costa");
+    await dismissTour(page);
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem("yorkfx_rates_v1");
+      if (!raw) return false;
+      const board = JSON.parse(raw);
+      const mid = board.rows && board.rows.JPY && board.rows.JPY.mid;
+      return typeof mid === "number" && Math.abs(mid - 0.00909918) < 1e-12;
+    });
     await openNewTransaction(page);
     await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await expect(page.getByText("ID on file").first()).toBeVisible();
     await chooseCurrency(page, 1, "JPY");
     await expect(page.locator(".cd-tx-side")).toContainText("We sell JPY");
     await page.locator(".cd-money input").first().fill("1000");
@@ -318,11 +377,12 @@ test("whole yen Customer receives is the posted amount", async ({ page }) => {
     await expect(page.getByTestId("tx-receives")).toHaveText("108,252");
     await postFrozen(page, "108252.00");
   } finally {
-    await restoreBoard(page);
+    await restoreBoard(request);
+    await drainYen(request);
   }
 });
 
-test("a we-sell fee stays off the amount the customer receives", async ({ page }) => {
+test("a we-sell fee stays off the amount the customer receives", async ({ page, request }) => {
   try {
     await quoteUsdToCad(page, 1280);
     await openNewTransaction(page);
@@ -339,11 +399,11 @@ test("a we-sell fee stays off the amount the customer receives", async ({ page }
     await expect(page.getByTestId("tx-receives")).toHaveText("72.21");
     await postFrozen(page, "72.21", "1.50");
   } finally {
-    await restoreBoard(page);
+    await restoreBoard(request);
   }
 });
 
-test("half-up Customer receives is the posted amount, not banker's rounding", async ({ page }) => {
+test("half-up Customer receives is the posted amount, not banker's rounding", async ({ page, request }) => {
   try {
     await quoteUsdToCad(page, 1280);
     await page.evaluate(async () => {
@@ -380,11 +440,15 @@ test("half-up Customer receives is the posted amount, not banker's rounding", as
     await expect(page.getByTestId("tx-ticket-receives")).toContainText("1.01");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
+    /* A zero margin is under the desk's 0.5% floor, so the sheet will
+       not ask for a quote until the teller overrides it. */
+    await page.getByRole("checkbox", { name: "Override and post below the floor" }).check();
+    await page.getByPlaceholder(/Reason/).fill("Half-up parity at a zero margin");
     await page.getByRole("button", { name: "Get server quote" }).click();
     await expect(page.getByTestId("tx-frozen")).toContainText("1.01");
     await expect(page.getByTestId("tx-receives")).toHaveText("1.01");
     await postFrozen(page, "1.01");
   } finally {
-    await restoreBoard(page);
+    await restoreBoard(request);
   }
 });

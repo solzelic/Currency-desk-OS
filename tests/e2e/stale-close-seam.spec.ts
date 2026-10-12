@@ -123,8 +123,14 @@ async function openTill(page: Page) {
 
 async function countTheBook(page: Page, balances: Record<string, string>) {
   await clickDrawerTab(page, /Cash drawer/i);
+  await expect(page.locator(".till-chip").first()).toBeVisible();
   for (const [ccy, amount] of Object.entries(balances)) {
-    await press(page.locator(`button:has-text("${ccy}")`).first());
+    /* The count sheet only has a chip for a currency it can break
+       into bills. A zero-decimal currency the book holds (the receive
+       seam stocks yen, then puts it back) has no chip to press. */
+    const chip = page.locator(".till-chip").filter({ hasText: ccy }).first();
+    if ((await chip.count()) === 0) continue;
+    await press(chip);
     await press(page.getByRole("button", { name: /Enter total/i }).first());
     await page.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
   }
