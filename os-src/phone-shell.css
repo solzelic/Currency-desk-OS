@@ -1081,6 +1081,10 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
+    /* Rows inherit the card. The card follows the shell, so dark mode
+       keeps the light ink on the dark surface. Pinning gray-900 would
+       put #161513 on #1E1D1A. */
+    color: inherit;
   }
   .phone-summary > div {
     display: flex;
@@ -1094,14 +1098,14 @@
   .phone-summary dt {
     margin: 0;
     font: var(--text-small);
-    color: var(--color-text-muted);
+    color: inherit;
   }
   .phone-summary dd {
     margin: 0;
     font: var(--text-small);
     font-weight: 600;
     text-align: right;
-    color: var(--color-text);
+    color: inherit;
     font-variant-numeric: tabular-nums;
   }
   .phone-summary > div.is-big dd { font: var(--text-title-2); }

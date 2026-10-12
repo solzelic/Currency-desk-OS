@@ -556,7 +556,10 @@ not a form and it does not save. `big` is the figure to read out loud.
 `tone: 'pos'` marks a positive amount with `--color-positive`. `mark`
 is written to `data-phone-cheque` so a test can read that figure.
 The label and the value sit on one row, so a long label such as
-"Give the customer" still has room.
+"Give the customer" still has room. Both inherit the card's text
+colour. The card follows the shell, so in dark mode the ink is
+`#F6F3EC` on the dark surface. Pinning `--gray-900` on that card
+would fail 4.5:1. A positive amount still uses `--color-positive`.
 
 ### Toast
 
@@ -614,7 +617,10 @@ ChoiceTiles, AmountField, SummaryList, and StepHeader are on
 A screen uses them. It does not ship a second copy. Amounts are still
 `formatPhoneMoney`. These four do not format money. Their CSS is in
 `os-src/phone-shell.css`, inside `max-width: 430px`. Selected colour is
-`--brand-primary`, whose default is `--brand-green`.
+`--brand-primary`, whose default is `--brand-green`. A dark OS
+preference paints the phone shell from the dark tokens in
+`tokens.css`. The shell text is `#F6F3EC`. A summary list inherits
+its card colour.
 
 Transfers (#113, `feat/phone-transfers`) still defines the same four
 names with different props (`title` not `label`, `amount` not `value`,

@@ -679,7 +679,8 @@ rejects a malformed amount with an em dash. On a phone, a dark OS preference
 paints the shell from the dark tokens in `tokens.css` (inside
 `max-width: 430px`). Text is `#F6F3EC` and secondary text is
 `#C9C2B6`, each at least 4.5:1 on the dark surface, including a
-selected Records tab and the New transaction button. A teller's
+selected Records tab and the New transaction button. A summary list
+inherits its card colour, and the card follows that shell ink. A teller's
 phone ledger does not say "View earnings"; that card is disabled,
 the same as the desktop stat. The 1280 pictures are outside that
 query. They are rendered in the seam job from main
