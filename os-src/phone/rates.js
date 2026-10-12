@@ -22,9 +22,25 @@
     return Math.round(value * scale) / scale;
   }
 
+  /* Same digit rule as fmtCad in yorkfx-converter.js, which is what
+     YorkFX Rates.html prints. Under 1 is 5 places, under 100 is 4,
+     and 100 or more is 2. That page is CAD per 1 unit. It does not
+     relabel a small unit as x100. */
   function formatSpot(value) {
     if (typeof value !== "number" || !(value > 0) || !Number.isFinite(value)) return "";
-    return value.toFixed(Math.abs(value) >= 0.0001 ? 4 : 6);
+    const places = value >= 100 ? 2 : (value >= 1 ? 4 : 5);
+    return value.toFixed(places);
+  }
+
+  function boardQuote(code, mid, spread, buyMargin, sellMargin) {
+    return {
+      code: code,
+      label: code,
+      per: 1,
+      spot: formatSpot(mid),
+      buy: formatSpot(buyPrice(mid, spread, buyMargin)),
+      sell: formatSpot(sellPrice(mid, spread, sellMargin)),
+    };
   }
 
   function formatPercent(fraction) {
@@ -242,6 +258,7 @@
     canChangeRates: canChangeRates,
     currencyName: currencyName,
     formatSpot: formatSpot,
+    boardQuote: boardQuote,
     formatPercent: formatPercent,
     percentNumber: percentNumber,
     buyPrice: buyPrice,

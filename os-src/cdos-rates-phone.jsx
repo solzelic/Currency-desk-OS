@@ -216,10 +216,7 @@
 
     function prices(code) {
       const row = draft.rows[code];
-      return {
-        buy: rates.formatSpot(rates.buyPrice(row.mid, row.spread, draft.buyMargin)),
-        sell: rates.formatSpot(rates.sellPrice(row.mid, row.spread, draft.sellMargin)),
-      };
+      return rates.boardQuote(code, row.mid, row.spread, draft.buyMargin, draft.sellMargin);
     }
 
     function rowView(code) {
@@ -260,13 +257,13 @@
           {can ? <button type="button" className="phone-rate-grip" aria-label={"Drag " + code + " to reorder"} onPointerDown={(e) => onGrip(e, code)}>⠿</button> : null}
           {can ? (
             <button type="button" className="phone-rate-main" onClick={() => { setOpenCode(code); setSpotText(rates.formatSpot(row.mid)); setSpreadText(null); setClampNote(""); }}>
-              <b>{code}</b>
-              <small>{rates.currencyName(code)} · spot {rates.formatSpot(row.mid)}</small>
+              <b>{quote.label}</b>
+              <small>{rates.currencyName(code)} · spot {quote.spot}</small>
             </button>
           ) : (
             <span className="phone-rate-main">
-              <b>{code}</b>
-              <small>{rates.currencyName(code)} · spot {rates.formatSpot(row.mid)}</small>
+              <b>{quote.label}</b>
+              <small>{rates.currencyName(code)} · spot {quote.spot}</small>
             </span>
           )}
           <span className="phone-rate-px"><span className="is-buy">Buy {quote.buy}</span><span className="is-sell">Sell {quote.sell}</span></span>
@@ -331,7 +328,7 @@
             <div className="phone-rate-board-r is-hd"><span /><span>We buy</span><span>We sell</span></div>
             {six.map((code) => {
               const quote = prices(code);
-              return <div key={code} className="phone-rate-board-r"><b>{code}</b><span>{quote.buy}</span><span>{quote.sell}</span></div>;
+              return <div key={code} className="phone-rate-board-r"><b>{quote.label}</b><span>{quote.buy}</span><span>{quote.sell}</span></div>;
             })}
             {note ? <p>{note}</p> : null}
           </div>

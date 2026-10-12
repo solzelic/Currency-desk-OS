@@ -577,6 +577,10 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone rate figures. The public rates page prints
+CAD per 1 unit. The phone editor, the preview, and the teller list
+use that print. A small unit stays per 1.
+
 **2026-10-12**, a refused rate publish. A teller or a supervisor who
 posts `/api/rates/publish` gets 403 and the sentence "Only a manager
 or an admin can publish rates." The refusal is an audit row,

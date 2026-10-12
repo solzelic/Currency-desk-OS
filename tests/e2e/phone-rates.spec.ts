@@ -43,6 +43,31 @@ async function assertNoDash(page: Page): Promise<void> {
   expect(text).not.toContain("\u2013");
 }
 
+test("a small unit matches the public board, which prints CAD per 1", async ({ page }) => {
+  await atDesk(page, "r.haddad");
+  const quote = await page.evaluate(() => {
+    const rates = window.CDOS.phoneRates;
+    const jpy = 1 / 109.9;
+    const inr = 1 / 60.31;
+    return {
+      jpy: rates.boardQuote("JPY", jpy, null, 0.015, 0.015),
+      inr: rates.boardQuote("INR", inr, null, 0.015, 0.015),
+      usd: rates.boardQuote("USD", 1.3641, null, 0.015, 0.015),
+    };
+  });
+  const jpy = (1 / 109.9);
+  const inr = (1 / 60.31);
+  expect(quote.jpy.per).toBe(1);
+  expect(quote.jpy.label).toBe("JPY");
+  expect(quote.jpy.buy).toBe((jpy * 0.985).toFixed(5));
+  expect(quote.jpy.sell).toBe((jpy * 1.015).toFixed(5));
+  expect(quote.inr.per).toBe(1);
+  expect(quote.inr.label).toBe("INR");
+  expect(quote.inr.spot).toBe(inr.toFixed(5));
+  expect(quote.usd.per).toBe(1);
+  expect(quote.usd.buy).toBe((1.3641 * 0.985).toFixed(4));
+});
+
 test("buy and sell follow the desk formula", async ({ page }) => {
   await atDesk(page, "r.haddad");
   const result = await page.evaluate(() => {
@@ -173,6 +198,30 @@ test("publish posts the board and a refused post says 403", async ({ page }) => 
     await page.locator(".phone-rates").getByRole("button", { name: "Raise Buy margin, under spot" }).click();
     await page.getByRole("button", { name: /Publish \d+ change/ }).click();
     const sheet = page.getByRole("dialog", { name: "Publish rates?" });
+    const publishNow = sheet.getByRole("button", { name: "Publish now" });
+    const shape = await publishNow.evaluate((el) => {
+      const button = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      const pageBox = el.closest(".phone-rate-sheet").getBoundingClientRect();
+      const body = el.closest(".phone-rate-sheet").querySelector(".phone-task-body");
+      const back = el.closest(".phone-rate-sheet").querySelector(".phone-rate-back").getBoundingClientRect();
+      return {
+        background: button.backgroundColor,
+        height: rect.height,
+        inset: rect.left - pageBox.left,
+        insetRight: pageBox.right - rect.right,
+        bodyPad: getComputedStyle(body).paddingLeft,
+        backLeft: back.left - pageBox.left,
+      };
+    });
+    expect(shape.background).toBe("rgb(39, 75, 142)");
+    expect(shape.height).toBeGreaterThanOrEqual(52);
+    expect(shape.height).toBeLessThan(53);
+    expect(shape.inset).toBeGreaterThanOrEqual(16);
+    expect(shape.inset).toBeLessThan(17);
+    expect(shape.insetRight).toBeGreaterThanOrEqual(16);
+    expect(shape.bodyPad).toBe("16px");
+    expect(shape.backLeft).toBeLessThanOrEqual(16);
     await expect(sheet).toContainText("These go to your website and rate board. Customers see them within about a minute.");
     await expect(sheet).toContainText("Publishing is saved with your name and the time. Only managers and admins can publish.");
     await expect(sheet).toContainText("Buy and sell margin");
@@ -233,6 +282,22 @@ test("a teller sees the list and the server refuses the post", async ({ page }) 
   await expect(screen.locator("[role='switch']")).toHaveCount(0);
   await expect(screen.getByRole("button", { name: /Publish/ })).toHaveCount(0);
   await expect(screen.locator('[data-code="GBP"]')).toContainText("British Pound");
+  const usd = screen.locator('[data-code="USD"]');
+  const stacked = await usd.evaluate((row) => {
+    const buy = row.querySelector(".is-buy").getBoundingClientRect();
+    const sell = row.querySelector(".is-sell").getBoundingClientRect();
+    const style = getComputedStyle(row.querySelector(".is-buy"));
+    return { buyBottom: buy.bottom, sellTop: sell.top, buyRight: buy.right, sellRight: sell.right, size: style.fontSize, weight: style.fontWeight, color: style.color };
+  });
+  expect(stacked.sellTop).toBeGreaterThanOrEqual(stacked.buyBottom - 1);
+  expect(Math.abs(stacked.buyRight - stacked.sellRight)).toBeLessThan(2);
+  expect(stacked.size).toBe("15px");
+  expect(Number(stacked.weight)).toBeGreaterThanOrEqual(600);
+  expect(stacked.color).toBe("rgb(30, 90, 168)");
+  const jpy = screen.locator('[data-code="JPY"]');
+  await jpy.scrollIntoViewIfNeeded();
+  await expect(jpy).toContainText("Japanese Yen");
+  await expect(jpy).not.toContainText("x100");
   await assertNoDash(page);
 
   const refused = await page.evaluate(async () => {

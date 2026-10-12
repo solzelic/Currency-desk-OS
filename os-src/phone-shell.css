@@ -625,9 +625,15 @@
   .phone-rate-main { min-height: 44px; min-width: 0; border: 0; background: transparent; text-align: left; padding: 0; }
   .phone-rate-main b { display: block; font-size: 16px; line-height: 20px; }
   .phone-rate-main small { display: block; font-size: 12px; line-height: 16px; color: var(--color-text-muted, #6B6760); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .phone-rate-px { text-align: right; font-size: 13px; line-height: 18px; font-variant-numeric: tabular-nums; }
-  .phone-rate-px .is-buy, .phone-rate-res .is-buy { color: var(--color-buy, #1E5AA8); }
-  .phone-rate-px .is-sell, .phone-rate-res .is-sell { color: var(--color-sell, #7A3E96); }
+  .phone-rate-px {
+    display: flex; flex-direction: column; align-items: flex-end; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .phone-rate-px .is-buy, .phone-rate-px .is-sell {
+    display: block; font-size: 15px; font-weight: 600; line-height: 20px;
+  }
+  .phone-rate-px .is-buy, .phone-rate-res .is-buy { color: #1E5AA8; }
+  .phone-rate-px .is-sell, .phone-rate-res .is-sell { color: #7A3E96; }
   .phone-rate-tg { width: 52px; height: 44px; border: 0; background: transparent; display: grid; place-items: center; }
   .phone-rate-tg i { width: 44px; height: 26px; border-radius: 13px; background: var(--brand-primary, #274B8E); position: relative; }
   .phone-rate-tg i:after { content: ""; position: absolute; right: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
@@ -655,9 +661,20 @@
   .phone-rate-board-r.is-hd { color: #C9C5BC; font-size: 12px; border-bottom: 0; padding-bottom: 0; }
   .phone-rate-board p { margin: 8px 0 0; color: #C9C5BC; font-size: 12px; line-height: 16px; }
   .phone-rate-sheet { width: 100%; max-width: none; height: 100%; max-height: none; border-radius: 0; display: flex; flex-direction: column; background: var(--color-bg, #F7F6F3); }
-  .phone-rate-sheet-h { display: grid; grid-template-columns: 72px 1fr 72px; align-items: center; min-height: 56px; padding: 0 8px; background: #fff; border-bottom: 1px solid var(--color-border); }
+  .phone-rate-sheet-h { display: grid; grid-template-columns: 72px 1fr 72px; align-items: center; min-height: 56px; padding: 0 16px; background: #fff; border-bottom: 1px solid var(--color-border); }
   .phone-rate-sheet-h h2 { margin: 0; text-align: center; font-size: 17px; }
-  .phone-rate-back { height: 44px; min-width: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--brand-primary, #274B8E); font-size: 16px; font-weight: 600; text-align: left; }
+  .phone-rate-back { height: 44px; min-width: 44px; padding: 0; border: 0; background: transparent; color: var(--brand-primary, #274B8E); font-size: 16px; font-weight: 600; text-align: left; }
+  .phone-rate-sheet .phone-task-body { padding: 16px 16px 8px; }
+  .phone-rate-sheet > .phone-task-foot {
+    padding-top: 12px; padding-left: 16px; padding-right: 16px;
+    background: var(--color-bg, #F7F6F3); border-top: 1px solid var(--color-border, #E2DFD8);
+  }
+  .phone-rate-sheet .phone-task-go {
+    display: block; width: 100%; height: 52px; min-height: 52px !important;
+    border: 0; border-radius: 12px; background: #274B8E; color: #fff;
+    font-size: 16px; font-weight: 600;
+  }
+  .phone-rate-sheet .phone-task-go:disabled { background: var(--gray-100, #EFEDE8); color: var(--gray-500, #6B6760); }
   .phone-rate-chg { list-style: none; margin: 12px 0 0; padding: 4px 16px; background: #fff; border: 1px solid var(--color-border); border-radius: 12px; }
   .phone-rate-chg li { display: flex; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--color-border); font-size: 14px; }
   .phone-rate-chg li:last-child { border-bottom: 0; }

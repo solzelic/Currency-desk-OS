@@ -62308,9 +62308,25 @@ window.CDOS_PERSIST = (function () {
     return Math.round(value * scale) / scale;
   }
 
+  /* Same digit rule as fmtCad in yorkfx-converter.js, which is what
+     YorkFX Rates.html prints. Under 1 is 5 places, under 100 is 4,
+     and 100 or more is 2. That page is CAD per 1 unit. It does not
+     relabel a small unit as x100. */
   function formatSpot(value) {
     if (typeof value !== "number" || !(value > 0) || !Number.isFinite(value)) return "";
-    return value.toFixed(Math.abs(value) >= 0.0001 ? 4 : 6);
+    const places = value >= 100 ? 2 : (value >= 1 ? 4 : 5);
+    return value.toFixed(places);
+  }
+
+  function boardQuote(code, mid, spread, buyMargin, sellMargin) {
+    return {
+      code: code,
+      label: code,
+      per: 1,
+      spot: formatSpot(mid),
+      buy: formatSpot(buyPrice(mid, spread, buyMargin)),
+      sell: formatSpot(sellPrice(mid, spread, sellMargin)),
+    };
   }
 
   function formatPercent(fraction) {
@@ -62528,6 +62544,7 @@ window.CDOS_PERSIST = (function () {
     canChangeRates: canChangeRates,
     currencyName: currencyName,
     formatSpot: formatSpot,
+    boardQuote: boardQuote,
     formatPercent: formatPercent,
     percentNumber: percentNumber,
     buyPrice: buyPrice,
@@ -63556,10 +63573,7 @@ window.CDOS_PERSIST = (function () {
     const publishLabel = "Publish " + diff.count + (diff.count === 1 ? " change" : " changes");
     function prices(code) {
       const row = draft.rows[code];
-      return {
-        buy: rates.formatSpot(rates.buyPrice(row.mid, row.spread, draft.buyMargin)),
-        sell: rates.formatSpot(rates.sellPrice(row.mid, row.spread, draft.sellMargin))
-      };
+      return rates.boardQuote(code, row.mid, row.spread, draft.buyMargin, draft.sellMargin);
     }
     function rowView(code) {
       const row = draft.rows[code];
@@ -63638,9 +63652,9 @@ window.CDOS_PERSIST = (function () {
           setSpreadText(null);
           setClampNote("");
         }
-      }, /*#__PURE__*/React.createElement("b", null, code), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", rates.formatSpot(row.mid))) : /*#__PURE__*/React.createElement("span", {
+      }, /*#__PURE__*/React.createElement("b", null, quote.label), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", quote.spot)) : /*#__PURE__*/React.createElement("span", {
         className: "phone-rate-main"
-      }, /*#__PURE__*/React.createElement("b", null, code), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", rates.formatSpot(row.mid))), /*#__PURE__*/React.createElement("span", {
+      }, /*#__PURE__*/React.createElement("b", null, quote.label), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", quote.spot)), /*#__PURE__*/React.createElement("span", {
         className: "phone-rate-px"
       }, /*#__PURE__*/React.createElement("span", {
         className: "is-buy"
@@ -63742,7 +63756,7 @@ window.CDOS_PERSIST = (function () {
         return /*#__PURE__*/React.createElement("div", {
           key: code,
           className: "phone-rate-board-r"
-        }, /*#__PURE__*/React.createElement("b", null, code), /*#__PURE__*/React.createElement("span", null, quote.buy), /*#__PURE__*/React.createElement("span", null, quote.sell));
+        }, /*#__PURE__*/React.createElement("b", null, quote.label), /*#__PURE__*/React.createElement("span", null, quote.buy), /*#__PURE__*/React.createElement("span", null, quote.sell));
       }), note ? /*#__PURE__*/React.createElement("p", null, note) : null));
     }
     const sticky = can ? /*#__PURE__*/React.createElement(shell.StickyAction, {

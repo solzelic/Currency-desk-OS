@@ -336,7 +336,13 @@ A manager or an admin edits the buy margin, the sell margin, the
 spot, a spread on one currency, whether that currency is on the
 board, and the order. The first six places are the homepage group.
 Public preview shows what the homepage will show after publish, and
-it says it is not live yet. One Publish button posts
+it says it is not live yet. Buy and sell on a row are stacked and
+right aligned. The figures are CAD per 1 unit, the print `fmtCad`
+uses on the public rates page. A unit under 0.05 CAD stays per 1.
+That page does not print JPY x100. The editor, the preview, and the
+teller list call `boardQuote`. Publish confirm is a full page with
+16px sides, the changes in a card, Back at the top left, and Publish
+now as the sticky button. One Publish button posts
 `/api/rates/publish`. The server permission `rates:change` is what
 allows it, and only a manager or an admin holds it. A teller or a
 supervisor who posts the route gets 403 and the sentence "Only a
