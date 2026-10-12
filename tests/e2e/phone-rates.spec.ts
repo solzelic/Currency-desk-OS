@@ -48,12 +48,8 @@ async function ensureTillOpen(page: Page): Promise<void> {
   await expect(line).toContainText("Till open");
 }
 
-function clock12(ms: number): string {
-  const d = new Date(ms);
-  let h = d.getHours();
-  const ap = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return h + ":" + String(d.getMinutes()).padStart(2, "0") + " " + ap;
+async function clock12(page: Page, ms: number): Promise<string> {
+  return page.evaluate((at) => window.CDOS.formatPhoneTime(new Date(at)), ms);
 }
 
 for (const width of [360, 390]) {
@@ -154,7 +150,7 @@ test("a fresh provider snapshot is the only Live line", async ({ page }) => {
   }));
   await atDesk(page);
   await openRates(page);
-  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Live, updated " + clock12(fetchedAt));
+  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Live, updated " + await clock12(page, fetchedAt));
 });
 
 test("a stale snapshot does not say Live", async ({ page }) => {
@@ -185,7 +181,7 @@ test("a lock says Rates locked, with its time when we have one", async ({ page }
   await landOnDesktop(page);
   await dismissTour(page);
   await openRates(page);
-  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Rates locked at " + clock12(at));
+  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Rates locked at " + await clock12(page, at));
 });
 
 test("rates that fail to load say so, and do not keep old prices", async ({ page }) => {

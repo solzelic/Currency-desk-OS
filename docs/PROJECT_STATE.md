@@ -582,7 +582,7 @@ existing New transaction with that currency, side, and amount, and
 the cursor on Client. New deal starts a deal with no quote. Amounts
 go through `formatPhoneMoney`. The status line says Live only for a
 real provider snapshot from the last two hours, and the time reads
-like "3:02 PM". A lock says Rates locked. Anything else says when it was last
+like "3:02 pm", through `formatPhoneTime`. A lock says Rates locked. Anything else says when it was last
 updated, or that it is not a live feed. There is no Example data
 tag. A board with nothing to quote says so. Feed, margins, and
 publish stay on the desktop Rate Board and in Pricing. An owner or

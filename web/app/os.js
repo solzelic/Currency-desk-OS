@@ -62995,17 +62995,14 @@ window.CDOS_PERSIST = (function () {
     return text + ' ' + (code || HOME_FALLBACK);
   }
 
-  /* 12-hour, uppercase, one space: "3:02 PM". A locale string can
-     use a narrow space or "p.m.", and the sweep treats that as a
-     different time. This screen does not print a calendar date.
-     One would read "Oct 11, 2026". */
+  /* The shared clock. 15:02 is "3:02 pm". A calendar day would
+     go through formatPhoneDate and read "Oct 11, 2026". This
+     screen names a time only. An instant uses the branch zone,
+     which defaults to America/Toronto. */
   function clock12(ms) {
-    const d = new Date(ms);
-    if (isNaN(+d)) return '';
-    let h = d.getHours();
-    const ap = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return h + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + ap;
+    const fn = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof fn !== 'function' || !ms) return '';
+    return fn(new Date(ms)) || '';
   }
 
   /* Live only when a real provider snapshot is fresh. A locked board,
