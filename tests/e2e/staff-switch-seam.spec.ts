@@ -93,7 +93,7 @@ test("switching from the avatar menu posts the deal as the next person", async (
     const opening = await fetch("/api/ledger/opening-balances", {
       method: "POST", headers, body: JSON.stringify({ balances: { CAD: "25000.00", USD: "8000.00" } }),
     });
-    const session = await fetch("/api/ledger/till-sessions/open", { method: "POST", headers });
+    const session = await fetch("/api/ledger/till-sessions/open", { method: "POST", headers, body: "{}" });
     const sessionBody = await session.json().catch(() => ({}));
     const customer = await fetch("/api/ledger/customers", {
       method: "POST", headers,
