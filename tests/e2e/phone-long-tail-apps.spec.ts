@@ -1,7 +1,7 @@
 /* The remaining More apps on a phone. Calculator and Tagged deals
    are the long-tail screen. Dashboard, Loan calculator, and Store
    say to open them on a computer. At 1280 the desktop is unchanged. */
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
@@ -43,6 +43,12 @@ async function openMore(page: Page, id: string): Promise<void> {
   await settled(page);
 }
 
+async function backAboveTitle(screen: Locator): Promise<void> {
+  const back = await screen.getByRole("button", { name: "More" }).boundingBox();
+  const title = await screen.locator(".phone-title h1").boundingBox();
+  expect(back && title && back.y < title.y).toBe(true);
+}
+
 async function shot(page: Page, name: string): Promise<void> {
   if (!shotDir) return;
   await page.screenshot({ path: `${shotDir}/${name}.png` });
@@ -73,6 +79,7 @@ test("every remaining more app is a phone screen at 360 and 390", async ({ page 
   await expect(calc.locator(".phone-stat-value")).toContainText(/[A-Z]{3}|No rate yet/);
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
+    await backAboveTitle(calc);
     await shot(page, `longtail_calc_${width}`);
   }
   await phoneSweep(page, { roots: ['.longtail[data-app="calc"]'] });
@@ -85,6 +92,7 @@ test("every remaining more app is a phone screen at 360 and 390", async ({ page 
   await expect(tagged.getByText("No tagged transactions yet")).toHaveCount(0);
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
+    await backAboveTitle(tagged);
     await shot(page, `longtail_tagged_${width}`);
   }
   await phoneSweep(page, { roots: ['.longtail[data-app="tagged"]'] });
@@ -105,6 +113,7 @@ test("every remaining more app is a phone screen at 360 and 390", async ({ page 
     await expect(page.locator(".ln-wrap, .st-wrap")).toHaveCount(0);
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
+      await backAboveTitle(screen);
       await shot(page, `longtail_${id}_${width}`);
     }
     await phoneSweep(page, { roots: [`.longtail[data-app="${id}"]`] });
