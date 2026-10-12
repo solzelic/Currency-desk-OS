@@ -136,7 +136,7 @@
           </div>
         )}
         {props.state === 'empty' && (
-          <Phone.EmptyState title={props.emptyText} actionLabel={props.emptyAction} onAction={props.onEmpty} />
+          <Phone.EmptyState title={props.emptyText} message={props.emptyBody} actionLabel={props.emptyAction} onAction={props.onEmpty} />
         )}
         {ready && cards.length > 0 && <Phone.SummaryCards columns={cards.length > 1 ? 2 : 3} cards={cards} />}
         {filters}

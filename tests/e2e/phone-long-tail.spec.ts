@@ -290,7 +290,10 @@ test.describe("vault on a phone", () => {
       });
       expect(backType).toEqual({ size: "16px", line: "24px", weight: "600", w: 24, h: 24 });
       await backAboveTitle(screen);
-      await expect(screen.getByText(/mid-market rate/)).toBeVisible();
+      const cap = screen.locator(".phone-stat-cap");
+      await expect(cap).toHaveText(/^\d+ currenc(?:y|ies) · mid-market rate, \d{1,2}:\d{2} (AM|PM)$/);
+      await expect(cap).not.toContainText("\u2014");
+      await expect(cap).not.toContainText("\u2013");
       await expect(screen.getByText("Running low")).toHaveCount(0);
       await expect(screen.getByText("Canadian dollar")).toBeVisible();
       await expect(screen.getByText("No rate yet")).toHaveCount(0);
@@ -321,6 +324,19 @@ test.describe("vault on a phone", () => {
       await expect.poll(async () => Number((await book.till())[issued] || 0), { timeout: 20_000 }).toBeCloseTo(before + 1, 2);
       await expect(page.getByText("Open the vault with a starting count first.")).toHaveCount(0);
     }
+    const screen = page.locator('.longtail[data-app="vault"]');
+    await page.evaluate(() => {
+      const raw = localStorage.getItem("yorkfx_rates_v1");
+      const cfg = raw ? JSON.parse(raw) : {};
+      delete cfg.publishedAt;
+      localStorage.setItem("yorkfx_rates_v1", JSON.stringify(cfg));
+      window.dispatchEvent(new StorageEvent("storage", { key: "yorkfx_rates_v1" }));
+    });
+    const quiet = screen.locator(".phone-stat-cap");
+    await expect(quiet).toHaveText(/^\d+ currenc(?:y|ies) · mid-market rate$/);
+    await expect(quiet).not.toContainText("\u2014");
+    await expect(quiet).not.toContainText("\u2013");
+    await expect(quiet).not.toContainText(",");
     /* A double tap can reopen Give out a float after the sheet closes.
        Do not click Cancel: a ledger poll re-renders that sheet and the
        click never settles. The empty amount placeholders are dark
@@ -357,8 +373,11 @@ test.describe("vault on a phone", () => {
         const before = await book.till();
         await openMore(page, "vault");
         const screen = page.locator('.longtail[data-app="vault"]');
-        await expect(screen.getByText("This vault has no opening position on the ledger, so there is nothing it can say the safe holds.")).toBeVisible();
-        await expect(screen.getByRole("button", { name: "Put the vault on the ledger" })).toBeVisible();
+        await expect(screen.getByRole("heading", { name: "No opening count yet" })).toBeVisible();
+        await expect(screen.getByText("Count the safe once so the vault knows what it holds.")).toBeVisible();
+        await expect(screen.getByRole("button", { name: "Count the vault" })).toBeVisible();
+        await expect(screen).not.toContainText("\u2014");
+        await expect(screen).not.toContainText("\u2013");
         await expect(screen.getByRole("button", { name: "Give out a float" })).toHaveCount(0);
         await backAboveTitle(screen);
         await shot(page, `longtail_empty_${width}`);

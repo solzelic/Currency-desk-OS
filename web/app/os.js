@@ -63301,6 +63301,7 @@ window.CDOS_PERSIST = (function () {
       className: "phone-error-detail"
     }, props.errorDetail) : null), props.state === 'empty' && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: props.emptyText,
+      message: props.emptyBody,
       actionLabel: props.emptyAction,
       onAction: props.onEmpty
     }), ready && cards.length > 0 && /*#__PURE__*/React.createElement(Phone.SummaryCards, {
@@ -63405,9 +63406,23 @@ window.CDOS_PERSIST = (function () {
   function homeOf(position) {
     return position && position.homeCurrency || window.CDOS.deskHomeCcy && window.CDOS.deskHomeCcy() || 'CAD';
   }
-  function clockLabel(date) {
-    if (!date || !window.CDOS.formatPhoneTime) return '';
-    return window.CDOS.formatPhoneTime(date);
+
+  /* The board's publishedAt is epoch milliseconds. A Date needs the
+     shop zone or the formatter returns a dash. No stamp, or a dash,
+     means the time clause is left off. */
+  function boardClock(settings) {
+    let at = null;
+    try {
+      const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+      if (cfg && cfg.publishedAt != null && cfg.publishedAt !== '') at = cfg.publishedAt;
+    } catch (e) {/* A missing board has no updated time. */}
+    const fn = window.CDOS.formatPhoneTime;
+    if (at == null || typeof fn !== 'function') return '';
+    const zone = settings && settings.timezone || 'America/Toronto';
+    const instant = typeof at === 'number' ? new Date(at) : at;
+    const text = fn(instant, zone);
+    if (!text || /[\u2014\u2013]/.test(text)) return '';
+    return /^\d{1,2}:\d{2} (AM|PM)$/.test(text) ? text : '';
   }
 
   /* Sum of the home figures the position already returned. A currency
@@ -63648,11 +63663,7 @@ window.CDOS_PERSIST = (function () {
     const [sheet, setSheet] = useState(false);
     const [detail, setDetail] = useState(null);
     const [toast, setToast] = useState('');
-    const [readAt, setReadAt] = useState(null);
     const [ratesAt, setRatesAt] = useState(0);
-    useEffect(() => {
-      if (!loading && position) setReadAt(new Date());
-    }, [loading, position]);
     useEffect(() => {
       const bump = () => setRatesAt(n => n + 1);
       window.addEventListener('storage', bump);
@@ -63680,18 +63691,20 @@ window.CDOS_PERSIST = (function () {
     const match = text => !needle || String(text || '').toLowerCase().includes(needle);
     let state = 'ready';
     let emptyText = '';
+    let emptyBody = '';
     let emptyAction = '';
     if (loading) state = 'loading';else if (error) state = 'error';else if (!rows) {
       state = 'empty';
-      emptyText = 'This vault has no opening position on the ledger, so there is nothing it can say the safe holds.';
-      emptyAction = 'Put the vault on the ledger';
+      emptyText = 'No opening count yet';
+      emptyBody = 'Count the safe once so the vault knows what it holds.';
+      emptyAction = 'Count the vault';
     }
     const held = rows || [];
     const shown = held.filter(r => match(r.name + ' ' + r.code));
     const total = position && position.vaultTotals ? position.vaultTotals.marketValueHome : null;
-    const when = clockLabel(readAt);
     const known = knownHomeWorth(held);
     const pricedOnBoard = held.some(r => r.fromBoard);
+    const when = pricedOnBoard ? boardClock(settings) : '';
     /* homePerUnit is the board mid: CAD per 1 unit, the same figure
        cadValue uses. Buy and sell are that mid plus or minus the
        margin, and this total does not use them. */
@@ -63816,6 +63829,7 @@ window.CDOS_PERSIST = (function () {
       errorDetail: error,
       onRetry: onRetry,
       emptyText: emptyText,
+      emptyBody: emptyBody,
       emptyAction: emptyAction,
       onEmpty: onRecordOpening,
       summary: state === 'ready' ? tab === 'profit' ? [{

@@ -225,7 +225,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the board without writing `ledger_rates`. A missing ledger figure
   is valued with `homePerUnit`, the board's mid-market rate (CAD per
   unit). Buy and sell are that mid plus or minus the margin, and the
-  vault does not use them. The headline says "mid-market rate". The
+  vault does not use them. The headline says "mid-market rate" and,
+  when the board has a published time, that time in 12-hour form. No
+  stamp means the time clause is left off, with no dash. An unopened
+  vault says "No opening count yet" and offers "Count the vault",
+  which opens the existing count. The
   desktop vault still prices from `ledger_rates` and shows no rate
   until that table has a row. A
   currency that still has no rate says the rate board has not

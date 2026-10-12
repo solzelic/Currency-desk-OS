@@ -560,7 +560,7 @@ the string in.
 | `chips`, `chip`, `onChip` | Filters when there are more than four sub-views. |
 | `search`, `onSearch`, `searchPlaceholder` | The search field. |
 | `state`, `loadingText`, `errorText`, `errorDetail`, `onRetry` | Honest states. `errorDetail` is the real message. |
-| `emptyText`, `emptyAction`, `onEmpty` | Empty. Omit `emptyAction` when there is nothing to do. |
+| `emptyText`, `emptyBody`, `emptyAction`, `onEmpty` | Empty. `emptyText` is the title, `emptyBody` the sentence. Omit `emptyAction` when there is nothing to do. |
 | `action`, `onAction` | The one button. Omit `action` on a read-only screen. |
 | `toast` | One line of feedback. |
 | `sheet` | A full-screen step, drawn by the caller. |
@@ -578,7 +578,10 @@ When the ledger figure is absent, the phone values the row at that
 same rate. `homePerUnit` is the board mid (CAD per unit), which is
 what `cadValue` uses. Buy and sell are that mid plus or minus the
 published margin, and the vault total does not use them. The headline
-says "N currencies · mid-market rate, 3:02 PM". The desktop position
+says "N currencies · mid-market rate, 3:02 PM" when the board has a
+published time. The clock is that `publishedAt`, in the shop's zone,
+12-hour. With no stamp the time clause is left off. A dash is never
+shown. The desktop position
 still reads `ledger_rates` only, so on this seed it shows no rate.
 That desktop gap is a follow-up. A currency neither source can price
 is not counted as zero. The row and the headline say "The rate board
@@ -598,9 +601,9 @@ currency and reuses it on a second tap, so the ledger records the
 movement once. An unopened vault is refused by that endpoint with
 "Open the vault with a starting count first."
 
-The empty unopened screen says the safe has no opening position and
-offers only "Put the vault on the ledger", which is the existing
-opening dialog. "Give out a float" stays hidden until that count
+The empty unopened screen says "No opening count yet" and "Count the
+safe once so the vault knows what it holds." The button is "Count the
+vault", which opens the existing opening dialog. "Give out a float" stays hidden until that count
 exists, so the phone cannot reach the server's refusal. The server
 still refuses a till movement from an unopened vault.
 A tracked vault that holds nothing says so. A cashier settling a float
