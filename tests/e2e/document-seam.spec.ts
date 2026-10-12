@@ -260,6 +260,30 @@ async function generate(page: Page, card: RegExp) {
 }
 const sheet = (page: Page) => page.locator("#cdos-report-doc").innerText();
 
+/* The heading can paint as soon as the till session arrives. The totals
+   come from a second read, and until that read lands the sheet says
+   "reading the ledger…". Snapshotting in that gap records a dash where
+   the count will be. Issue #158's flake: a 1.5s delay on the summary
+   made this fail every time. */
+async function readSignOffSheet(page: Page, sessionNumber: number): Promise<string> {
+  await expect
+    .poll(() => sheet(page), { timeout: 30_000 })
+    .toContain(`Session #${sessionNumber}`);
+  await expect
+    .poll(() => sheet(page), { timeout: 30_000 })
+    .not.toMatch(/reading the ledger/i);
+  return sheet(page);
+}
+
+/* Hold the sheet's own summary read. The session read is not held, so
+   the heading is on the page while the totals are still loading. */
+async function delayLedgerSummary(page: Page, ms = 1_500): Promise<void> {
+  await page.route("**/api/ledger/summary**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    await route.continue();
+  });
+}
+
 /* ------------------------------------------------------------------
    1. THE WALK THAT WAS AUDITED
 
@@ -292,14 +316,15 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   const till = await server.session();
   const pack = (await server.jurisdiction()).pack;
 
+  /* The summary the sheet fetches for itself, held long enough that
+     the session heading is already painted. The read below waits until
+     "reading the ledger…" has gone. */
+  await delayLedgerSummary(page);
   await generate(page, /End-of-Day Sign-Off/);
-  /* The document fetches for itself, so "the node is visible" and "the
-     answers have landed" are different moments. The footer date is also
-     the wall clock when the session has not arrived yet, so wait for the
-     session number, which only that fetch can print. */
   /* Session number and the day's count come from different fetches.
      The number can paint while the summary is still "reading the ledger",
-     which is what a zone just past midnight (Pacific/Auckland) hit. */
+     which is what a zone just past midnight (Pacific/Auckland) hit.
+     Wait for the count, then for that placeholder to leave. */
   await expect
     .poll(() => sheet(page), { timeout: 30_000 })
     .toMatch(
@@ -308,6 +333,7 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
         "i",
       ),
     );
+  await expect.poll(() => sheet(page), { timeout: 30_000 }).not.toMatch(/reading the ledger/i);
   const doc = await sheet(page);
 
   // ---- the date and the day ----
@@ -402,6 +428,63 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   // ---- and the demo book's fingerprints, gone ----
   for (const ghost of ["32,700", "222.97", "594,049", "249,270", "130,566"]) {
     expect(doc, `the demo book's ${ghost} is on a signed document`).not.toContain(ghost);
+  }
+});
+
+/* ------------------------------------------------------------------
+   Issue #158. The server clock is on Israel time.
+
+   On main at 5216ef4, TZ=Asia/Jerusalem, this same walk headed the
+   sheet "Sunday, October 11, 2026 · Session #1" and printed
+   Transactions 0 after a deal on 12 October. The session DATE was
+   read with toISOString(), so a process zone ahead of UTC moved the
+   trading day back one day, and the sheet asked the ledger for that
+   day. The branch calendar date is the one that belongs on the sheet.
+   ------------------------------------------------------------------ */
+test("the sign-off sheet keeps the branch calendar date when the server clock is east of UTC", async ({ page }) => {
+  await signInAtDesk(page);
+  const session = await ensureOpenSession(page);
+  expect(session, `the till would not open: ${session}`).toBe("open");
+  const topUp = await ensureDrawerHas(page, { CAD: 5000, USD: 2000 });
+  expect(topUp, `the drawer could not be topped up: ${topUp}`).not.toMatch(/\d{3}/);
+  const board = await ensureBoard(page);
+  expect(board, `no rate board to price a quote against: ${board}`).toMatch(/published/);
+  await signInAtDesk(page);
+
+  const key = `doc-seam-zone-${Date.now()}`;
+  const deal = await postOneDeal(page, key);
+  expect(deal.ok, `no deal could be posted: ${deal.why}`).toBe(true);
+  const closed = await countExactlyAndClose(page, key);
+  expect(closed.ok, `the day would not close: ${closed.why}`).toBe(true);
+
+  await page.reload();
+  const server = book(page);
+  const till = await server.session();
+  const zone = till.day?.timeZone as string | undefined;
+  expect(zone, "the session names the branch zone").toBeTruthy();
+  const expected = calendarDate(new Date(), zone!);
+  expect(
+    till.session.businessDate,
+    "the session date is the branch calendar date, not a UTC shift of the stored DATE",
+  ).toBe(expected);
+
+  const day = await server.summary(await todayWindow(page));
+  expect(day.posted, "the deal posted on this business date is inside the sheet's window").toBeGreaterThan(0);
+
+  await generate(page, /End-of-Day Sign-Off/);
+  const doc = await readSignOffSheet(page, till.session.sessionNumber);
+  expect(doc).toContain(longCalendarDate(expected));
+  expect(doc).toContain(`trading day ${expected}`);
+  expect(doc).toContain(`Session #${till.session.sessionNumber}`);
+  expect(doc).toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
+
+  /* The date main printed: local midnight of the real business date,
+     then toISOString(). Ahead of UTC that is the previous day, and
+     the sheet must not be headed with it. */
+  const shifted = dateShiftedByProcessZone(expected);
+  if (shifted !== expected) {
+    expect(doc, "the process zone must not move the sheet back a day").not.toContain(longCalendarDate(shifted));
+    expect(doc).not.toContain(`trading day ${shifted}`);
   }
 });
 
@@ -606,6 +689,26 @@ function calendarDate(at: Date, timeZone: string): string {
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
+/* Noon UTC, formatted in UTC, so the heading is the calendar date and
+   not a local midnight. This is how the sheet itself prints the date. */
+function longCalendarDate(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-CA", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/* node-pg's DATE is local midnight. toISOString() of that instant is
+   the previous calendar day when the process zone is ahead of UTC.
+   That is the read main used for the session's business date. */
+function dateShiftedByProcessZone(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year!, month! - 1, day!).toISOString().slice(0, 10);
+}
+
 function nextDate(iso: string): string {
   const [year, month, day] = iso.split("-").map(Number);
   const utc = new Date(Date.UTC(year!, month! - 1, day!));
@@ -687,12 +790,8 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
         expect(day.posted, "the deal is inside the session's window").toBeGreaterThan(0);
 
         await generate(page, /End-of-Day Sign-Off/);
-        /* The session number can paint before the day's totals arrive.
-           Wait for the count, which is the figure this case exists for. */
-        await expect
-          .poll(() => sheet(page), { timeout: 30_000 })
-          .toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
-        const doc = await sheet(page);
+        const doc = await readSignOffSheet(page, till.session.sessionNumber);
+        expect(doc).toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
         const heading = new Date(`${expected}T12:00:00Z`).toLocaleDateString("en-CA", {
           timeZone: "UTC",
           weekday: "long",
