@@ -53,6 +53,7 @@
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
+import { civilDate } from "../ledger/civil-date.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 
@@ -1275,8 +1276,7 @@ const blank = (value: string | null | undefined) => {
   return trimmed === "" ? null : trimmed;
 };
 
-const isoDate = (value: unknown) =>
-  value == null ? null : new Date(value as string | Date).toISOString().slice(0, 10);
+const isoDate = (value: unknown) => civilDate(value);
 
 function clientJson(
   row: Record<string, unknown>,

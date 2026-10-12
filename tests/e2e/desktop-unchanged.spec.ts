@@ -15,12 +15,17 @@
    fails. The break proof parses the sentence this file throws.
 
    Text is Archivo and Space Mono from tests/e2e/fonts, served in place
-   of fonts.googleapis.com. The runner's fontconfig is not a face in
-   this picture. A shot is refused when those faces have not loaded.
+   of fonts.googleapis.com. U+2192 and U+2265 are not in those latin
+   files, so the capture also serves Noto Sans for them on Archivo and
+   DejaVu Sans Mono for them on Space Mono. The runner's fontconfig is
+   not a face in this picture. A shot is refused when those faces have
+   not loaded, including the arrow and the greater-or-equal sign.
 
-   The page clock is 2026-06-18T15:02:00.000Z. The menu bar is 24-hour,
-   so it reads 15:02. The audit seed's 09:05 is the AM case: the desk
-   paints it 9:05 AM, and 15:02 paints 3:02 PM. "2m 00s ago" is that
+   The browser zone is UTC. The page clock is 2026-06-18T15:02:00.000Z.
+   The menu bar is 24-hour, so it reads 15:02. A machine set to
+   Asia/Jerusalem would otherwise paint 18:02. The audit seed's 09:05
+   is the AM case: the desk paints it 9:05 AM, and 15:02 paints 3:02 PM.
+   "2m 00s ago" is that
    same clock minus two minutes, stored as the rate board's publishedAt
    before the page scripts run.
 
@@ -32,6 +37,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Locator, Page, TestInfo } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
+
+/* The pinned instant is 15:02 UTC. The menu bar formats local time, so
+   the browser zone has to be UTC or Jerusalem paints 18:02. */
+test.use({ timezoneId: "UTC" });
 
 const FONT_DIR = path.join(process.cwd(), "tests", "e2e", "fonts");
 const DESK_FONTS_CSS = readFileSync(path.join(FONT_DIR, "desk-faces.css"), "utf8");
@@ -353,6 +362,7 @@ async function fontsReady(page: Page): Promise<void> {
           continue;
         }
         if (!fonts.check(spec)) missing.push(spec);
+        if (!fonts.check(spec, "→≥")) missing.push(spec + " →≥");
       }
       return missing;
     });

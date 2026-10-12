@@ -7,12 +7,16 @@
    A wall clock ("15:02") and a calendar day do not need a zone.
    A Date, or a string with Z or a numeric offset, is an instant.
    The caller passes the shop's zone. Omitting it does not assume
-   Toronto. An impossible date, a bad clock, a bad zone, or a
-   malformed amount is an em dash, never a computed value.
-   Blank stays blank. */
+   Toronto. A clock or a date is accepted only when the whole string
+   is that value: "junk 9:05 junk", "ref 12:34", "2026-10-11 junk"
+   and "0000-01-01" are not times or dates. An impossible date, a
+   bad clock, a bad zone, or any of those is the word Unknown, never
+   a computed value. A malformed amount is an em dash. Blank stays
+   blank. */
 (function () {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const DASH = '\u2014';
+  const UNKNOWN = 'Unknown';
 
   /* Minor units. Mirrors EXCEPTIONS in server/src/ledger/currencies.ts.
      The browser cannot import that module. Change both together. */
@@ -43,34 +47,34 @@
   }
 
   function isInstantText(text) {
-    return /\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
   }
 
   function daysInMonth(year, month) {
     return new Date(Date.UTC(year, month, 0)).getUTCDate();
   }
 
-  function calendarParts(text) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
-    if (!m) return null;
-    const year = Number(m[1]);
-    const month = Number(m[2]);
-    const day = Number(m[3]);
-    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+  /* Year 0 is not a civil year we will print. The match is the whole
+     string: a date with words after it is not that date. */
+  function calendarFrom(yearText, monthText, dayText) {
+    if (!/^\d{4}$/.test(yearText) || !/^\d{2}$/.test(monthText) || !/^\d{2}$/.test(dayText)) return null;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
     return { year: year, month: month, day: day };
   }
 
-  function wallClock(text) {
-    const m = /(?:^|[ T])(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:\s*([ap]m)\b)?/i.exec(text);
-    if (!m) return null;
-    let hour = Number(m[1]);
-    const minute = Number(m[2]);
+  function clockFrom(hourText, minuteText, ap) {
+    if (!/^\d{1,2}$/.test(hourText) || !/^\d{2}$/.test(minuteText)) return null;
+    let hour = Number(hourText);
+    const minute = Number(minuteText);
     if (minute > 59) return null;
-    const ap = m[3] ? m[3].toLowerCase() : '';
-    if (ap) {
+    const suffix = ap ? String(ap).toLowerCase() : '';
+    if (suffix) {
       /* "13:02 AM" is not a clock. A suffix only belongs on 1–12. */
       if (hour < 1 || hour > 12) return null;
-      const pm = ap === 'pm';
+      const pm = suffix === 'pm';
       if (pm && hour < 12) hour += 12;
       if (!pm && hour === 12) hour = 0;
     } else if (hour > 23) {
@@ -135,25 +139,38 @@
       const parts = instantParts(parsed, timeZone);
       return parts ? { kind: 'instant', parts: parts } : { kind: 'bad' };
     }
-    return {
-      kind: 'wall',
-      calendar: calendarParts(text),
-      clock: wallClock(text),
-    };
+    const dateClock = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(text);
+    if (dateClock) {
+      const calendar = calendarFrom(dateClock[1], dateClock[2], dateClock[3]);
+      const clock = clockFrom(dateClock[4], dateClock[5], '');
+      if (!calendar || !clock) return { kind: 'bad' };
+      return { kind: 'wall', calendar: calendar, clock: clock };
+    }
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (dateOnly) {
+      const calendar = calendarFrom(dateOnly[1], dateOnly[2], dateOnly[3]);
+      return calendar ? { kind: 'wall', calendar: calendar, clock: null } : { kind: 'bad' };
+    }
+    const clockOnly = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:\s*([ap]m))?$/i.exec(text);
+    if (clockOnly) {
+      const clock = clockFrom(clockOnly[1], clockOnly[2], clockOnly[3] || '');
+      return clock ? { kind: 'wall', calendar: null, clock: clock } : { kind: 'bad' };
+    }
+    return { kind: 'bad' };
   }
 
   function formatPhoneTime(value, timeZone) {
     const zone = zoneOf(timeZone);
-    if (zone === null) return DASH;
+    if (zone === null) return UNKNOWN;
     if (value == null || value === '') return '';
     const readValue = read(value, zone);
-    if (!readValue || readValue.kind === 'bad') return DASH;
+    if (!readValue || readValue.kind === 'bad') return UNKNOWN;
     if (readValue.kind === 'instant') {
-      if (!zone) return DASH;
-      return clockLabel(readValue.parts.hour, readValue.parts.minute) || DASH;
+      if (!zone) return UNKNOWN;
+      return clockLabel(readValue.parts.hour, readValue.parts.minute) || UNKNOWN;
     }
-    if (!readValue.clock) return DASH;
-    return clockLabel(readValue.clock.hour, readValue.clock.minute) || DASH;
+    if (!readValue.clock) return UNKNOWN;
+    return clockLabel(readValue.clock.hour, readValue.clock.minute) || UNKNOWN;
   }
 
   /* A list heading. Today is "Today, Oct 11". Any other calendar day
@@ -163,27 +180,28 @@
     if (value == null || value === '') return '';
     const text = String(value).trim();
     if (!text) return '';
-    if (isInstantText(text)) return DASH;
-    const cal = calendarParts(text);
-    if (!cal) return DASH;
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (!dateOnly) return UNKNOWN;
+    const cal = calendarFrom(dateOnly[1], dateOnly[2], dateOnly[3]);
+    if (!cal) return UNKNOWN;
     const monthDay = MONTHS[cal.month - 1] + ' ' + cal.day;
-    const todayText = String(today || '').trim().slice(0, 10);
-    if (todayText && text.slice(0, 10) === todayText) return 'Today, ' + monthDay;
+    const todayText = String(today || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(todayText) && text === todayText) return 'Today, ' + monthDay;
     return monthDay + ', ' + cal.year;
   }
 
   function formatPhoneDate(value, timeZone) {
     const zone = zoneOf(timeZone);
-    if (zone === null) return DASH;
+    if (zone === null) return UNKNOWN;
     if (value == null || value === '') return '';
     const readValue = read(value, zone);
-    if (!readValue || readValue.kind === 'bad') return DASH;
+    if (!readValue || readValue.kind === 'bad') return UNKNOWN;
     if (readValue.kind === 'instant') {
-      if (!zone) return DASH;
-      return dateLabel(readValue.parts.year, readValue.parts.month, readValue.parts.day) || DASH;
+      if (!zone) return UNKNOWN;
+      return dateLabel(readValue.parts.year, readValue.parts.month, readValue.parts.day) || UNKNOWN;
     }
-    if (!readValue.calendar) return DASH;
-    return dateLabel(readValue.calendar.year, readValue.calendar.month, readValue.calendar.day) || DASH;
+    if (!readValue.calendar) return UNKNOWN;
+    return dateLabel(readValue.calendar.year, readValue.calendar.month, readValue.calendar.day) || UNKNOWN;
   }
 
   function groupDigits(ints) {

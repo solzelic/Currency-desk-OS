@@ -40048,8 +40048,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     children
   }) => ReactDOM.createPortal(children, document.body);
   const addDays = (date, n) => {
-    const d = new Date(date + 'T00:00:00');
-    d.setDate(d.getDate() + (+n || 0));
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+    if (!m) return '';
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    d.setUTCDate(d.getUTCDate() + (+n || 0));
     return d.toISOString().slice(0, 10);
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
@@ -49699,6 +49701,26 @@ ${snap}`;
      four places, including the sentence claiming what the law requires,
      while the rest of the product honoured the owner's setting. */
   const limitOf = settings => reportingLimit(settings);
+  /* The sheet's day is a YYYY-MM-DD civil date. Formatting it through
+     local midnight would name the previous day in a zone ahead of UTC.
+     Noon UTC of that same calendar day does not move. */
+  const civilLongDate = iso => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const stamp = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12));
+    if (Number.isNaN(stamp.getTime())) return String(iso || '');
+    try {
+      return stamp.toLocaleDateString('en-CA', {
+        timeZone: 'UTC',
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return String(iso || '');
+    }
+  };
 
   /* WHO REGULATES THIS DESK, AND WHAT THE FORM IS CALLED.
       This file printed "Prepared for FINTRAC record-keeping under the
@@ -50688,18 +50710,7 @@ ${snap}`;
            replaces "Day 1", which was a counter kept in the browser. */
         const sheetDate = tillDay.session && tillDay.session.businessDate || businessDate();
         const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
-        const longDate = (() => {
-          try {
-            return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric'
-            });
-          } catch (e) {
-            return sheetDate;
-          }
-        })();
+        const longDate = civilLongDate(sheetDate);
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "End-of-Day Sign-Off",
@@ -62031,12 +62042,16 @@ window.CDOS_PERSIST = (function () {
    A wall clock ("15:02") and a calendar day do not need a zone.
    A Date, or a string with Z or a numeric offset, is an instant.
    The caller passes the shop's zone. Omitting it does not assume
-   Toronto. An impossible date, a bad clock, a bad zone, or a
-   malformed amount is an em dash, never a computed value.
-   Blank stays blank. */
+   Toronto. A clock or a date is accepted only when the whole string
+   is that value: "junk 9:05 junk", "ref 12:34", "2026-10-11 junk"
+   and "0000-01-01" are not times or dates. An impossible date, a
+   bad clock, a bad zone, or any of those is the word Unknown, never
+   a computed value. A malformed amount is an em dash. Blank stays
+   blank. */
 (function () {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const DASH = '\u2014';
+  const UNKNOWN = 'Unknown';
 
   /* Minor units. Mirrors EXCEPTIONS in server/src/ledger/currencies.ts.
      The browser cannot import that module. Change both together. */
@@ -62067,34 +62082,34 @@ window.CDOS_PERSIST = (function () {
   }
 
   function isInstantText(text) {
-    return /\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
   }
 
   function daysInMonth(year, month) {
     return new Date(Date.UTC(year, month, 0)).getUTCDate();
   }
 
-  function calendarParts(text) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
-    if (!m) return null;
-    const year = Number(m[1]);
-    const month = Number(m[2]);
-    const day = Number(m[3]);
-    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+  /* Year 0 is not a civil year we will print. The match is the whole
+     string: a date with words after it is not that date. */
+  function calendarFrom(yearText, monthText, dayText) {
+    if (!/^\d{4}$/.test(yearText) || !/^\d{2}$/.test(monthText) || !/^\d{2}$/.test(dayText)) return null;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
     return { year: year, month: month, day: day };
   }
 
-  function wallClock(text) {
-    const m = /(?:^|[ T])(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:\s*([ap]m)\b)?/i.exec(text);
-    if (!m) return null;
-    let hour = Number(m[1]);
-    const minute = Number(m[2]);
+  function clockFrom(hourText, minuteText, ap) {
+    if (!/^\d{1,2}$/.test(hourText) || !/^\d{2}$/.test(minuteText)) return null;
+    let hour = Number(hourText);
+    const minute = Number(minuteText);
     if (minute > 59) return null;
-    const ap = m[3] ? m[3].toLowerCase() : '';
-    if (ap) {
+    const suffix = ap ? String(ap).toLowerCase() : '';
+    if (suffix) {
       /* "13:02 AM" is not a clock. A suffix only belongs on 1–12. */
       if (hour < 1 || hour > 12) return null;
-      const pm = ap === 'pm';
+      const pm = suffix === 'pm';
       if (pm && hour < 12) hour += 12;
       if (!pm && hour === 12) hour = 0;
     } else if (hour > 23) {
@@ -62159,25 +62174,38 @@ window.CDOS_PERSIST = (function () {
       const parts = instantParts(parsed, timeZone);
       return parts ? { kind: 'instant', parts: parts } : { kind: 'bad' };
     }
-    return {
-      kind: 'wall',
-      calendar: calendarParts(text),
-      clock: wallClock(text),
-    };
+    const dateClock = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(text);
+    if (dateClock) {
+      const calendar = calendarFrom(dateClock[1], dateClock[2], dateClock[3]);
+      const clock = clockFrom(dateClock[4], dateClock[5], '');
+      if (!calendar || !clock) return { kind: 'bad' };
+      return { kind: 'wall', calendar: calendar, clock: clock };
+    }
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (dateOnly) {
+      const calendar = calendarFrom(dateOnly[1], dateOnly[2], dateOnly[3]);
+      return calendar ? { kind: 'wall', calendar: calendar, clock: null } : { kind: 'bad' };
+    }
+    const clockOnly = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:\s*([ap]m))?$/i.exec(text);
+    if (clockOnly) {
+      const clock = clockFrom(clockOnly[1], clockOnly[2], clockOnly[3] || '');
+      return clock ? { kind: 'wall', calendar: null, clock: clock } : { kind: 'bad' };
+    }
+    return { kind: 'bad' };
   }
 
   function formatPhoneTime(value, timeZone) {
     const zone = zoneOf(timeZone);
-    if (zone === null) return DASH;
+    if (zone === null) return UNKNOWN;
     if (value == null || value === '') return '';
     const readValue = read(value, zone);
-    if (!readValue || readValue.kind === 'bad') return DASH;
+    if (!readValue || readValue.kind === 'bad') return UNKNOWN;
     if (readValue.kind === 'instant') {
-      if (!zone) return DASH;
-      return clockLabel(readValue.parts.hour, readValue.parts.minute) || DASH;
+      if (!zone) return UNKNOWN;
+      return clockLabel(readValue.parts.hour, readValue.parts.minute) || UNKNOWN;
     }
-    if (!readValue.clock) return DASH;
-    return clockLabel(readValue.clock.hour, readValue.clock.minute) || DASH;
+    if (!readValue.clock) return UNKNOWN;
+    return clockLabel(readValue.clock.hour, readValue.clock.minute) || UNKNOWN;
   }
 
   /* A list heading. Today is "Today, Oct 11". Any other calendar day
@@ -62187,27 +62215,28 @@ window.CDOS_PERSIST = (function () {
     if (value == null || value === '') return '';
     const text = String(value).trim();
     if (!text) return '';
-    if (isInstantText(text)) return DASH;
-    const cal = calendarParts(text);
-    if (!cal) return DASH;
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (!dateOnly) return UNKNOWN;
+    const cal = calendarFrom(dateOnly[1], dateOnly[2], dateOnly[3]);
+    if (!cal) return UNKNOWN;
     const monthDay = MONTHS[cal.month - 1] + ' ' + cal.day;
-    const todayText = String(today || '').trim().slice(0, 10);
-    if (todayText && text.slice(0, 10) === todayText) return 'Today, ' + monthDay;
+    const todayText = String(today || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(todayText) && text === todayText) return 'Today, ' + monthDay;
     return monthDay + ', ' + cal.year;
   }
 
   function formatPhoneDate(value, timeZone) {
     const zone = zoneOf(timeZone);
-    if (zone === null) return DASH;
+    if (zone === null) return UNKNOWN;
     if (value == null || value === '') return '';
     const readValue = read(value, zone);
-    if (!readValue || readValue.kind === 'bad') return DASH;
+    if (!readValue || readValue.kind === 'bad') return UNKNOWN;
     if (readValue.kind === 'instant') {
-      if (!zone) return DASH;
-      return dateLabel(readValue.parts.year, readValue.parts.month, readValue.parts.day) || DASH;
+      if (!zone) return UNKNOWN;
+      return dateLabel(readValue.parts.year, readValue.parts.month, readValue.parts.day) || UNKNOWN;
     }
-    if (!readValue.calendar) return DASH;
-    return dateLabel(readValue.calendar.year, readValue.calendar.month, readValue.calendar.day) || DASH;
+    if (!readValue.calendar) return UNKNOWN;
+    return dateLabel(readValue.calendar.year, readValue.calendar.month, readValue.calendar.day) || UNKNOWN;
   }
 
   function groupDigits(ints) {

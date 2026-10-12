@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { civilDate } from "./civil-date.js";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable } from "./currencies.js";
@@ -67,10 +68,7 @@ const fixed = (value: Decimal.Value) =>
 const sessionJson = (row: Record<string, unknown>) => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
-  businessDate:
-    row.business_date instanceof Date
-      ? row.business_date.toISOString().slice(0, 10)
-      : String(row.business_date),
+  businessDate: civilDate(row.business_date),
   status: row.status,
   openedBy: row.opened_by,
   openedAt: new Date(row.opened_at as string | Date).toISOString(),
@@ -313,7 +311,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            now.toISOString().slice(0, 10),
+            civilDate(now),
             actor.userId,
             now,
           ],

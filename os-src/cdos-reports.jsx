@@ -23,6 +23,20 @@
      four places, including the sentence claiming what the law requires,
      while the rest of the product honoured the owner's setting. */
   const limitOf = (settings) => reportingLimit(settings);
+  /* The sheet's day is a YYYY-MM-DD civil date. Formatting it through
+     local midnight would name the previous day in a zone ahead of UTC.
+     Noon UTC of that same calendar day does not move. */
+  const civilLongDate = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const stamp = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12));
+    if (Number.isNaN(stamp.getTime())) return String(iso || '');
+    try {
+      return stamp.toLocaleDateString('en-CA', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    } catch (e) {
+      return String(iso || '');
+    }
+  };
 
   /* WHO REGULATES THIS DESK, AND WHAT THE FORM IS CALLED.
 
@@ -569,7 +583,7 @@
            replaces "Day 1", which was a counter kept in the browser. */
         const sheetDate = (tillDay.session && tillDay.session.businessDate) || businessDate();
         const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
-        const longDate = (() => { try { return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
+        const longDate = civilLongDate(sheetDate);
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return (<div>
           <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} />

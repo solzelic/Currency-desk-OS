@@ -2,6 +2,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 import { assertDarkShellContrast, phoneSweep } from "./helpers/phone-sweep";
+import { expectPhoneApp, expectPhoneMore } from "./helpers/phone-screen";
 
 const PHONE = { width: 390, height: 844 };
 
@@ -30,7 +31,7 @@ async function atDesk(page: Page, staffId: string): Promise<void> {
 
 async function moreNames(page: Page): Promise<string[]> {
   await page.locator('#phonebar [data-phone-app="more"]').click();
-  await expect(page.locator("#phone-more")).toBeVisible();
+  await expectPhoneMore(page);
   return page.locator("#phone-more .phone-more-name").allTextContents();
 }
 
@@ -79,6 +80,10 @@ test("a clock is 3:02 PM and today's list group starts with Today", async ({ pag
       clock: time("15:02"),
       badTime: time("13:02 AM"),
       badDate: date("2026-02-31"),
+      junkClock: time("junk 9:05 junk"),
+      junkRef: time("ref 12:34"),
+      junkDate: date("2026-10-11 junk"),
+      yearZero: date("0000-01-01"),
       zoned: time("2026-06-18T19:02:00Z", "America/Toronto"),
       unzoned: time("2026-06-18T19:02:00Z"),
       midnight: time("00:00"),
@@ -91,10 +96,16 @@ test("a clock is 3:02 PM and today's list group starts with Today", async ({ pag
     };
   });
   expect(labels.clock).toBe("3:02 PM");
-  expect(labels.badTime).toBe("\u2014");
-  expect(labels.badDate).toBe("\u2014");
+  expect(labels.badTime).toBe("Unknown");
+  expect(labels.badDate).toBe("Unknown");
+  expect(labels.junkClock).toBe("Unknown");
+  expect(labels.junkRef).toBe("Unknown");
+  expect(labels.junkDate).toBe("Unknown");
+  expect(labels.yearZero).toBe("Unknown");
+  expect(labels.junkClock).not.toBe("9:05 AM");
+  expect(labels.junkDate).not.toBe("Oct 11, 2026");
   expect(labels.zoned).toBe("3:02 PM");
-  expect(labels.unzoned).toBe("\u2014");
+  expect(labels.unzoned).toBe("Unknown");
   expect(labels.midnight).toBe("12:00 AM");
   expect(labels.noon).toBe("12:00 PM");
   expect(labels.date).toBe("Jun 18, 2026");
@@ -103,6 +114,67 @@ test("a clock is 3:02 PM and today's list group starts with Today", async ({ pag
   expect(labels.sameTime).toBe(true);
   expect(labels.sameGroup).toBe(true);
   expect(labels.clock).not.toMatch(/[ap]m/);
+});
+
+/* 0.10 and 0.20 summed in the browser is 0.30000000000000004. The
+   day's fee line has to be the server's string, which here is not
+   that sum. */
+test("the day's fee total is the server string, not a float sum", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  const day = await page.evaluate(() => window.CDOS.businessDate());
+  const postedAt = `${day}T12:00:00.000Z`;
+  const row = (id: string, fee: string) => ({
+    transactionId: id,
+    transactionRef: id,
+    postedAt,
+    customerId: "cust-fee",
+    dealKind: "exchange",
+    from: "USD",
+    inputAmount: "100.00",
+    rate: "1.3000",
+    to: "CAD",
+    outputAmount: "130.00",
+    feeCad: fee,
+    actorId: "user:a.singh",
+    reversal: null,
+  });
+  await page.route("**/api/ledger/transactions**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ transactions: [row("fee-a", "0.10"), row("fee-b", "0.20")] }),
+    });
+  });
+  await page.route("**/api/ledger/summary**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        feesHome: "1.25",
+        homeCurrency: "CAD",
+        posted: 2,
+        volumeHome: "200.00",
+      }),
+    });
+  });
+  await page.reload();
+  await dismissTour(page);
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await dismissTour(page);
+  const section = page.locator(".phone-section", { hasText: "1.25 CAD" });
+  await expect(section).toBeVisible();
+  await expect(section.locator(".phone-sec-meta")).toContainText("1.25 CAD");
+  await expect(page.locator(".phone-ledger")).not.toContainText("0.30000000000000004");
+  await expect(section.locator(".phone-sec-meta")).not.toContainText("0.30 CAD");
 });
 
 test("the bar is five tabs and has no centre plus", async ({ page }) => {
@@ -213,7 +285,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
 
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await dismissTour(page);
-  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "ledger");
+  await expectPhoneApp(page, "ledger");
   const ledger = await accentOf(page, "ledger", "New transaction");
   expect(ledger.appAttr).toBe("ledger");
   expect(ledger.brand).toBe(ACCENT.ledger);
@@ -222,7 +294,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
 
   await page.locator('#phonebar [data-phone-app="clients"]').click();
   await dismissTour(page);
-  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "clients");
+  await expectPhoneApp(page, "clients");
   const clients = await accentOf(page, "clients", "New contact");
   expect(clients.appAttr).toBe("clients");
   expect(clients.brand).toBe(ACCENT.clients);
@@ -230,9 +302,10 @@ test("primary buttons use the open app's accent", async ({ page }) => {
   expect(clients.chip).toBe(CHIP);
 
   await page.locator('#phonebar [data-phone-app="more"]').click();
+  await expectPhoneMore(page);
   await page.locator('#phone-more [data-phone-app="transfers"]').click();
   await dismissTour(page);
-  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "transfers");
+  await expectPhoneApp(page, "transfers");
   const transfers = await accentOf(page, "transfers", "New transfer");
   expect(transfers.appAttr).toBe("transfers");
   expect(transfers.brand).toBe(ACCENT.transfers);
@@ -450,8 +523,9 @@ test("the top bar is one line at 360 when the till is closed", async ({ page }) 
   await page.setViewportSize({ width: 360, height: 780 });
   await seedLongDesk(page, true);
   await page.locator('#phonebar [data-phone-app="more"]').click();
+  await expectPhoneMore(page);
   await page.locator('#phone-more [data-phone-app="reports"]').click();
-  await expect(page.locator('.win.show.active[data-app="reports"]')).toBeVisible();
+  await expectPhoneApp(page, "reports");
   await expect(page.locator(".phone-till-state")).toHaveText(/Till closed/);
   const bar = await topBarMeasure(page);
   expect(bar).not.toBeNull();
@@ -496,8 +570,9 @@ test("the till line joins with a spaced dot at 360 when the till is closed and w
   });
   await seedLongDesk(page, true, "Till 1");
   await page.locator('#phonebar [data-phone-app="more"]').click();
+  await expectPhoneMore(page);
   await page.locator('#phone-more [data-phone-app="reports"]').click();
-  await expect(page.locator('.win.show.active[data-app="reports"]')).toBeVisible();
+  await expectPhoneApp(page, "reports");
   await expect(page.locator(".phone-till-state")).toHaveText("Till closed");
   expect(await renderedTillLine(page)).toBe("Front Desk 01 · Till 1 · Till closed");
 
@@ -647,12 +722,13 @@ test("opening a phone app focuses that window at 430", async ({ page }) => {
   for (const id of ["rates", "ledger", "clients", "till"]) {
     await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
     await dismissTour(page);
-    await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", id);
+    await expectPhoneApp(page, id);
   }
   await page.locator('#phonebar [data-phone-app="more"]').click();
+  await expectPhoneMore(page);
   await page.locator('#phone-more [data-phone-app="reports"]').click();
   await dismissTour(page);
-  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "reports");
+  await expectPhoneApp(page, "reports");
 });
 
 test("empty, loading, and error states, and an unknown bell", async ({ page }) => {

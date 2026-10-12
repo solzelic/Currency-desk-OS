@@ -2,6 +2,7 @@
    desktop chrome is the one a wide window already had. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
+import { expectPhoneApp, expectPhoneMore } from "./helpers/phone-screen";
 
 const PHONE = { width: 390, height: 844 };
 
@@ -37,7 +38,7 @@ async function atDesk(page: Page, staffId = "a.singh"): Promise<void> {
 
 async function moreLabels(page: Page): Promise<string[]> {
   await page.locator('#phonebar [data-phone-app="more"]').click();
-  await expect(page.locator("#phone-more")).toBeVisible();
+  await expectPhoneMore(page);
   return page.locator("#phone-more .phone-more-name").allTextContents();
 }
 
@@ -155,6 +156,7 @@ test("each tab opens that app", async ({ page }) => {
     await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
     await dismissTour(page);
     await settled(page);
+    await expectPhoneApp(page, id);
     await expect(page.locator(".win.show.active .win-title")).toContainText(title);
     await expect(page.locator(`#phonebar [data-phone-app="${id}"]`)).toHaveClass(/is-on/);
   }
@@ -186,6 +188,7 @@ test("more lists the apps this role can open", async ({ page }) => {
   await page.locator('#phone-more [data-phone-app="compliance"]').click();
   await dismissTour(page);
   await settled(page);
+  await expectPhoneApp(page, "compliance");
   await expect(page.locator(".win.show.active .win-title")).toContainText(/Compliance/);
   await expect(page.locator('#phonebar [data-phone-app="more"]')).toHaveClass(/is-on/);
 });
@@ -472,6 +475,7 @@ test("the window title bar is hidden on a phone and visible on the desktop", asy
     await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
     await dismissTour(page);
     await settled(page);
+    await expectPhoneApp(page, id);
     await expectNoDesktopChrome(page);
   }
   await expect(page.getByRole("button", { name: "Cash drawer", exact: true })).toBeVisible();
@@ -490,6 +494,7 @@ test("the window title bar is hidden on a phone and visible on the desktop", asy
   await page.locator('#phone-more [data-phone-app="vault"]').click();
   await dismissTour(page);
   await settled(page);
+  await expectPhoneApp(page, "vault");
   await expectNoDesktopChrome(page);
   if (!(await sheet.isVisible())) {
     await page.locator('#phonebar [data-phone-app="more"]').click();
@@ -497,6 +502,7 @@ test("the window title bar is hidden on a phone and visible on the desktop", asy
   await page.locator('#phone-more [data-phone-app="compliance"]').click();
   await dismissTour(page);
   await settled(page);
+  await expectPhoneApp(page, "compliance");
   await expectNoDesktopChrome(page);
 
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -583,6 +589,7 @@ test("the selected tab takes that app's colour", async ({ page }) => {
     await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
     await dismissTour(page);
     await settled(page);
+    await expectPhoneApp(page, id);
     const colour = await painted(id, id);
     expect(colour.on, id).toBe(true);
     expect(colour.label, id).toBe(colour.expected);
@@ -598,9 +605,11 @@ test("the selected tab takes that app's colour", async ({ page }) => {
   }
 
   await page.locator('#phonebar [data-phone-app="more"]').click();
+  await expectPhoneMore(page);
   await page.locator('#phone-more [data-phone-app="compliance"]').click();
   await dismissTour(page);
   await settled(page);
+  await expectPhoneApp(page, "compliance");
   const opened = await painted("more", "compliance");
   expect(opened.on).toBe(true);
   expect(opened.label).toBe(opened.expected);

@@ -75,19 +75,22 @@ uppercase, as in `10:16 AM`. The phone does not follow the desktop
 24-hour setting.
 
 `timeZone` is the branch zone (`settings.timezone`). A wall clock does
-not need one. An instant with no zone is an em dash. The formatter
+not need one. An instant with no zone is the word Unknown. The formatter
 does not assume Toronto.
 
 A wall clock (`15:02`, `2026-06-18 15:02`, `2026-06-18T15:02:00` with no
 `Z` and no numeric offset) is already a local time. The zone does not
-move it. `13:02 AM` is not a clock. It is an em dash. `13:02` with no
-suffix is `1:02 PM`.
+move it. The whole string has to be that clock or that date plus that
+clock. `junk 9:05 junk` and `ref 12:34` are not clocks. `13:02 AM` is
+not a clock. Each is the word Unknown. `13:02` with no suffix is
+`1:02 PM`.
 
-A `Date`, or a string that ends in `Z` or a numeric offset, is an
-instant. `2026-06-18T19:02:00Z` is `3:02 PM` in `America/Toronto` and
-`7:02 PM` in `UTC`. The same instant with no zone is an em dash.
+A `Date`, or a string that is a full instant (`YYYY-MM-DDTHH:MM` with
+`Z` or a numeric offset, and nothing else), is an instant.
+`2026-06-18T19:02:00Z` is `3:02 PM` in `America/Toronto` and
+`7:02 PM` in `UTC`. The same instant with no zone is the word Unknown.
 
-A blank returns `''`. A bad zone or a value with no clock is an em dash.
+A blank returns `''`. A bad zone or a value with no clock is the word Unknown.
 
 ## Date
 
@@ -106,12 +109,14 @@ An instant uses the calendar day in the branch zone the caller passes.
 `2026-06-18T03:30:00Z` is `Jun 17, 2026` in `America/Toronto`.
 A `Date` built from `2026-06-18` alone is that UTC midnight instant,
 and it does move. Callers pass the `YYYY-MM-DD` string.
-An instant with no zone is an em dash.
+An instant with no zone is the word Unknown.
 
-`2026-02-31` and `2026-02-29` are not days. They are an em dash.
-`2024-02-29` is `Feb 29, 2024`.
+`2026-02-31` and `2026-02-29` are not days. They are the word Unknown.
+`2024-02-29` is `Feb 29, 2024`. `2026-10-11 junk` is not 11 October,
+and `0000-01-01` is not a day. Both are the word Unknown. The year,
+month, and day have to be the whole string.
 
-A blank returns `''`. A value with no calendar day is an em dash.
+A blank returns `''`. A value with no calendar day is the word Unknown.
 
 ## List groups
 
@@ -125,7 +130,8 @@ window.CDOS.Phone.formatListGroup(value, today)   // the same function
 `formatPhoneListGroup('2026-10-08', '2026-10-11')` is `Oct 8, 2026`.
 A date on a form stays `formatPhoneDate`
 (`Jun 18, 2026`). The group reads the day off the string. It does
-not pass that string to `Date`.
+not pass that string to `Date`. A string that is not exactly
+`YYYY-MM-DD` is the word Unknown.
 
 ## Where the chrome lives
 

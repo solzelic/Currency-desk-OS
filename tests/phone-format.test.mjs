@@ -33,9 +33,9 @@ test("a wall clock does not move when the branch zone changes", () => {
 test("an instant is shown in the branch time zone", () => {
   const instant = "2026-06-18T19:02:00Z";
   const date = new Date(instant);
-  assert.equal(formatPhoneTime(instant), "\u2014");
-  assert.equal(formatPhoneDate(instant), "\u2014");
-  assert.equal(formatPhoneTime(date), "\u2014");
+  assert.equal(formatPhoneTime(instant), "Unknown");
+  assert.equal(formatPhoneDate(instant), "Unknown");
+  assert.equal(formatPhoneTime(date), "Unknown");
   assert.equal(formatPhoneTime(instant, TORONTO), "3:02 PM");
   assert.equal(formatPhoneTime(date, TORONTO), "3:02 PM");
   assert.equal(formatPhoneDate(instant, TORONTO), "Jun 18, 2026");
@@ -55,28 +55,42 @@ test("a calendar date never shifts through UTC", () => {
   assert.equal(formatPhoneDate(new Date("2026-06-18T00:00:00Z"), TORONTO), "Jun 17, 2026");
 });
 
-test("blank stays blank and a bad value is an em dash", () => {
+test("blank stays blank and a bad clock or date is Unknown", () => {
   assert.equal(formatPhoneTime(""), "");
   assert.equal(formatPhoneTime(null), "");
   assert.equal(formatPhoneDate(""), "");
   assert.equal(formatPhoneDate(null), "");
-  assert.equal(formatPhoneDate("not-a-date"), "\u2014");
-  assert.equal(formatPhoneTime("2026-06-18"), "\u2014");
-  assert.equal(formatPhoneDate("15:02"), "\u2014");
-  assert.equal(formatPhoneTime(new Date("nope")), "\u2014");
-  assert.equal(formatPhoneTime("15:02", "Not/AZone"), "\u2014");
-  assert.equal(formatPhoneDate("2026-06-18", "Not/AZone"), "\u2014");
-  assert.equal(formatPhoneDate("2026-06-18T19:02:00Z", "Not/AZone"), "\u2014");
-  assert.equal(formatPhoneTime("25:00"), "\u2014");
-  assert.equal(formatPhoneTime("13:02 AM"), "\u2014");
-  assert.equal(formatPhoneTime("13:02 PM"), "\u2014");
+  assert.equal(formatPhoneDate("not-a-date"), "Unknown");
+  assert.equal(formatPhoneTime("2026-06-18"), "Unknown");
+  assert.equal(formatPhoneDate("15:02"), "Unknown");
+  assert.equal(formatPhoneTime(new Date("nope")), "Unknown");
+  assert.equal(formatPhoneTime("15:02", "Not/AZone"), "Unknown");
+  assert.equal(formatPhoneDate("2026-06-18", "Not/AZone"), "Unknown");
+  assert.equal(formatPhoneDate("2026-06-18T19:02:00Z", "Not/AZone"), "Unknown");
+  assert.equal(formatPhoneTime("25:00"), "Unknown");
+  assert.equal(formatPhoneTime("13:02 AM"), "Unknown");
+  assert.equal(formatPhoneTime("13:02 PM"), "Unknown");
   assert.equal(formatPhoneTime("13:02"), "1:02 PM");
-  assert.equal(formatPhoneDate("2026-02-31"), "\u2014");
-  assert.equal(formatPhoneDate("2026-02-29"), "\u2014");
+  assert.equal(formatPhoneDate("2026-02-31"), "Unknown");
+  assert.equal(formatPhoneDate("2026-02-29"), "Unknown");
   assert.equal(formatPhoneDate("2024-02-29"), "Feb 29, 2024");
-  assert.equal(formatPhoneDate("2026-04-31"), "\u2014");
-  assert.equal(formatPhoneListGroup("2026-02-31", "2026-10-11"), "\u2014");
-  assert.equal(formatPhoneListGroup("2026-06-18T19:02:00Z", "2026-06-18"), "\u2014");
+  assert.equal(formatPhoneDate("2026-04-31"), "Unknown");
+  assert.equal(formatPhoneListGroup("2026-02-31", "2026-10-11"), "Unknown");
+  assert.equal(formatPhoneListGroup("2026-06-18T19:02:00Z", "2026-06-18"), "Unknown");
+});
+
+test("junk is Unknown, not a clock or a date parsed out of it", () => {
+  for (const value of ["junk 9:05 junk", "ref 12:34", "2026-10-11 junk", "0000-01-01"]) {
+    assert.equal(formatPhoneTime(value), "Unknown", value);
+    assert.equal(formatPhoneDate(value), "Unknown", value);
+    assert.equal(formatPhoneListGroup(value, "2026-10-11"), "Unknown", value);
+    assert.equal(formatPhoneTime(value, "America/Toronto"), "Unknown", value);
+    assert.equal(formatPhoneDate(value, "Asia/Jerusalem"), "Unknown", value);
+  }
+  assert.notEqual(formatPhoneTime("junk 9:05 junk"), "9:05 AM");
+  assert.notEqual(formatPhoneTime("ref 12:34"), "12:34 PM");
+  assert.notEqual(formatPhoneDate("2026-10-11 junk"), "Oct 11, 2026");
+  assert.notEqual(formatPhoneDate("0000-01-01"), "Jan 1, 0");
 });
 
 test("a list group for the business day is Today, Oct 11", () => {

@@ -571,6 +571,18 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, civil dates and the phone capture. A PostgreSQL `date`
+is a calendar day. Reading it with `toISOString()` named the previous
+day in Asia/Jerusalem, so an identity document stored as 1 April 2030
+came back as 31 March 2030, and the till's business date did the same
+thing to the sign-off heading and the reporting window. Those values
+are now the local year, month, and day. A phone clock or date that is
+not the whole string is the word Unknown. The 1280 capture pins the
+browser zone to UTC, so 15:02Z stays 15:02, and it serves Noto Sans
+and DejaVu Sans Mono for → and ≥. The sign-in shot still turns the
+card blur off, because two renders of main with the blur on did not
+match.
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
@@ -624,9 +636,10 @@ picture is exact, the same as every other picture. The clients list and the
 till roster in that picture are pinned, so other tests' contacts and
 extra drawers stay out of it. The earlier rewrite to
 `#00898` and the 20-pixel ceiling are retired.
-`formatPhoneTime` / `formatPhoneDate` / `formatPhoneMoney` reject an
-impossible date, a bad clock, a missing zone on an instant, and a
-malformed amount with an em dash. On a phone, a dark OS preference
+`formatPhoneTime` / `formatPhoneDate` reject an impossible date, a
+bad clock, a missing zone on an instant, and a string that is not
+exactly a clock or a date, with the word Unknown. `formatPhoneMoney`
+rejects a malformed amount with an em dash. On a phone, a dark OS preference
 paints the shell from the dark tokens in `tokens.css` (inside
 `max-width: 430px`). Text is `#F6F3EC` and secondary text is
 `#C9C2B6`, each at least 4.5:1 on the dark surface, including a

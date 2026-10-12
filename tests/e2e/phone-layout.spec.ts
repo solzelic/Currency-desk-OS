@@ -22,6 +22,7 @@
    the chrome. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
+import { expectPhoneApp, expectPhoneMore } from "./helpers/phone-screen";
 
 const SCREENS = ["rates", "ledger", "clients", "till", "compliance"] as const;
 
@@ -176,6 +177,7 @@ async function openOnPhone(page: Page, id: string): Promise<void> {
   const tab = page.locator(`#phonebar [data-phone-app="${id}"]`);
   if (await tab.count()) {
     await tab.click();
+    await expectPhoneApp(page, id);
     return;
   }
   /* More toggles. A second click while the sheet is open closes it,
@@ -186,7 +188,9 @@ async function openOnPhone(page: Page, id: string): Promise<void> {
   if (!(await sheet.isVisible())) {
     await page.locator('#phonebar [data-phone-app="more"]').click();
   }
+  await expectPhoneMore(page);
   await page.locator(`#phone-more [data-phone-app="${id}"]`).click();
+  await expectPhoneApp(page, id);
 }
 
 function clipFixture(fixed: boolean): string {

@@ -6,6 +6,7 @@
    linked transactions is not applied. Article 80's cash payment limit
    is not a block. pack-eu-v1 is a different row and is not read here. */
 import Decimal from "decimal.js";
+import { civilDate } from "./civil-date.js";
 import { idKindForDeal } from "./compliance-gate.js";
 import { EU_AMLR_PACK_ID } from "./jurisdiction.js";
 
@@ -49,20 +50,15 @@ function pgCode(error: unknown): string | undefined {
 }
 
 function dateOnly(value: unknown): string | null {
-  if (value == null || value === "") return null;
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-  const text = String(value).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+  return civilDate(value);
 }
 
 /** The disclaimer while today is before the date the regulation applies.
     On that date, and after it, there is nothing extra to say. */
 export function euAmlrNotice(appliesFrom: unknown, today = new Date()): string | null {
   const from = dateOnly(appliesFrom);
-  if (!from) return null;
-  const now = today.toISOString().slice(0, 10);
+  const now = civilDate(today);
+  if (!from || !now) return null;
   return now < from ? EU_AMLR_NOTICE : null;
 }
 
