@@ -16,6 +16,7 @@ import type { Db } from "../db/index.js";
 import { TENANT_PLANS, type TenantPlan } from "../db/schema.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
+import { OWNER_ONLY_REFUSAL } from "../state/owner-settings.js";
 import { refreshSiteDomains, SITES } from "../sites.js";
 
 const domainShape = z
@@ -84,14 +85,24 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
     // hours can be kept current by a branch manager.
     const isAdmin = who.role === "administrator";
     const isManager = isAdmin || who.role === "branch_manager";
+    const scope = { tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id };
+
     if (parsed.data.siteDomain !== undefined && !isAdmin) {
-      return reply.code(403).send({ error: "forbidden" });
+      await audit(db, { ...scope, action: "settings.owner_only_refused", detail: { groups: ["shop"], fields: ["siteDomain"] } });
+      return reply.code(403).send({ error: "forbidden", detail: OWNER_ONLY_REFUSAL });
     }
     if (parsed.data.siteConfig !== undefined && !isManager) {
-      return reply.code(403).send({ error: "forbidden" });
+      const fields = Object.keys(parsed.data.siteConfig);
+      await audit(db, {
+        ...scope,
+        action: "settings.owner_only_refused",
+        detail: { groups: fields.includes("hours") ? ["hours"] : ["shop"], fields },
+      });
+      return reply.code(403).send({
+        error: "forbidden",
+        detail: "You can't change the public site. Nothing was saved.",
+      });
     }
-
-    const scope = { tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id };
 
     if (parsed.data.siteDomain !== undefined) {
       const domain = parsed.data.siteDomain === null ? null : parsed.data.siteDomain.toLowerCase().replace(/^www\./, "");

@@ -987,6 +987,11 @@
     const setT = (patch, note) => { setTicker(t => ({ ...t, ...patch })); if (note) log('Ticker updated', note); };
     const toggleCcy = (code) => setT({ hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code] }, code);
 
+    /* Shop, compliance thresholds, localization, billing, and role presets
+       are the owner's. A teller with "open settings" still does not get
+       those rows, including in search. The server refuses the write. */
+    const ownerDesk = me.role === 'Owner';
+    const ownerOnlyTab = { business: 1, localization: 1, compliance: 1, billing: 1, payment: 1, permissions: 1 };
     const NAV_GROUPS = canSys ? [
       ['Business', [
         ['business', 'Business profile', 'building'],
@@ -1014,6 +1019,10 @@
         ['permissions', 'Role presets', 'id'],
       ]],
     ] : [];
+    const visibleNav = ownerDesk ? NAV_GROUPS : NAV_GROUPS
+      .map(([group, items]) => [group, items.filter(([id]) => !ownerOnlyTab[id])])
+      .filter(([, items]) => items.length);
+    useEffect(() => { if (!ownerDesk && ownerOnlyTab[tab]) setTab('account'); }, [tab, ownerDesk]);
 
     return (<SettingsCtx.Provider value={ctxVal}><div className="flex settings-shell" style={{ height: '100%' }}>
       {/* nav rail */}
@@ -1030,7 +1039,7 @@
           <input value={navQ} onChange={e => setNavQ(e.target.value)} placeholder="Search settings…" className="outline-none text-[12.5px] bg-transparent w-full" />
           {navQ && <button onClick={() => setNavQ('')} className="grid place-items-center flex-none" style={{ color: CD.faint }}><Ic n="x" s={13} c={CD.faint} /></button>}
         </div>}
-        {NAV_GROUPS.map(([group, items]) => {
+        {visibleNav.map(([group, items]) => {
           const shownItems = items.filter(([id, label]) => navMatch(id, label));
           if (!shownItems.length) return null;
           return (
@@ -1043,7 +1052,7 @@
             ))}
           </div>
         ); })}
-        {canSys && navQ.trim() && !NAV_GROUPS.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && <div className="text-[11px] px-2 py-3 text-center" style={{ color: CD.faint }}>Nothing matches “{navQ.trim()}”.</div>}
+        {canSys && navQ.trim() && !visibleNav.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && <div className="text-[11px] px-2 py-3 text-center" style={{ color: CD.faint }}>Nothing matches “{navQ.trim()}”.</div>}
       </div>
 
       {/* panels */}

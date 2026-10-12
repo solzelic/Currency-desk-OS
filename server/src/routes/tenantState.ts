@@ -13,9 +13,17 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { audit } from "../audit.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
+import {
+  editableOwnerRows,
+  keepOwnerFields,
+  OWNER_ONLY_REFUSAL,
+  ownerOnlyEdits,
+  ownsSettings,
+} from "../state/owner-settings.js";
 
 /* What we last said about each desk's document, so a save every four
    seconds does not become a log line every four seconds. Only a CHANGE in
@@ -88,8 +96,9 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const rows = await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1);
     const row = rows[0];
-    if (!row) return { state: null, updatedAt: null, version: 0 };
-    return { state: row.state, updatedAt: row.updatedAt, version: row.version };
+    const settingsRows = editableOwnerRows(who.role);
+    if (!row) return { state: null, updatedAt: null, version: 0, settingsRows };
+    return { state: row.state, updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
@@ -101,7 +110,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    const state = parsed.data.state;
+    let state = parsed.data.state;
 
     const bytes = Buffer.byteLength(JSON.stringify(state));
     if (bytes > MAX_STATE_BYTES) {
@@ -139,6 +148,30 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         state: current.state,
         version: current.version,
       });
+    }
+
+    /* Owner-only fields are refused whole. Checked after the version
+       conflict so a stale save still merges, and before any write so a
+       teller cannot move the large-cash line by sending it beside an
+       ordinary key. The field is not removed and the rest saved. */
+    const storedState = (current?.state ?? null) as Record<string, unknown> | null;
+    if (!ownsSettings(who.role)) {
+      const edits = ownerOnlyEdits(storedState, state);
+      if (edits.length) {
+        await audit(db, {
+          tenantId: who.tenantId,
+          legalEntityId: who.legalEntityId,
+          branchId: who.branchId,
+          actorId: who.id,
+          action: "settings.owner_only_refused",
+          detail: {
+            groups: [...new Set(edits.map((edit) => edit.group))],
+            fields: edits.map((edit) => edit.field),
+          },
+        });
+        return reply.code(403).send({ error: "forbidden", detail: OWNER_ONLY_REFUSAL });
+      }
+      state = keepOwnerFields(storedState, state);
     }
 
     /* Describe what is being saved. This NEVER refuses — the browser holds

@@ -74,6 +74,18 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 New agent pull requests are frozen until the repository owner pushes a commit to main that ends the freeze, except pull requests that finish work already in progress.
 
+- **Owner-only settings stay with the owner.** A teller, supervisor,
+  manager, compliance officer, or auditor who sends a shop setting, a
+  compliance threshold (including the large-cash line), localization,
+  billing, a role preset, or hours and timezone on `PUT /api/tenant/state`
+  gets 403 and a plain refusal. Nothing in that save is written, and the
+  attempt is an audit row. Settings search does not offer those rows to
+  anyone who is not the owner. The desk snapshot still carries the
+  current values, because the counter has to show the line it is working
+  to. `PUT /api/ledger/desk-thresholds` was already limited to the owner;
+  a refused attempt there is now audited too. A manager can still publish
+  the public site's contact and hours. A teller cannot.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -681,6 +693,12 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-12**, owner-only settings. The desk snapshot no longer accepts
+an owner-only field from anyone but the owner. A changed large-cash
+threshold, shop setting, localization, billing choice, role preset, or
+hours and timezone is refused whole, audited, and left as it was. The
+settings list and its search hide those rows from everyone else.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

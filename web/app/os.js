@@ -6737,7 +6737,24 @@
     const toggleCcy = code => setT({
       hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code]
     }, code);
+
+    /* Shop, compliance thresholds, localization, billing, and role presets
+       are the owner's. A teller with "open settings" still does not get
+       those rows, including in search. The server refuses the write. */
+    const ownerDesk = me.role === 'Owner';
+    const ownerOnlyTab = {
+      business: 1,
+      localization: 1,
+      compliance: 1,
+      billing: 1,
+      payment: 1,
+      permissions: 1
+    };
     const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [];
+    const visibleNav = ownerDesk ? NAV_GROUPS : NAV_GROUPS.map(([group, items]) => [group, items.filter(([id]) => !ownerOnlyTab[id])]).filter(([, items]) => items.length);
+    useEffect(() => {
+      if (!ownerDesk && ownerOnlyTab[tab]) setTab('account');
+    }, [tab, ownerDesk]);
     return /*#__PURE__*/React.createElement(SettingsCtx.Provider, {
       value: ctxVal
     }, /*#__PURE__*/React.createElement("div", {
@@ -6811,7 +6828,7 @@
       n: "x",
       s: 13,
       c: CD.faint
-    }))), NAV_GROUPS.map(([group, items]) => {
+    }))), visibleNav.map(([group, items]) => {
       const shownItems = items.filter(([id, label]) => navMatch(id, label));
       if (!shownItems.length) return null;
       return /*#__PURE__*/React.createElement("div", {
@@ -6838,7 +6855,7 @@
         s: 15,
         c: tab === id ? 'var(--cd-on-ink)' : CD.mute
       }), " ", label)));
-    }), canSys && navQ.trim() && !NAV_GROUPS.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && /*#__PURE__*/React.createElement("div", {
+    }), canSys && navQ.trim() && !visibleNav.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] px-2 py-3 text-center",
       style: {
         color: CD.faint
@@ -60890,6 +60907,19 @@ window.CDOS_PERSIST = (function () {
       return announce({
         level: 'stopped', code: 'state_too_large',
         detail: (over && over.detail) || "This desk's records are too large to save. Nothing is being saved. Contact CurrencyDesk.",
+      });
+    }
+
+    /* The owner-only settings guard. Retrying sends the same document.
+       Say what the server said and stop, so the refusal is not swallowed
+       into a silent loop. */
+    if (r.status === 403) {
+      var denied = null;
+      try { denied = await r.json(); } catch (e) {}
+      health = 'stopped';
+      return announce({
+        level: 'stopped', code: 'settings_forbidden',
+        detail: (denied && denied.detail) || 'Only the owner can change that setting. Nothing was saved.',
       });
     }
 

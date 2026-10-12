@@ -258,6 +258,19 @@ window.CDOS_PERSIST = (function () {
       });
     }
 
+    /* The owner-only settings guard. Retrying sends the same document.
+       Say what the server said and stop, so the refusal is not swallowed
+       into a silent loop. */
+    if (r.status === 403) {
+      var denied = null;
+      try { denied = await r.json(); } catch (e) {}
+      health = 'stopped';
+      return announce({
+        level: 'stopped', code: 'settings_forbidden',
+        detail: (denied && denied.detail) || 'Only the owner can change that setting. Nothing was saved.',
+      });
+    }
+
     /* Session gone. Retrying cannot fix it either; the OS handles the
        sign-out, we just stop pretending we are saving. */
     if (r.status === 401) {
