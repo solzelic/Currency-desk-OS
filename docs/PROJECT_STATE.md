@@ -571,6 +571,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone shop name and empty ledger figures. At 360 the
+shop name drops from 17px to 15px before it is cut. An empty phone
+ledger shows 0.00 for Pay-in volume and Fees collected. The caption
+stays Nothing posted. A total the book cannot value stays absent.
+
 **2026-10-12**, phone back. `Phone.Back` is a 24px chevron and the
 parent name, in `var(--color-text)` at 16px / 24px line height,
 weight 600. The hit is 44px tall and covers the icon and the name.

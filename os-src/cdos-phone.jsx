@@ -2,7 +2,7 @@
    Props and names are the contract in docs/PHONE_SHELL.md.
    Time, date, and money come from os-src/phone/format.js. */
 (function () {
-  const { useState } = React;
+  const { useState, useRef, useLayoutEffect } = React;
   const Ic = window.CDOS && window.CDOS.Ic;
   if (!Ic) throw new Error('Phone shell: icons did not load.');
   const formatPhoneMoney = window.CDOS && window.CDOS.formatPhoneMoney;
@@ -48,11 +48,55 @@
     return { name: names.length ? names[names.length - 1] : '', status: known ? last : '' };
   }
 
+  /* 17px until the name would be cut. Then 15px. The ellipsis is only
+     what still does not fit at 15px. A hidden header has no width, so
+     the size stays on the stylesheet. */
+  function PhoneShopName({ shop }) {
+    const ref = useRef(null);
+    useLayoutEffect(() => {
+      const el = ref.current;
+      const box = el && el.parentElement;
+      if (!el || !box) return undefined;
+      const fit = () => {
+        if (box.clientWidth <= 0) {
+          if (el.style.fontSize) el.style.fontSize = '';
+          return;
+        }
+        const probe = el.cloneNode(true);
+        const style = getComputedStyle(el);
+        probe.style.fontSize = '17px';
+        probe.style.fontFamily = style.fontFamily;
+        probe.style.fontWeight = style.fontWeight;
+        probe.style.letterSpacing = style.letterSpacing;
+        probe.style.display = 'inline-block';
+        probe.style.whiteSpace = 'nowrap';
+        probe.style.position = 'fixed';
+        probe.style.left = '0';
+        probe.style.top = '0';
+        probe.style.width = 'auto';
+        probe.style.maxWidth = 'none';
+        probe.style.overflow = 'visible';
+        probe.style.visibility = 'hidden';
+        probe.style.pointerEvents = 'none';
+        document.body.appendChild(probe);
+        const textWidth = probe.scrollWidth;
+        probe.remove();
+        const next = textWidth > el.clientWidth + 1 ? '15px' : '';
+        if (el.style.fontSize !== next) el.style.fontSize = next;
+      };
+      fit();
+      const observer = new ResizeObserver(fit);
+      observer.observe(box);
+      return () => observer.disconnect();
+    }, [shop]);
+    return <span ref={ref} className="phone-shop-name">{shop}</span>;
+  }
+
   function PhoneTopBar({ shop, desk, tillOpen, unread, onBell, avatar }) {
     const line = deskLine(desk);
     return (
       <header className="phone-head">
-        <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><span className="phone-shop-name">{shop}</span></div>
+        <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><PhoneShopName shop={shop} /></div>
         <div className={'phone-till' + (tillOpen ? '' : ' is-closed')}>
           <i className="phone-till-dot" />
           <span className="phone-till-line">

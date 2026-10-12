@@ -1856,6 +1856,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: none;
     background: var(--c, var(--cd-ink));
   }
+  /* 17px comes from .phone-shop. The name drops to 15px when 17px
+     would cut it. The ellipsis is only the remainder at 15px. */
   .phone-shop-name {
     min-width: 0;
     overflow: hidden;

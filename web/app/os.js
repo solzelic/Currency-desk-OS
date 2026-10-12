@@ -31530,8 +31530,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
         byDay[key].rows.push(row);
       });
-      const volumeText = !stats.n || stats.vol == null || !home ? '—' : money(stats.vol, home) || '—';
-      const feesText = !stats.n || stats.fees == null || !home ? '—' : money(stats.fees, home) || '—';
+      /* Nothing posted is an empty book, so the figure is 0.00.
+         A book with deals the home currency cannot value stays absent. */
+      const zeroText = home ? money(0, home) || '' : '';
+      const volumeText = !stats.n ? zeroText || '—' : stats.vol == null || !home ? '—' : money(stats.vol, home) || '—';
+      const feesText = !stats.n ? zeroText || '—' : stats.fees == null || !home ? '—' : money(stats.fees, home) || '—';
       return /*#__PURE__*/React.createElement("div", {
         className: "phone-ledger"
       }, /*#__PURE__*/React.createElement(Phone.Screen, {
@@ -62301,7 +62304,9 @@ window.CDOS_PERSIST = (function () {
    Time, date, and money come from os-src/phone/format.js. */
 (function () {
   const {
-    useState
+    useState,
+    useRef,
+    useLayoutEffect
   } = React;
   const Ic = window.CDOS && window.CDOS.Ic;
   if (!Ic) throw new Error('Phone shell: icons did not load.');
@@ -62362,6 +62367,55 @@ window.CDOS_PERSIST = (function () {
       status: known ? last : ''
     };
   }
+
+  /* 17px until the name would be cut. Then 15px. The ellipsis is only
+     what still does not fit at 15px. A hidden header has no width, so
+     the size stays on the stylesheet. */
+  function PhoneShopName({
+    shop
+  }) {
+    const ref = useRef(null);
+    useLayoutEffect(() => {
+      const el = ref.current;
+      const box = el && el.parentElement;
+      if (!el || !box) return undefined;
+      const fit = () => {
+        if (box.clientWidth <= 0) {
+          if (el.style.fontSize) el.style.fontSize = '';
+          return;
+        }
+        const probe = el.cloneNode(true);
+        const style = getComputedStyle(el);
+        probe.style.fontSize = '17px';
+        probe.style.fontFamily = style.fontFamily;
+        probe.style.fontWeight = style.fontWeight;
+        probe.style.letterSpacing = style.letterSpacing;
+        probe.style.display = 'inline-block';
+        probe.style.whiteSpace = 'nowrap';
+        probe.style.position = 'fixed';
+        probe.style.left = '0';
+        probe.style.top = '0';
+        probe.style.width = 'auto';
+        probe.style.maxWidth = 'none';
+        probe.style.overflow = 'visible';
+        probe.style.visibility = 'hidden';
+        probe.style.pointerEvents = 'none';
+        document.body.appendChild(probe);
+        const textWidth = probe.scrollWidth;
+        probe.remove();
+        const next = textWidth > el.clientWidth + 1 ? '15px' : '';
+        if (el.style.fontSize !== next) el.style.fontSize = next;
+      };
+      fit();
+      const observer = new ResizeObserver(fit);
+      observer.observe(box);
+      return () => observer.disconnect();
+    }, [shop]);
+    return /*#__PURE__*/React.createElement("span", {
+      ref: ref,
+      className: "phone-shop-name"
+    }, shop);
+  }
   function PhoneTopBar({
     shop,
     desk,
@@ -62378,9 +62432,9 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement("i", {
       className: "phone-appdot",
       "aria-hidden": "true"
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "phone-shop-name"
-    }, shop)), /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement(PhoneShopName, {
+      shop: shop
+    })), /*#__PURE__*/React.createElement("div", {
       className: 'phone-till' + (tillOpen ? '' : ' is-closed')
     }, /*#__PURE__*/React.createElement("i", {
       className: "phone-till-dot"

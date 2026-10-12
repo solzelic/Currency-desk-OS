@@ -169,8 +169,9 @@ non-colour signal). `unread` boolean — the bell dot renders only when this
 is true. `onBell` opens the real alerts surface (Compliance). `avatar` is
 a node; the desk passes the existing account button.
 
-The shop name is `.phone-shop-name`, one line. A long name ends in
-an ellipsis.
+The shop name is `.phone-shop-name`, one line, at 17px. When 17px
+would cut the name, the size drops to 15px. A name that still does
+not fit at 15px ends in one ellipsis.
 
 The till line is a sibling, `.phone-till`, and it is one line. It
 shows the status first, then one place: the till name when the desk

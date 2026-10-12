@@ -322,14 +322,14 @@ test("the title sits 16px under the top bar at 360", async ({ page }) => {
 /* A long station and till name used to wrap "open" or "closed"
    onto a second line at 360, so the header grew. The line is now
    the status, then one place. The status stays whole. */
-async function seedLongDesk(page: Page, closed = false, tillName = "Wholesale desk"): Promise<void> {
+async function seedLongDesk(page: Page, closed = false, tillName = "Wholesale desk", operatingName = "York Currency Exchange on Adelaide Street West"): Promise<void> {
   await page.context().clearCookies();
   await page.goto("/app");
   await page.waitForFunction(() => {
     const stations = window.CDOS && window.CDOS._stations;
     return !!(stations && stations.defaultBranches && stations.SKEY);
   });
-  await page.evaluate(({ closed, tillName }) => {
+  await page.evaluate(({ closed, tillName, operatingName }) => {
     const stations = window.CDOS._stations;
     const branches = stations.defaultBranches();
     const branch = branches.find((item) => item.id === "b01") || branches[0];
@@ -340,10 +340,10 @@ async function seedLongDesk(page: Page, closed = false, tillName = "Wholesale de
       skey: stations.SKEY,
       branches,
       station: { branchId: branch.id, tillId: till.id },
-      operatingName: "York Currency Exchange on Adelaide Street West",
+      operatingName,
       closed,
     }));
-  }, { closed, tillName });
+  }, { closed, tillName, operatingName });
   await page.addInitScript(() => {
     const raw = sessionStorage.getItem("phone-top-seed");
     if (!raw) return;
@@ -384,6 +384,7 @@ async function topBarMeasure(page: Page) {
     return {
       height: Math.round(headBox.height),
       shopLines: shop.getClientRects().length,
+      shopSize: getComputedStyle(shop).fontSize,
       shopClipped: shop.scrollWidth > shop.clientWidth + 1,
       lineLines: line.getClientRects().length,
       lineClipped: line.scrollWidth > line.clientWidth + 1,
@@ -416,7 +417,7 @@ test("the top bar is the same height at 360 and 390 with a long desk name", asyn
   expect(at360!.height).toBe(56);
   expect(at360!.shopLines).toBe(1);
   expect(at390!.shopLines).toBe(1);
-  expect(at360!.shopClipped).toBe(true);
+  expect(at360!.shopSize).toBe("15px");
   expect(at360!.lineLines).toBe(1);
   expect(at390!.lineLines).toBe(1);
   expect(at360!.tillHeight).toBeLessThanOrEqual(16);
@@ -549,6 +550,111 @@ test("the status stays whole and a long place ends in one ellipsis", async ({ pa
   expect(family.toLowerCase()).not.toMatch(/mono/);
   expect(size).toBe("15px");
   expect(weight).toBe("600");
+});
+
+/* 17px cuts "York Currency Exchange on Adelaide Street West" at 360.
+   The name drops to 15px first. A short name stays 17px. */
+async function shopFit(page: Page) {
+  return page.locator(".phone-shop-name").evaluate((el) => {
+    const style = getComputedStyle(el);
+    const probe = el.cloneNode(true);
+    if (!(probe instanceof HTMLElement)) return null;
+    probe.style.fontFamily = style.fontFamily;
+    probe.style.fontWeight = style.fontWeight;
+    probe.style.letterSpacing = style.letterSpacing;
+    probe.style.display = "inline-block";
+    probe.style.whiteSpace = "nowrap";
+    probe.style.position = "fixed";
+    probe.style.left = "0";
+    probe.style.top = "0";
+    probe.style.width = "auto";
+    probe.style.maxWidth = "none";
+    probe.style.overflow = "visible";
+    probe.style.visibility = "hidden";
+    probe.style.fontSize = "17px";
+    document.body.appendChild(probe);
+    const at17 = probe.scrollWidth;
+    probe.style.fontSize = "15px";
+    const at15 = probe.scrollWidth;
+    probe.remove();
+    return {
+      text: el.textContent || "",
+      size: style.fontSize,
+      box: el.clientWidth,
+      at17,
+      at15,
+      clipped: el.scrollWidth > el.clientWidth + 1,
+      overflow: style.textOverflow,
+      lines: el.getClientRects().length,
+    };
+  });
+}
+
+test("the shop name drops to 15px at 360 before it is cut", async ({ page }) => {
+  const longName = "York Currency Exchange on Adelaide Street West";
+  await page.setViewportSize({ width: 360, height: 780 });
+  await seedLongDesk(page, false, "Wholesale desk", longName);
+  await expect(page.locator(".phone-shop-name")).toHaveText(longName);
+  const narrow = await shopFit(page);
+  expect(narrow).not.toBeNull();
+  expect(narrow!.at17).toBeGreaterThan(narrow!.box + 1);
+  expect(narrow!.size).toBe("15px");
+  expect(narrow!.lines).toBe(1);
+  expect(narrow!.clipped).toBe(narrow!.at15 > narrow!.box + 1);
+  if (narrow!.clipped) expect(narrow!.overflow).toBe("ellipsis");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const wide = await shopFit(page);
+  expect(wide).not.toBeNull();
+  expect(wide!.lines).toBe(1);
+  expect(wide!.text).toBe(longName);
+  if (wide!.at17 > wide!.box + 1) expect(wide!.size).toBe("15px");
+  else expect(wide!.size).toBe("17px");
+  expect(wide!.clipped).toBe(wide!.size === "15px" ? wide!.at15 > wide!.box + 1 : wide!.at17 > wide!.box + 1);
+
+  await page.setViewportSize({ width: 360, height: 780 });
+  await seedLongDesk(page, false, "Wholesale desk", "York Currency Exchange");
+  await expect(page.locator(".phone-shop-name")).toHaveText("York Currency Exchange");
+  const shortName = await shopFit(page);
+  expect(shortName).not.toBeNull();
+  expect(shortName!.at17).toBeLessThanOrEqual(shortName!.box + 1);
+  expect(shortName!.size).toBe("17px");
+  expect(shortName!.clipped).toBe(false);
+  expect(shortName!.lines).toBe(1);
+});
+
+async function emptyMoney(page: Page) {
+  return page.locator(".phone-ledger .phone-stat").evaluateAll((cards) => {
+    const read = (label: string) => {
+      const card = cards.find((el) => (el.querySelector(".phone-stat-label")?.textContent || "") === label);
+      if (!(card instanceof HTMLElement)) return null;
+      return {
+        value: card.querySelector(".phone-stat-value")?.textContent || "",
+        caption: card.querySelector(".phone-stat-cap")?.textContent || "",
+      };
+    };
+    return { volume: read("Pay-in volume"), fees: read("Fees collected") };
+  });
+}
+
+test("an empty ledger shows 0.00 for pay in and fees", async ({ page }) => {
+  const dash = /[\u2012\u2013\u2014\u2015\u2212]/;
+  for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    await atDesk(page, "a.singh");
+    await page.locator('#phonebar [data-phone-app="ledger"]').click();
+    await expect(page.locator('.win.show.active[data-app="ledger"]')).toBeVisible();
+    const cards = await emptyMoney(page);
+    expect(cards.volume, `${size.width} pay in`).not.toBeNull();
+    expect(cards.fees, `${size.width} fees`).not.toBeNull();
+    expect(cards.volume!.value).toMatch(/^0\.00 [A-Z]{3}$/);
+    expect(cards.fees!.value).toMatch(/^0\.00 [A-Z]{3}$/);
+    expect(cards.volume!.value).toBe(cards.fees!.value);
+    expect(cards.volume!.value).not.toMatch(dash);
+    expect(cards.fees!.value).not.toMatch(dash);
+    expect(cards.volume!.caption).toBe("Nothing posted");
+    expect(cards.fees!.caption).toBe("Nothing posted");
+  }
 });
 
 /* The back control lives on a record. A local row is what the desk

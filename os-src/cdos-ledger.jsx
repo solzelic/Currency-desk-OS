@@ -1730,8 +1730,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         if (!byDay[key]) { byDay[key] = { key, rows: [] }; groups.push(byDay[key]); }
         byDay[key].rows.push(row);
       });
-      const volumeText = (!stats.n || stats.vol == null || !home) ? '—' : (money(stats.vol, home) || '—');
-      const feesText = (!stats.n || stats.fees == null || !home) ? '—' : (money(stats.fees, home) || '—');
+      /* Nothing posted is an empty book, so the figure is 0.00.
+         A book with deals the home currency cannot value stays absent. */
+      const zeroText = home ? (money(0, home) || '') : '';
+      const volumeText = !stats.n ? (zeroText || '—') : ((stats.vol == null || !home) ? '—' : (money(stats.vol, home) || '—'));
+      const feesText = !stats.n ? (zeroText || '—') : ((stats.fees == null || !home) ? '—' : (money(stats.fees, home) || '—'));
       return (
         <div className="phone-ledger">
           <Phone.Screen
