@@ -156,8 +156,9 @@ const quote = await request("/api/quotes", {
 }, balances.cookie);
 if (quote.status !== 201) fail(`check-dist-boot: quote ${quote.status} ${quote.text}`);
 const frozen = JSON.parse(quote.text);
-if (frozen.outputAmount !== "4702.63") {
-  fail(`check-dist-boot: quote output ${frozen.outputAmount}, expected 4702.63. ${quote.text}`);
+/* 3,500 USD at the displayed rate 1.3436 is 4,702.60 CAD. */
+if (frozen.outputAmount !== "4702.60") {
+  fail(`check-dist-boot: quote output ${frozen.outputAmount}, expected 4702.60. ${quote.text}`);
 }
 
 const posted = await request(`/api/quotes/${frozen.quoteId}/post`, {
@@ -172,8 +173,8 @@ const posted = await request(`/api/quotes/${frozen.quoteId}/post`, {
 }, quote.cookie);
 if (posted.status !== 201) fail(`check-dist-boot: post ${posted.status} ${posted.text}`);
 const row = JSON.parse(posted.text);
-if (row.outputAmount !== "4702.63") {
-  fail(`check-dist-boot: posted output ${row.outputAmount}, expected 4702.63. ${posted.text}`);
+if (row.outputAmount !== "4702.60") {
+  fail(`check-dist-boot: posted output ${row.outputAmount}, expected 4702.60. ${posted.text}`);
 }
 
 console.log(`check-dist-boot: POST /api/quotes outputAmount ${frozen.outputAmount}; posted ${row.outputAmount}`);
