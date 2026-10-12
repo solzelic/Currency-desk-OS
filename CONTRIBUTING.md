@@ -67,7 +67,7 @@ not the tool that performed it.
 
 ## Pull requests
 
-New agent PRs are frozen until Sol's push, except the finalize list.
+New agent pull requests are frozen until the repository owner pushes a commit to main that ends the freeze, except pull requests that finish work already in progress.
 
 Use the PR template. Every PR states:
 

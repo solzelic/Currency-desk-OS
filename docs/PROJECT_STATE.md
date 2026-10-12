@@ -72,7 +72,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-New agent PRs are frozen until Sol's push, except the finalize list.
+New agent pull requests are frozen until the repository owner pushes a commit to main that ends the freeze, except pull requests that finish work already in progress.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header

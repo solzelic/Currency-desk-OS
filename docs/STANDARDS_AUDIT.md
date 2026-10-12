@@ -183,7 +183,7 @@ CI does not run on `main` after merge.
 | --- | --- |
 | `.github/workflows/{server,browser,governance}.yml` | PRs gate on typecheck, server tests + Postgres ledger, parse, generated-output freshness, full seam suite, living-docs freshness. |
 | `.github/pull_request_template.md`, `CONTRIBUTING.md` | One job, stated end state, tests run, rollback. |
-| Workflows are `on: [pull_request]` only | A push to `main` that bypasses a PR (or a broken merge) is not re-tested. Red-main-as-stop-the-line is a people rule, not a workflow. |
+| Server, Browser, Civil dates, and Governance run on `pull_request` and on `push` to `main` | A push to `main` re-runs Server, Browser, and Civil dates. Governance's diff stays on `pull_request`, because a push has no base ref and no review body. |
 | No CODEOWNERS; `gh` rulesets list is empty | “Nothing reaches main without CTO review” is not enforced by GitHub from what this audit can see (branch-protection API returned 403 to the agent). |
 | PR #30 | Still open, conflicting, last CI 2026-08-06 — pre-governance. A counter-example of “small, current, reviewed”. |
 

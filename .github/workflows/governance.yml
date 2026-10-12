@@ -23,10 +23,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+      # Prove a push exits 0 before the real diff. The push has no base ref.
+      - name: Push event passes
+        run: node --test tests/governance-push.test.mjs
       # PR body and base ref go through env, never string interpolation into
-      # the shell — the body is author-controlled text.
+      # the shell. The body is author-controlled text. The diff runs on
+      # pull_request only. A push has no base ref and no review body.
       - name: Living documentation was reviewed or updated
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE_REF: ${{ github.base_ref }}
-        run: node scripts/check-repository-governance.mjs --base "origin/$BASE_REF"
+          EVENT_NAME: ${{ github.event_name }}
+        run: node scripts/run-governance-check.mjs
