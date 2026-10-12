@@ -2589,6 +2589,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     overflow: hidden !important;
   }
   .phone-rates {
+    --brand-primary: var(--accent-rates, #274B8E);
     background: var(--color-bg, #F7F6F3);
     /* The window runs under the bar. This keeps New deal above it. */
     padding-bottom: var(--phone-bar-h);
@@ -2617,6 +2618,49 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 50%;
     flex: none;
     background: #6B6760;
+  }
+  .phone-rates-status-skel {
+    display: block;
+    width: 168px;
+    height: 12px;
+    border-radius: 4px;
+    background: var(--gray-100, #EFEDE8);
+  }
+  /* Six table rows under the search, while the board is still arriving. */
+  .phone-rates .phone-rates-skel.phone-skel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 72px 72px;
+    gap: 8px;
+    align-items: center;
+    box-sizing: border-box;
+    height: 44px;
+    margin: 0;
+    padding: 0 16px;
+    border-radius: 0;
+    background: transparent;
+    border-bottom: 1px solid var(--gray-200, #E7E4DE);
+  }
+  .phone-rates-skel i {
+    display: block;
+    height: 12px;
+    border-radius: 4px;
+    background: var(--gray-100, #EFEDE8);
+  }
+  .phone-rates .phone-error .phone-text-btn {
+    background: var(--brand-primary, #274B8E);
+    color: #fff;
+  }
+  .phone-rates-pricing {
+    display: block;
+    margin: 16px auto 0;
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--brand-primary, #274B8E);
+    border-radius: var(--radius-md, 10px);
+    background: transparent;
+    color: var(--brand-primary, #274B8E);
+    font: 600 15px/1 var(--font-ui, Archivo, system-ui, sans-serif);
+    cursor: pointer;
   }
   .phone-rates-status.is-live i { background: var(--color-positive, #157A3E); }
   .phone-rates-status.is-locked i { background: var(--color-warning-border, #E8B04A); }
@@ -2725,7 +2769,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     cursor: pointer;
   }
   /* A selected option is neutral. Only the primary button takes the app accent. */
-  .phone-quote-seg button.is-on { background: var(--gray-900, #161513); color: #fff; }
+  .phone-quote-seg button.is-on { background: var(--brand-primary, #274B8E); color: #fff; }
   .phone-quote-amt, .phone-quote-gets, .phone-quote-kv {
     background: #fff;
     border: 1px solid var(--color-border, #E2DFD8);

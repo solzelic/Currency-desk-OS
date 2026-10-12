@@ -575,9 +575,10 @@ authenticated narrative dashboard.
 ## Last reviewed
 
 **2026-10-12**, phone Rates quote. Customer gets is the output of
-`POST /api/quotes`, and the rate on that sheet is the server's
-customer rate with trailing zeros stripped, not a 4-decimal round
-multiplied again in the browser. The list stays four decimals.
+`POST /api/quotes`. The sheet shows that customer rate at four
+decimals. Customer gets stays the server output, not a multiply of
+the rounded rate. The list stays four decimals. The fee note is
+"The fee is set in Pricing."
 Currency names are the catalog in `yorkfx-converter.js` (`US
 Dollar`, `Saudi Riyal`), not `Intl.DisplayNames`. Pricing #117's
 phone list still asks DisplayNames; it should read this same table.

@@ -55,6 +55,13 @@
     const fn = window.CDOS.formatPhoneMoney;
     return typeof fn === 'function' ? fn(n, ccy) : (num(n) + (ccy ? ' ' + ccy : ''));
   };
+  /* Two decimals, including a trailing zero. num() drops it, so 671.80
+     was painting as 671.8 on the phone ticket. */
+  const money2 = (n) => {
+    const raw = Number(String(n == null ? '' : n).replace(/,/g, ''));
+    if (!Number.isFinite(raw)) return '';
+    return new Intl.NumberFormat('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(raw);
+  };
   const phoneDay = (iso) => {
     if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || '';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1186,7 +1193,7 @@
                     <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                   </div>
                   <Lbl>Customer receives</Lbl>
-                  <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
+                  <Money value={out.amt ? (phoneSheet ? money2(out.amt) : num(out.amt)) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : rateShown(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? (phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate)) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>

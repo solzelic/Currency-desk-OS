@@ -32690,6 +32690,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const fn = window.CDOS.formatPhoneMoney;
     return typeof fn === 'function' ? fn(n, ccy) : num(n) + (ccy ? ' ' + ccy : '');
   };
+  /* Two decimals, including a trailing zero. num() drops it, so 671.80
+     was painting as 671.8 on the phone ticket. */
+  const money2 = n => {
+    const raw = Number(String(n == null ? '' : n).replace(/,/g, ''));
+    if (!Number.isFinite(raw)) return '';
+    return new Intl.NumberFormat('en-CA', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(raw);
+  };
   const phoneDay = iso => {
     if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || '';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -35332,7 +35342,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
-      value: out.amt ? num(out.amt) : '—',
+      value: out.amt ? phoneSheet ? money2(out.amt) : num(out.amt) : '—',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);
@@ -63141,6 +63151,15 @@ window.CDOS_PERSIST = (function () {
     if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return '';
     return text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   }
+
+  /* The sheet shows four decimals. Customer gets is still the server
+     output, not this rounded rate multiplied again. */
+  function formatQuoteRate(raw) {
+    const full = formatServerRate(raw);
+    if (!full) return '';
+    const n = Number(full);
+    return isFinite(n) ? n.toFixed(4) : '';
+  }
   function moneyInput(raw) {
     const text = String(raw || '').trim();
     if (!/^(?:0|[1-9]\d*)(?:\.\d{0,2})?$/.test(text)) return '';
@@ -63214,6 +63233,7 @@ window.CDOS_PERSIST = (function () {
     const amountRef = useRef(null);
     const heldQuote = useRef('');
     const canEdit = role === 'Owner' || role === 'Manager';
+    const isOwner = role === 'Owner';
     const load = () => {
       setPhase('loading');
       fetch('/api/rates/market', {
@@ -63348,7 +63368,14 @@ window.CDOS_PERSIST = (function () {
     }, "Edit") : null;
     const banner = /*#__PURE__*/React.createElement("div", {
       "data-phone-rates": phase
-    }, status.text ? /*#__PURE__*/React.createElement("p", {
+    }, phase === 'loading' ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-rates-status is-fresh",
+      "data-phone-rates-status": "loading"
+    }, /*#__PURE__*/React.createElement("i", {
+      "aria-hidden": "true"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "phone-rates-status-skel"
+    })) : status.text ? /*#__PURE__*/React.createElement("p", {
       className: 'phone-rates-status is-' + status.tone,
       "data-phone-rates-status": status.tone
     }, /*#__PURE__*/React.createElement("i", {
@@ -63375,16 +63402,26 @@ window.CDOS_PERSIST = (function () {
       className: "is-buy"
     }, "We buy"), ": the customer gives us that currency. ", /*#__PURE__*/React.createElement("b", {
       className: "is-sell"
-    }, "We sell"), ": the customer takes it."), phase === 'loading' && /*#__PURE__*/React.createElement(Phone.LoadingState, {
-      rows: 6,
-      label: "Loading rates"
-    }), phase === 'error' && /*#__PURE__*/React.createElement(Phone.ErrorState, {
-      message: "Rates did not load. Try again.",
+    }, "We sell"), ": the customer takes it."), phase === 'loading' && /*#__PURE__*/React.createElement("div", {
+      className: "phone-rates-skels",
+      role: "status",
+      "aria-label": "Loading rates"
+    }, [0, 1, 2, 3, 4, 5].map(i => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      className: "phone-skel phone-rates-skel"
+    }, /*#__PURE__*/React.createElement("i", null), /*#__PURE__*/React.createElement("i", null), /*#__PURE__*/React.createElement("i", null)))), phase === 'error' && /*#__PURE__*/React.createElement(Phone.ErrorState, {
+      message: "Rates did not load.",
       onRetry: load
-    }), phase === 'ready' && rows.length === 0 && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+    }), phase === 'ready' && rows.length === 0 && /*#__PURE__*/React.createElement("div", {
+      className: "phone-rates-empty"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No rates yet",
-      message: "The desk has no currency to quote."
-    }), phase === 'ready' && rows.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      message: "Add currencies in Pricing to see rates here."
+    }), isOwner ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-rates-pricing",
+      onClick: onEditPricing
+    }, "Open Pricing") : null), phase === 'ready' && rows.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "phone-rates-head"
     }, /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("span", null, "We buy"), /*#__PURE__*/React.createElement("span", null, "We sell")), /*#__PURE__*/React.createElement("div", {
       className: "phone-list"
@@ -63458,9 +63495,9 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'), /*#__PURE__*/React.createElement("b", {
       className: side === 'buys' ? 'is-sell' : 'is-buy',
       "data-server-rate": serverQuote ? formatServerRate(serverQuote.customerRate) : ''
-    }, serverQuote ? formatServerRate(serverQuote.customerRate) + ' ' + serverQuote.to : '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Fee"), /*#__PURE__*/React.createElement("b", null, amountLine(serverQuote ? serverQuote.feeCad : feeCad, home)))), /*#__PURE__*/React.createElement("p", {
+    }, serverQuote ? formatQuoteRate(serverQuote.customerRate) + ' ' + serverQuote.to : '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Fee"), /*#__PURE__*/React.createElement("b", null, amountLine(serverQuote ? serverQuote.feeCad : feeCad, home)))), /*#__PURE__*/React.createElement("p", {
       className: "phone-quote-note"
-    }, quoteNote || 'The fee is set in Pricing. Customer gets is the server quote, and posting uses that amount.'), picking && /*#__PURE__*/React.createElement("div", {
+    }, quoteNote || 'The fee is set in Pricing.'), picking && /*#__PURE__*/React.createElement("div", {
       className: "phone-quote-pick",
       role: "listbox",
       "aria-label": "Currencies"

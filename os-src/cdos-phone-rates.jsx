@@ -153,6 +153,15 @@
     return text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   }
 
+  /* The sheet shows four decimals. Customer gets is still the server
+     output, not this rounded rate multiplied again. */
+  function formatQuoteRate(raw) {
+    const full = formatServerRate(raw);
+    if (!full) return '';
+    const n = Number(full);
+    return isFinite(n) ? n.toFixed(4) : '';
+  }
+
   function moneyInput(raw) {
     const text = String(raw || '').trim();
     if (!/^(?:0|[1-9]\d*)(?:\.\d{0,2})?$/.test(text)) return '';
@@ -219,6 +228,7 @@
     const amountRef = useRef(null);
     const heldQuote = useRef('');
     const canEdit = role === 'Owner' || role === 'Manager';
+    const isOwner = role === 'Owner';
 
     const load = () => {
       setPhase('loading');
@@ -340,7 +350,9 @@
       : null;
     const banner = (
       <div data-phone-rates={phase}>
-        {status.text ? <p className={'phone-rates-status is-' + status.tone} data-phone-rates-status={status.tone}><i aria-hidden="true" />{status.text}</p> : null}
+        {phase === 'loading'
+          ? <p className="phone-rates-status is-fresh" data-phone-rates-status="loading"><i aria-hidden="true" /><span className="phone-rates-status-skel" /></p>
+          : status.text ? <p className={'phone-rates-status is-' + status.tone} data-phone-rates-status={status.tone}><i aria-hidden="true" />{status.text}</p> : null}
         <Phone.Search value={query} onChange={setQuery} placeholder="Find a currency" label="Find a currency" />
       </div>
     );
@@ -357,9 +369,20 @@
         {phase === 'ready' && (
           <p className="phone-rates-explain">Prices in {home} for 1 unit (x100: for 100 units). <b className="is-buy">We buy</b>: the customer gives us that currency. <b className="is-sell">We sell</b>: the customer takes it.</p>
         )}
-        {phase === 'loading' && <Phone.LoadingState rows={6} label="Loading rates" />}
-        {phase === 'error' && <Phone.ErrorState message="Rates did not load. Try again." onRetry={load} />}
-        {phase === 'ready' && rows.length === 0 && <Phone.EmptyState title="No rates yet" message="The desk has no currency to quote." />}
+        {phase === 'loading' && (
+          <div className="phone-rates-skels" role="status" aria-label="Loading rates">
+            {[0, 1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="phone-skel phone-rates-skel"><i /><i /><i /></div>
+            ))}
+          </div>
+        )}
+        {phase === 'error' && <Phone.ErrorState message="Rates did not load." onRetry={load} />}
+        {phase === 'ready' && rows.length === 0 && (
+          <div className="phone-rates-empty">
+            <Phone.EmptyState title="No rates yet" message="Add currencies in Pricing to see rates here." />
+            {isOwner ? <button type="button" className="phone-rates-pricing" onClick={onEditPricing}>Open Pricing</button> : null}
+          </div>
+        )}
         {phase === 'ready' && rows.length > 0 && (
           <div>
             <div className="phone-rates-head"><span>Currency</span><span>We buy</span><span>We sell</span></div>
@@ -403,10 +426,10 @@
                 <b aria-live="polite" data-server-quote={serverQuote ? serverQuote.quoteId : ''} data-server-output={serverQuote ? serverQuote.outputAmount : ''}>{serverQuote ? amountLine(serverQuote.outputAmount, serverQuote.to) : '—'}</b>
               </div>
               <div className="phone-quote-kv">
-                <div><span>{'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'}</span><b className={side === 'buys' ? 'is-sell' : 'is-buy'} data-server-rate={serverQuote ? formatServerRate(serverQuote.customerRate) : ''}>{serverQuote ? formatServerRate(serverQuote.customerRate) + ' ' + serverQuote.to : '—'}</b></div>
+                <div><span>{'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'}</span><b className={side === 'buys' ? 'is-sell' : 'is-buy'} data-server-rate={serverQuote ? formatServerRate(serverQuote.customerRate) : ''}>{serverQuote ? formatQuoteRate(serverQuote.customerRate) + ' ' + serverQuote.to : '—'}</b></div>
                 <div><span>Fee</span><b>{amountLine(serverQuote ? serverQuote.feeCad : feeCad, home)}</b></div>
               </div>
-              <p className="phone-quote-note">{quoteNote || 'The fee is set in Pricing. Customer gets is the server quote, and posting uses that amount.'}</p>
+              <p className="phone-quote-note">{quoteNote || 'The fee is set in Pricing.'}</p>
               {picking && (
                 <div className="phone-quote-pick" role="listbox" aria-label="Currencies">
                   {rows.map(row => (

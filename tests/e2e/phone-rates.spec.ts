@@ -150,14 +150,20 @@ for (const width of [360, 390]) {
     await expect(gets).toHaveText(/\d[\d,]*\.\d{2} CAD/);
     const serverRate = await sheet.locator("[data-server-rate]").getAttribute("data-server-rate");
     expect(serverRate).toMatch(/^\d+\.\d+$/);
-    await expect(sheet.locator(".phone-quote-kv")).toContainText(`${serverRate} CAD`);
+    await expect(sheet.locator("[data-server-rate]")).toHaveText(`${Number(serverRate).toFixed(4)} CAD`);
+    await expect(sheet.locator(".phone-quote-note")).toHaveText("The fee is set in Pricing.");
     await expect(sheet.locator(".phone-quote-kv")).toContainText(/0\.00 CAD/);
     await page.screenshot({ path: `${SHOTS}/rates_quote_${width}.png` });
     const quoted = (await gets.innerText()).replace(/\s*CAD\s*$/, "");
     const quoteId = await gets.getAttribute("data-server-quote");
 
     const sells = sheet.getByRole("tab", { name: "Customer sells" });
-    expect(await sells.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(22, 21, 19)");
+    const sellsPaint = await sells.evaluate((el) => {
+      const paint = getComputedStyle(el);
+      return { background: paint.backgroundColor, color: paint.color };
+    });
+    expect(sellsPaint.background).toBe("rgb(39, 75, 142)");
+    expect(sellsPaint.color).toBe("rgb(255, 255, 255)");
     const start = sheet.getByRole("button", { name: "Start this deal" });
     expect(await start.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(39, 75, 142)");
 
@@ -167,7 +173,10 @@ for (const width of [360, 390]) {
     await expect(page.getByText("We buy USD")).toBeVisible();
     await expect(page.locator("[data-phone-client]")).toBeFocused();
     await expect(page.locator('.fixed.inset-0 input[inputmode="decimal"]').first()).toHaveValue("500");
-    await expect(page.locator(".fixed.inset-0")).toContainText(quoted);
+    await expect(page.locator(".cd-tx-receive")).toHaveText(quoted);
+    expect(quoted).toMatch(/^\d[\d,]*\.\d{2}$/);
+    await expect(page.locator(".fixed.inset-0")).toContainText("500.00 USD");
+    await expect(page.locator(".fixed.inset-0")).toContainText(`${quoted} CAD`);
     await page.screenshot({ path: `${SHOTS}/rates_deal_${width}.png` });
 
     /* Customer gets is the quote this screen asked the server for.
@@ -212,7 +221,15 @@ for (const width of [360, 390]) {
     });
     await page.locator('#phonebar [data-phone-app="rates"]').click();
     await expect(page.locator('[data-phone-rates="loading"]')).toBeVisible();
-    await expect(page.locator(".phone-skel")).toHaveCount(6);
+    await expect(page.getByRole("heading", { name: "Rates", exact: true })).toBeVisible();
+    await expect(page.locator('[data-phone-rates-status="loading"]')).toBeVisible();
+    await expect(page.getByLabel("Find a currency")).toBeVisible();
+    const skels = page.locator(".phone-rates-skel");
+    await expect(skels).toHaveCount(6);
+    const skelBox = await skels.first().boundingBox();
+    expect(skelBox && Math.round(skelBox.height)).toBe(44);
+    const searchBox = await page.getByLabel("Find a currency").boundingBox();
+    expect(skelBox && searchBox && skelBox.y).toBeGreaterThan(searchBox.y);
     await expect(page.locator(".phone-rate")).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/rates_loading_${width}.png` });
     release();
@@ -273,7 +290,10 @@ test("rates that fail to load say so, and do not keep old prices", async ({ page
   page.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text()); });
   await page.route("**/api/rates/market", (route) => route.abort());
   await openRates(page);
-  await expect(page.getByText("Rates did not load. Try again.")).toBeVisible();
+  await expect(page.getByText("Rates did not load.")).toBeVisible();
+  const retry = page.getByRole("button", { name: "Try again" });
+  await expect(retry).toBeVisible();
+  expect(await retry.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(39, 75, 142)");
   await expect(page.locator(".phone-rate")).toHaveCount(0);
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
@@ -316,13 +336,32 @@ test("an empty board says so, and passes the phone sweep", async ({ page }) => {
   });
   await openRates(page);
   await expect(page.getByText("No rates yet")).toBeVisible();
-  await expect(page.getByText("The desk has no currency to quote.")).toBeVisible();
+  await expect(page.getByText("Add currencies in Pricing to see rates here.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Pricing" })).toHaveCount(0);
   await expect(page.locator(".phone-rate")).toHaveCount(0);
+  await atDesk(page, "j.masri");
+  await page.evaluate(() => {
+    window.CDOS.buyUnitCad = () => 0;
+    window.CDOS.sellUnitCad = () => 0;
+  });
+  await openRates(page);
+  const openPricing = page.getByRole("button", { name: "Open Pricing" });
+  await expect(openPricing).toBeVisible();
+  const outline = await openPricing.evaluate((el) => {
+    const paint = getComputedStyle(el);
+    return { background: paint.backgroundColor, color: paint.color, border: paint.borderTopColor };
+  });
+  expect(outline.background).toBe("rgba(0, 0, 0, 0)");
+  expect(outline.color).toBe("rgb(39, 75, 142)");
+  expect(outline.border).toBe("rgb(39, 75, 142)");
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
     await page.screenshot({ path: `${SHOTS}/rates_empty_${width}.png` });
   }
+  await page.setViewportSize({ width: 390, height: 844 });
   await phoneSweep(page, { roots: [".phone-rates"] });
+  await openPricing.click();
+  await expect(page.locator(".win.show.active .win-title")).toContainText("Pricing");
 });
 
 test("a desk prices the list in its own currency", async ({ page }) => {
