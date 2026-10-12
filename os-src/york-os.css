@@ -3140,18 +3140,25 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-weight: 600; font-size: 13px; padding: 0 4px; color: var(--gray-900, #161513);
   }
   .till-phone-actions button:disabled { color: var(--gray-500, #6B6760); }
+  .till-phone-card .till-phone-top {
+    display: flex; align-items: flex-end; justify-content: flex-start;
+    gap: 8px; min-height: 44px;
+  }
   .till-phone-card .till-phone-till {
     display: flex; align-items: flex-end; justify-content: flex-start;
-    width: 100%; box-sizing: border-box; margin: 0; min-height: 44px; padding: 8px 0 0;
+    flex: 1 1 auto; width: auto; min-width: 44px; box-sizing: border-box;
+    margin: 0; min-height: 44px; padding: 8px 0 0;
     border: 0; background: transparent; text-align: left;
     font-size: 17px; line-height: 22px; font-weight: 600;
     color: var(--gray-900, #161513);
   }
+  .till-phone-card .till-phone-drawer { flex: 0 1 auto; min-width: 0; margin: 0; text-align: right; }
+  .till-phone-card .till-phone-k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .till-phone-card .till-phone-amount { font-size: 17px; line-height: 22px; font-weight: 600; }
   .till-phone-card .till-phone-meta {
     font-size: 13px; line-height: 18px; margin-top: 2px;
     color: var(--color-text-muted, #6B6760);
   }
-  .till-phone-card .till-phone-drawer { margin-top: 8px; }
   .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--tap-min); }
   .till-phone-sec h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 650; }
   .till-phone-group {
