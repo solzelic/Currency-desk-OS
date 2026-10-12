@@ -128,6 +128,20 @@ describe("platform write routes name a need", () => {
     expect(stranger.statusCode).toBe(401);
   });
 
+  it("refuses an auditor before it judges a bad tenant body", async () => {
+    const before = await tenant("tnt-gatedesk");
+    for (const payload of [{ plan: "not-a-plan" }, { suspended: "no" }, {}]) {
+      const res = await call(sessions.auditor, "PATCH", "/api/admin/tenants/tnt-gatedesk", payload);
+      expect({ status: res.statusCode, error: res.json().error }).toEqual({ status: 403, error: "permission_denied" });
+    }
+    expect(await tenant("tnt-gatedesk")).toMatchObject({ plan: before!.plan, suspended: before!.suspended });
+    const billing = await call(sessions.billing, "PATCH", "/api/admin/tenants/tnt-gatedesk", { plan: "not-a-plan" });
+    expect(billing.statusCode).toBe(400);
+    const security = await call(sessions.security, "PATCH", "/api/admin/tenants/tnt-gatedesk", { suspended: "no" });
+    expect(security.statusCode).toBe(400);
+    expect(await tenant("tnt-gatedesk")).toMatchObject({ plan: before!.plan, suspended: before!.suspended });
+  });
+
   it("refuses an auditor and billing from creating a desk, and lets support and security create one", async () => {
     await denied(await call(sessions.auditor, "POST", "/api/admin/tenants", deskBody("auditenant", "a@auditenant.example")));
     expect(await tenant("tnt-auditenant")).toBeUndefined();

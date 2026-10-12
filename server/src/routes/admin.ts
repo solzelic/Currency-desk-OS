@@ -1396,18 +1396,34 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   /* Block or unblock a desk, or change its plan. Those are different
      jobs: a suspension is security:manage, and support does not hold
      it. A plan change is billing:write. A body that asks for both has
-     to hold both, and neither write happens until both checks pass. */
+     to hold both, and neither write happens until both checks pass.
+     Which fields are present decides the need, and that check runs
+     before the body is validated. A caller who does not hold it is
+     refused with 403, including when the body is bad. */
   app.patch<{ Params: { id: string } }>("/api/admin/tenants/:id", async (req, reply) => {
-    const parsed = patchTenantBody.safeParse(req.body);
-    if (!parsed.success) {
-      if (!(await gate(req, reply))) return;
-      return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    }
+    const raw = req.body;
+    const record = raw !== null && typeof raw === "object" && !Array.isArray(raw)
+      ? raw as Record<string, unknown>
+      : {};
     const needs: Permission[] = [];
-    if (parsed.data.suspended !== undefined) needs.push("security:manage");
-    if (parsed.data.plan !== undefined) needs.push("billing:write");
-    const who = await gate(req, reply, needs);
+    if ("suspended" in record) needs.push("security:manage");
+    if ("plan" in record) needs.push("billing:write");
+    const who = await gate(req, reply, needs.length ? needs : undefined);
     if (!who) return;
+    /* No field names a job. This is still a write, so someone who holds
+       neither permission learns nothing about the shape. */
+    if (!needs.length) {
+      const role = ((who as any).platform as { role: PlatformRole }).role;
+      if (!can(role, "security:manage") && !can(role, "billing:write")) {
+        reply.code(403).send({
+          error: "permission_denied",
+          detail: `Your role (${role}) cannot security manage or billing write.`,
+        });
+        return;
+      }
+    }
+    const parsed = patchTenantBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const id = req.params.id;
     const t = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, id)).limit(1))[0];
     if (!t) return reply.code(404).send({ error: "not_found" });
