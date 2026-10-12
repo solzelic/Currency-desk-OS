@@ -70,6 +70,11 @@ test("the shared shell uses those tokens and does not restyle 1280", () => {
   assert.equal(york.includes("rgb(30, 29, 26)"), false);
   assert.equal(shell.includes("color-scheme: light !important"), false);
   assert.match(shell, /html\[data-cdtheme="dark"\] \{ color-scheme: dark; \}/);
+  assert.ok(ratio(hex("#161513"), hex("#F6F3EC")) >= 4.5);
+  assert.ok(ratio(hex("#FFFFFF"), hex("#0F5132")) >= 4.5);
+  assert.ok(ratio(hex("#C9C2B6"), hex("#2A2924")) >= 4.5);
+  assert.match(shell, /html\[data-cdtheme="dark"\] \.phone-seg-btn\.on \{[\s\S]*?color:\s*#161513/);
+  assert.match(shell, /html\[data-cdtheme="dark"\] \.phone-sticky-btn \{[\s\S]*?background-color:\s*#0F5132/);
   const shellBody = shell.replace(/^\/\*[\s\S]*?\*\//, "");
   assert.equal(shellBody.trimStart().startsWith("@media (max-width: 430px)"), true);
 });

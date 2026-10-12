@@ -114,6 +114,16 @@
   // routes through the one OS door instead of offering its own sign-in. With
   // no backend at all (static demo, file://) the offline sign-in stays.
   var EMBEDDED = window.self !== window.top || /(\?|&|#)embed/.test(window.location.search + window.location.hash);
+  /* The iframe's own width is the window, not the desk. The parent
+     page is 1280 on the desktop picture and at most 430 on a phone. */
+  function embeddedPhone() {
+    try {
+      if (window.parent && window.parent !== window && window.parent.matchMedia) {
+        return window.parent.matchMedia('(max-width: 430px)').matches;
+      }
+    } catch (e) {}
+    return window.matchMedia && window.matchMedia('(max-width: 430px)').matches;
+  }
   var BACKEND = false;   // set once /api/auth/me answers — any HTTP status
   function showOsDoor() {
     var form = document.getElementById('signinForm');
@@ -144,11 +154,15 @@
           return r.json().then(function (d) {
             if (!(d && d.user)) return;
             /* The desk writes yorkfx_staff_auth before this frame loads.
-               The flag is already set, and enterAs is what opens the
-               editor. Skipping it left the sign-in form up on a desk
-               that was already signed in. */
+               enterAs opens the editor when the flag is missing. When
+               the flag is already set, main leaves the sign-in form up.
+               A phone still needs the editor. */
             if (!isAuthed()) enterAs(d.user.id);
-            else showApp();
+            /* The desk sets the flag before this frame loads, so main
+               leaves the sign-in form up. Calling showApp() here opened
+               the editor and moved the 1280 picture. A phone is the
+               only width that needs the editor. */
+            else if (embeddedPhone()) showApp();
           });
         }
         // Backend up, no desk session. Clear any sessionStorage flag left by an

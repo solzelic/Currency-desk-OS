@@ -1751,7 +1751,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
                 <Phone.SummaryCards columns={2} cards={[
                   { id: 'records', label: 'Records', value: String(stats.n), caption: rangeLabel },
                   { id: 'volume', label: 'Pay-in volume', value: volumeText, caption: !stats.n ? 'Nothing posted' : (stats.unvalued ? stats.unvalued + ' not in this total' : 'View breakdown'), onClick: stats.n ? () => setBreakdown('volume') : undefined },
-                  { id: 'fees', label: 'Fees collected', value: feesText, caption: stats.n ? 'View earnings' : 'Nothing posted', onClick: stats.n ? () => setBreakdown('fees') : undefined },
+                  { id: 'fees', label: 'Fees collected', value: feesText, caption: earningsHidden ? null : (stats.n ? 'View earnings' : 'Nothing posted'), onClick: !earningsHidden && stats.n ? () => setBreakdown('fees') : undefined, disabled: !!earningsHidden },
                   { id: 'rpt', label: 'Reportable', value: stats.openRpt > 0 ? String(stats.openRpt) : (stats.rpt > 0 ? 'Filed' : '0'), caption: stats.rpt > 0 ? (stats.openRpt > 0 ? 'Open' : 'All filed') : 'Nothing to file', onClick: () => setViewToggle('RPT') },
                 ]} />
                 <Phone.Search value={q} onChange={(value) => { setQ(value); if (value) setFocusRefs(null); }} placeholder="Search name, ref or amount" label="Search name, ref or amount" />
@@ -1799,7 +1799,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           </Phone.Screen>
           {modal && <Portal>{React.createElement((window.CDOS && window.CDOS.TxModal) || TxModal, { rows, clients, setClients, setRows, settings, me, log, prefillClient: client, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted: refreshServerLedger, onClose: () => setModal(false), onDone: (id) => { setModal(false); setView('open'); setDetailId(id); } })}</Portal>}
           {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients, serverBacked }} onServerReversed={refreshServerLedger} onClose={() => setDetailId(null)} onReceipt={openReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
-          {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} onClose={() => setBreakdown(null)} /></Portal>}
+          {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} earningsHidden={earningsHidden} onClose={() => setBreakdown(null)} /></Portal>}
         </div>
       );
     }

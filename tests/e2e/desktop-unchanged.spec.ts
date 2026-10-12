@@ -399,12 +399,10 @@ async function openDesktopApp(page: Page, id: string, title: RegExp): Promise<Lo
     await expect(page.getByText(HOLD_UNTIL).first()).toBeVisible();
   }
   if (id === "rates") {
+    /* Main leaves the embedded board on its sign-in form. The 1280
+       picture is that form. Opening the editor is a desktop change. */
     const frame = page.frameLocator('iframe[title="Rate Board"]');
-    if (process.env.DESKTOP_BASELINE_FROM === "main") {
-      await expect(frame.locator("body")).toBeVisible();
-    } else {
-      await expect(frame.locator("#edSince")).toContainText("2m 00s");
-    }
+    await expect(frame.getByRole("heading", { name: "Rate board sign-in" })).toBeVisible();
   }
   if (id === "audit") {
     await expect(win).toContainText("9:05 AM");

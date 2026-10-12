@@ -184,6 +184,10 @@
     color: inherit;
   }
   button.phone-stat { cursor: pointer; }
+  button.phone-stat:disabled {
+    opacity: 1;
+    cursor: default;
+  }
   .phone-stat-label { font: var(--text-caption); color: var(--color-text-muted, #6B6760); }
   .phone-stat-value { font: var(--text-amount); color: var(--color-text, #161513); }
   .phone-stat-cap { font: var(--text-caption); color: var(--color-text-muted, #6B6760); }
@@ -346,6 +350,31 @@
     background: var(--gray-100, #EFEDE8);
     color: var(--gray-500, #6B6760);
     cursor: not-allowed;
+  }
+  /* Selected Records was ledger green on the muted tan, 3.66:1.
+     New transaction was under 4.5:1 on the same screen. Dark mode
+     uses a light pill with near-black type, and white on #0F5132
+     (9.4:1) for the sticky action. */
+  html[data-cdtheme="dark"] .phone-seg {
+    background: #2A2924;
+  }
+  html[data-cdtheme="dark"] .phone-seg-btn {
+    color: #C9C2B6;
+  }
+  html[data-cdtheme="dark"] .phone-seg-btn.on {
+    background: #F6F3EC;
+    color: #161513;
+  }
+  html[data-cdtheme="dark"] .phone-sticky {
+    background: #14130F;
+  }
+  html[data-cdtheme="dark"] .phone-sticky-btn {
+    background-color: #0F5132;
+    color: #FFFFFF;
+  }
+  html[data-cdtheme="dark"] .phone-sticky-btn:disabled {
+    background-color: #2A2924;
+    color: #C9C2B6;
   }
   .phone-sticky-why {
     margin: 8px 0 0;

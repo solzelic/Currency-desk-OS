@@ -733,17 +733,20 @@ test("dark theme text on Clients and Ledger is at least 4.5:1", async ({ page })
   await page.reload();
   await landOnDesktop(page);
   await dismissTour(page);
-  const failures: string[] = [];
   for (const width of [360, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
     for (const app of ["ledger", "clients"]) {
       await page.locator(`#phonebar [data-phone-app="${app}"]`).click();
       await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", app);
-      const lines = await assertDarkShellContrast(page, app);
-      lines.forEach((line) => failures.push(width + "px " + app + ": " + line));
+      /* A window still opening paints light type on a light card for
+         one frame. The threshold stays 4.5:1. This waits until the
+         painted shell holds it. */
+      await expect.poll(async () => {
+        const lines = await assertDarkShellContrast(page, app);
+        return lines.map((line) => width + "px " + app + ": " + line);
+      }, { timeout: 8_000, message: "dark shell contrast" }).toEqual([]);
     }
   }
-  expect(failures, "dark shell contrast").toEqual([]);
 });
 
 test("desktop does not request Inter", async ({ page }) => {

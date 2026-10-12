@@ -16,7 +16,7 @@ those files in place of `fonts.googleapis.com`. The same files are used
 for the main capture and for the branch compare. A runner font change
 does not move the pixels. A shot is refused if those faces did not load.
 
-main-sha: 9f1efb81f285a69e1b0d30ee2f092e9734342a08
+main-sha: 5216ef4780b750c2dcce5847296288920d63b443
 
 Do not replace a PNG with a picture of a feature branch. A difference
 means the desktop changed. The pixel rule is in

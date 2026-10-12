@@ -31609,8 +31609,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           id: 'fees',
           label: 'Fees collected',
           value: feesText,
-          caption: stats.n ? 'View earnings' : 'Nothing posted',
-          onClick: stats.n ? () => setBreakdown('fees') : undefined
+          caption: earningsHidden ? null : stats.n ? 'View earnings' : 'Nothing posted',
+          onClick: !earningsHidden && stats.n ? () => setBreakdown('fees') : undefined,
+          disabled: !!earningsHidden
         }, {
           id: 'rpt',
           label: 'Reportable',
@@ -31746,6 +31747,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         rows: rows.filter(r => inRange(r.date)),
         client: client,
         focus: breakdown,
+        earningsHidden: earningsHidden,
         onClose: () => setBreakdown(null)
       })));
     }
@@ -62443,12 +62445,14 @@ window.CDOS_PERSIST = (function () {
     return /*#__PURE__*/React.createElement("div", {
       className: 'phone-stats cols-' + cols
     }, (cards || []).map((card, i) => {
-      const Tag = card.onClick ? 'button' : 'div';
+      const button = !!(card.onClick || card.disabled);
+      const Tag = button ? 'button' : 'div';
       return /*#__PURE__*/React.createElement(Tag, {
         key: card.id || i,
-        type: card.onClick ? 'button' : undefined,
+        type: button ? 'button' : undefined,
         className: "phone-stat",
-        onClick: card.onClick
+        disabled: card.disabled ? true : undefined,
+        onClick: card.disabled ? undefined : card.onClick
       }, /*#__PURE__*/React.createElement("span", {
         className: "phone-stat-label"
       }, card.label), /*#__PURE__*/React.createElement("span", {
