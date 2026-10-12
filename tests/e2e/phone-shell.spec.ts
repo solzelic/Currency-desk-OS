@@ -29,6 +29,28 @@ async function atDesk(page: Page, staffId: string): Promise<void> {
   await expect(page.locator(".win.show.active").first()).toHaveCSS("transform", "none");
 }
 
+/* A fresh book has no till session, and the desk treats that as
+   closed. These checks are about the open line, so they open the
+   till the way the drawer does, then let the screen read it back. */
+async function openServerTill(page: Page): Promise<void> {
+  const opened = await page.evaluate(async () => {
+    const res = await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: "{}",
+    });
+    if (res.ok || res.status === 409) return "open";
+    return `${res.status} ${await res.text()}`;
+  });
+  expect(opened, "the till did not open").toBe("open");
+  const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
+  await page.reload();
+  await sync;
+  await dismissTour(page);
+  await landOnDesktop(page);
+}
+
 async function moreNames(page: Page): Promise<string[]> {
   await page.locator('#phonebar [data-phone-app="more"]').click();
   await expectPhoneMore(page);
@@ -282,6 +304,7 @@ async function accentOf(page: Page, app: string, label: string): Promise<{ appAt
 test("primary buttons use the open app's accent", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page, "a.singh");
+  await openServerTill(page);
 
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await dismissTour(page);
@@ -479,6 +502,7 @@ async function topBarMeasure(page: Page) {
 test("the top bar is the same height at 360 and 390 with a long desk name", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
   await seedLongDesk(page);
+  await openServerTill(page);
   await expect(page.locator(".phone-head")).toBeVisible();
   const at360 = await topBarMeasure(page);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -578,6 +602,7 @@ test("the till line joins with a spaced dot at 360 when the till is closed and w
 
   await page.unroute("**/api/ledger/till-session");
   await seedLongDesk(page, false, "Till 1");
+  await openServerTill(page);
   await expect(page.locator(".phone-head")).toBeVisible();
   await expect(page.locator(".phone-till-state")).toHaveText("Till open");
   expect(await renderedTillLine(page)).toBe("Front Desk 01 · Till 1 · Till open");
