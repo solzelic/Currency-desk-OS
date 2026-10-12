@@ -64153,9 +64153,9 @@ window.CDOS_PERSIST = (function () {
     })), document.body);
   }
 
-  /* Not opened. The detail's Cancel button stays disabled until
-     docs/TRANSFER_CANCEL.md. `refund` is the server's stored amount,
-     already formatted. This sheet does not estimate it. */
+  /* Not opened. #130 adds the outline-red Cancel on this sheet.
+     Until then the detail has no Cancel control. `refund` is the
+     server's stored amount, already formatted. */
   function cancelSheetCopy(refund) {
     return {
       title: "Cancel this transfer?",
@@ -64178,10 +64178,6 @@ window.CDOS_PERSIST = (function () {
       id: "ph-cancel-title"
     }, copy.title), /*#__PURE__*/React.createElement("p", null, copy.body), /*#__PURE__*/React.createElement("button", {
       type: "button",
-      className: "ph-btn",
-      disabled: true
-    }, "Cancel is being fixed"), /*#__PURE__*/React.createElement("button", {
-      type: "button",
       className: "ph-btn quiet",
       onClick: onStay
     }, "Keep the transfer")));
@@ -64193,9 +64189,7 @@ window.CDOS_PERSIST = (function () {
 })();
 
 /* ---- os-src/phone/transfers.jsx ---- */
-/* Phone Transfers, only at 430px. The desktop pipeline is not restyled.
-   Partners are not connected. Creating a transfer records the cash.
-   It does not send anything to the partner. */
+/* Phone Transfers, only at 430px. The desktop pipeline is not restyled. */
 (function () {
   const {
     useState,
@@ -64203,8 +64197,6 @@ window.CDOS_PERSIST = (function () {
     useMemo,
     useRef
   } = React;
-  /* The foundation formatter. A missing one is a broken shell, not a
-     second formatter invented here. */
   const money = (amount, currency) => {
     const format = window.CDOS.formatPhoneMoney;
     if (typeof format !== "function") throw new Error("formatPhoneMoney is not loaded.");
@@ -64247,9 +64239,7 @@ window.CDOS_PERSIST = (function () {
     }
   }
 
-  /* Stored stamps are "2026-06-18 10:12". The phone reads
-     "Jun 18, 2026, 10:12 AM". A stamp this cannot read is left off
-     the line, so an ISO date never reaches the screen. */
+  /* "2026-06-18 10:12" reads "Jun 18, 2026, 10:12 AM". An unread stamp is left off. */
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   function historyWhen(ts) {
     const match = String(ts || "").match(/(\d{4})-(\d{2})-(\d{2})(?:[ T,]+)(\d{1,2}):(\d{2})/);
@@ -64268,9 +64258,7 @@ window.CDOS_PERSIST = (function () {
     return !!PROGRESS[t.status];
   }
 
-  /* Release goes back to the status before the hold. A fresh hold
-     remembers that status. An older hold, with nothing remembered,
-     uses the last history line that is not itself a hold. */
+  /* Release returns to the status before the hold, or the last history line that is not a hold. */
   function priorStatus(t) {
     const held = t.heldFrom;
     if (held && held !== "hold" && held !== "cancelled") return held;
@@ -64289,8 +64277,7 @@ window.CDOS_PERSIST = (function () {
     return at >= 0 && at < flow.length - 1 ? flow[at + 1] : null;
   }
 
-  /* "Funded" is the receive name of the send key. A receive is marked
-     Ready for pickup, then Paid to customer — the same list, no new key. */
+  /* A receive skips Funded, the receive name of the send key. */
   function advanceKey(t) {
     const next = nextStatus(t);
     if (t && t.direction === "receive" && t.status !== "hold" && next === "sent") return "transit";
@@ -64306,9 +64293,6 @@ window.CDOS_PERSIST = (function () {
     if (next === "paid") return "Mark paid out";
     return "Mark as " + T().statusLabel(next, t.direction);
   }
-
-  /* The total is the stored amount plus the stored fee, in cents,
-     then formatted. It is not priced again from the board. */
   function homeTotal(pay, fee) {
     const amount = Number(pay);
     const extra = Number(fee);
@@ -64316,12 +64300,7 @@ window.CDOS_PERSIST = (function () {
     return (Math.round(amount * 100) + Math.round(extra * 100)) / 100;
   }
 
-  /* The rate on the sheet is the one that multiplies back to the
-     gross, to the cent. The server keeps rates at 12 places. Show
-     the shortest of those that still hits, so a rounded rate never
-     makes Amount × Rate miss the row beside it. A receive's target
-     is the gross the book stored: payout plus the fee the partner
-     owes. A send's target is the foreign payout. */
+  /* Shortest rate that still multiplies back to the target, to the cent. */
   function rateShown(amount, targetCents) {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt === 0 || !Number.isFinite(targetCents)) return "";
@@ -64331,6 +64310,25 @@ window.CDOS_PERSIST = (function () {
       if (Math.round(amt * Number(shown) * 100) === targetCents) return shown;
     }
     return exact.toFixed(12);
+  }
+
+  /* Under 1 home per unit, Rates' fmtCad is quoted per 100. */
+  function receiveRate(amount, grossCents, home, ccy) {
+    const perUnit = rateShown(amount, grossCents);
+    if (!perUnit) return "";
+    const unit = Number(perUnit);
+    const per100 = unit < 1;
+    const exact = per100 ? unit * 100 : unit;
+    const basis = per100 ? 100 : 1;
+    const hits = text => Math.round(Number(amount) * Number(String(text).replace(/,/g, "")) / basis * 100) === grossCents;
+    const quoted = typeof fmtCad === "function" ? String(fmtCad(exact)) : "";
+    let shown = quoted && hits(quoted) ? quoted : "";
+    for (let digits = 0; !shown && digits <= 12; digits++) {
+      const candidate = exact.toFixed(digits);
+      if (hits(candidate)) shown = candidate;
+    }
+    shown = shown || exact.toFixed(12);
+    return shown + (per100 ? " " + home + " per 100 " + ccy : " " + home + "/" + ccy);
   }
   function detailRows(t, home) {
     const send = t.direction === "send";
@@ -64358,20 +64356,20 @@ window.CDOS_PERSIST = (function () {
       }, {
         label: "Rate",
         value: rate ? rate + " " + t.ccy + "/" + home : ""
+      }, {
+        label: "Receiver gets",
+        value: money(t.recvAmt, t.ccy)
       }].concat(tail);
     }
-    /* recvAmt leaves the drawer. The fee stays in the proceeds.
-       payAmt is what the sender paid, in the foreign currency. */
     const payout = Math.round(Number(t.recvAmt) * 100);
     const fee = Math.round(Number(t.fee) * 100);
     const grossCents = Number.isFinite(payout) && Number.isFinite(fee) ? payout + fee : NaN;
-    const rate = rateShown(t.payAmt, grossCents);
     return [{
       label: "Sender paid",
       value: money(t.payAmt, t.ccy)
     }, {
       label: "Rate",
-      value: rate ? rate + " " + home + "/" + t.ccy : ""
+      value: receiveRate(t.payAmt, grossCents, home, t.ccy)
     }, {
       label: "Gross",
       value: Number.isFinite(grossCents) ? money(grossCents / 100, home) : ""
@@ -64384,8 +64382,6 @@ window.CDOS_PERSIST = (function () {
       mark: "transfer-hand"
     }].concat(tail);
   }
-
-  /* `pin` is minted in the browser. A partner PIN is `partnerPin`, typed by staff. */
   function typedPartnerPin(t) {
     const typed = String(t && t.partnerPin || "").trim();
     if (!typed || typed === String(t && t.pin || "").trim()) return "";
@@ -64664,7 +64660,7 @@ window.CDOS_PERSIST = (function () {
     const SummaryList = window.CDOS.SummaryList;
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     const home = pack && pack.homeCurrency || "CAD";
-    const canCancel = !!(me && (me.role === "Owner" || me.role === "Manager" || me.role === "Senior teller"));
+    const manager = !!(me && (me.role === "Owner" || me.role === "Manager"));
     const receive = t.direction === "receive";
     const open = t.status !== "paid" && t.status !== "cancelled";
     const partnerPin = typedPartnerPin(t);
@@ -64759,20 +64755,14 @@ window.CDOS_PERSIST = (function () {
       type: "button",
       className: "ph-btn",
       onClick: () => onAdvance(t, advanceKey(t), "marked by hand")
-    }, label), (t.status !== "hold" || !receive && canCancel) && /*#__PURE__*/React.createElement("div", {
+    }, label), t.status !== "hold" && /*#__PURE__*/React.createElement("div", {
       className: "ph-secondary"
-    }, t.status !== "hold" && /*#__PURE__*/React.createElement("button", {
+    }, /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => onAdvance(t, "hold", "marked by hand")
-    }, "Hold"), !receive && canCancel && /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      className: "is-cancel",
-      disabled: true
-    }, "Cancel is being fixed")), receive ? /*#__PURE__*/React.createElement("p", {
+    }, "Hold")), /*#__PURE__*/React.createElement("p", {
       className: "ph-cancel-note"
-    }, "A received transfer can't be cancelled here. Ask a manager.") : !canCancel && /*#__PURE__*/React.createElement("p", {
-      className: "ph-cancel-note"
-    }, "Only a manager can cancel a transfer that took cash. Ask a manager to cancel."))), document.body);
+    }, receive ? "A received transfer can't be cancelled here. Ask a manager." : manager ? "Cancelling is not available on the phone yet." : "Only a manager can cancel a transfer that took cash. Ask a manager to cancel."))), document.body);
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     PhoneTransfers

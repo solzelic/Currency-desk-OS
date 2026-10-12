@@ -3244,11 +3244,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .ph-label { margin: 16px 0 8px; font-size: 13px; font-weight: 600; }
   .ph-hist { margin: 0 0 8px; font: var(--text-caption); color: var(--color-text-muted, #6B6760); }
-  /* Hand to customer is the cash result. Shared summary values are
-     already 600, so this row is 700. It stays the text colour. */
-  .ph-sheet .phone-summary div:has(dd[data-phone-cheque="transfer-hand"]) dt,
+  /* Customer receives is the key number, the same size as a
+     cheque's "Give the customer": 24/32, weight 700. Text colour. */
   .ph-sheet .phone-summary dd[data-phone-cheque="transfer-hand"] {
-    font-weight: 700;
+    font: var(--text-amount-lg);
+    color: var(--color-text, #161513);
   }
   .ph-hint { margin: 4px 0; color: #6B6760; font-size: 13px; font-weight: 400; }
   .ph-picks { display: flex; flex-direction: column; gap: 8px; }

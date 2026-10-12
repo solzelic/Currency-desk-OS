@@ -289,9 +289,9 @@
   }
 
 
-  /* Not opened. The detail's Cancel button stays disabled until
-     docs/TRANSFER_CANCEL.md. `refund` is the server's stored amount,
-     already formatted. This sheet does not estimate it. */
+  /* Not opened. #130 adds the outline-red Cancel on this sheet.
+     Until then the detail has no Cancel control. `refund` is the
+     server's stored amount, already formatted. */
   function cancelSheetCopy(refund) {
     return {
       title: "Cancel this transfer?",
@@ -306,7 +306,6 @@
         <div className="ph-confirm-card">
           <h2 id="ph-cancel-title">{copy.title}</h2>
           <p>{copy.body}</p>
-          <button type="button" className="ph-btn" disabled>Cancel is being fixed</button>
           <button type="button" className="ph-btn quiet" onClick={onStay}>Keep the transfer</button>
         </div>
       </div>

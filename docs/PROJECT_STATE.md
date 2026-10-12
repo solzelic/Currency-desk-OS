@@ -117,10 +117,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Partners are not connected. A cashier changes a status by hand
   from the transfer's detail.
   Creating a transfer posts the existing remittance. It does not
-  send money to a partner. Cancel does not run on the phone. A
-  cashier on a send is told to ask a manager. Owner, Manager, and
-  Senior teller see Cancel disabled until the reversal is wired.
-  A receive has no cancel path. The bar is five
+  send money to a partner. Cancel is hidden on the phone until the
+  reversal contract ships. A teller on a send is told to ask a
+  manager. An owner or a manager is told cancelling is not available
+  on the phone yet. A receive has no cancel path. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -586,28 +586,33 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-12**, phone Transfers QA. Cancel does not run. A cashier
-on a send is told: "Only a manager can cancel a transfer that took
-cash. Ask a manager to cancel." Owner, Manager, and Senior teller
-see Cancel disabled, labelled "Cancel is being fixed", until the
-reversal contract lands. A receive shows "A received transfer
-can't be cancelled here. Ask a manager." and no cancel control.
+**2026-10-12**, phone Transfers QA. Cancel is hidden. A teller on
+a send is told: "Only a manager can cancel a transfer that took
+cash. Ask a manager to cancel." An owner or a manager sees
+"Cancelling is not available on the phone yet." under Hold. There
+is no Cancel button until the reversal contract lands, when the
+outline-red Cancel returns for Owner, Manager, and Senior teller.
+A receive shows "A received transfer can't be cancelled here. Ask
+a manager." and no cancel control.
 A send detail shows Amount sent, Fee, and Total paid, then the rate,
 the method, and the partner (a 600 CAD send with the 9.99 fee is
 609.99 CAD). The rate is the one that multiplies Amount sent back to
-the foreign payout, to the cent, at up to 12 places. A receive shows
-Sender paid in the foreign currency, that same kind of rate, Gross, the fee kept from the
-proceeds, and Customer receives in the desk currency, then the method and the partner. The
-rate multiplies Sender paid to Gross (10,000 PHP at 0.024935 is 249.35
-CAD). Customer receives is bold and is the cash the ledger takes out
-of the drawer. The fee is not subtracted from it, and the customer
+the foreign payout, to the cent, at up to 12 places. Receiver gets
+follows that rate and is the stored foreign payout. A receive shows
+Sender paid in the foreign currency, the rate as Rates quotes a
+small unit (10,000 PHP at 2.4935 CAD per 100 PHP is 249.35 CAD),
+Gross, the fee kept from the proceeds, and Customer receives in the
+desk currency, then the method and the partner. Customer receives
+is the key number, 24/32 weight 700, and is the cash the ledger
+takes out of the drawer. The fee is not subtracted from it, and the customer
 does not pay it on the side. A receive is marked Ready for pickup,
 then Paid to customer. The Funded name of the send key is not a
 phone button. Desk reference is the transfer's
 own reference, a plain row, with "Our own reference. Not a partner pickup code."
 The browser-minted tracking number is not shown. A partner PIN is shown
-only when staff typed one. Cancel stays disabled until the reversal
-contract in `docs/TRANSFER_CANCEL.md`. Release returns
+only when staff typed one. Cancel stays hidden until the reversal
+contract in `docs/TRANSFER_CANCEL.md`, which brings the outline-red
+Cancel back. Release returns
 a held transfer to the status it had before the hold. The desktop
 pipeline, including its sample history wording, is unchanged.
 

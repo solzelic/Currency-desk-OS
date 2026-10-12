@@ -1,10 +1,6 @@
-/* Phone Transfers, only at 430px. The desktop pipeline is not restyled.
-   Partners are not connected. Creating a transfer records the cash.
-   It does not send anything to the partner. */
+/* Phone Transfers, only at 430px. The desktop pipeline is not restyled. */
 (function () {
   const { useState, useEffect, useMemo, useRef } = React;
-  /* The foundation formatter. A missing one is a broken shell, not a
-     second formatter invented here. */
   const money = (amount, currency) => {
     const format = window.CDOS.formatPhoneMoney;
     if (typeof format !== "function") throw new Error("formatPhoneMoney is not loaded.");
@@ -29,9 +25,7 @@
     }
   }
 
-  /* Stored stamps are "2026-06-18 10:12". The phone reads
-     "Jun 18, 2026, 10:12 AM". A stamp this cannot read is left off
-     the line, so an ISO date never reaches the screen. */
+  /* "2026-06-18 10:12" reads "Jun 18, 2026, 10:12 AM". An unread stamp is left off. */
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   function historyWhen(ts) {
     const match = String(ts || "").match(/(\d{4})-(\d{2})-(\d{2})(?:[ T,]+)(\d{1,2}):(\d{2})/);
@@ -45,9 +39,7 @@
   const PROGRESS = { created: 1, sent: 1, transit: 1 };
   function inProgress(t) { return !!PROGRESS[t.status]; }
 
-  /* Release goes back to the status before the hold. A fresh hold
-     remembers that status. An older hold, with nothing remembered,
-     uses the last history line that is not itself a hold. */
+  /* Release returns to the status before the hold, or the last history line that is not a hold. */
   function priorStatus(t) {
     const held = t.heldFrom;
     if (held && held !== "hold" && held !== "cancelled") return held;
@@ -67,8 +59,7 @@
     return at >= 0 && at < flow.length - 1 ? flow[at + 1] : null;
   }
 
-  /* "Funded" is the receive name of the send key. A receive is marked
-     Ready for pickup, then Paid to customer — the same list, no new key. */
+  /* A receive skips Funded, the receive name of the send key. */
   function advanceKey(t) {
     const next = nextStatus(t);
     if (t && t.direction === "receive" && t.status !== "hold" && next === "sent") return "transit";
@@ -86,8 +77,6 @@
     return "Mark as " + T().statusLabel(next, t.direction);
   }
 
-  /* The total is the stored amount plus the stored fee, in cents,
-     then formatted. It is not priced again from the board. */
   function homeTotal(pay, fee) {
     const amount = Number(pay);
     const extra = Number(fee);
@@ -95,12 +84,7 @@
     return (Math.round(amount * 100) + Math.round(extra * 100)) / 100;
   }
 
-  /* The rate on the sheet is the one that multiplies back to the
-     gross, to the cent. The server keeps rates at 12 places. Show
-     the shortest of those that still hits, so a rounded rate never
-     makes Amount × Rate miss the row beside it. A receive's target
-     is the gross the book stored: payout plus the fee the partner
-     owes. A send's target is the foreign payout. */
+  /* Shortest rate that still multiplies back to the target, to the cent. */
   function rateShown(amount, targetCents) {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt === 0 || !Number.isFinite(targetCents)) return "";
@@ -110,6 +94,25 @@
       if (Math.round(amt * Number(shown) * 100) === targetCents) return shown;
     }
     return exact.toFixed(12);
+  }
+
+  /* Under 1 home per unit, Rates' fmtCad is quoted per 100. */
+  function receiveRate(amount, grossCents, home, ccy) {
+    const perUnit = rateShown(amount, grossCents);
+    if (!perUnit) return "";
+    const unit = Number(perUnit);
+    const per100 = unit < 1;
+    const exact = per100 ? unit * 100 : unit;
+    const basis = per100 ? 100 : 1;
+    const hits = (text) => Math.round(Number(amount) * Number(String(text).replace(/,/g, "")) / basis * 100) === grossCents;
+    const quoted = typeof fmtCad === "function" ? String(fmtCad(exact)) : "";
+    let shown = quoted && hits(quoted) ? quoted : "";
+    for (let digits = 0; !shown && digits <= 12; digits++) {
+      const candidate = exact.toFixed(digits);
+      if (hits(candidate)) shown = candidate;
+    }
+    shown = shown || exact.toFixed(12);
+    return shown + (per100 ? " " + home + " per 100 " + ccy : " " + home + "/" + ccy);
   }
 
   function detailRows(t, home) {
@@ -128,24 +131,21 @@
         { label: "Fee", value: money(t.fee, home) },
         { label: "Total paid", value: total === "" ? "" : money(total, home) },
         { label: "Rate", value: rate ? rate + " " + t.ccy + "/" + home : "" },
+        { label: "Receiver gets", value: money(t.recvAmt, t.ccy) },
       ].concat(tail);
     }
-    /* recvAmt leaves the drawer. The fee stays in the proceeds.
-       payAmt is what the sender paid, in the foreign currency. */
     const payout = Math.round(Number(t.recvAmt) * 100);
     const fee = Math.round(Number(t.fee) * 100);
     const grossCents = Number.isFinite(payout) && Number.isFinite(fee) ? payout + fee : NaN;
-    const rate = rateShown(t.payAmt, grossCents);
     return [
       { label: "Sender paid", value: money(t.payAmt, t.ccy) },
-      { label: "Rate", value: rate ? rate + " " + home + "/" + t.ccy : "" },
+      { label: "Rate", value: receiveRate(t.payAmt, grossCents, home, t.ccy) },
       { label: "Gross", value: Number.isFinite(grossCents) ? money(grossCents / 100, home) : "" },
       { label: "Fee", value: Number.isFinite(fee) ? money(-fee / 100, home) : "" },
       { label: "Customer receives", value: money(t.recvAmt, home), mark: "transfer-hand" },
     ].concat(tail);
   }
 
-  /* `pin` is minted in the browser. A partner PIN is `partnerPin`, typed by staff. */
   function typedPartnerPin(t) {
     const typed = String((t && t.partnerPin) || "").trim();
     if (!typed || typed === String((t && t.pin) || "").trim()) return "";
@@ -159,8 +159,6 @@
     if (status === "cancelled") return "neg";
     return "neutral";
   }
-
-
 
   function PhoneTransfers(props) {
     const Wizard = window.CDOS.PhoneTransferWizard;
@@ -323,7 +321,7 @@
     const SummaryList = window.CDOS.SummaryList;
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     const home = (pack && pack.homeCurrency) || "CAD";
-    const canCancel = !!(me && (me.role === "Owner" || me.role === "Manager" || me.role === "Senior teller"));
+    const manager = !!(me && (me.role === "Owner" || me.role === "Manager"));
     const receive = t.direction === "receive";
     const open = t.status !== "paid" && t.status !== "cancelled";
     const partnerPin = typedPartnerPin(t);
@@ -379,15 +377,17 @@
         {open && (
           <div className="ph-sheet-f">
             {label && <button type="button" className="ph-btn" onClick={() => onAdvance(t, advanceKey(t), "marked by hand")}>{label}</button>}
-            {(t.status !== "hold" || (!receive && canCancel)) && (
+            {t.status !== "hold" && (
               <div className="ph-secondary">
-                {t.status !== "hold" && <button type="button" onClick={() => onAdvance(t, "hold", "marked by hand")}>Hold</button>}
-                {!receive && canCancel && <button type="button" className="is-cancel" disabled>Cancel is being fixed</button>}
+                <button type="button" onClick={() => onAdvance(t, "hold", "marked by hand")}>Hold</button>
               </div>
             )}
-            {receive
-              ? <p className="ph-cancel-note">A received transfer can't be cancelled here. Ask a manager.</p>
-              : !canCancel && <p className="ph-cancel-note">Only a manager can cancel a transfer that took cash. Ask a manager to cancel.</p>}
+            {/* #130 puts the outline-red Cancel back, for Owner, Manager, and Senior teller. It stays hidden until that ships. */}
+            <p className="ph-cancel-note">{receive
+              ? "A received transfer can't be cancelled here. Ask a manager."
+              : manager
+                ? "Cancelling is not available on the phone yet."
+                : "Only a manager can cancel a transfer that took cash. Ask a manager to cancel."}</p>
           </div>
         )}
       </div>,

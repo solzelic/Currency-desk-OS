@@ -99,7 +99,8 @@ function rateNumber(text: string): number {
 /* Amount × the rate printed on the sheet, in cents. A rate rounded
    so the product misses the gross fails this. */
 function productCents(amountText: string, rateText: string): number {
-  return Math.round(money(amountText) * rateNumber(rateText) * 100);
+  const basis = /per 100\b/.test(rateText) ? 100 : 1;
+  return Math.round(money(amountText) * rateNumber(rateText) / basis * 100);
 }
 
 function obligations(page: Page) {
@@ -213,11 +214,13 @@ for (const width of [360, 390]) {
     const sentRate = await summaryValue(detail, "Rate").innerText();
     expect(productCents(sentAmount, sentRate)).toBe(Math.round(stored!.recvAmt * 100));
     expect(await detail.locator(".phone-summary dt").allTextContents()).toEqual([
-      "Amount sent", "Fee", "Total paid", "Rate", "Method", "Partner", "Desk reference",
+      "Amount sent", "Fee", "Total paid", "Rate", "Receiver gets", "Method", "Partner", "Desk reference",
     ]);
+    await expect(summaryValue(detail, "Receiver gets")).toHaveText(
+      await page.evaluate((amount) => (window as unknown as { CDOS: { formatPhoneMoney: (n: number, c: string) => string } }).CDOS.formatPhoneMoney(amount, "PHP"), stored!.recvAmt),
+    );
     await expect(summaryValue(detail, "Amount sent")).not.toHaveClass(/is-pos/);
     await expect(detail.getByText("Customer paid")).toHaveCount(0);
-    await expect(detail.getByText("Receiver gets")).toHaveCount(0);
     await expect(summaryValue(detail, "Desk reference")).toHaveText("TR-260618-003");
     await expect(detail.getByText("Our own reference. Not a partner pickup code.")).toBeVisible();
     await expect(detail.getByText("48 221 905")).toHaveCount(0);
@@ -258,13 +261,14 @@ for (const width of [360, 390]) {
     expect(paint.paid).toMatchObject({ bg: "rgb(31, 114, 105)", color: "rgb(255, 255, 255)" });
     expect(paint.hold).toEqual({ bg: "rgb(255, 255, 255)", color: "rgb(22, 21, 19)", border: "rgb(201, 197, 188)" });
     await expect(detail.getByRole("button", { name: "Cancel transfer" })).toHaveCount(0);
-    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toBeVisible();
-    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toBeDisabled();
-    await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toHaveCount(0);
+    await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toBeVisible();
+    await expect(detail.getByText("Cancelling is not available on the phone yet.")).toHaveCount(0);
     await expect(detail.getByText("Only the owner can cancel")).toHaveCount(0);
     await expect(detail.getByText("The cash stays recorded")).toHaveCount(0);
     await expect(detail.getByRole("alertdialog")).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Mark paid out" })).toBeVisible();
+    await shot(page, `transfers_send_${width}`);
     await detail.getByRole("button", { name: "Mark paid out" }).click();
     await expect(detail.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
     await detail.getByRole("button", { name: "Back" }).click();
@@ -394,7 +398,7 @@ for (const width of [360, 390]) {
     await page.getByText("Ana Cruz").click();
     const detail = page.getByRole("dialog");
     await expect(summaryValue(detail, "Sender paid")).toHaveText("10,000.00 PHP");
-    await expect(summaryValue(detail, "Rate")).toHaveText("0.024935 CAD/PHP");
+    await expect(summaryValue(detail, "Rate")).toHaveText("2.4935 CAD per 100 PHP");
     await expect(summaryValue(detail, "Gross")).toHaveText("249.35 CAD");
     await expect(summaryValue(detail, "Fee")).toHaveText("\u22129.99 CAD");
     await expect(summaryValue(detail, "Customer receives")).toHaveText("239.36 CAD");
@@ -411,6 +415,8 @@ for (const width of [360, 390]) {
     await expect(summaryValue(detail, "Customer receives")).not.toHaveClass(/is-pos/);
     await expect(summaryValue(detail, "Customer receives")).toHaveCSS("color", "rgb(22, 21, 19)");
     await expect(summaryValue(detail, "Customer receives")).toHaveCSS("font-weight", "700");
+    await expect(summaryValue(detail, "Customer receives")).toHaveCSS("font-size", "24px");
+    await expect(summaryValue(detail, "Customer receives")).toHaveCSS("line-height", "32px");
     await expect(detail.getByText("Partner PIN (typed in by staff)")).toHaveCount(0);
     await expect(detail.getByText("Tracking PIN")).toHaveCount(0);
     await expect(detail.locator(".ph-pin, .ph-pin-row, .ph-ref")).toHaveCount(0);
@@ -475,7 +481,7 @@ test("amount times the displayed rate equals the gross to the cent", async ({ pa
   expect(productCents(amount, rate)).toBe(2393567);
   await expect(summaryValue(detail, "Total paid")).toHaveText("609.99 CAD");
   expect(await detail.locator(".phone-summary dt").allTextContents()).toEqual([
-    "Amount sent", "Fee", "Total paid", "Rate", "Method", "Partner", "Desk reference",
+    "Amount sent", "Fee", "Total paid", "Rate", "Receiver gets", "Method", "Partner", "Desk reference",
   ]);
 });
 
@@ -555,21 +561,19 @@ test("hold then release returns to the previous status", async ({ page }) => {
 });
 
 for (const width of [360, 390]) {
-  test(`the owner sees cancel disabled until the reversal is wired at ${width}`, async ({ page }) => {
+  test(`the owner is told cancelling is not on the phone yet at ${width}`, async ({ page }) => {
     await openPhoneTransfers(page, width, "j.masri");
     await page.locator(".ph-xfer-row").filter({ hasText: "In transit" }).click();
     const detail = page.getByRole("dialog");
-    const cancel = detail.getByRole("button", { name: "Cancel is being fixed" });
-    await expect(cancel).toBeVisible();
-    await expect(cancel).toBeDisabled();
+    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Cancel transfer" })).toHaveCount(0);
+    await expect(detail.getByText("Cancelling is not available on the phone yet.")).toBeVisible();
     await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toHaveCount(0);
     await expect(detail.getByText("Only the owner can cancel")).toHaveCount(0);
     await expect(detail.getByText("The cash stays recorded")).toHaveCount(0);
     await expect(detail.getByText("Amount sent")).toBeVisible();
     await expect(detail.getByText("Total paid")).toBeVisible();
     await shot(page, `transfers_detail_${width}`);
-    await cancel.click({ force: true });
     await expect(detail.locator(".ph-sum-who .phone-badge")).toHaveText("In transit");
     await expect(detail.getByText("Cancelled")).toHaveCount(0);
   });
@@ -583,6 +587,7 @@ for (const width of [360, 390]) {
     await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Cancel transfer" })).toHaveCount(0);
     await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toBeVisible();
+    await expect(detail.getByText("Cancelling is not available on the phone yet.")).toHaveCount(0);
     await expect(detail.getByText("Only the owner can cancel")).toHaveCount(0);
     await expect(detail.getByText("A received transfer can't be cancelled here. Ask a manager.")).toHaveCount(0);
     await shot(page, `transfers_teller_cancel_${width}`);
