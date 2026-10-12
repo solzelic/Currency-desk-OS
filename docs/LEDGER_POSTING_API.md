@@ -54,7 +54,8 @@ purpose 500 characters, source of funds 500 characters, and reversal reason
 and the fee as separate lines, then credits destination value, FX spread, and
 fee revenue. The till movement is the net cash: home in of input plus the fee
 when the customer pays home, or home out of output less the fee when they
-receive it. The receipt prints those same figures. A drawer that cannot fund
+receive it. The receipt keeps the gross exchange and the fee, and adds
+`Cash to customer` for the net the teller hands over. A drawer that cannot fund
 the payout answers `INSUFFICIENT_TILL_LIQUIDITY`.
 
 ## Failure codes

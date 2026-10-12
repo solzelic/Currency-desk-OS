@@ -86,19 +86,24 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   A fee is in the teller headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
   and buying shows `132.86 CAD (134.36 less 1.50 fee)`. That net is the
   cash the till moves, in one movement. The journal still keeps the
-  exchange and the fee as separate lines. The receipt prints the same
-  numbers as the customer screen: `You give 105.00 CAD` and
-  `100.00 CAD + 5.00 CAD service fee`, or `You receive 129.36 CAD` and
-  `134.36 CAD less 5.00 CAD service fee`. A till that cannot pay the
-  currency says `The till doesn't have enough USD. Ask a manager to move cash in.`
-  On the customer screen the sale reads `101.50 CAD`, with
-  `100.00 CAD + 1.50 CAD service fee` in 20px under it, and the footer
-  stays `Rate as quoted now`. The customer screen and the phone rate
-  field show the rate to 4 decimals (`1 CAD = 0.7221 USD`).
-  The multiply still uses the full rate, and the exchange amount stored
-  on the transaction does not change. An amount with too many decimals
+  exchange and the fee as separate lines. The receipt keeps the gross
+  exchange and the fee, and adds the cash the teller hands over:
+  `You receive 134.36 CAD`, `134.36 CAD less 5.00 CAD service fee`, and
+  `Cash to customer 129.36 CAD`. A sell adds `Cash from customer 105.00 CAD`.
+  The frozen quote line carries the same fee and cash lines. A till that
+  cannot pay the currency says `The till doesn't have enough USD. Ask a
+  manager to move cash in.` On the customer screen a sale reads
+  `101.50 CAD`, with `100.00 CAD + 1.50 CAD service fee` in 20px under it.
+  A buy shows You receive as the gross `134.36 CAD`, the fee under it,
+  and `Cash to customer 129.36 CAD`. The footer stays `Rate as quoted now`.
+  The customer screen and the phone rate field show the rate to 4 decimals
+  (`1 CAD = 0.7221 USD`).
+  That displayed rate is the rate the amount is multiplied by, then
+  rounded to the currency. The rate stored on the quote is still the
+  full board rate. An amount with too many decimals
   is cut back to the currency's places, so `12.345` stays `12.34`, and
-  the sheet says `CAD uses 2 decimals. Try 12.35.` under Customer pays in.
+  the sheet says `CAD uses 2 decimals. Try 12.35.` under Customer pays in,
+  including when `12.345` is pasted.
   A yen fraction reads `JPY uses 0 decimals. Try 1001.` The currency picker reads
   names from the shared catalog (`Swiss Franc`, `Australian Dollar`,
   `Japanese Yen`). Every currency whose scale is three minor

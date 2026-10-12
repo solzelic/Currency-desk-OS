@@ -33216,6 +33216,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     testId,
     onRefuse
   }) {
+    const clampEcho = useRef('');
+    const applyTyped = raw => {
+      const text = String(raw == null ? '' : raw);
+      if (clampEcho.current && text === clampEcho.current) {
+        clampEcho.current = '';
+        return null;
+      }
+      const next = clampTypedAmount(value, text.trim(), ccy);
+      clampEcho.current = next.refused ? next.value : '';
+      return next;
+    };
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-money flex items-stretch",
       style: {
@@ -33238,8 +33249,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, value) : /*#__PURE__*/React.createElement("input", {
       value: value,
+      onPaste: e => {
+        const text = (e.clipboardData && e.clipboardData.getData('text') || '').trim();
+        if (!text) return;
+        const next = applyTyped(text);
+        if (!next || !next.refused) return;
+        e.preventDefault();
+        e.target.value = next.value;
+        if (onRefuse) onRefuse(next.refused);
+        if (next.value !== value) onChange(next.value);
+      },
       onChange: e => {
-        const next = clampTypedAmount(value, e.target.value, ccy);
+        const next = applyTyped(e.target.value);
+        if (!next) return;
         e.target.value = next.value;
         if (onRefuse) onRefuse(next.refused);
         if (next.value !== value) onChange(next.value);
@@ -33674,7 +33696,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-on-ink-soft)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, q.giveNote) : null), q.rateLine && /*#__PURE__*/React.createElement("div", {
+    }, q.giveNote) : null, q.cashFromCustomer ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8,
+        fontSize: 20,
+        lineHeight: 1.3,
+        color: 'var(--cd-on-ink)',
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }, q.cashFromCustomer) : null), q.rateLine && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-4",
       style: {
         color: 'var(--cd-on-ink-soft)'
@@ -33716,7 +33746,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-on-ink-soft)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, q.receiveNote) : null)), /*#__PURE__*/React.createElement("div", {
+    }, q.receiveNote) : null, q.cashToCustomer ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8,
+        fontSize: 20,
+        lineHeight: 1.3,
+        color: '#7fd1a3',
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }, q.cashToCustomer) : null)), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-10 py-6",
       style: {
         borderTop: '1px solid var(--cd-on-ink-faint)',
@@ -34112,7 +34150,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       receiveCurrency: frozenHands.receiveCurrency,
       receiveDetail: frozenHands.receiveDetail,
       receiveWire: frozenHands.receiveWire,
-      receiveNote: frozenHands.receiveNote
+      receiveNote: frozenHands.receiveNote,
+      cashToCustomer: frozenHands.cashToCustomer,
+      cashFromCustomer: frozenHands.cashFromCustomer
     } : exchangeQuote || {
       state: 'bad',
       message: sheetWords('Quote pricing did not load.')
@@ -34970,11 +35010,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onDone && onDone(tx.id);
     };
 
-    /* The phone rate field and the customer screen show four decimals.
-       The desktop field keeps formatRate, which is the full rate. */
+    /* The rate in the field is the four decimal rate the amount was
+       multiplied by, on the phone and on the desk. */
     const exactRate = exchangeReady ? String(fx.rateWire || fx.customerRate || '') : '';
     const fourRate = exchangeReady && quoteApi && exactRate !== '' ? quoteApi.displayRate(exactRate) : '';
-    const sheetRate = !exchangeReady ? '—' : phoneSheet && fourRate ? fourRate : fx.rateLabel;
+    const sheetRate = !exchangeReady ? '—' : fourRate || fx.rateLabel;
     // present-quote payload (exchange + send)
     const presentQ = isSend ? {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
@@ -34993,10 +35033,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       giveLbl: 'You give',
       give: exchangeReady && fx.giveAmount ? `${fx.giveAmount} ${fx.giveCurrency}` : `${num(amtN)} ${inCcy}`,
       giveNote: exchangeReady && fx.giveNote ? fx.giveNote : '',
+      cashFromCustomer: exchangeReady && fx.cashFromCustomer ? fx.cashFromCustomer : '',
       rateLine: `1 ${inCcy} = ${fourRate || '—'} ${outCcy}`,
       getLbl: 'You receive',
-      get: exchangeReady && fx.receiveAmount ? `${fx.receiveAmount} ${fx.receiveCurrency}` : `— ${outCcy}`,
+      get: exchangeReady && fx.receivesLabel ? `${fx.receivesLabel} ${outCcy}` : `— ${outCcy}`,
       receiveNote: exchangeReady && fx.receiveNote ? fx.receiveNote : '',
+      cashToCustomer: exchangeReady && fx.cashToCustomer ? fx.cashToCustomer : '',
       foot: fx && (fx.giveDetail || fx.receiveDetail) ? lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now' : feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
@@ -35291,7 +35333,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       testId: "tx-receives",
-      value: exchangeReady ? fx.receiveDetail ? fx.receiveAmount : fx.receivesLabel : '—',
+      value: exchangeReady ? fx.receivesLabel : '—',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);
@@ -35323,7 +35365,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       value: override ? manualRate : exchangeReady ? sheetRate : '',
       onFocus: () => {
         if (!override && !lockLive) {
-          setManualRate(exchangeReady ? fx.rateWire || fx.customerRate : '');
+          setManualRate(exchangeReady ? fourRate || fx.rateWire || fx.customerRate : '');
           setOverride(true);
         }
       },
@@ -35402,7 +35444,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           setOverride(false);
           setManualRate('');
         } else {
-          setManualRate(exchangeReady ? fx.customerRate : '');
+          setManualRate(exchangeReady ? fourRate || fx.customerRate : '');
           setOverride(true);
           setLock(null);
         }
@@ -36269,7 +36311,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.green
       }
-    }, "Frozen quote \xB7 ", quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount, " ", serverQuote.from, " \u2192 ", quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount, " ", serverQuote.to, " \xB7 Expires in ", quoteClock(quoteLeft)), serverQuote && quoteDead && /*#__PURE__*/React.createElement("div", {
+    }, "Frozen quote \xB7 ", quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount, " ", serverQuote.from, " \u2192 ", quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount, " ", serverQuote.to, Number(serverQuote.feeCad) > 0 ? ` · Fee ${quoteApi ? quoteApi.formatAmount(serverQuote.feeCad, home) : serverQuote.feeCad} ${home}` : '', fx && fx.cashFromCustomer ? ` · ${fx.cashFromCustomer}` : '', fx && fx.cashToCustomer ? ` · ${fx.cashToCustomer}` : '', " \xB7 Expires in ", quoteClock(quoteLeft)), serverQuote && quoteDead && /*#__PURE__*/React.createElement("div", {
       "data-testid": "tx-frozen",
       className: "px-3 py-2 text-[11px]",
       style: {

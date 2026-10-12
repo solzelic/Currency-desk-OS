@@ -8,10 +8,13 @@
   home-currency tender: the customer hands over input plus the fee when they
   pay home currency, and takes output less the fee when they receive it. The
   teller's You give / You receive headline is that net. The customer screen
-  shows the net on its own line and the fee under it. The frozen input,
+  shows You receive as the gross exchange and the fee under it, and names
+  the net payout as Cash to customer. The frozen input,
   output, and fee stay the figures the ledger posts. The rate drawn for the
-  customer, and on the phone rate field, is 4 decimal places. The posted
-  amount is still `input ×` the full rate. Before the quote exists, the
+  customer, on the phone rate field, and in the desk rate field, is
+  4 decimal places. The posted amount is `input ×` that displayed rate,
+  rounded half up to the currency. The quote still stores the full
+  rate. Before the quote exists, the
   preview is the same function (`os-src/quote-terms.js`), not a second rounding.
 - Activated quote terms are immutable in PostgreSQL. Status may progress from
   active to expired, cancelled, or posted; posted and cancelled quotes cannot
@@ -27,11 +30,13 @@
   A message that table does not name is `Couldn't get a price. Reload and
   try again.`, never the server's own sentence.
 - The fee is home-currency tender, recorded as its own journal line
-  (`till` debit and `revenue:fee`). The drawer movement and the receipt
-  are the net cash from `cashHands` in `os-src/quote-terms.js`: the
-  customer hands over input plus the fee, or receives output less the
-  fee. The receipt prints that same `You give` / `You receive` and the
-  service-fee line. A till that cannot pay the currency answers
+  (`till` debit and `revenue:fee`). The drawer movement is the net cash
+  from `cashHands` in `os-src/quote-terms.js`: the customer hands over
+  input plus the fee, or receives output less the fee. The receipt keeps
+  the gross `You give` / `You receive` and the
+  service-fee line, and adds `Cash to customer 129.36 CAD` (and
+  `Cash from customer 105.00 CAD` when the fee is collected on the
+  way in). The frozen quote line carries those same words. A till that cannot pay the currency answers
   `INSUFFICIENT_TILL_LIQUIDITY` with `The till doesn't have enough USD.
   Ask a manager to move cash in.`
 - A quote-originated transaction retains `quote_id`, `market_mid`, rate-board

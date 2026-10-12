@@ -16,20 +16,23 @@ means foreign currency to home currency and uses **We Buy**. `customerRate`
 is always output units per input unit; `marketMid` remains home currency per
 unit of foreign currency.
 
-The output amount is `input × customerRate`, rounded half-up to the output
-currency's minor units (a yen to a whole yen, a dollar to a cent). The
-customer rate is not rounded before that multiply, and the published mid is
-not rounded to four places before the margin. `os-src/quote-terms.js` is
+The output amount is `input ×` the customer rate rounded half-up to 4
+decimal places, then rounded half-up to the output currency's minor
+units (a yen to a whole yen, a dollar to a cent). That 4 decimal rate
+is the rate on the screen. The published mid is not rounded to four
+places before the margin. `os-src/quote-terms.js` is
 that function. The New transaction sheet previews with it, and once a quote
 is frozen the sheet shows the frozen input, output, and rate rather than a
 second product. The teller's You give / You receive line is the cash the
 till moves: input plus the fee when the customer pays home currency, output
-less the fee when they receive it. The customer screen shows that total
-on its own (`101.50 CAD`) and the fee under it (`100.00 CAD + 1.50 CAD service fee`).
+less the fee when they receive it. The customer screen shows a sale as
+that total (`101.50 CAD`) and the fee under it (`100.00 CAD + 1.50 CAD service fee`).
+You receive is the gross exchange. A buy adds `Cash to customer` for the net payout.
 The footer stays `Rate as quoted now`. Those three frozen figures stay
 authoritative. The customer screen and the phone rate field print the
-rate to 4 decimals. The rate stored on the quote is still 12 decimal
-places, and that full rate is what the posted amount is multiplied by.
+rate to 4 decimals, and that is the rate the posted amount is
+multiplied by. The rate stored on the quote is still 12 decimal
+places.
 A quote whose
 payout is zero, including a fee that consumes a home-currency payout, is
 refused with `422 ZERO_PAYOUT`.
@@ -75,7 +78,7 @@ status transition atomically.
 
 `feeCad` is home-currency tender, not part of the exchange input. The
 journal records it as a dedicated till debit and `revenue:fee` credit.
-The till movement and the receipt use the net from `cashHands`. Quote-originated transactions permanently retain quote
+The till movement is the net from `cashHands`. The receipt keeps the gross exchange and the fee, and names the net as `Cash to customer`. Quote-originated transactions permanently retain quote
 ID, market mid, publication ID, snapshot ID, source type, and optional override
 ID; later board publications cannot alter that history.
 

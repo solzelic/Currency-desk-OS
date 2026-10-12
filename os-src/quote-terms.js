@@ -192,8 +192,14 @@
       if (!out.isFinite() || out.lt(0) || out.gte(1)) throw new Error("invalid board terms");
       return out;
     }
+    /* The rate on the screen is four decimal places. The amount is that
+       same rate times the amount, then rounded to the currency's places.
+       displayRate and roundOutput share pricedRate so they cannot drift. */
+    function pricedRate(rate) {
+      return new Decimal(rate).toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
+    }
     function roundOutput(amount, rate, currency) {
-      return new Decimal(amount).mul(rate).toDecimalPlaces(placesOf(currency), Decimal.ROUND_HALF_UP);
+      return new Decimal(amount).mul(pricedRate(rate)).toDecimalPlaces(placesOf(currency), Decimal.ROUND_HALF_UP);
     }
     /* The customer receives nothing, or the fee would take the whole
        home payout. That is a refused quote, not a zero on the ticket. */
@@ -254,7 +260,14 @@
       }
       /* The drawer moves the net cash. The journal still keeps the
          exchange and the fee as separate lines. A cross has no home
-         leg in the exchange, so the fee is its own home movement. */
+         leg in the exchange, so the fee is its own home movement.
+         The receipt keeps the gross exchange and the fee, and names
+         the cash the teller hands over. */
+      var payout = to === homeCode ? output.minus(fee) : output;
+      var cashToCustomer = "Cash to customer " + amountOf(payout, to) + " " + to;
+      var cashFromCustomer = from === homeCode && fee.gt(0)
+        ? "Cash from customer " + amountOf(input.plus(fee), from) + " " + from
+        : null;
       var moves = [];
       function pushMove(currency, direction, value) {
         if (!value.gt(0)) return;
@@ -269,10 +282,12 @@
       if (to === homeCode) pushMove(to, "out", output.minus(fee));
       else pushMove(to, "out", output);
       if (from !== homeCode && to !== homeCode) pushMove(homeCode, "in", fee);
-      var receiptCash = ["You give " + give.amount + " " + give.currency];
+      var receiptCash = ["You give " + amountOf(input, from) + " " + from];
       if (giveNote) receiptCash.push(giveNote);
-      receiptCash.push("You receive " + receive.amount + " " + receive.currency);
+      if (cashFromCustomer) receiptCash.push(cashFromCustomer);
+      receiptCash.push("You receive " + amountOf(output, to) + " " + to);
       if (receiveNote) receiptCash.push(receiveNote);
+      receiptCash.push(cashToCustomer);
       return {
         give: give.sentence,
         giveAmount: give.amount,
@@ -285,6 +300,8 @@
         receiveDetail: receive.detail,
         receiveNote: receiveNote,
         receiveWire: wireOf(to === homeCode && fee.gt(0) ? output.minus(fee) : output, to),
+        cashToCustomer: cashToCustomer,
+        cashFromCustomer: cashFromCustomer,
         tillMoves: moves,
         receiptCash: receiptCash,
       };
@@ -296,10 +313,9 @@
     function formatRate(value) {
       return new Decimal(value).toDecimalPlaces(12).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
     }
-    /* Four places on the customer screen and the phone rate field.
-       formatRate stays the full rate the multiply uses. */
+    /* Four places. This is the rate roundOutput multiplies by. */
     function displayRate(value) {
-      return new Decimal(value).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toFixed(4);
+      return pricedRate(value).toFixed(4);
     }
     function formatAmount(value, currency) {
       var places = placesOf(currency);
@@ -418,6 +434,8 @@
         receiveDetail: hands.receiveDetail,
         receiveWire: hands.receiveWire,
         receiveNote: hands.receiveNote,
+        cashToCustomer: hands.cashToCustomer,
+        cashFromCustomer: hands.cashFromCustomer,
         tillMoves: hands.tillMoves,
         receiptCash: hands.receiptCash,
       };

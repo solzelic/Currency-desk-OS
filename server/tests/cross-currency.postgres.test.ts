@@ -232,9 +232,9 @@ postgres("one deal, two foreign currencies", () => {
       .div("1.5")
       .mul(new Decimal("0.98").mul("0.97"));
     expect(new Decimal(made.customerRate).toFixed(12)).toBe(expected.toFixed(12));
-    expect(made.outputAmount).toBe("887.23");
-    // 1,000 USD at 1.40 is 1,400 of home value; the euros go out worth 1,330.85
-    expect(made.spreadCad).toBe("69.15");
+    expect(made.outputAmount).toBe("887.20");
+    // 1,000 USD at 1.40 is 1,400 of home value; the euros go out worth 1,330.80
+    expect(made.spreadCad).toBe("69.20");
 
     const stored = await pool.query(
       "SELECT direction,from_mid,to_mid,market_mid FROM quotes WHERE quote_id=$1",
@@ -265,8 +265,8 @@ postgres("one deal, two foreign currencies", () => {
     expect(rows).toEqual([
       { account_code: "till:USD", side: "debit", amount_cad: "1400.00" },
       { account_code: "till:CAD", side: "debit", amount_cad: "4.00" },
-      { account_code: "till:EUR", side: "credit", amount_cad: "1330.85" },
-      { account_code: "revenue:fx_trading", side: "credit", amount_cad: "69.15" },
+      { account_code: "till:EUR", side: "credit", amount_cad: "1330.80" },
+      { account_code: "revenue:fx_trading", side: "credit", amount_cad: "69.20" },
       { account_code: "revenue:fee", side: "credit", amount_cad: "4.00" },
     ]);
 
@@ -277,7 +277,7 @@ postgres("one deal, two foreign currencies", () => {
     );
     expect(movements.rows).toEqual([
       { currency: "CAD", direction: "in", amount: "4.00" },
-      { currency: "EUR", direction: "out", amount: "887.23" },
+      { currency: "EUR", direction: "out", amount: "887.20" },
       { currency: "USD", direction: "in", amount: "1000.00" },
     ]);
     const balances = await pool.query(
@@ -286,7 +286,7 @@ postgres("one deal, two foreign currencies", () => {
     );
     expect(balances.rows).toEqual([
       { currency: "CAD", available_amount: "25004.00" },
-      { currency: "EUR", available_amount: "6112.77" },
+      { currency: "EUR", available_amount: "6112.80" },
       { currency: "GBP", available_amount: "3500.00" },
       { currency: "USD", available_amount: "13000.00" },
     ]);
@@ -305,16 +305,16 @@ postgres("one deal, two foreign currencies", () => {
       "SELECT realized_pnl_home,cost_of_sale_home,spread_cad FROM ledger_transactions WHERE transaction_id=$1",
       [transactionId],
     );
-    // 887.23 euros that cost 1.20 each
-    expect(tx.rows[0].cost_of_sale_home).toBe("1064.68");
-    expect(tx.rows[0].realized_pnl_home).toBe("335.32");
-    /* The margin is 69.15 of it. The rest — 887.23 × 0.30 — is what the
+    // 887.20 euros that cost 1.20 each
+    expect(tx.rows[0].cost_of_sale_home).toBe("1064.64");
+    expect(tx.rows[0].realized_pnl_home).toBe("335.36");
+    /* The margin is 69.20 of it. The rest, 887.20 times 0.30, is what the
        desk made holding euros, and it is realized here rather than being
        booked the day the market moved. */
-    expect(tx.rows[0].spread_cad).toBe("69.15");
+    expect(tx.rows[0].spread_cad).toBe("69.20");
     expect(
       new Decimal(tx.rows[0].realized_pnl_home).sub(tx.rows[0].spread_cad).toFixed(2),
-    ).toBe("266.17");
+    ).toBe("266.16");
 
     const rows = await journalOf(transactionId);
     expect(sideTotal(rows, "debit").toFixed(2)).toBe(
@@ -323,7 +323,7 @@ postgres("one deal, two foreign currencies", () => {
     expect(rows).toContainEqual({
       account_code: "till:EUR",
       side: "credit",
-      amount_cad: "1064.68",
+      amount_cad: "1064.64",
     });
 
     /* Both sides moved a basis: the euros left at what they cost, and the
@@ -338,7 +338,7 @@ postgres("one deal, two foreign currencies", () => {
         event_kind: "sale",
         direction: "out",
         unit_cost_home: "1.200000000000",
-        realized_pnl_home: "335.32",
+        realized_pnl_home: "335.36",
       },
       {
         currency: "USD",
@@ -363,18 +363,18 @@ postgres("one deal, two foreign currencies", () => {
       "SELECT realized_pnl_home,cost_of_sale_home FROM ledger_transactions WHERE transaction_id=$1",
       [transactionId],
     );
-    expect(tx.rows[0].cost_of_sale_home).toBe("1419.57");
-    expect(tx.rows[0].realized_pnl_home).toBe("-19.57");
+    expect(tx.rows[0].cost_of_sale_home).toBe("1419.52");
+    expect(tx.rows[0].realized_pnl_home).toBe("-19.52");
 
     const rows = await journalOf(transactionId);
     // the loss is a DEBIT, and the totals close on the other side
     expect(rows).toContainEqual({
       account_code: "revenue:fx_trading",
       side: "debit",
-      amount_cad: "19.57",
+      amount_cad: "19.52",
     });
-    expect(sideTotal(rows, "debit").toFixed(2)).toBe("1423.57");
-    expect(sideTotal(rows, "credit").toFixed(2)).toBe("1423.57");
+    expect(sideTotal(rows, "debit").toFixed(2)).toBe("1423.52");
+    expect(sideTotal(rows, "credit").toFixed(2)).toBe("1423.52");
   });
 
   it("rejects a cross whose from-mid OR to-mid has been moved", async () => {
@@ -471,7 +471,7 @@ postgres("one deal, two foreign currencies", () => {
     expect(made.toMid).toBeNull();
     expect(made.buyOrSellSide).toBe("we_sell");
     expect(made.customerRate).toBe("0.692857142857");
-    expect(made.outputAmount).toBe("692.86");
+    expect(made.outputAmount).toBe("692.90");
 
     const posted = await postQuote(made, "home-unchanged");
     expect(posted.statusCode).toBe(201);
@@ -480,8 +480,8 @@ postgres("one deal, two foreign currencies", () => {
       { account_code: "till:CAD", side: "debit", amount_cad: "1000.00" },
       { account_code: "till:CAD", side: "debit", amount_cad: "4.00" },
       // the dollars leave at what they cost, and the margin is what is left
-      { account_code: "till:USD", side: "credit", amount_cad: "970.00" },
-      { account_code: "revenue:fx_trading", side: "credit", amount_cad: "30.00" },
+      { account_code: "till:USD", side: "credit", amount_cad: "970.06" },
+      { account_code: "revenue:fx_trading", side: "credit", amount_cad: "29.94" },
       { account_code: "revenue:fee", side: "credit", amount_cad: "4.00" },
     ]);
   });

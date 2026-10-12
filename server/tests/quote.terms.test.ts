@@ -7,7 +7,7 @@ const quoteTerms = createRequire(import.meta.url)("../../os-src/quote-terms.js")
 const cashHands = quoteTerms.cashHands;
 
 describe("quote terms",()=>{
-  it("uses We Sell when a customer buys foreign currency",()=>{const q=calculateQuoteTerms({direction:"customer_buy_foreign",from:"CAD",to:"USD",inputAmount:"1000.00",feeCad:"4.00",marketMid:"1.4",margin:"0.03"});expect(q.buyOrSellSide).toBe("we_sell");expect(q.customerRate.toFixed(12)).toBe("0.692857142857");expect(q.outputAmount.toFixed(2)).toBe("692.86");expect(q.spreadCad.toFixed(2)).toBe("30.00");});
+  it("uses We Sell when a customer buys foreign currency",()=>{const q=calculateQuoteTerms({direction:"customer_buy_foreign",from:"CAD",to:"USD",inputAmount:"1000.00",feeCad:"4.00",marketMid:"1.4",margin:"0.03"});expect(q.buyOrSellSide).toBe("we_sell");expect(q.customerRate.toFixed(12)).toBe("0.692857142857");expect(q.outputAmount.toFixed(2)).toBe("692.90");expect(q.spreadCad.toFixed(2)).toBe("29.94");});
   it("uses We Buy when a customer sells foreign currency",()=>{const q=calculateQuoteTerms({direction:"customer_sell_foreign",from:"USD",to:"CAD",inputAmount:"1000.00",feeCad:"0.00",marketMid:"1.4",margin:"0.02"});expect(q.buyOrSellSide).toBe("we_buy");expect(q.customerRate.toFixed(12)).toBe("1.372000000000");expect(q.outputAmount.toFixed(2)).toBe("1372.00");expect(q.spreadCad.toFixed(2)).toBe("28.00");});
   it("rounds a half up, not to even",()=>{expect(roundOutput(new Decimal("1.005"),new Decimal(1),"USD").toFixed(2)).toBe("1.01");});
   it("names a yen amount that is not a whole yen",()=>{expect(()=>calculateQuoteTerms({direction:"customer_sell_foreign",from:"JPY",to:"CAD",inputAmount:"1000.5",feeCad:"0",marketMid:"0.00909918",margin:"0.015"})).toThrow("JPY uses 0 decimals. Try 1001.");});
@@ -28,9 +28,11 @@ describe("quote terms",()=>{
       { currency: "USD", direction: "out", amount: "72.21" },
     ]);
     expect(sell.receiptCash).toEqual([
-      "You give 105.00 CAD",
+      "You give 100.00 CAD",
       "100.00 CAD + 5.00 CAD service fee",
+      "Cash from customer 105.00 CAD",
       "You receive 72.21 USD",
+      "Cash to customer 72.21 USD",
     ]);
     const buy = cashHands("100.00","134.36","5.00","USD","CAD","CAD");
     expect(buy.receiveAmount).toBe("129.36");
@@ -41,9 +43,12 @@ describe("quote terms",()=>{
     ]);
     expect(buy.receiptCash).toEqual([
       "You give 100.00 USD",
-      "You receive 129.36 CAD",
+      "You receive 134.36 CAD",
       "134.36 CAD less 5.00 CAD service fee",
+      "Cash to customer 129.36 CAD",
     ]);
+    expect(buy.cashToCustomer).toBe("Cash to customer 129.36 CAD");
+    expect("Cash to customer 129.36 CAD").not.toMatch(/[-\u2013\u2014]/);
     const yen = cashHands("1000","108252","5.00","CAD","JPY","CAD");
     expect(yen.giveAmount).toBe("1,005.00");
     expect(yen.receiveAmount).toBe("108,252");
@@ -52,7 +57,7 @@ describe("quote terms",()=>{
       { currency: "JPY", direction: "out", amount: "108252.00" },
     ]);
     const plain = cashHands("100.00","72.21","0","CAD","USD","CAD");
-    expect(plain.receiptCash).toEqual(["You give 100.00 CAD", "You receive 72.21 USD"]);
+    expect(plain.receiptCash).toEqual(["You give 100.00 CAD", "You receive 72.21 USD", "Cash to customer 72.21 USD"]);
     expect(plain.tillMoves).toEqual([
       { currency: "CAD", direction: "in", amount: "100.00" },
       { currency: "USD", direction: "out", amount: "72.21" },
@@ -83,7 +88,7 @@ describe("quote terms",()=>{
     const shownRate = quoteTerms.displayRate(priced.rateWire);
     expect(shownRate).toMatch(/^\d+\.\d{4}$/);
     expect(priced.outputWire).toBe(quoteTerms.roundOutput(new Decimal("1000"), priced.rateWire, "USD").toFixed(2));
-    expect(new Decimal(shownRate).mul("1000").toDecimalPlaces(2).toFixed(2)).not.toBe(priced.outputWire);
+    expect(new Decimal(shownRate).mul("1000").toDecimalPlaces(2).toFixed(2)).toBe(priced.outputWire);
     expect(quoteTerms.preview(board, { from: "CAD", to: "JOD", inputAmount: "10", feeCad: "0", homeCurrency: "CAD" }).message).toBe("That currency is not available on this desk.");
   });
 });

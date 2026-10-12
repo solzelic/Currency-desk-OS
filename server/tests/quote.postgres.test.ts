@@ -247,7 +247,7 @@ postgres("quote service against real PostgreSQL", () => {
     expect((await pool.query("SELECT count(*)::int AS n FROM ledger_transactions")).rows[0].n).toBe(0);
     expect((await pool.query("SELECT status FROM quotes WHERE quote_id=$1", [made.json().quoteId])).rows[0].status).toBe("active");
   });
-  it("refuses 4,702.73 when the recomputed amount is 4,702.63", async () => {
+  it("refuses 4,702.73 when the recomputed amount is 4,702.60", async () => {
     await pool.query(
       "UPDATE rate_boards SET buy_margin=0.015, sell_margin=0.015, board_rows=$1::jsonb, published_at=now() WHERE id='board-1'",
       [JSON.stringify({ USD: { mid: 1.36407, show: true } })],
@@ -259,8 +259,8 @@ postgres("quote service against real PostgreSQL", () => {
       payload: { ...body, from: "USD", to: "CAD", inputAmount: "3500.00", feeCad: "0.00", direction: "customer_sell_foreign" },
     });
     expect(made.statusCode, made.body).toBe(201);
-    expect(made.json().outputAmount).toBe("4702.63");
-    for (const shownAmount of ["4702.73", "4,702.73"]) {
+    expect(made.json().outputAmount).toBe("4702.60");
+    for (const shownAmount of ["4702.73", "4,702.73", "4702.63", "4,702.63"]) {
       const refused = await app.inject({
         method: "POST",
         url: `/api/quotes/${made.json().quoteId}/post`,
@@ -275,10 +275,10 @@ postgres("quote service against real PostgreSQL", () => {
       method: "POST",
       url: `/api/quotes/${made.json().quoteId}/post`,
       cookies: await cookie(),
-      payload: postBody("right-4702", { shownAmount: "4,702.63" }),
+      payload: postBody("right-4702", { shownAmount: "4,702.60" }),
     });
     expect(posted.statusCode, posted.body).toBe(201);
-    expect(posted.json().outputAmount).toBe("4702.63");
+    expect(posted.json().outputAmount).toBe("4702.60");
   });
   it("creates a customer-buy quote using We Sell with board and snapshot lineage", async () => {
     const res = await app.inject({
@@ -293,7 +293,7 @@ postgres("quote service against real PostgreSQL", () => {
     expect(q.rateBoardPublicationId).toBe("board-1");
     expect(q.marketSnapshotId).toBe("snap-1");
     expect(q.customerRate).toBe("0.692857142857");
-    expect(q.outputAmount).toBe("692.86");
+    expect(q.outputAmount).toBe("692.90");
   });
   it("creates a customer-sell quote using We Buy and preserves old board terms", async () => {
     const created = await app.inject({
@@ -657,8 +657,8 @@ postgres("quote service against real PostgreSQL", () => {
     );
     const board = { buyMargin: 0.015, sellMargin: 0.015, rows };
     const deals = [
-      ["USD", "CAD", "3500.00", "customer_sell_foreign", "4702.63"],
-      ["CAD", "USD", "3500.00", "customer_buy_foreign", "2527.36"],
+      ["USD", "CAD", "3500.00", "customer_sell_foreign", "4702.60"],
+      ["CAD", "USD", "3500.00", "customer_buy_foreign", "2527.35"],
       ["CAD", "JPY", "1000.00", "customer_buy_foreign", "108252.00"],
     ] as const;
     const cookies = await cookie();

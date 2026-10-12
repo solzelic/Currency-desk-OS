@@ -172,10 +172,10 @@ const lotsAt = async (locationId: string) =>
 /**
  * A customer buys a thousand US dollars, so the desk disposes of USD.
  *
- * A quote is priced off what the customer hands over, and at 1.40 with the
- * board's 3% sell margin 1,443.30 CAD buys exactly a thousand dollars —
- * which is what makes the cost arithmetic below readable rather than a
- * string of rounded remainders.
+ * A quote is priced off what the customer hands over, and at the displayed
+ * 4dp rate (0.6929) 1,443.21 CAD buys exactly a thousand dollars — which
+ * is what makes the cost arithmetic below readable rather than a string of
+ * rounded remainders.
  */
 async function sellAThousandDollars(idempotencyKey: string) {
   const cookies = await cookie();
@@ -188,7 +188,7 @@ async function sellAThousandDollars(idempotencyKey: string) {
         customerId: "customer-demo",
         from: "CAD",
         to: "USD",
-        inputAmount: "1443.30",
+        inputAmount: "1443.21",
         feeCad: "4.00",
         direction: "customer_buy_foreign",
       },

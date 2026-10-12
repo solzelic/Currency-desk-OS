@@ -93,7 +93,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const owner = await cookie("j.masri");
     const quote = (await app.inject({
       method: "POST", url: "/api/quotes", cookies: owner,
-      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.30", feeCad: "4.00", direction: "customer_buy_foreign" },
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.21", feeCad: "4.00", direction: "customer_buy_foreign" },
     })).json();
     const posted = await app.inject({
       method: "POST", url: `/api/quotes/${quote.quoteId}/post`, cookies: owner,
@@ -116,7 +116,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const tellerSummary = await read("m.costa", "/api/ledger/summary");
     const ownerSummary = await read("j.masri", "/api/ledger/summary");
     const supervisorSummary = await read("a.singh", "/api/ledger/summary");
-    expect(tellerSummary.volumeHome).toBe("2443.30");
+    expect(tellerSummary.volumeHome).toBe("2443.21");
     expect(tellerSummary.feesHome).toBe("39.00");
     lacks(tellerSummary, ["earningsHome", "realizedPnlHome", "costOfSaleHome"]);
     expect(tellerSummary.byActor.length).toBeGreaterThan(0);
@@ -133,10 +133,10 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const ownerTx = await read("j.masri", "/api/ledger/transactions?limit=20");
     const deal = ownerTx.transactions.find((row: { transactionId: string }) => row.transactionId === transactionId);
     const tellerDeal = tellerTx.transactions.find((row: { transactionId: string }) => row.transactionId === transactionId);
-    expect(deal).toMatchObject({ feeCad: "4.00", realizedPnlHome: "103.30" });
+    expect(deal).toMatchObject({ feeCad: "4.00", realizedPnlHome: "103.21" });
     expect(deal.spreadCad).toEqual(expect.any(String));
     expect(deal.marketMid).toEqual(expect.any(String));
-    expect(tellerDeal).toMatchObject({ inputAmount: "1443.30", feeCad: "4.00" });
+    expect(tellerDeal).toMatchObject({ inputAmount: "1443.21", feeCad: "4.00" });
     lacks(tellerDeal, ["spreadCad", "costOfSaleHome", "realizedPnlHome", "marketMid"]);
 
     const tellerReceipt = await read("m.costa", `/api/ledger/transactions/${transactionId}/receipt`);
@@ -227,8 +227,8 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
       tellerPost: tellerPost.json(), tellerCancel: cancelled.json(),
     });
     lacks(JSON.parse(leaked), SHOP);
-    expect(leaked).not.toContain("107.30");
-    expect(leaked).not.toContain("103.30");
+    expect(leaked).not.toContain("107.21");
+    expect(leaked).not.toContain("103.21");
     expect(leaked).toContain("4.00");
     expect(leaked).toContain("35.00");
   });
@@ -242,7 +242,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const owner = await cookie("j.masri");
     const quote = (await app.inject({
       method: "POST", url: "/api/quotes", cookies: owner,
-      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.30", feeCad: "4.00", direction: "customer_buy_foreign" },
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.21", feeCad: "4.00", direction: "customer_buy_foreign" },
     })).json();
     const posted = await app.inject({
       method: "POST", url: `/api/quotes/${quote.quoteId}/post`, cookies: owner,

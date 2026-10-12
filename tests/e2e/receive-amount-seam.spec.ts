@@ -54,7 +54,7 @@ async function openNewTransaction(page: Page): Promise<void> {
 }
 
 /* The rest of the suite republishes York's board (a 2% margin is
-   enough to move 3,500 USD from 4,702.63 to 4,678.76). This test pins
+   enough to move 3,500 USD from 4,702.60 to 4,678.80). This test pins
    the board the cashier actually misread, then puts the previous
    publication back. */
 type BoardSnap = {
@@ -148,7 +148,7 @@ async function restoreBoard(request: APIRequestContext): Promise<void> {
 }
 
 /* Signs in at the shared till with the QA board. Does not post.
-   A USD 3,500 we-buy pays 4,702.63 CAD out of a 25,000 opening, so
+   A USD 3,500 we-buy pays 4,702.60 CAD out of a 25,000 opening, so
    only the viewport cases (and the yen case's one setup post) may
    call quoteUsdToCad. */
 async function prepareDesk(page: Page, width: number): Promise<void> {
@@ -204,28 +204,30 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   await page.locator(".cd-tx-swap").click();
   await expect(page.locator(".cd-tx-side")).toContainText("We buy USD");
   await page.locator(".cd-money input").first().fill("3500");
-  await expect(page.getByTestId("tx-receives")).toHaveText("4,702.63");
-  await expect(page.getByTestId("tx-ticket-receives")).toContainText("4,702.63");
+  await expect(page.getByTestId("tx-receives")).toHaveText("4,702.60");
+  await expect(page.getByTestId("tx-ticket-receives")).toContainText("4,702.60");
   await page.locator(".cd-tx-purpose").fill("Personal travel");
   await page.locator(".cd-tx-source").fill("Employment income");
   await page.getByRole("button", { name: "Get server quote" }).click();
-  await expect(page.getByTestId("tx-frozen")).toContainText("4,702.63");
+  await expect(page.getByTestId("tx-frozen")).toContainText("4,702.60");
   const frozen = await page.getByTestId("tx-frozen").innerText();
   expect(frozen, "frozen expiry").toMatch(/Expires in \d+:\d{2}$/);
+  expect(frozen).toContain("Cash to customer 4,702.60 CAD");
   expect(frozen).not.toMatch(/[AP]M|a\.m\.|p\.m\./);
-  await expect(page.locator(".cd-tx-rail")).toContainText("71.62");
-  if (width < 600) {
-    await expect(page.locator(".cd-tx-rate")).toHaveValue(/^\d+\.\d{4}$/);
-  } else {
-    expect(await page.locator(".cd-tx-rate").inputValue(), "the desk rate keeps the full rate").toMatch(/\.\d{5,}/);
-  }
+  await expect(page.locator(".cd-tx-rail")).toContainText("71.65");
+  const shownRate = await page.locator(".cd-tx-rate").inputValue();
+  expect(shownRate, "the rate in the field is the priced rate").toMatch(/^\d+\.\d{4}$/);
+  const shownAmount = (await page.getByTestId("tx-receives").innerText()).replace(/,/g, "");
+  const [whole, frac] = shownRate.split(".");
+  const product = (Number(whole + frac) * 3500) / (10 ** frac.length);
+  expect(product.toFixed(2), "shown rate times 3500").toBe(shownAmount);
   if (width <= 360) {
     const kicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
     await expect(kicker).toContainText("CAD");
     const overflow = await kicker.evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(overflow, "the rate line clips CAD").toBeLessThanOrEqual(1);
   }
-  await expect(page.getByTestId("tx-receives")).toHaveText("4,702.63");
+  await expect(page.getByTestId("tx-receives")).toHaveText("4,702.60");
   await expect(page.getByTestId("tx-ticket-pays")).toContainText("3,500.00");
   const shot = process.env.SHOT_DIR;
   if (shot) {
@@ -237,10 +239,11 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   const postedRes = await postedWait;
   const posted = await postedRes.json();
   expect(postedRes.status(), JSON.stringify(posted)).toBe(201);
-  expect(posted.outputAmount, "posted output").toBe("4702.63");
+  expect(posted.outputAmount, "posted output").toBe("4702.60");
   const buyLines = posted.receipt.lines.join("\n");
   expect(buyLines, "receipt matches the screen").toContain("You give 3,500.00 USD");
-  expect(buyLines).toContain("You receive 4,702.63 CAD");
+  expect(buyLines).toContain("You receive 4,702.60 CAD");
+  expect(buyLines).toContain("Cash to customer 4,702.60 CAD");
   expect(buyLines).not.toContain("Fee paid separately");
   expect(buyLines).not.toContain("Paid exchange");
   const listed = await page.evaluate(async () => {
@@ -249,7 +252,7 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   });
   const row = (listed.transactions || []).find((tx: { quoteId?: string }) => tx.quoteId === posted.quoteId);
   expect(row, "ledger row").toBeTruthy();
-  expect(row.outputAmount).toBe("4702.63");
+  expect(row.outputAmount).toBe("4702.60");
 }
 
 test("desktop Customer receives is the posted amount for USD 3,500", async ({ page, request }) => {
@@ -260,20 +263,21 @@ test("desktop Customer receives is the posted amount for USD 3,500", async ({ pa
     await page.locator(".cd-money input").first().click();
     await page.locator(".cd-money input").first().fill("3500");
     await expect(page.locator(".cd-tx-side")).toContainText("We sell USD");
-    await expect(page.getByTestId("tx-receives")).toHaveText("2,527.36");
+    await expect(page.getByTestId("tx-receives")).toHaveText("2,527.35");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
     await page.getByRole("button", { name: "Get server quote" }).click();
-    await expect(page.getByTestId("tx-frozen")).toContainText("2,527.36");
+    await expect(page.getByTestId("tx-frozen")).toContainText("2,527.35");
     const postedWait = page.waitForResponse((res) => res.url().includes("/api/quotes/") && res.url().endsWith("/post") && res.request().method() === "POST");
     await page.getByRole("button", { name: "Post frozen quote" }).click();
     const sellRes = await postedWait;
     const sellPosted = await sellRes.json();
     expect(sellRes.status(), JSON.stringify(sellPosted)).toBe(201);
-    expect(sellPosted.outputAmount).toBe("2527.36");
+    expect(sellPosted.outputAmount).toBe("2527.35");
     const sellLines = sellPosted.receipt.lines.join("\n");
     expect(sellLines).toContain("You give 3,500.00 CAD");
-    expect(sellLines).toContain("You receive 2,527.36 USD");
+    expect(sellLines).toContain("You receive 2,527.35 USD");
+    expect(sellLines).toContain("Cash to customer 2,527.35 USD");
     expect(sellLines).not.toContain("Fee paid separately");
   } finally {
     await restoreBoard(request);
@@ -502,6 +506,8 @@ test("a we-sell fee is cash the till takes, and the headline says so", async ({ 
     await page.locator(".cd-tx-source").fill("Employment income");
     await page.getByRole("button", { name: "Get server quote" }).click();
     await expect(page.getByTestId("tx-frozen")).toContainText("72.21");
+    await expect(page.getByTestId("tx-frozen")).toContainText("Cash from customer 101.50 CAD");
+    await expect(page.getByTestId("tx-frozen")).toContainText("Cash to customer 72.21 USD");
     await expect(page.getByTestId("tx-ticket-pays")).toContainText("101.50 CAD (100.00 + 1.50 fee)");
     await page.getByRole("button", { name: "Show customer the quote" }).click();
     const presented = page.locator("div.fixed.inset-0").last();
@@ -512,14 +518,18 @@ test("a we-sell fee is cash the till takes, and the headline says so", async ({ 
     await expect(presented).not.toContainText("(100.00 + 1.50 fee)");
     await expect(presented.getByText(/^1 CAD = \d+\.\d{4} USD$/)).toBeVisible();
     await expect(presented).toContainText("You receive");
+    await expect(presented).toContainText("Cash from customer 101.50 CAD");
+    await expect(presented).toContainText("Cash to customer 72.21 USD");
     await presented.getByRole("button", { name: "Back to desk" }).click();
     const before = await sharedBalances(request);
     const headline = (await page.getByTestId("tx-ticket-pays").innerText()).replace(/\s+/g, " ");
     const posted = await postFrozen(page, "72.21", "1.50");
     const lines = posted.receipt.lines.join("\n");
-    expect(lines).toContain("You give 101.50 CAD");
+    expect(lines).toContain("You give 100.00 CAD");
     expect(lines).toContain("100.00 CAD + 1.50 CAD service fee");
+    expect(lines).toContain("Cash from customer 101.50 CAD");
     expect(lines).toContain("You receive 72.21 USD");
+    expect(lines).toContain("Cash to customer 72.21 USD");
     expect(lines).not.toContain("Fee paid separately");
     expect(lines).not.toContain("Paid exchange");
     const after = await sharedBalances(request);
@@ -540,17 +550,20 @@ test("a we-buy fee is cash the till pays out, and the headline says so", async (
     await expect(page.locator(".cd-tx-side")).toContainText("We buy USD");
     await page.locator(".cd-money input").first().fill("100");
     await page.locator(".cd-tx-fee").fill("1.50");
-    await expect(page.getByTestId("tx-receives")).toHaveText("132.86");
+    await expect(page.getByTestId("tx-receives")).toHaveText("134.36");
     await expect(page.getByTestId("tx-ticket-receives")).toContainText("132.86 CAD (134.36 less 1.50 fee)");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
     await page.getByRole("button", { name: "Get server quote" }).click();
     await expect(page.getByTestId("tx-ticket-receives")).toContainText("132.86 CAD (134.36 less 1.50 fee)");
+    await expect(page.getByTestId("tx-frozen")).toContainText("Cash to customer 132.86 CAD");
+    await expect(page.getByTestId("tx-frozen")).toContainText("Fee 1.50 CAD");
     await page.getByRole("button", { name: "Show customer the quote" }).click();
     const presented = page.locator("div.fixed.inset-0").last();
     await expect(presented).toContainText("You receive");
-    await expect(presented).toContainText("132.86 CAD");
+    await expect(presented).toContainText("134.36 CAD");
     await expect(presented).toContainText("134.36 CAD less 1.50 CAD service fee");
+    await expect(presented).toContainText("Cash to customer 132.86 CAD");
     await expect(presented).not.toContainText("(134.36 less 1.50 fee)");
     await presented.getByRole("button", { name: "Back to desk" }).click();
     const before = await sharedBalances(request);
@@ -558,8 +571,9 @@ test("a we-buy fee is cash the till pays out, and the headline says so", async (
     const posted = await postFrozen(page, "134.36", "1.50");
     const lines = posted.receipt.lines.join("\n");
     expect(lines).toContain("You give 100.00 USD");
-    expect(lines).toContain("You receive 132.86 CAD");
+    expect(lines).toContain("You receive 134.36 CAD");
     expect(lines).toContain("134.36 CAD less 1.50 CAD service fee");
+    expect(lines).toContain("Cash to customer 132.86 CAD");
     expect(lines).not.toContain("Fee paid separately");
     expect(lines).not.toContain("Received: 134.36");
     const after = await sharedBalances(request);
@@ -850,7 +864,9 @@ test("yen with a fee matches the screen, the receipt and the drawer", async ({ p
     const posted = await postedRes.json();
     expect(postedRes.status(), JSON.stringify(posted)).toBe(201);
     const lines = posted.receipt.lines.join("\n");
-    expect(lines).toContain("You give 105.00 CAD");
+    expect(lines).toContain("You give 100.00 CAD");
+    expect(lines).toContain("Cash from customer 105.00 CAD");
+    expect(lines).toContain("Cash to customer");
     expect(lines).toContain("100.00 CAD + 5.00 CAD service fee");
     expect(lines).toContain(`You receive ${shown} JPY`);
     expect(lines).not.toContain("Fee paid separately");
@@ -875,6 +891,14 @@ test("a malformed amount does not show invalid money", async ({ page, request })
     await amount.pressSequentially("12.345");
     await expect(amount).toHaveValue("12.34");
     const alert = page.locator('[data-req-field="amt"]').getByRole("alert");
+    await expect(alert).toHaveText("CAD uses 2 decimals. Try 12.35.");
+    await amount.fill("");
+    await amount.evaluate((el) => {
+      const paste = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, "clipboardData", { value: { getData: () => "12.345" } });
+      el.dispatchEvent(paste);
+    });
+    await expect(amount).toHaveValue("12.34");
     await expect(alert).toHaveText("CAD uses 2 decimals. Try 12.35.");
     expect("CAD uses 2 decimals. Try 12.35.").not.toMatch(/[-\u2013\u2014]/);
     await expect(page.locator(".cd-tx")).not.toContainText("invalid money");
