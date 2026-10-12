@@ -63,7 +63,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 | Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
-| Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. A session that is already open keeps the date it stored. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt`. `branches.timezone` is NOT NULL and defaults to America/Toronto. A blank zone or a zone the server cannot read is refused as `BRANCH_TIMEZONE_UNSET` (409) |
+| Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. A session that is already open keeps the date it stored, and the zone it opened in (`opened_timezone`). Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt`. `branches.timezone` is NOT NULL and defaults to America/Toronto. An owner or a manager sets it (`PUT /api/ledger/branch-timezone`). A teller is refused. An invalid zone is 422. The change is an audit row: old zone, new zone, who, when. The new zone is used the next time a till is opened. A blank zone or a zone the server cannot read, already stored, is refused as `BRANCH_TIMEZONE_UNSET` (409) |
 | Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
 
 ## Production/build surfaces
@@ -521,6 +521,14 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, branch time zone from Settings. The Localization
+dropdown reads and writes `branches.timezone`. An owner or a manager
+can set a real IANA zone. A teller cannot. An invalid zone is refused
+with 422. The audit row names the old zone, the new zone, who changed
+it, and when. An open till keeps the business date and the zone it
+opened with. The screen says the new zone applies from the next time
+a till is opened. After a reload the dropdown shows the server's value.
 
 **2026-10-11**, identity expiry. An ID is current through the end of its expiry
 date in the branch time zone. That date and today are compared as

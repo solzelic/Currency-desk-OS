@@ -2409,6 +2409,18 @@
           body: JSON.stringify({ method: method }),
         });
       },
+      /* The branch time zone. The Settings dropdown used to write only
+         the browser's saved settings, so branches.timezone never moved
+         off America/Toronto. */
+      loadBranchTimeZone: function () {
+        return request("/api/ledger/branch-timezone");
+      },
+      setBranchTimeZone: function (timezone) {
+        return request("/api/ledger/branch-timezone", {
+          method: "PUT",
+          body: JSON.stringify({ timezone: timezone }),
+        });
+      },
       /* ---- cheque cashing ----
 
          Cashing a cheque hands a customer real money out of a real
@@ -5197,6 +5209,90 @@
         color: CD.flag
       }
     }, err));
+  }
+
+  /* The branch time zone lives on branches.timezone. This control used
+     to call set('timezone'), which wrote the browser's saved settings
+     and left every branch on America/Toronto. The dropdown shows what
+     the server returned, including after a reload. */
+  function BranchTimeZoneRow() {
+    const [status, setStatus] = useState('loading');
+    const [zone, setZone] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const api = window.CDOS && window.CDOS.Backend;
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') {
+        setStatus('offline');
+        return;
+      }
+      let alive = true;
+      api.loadBranchTimeZone().then(j => {
+        if (alive) {
+          setZone(j.timezone);
+          setStatus('ready');
+        }
+      }).catch(e => {
+        if (alive) {
+          setStatus('offline');
+          setErr(e && e.message ? e.message : 'Could not read the branch time zone.');
+        }
+      });
+      return () => {
+        alive = false;
+      };
+    }, []);
+    const save = async next => {
+      if (busy || status !== 'ready' || next === zone) return;
+      const previous = zone;
+      setBusy(true);
+      setErr('');
+      setZone(next);
+      try {
+        const saved = await api.setBranchTimeZone(next);
+        setZone(saved.timezone);
+      } catch (e) {
+        setZone(previous);
+        setErr(e && e.message ? e.message : 'Could not save the time zone — nothing was changed.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    const options = zone && TIMEZONES.indexOf(zone) < 0 ? [zone].concat(TIMEZONES) : TIMEZONES;
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "settings-timezone"
+    }, /*#__PURE__*/React.createElement(Row, {
+      title: "Timezone",
+      desc: "Applies from the next time a till is opened."
+    }, status === 'ready' ? /*#__PURE__*/React.createElement("select", {
+      "data-testid": "branch-timezone",
+      "aria-label": "Timezone",
+      value: zone,
+      disabled: busy,
+      onChange: e => save(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        width: 220,
+        maxWidth: '100%'
+      }
+    }, options.map(t => /*#__PURE__*/React.createElement("option", {
+      key: t,
+      value: t
+    }, t))) : /*#__PURE__*/React.createElement("span", {
+      className: "text-[11px]",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, status === 'loading' ? 'reading…' : 'unavailable')), err ? /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-testid": "branch-timezone-error",
+      className: "text-[11px] -mt-1 mb-1",
+      style: {
+        color: CD.flag
+      }
+    }, err) : null);
   }
 
   /* ---------- the desk's compliance thresholds (server-backed) ----------
@@ -9997,19 +10093,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, "Select ", jr.label.toLowerCase(), "\u2026"), jr.opts.map(o => /*#__PURE__*/React.createElement("option", {
         key: o
       }, o))));
-    })(), /*#__PURE__*/React.createElement(Row, {
-      title: "Timezone"
-    }, /*#__PURE__*/React.createElement("select", {
-      value: settings.timezone || 'America/Toronto',
-      onChange: e => set('timezone', e.target.value),
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 220
-      }
-    }, TIMEZONES.map(t => /*#__PURE__*/React.createElement("option", {
-      key: t
-    }, t)))), /*#__PURE__*/React.createElement("div", {
+    })(), /*#__PURE__*/React.createElement(BranchTimeZoneRow, null), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1 mt-5",
       style: {
         color: CD.faint,

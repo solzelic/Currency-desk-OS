@@ -113,6 +113,11 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Migration `040_till_balance_generation` keeps one generation per till
   and bumps it when that drawer's cash changes. A close names the
   generation it counted against. 039 is on main, so this file is 040.
+- Migration `041_till_session_timezone` stores the zone a till was
+  opened in (`ledger_till_sessions.opened_timezone`). A later change to
+  `branches.timezone` names the next session. A session opened before
+  the column existed leaves it null and still reads the branch's
+  current zone. 040 is on main, so this file is 041.
 
 ## Test commands
 

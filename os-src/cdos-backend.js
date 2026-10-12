@@ -352,6 +352,18 @@
           body: JSON.stringify({ method: method }),
         });
       },
+      /* The branch time zone. The Settings dropdown used to write only
+         the browser's saved settings, so branches.timezone never moved
+         off America/Toronto. */
+      loadBranchTimeZone: function () {
+        return request("/api/ledger/branch-timezone");
+      },
+      setBranchTimeZone: function (timezone) {
+        return request("/api/ledger/branch-timezone", {
+          method: "PUT",
+          body: JSON.stringify({ timezone: timezone }),
+        });
+      },
       /* ---- cheque cashing ----
 
          Cashing a cheque hands a customer real money out of a real

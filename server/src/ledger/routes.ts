@@ -24,6 +24,7 @@ import {
 } from "./threshold-control.js";
 import { CurrencyService } from "./currency-control.js";
 import { BranchLocationService } from "./branch-location.js";
+import { BranchTimeZoneService } from "./branch-timezone.js";
 import { currencyCode } from "./currencies.js";
 import { isRetryable } from "./retry.js";
 import {
@@ -324,6 +325,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const costMethod = new CostMethodService(pool);
   const thresholds = new ThresholdService(pool);
   const branchLocation = new BranchLocationService(pool);
+  const branchTimeZone = new BranchTimeZoneService(pool);
   const currencies = new CurrencyService(pool);
   const reportFilings = new ReportFilingService(pool);
   const cheques = new ChequeService(pool);
@@ -840,6 +842,36 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const actor = await actorOrReply(req, reply);
       return actor ? reply.send(await branchLocation.set(actor, parsed.data.airsideOrCasino)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* The zone this branch's next till open will use. The read is
+     ledger:view so the Settings dropdown can show the server's
+     value. The write is the owner or a manager. An invalid zone is
+     422. An open session is not rewritten. */
+  app.get("/api/ledger/branch-timezone", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await branchTimeZone.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+  app.put("/api/ledger/branch-timezone", async (req, reply) => {
+    const parsed = z.object({
+      timezone: z.string().max(100),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        code: "INVALID_REQUEST",
+        message: parsed.error.issues[0]?.message ?? "The time zone was not a text value.",
+      });
+    }
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await branchTimeZone.set(actor, parsed.data.timezone)) : undefined;
     } catch (error) {
       return failure(reply, error);
     }
