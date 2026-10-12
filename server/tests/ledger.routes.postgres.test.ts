@@ -753,6 +753,22 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
   });
 
   it("cancels a send once for a manager, refuses a teller, and refuses a paid-out transfer", async () => {
+    /* The book currency comes from the pack on the ledger's legal entity.
+       Another suite repoints York FX and leaves it, and a file that runs
+       alone has no entity row at all, so the baseline (USD) would take
+       the cash. Restate the seed contract before posting. */
+    await pool.query(
+      "INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT (id) DO NOTHING",
+      [DEMO.tenantId],
+    );
+    await pool.query(
+      `INSERT INTO legal_entities
+         (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+       VALUES ($1, $2, 'York Currency Exchange Inc.', 'FINTRAC', 'CAD', 'pack-ca-v1', 1)
+       ON CONFLICT (id) DO UPDATE
+         SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1`,
+      [DEMO.legalEntityId, DEMO.tenantId],
+    );
     const tellerCookies = await cookie("a.singh");
     const managerCookies = await cookie("r.haddad");
     const send = {
@@ -776,6 +792,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       payload: send,
     });
     expect(created.statusCode).toBe(201);
+    expect(created.json().homeCurrency).toBe("CAD");
     const transactionId = created.json().transactionId as string;
     const cad = async () =>
       (
@@ -827,7 +844,8 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       payload: { idempotencyKey: `${key}:again`, reason: "Cancelled at the counter" },
     });
     expect(again.statusCode).toBe(422);
-    expect(again.json().code).toBe("REVERSAL_ALREADY_EXISTS");
+    expect(again.json().code).toBe("REVERSAL_NOT_ALLOWED");
+    expect(String(again.json().message)).toContain("already reversed");
     expect(await cad()).toBe("25000.00");
 
     const paidSend = await app.inject({

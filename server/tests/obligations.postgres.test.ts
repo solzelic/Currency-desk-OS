@@ -693,9 +693,11 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
     );
     expect(fee.rows).toEqual([{ side: "debit", amount_cad: "9.99" }]);
 
+    /* A new key is not a second reversal. The obligation is already
+       reversed, so the book refuses it and the drawer stays put. */
     await expect(
       service.reverse(supervisor, posted.transactionId!, `${key}:again`, "Cancelled at the counter"),
-    ).rejects.toMatchObject({ code: "REVERSAL_ALREADY_EXISTS" });
+    ).rejects.toMatchObject({ code: "REVERSAL_NOT_ALLOWED" });
     expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).toFixed(2));
     expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(1);
   });
