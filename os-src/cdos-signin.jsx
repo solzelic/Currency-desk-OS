@@ -524,6 +524,7 @@
     const [pick, setPick] = useState(null);
     const [pin, setPin] = useState(''); const [verifying, setVerifying] = useState(false);
     const [err, setErr] = useState('');
+    const [lockedOut, setLockedOut] = useState(false);
     const others = (operators || []).filter(o => o.active !== false);
     if (!pick) {
       return (<div style={Scrim}><style>{cdKeyframes}</style>
@@ -539,7 +540,7 @@
                 <Avatar name={o.name} size={38} />
                 <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>{o.name}</span><span style={{ display: 'block', fontSize: 12, color: 'var(--si-mute)' }}>{o.role || 'Staff'}</span></span>
                 {isCur ? <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.1em', color: 'var(--si-faint)', textTransform: 'uppercase' }}>On the desk now</span>
-                  : <button type="button" onClick={() => { setPick(o); setPin(''); }} style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--si-primary)', background: 'rgba(29,107,69,0.08)', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>Take over</button>}
+                  : <button type="button" onClick={() => { setPick(o); setPin(''); setErr(''); setLockedOut(false); }} style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--si-primary)', background: 'rgba(29,107,69,0.08)', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>Take over</button>}
               </div>);
             })}
           </div>
@@ -550,7 +551,7 @@
       </div>);
     }
     const push = (d) => {
-      if (verifying || pin.length >= 4) return;
+      if (lockedOut || verifying || pin.length >= 4) return;
       const n = (pin + d).slice(0, 4);
       setPin(n);
       if (n.length !== 4) return;
@@ -576,11 +577,15 @@
         }
         if (res.ok) { onConfirm(pick, data); return; }
         setVerifying(false); setPin('');
-        if (res.status === 409 && data.error === 'no_pin') {
-          setErr('No PIN is set for this person. Set one before switching.');
+        if (res.status === 429 || (res.status === 401 && data.locked)) {
+          setLockedOut(true);
+          setErr(data.detail || 'Too many wrong tries.');
           return;
         }
-        if (res.status === 429) { setErr('Too many tries — wait a few minutes'); return; }
+        if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+          setErr(data.detail);
+          return;
+        }
         if (res.status === 401) { setErr('Incorrect PIN'); return; }
         setErr(data.detail || 'Could not switch to that account.');
       }).catch((e) => {
@@ -594,9 +599,11 @@
         <Avatar name={pick.name} />
         <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 4 }}>Confirm it's you</div>
         <div style={{ fontSize: 13.5, color: 'var(--si-mute)', marginBottom: 4 }}>{firstOf(pick.name)}, enter your PIN to take this drawer.</div>
-        {err ? <div style={{ fontSize: 12.5, color: 'var(--si-flag)', margin: '8px 0' }}>{err}</div> : null}
+        {err ? <div style={{ fontSize: 12.5, color: 'var(--si-flag)', margin: '8px 0', lineHeight: 1.35 }}>{err}</div> : null}
         <Dots n={4} filled={pin.length} />
-        <Keypad value={pin} max={4} onDigit={push} onBack={() => { if (!verifying) setPin(pin.slice(0, -1)); }} leftLabel="Cancel" onLeft={() => { setPick(null); setPin(''); }} verifying={verifying} />
+        {lockedOut
+          ? <button type="button" onClick={onCancel} style={{ height: 44, width: '100%', borderRadius: 12, border: 'none', background: 'var(--si-ink)', color: '#fff', fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>OK</button>
+          : <Keypad value={pin} max={4} onDigit={push} onBack={() => { if (!verifying) setPin(pin.slice(0, -1)); }} leftLabel="Cancel" onLeft={() => { setPick(null); setPin(''); setErr(''); setLockedOut(false); }} verifying={verifying} />}
       </div>
     </div>);
   }

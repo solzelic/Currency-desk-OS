@@ -228,6 +228,15 @@
     return outcome(book, id) == null;
   }
 
+  /* Once per person, and only when they sign in. A switch or a handover
+     is somebody else taking a desk that is already open. That arrival
+     does not open the tour, and it does not write skipped or finished,
+     so the person still sees it the next time they sign in themselves. */
+  function shouldOpen(book, id, arrival) {
+    if (arrival === 'switch' || arrival === 'handover') return false;
+    return shouldShow(book, id);
+  }
+
   /* Writes this person's row and leaves every other person alone.
      `now` is injectable so a test does not depend on the clock. */
   function record(storage, id, status, tour, now) {
@@ -256,6 +265,7 @@
     read: read,
     outcome: outcome,
     shouldShow: shouldShow,
+    shouldOpen: shouldOpen,
     record: record,
   };
 })();

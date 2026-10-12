@@ -795,6 +795,7 @@
     const [signup, setSignup] = useState(null);     // { email } while verifying a new-desk signup
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
+    const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
        from inside an effect that only runs once. A setState callback looks
@@ -1525,7 +1526,7 @@
        every deal, stayed with whoever had signed in. Switching now asks
        the server to revoke that session and open one for this person.
        There is no path that skips the PIN: a local "0000" is not a session. */
-    const finishSwitch = async (switched) => {
+    const finishSwitch = async (switched, arrival) => {
       let res;
       try {
         res = await fetch('/api/auth/me', { credentials: 'same-origin' });
@@ -1552,6 +1553,8 @@
         setStage('lock');
         return;
       }
+      const how = arrival === 'handover' ? 'handover' : 'switch';
+      setTourArrival(how);
       srvUserRef.current = u;
       setSrvUser(u);
       setUser(u.id);
@@ -1590,7 +1593,7 @@
         name: s.name,
         staffId: s.code,
         purpose: 'switch',
-        onOk: (switched) => { finishSwitch(switched); },
+        onOk: (switched) => { finishSwitch(switched, 'switch'); },
       });
     };
     const tillGate = (fn) => { const need = settings.pinOnTill !== false && reqPin(me.name); if (need) askPin({ title: 'Confirm it’s you', sub: 'Enter your PIN to take this drawer', name: me.name, expected: pinOf(me.name), onOk: fn }); else fn(); };
@@ -2411,7 +2414,7 @@
       {/* C · operator handover — pass the desk to a colleague, on the record */}
       {handover && ReactDOM.createPortal(<Handover operators={(settings.employees && settings.employees.length ? settings.employees : STAFF)} current={me}
         onCancel={() => setHandover(false)}
-        onConfirm={(op, switched) => { setHandover(false); finishSwitch(switched); log && log('operator.handover', { to: op.name }); }} />, document.body)}
+        onConfirm={(op, switched) => { setHandover(false); finishSwitch(switched, 'handover'); log && log('operator.handover', { to: op.name }); }} />, document.body)}
       {/* MENU BAR */}
       <div id="menubar">
         <div className="mb-brand" title={chromeCollapsed ? 'Show the app row' : 'Hide the bars for more room'} style={{ cursor: 'pointer' }} onClick={() => setChromeCollapsed(c => !c)}>
@@ -2651,7 +2654,9 @@
       {/* First sign-in. Mounted only on the desk, after the lock and the
           station picker, so it never talks over a screen the person has
           not reached yet. `paused` hides it under the PIN, the lock, and
-          a handover without forgetting the step they were on. */}
+          a handover without forgetting the step they were on. A switch
+          or a handover passes arrival so the tour stays shut and is not
+          marked done. */}
       {window.CDOS.FirstRun && <window.CDOS.FirstRun
         role={me.role}
         staffId={(srvUser && srvUser.id) || user || (me && me.name)}
@@ -2660,6 +2665,7 @@
         openApp={openApp}
         openClient={openClientProfile}
         paused={!!(deskLocked || handover || pinGate)}
+        arrival={tourArrival}
       />}
     </div>);
   }

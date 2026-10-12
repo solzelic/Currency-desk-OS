@@ -187,9 +187,12 @@ credential change revokes every other session.
 **Taking the desk is a new session.** `POST /api/auth/switch` proves the next
 person's PIN, revokes the live cookie, and issues one for them. The avatar
 menu used to change only the name on screen, so the book kept stamping
-whoever had typed the password. A missing PIN is refused. `0000` is not
-accepted in its place. The workspace stays only when that person may use it;
+whoever had typed the password. A missing PIN is refused in that person's
+name (initial and surname). `0000` is refused as too easy to guess, and it
+does not count as a wrong try. Too many wrong tries locks the keypad until
+a manager clears it. The workspace stays only when that person may use it;
 otherwise they pick a till. The audit row is `auth.switch` with `{from, to}`.
+The first-run tour stays closed on a switch and on a handover.
 
 **Nothing enumerable.** Whether an account exists is not public. The reset
 route answers identically for a stranger and a customer, in the same words —
