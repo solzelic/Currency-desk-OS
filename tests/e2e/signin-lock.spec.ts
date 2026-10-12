@@ -61,6 +61,8 @@ test.describe("locked sign-in", () => {
       const signIn = page.getByRole("button", { name: "Sign in" });
       await expect(signIn).toBeDisabled();
       await expect(signIn.locator("svg")).toBeVisible();
+      expect((await signIn.innerText()).replace(/\s+/g, " ").trim()).toBe("Sign in");
+      expect(await signIn.evaluate((el) => getComputedStyle(el).textTransform)).toBe("none");
       await expect(page.getByRole("button", { name: /send my code/i })).toHaveCount(0);
       await expect(page.getByRole("button", { name: /^locked$/i })).toHaveCount(0);
       await expect(page.getByText(/Another code/)).toHaveCount(0);

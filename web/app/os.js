@@ -59674,24 +59674,36 @@ ${snap}`;
       }, err), /*#__PURE__*/React.createElement("button", {
         type: "submit",
         disabled: busy || locked && !!lockUntil || cool > 0 || pw.length < 4,
-        style: {
-          ...primaryBtn(!busy && !(locked && lockUntil) && cool === 0 && pw.length >= 4),
+        style: locked ? {
+          width: '100%',
+          height: 48,
           marginTop: 16,
-          ...(locked ? {
-            textTransform: 'none',
-            letterSpacing: 0,
-            fontFamily: 'Archivo, system-ui, sans-serif',
-            fontSize: 15
-          } : {})
+          borderRadius: 12,
+          border: 'none',
+          cursor: lockUntil || busy || pw.length < 4 ? 'not-allowed' : 'pointer',
+          background: !lockUntil && !busy && pw.length >= 4 ? 'var(--si-primary)' : 'rgba(23,20,15,0.07)',
+          color: !lockUntil && !busy && pw.length >= 4 ? '#fff' : 'var(--si-ink)',
+          fontFamily: 'Archivo, system-ui, sans-serif',
+          fontSize: 15,
+          fontWeight: 700,
+          letterSpacing: 0,
+          textTransform: 'none'
+        } : {
+          ...primaryBtn(!busy && cool === 0 && pw.length >= 4),
+          marginTop: 16
         }
       }, busy ? 'Checking…' : locked && lockUntil ? /*#__PURE__*/React.createElement("span", {
         style: {
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 8
+          gap: 8,
+          textTransform: 'none',
+          letterSpacing: 0,
+          fontFamily: 'Archivo, system-ui, sans-serif',
+          fontSize: 15
         }
-      }, /*#__PURE__*/React.createElement("svg", {
+      }, " ", /*#__PURE__*/React.createElement("svg", {
         viewBox: "0 0 24 24",
         width: "16",
         height: "16",

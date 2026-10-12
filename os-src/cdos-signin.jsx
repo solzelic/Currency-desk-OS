@@ -443,8 +443,15 @@
         </div>
         {locked && <div style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--si-ink)', marginTop: 16, lineHeight: 1.35 }}>{lockSentence}</div>}
         {err && !locked && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy || (locked && !!lockUntil) || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && !(locked && lockUntil) && cool === 0 && pw.length >= 4), marginTop: 16, ...((locked) ? { textTransform: 'none', letterSpacing: 0, fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15 } : {}) }}>
-          {busy ? 'Checking…' : locked && lockUntil ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sign in</span> : locked ? 'Try again' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
+        <button type="submit" disabled={busy || (locked && !!lockUntil) || cool > 0 || pw.length < 4} style={locked ? {
+          width: '100%', height: 48, marginTop: 16, borderRadius: 12, border: 'none',
+          cursor: lockUntil || busy || pw.length < 4 ? 'not-allowed' : 'pointer',
+          background: !lockUntil && !busy && pw.length >= 4 ? 'var(--si-primary)' : 'rgba(23,20,15,0.07)',
+          color: !lockUntil && !busy && pw.length >= 4 ? '#fff' : 'var(--si-ink)',
+          fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 700,
+          letterSpacing: 0, textTransform: 'none',
+        } : { ...primaryBtn(!busy && cool === 0 && pw.length >= 4), marginTop: 16 }}>
+          {busy ? 'Checking…' : locked && lockUntil ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, textTransform: 'none', letterSpacing: 0, fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15 }}> <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sign in</span> : locked ? 'Try again' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
         {/* A staff id with no @ has nowhere to send a code. Saying we
             will email one tells them the wrong next step, and it is
             worse on a lock, where the button is not going to send. */}
