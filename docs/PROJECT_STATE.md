@@ -571,6 +571,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, desktop picture noise. The 1280 comparison allows
+20 pixels at threshold 0.2, which is the Till antialiasing on
+Actions run 38188660101. The Cheques customer id is frozen with
+no word boundary, because `cust_` plus a live UUID was the 592-pixel
+band on that run. The pictures themselves were not replaced.
+
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
 uppercase suffix (`3:02 PM`). A form date stays `Jun 18, 2026`.
 A list group for the business day is `Today, Oct 11`.

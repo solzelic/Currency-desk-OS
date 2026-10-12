@@ -389,7 +389,11 @@ the dialogs they were.
 whole desk. At 1280×800 it captures the open window of every app —
 Ledger, Clients, Rates, Till, Compliance, Reports, Settings, Pricing,
 Transfers, Cheques, Vault, and Audit trail — and the sign-in screen
-(`#lock`). The comparison is `maxDiffPixels: 0`.
+(`#lock`). The comparison is `maxDiffPixels: 20` and `threshold: 0.2`.
+On Actions run 38188660101 the Till window matched, then the retry
+differed by 6 pixels of antialiasing. 20 is the ceiling for that
+noise on one window. A content change is larger — the Cheques
+customer id on that run was 592 pixels — and still fails.
 
 The PNG files in `tests/e2e/desktop-unchanged.spec.ts-snapshots/` are
 the GitHub Actions render of the foundation head. A laptop and Actions
@@ -406,7 +410,11 @@ require a word boundary, so `cust_` plus an id is frozen too.
 Those values change every suite run. The first committed pictures
 did not freeze the ref, so the next Actions run differed by that
 column. The Cheques picture in the tree is the Actions render from
-run 38189339979, with the customer id frozen.
+run 38189339979, with the customer id frozen. Those pictures were
+not regenerated. Before the shot the page clock is pinned, a rate
+poll replays its first response (`RATES_SYNC` is already off),
+animations and the caret are off, and `document.fonts.ready` has
+resolved.
 
 Inter is loaded only at `max-width: 430px` (`media` on the stylesheet
 link, and `--font-ui` in `os-src/tokens.css`). Wider than that the desk
