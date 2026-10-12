@@ -126,10 +126,52 @@ describe("signOffWindow", () => {
       now,
     });
     expect(new Date(window.from).getTime()).toBe(zonedMidnight("2026-10-11", "Asia/Jerusalem").getTime());
-    expect(new Date(window.to).getTime()).toBeGreaterThan(now.getTime());
+    /* One millisecond past now, so a deal posted at this instant is inside
+       `posted_at < to`. A flat extra day (now + 24h, or the next midnight
+       + 24h) would also be greater than now, and would be the wrong end. */
+    expect(new Date(window.to).getTime()).toBe(now.getTime() + 1);
     const deal = now.getTime();
     expect(deal).toBeGreaterThanOrEqual(new Date(window.from).getTime());
     expect(deal).toBeLessThan(new Date(window.to).getTime());
+  });
+
+  it("ends at the close when the session was closed after midnight", () => {
+    const closedAt = new Date("2026-10-12T01:15:00+03:00");
+    const now = new Date("2026-10-12T08:00:00+03:00");
+    const window = signOffWindow({
+      businessDate: "2026-10-11",
+      timeZone: "Asia/Jerusalem",
+      closedAt,
+      now,
+    });
+    expect(window.to).toBe(closedAt.toISOString());
+    const posted = new Date("2026-10-12T00:30:00+03:00").getTime();
+    const afterClose = new Date("2026-10-12T02:00:00+03:00").getTime();
+    expect(posted).toBeGreaterThanOrEqual(new Date(window.from).getTime());
+    expect(posted).toBeLessThan(new Date(window.to).getTime());
+    expect(afterClose).toBeGreaterThanOrEqual(new Date(window.to).getTime());
+    expect(window.to).not.toBe(now.toISOString());
+    expect(new Date(window.to).getTime()).not.toBe(
+      zonedMidnight("2026-10-12", "Asia/Jerusalem").getTime(),
+    );
+  });
+
+  it("is not a flat 24 hours across Jerusalem's daylight-saving nights", () => {
+    const spring = signOffWindow({
+      businessDate: "2026-03-27",
+      timeZone: "Asia/Jerusalem",
+      closedAt: null,
+      now: new Date("2026-03-27T12:00:00+03:00"),
+    });
+    expect(new Date(spring.to).getTime() - new Date(spring.from).getTime()).toBe(23 * 60 * 60 * 1000);
+
+    const fall = signOffWindow({
+      businessDate: "2026-10-25",
+      timeZone: "Asia/Jerusalem",
+      closedAt: null,
+      now: new Date("2026-10-25T12:00:00+02:00"),
+    });
+    expect(new Date(fall.to).getTime() - new Date(fall.from).getTime()).toBe(25 * 60 * 60 * 1000);
   });
 
   it("starts a session opened just after midnight on that new business date", () => {

@@ -22,6 +22,11 @@ import { refreshSiteDomains } from "./sites.js";
 import { hashPassword } from "./auth/password.js";
 import { revokeAllSessions } from "./auth/sessions.js";
 import { audit } from "./audit.js";
+import { assertTestClockAllowed } from "./ledger/clock.js";
+
+/* Before a database is opened. A production boot with the test clock
+   switched on stops here, with this error, and never listens. */
+assertTestClockAllowed();
 
 for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVERRIDE_MAX_DEVIATION"] as const) {
   const value = process.env[key];

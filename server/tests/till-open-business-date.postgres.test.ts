@@ -311,4 +311,79 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
       expect(body.session.businessDate).not.toBe(utcSlice);
     }
   });
+
+  it("mints CD-YYMMDD from the session's trading day, not the UTC date", async () => {
+    const at = "2026-10-12T00:30:00+03:00";
+    await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [
+      DEMO.branchId,
+      "Asia/Jerusalem",
+    ]);
+    const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
+    await pool.query(
+      `INSERT INTO ledger_customers
+        (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ('customer-ref-day',$1,$2,$3,$4,'Ref Day','normal','verified')
+       ON CONFLICT (customer_id) DO NOTHING`,
+      scope.slice(0, 4),
+    );
+    for (const [currency, amount] of [["CAD", 25000], ["USD", 12000]] as const) {
+      await pool.query(
+        `INSERT INTO ledger_till_balances
+          (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency)
+         DO UPDATE SET available_amount = GREATEST(ledger_till_balances.available_amount, EXCLUDED.available_amount)`,
+        [...scope, currency, amount],
+      );
+    }
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { staffId: "j.masri", password: DEMO.password, tenantId: DEMO.tenantId },
+    });
+    expect(login.statusCode).toBe(200);
+    const cookies = {
+      cdos_session: login.cookies.find((cookie) => cookie.name === "cdos_session")!.value,
+    };
+    const headers = { "x-workspace-id": DEMO.workspaceId, "x-cd-now": at };
+    const opened = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/open",
+      cookies,
+      headers,
+    });
+    expect(opened.statusCode, opened.body).toBe(201);
+    expect(opened.json().session.businessDate).toBe("2026-10-12");
+    const quote = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies,
+      headers,
+      payload: {
+        customerId: "customer-ref-day",
+        from: "CAD",
+        to: "USD",
+        inputAmount: "100.00",
+        feeCad: "4.00",
+        direction: "customer_buy_foreign",
+      },
+    });
+    expect(quote.statusCode, quote.body).toBe(201);
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/quotes/${quote.json().quoteId}/post`,
+      cookies,
+      headers,
+      payload: {
+        idempotencyKey: `ref-day-${Date.now()}`,
+        purpose: "Personal travel",
+        sourceOfFunds: "Employment income",
+      },
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+    const ref = posted.json().transactionRef as string;
+    expect(ref).toMatch(/^CD-261012-/);
+    expect(ref.startsWith("CD-261011-")).toBe(false);
+    expect(new Date(at).toISOString().slice(0, 10)).toBe("2026-10-11");
+  });
 });

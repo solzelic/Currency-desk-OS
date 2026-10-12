@@ -3,9 +3,19 @@ import type { FastifyInstance } from "fastify";
 
 /* The product clock is the real one. Tests that have to stand just after
    midnight send `x-cd-now` and set CD_TEST_CLOCK=1 on the test server.
-   Production does not set that variable, so the header is ignored there
-   even if a client sends it. */
+   Importing this module does nothing to the process: the header hook is
+   registered only by bindTestClock, and only when the flag is allowed.
+   Production with the flag set never reaches a request. */
 const clock = new AsyncLocalStorage<Date>();
+
+export const TEST_CLOCK_PRODUCTION_ERROR = "CD_TEST_CLOCK must never be set in production";
+
+/** Production must not be able to honour a client-supplied clock. */
+export function assertTestClockAllowed(): void {
+  if (process.env.NODE_ENV === "production" && process.env.CD_TEST_CLOCK === "1") {
+    throw new Error(TEST_CLOCK_PRODUCTION_ERROR);
+  }
+}
 
 export function now(): Date {
   return clock.getStore() ?? new Date();
@@ -28,6 +38,12 @@ function testInstant(header: string | string[] | undefined): Date | null {
 }
 
 export function bindTestClock(app: FastifyInstance): void {
+  assertTestClockAllowed();
+  /* No hook at all unless a test server asked for one. A production
+     process never reaches this with the flag set — it has already
+     refused to boot — and a production process without the flag does
+     not grow a request hook that knows the header exists. */
+  if (process.env.CD_TEST_CLOCK !== "1") return;
   app.addHook("onRequest", (req, reply, done) => {
     let at: Date | null;
     try {
