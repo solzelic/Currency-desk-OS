@@ -253,6 +253,10 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   const row = (listed.transactions || []).find((tx: { quoteId?: string }) => tx.quoteId === posted.quoteId);
   expect(row, "ledger row").toBeTruthy();
   expect(row.outputAmount).toBe("4702.60");
+  if (width >= 1280) {
+    await page.locator(".win-back").click();
+    await expect(page.locator("tbody tr").filter({ hasText: "3,500" }).first().getByTestId("ledger-payout")).toHaveText("4,702.60 CAD");
+  }
 }
 
 test("desktop Customer receives is the posted amount for USD 3,500", async ({ page, request }) => {
@@ -551,7 +555,7 @@ test("a we-buy fee is cash the till pays out, and the headline says so", async (
     await expect(page.locator(".cd-tx-side")).toContainText("We buy USD");
     await page.locator(".cd-money input").first().fill("100");
     await page.locator(".cd-tx-fee").fill("1.50");
-    await expect(page.getByTestId("tx-receives")).toHaveText("134.36");
+    await expect(page.getByTestId("tx-receives")).toHaveText("132.86");
     await expect(page.getByTestId("tx-ticket-receives")).toContainText("132.86 CAD (134.36 less 1.50 fee)");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
@@ -607,10 +611,24 @@ test("the big buy number is the cash handed to the customer", async ({ page, req
     await expect(page.locator(".cd-tx-side")).toContainText("We buy USD");
     await page.locator(".cd-money input").first().fill("100");
     await page.locator(".cd-tx-fee").fill("5");
+    /* The green field is the cash handed over. Gross 134.36 would
+       overpay the customer by the fee. */
+    await expect(page.getByTestId("tx-receives")).toHaveText("129.36");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
     await page.getByRole("button", { name: "Get server quote" }).click();
     await expect(page.getByTestId("tx-frozen")).toContainText("Cash to customer 129.36 CAD");
+    await expect(page.getByTestId("tx-receives")).toHaveText("129.36");
+    const quiet = page.locator(".cd-tx-head .cd-tx-quiet");
+    await expect(quiet).toContainText("M. Costa");
+    await expect(quiet).toHaveText(/[A-Z][a-z]{2} \d{1,2}, \d{4}/);
+    await expect(quiet).not.toHaveText(/\d{4}-\d{2}-\d{2}/);
+    for (const size of BUY_CASH_VIEWPORTS) {
+      if (size.width === 430) continue;
+      await page.setViewportSize(size);
+      await page.locator(".cd-tx").screenshot({ path: testInfo.outputPath(`buy_sheet_${size.width}.png`) });
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.getByRole("button", { name: "Show customer the quote" }).click();
     const presented = page.locator("div.fixed.inset-0").last();
     const big = (await presented.getByTestId("quote-you-receive").innerText()).replace(/\s+/g, " ").trim();

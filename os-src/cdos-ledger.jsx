@@ -33,6 +33,13 @@
   const homeCcy = () => { const pack = deskPack(); return (pack && pack.homeCurrency) || (reportingLimit(null) || {}).currency || null; };
   const homeOf = (amt, ccy) => { const home = homeCcy(); if (!home) return null; if (ccy === home) return +amt || 0; if (home !== 'CAD') return null; const rate = crossRate('CAD', ccy); return rate ? (+amt || 0) / rate : null; };
   const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
+  /* Pay-out keeps the currency's decimals. num() drops a trailing zero,
+     so 4702.60 was printing as 4,702.6. Yen stays a whole number. */
+  const ledgerMoney = (amount, currency) => {
+    const terms = window.CDOS && window.CDOS.quoteTerms;
+    if (terms && typeof terms.formatAmount === 'function' && currency) return terms.formatAmount(amount, currency);
+    return num(amount);
+  };
   /* `sumHome` stood here — a total that converted every leg at today's
      board mid. Every figure that used it now goes through `sumDealHome`,
      which counts the leg that IS the desk's own currency and counts
@@ -1626,7 +1633,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const body = recs.map(r => {
         const f = flags[r.id] || {}; const v = r.status === 'void';
         const fl = v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok' && f.idNeeded) ? 'ID' : ''].filter(Boolean).join(' ') || '—');
-        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
+        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : ledgerMoney(r.outAmt, r.outCcy)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
       }).join('');
       const w = window.open('', '_blank', 'width=980,height=1100');
       if (!w) { log('Report blocked', 'Allow pop-ups to print the report'); return; }
@@ -1820,7 +1827,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
               <td className="px-3 py-2.5 font-medium" style={{ color: CD.ink }}>{x.customer ? <button onClick={e => { e.stopPropagation(); openClientProfile && openClientProfile(x.customer); }} className="text-left hover:underline" style={{ color: CD.ink, fontWeight: 500 }} title={`Open ${x.customer}'s KYC profile`}>{x.customer}</button> : <span style={{ color: CD.faint }}>—</span>}</td>
               <td className="px-3 py-2.5" style={{ color: CD.mute }}>{x.type}</td>
               <td className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(x.inAmt)} <span style={{ color: CD.faint }}>{x.inCcy}</span></td>
-              <td className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? '—' : num(x.outAmt)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></td>
+              <td data-testid="ledger-payout" className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? '—' : <>{ledgerMoney(x.outAmt, x.outCcy)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></>}</td>
               <td className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmtHome(x.fee)}</td>
               <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}><div className="flex flex-wrap gap-1">
                 {f.single && <FlagTag kind="RPT" filed={x.filed} onClick={() => setDetailId(x.id)} title={x.filed ? `LCTR ${x.filedInfo && x.filedInfo.ref} filed` : 'Reportable ≥ $10k — click to file'} />}

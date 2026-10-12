@@ -25,7 +25,8 @@ that function. The New transaction sheet previews with it, and once a quote
 is frozen the sheet shows the frozen input, output, and rate rather than a
 second product. The teller's You give / You receive line is the cash the
 till moves: input plus the fee when the customer pays home currency, output
-less the fee when they receive it. The customer screen's big number
+less the fee when they receive it. The big green Customer receives field
+on the sheet is that same cash. The customer screen's big number
 is the cash that changes hands. A sale shows You give as that total
 (`101.50 CAD`) and the fee under it (`100.00 CAD + 1.50 CAD service fee`).
 A buy shows You receive as the net payout (`129.36 CAD`), with

@@ -26944,6 +26944,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return rate ? (+amt || 0) / rate : null;
   };
   const fmtHome = v => v == null ? '—' : fmt(v, homeCcy() || 'CAD');
+  /* Pay-out keeps the currency's decimals. num() drops a trailing zero,
+     so 4702.60 was printing as 4,702.6. Yen stays a whole number. */
+  const ledgerMoney = (amount, currency) => {
+    const terms = window.CDOS && window.CDOS.quoteTerms;
+    if (terms && typeof terms.formatAmount === 'function' && currency) return terms.formatAmount(amount, currency);
+    return num(amount);
+  };
   /* `sumHome` stood here — a total that converted every leg at today's
      board mid. Every figure that used it now goes through `sumDealHome`,
      which counts the leg that IS the desk's own currency and counts
@@ -31463,7 +31470,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         const f = flags[r.id] || {};
         const v = r.status === 'void';
         const fl = v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' && f.idNeeded ? 'ID' : ''].filter(Boolean).join(' ') || '—';
-        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
+        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : ledgerMoney(r.outAmt, r.outCcy)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
       }).join('');
       const w = window.open('', '_blank', 'width=980,height=1100');
       if (!w) {
@@ -32165,18 +32172,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           color: CD.faint
         }
       }, x.inCcy)), /*#__PURE__*/React.createElement("td", {
+        "data-testid": "ledger-payout",
         className: "px-3 py-2.5 whitespace-nowrap",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: CD.green,
           fontWeight: 600
         }
-      }, x.outAmt === '' ? '—' : num(x.outAmt), " ", /*#__PURE__*/React.createElement("span", {
+      }, x.outAmt === '' ? '—' : /*#__PURE__*/React.createElement(React.Fragment, null, ledgerMoney(x.outAmt, x.outCcy), " ", /*#__PURE__*/React.createElement("span", {
         style: {
           color: CD.faint,
           fontWeight: 400
         }
-      }, x.outCcy)), /*#__PURE__*/React.createElement("td", {
+      }, x.outCcy))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2.5 whitespace-nowrap",
         style: {
           fontVariantNumeric: 'tabular-nums',
@@ -35140,7 +35148,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, meta.short, " \xB7 ", me.name, " \xB7 ", phoneSheet ? phoneDay(TODAY) : TODAY))), /*#__PURE__*/React.createElement("button", {
+    }, meta.short, " \xB7 ", me.name, " \xB7 ", phoneDay(TODAY)))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: requestClose,
       "aria-label": "Close",
@@ -35380,7 +35388,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       testId: "tx-receives",
-      value: exchangeReady ? fx.receivesLabel : '—',
+      value: exchangeReady ? fx.receiveAmount : '—',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);

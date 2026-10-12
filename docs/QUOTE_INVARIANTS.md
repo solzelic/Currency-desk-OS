@@ -7,7 +7,9 @@
 - The exchange output on the sheet is that frozen output. A fee is separate
   home-currency tender: the customer hands over input plus the fee when they
   pay home currency, and takes output less the fee when they receive it. The
-  teller's You give / You receive headline is that net. The customer
+  teller's You give / You receive headline is that net. The big green
+  Customer receives field on the sheet is that same cash (`129.36` on a
+  buy of USD 100 with a 5.00 CAD fee). The customer
   screen's big number is the cash that changes hands. A buy shows You
   receive as that net (`129.36 CAD`), with the gross exchange less the
   fee on the next line (`134.36 CAD less 5.00 CAD service fee`), and

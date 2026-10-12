@@ -1,9 +1,11 @@
 /* What a deal is worth, and what the desk takes on it.
 
    The arithmetic lives in os-src/quote-terms.js so the counter preview
-   and this service are the same function. A customer rate is not rounded
-   before it is multiplied. The amount the customer receives is that
-   product, rounded half-up to the output currency's minor units.
+   and this service are the same function. The displayed rate is the
+   customer rate rounded half-up to 4 decimal places. The amount is that
+   displayed rate times the input, then rounded half-up to the output
+   currency's minor units. The rate stored on the quote stays the full
+   board rate.
 
    Three shapes, and the only difference between them is how many sides
    are foreign:
@@ -44,7 +46,7 @@ export function calculateQuoteTerms(input: QuoteTermsInput) {
   return quoteTerms.calculateQuoteTerms(input);
 }
 
-/** input × rate, half-up to the currency's minor units. The rate is not rounded first. */
+/** Displayed 4 decimal rate times the input, half-up to the currency's minor units. */
 export function roundOutput(amount: Decimal, rate: Decimal, currency: string): Decimal {
   return quoteTerms.roundOutput(amount, rate, currency);
 }
@@ -53,9 +55,6 @@ export function minorUnits(code: string): number {
   return quoteTerms.minorUnits(code);
 }
 
-/** The Customer receives figure on the sheet, as a money string.
-    Output less the fee when that fee comes out of a home payout,
-    otherwise the exchange output. */
 /** Net cash the customer hands over, the till movement, and the receipt
     lines. The journal still records the exchange and the fee apart. */
 export function cashHands(
@@ -72,6 +71,7 @@ export function cashHands(
   };
 }
 
+/** Cash the teller was shown. A home payout less the fee, otherwise the exchange output. */
 export function amountShown(
   quote: { inputAmount: string; outputAmount: string; feeCad: string; from: string; to: string },
   home = "CAD",
