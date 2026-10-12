@@ -8469,7 +8469,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           style: {
             color: CD.faint
           }
-        }, "unposted"), /*#__PURE__*/React.createElement(Ic, {
+        }, "No till"), /*#__PURE__*/React.createElement(Ic, {
           n: "chev",
           s: 15,
           c: CD.faint
@@ -8676,7 +8676,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           onChange: ev => {
             if (!ev.target.value) {
               assignEmp(e.name, null, null);
-              log(`${e.name} · unposted`, '');
+              log(`${e.name} · no till`, '');
               return;
             }
             const parts = ev.target.value.split('|');
