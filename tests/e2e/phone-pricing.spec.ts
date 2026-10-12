@@ -175,7 +175,7 @@ for (const width of [360, 390]) {
     const res = await done;
     expect(res.status()).toBe(200);
     await expect(page.locator("[data-pr='toast']")).toContainText(/Sent to the Rate Board\./);
-    await expect(page.locator("[data-pr='toast']")).toContainText(/\d+ currencies, \d{1,2}:\d{2}/);
+    await expect(page.locator("[data-pr='toast']")).toContainText(/\d+ currencies, \d{1,2}:\d{2} (AM|PM)\./);
     await expect(button).toBeDisabled();
     await button.click({ force: true });
     await page.waitForTimeout(400);

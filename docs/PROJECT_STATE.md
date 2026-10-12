@@ -702,7 +702,8 @@ replace them. A failure means the desktop changed.
 global settings and one spread per currency. A sheet steps the
 spread and previews the next 500-unit deal with `priceDeal`. Publish
 uses the existing rate-board endpoint, once, and a toast names how
-many currencies went up. A cashier can open the screen and cannot
+many currencies went up and the time from `formatPhoneTime`
+(`3:02 PM`). A cashier can open the screen and cannot
 publish. Desktop Pricing is the shared 1280 baseline. This screen
 does not replace that picture.
 

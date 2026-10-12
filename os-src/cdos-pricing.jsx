@@ -342,6 +342,12 @@
     if (typeof format !== 'function') throw new Error('Pricing: formatPhoneMoney did not load.');
     return format(n, ccy) || '—';
   }
+  /* Clocks go through the same formatter. "3:02 PM", never 15:02. */
+  function pricingClock(when, timeZone) {
+    const format = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof format !== 'function') throw new Error('Pricing: formatPhoneTime did not load.');
+    return format(when, timeZone) || '';
+  }
   function rate4(n, known) {
     if (!known || n == null || !isFinite(+n)) return '—';
     return (+n).toFixed(4);
@@ -575,9 +581,15 @@
       } catch (err) {
         if (log) log('Pricing', err && err.message ? err.message : 'this phone did not keep a copy of the board');
       }
-      const when = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      let when = '';
+      try {
+        when = pricingClock(new Date(), safe.timezone);
+        if (!when && log) log('Pricing', 'formatPhoneTime returned no clock');
+      } catch (err) {
+        if (log) log('Pricing', err && err.message ? err.message : 'formatPhoneTime did not load');
+      }
       const sent = Object.keys(rows).length;
-      setToast('Sent to the Rate Board. ' + sent + ' currencies, ' + when + '.');
+      setToast('Sent to the Rate Board. ' + sent + ' currencies' + (when ? ', ' + when : '') + '.');
       if (log) log('Rates published to board', sent + ' currencies · default ' + defSpread + '% · by ' + (me && me.name ? me.name : 'owner'));
       setPhase('locked');
       const hold = (fn, ms) => { const id = setTimeout(fn, ms); timers.current.push(id); };
