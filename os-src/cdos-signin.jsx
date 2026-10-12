@@ -106,7 +106,9 @@
        BEFORE the await. React state does not update synchronously, so
        `disabled` alone loses the race against a double-click — the second
        press lands while the first render is still pending. A ref cannot. */
-    const [cool, setCool] = useState(0);
+    const [coolUntil, setCoolUntil] = useState(0);
+    const [now, setNow] = useState(0);
+    const cool = coolUntil > now ? Math.ceil((coolUntil - now) / 1000) : 0;
     /* A lock is not a resend cooldown. `retryAfter` on a lock is how
        long the counter lasts (fifteen minutes). Feeding that into the
        countdown turned the button into "Another code in 900s" and hid
@@ -116,10 +118,11 @@
     const [lockAt, setLockAt] = useState(0);
     const sending = useRef(false);
     useEffect(() => {
-      if (cool <= 0) return;
-      const t = setTimeout(() => setCool(c => c - 1), 1000);
-      return () => clearTimeout(t);
-    }, [cool]);
+      if (coolUntil <= Date.now()) return undefined;
+      setNow(Date.now());
+      const t = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(t);
+    }, [coolUntil]);
     /* The lock ends when the server's time passes. The page clock is
        what the button watches, so a wait on this screen is enough.
        There is no reload. */
@@ -135,7 +138,7 @@
       const t = setInterval(tick, 1000);
       return () => clearInterval(t);
     }, [locked, lockAt]);
-    const startCooldown = (secs) => setCool(Math.max(1, Math.round(secs || 120)));
+    const startCooldown = (secs) => setCoolUntil(Date.now() + Math.max(1, Math.round(secs || 120)) * 1000);
     const applyLock = (d) => {
       if (!d || d.error !== 'too_many_attempts') return false;
       const at = typeof d.retryAt === 'string' ? Date.parse(d.retryAt) : NaN;
@@ -198,7 +201,7 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId, password: pw }),
         });
-        if (res && res.status === 401) { sending.current = false; setBusy(false); setErr('That password doesn\u2019t match this ID. Try again, or reset it below.'); return; }
+        if (res && res.status === 401) { sending.current = false; setBusy(false); clearLock(); setErr('That password doesn\u2019t match this ID. Try again, or reset it below.'); return; }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
           sending.current = false; setBusy(false);
@@ -316,7 +319,9 @@
         const d = await res.json().catch(() => null);
         if (res.status === 429) {
           if (d && d.error === 'too_many_attempts') {
-            setNote(d.until ? 'Try again at ' + d.until : ((d && d.detail) || 'Too many tries.'));
+            setNote(d && d.until
+              ? 'Too many tries. Try again at ' + d.until + '.'
+              : 'Too many tries. Try again in a few minutes.');
             return;
           }
           startCooldown(d && d.retryAfter);
@@ -438,8 +443,8 @@
         </div>
         {locked && <div style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--si-ink)', marginTop: 16, lineHeight: 1.35 }}>{lockSentence}</div>}
         {err && !locked && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy || locked || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4), marginTop: 16, ...(locked ? { textTransform: 'none', letterSpacing: 0, fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15 } : {}) }}>
-          {busy ? 'Checking…' : locked ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sign in</span> : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
+        <button type="submit" disabled={busy || (locked && !!lockUntil) || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && !(locked && lockUntil) && cool === 0 && pw.length >= 4), marginTop: 16, ...((locked) ? { textTransform: 'none', letterSpacing: 0, fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15 } : {}) }}>
+          {busy ? 'Checking…' : locked && lockUntil ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sign in</span> : locked ? 'Try again' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
         {/* A staff id with no @ has nowhere to send a code. Saying we
             will email one tells them the wrong next step, and it is
             worse on a lock, where the button is not going to send. */}
@@ -526,7 +531,7 @@
       <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: err ? 'var(--si-flag)' : 'var(--si-faint)', margin: '4px 0 14px' }}>{err ? err.toUpperCase() : verifying ? 'VERIFYING…' : 'TAP THE CODE IN BELOW'}</div>
       <Keypad value={code} max={6} onDigit={pushDigit} onBack={backDigit}
         leftLabel={cool > 0 ? cool + 's' : 'Resend'} onLeft={cool > 0 ? null : resendCode} verifying={verifying} />
-      <div style={{ fontSize: 11, color: 'var(--si-faint)', marginTop: 16 }}>{note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'}</div>
+      <div style={{ fontSize: note && note.indexOf('Too many tries.') === 0 ? 22 : 11, fontWeight: note && note.indexOf('Too many tries.') === 0 ? 800 : 400, color: note && note.indexOf('Too many tries.') === 0 ? 'var(--si-ink)' : 'var(--si-faint)', marginTop: 16, lineHeight: 1.35 }}>{note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'}</div>
       <button type="button" onClick={() => { setStep('password'); setCode(''); }} style={{ background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>← Back</button>
     </div>));
   }

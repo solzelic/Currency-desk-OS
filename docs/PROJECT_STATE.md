@@ -566,7 +566,9 @@ Try again at 10:42 AM." The hour is the shop's own clock, so the zone
 is not repeated. While that holds, the button reads Sign in, with a
 lock, and it is disabled. It comes back when that time passes. With
 no time from the server it says "Too many tries. Try again in a few
-minutes." An unknown staff
+minutes." and Try again sends the password once more without a
+reload. Asking for another code while locked says "Too many tries.
+Try again at 10:42 AM." An unknown staff
 id gets that same sentence. The address is `CF-Connecting-IP` when the
 hop is in Cloudflare's published ranges and that header is an IP. A
 missing or invalid header counts the socket peer and logs a warning

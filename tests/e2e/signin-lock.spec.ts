@@ -88,8 +88,45 @@ test.describe("locked sign-in", () => {
     await page.locator('input[type="password"]').fill("wrong-password-lock");
     await page.getByRole("button", { name: /send my code/i }).click();
     await expect(page.getByText("Too many tries. Try again in a few minutes.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign in" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: /send my code/i })).toHaveCount(0);
+    const again = page.getByRole("button", { name: "Try again" });
+    await expect(again).toBeEnabled();
+    await again.click();
+    await expect(page.getByText("Too many tries. Try again in a few minutes.")).toBeVisible();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+  });
+
+  test("resending a code while locked says the same time", async ({ page }) => {
+    await page.clock.install();
+    await page.setViewportSize({ width: 390, height: 844 });
+    let calls = 0;
+    await page.route("**/api/auth/login/start", (route) => {
+      calls += 1;
+      if (calls === 1) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            needsCode: true,
+            maskedEmail: "s•••@shop.example",
+            user: { id: "sam@shop.example", name: "Sam", role: "teller" },
+          }),
+        });
+      }
+      return route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "too_many_attempts", until: "5:04 AM" }),
+      });
+    });
+    await openPassword(page, "sam@shop.example");
+    await page.locator('input[type="password"]').fill("wrong-password-lock");
+    await page.getByRole("button", { name: /send my code/i }).click();
+    await expect(page.getByText("Check your email")).toBeVisible();
+    await page.clock.fastForward(121_000);
+    await page.getByRole("button", { name: "Resend" }).click();
+    await expect(page.getByText("Too many tries. Try again at 5:04 AM.")).toBeVisible();
   });
 
   test("a 503 says sign-in is having trouble", async ({ page }) => {
