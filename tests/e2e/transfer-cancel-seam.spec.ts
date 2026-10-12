@@ -127,7 +127,11 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
 test("a teller is told to ask the owner, and Cancel is not offered", async ({ page }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
-  const book = await openDeskAndTill(page, "m.costa");
+  /* A cashier cannot set opening balances. The test above already opened
+     this till, and the two run in order. */
+  await signInAtDesk(page, "m.costa");
+  const book = ledger(page);
+  expect((await book.session())?.status).toBe("open");
   const before = Number((await book.till()).CAD);
   await sendSixHundred(page);
   await expect
