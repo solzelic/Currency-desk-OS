@@ -45,22 +45,20 @@ async function expectTillLabels(page: Page): Promise<void> {
   await expect(page.locator("body")).not.toContainText("unposted");
 }
 
-test("rows with no drawer say No till at 390", async ({ page }) => {
+test("rows with no drawer say No till at 390", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signInAtDesk(page, "r.haddad");
   await dismissTour(page);
   await openEmployees(page);
-  await page.getByRole("button", { name: /J\. Masri/ }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: "/cursor/stores/self/notill/roster_390.png" });
   await expectTillLabels(page);
-  await page.screenshot({ path: "/cursor/stores/self/notill/roster_390_iqbal.png" });
+  await page.screenshot({ path: testInfo.outputPath("roster-390.png") });
 });
 
-test("rows with no drawer say No till at 1280", async ({ page }) => {
+test("rows with no drawer say No till at 1280", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await signInAtDesk(page, "r.haddad");
   await dismissTour(page);
   await openEmployees(page);
   await expectTillLabels(page);
-  await page.screenshot({ path: "/cursor/stores/self/notill/roster_1280.png" });
+  await page.screenshot({ path: testInfo.outputPath("roster-1280.png") });
 });
