@@ -359,7 +359,7 @@ still pulls the CDN.)
    between one-time codes (`server/src/cooldown.ts`) lives in process
    memory. A restart forgets that somebody asked ninety seconds ago;
    that gap is not the lockout. Shop sign-in failure counts and the
-   emailed-code marker are Postgres rows (migration 041), so a restart
+   emailed-code marker are Postgres rows (migration 044), so a restart
    does not hand back five more guesses and does not let a code be
    checked without the password step. Platform MFA challenges are rows
    too.

@@ -44,7 +44,7 @@ third-party screening, exports, or deployment architecture change.
 | Tampering | Editing localStorage ledger or audit events | Demo warning; append-only adapter API | Server authority, signatures/hashes where justified, immutable audit storage, reconciliation |
 | Repudiation | Denying a warning override or reversal | Actor/action/target/reason/correlation event model | Trusted identity, timestamps, durable ingestion, monitored review |
 | Information disclosure | Cross-tenant customer lookup or KYC leakage | Scope on records, tenant/branch authorization checks | Query-level server enforcement, object-store grants, encryption, DLP, penetration testing |
-| Denial of service | Flooding posting or export endpoints | Shop sign-in passwords are limited per account and per address (Postgres, migration 041). Other endpoints are not | Rate limits, quotas, queue controls, backpressure, service objectives, recovery plans |
+| Denial of service | Flooding posting or export endpoints | Shop sign-in passwords are limited per account and per address (Postgres, migration 044). Other endpoints are not | Rate limits, quotas, queue controls, backpressure, service objectives, recovery plans |
 | Elevation of privilege | Teller changes rates or exports records | Permission matrix and helper functions | Server policy enforcement, admin approvals, access reviews, segregation of duties |
 | Injection / XSS | Malicious customer text executes script | React escaping for rendered text | CSP, dependency controls, output encoding, safe file rendering, security testing |
 | Replay / duplicate post | Reusing a transaction request | Correlation IDs only | Idempotency keys, nonce/session binding, atomic server transactions |
