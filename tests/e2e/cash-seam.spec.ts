@@ -180,10 +180,28 @@ test("the desk opens a till session, and the ledger is the one that says so", as
 
   await expect(page.locator(".till-operator")).toHaveText("On the drawer: A. Singh, Senior teller");
 
-  /* One drawer, nothing counted yet. Currencies are not drawers. */
-  await expect(page.locator(".till-statusline")).toContainText("0 of 1 counted");
+  /* Drawers, not currencies. The seeded desk has one till, so the line is
+     "0 of 1 counted" and "Count the drawer". Specs earlier in this suite
+     add tills and leave them, and then the same screen says "0 of 3
+     counted" and "Count all 3 drawers". Either reading is the branch's
+     tills. Counting the two currencies (CAD and USD) is the bug. */
+  const roster = await page.evaluate(async () => {
+    const response = await fetch("/api/ledger/workspaces", { credentials: "same-origin" });
+    return response.json() as { workspaces?: unknown[] };
+  });
+  const drawers = Math.max(1, Array.isArray(roster.workspaces) ? roster.workspaces.length : 0);
+  const currencies = Object.keys(balances).length;
+  const status = page.locator(".till-statusline");
+  await expect(status).toContainText(`0 of ${drawers} counted`);
+  if (drawers !== currencies) {
+    await expect(status).not.toContainText(`0 of ${currencies} counted`);
+  }
+  const countBeforeClose =
+    drawers === 1
+      ? "Count the drawer before closing. The close writes your count back as the balance"
+      : `Count all ${drawers} drawers before closing. The close writes your count back as the balance`;
   await expect(page.getByRole("button", { name: "Close the day", exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Count the drawer before closing. The close writes your count back as the balance")).toBeVisible();
+  await expect(page.getByText(countBeforeClose)).toBeVisible();
   await expect(
     page.getByText("Closing saves your count. Any difference is recorded under your name.", { exact: true }),
   ).toBeVisible();
