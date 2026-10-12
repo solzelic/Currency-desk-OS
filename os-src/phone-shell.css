@@ -810,14 +810,16 @@
     align-items: center;
     gap: 8px;
     position: fixed;
-    top: 12px;
     left: 16px;
     right: 16px;
+    /* 16px above the sticky action. That bar is a 1px border, 12px
+       of padding, a 48px button, and 12px of padding, on the tab bar. */
+    bottom: calc(var(--phone-bar-h, 64px) + 1px + 12px + 48px + 12px + 16px);
     z-index: 800;
     padding: 12px 14px;
     background: var(--gray-900);
-    color: var(--gray-0);
-    border-radius: 10px;
+    color: #fff;
+    border-radius: var(--radius-md);
     font-size: 14px;
     line-height: 20px;
   }

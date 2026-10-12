@@ -576,6 +576,10 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone toast. The shared toast sits at the bottom, 16px
+above the sticky action, inset 16px, `--radius-md`, `--gray-900`
+with white 14/20 text. It leaves after 4 seconds. `role="status"`.
+
 **2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
 FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are
 styled in `os-src/phone-shell.css` with `tokens.css` variables. A

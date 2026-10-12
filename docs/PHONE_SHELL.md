@@ -522,8 +522,10 @@ password field and Next. `data-pin-step` is the step number.
 
 ### Toast
 
-`os-src/phone/toast.jsx`. One line, portaled, `aria-live="polite"`.
-It leaves after 3 seconds and calls `onDone`. The timer follows the
+`os-src/phone/toast.jsx`. One line, portaled to `document.body`,
+`role="status"`. It sits at the bottom, 16px above the sticky action,
+inset 16px. The face is `--gray-900`, white 14/20, `--radius-md`.
+It leaves after 4 seconds and calls `onDone`. The timer follows the
 text, not the callback, so a parent re-render does not keep it on
 screen.
 
