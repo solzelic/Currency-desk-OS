@@ -217,12 +217,13 @@ emailed-code step does the same: an unknown staff id and a wrong code are
 one answer, and the code is not compared unless this browser already proved
 the password. Shop sign-in counts five wrong passwords per account and
 twenty per address, in Postgres (`server/src/auth/signin-guard.ts`), and
-locks both the real id and the unknown one with the same sentence. The
-address is the Cloudflare client when the delivering hop is in
-Cloudflare's published ranges and `CF-Connecting-IP` is an IP. A
-missing or invalid header counts the socket and logs a warning.
-Otherwise the address is the Render hop, or the socket when nothing
-is in front. The count is the number the insert
+locks both the real id and the unknown one with the same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
+socket is a published Cloudflare address, or when the socket is a
+private address and the rightmost forwarded hop is Cloudflare. A
+missing or invalid header counts the socket and logs a warning. The
+first request logs header names only. Otherwise a private socket
+counts the rightmost hop, or the socket when nothing is in front.
+IPv6 /64 rotation is accepted for now and is a follow-up. The count is the number the insert
 returned, so a correct password past that count is still refused. An
 owner or a manager can clear the account counter.
 

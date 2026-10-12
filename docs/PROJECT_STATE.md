@@ -565,11 +565,20 @@ Postgres, five per account and twenty per address, for fifteen
 minutes. The count is written before the answer, so a burst cannot
 slip a correct password through after the limit. The lock says "Too
 many tries. Try again in N minutes." and an unknown staff id gets
-that same sentence. The address is `CF-Connecting-IP` when the
-hop is in Cloudflare's published ranges and that header is an IP. A
-missing or invalid header counts the socket peer and logs a warning
-that does not include the header value. Otherwise the address is the
-Render hop, or the socket when nothing is in front. An owner or a
+that same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
+socket is a published Cloudflare address, or when the socket is a
+private address and the rightmost `X-Forwarded-For` hop is Cloudflare.
+IPv6 /64 rotation is accepted for now and is a follow-up. A missing
+or invalid header counts the socket and warns without the header
+value. Otherwise a private socket counts the rightmost hop, and
+anything else counts the socket. The first request logs the header
+names present, with no values and no IPs. Render's docs say the app
+sees the proxy IP and that the first `X-Forwarded-For` entry is the
+client. This count does not use that first entry. A caller-supplied
+header cannot open a new bucket unless the hop is Cloudflare.
+Production mail uses `is not set` for one missing name and `are not
+set` for both, and a provider error body that cannot be read still
+logs the status. An owner or a
 manager can clear the account
 counter, and `RESET_STAFF_PASSWORD` clears it too. The emailed-code
 step gives one answer, in the same time, for an unknown id and a
