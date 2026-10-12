@@ -246,8 +246,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Showing the last loaded list." After 20 seconds still loading,
   the screen says "Waking the server up, this can take a minute."
   Add client opens the existing add flow full screen. Skip, add ID
-  later is a 44px secondary button. The empty state sits in a card,
-  and its button uses accent #3C3B78. Record ID's icon and Save use
+  later is a 44px secondary button. The empty state sits in a card
+  on the phone surface, says 0 contacts, and its button uses accent
+  #3C3B78. In a dark phone theme that surface is the dark token, so
+  the heading stays readable. Record ID's icon and Save use
   the same accent. Wider than 430px, Clients is the desktop list.
   That shared editor no longer offers Health Card, and a new
   contact or an ID still waits for the server before this browser
@@ -632,7 +634,8 @@ says "Name is too long. Keep it under 300 characters." A server
 fault says "Couldn't save. Try again." A signed-out session says
 "You've been signed out. Sign in again." A list that loaded and
 then went offline stays up and says "Offline. Showing the last
-loaded list." The empty state sits in a card. Record ID's icon and
+loaded list." The empty state sits in a card on the phone surface
+and says 0 contacts. Record ID's icon and
 Save use #3C3B78. The shared editor, including the desktop list,
 no longer offers Health Card, and a save still waits for the server
 before this browser keeps a copy.

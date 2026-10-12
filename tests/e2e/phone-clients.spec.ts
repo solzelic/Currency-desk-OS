@@ -105,6 +105,7 @@ test.describe("phone clients", () => {
       release();
       await expect(page.locator("[data-phone-state]")).toHaveAttribute("data-phone-state", "empty");
       await expect(page.locator(".phone-clients .phone-state-card").getByRole("heading", { name: "No clients yet" })).toBeVisible();
+      await expect(page.locator(".phone-clients .phone-state-card")).toContainText("0 contacts");
       await expect(page.getByRole("button", { name: "Add client" })).toBeVisible();
       const emptyAccent = await page.locator(".phone-clients .phone-empty .phone-text-btn").evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(emptyAccent).toBe("rgb(60, 59, 120)");

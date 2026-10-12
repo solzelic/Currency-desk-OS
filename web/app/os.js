@@ -63612,7 +63612,9 @@ window.CDOS_PERSIST = (function () {
       onAction: retry
     })), state === "empty" && /*#__PURE__*/React.createElement("div", {
       className: "phone-state-card"
-    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-sec"
+    }, /*#__PURE__*/React.createElement("span", null, "0 contacts")), /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No clients yet",
       message: "Add a client the first time they deal with you. Their ID stays on their file for next time.",
       actionLabel: canEdit && canWrite ? "Add client" : undefined,

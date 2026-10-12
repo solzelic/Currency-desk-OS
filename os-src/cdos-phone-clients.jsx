@@ -355,6 +355,7 @@
         )}
         {state === "empty" && (
           <div className="phone-state-card">
+            <div className="phone-sec"><span>0 contacts</span></div>
             <Phone.EmptyState
               title="No clients yet"
               message="Add a client the first time they deal with you. Their ID stays on their file for next time."
