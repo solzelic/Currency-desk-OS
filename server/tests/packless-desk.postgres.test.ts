@@ -589,7 +589,11 @@ postgres("a desk with no country pack uses the baseline", () => {
       method: "POST",
       url: `/api/ledger/obligation-deals/${sent.json().transactionId}/reversal`,
       cookies: owner,
-      payload: { idempotencyKey: "void-send-now", reason: "Wrong beneficiary" },
+      payload: {
+        idempotencyKey: "void-send-now",
+        reason: "Wrong beneficiary",
+        partnerConfirmedNotPaid: true,
+      },
     });
     expect(obligationVoid.statusCode).toBe(201);
   });
