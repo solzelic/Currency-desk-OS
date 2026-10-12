@@ -3,7 +3,7 @@
    A tracking PIN, a receipt, and an EFT report stay off this screen.
    A status note that claims a partner moved the money is not shown. */
 (function () {
-  const { useState, useEffect } = React;
+  const { useState, useEffect, useRef } = React;
 
   function shell() {
     const C = window.CDOS || {};
@@ -244,7 +244,7 @@
     return how;
   }
 
-  function BenSheet({ sender, lockSender, corridors, onClose, onSave }) {
+  function BenSheet({ sender, lockSender, corridors, onClose, onSave, saveError, busy }) {
     const { T, Ic } = shell();
     const [, setPackTick] = useState(0);
     useEffect(() => {
@@ -323,7 +323,8 @@
             <label className="phone-field"><span className="phone-flabel">Phone <span className="phone-opt">Optional</span></span><input value={b.phone} onChange={(e) => set('phone', e.target.value)} inputMode="tel" /></label>
           </div>
           <div className="phone-task-foot">
-            <button type="button" className="phone-task-go" disabled={!valid} onClick={() => onSave({ ...b, createdAt: stamp() })}>Save beneficiary</button>
+            <button type="button" className="phone-task-go" disabled={!valid || !!busy} onClick={() => onSave({ ...b, createdAt: new Date().toISOString() })}>Save beneficiary</button>
+            {saveError ? <p className="phone-sticky-why" role="alert">{saveError}</p> : null}
             {why ? <p className="phone-sticky-why">{why}</p> : null}
           </div>
         </div>
@@ -358,7 +359,7 @@
                 <div>
                   <b>{b.name}</b>
                   <small>{[b.relationship, corOf(b.corridor).country].filter(Boolean).join(' \u00b7 ')}</small>
-                  <small>{payoutBits(b)}</small>
+                  <small>{payoutBits(b)}{b.sample ? ' \u00b7 Demo' : ''}</small>
                 </div>
                 <button type="button" aria-label={'Use ' + b.name} onClick={() => onUse(b)}>Use</button>
               </div>
@@ -378,6 +379,8 @@
     const [detailId, setDetailId] = useState(null);
     const [sender, setSender] = useState('');
     const [sheet, setSheet] = useState(null);
+    const [saveError, setSaveError] = useState('');
+    const saveLock = useRef(false);
     useEffect(() => {
       if (!openId) return;
       setDetailId(openId);
@@ -416,13 +419,35 @@
     };
     const people = beneficiaries.filter((b) => !needle || (b.name + ' ' + b.sender + ' ' + b.partner).toLowerCase().indexOf(needle) >= 0);
     const saveBen = (b) => {
-      if (!setBeneficiaries) throw new Error('Phone transfers: cannot store a beneficiary.');
-      setBeneficiaries((rows) => {
-        const ex = rows.find((x) => x.id === b.id);
-        return ex ? rows.map((x) => x.id === b.id ? b : x) : [b, ...rows];
-      });
+      if (saveLock.current) return;
+      saveLock.current = true;
+      setSaveError('');
+      const key = T.BKEY;
+      if (!key || !setBeneficiaries) {
+        saveLock.current = false;
+        throw new Error('Phone transfers: cannot store a beneficiary.');
+      }
+      let next;
+      try {
+        const raw = localStorage.getItem(key);
+        const rows = raw ? JSON.parse(raw) : beneficiaries.slice();
+        if (!Array.isArray(rows)) throw new Error('Phone transfers: the beneficiary store is not a list.');
+        const ex = rows.find((x) => x && x.id === b.id);
+        next = ex ? rows.map((x) => x.id === b.id ? b : x) : [b, ...rows];
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch (error) {
+        saveLock.current = false;
+        setSaveError('Could not save. Nothing was kept.');
+        return;
+      }
+      setBeneficiaries(next);
       if (log) log('Beneficiary saved', b.name + ' \u00b7 ' + b.partner);
       setSheet(null);
+    };
+    const openSheet = (next) => {
+      saveLock.current = false;
+      setSaveError('');
+      setSheet(next);
     };
     const detail = detailId ? transfers.find((t) => t.id === detailId) : null;
     if (detailId) {
@@ -446,10 +471,10 @@
             corridors={corridors}
             onBack={() => setSender('')}
             onUse={(b) => { if (onNew) onNew({ sender: sender, benId: b.id }); }}
-            onAdd={() => setSheet({ sender: sender, lock: true })}
+            onAdd={() => openSheet({ sender: sender, lock: true })}
             onNew={onNew}
           />
-          {sheet ? <BenSheet sender={sheet.sender} lockSender={!!sheet.lock} corridors={corridors} onClose={() => setSheet(null)} onSave={saveBen} /> : null}
+          {sheet ? <BenSheet sender={sheet.sender} lockSender={!!sheet.lock} corridors={corridors} onClose={() => setSheet(null)} onSave={saveBen} saveError={saveError} busy={saveLock.current} /> : null}
         </>
       );
     }
@@ -459,7 +484,7 @@
       : <Phone.EmptyState title="No transfers here" message={emptyCopy} />;
     const sticky = tab === 'records'
       ? <Phone.StickyAction label="+ New transfer record" onClick={() => { if (onNew) onNew(true); }} />
-      : <Phone.StickyAction label="Add a beneficiary" onClick={() => setSheet({ sender: '', lock: false })} />;
+      : <Phone.StickyAction label="Add a beneficiary" onClick={() => openSheet({ sender: '', lock: false })} />;
     return (
       <Phone.Screen app="transfers" title="Transfers" sticky={sticky}>
         <div className="phone-seg" role="tablist">
@@ -475,7 +500,7 @@
                   key={b.id}
                   title={b.name}
                   subtitle={[b.relationship, corOf(b.corridor).country, b.sender].filter(Boolean).join(' \u00b7 ')}
-                  note={payoutBits(b)}
+                  note={b.sample ? payoutBits(b) + ' \u00b7 Demo' : payoutBits(b)}
                   onClick={() => { if (b.sender) setSender(b.sender); }}
                 />
               ))}
@@ -511,7 +536,7 @@
           </Phone.ListSection>
         )) : null}
         {tab === 'records' && !groups.length ? empty : null}
-        {sheet ? <BenSheet sender={sheet.sender} lockSender={!!sheet.lock} corridors={corridors} onClose={() => setSheet(null)} onSave={saveBen} /> : null}
+        {sheet ? <BenSheet sender={sheet.sender} lockSender={!!sheet.lock} corridors={corridors} onClose={() => setSheet(null)} onSave={saveBen} saveError={saveError} busy={saveLock.current} /> : null}
       </Phone.Screen>
     );
   }

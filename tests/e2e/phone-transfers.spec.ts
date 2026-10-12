@@ -508,6 +508,7 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
   const list = page.locator(".phone-transfers");
   await list.getByRole("tab", { name: "Saved beneficiaries" }).click();
   await expect(list.getByText("Maria Carter")).toBeVisible();
+  await expect(list.getByText("Demo").first()).toBeVisible();
   await expect(list.getByText("Rohan Miller")).toBeVisible();
   await expect(list.getByText("Lin Wei")).toBeVisible();
   await expect(list).not.toContainText("Joel Carter");
@@ -573,6 +574,59 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
   expect(stored).toBe(true);
   expect(posts.slice(before).some((url) => url.includes("/api/"))).toBe(false);
   await expect(list).not.toContainText("Joel Carter");
+  await expect(list.locator(".phone-ben").filter({ hasText: "Maria Carter" })).toContainText("Demo");
+  await expect(list.locator(".phone-ben").filter({ hasText: "Ada Carter" })).not.toContainText("Demo");
+
+  await list.getByRole("button", { name: "Add a beneficiary" }).click();
+  const again = page.locator(".phone-ben-sheet");
+  await again.getByPlaceholder("Receiver's name").fill("Bea Carter");
+  if (addressTag === "Needed for large transfers") {
+    await again.getByPlaceholder("Street, city, country").fill("2 King Street, Toronto");
+  }
+  await expect(again.getByRole("button", { name: "Save beneficiary" })).toBeEnabled();
+  const writes = await again.locator(".phone-task-go").evaluate((btn) => {
+    let n = 0;
+    const orig = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function (key, value) {
+      if (key === "cdos_beneficiaries_v1" && String(value).indexOf("Bea Carter") >= 0) n += 1;
+      return orig(key, value);
+    };
+    (btn as HTMLButtonElement).click();
+    (btn as HTMLButtonElement).click();
+    localStorage.setItem = orig;
+    return n;
+  });
+  expect(writes).toBe(1);
+  await expect(list.getByText("Bea Carter")).toBeVisible();
+  const bea = await page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_beneficiaries_v1") || "[]");
+    return rows.filter((item: { name?: string }) => item.name === "Bea Carter").length;
+  });
+  expect(bea).toBe(1);
+
+  await list.getByRole("button", { name: "Add a beneficiary" }).click();
+  const fail = page.locator(".phone-ben-sheet");
+  await fail.getByPlaceholder("Receiver's name").fill("Cara Carter");
+  if (addressTag === "Needed for large transfers") {
+    await fail.getByPlaceholder("Street, city, country").fill("3 King Street, Toronto");
+  }
+  await page.evaluate(() => {
+    const orig = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function (key, value) {
+      if (key === "cdos_beneficiaries_v1" && String(value).indexOf("Cara Carter") >= 0) {
+        throw new Error("disk full");
+      }
+      return orig(key, value);
+    };
+  });
+  await fail.getByRole("button", { name: "Save beneficiary" }).click();
+  await expect(fail.getByText("Could not save. Nothing was kept.")).toBeVisible();
+  const kept = await page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_beneficiaries_v1") || "[]");
+    return rows.filter((item: { name?: string }) => item && item.name === "Cara Carter").length;
+  });
+  expect(kept).toBe(0);
+  await expect(page.locator(".phone-ben").filter({ hasText: "Cara Carter" })).toHaveCount(0);
 
   await phoneSweep(page, {
     roots: [".phone-transfers", ".phone-head", "#phone-dock"],

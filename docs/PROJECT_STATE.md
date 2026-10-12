@@ -640,6 +640,8 @@ Needed for large transfers, and every other pack says Optional.
 The York seed (`server/src/seed.ts`) is `pack-ca-v1`. A desk whose
 pack has not arrived is not version 2, so the tag stays Optional
 until that pack loads. The screen does not name the desk.
+A second tap does not write a second person. A save that throws is
+not kept in the browser store. Sample people are labelled Demo.
 
 **2026-10-12**, phone transfer record. A row opens the record. The
 title is the two names, at 22px and weight 700, and the TR number sits

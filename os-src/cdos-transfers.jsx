@@ -177,9 +177,9 @@
 
   function defaultBeneficiaries() {
     return [
-      { id: 'b1', name: 'Maria Carter', relationship: 'Parent', sender: 'Rachel Carter', corridor: 'PH', method: 'cash', partner: 'Cebuana Lhuillier', pickupCity: 'Cebu City', phone: '+63 917 555 0102', address: '', bank: '', branch: '', account: '', walletId: '', createdAt: '2026-04-02 10:12' },
-      { id: 'b2', name: 'Rohan Miller', relationship: 'Sibling', sender: 'Jakob Miller', corridor: 'IN', method: 'bank', partner: 'ICICI Bank', bank: 'ICICI Bank', branch: 'Mumbai — Andheri', account: '00412•••8841', pickupCity: '', phone: '+91 98•••• 4471', address: '', walletId: '', createdAt: '2026-05-11 14:30' },
-      { id: 'b3', name: 'Lin Wei', relationship: 'Spouse', sender: 'Brooke Lawson', corridor: 'CN', method: 'wallet', partner: 'Alipay', walletId: 'lin.wei@alipay', pickupCity: '', phone: '+86 138•••• 9920', bank: '', branch: '', account: '', address: '', createdAt: '2026-05-28 09:05' },
+      { id: 'b1', name: 'Maria Carter', relationship: 'Parent', sender: 'Rachel Carter', corridor: 'PH', method: 'cash', partner: 'Cebuana Lhuillier', pickupCity: 'Cebu City', phone: '+63 917 555 0102', address: '', bank: '', branch: '', account: '', walletId: '', createdAt: '2026-04-02 10:12', sample: true },
+      { id: 'b2', name: 'Rohan Miller', relationship: 'Sibling', sender: 'Jakob Miller', corridor: 'IN', method: 'bank', partner: 'ICICI Bank', bank: 'ICICI Bank', branch: 'Mumbai — Andheri', account: '00412•••8841', pickupCity: '', phone: '+91 98•••• 4471', address: '', walletId: '', createdAt: '2026-05-11 14:30', sample: true },
+      { id: 'b3', name: 'Lin Wei', relationship: 'Spouse', sender: 'Brooke Lawson', corridor: 'CN', method: 'wallet', partner: 'Alipay', walletId: 'lin.wei@alipay', pickupCity: '', phone: '+86 138•••• 9920', bank: '', branch: '', account: '', address: '', createdAt: '2026-05-28 09:05', sample: true },
     ];
   }
 

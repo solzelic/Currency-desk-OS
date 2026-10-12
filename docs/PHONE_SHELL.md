@@ -510,7 +510,9 @@ the TR number sits under it. Then sender, beneficiary, why, and the
 status. The phone does not change that status. Amounts are the stored
 ledger row and the obligation face, or they are absent. Saved beneficiaries
 are the second tab, and Use opens `TransferModal` with that sender
-and beneficiary already chosen. The address tag follows
+and beneficiary already chosen. A second tap does not save a second
+person, and a failed write is not kept. Sample people are labelled
+Demo. The address tag follows
 `addressRequiredOverIdLine`: Needed for large transfers on Canada
 version 2, Optional otherwise. The cash step is still
 `TransferModal`. The desktop pipeline is unchanged.
