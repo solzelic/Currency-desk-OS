@@ -86,11 +86,32 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     await page.screenshot({ path: shot(`settings_list-owner_${width}.png`) });
 
     await root.getByRole("button", { name: /Shop details/ }).click();
+    await expect(root.getByRole("heading", { name: "Shop details", exact: true })).toBeVisible();
     await expect(root.getByRole("heading", { name: "Change this on a computer" })).toBeVisible();
-    await expect(root.getByText("Use a computer to change this.")).toBeVisible();
+    await expect(root.getByText("Shop details are edited on a computer so nothing is changed by accident.")).toBeVisible();
+    await expect(root.getByText("Use a computer to change this.")).toHaveCount(0);
     await expect(root.getByText("York Currency Exchange")).toBeVisible();
     await expect(root.getByText(/120 Adelaide/)).toBeVisible();
+    await expect(root.getByText("Mon to Fri")).toBeVisible();
+    await expect(root.getByText("9:30 AM to 6:00 PM")).toBeVisible();
+    await expect(root.getByText("Sat, Sun and holidays")).toBeVisible();
+    await expect(root.getByText("10:00 AM to 5:00 PM")).toBeVisible();
     await expect(root.locator(".phq-kv")).toBeVisible();
+    await expect(root.locator(".phq-kv")).not.toContainText("–");
+    const screenFill = await root.locator(".phone-computer").evaluate((el) => {
+      const shell = el.getBoundingClientRect();
+      const body = el.closest(".win-body");
+      const dock = document.getElementById("phone-dock");
+      const dockBox = dock ? dock.getBoundingClientRect() : null;
+      return {
+        reachesBar: dockBox ? shell.bottom >= dockBox.top - 2 : false,
+        bg: getComputedStyle(el).backgroundColor,
+        bodyBg: body ? getComputedStyle(body).backgroundColor : "",
+      };
+    });
+    expect(screenFill.reachesBar).toBe(true);
+    expect(screenFill.bg).toBe("rgb(247, 246, 243)");
+    expect(screenFill.bg).toBe(screenFill.bodyBg);
     await expect(page.locator(".sheet")).toHaveCount(0);
     await expect(page.locator(".settings-shell")).toBeHidden();
     await page.screenshot({ path: shot(`settings_computer-section_${width}.png`) });

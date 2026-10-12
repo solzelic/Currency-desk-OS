@@ -675,10 +675,13 @@ button. It leaves after 4 seconds. `role="status"`.
 **2026-10-12**, phone Settings. Under 430px, Settings is a list. Search, the
 person’s row, PIN and sign-in, notifications, and sign out are on
 it. An owner also sees the shop and the other apps. The section
-caption says to change them on a computer. Shop details shows the
-name, address, and hours already on the desk, read-only. Those
-clocks go through `formatPhoneTime` (`3:02 PM`). Then an
-empty state with a monitor icon. The desktop form fails a phone
+caption says to change them on a computer. Shop details is a
+`Phone.Title` under the back link, on one screen background. It
+shows the name and address already on the desk, then one line per
+day group (`Mon to Fri`, `9:30 AM to 6:00 PM`). Those clocks go
+through `formatPhoneTime` (`3:02 PM`), and a range is the word
+“to”. Then an empty state: “Change this on a computer”, and why
+shop details stay on a computer. The desktop form fails a phone
 sweep (targets under 44px, type under 12px, contrast under 4.5:1),
 so it is not opened.
 A cashier sees their own rows and sign out. Texts, receipts,

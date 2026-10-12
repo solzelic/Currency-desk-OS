@@ -573,12 +573,18 @@ FullScreenSheet is one of those. When a screen builds it, the sheet
 is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 
 `os-src/phone/settings.jsx` is the Settings screen. Shop and app
-sections open inside `Phone.Screen`. Shop details shows the name,
-address, and hours the screen already has as read-only rows. Each
-clock in those hours goes through `formatPhoneTime` (`3:02 PM`). When
-`SummaryList` is loaded, it draws those rows. Then `EmptyState`:
-a monitor icon, “Change this on a computer”, and one sentence. Other sections are that empty state only. The desktop
-form is not opened. PIN before a void is a sentence, not a switch.
+sections open inside `Phone.Screen`. The section name is a
+`Phone.Title` under the back link, and that screen’s background
+fills the window. Shop details shows the name and address the
+screen already has, then one line per day group (`Mon to Fri`,
+`9:30 AM to 6:00 PM`). Each clock goes through `formatPhoneTime`
+(`3:02 PM`), and a range is the word “to”, not a dash. When
+`SummaryList` is loaded and every row is a plain pair, it draws
+those rows. A day group is its own line, so it is drawn as a
+`.phq-kv` row. Then `EmptyState`: a monitor icon, “Change this on
+a computer”, and a sentence that says why. Other sections are
+that title and empty state only. The desktop form is not opened.
+PIN before a void is a sentence, not a switch.
 The void gate reads `settings.pinOnVoid` and `employee.requirePin`,
 and this screen does not write either.
 

@@ -5629,11 +5629,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (typeof fmt !== 'function') return String(text);
     return String(text).replace(/\d{1,2}:\d{2}\s*(?:am|pm)?/gi, bit => fmt(bit, timeZone) || bit);
   }
+
+  /* Day groups are spoken, not dashed: Mon–Fri is "Mon to Fri", and
+     the weekend seed is "Sat, Sun and holidays". Each clock is
+     formatPhoneTime, then the range between them is "to". */
+  function phoneDays(days) {
+    const raw = String(days || '').trim();
+    if (/^sat\s*[–—-]\s*sun\s*(?:&|and)\s*holidays$/i.test(raw)) return 'Sat, Sun and holidays';
+    return raw.replace(/\s*[–—-]\s*/g, ' to ');
+  }
+  function phoneHours(hours, timeZone) {
+    return phoneClocks(String(hours || '').trim(), timeZone).replace(/\s*[–—-]\s*/g, ' to ').trim();
+  }
   function shopFacts(settings, hours) {
     const zone = settings.timezone;
     const name = settings.operatingName || settings.bizName || '';
     const address = [settings.bizAddress, [settings.bizCity, settings.bizRegion, settings.bizPostal].filter(Boolean).join(' '), settings.bizCountry].filter(Boolean).join(', ');
-    const hourText = (Array.isArray(hours) ? hours : []).filter(row => row && String(row.days || '').trim() && String(row.hours || '').trim()).map(row => String(row.days).trim() + ' ' + phoneClocks(String(row.hours).trim(), zone)).join(', ');
     const rows = [];
     if (name) rows.push({
       label: 'Name',
@@ -5643,11 +5654,20 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       label: 'Address',
       value: address
     });
-    if (hourText) rows.push({
-      label: 'Hours',
-      value: hourText
+    (Array.isArray(hours) ? hours : []).forEach(row => {
+      const days = phoneDays(row && row.days);
+      const span = phoneHours(row && row.hours, zone);
+      if (days && span) rows.push({
+        label: days,
+        value: span,
+        line: true
+      });
     });
     return rows;
+  }
+  function computerWhy(section) {
+    if (section.id === 'business') return 'Shop details are edited on a computer so nothing is changed by accident.';
+    return 'These are edited on a computer so nothing is changed by accident.';
   }
   function ComputerNote({
     section,
@@ -5677,22 +5697,26 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }), /*#__PURE__*/React.createElement("path", {
       d: "M8 20h8M12 16v4"
     }));
+    const lined = rows.some(row => row.line);
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "settings",
       className: "phone-computer"
     }, /*#__PURE__*/React.createElement(Back, {
       label: "Settings",
       onClick: onBack
-    }), rows.length ? SummaryList ? /*#__PURE__*/React.createElement(SummaryList, {
+    }), /*#__PURE__*/React.createElement(Phone.Title, {
+      title: section.title
+    }), rows.length ? SummaryList && !lined ? /*#__PURE__*/React.createElement(SummaryList, {
       rows: rows
     }) : /*#__PURE__*/React.createElement("div", {
       className: "phq-kv"
     }, rows.map(row => /*#__PURE__*/React.createElement("div", {
-      key: row.label
+      key: row.label,
+      className: row.line ? 'is-line' : ''
     }, /*#__PURE__*/React.createElement("span", null, row.label), /*#__PURE__*/React.createElement("b", null, row.value)))) : null, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       icon: monitor,
       title: "Change this on a computer",
-      message: "Use a computer to change this."
+      message: computerWhy(section)
     }));
   }
   function PhoneSettings({
@@ -5823,7 +5847,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       key: r.id,
       rowId: r.id
     }, r))))) : null;
-    return /*#__PURE__*/React.createElement("div", null, screen === 'list' && computer && /*#__PURE__*/React.createElement(ComputerNote, {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-settings-body"
+    }, screen === 'list' && computer && /*#__PURE__*/React.createElement(ComputerNote, {
       section: computer,
       settings: settings,
       hours: hours,
