@@ -923,7 +923,7 @@ export class ChequeService {
       /* Cash goes back INTO this drawer, so this drawer has to be open.
          The clearance path deliberately does not ask for this; see the
          note there. */
-      await requireOpenTill(client, actor);
+      await requireOpenTill(client, actor, { held: false });
 
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='cheque-reverse' AND idempotency_key=$6 FOR UPDATE",

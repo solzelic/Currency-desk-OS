@@ -199,6 +199,12 @@ postgres("the reads a signed document is built from", () => {
     await tillHolds("CAD", 50000);
     await tillHolds("USD", 4000, "1.340000000000");
     await sellAThousandDollars("r.haddad", "doc-actor-1", "4.00");
+    /* The till belongs to whoever counted it. Singh's deals are theirs
+       only after the count moves to them. */
+    await pool.query(
+      "UPDATE ledger_till_sessions SET opened_by=$1 WHERE session_id='doc-session-1'",
+      [`${DEMO.tenantId}:a.singh`],
+    );
     await sellAThousandDollars("a.singh", "doc-actor-2", "6.00");
     await sellAThousandDollars("a.singh", "doc-actor-3", "0.00");
 

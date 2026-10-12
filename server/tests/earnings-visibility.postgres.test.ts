@@ -197,6 +197,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     expect(managerCancel.statusCode, managerCancel.body).toBe(200);
     expect(managerCancel.json().spreadCad).toBe(managerLive.spreadCad);
 
+    await pool.query("UPDATE ledger_till_sessions SET opened_by=$1 WHERE status='open'", [`${DEMO.tenantId}:m.costa`]);
     const tellerMade = (await app.inject({
       method: "POST", url: "/api/quotes", cookies: teller,
       payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "300.00", feeCad: "4.00", direction: "customer_buy_foreign" },
@@ -232,6 +233,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
   });
 
   it("redacts an auditor and a compliance officer, and leaves close-day figures", async () => {
+    await pool.query("UPDATE ledger_till_sessions SET opened_by=$1 WHERE status='open'", [`${DEMO.tenantId}:j.masri`]);
     const setRole = (staffId: string, role: "auditor" | "compliance_officer") =>
       handle.db.update(schema.staffUsers).set({ role, authorizedBranchIds: [DEMO.branchId] }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:${staffId}`));
     await setRole("s.iqbal", "auditor");

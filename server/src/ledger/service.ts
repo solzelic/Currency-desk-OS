@@ -178,6 +178,7 @@ const fixed = (value: Decimal, places = 2) =>
 export async function requireOpenTill(
   client: pg.PoolClient,
   actor: LedgerActor,
+  opts?: { held?: boolean },
 ) {
   const session = await client.query(
     `SELECT status, opened_by
@@ -195,8 +196,10 @@ export async function requireOpenTill(
       "Open the till before posting transactions.",
     );
   }
-  const opener = session.rows[0].opened_by as string;
-  if (opener === actor.userId) return;
+  const opener = String(session.rows[0].opened_by ?? "");
+  /* A reversal puts money back. It is not a new deal, and a manager may
+     approve it without counting the till. */
+  if (opts?.held === false || opener === actor.userId) return;
   const named = await client.query(`SELECT name FROM staff_users WHERE id=$1`, [opener]);
   const who = pinDeskName(String(named.rows[0]?.name ?? ""));
   throw new LedgerError(

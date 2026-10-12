@@ -63,6 +63,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (pool) {
+    await pool.query("DELETE FROM staff_users WHERE password_hash='x' AND id LIKE 'tnt-yorkfx:%'");
+  }
   await app.close();
   await handle.close();
   await pool?.end();
