@@ -205,7 +205,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   deal count and when (`2 deals · Today`). That when is a day word
   (Today, Yesterday, or Oct 11). Clients does not print a clock. A
   clock on this screen would go through `os-src/phone/format.js` and
-  read like 3:02 pm. A business says Business
+  read like 3:02 PM. A business says Business
   in front of that. An individual does not say Individual. The ID
   badge sits on the right of that line. That standing is read from
   the document on file — type, number, and expiry — and a stored
@@ -746,7 +746,7 @@ A row is about 72px. Line 1 is the name and the last-deal amount.
 Line 2 is `2 deals · Today`, with Business only when the client is a
 business, and the ID badge on the right. That when is a day word.
 Clients does not print a clock. A clock on this screen would go
-through `os-src/phone/format.js` and read like 3:02 pm. The 16px under the title is the shared PhoneTitle.
+through `os-src/phone/format.js` and read like 3:02 PM. The 16px under the title is the shared PhoneTitle.
 A Missing ID or Expired row opens Record the ID. Chips and badges
 use the same words. A failed load drops the chip counts, uses the
 short error, and leaves Add client disabled. A cached list says it
