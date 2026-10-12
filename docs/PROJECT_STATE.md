@@ -585,9 +585,10 @@ admin, and a location opened from the desk write `America/Toronto` when
 they do not name a zone. The column has been `NOT NULL` with that
 default since the desk table was created. A blank value or a string
 that is not a time zone is `BRANCH_TIMEZONE_UNSET`, HTTP 409. The
-header `x-cd-now` is read only when `CD_TEST_CLOCK=1` and the process
-is not production. The hook that reads it is registered only in that
-case. `CD_TEST_CLOCK=1` with `NODE_ENV=production` refuses to boot
+header `x-cd-now` is read only when `CD_TEST_CLOCK=1` on a process
+outside production and outside Render. The hook that reads it is
+registered only in that case. `CD_TEST_CLOCK=1` with
+`NODE_ENV=production`, or with `RENDER` set, refuses to boot
 (`CD_TEST_CLOCK must never be set in production`) before the database
 is opened.
 

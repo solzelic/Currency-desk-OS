@@ -313,7 +313,11 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
   });
 
   it("mints CD-YYMMDD from the session's trading day, not the UTC date", async () => {
-    const at = "2026-10-12T00:30:00+03:00";
+    /* 17 October is not the day this suite runs. A reference minted
+       from the wall clock carries today's digits, so a pin of today
+       stays green when the test clock is ignored. */
+    const at = "2026-10-17T00:30:00+03:00";
+    expect(new Date().toISOString().slice(0, 10)).not.toBe("2026-10-17");
     await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [
       DEMO.branchId,
       "Asia/Jerusalem",
@@ -365,7 +369,7 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
       headers,
     });
     expect(opened.statusCode, opened.body).toBe(201);
-    expect(opened.json().session.businessDate).toBe("2026-10-12");
+    expect(opened.json().session.businessDate).toBe("2026-10-17");
     const quote = await app.inject({
       method: "POST",
       url: "/api/quotes",
@@ -394,8 +398,8 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
     });
     expect(posted.statusCode, posted.body).toBe(201);
     const ref = posted.json().transactionRef as string;
-    expect(ref).toMatch(/^CD-261012-/);
-    expect(ref.startsWith("CD-261011-")).toBe(false);
-    expect(new Date(at).toISOString().slice(0, 10)).toBe("2026-10-11");
+    expect(ref).toMatch(/^CD-261017-/);
+    expect(ref.startsWith("CD-261016-")).toBe(false);
+    expect(new Date(at).toISOString().slice(0, 10)).toBe("2026-10-16");
   });
 });

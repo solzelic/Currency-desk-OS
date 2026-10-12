@@ -24,8 +24,9 @@ import { revokeAllSessions } from "./auth/sessions.js";
 import { audit } from "./audit.js";
 import { assertTestClockAllowed } from "./ledger/clock.js";
 
-/* Before a database is opened. A production boot with the test clock
-   switched on stops here, with this error, and never listens. */
+/* Before a database is opened. A production boot, or a Render boot,
+   with the test clock switched on stops here, with this error, and
+   never listens. */
 assertTestClockAllowed();
 
 for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVERRIDE_MAX_DEVIATION"] as const) {

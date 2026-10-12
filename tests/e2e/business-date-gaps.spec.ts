@@ -507,7 +507,10 @@ test("a ledger row shows the branch calendar date of the posting, not the UTC da
   const seen: string[] = [];
   let previous: string | null = null;
   let transactionId: string | null = null;
-  const at = JERUSALEM_AFTER_MIDNIGHT;
+  /* 17 October is not the day this suite runs. CD-261012 was that
+     day on 12 October 2026, so a wall-clock reference matched it. */
+  const at = "2026-10-17T00:30:00+03:00";
+  expect(new Date().toISOString().slice(0, 10)).not.toBe("2026-10-17");
   try {
     await arm(page, at, seen);
     previous = await setBranchZone("Asia/Jerusalem");
@@ -525,7 +528,8 @@ test("a ledger row shows the branch calendar date of the posting, not the UTC da
     expect(deal.ok, deal.why).toBe(true);
     transactionId = deal.transactionId;
     const ref = deal.transactionRef as string;
-    expect(ref).toMatch(/^CD-261012-/);
+    expect(ref).toMatch(/^CD-261017-/);
+    expect(ref.startsWith("CD-261016-")).toBe(false);
     await page.reload();
     await landOnDesktop(page);
     await waitForZone(page, "Asia/Jerusalem");
@@ -536,8 +540,8 @@ test("a ledger row shows the branch calendar date of the posting, not the UTC da
     await openDeskApp(page, "ledger");
     const row = page.locator("tr", { hasText: ref });
     await expect(row).toBeVisible();
-    await expect(row).toContainText("2026-10-12");
-    await expect(row).not.toContainText("2026-10-11");
+    await expect(row).toContainText("2026-10-17");
+    await expect(row).not.toContainText("2026-10-16");
   } finally {
     if (transactionId) {
       const reversed = await page.evaluate(async (id) => {
@@ -555,4 +559,128 @@ test("a ledger row shows the branch calendar date of the posting, not the UTC da
     if (previous) await restoreBranchZone(previous);
     await page.unroute("**/*");
   }
+});
+
+/* The badge and the server standing already have their own walks.
+   This is the other call: customerPayload in cdos-backend.js, the
+   idStatus posted to /api/ledger/customers. Replacing that comparison
+   with the UTC date leaves the badge green and still sends the wrong
+   status. */
+/* An empty drawer has nothing to count, and the close route refuses
+   a count of no currencies. A till this file opened and never topped
+   up is that drawer. Put a float in it, then count it out. */
+async function closeGapTill(page: Page, key: string) {
+  const closed = await countExactlyAndClose(page, key);
+  if (closed.ok || !closed.why.startsWith("count:")) return closed;
+  const topped = await ensureDrawer(page, key);
+  if (/:4\d\d|:5\d\d/.test(topped)) return { ok: false, why: topped };
+  return countExactlyAndClose(page, `${key}-b`);
+}
+
+async function sendDeskCustomer(page: Page, name: string) {
+  const prepared = await page.evaluate(async (customerName) => {
+    const listed = await window.CDOS.Backend.Clients.list();
+    const found = (listed.clients || []).find((client: { legalName?: string }) => client.legalName === customerName);
+    if (!found) return { ok: false as const, why: "client not listed" };
+    const record = window.CDOS.Backend.Clients.toDeskRecord(found);
+    return {
+      ok: true as const,
+      idExpiry: String(record.idExpiry || ""),
+      idType: String(record.idType || ""),
+      on: window.CDOS.branchCalendarDate(),
+      browserZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    };
+  }, name);
+  if (!prepared.ok) return { prepared, sent: null as { idStatus?: string } | null, saved: "" };
+  const pending = page.waitForRequest((request) =>
+    request.method() === "POST" && request.url().includes("/api/ledger/customers"));
+  const saved = await page.evaluate(async (customerName) => {
+    const listed = await window.CDOS.Backend.Clients.list();
+    const found = (listed.clients || []).find((client: { legalName?: string }) => client.legalName === customerName);
+    const record = window.CDOS.Backend.Clients.toDeskRecord(found);
+    const body = await window.CDOS.Backend.syncCustomer(customerName, record);
+    return String(body.idStatus || "");
+  }, name);
+  const request = await pending;
+  return { prepared, sent: request.postDataJSON() as { idStatus?: string }, saved };
+}
+
+test.describe("desk ledger counter, Toronto evening", () => {
+  test.use({ timezoneId: "America/Toronto" });
+
+  test("an ID that expires today is sent as verified at 11:30 PM EDT", async ({ page }) => {
+    const seen: string[] = [];
+    let previous: string | null = null;
+    const at = TORONTO_BEFORE_MIDNIGHT;
+    const name = `Gap counter Toronto ${Date.now()}`;
+    try {
+      await arm(page, at, seen, true);
+      previous = await setBranchZone("America/Toronto");
+      await signInAtDesk(page, "j.masri");
+      await ensureGapTill(page);
+      const closed = await closeGapTill(page, `gap-tor-send-close-${Date.now()}`);
+      expect(closed.ok, closed.why).toBe(true);
+      const opened = await openSession(page);
+      expect(opened.error).toBeUndefined();
+      expect(opened.session.day.businessDate).toBe("2026-10-11");
+      const filed = await fileIdentity(page, name, "2026-10-11", `tor-send-${Date.now()}`);
+      expect(filed.ok, filed.why).toBe(true);
+      await page.reload();
+      await landOnDesktop(page);
+      await waitForZone(page, "America/Toronto");
+      const sent = await sendDeskCustomer(page, name);
+      expect(sent.prepared.ok, sent.prepared.ok ? "" : sent.prepared.why).toBe(true);
+      if (!sent.prepared.ok) return;
+      expect(sent.prepared.browserZone).toBe("America/Toronto");
+      expect(sent.prepared.idExpiry).toBe("2026-10-11");
+      expect(sent.prepared.on).toBe("2026-10-11");
+      expect(sent.sent?.idStatus).toBe("verified");
+      expect(sent.saved).toBe("verified");
+    } finally {
+      const closed = await closeGapTill(page, `gap-tor-send-done-${Date.now()}`);
+      if (!closed.ok) throw new Error(closed.why);
+      if (previous) await restoreBranchZone(previous);
+      await page.unroute("**/*");
+    }
+  });
+});
+
+test.describe("desk ledger counter, Jerusalem browser", () => {
+  test.use({ timezoneId: "Asia/Jerusalem" });
+
+  test("an ID that expired yesterday is sent as expired just after midnight", async ({ page }) => {
+    const seen: string[] = [];
+    let previous: string | null = null;
+    const at = "2026-10-12T00:01:00+03:00";
+    const name = `Gap counter Jerusalem ${Date.now()}`;
+    try {
+      await arm(page, at, seen, true);
+      previous = await setBranchZone("Asia/Jerusalem");
+      await signInAtDesk(page, "j.masri");
+      await ensureGapTill(page);
+      const closed = await closeGapTill(page, `gap-jlem-send-close-${Date.now()}`);
+      expect(closed.ok, closed.why).toBe(true);
+      const opened = await openSession(page);
+      expect(opened.error).toBeUndefined();
+      expect(opened.session.day.businessDate).toBe("2026-10-12");
+      const filed = await fileIdentity(page, name, "2026-10-11", `jlem-send-${Date.now()}`);
+      expect(filed.ok, filed.why).toBe(true);
+      await page.reload();
+      await landOnDesktop(page);
+      await waitForZone(page, "Asia/Jerusalem");
+      const sent = await sendDeskCustomer(page, name);
+      expect(sent.prepared.ok, sent.prepared.ok ? "" : sent.prepared.why).toBe(true);
+      if (!sent.prepared.ok) return;
+      expect(sent.prepared.browserZone).toBe("Asia/Jerusalem");
+      expect(sent.prepared.idExpiry).toBe("2026-10-11");
+      expect(sent.prepared.on).toBe("2026-10-12");
+      expect(sent.sent?.idStatus).toBe("expired");
+      expect(sent.saved).toBe("expired");
+    } finally {
+      const closed = await closeGapTill(page, `gap-jlem-send-done-${Date.now()}`);
+      if (!closed.ok) throw new Error(closed.why);
+      if (previous) await restoreBranchZone(previous);
+      await page.unroute("**/*");
+    }
+  });
 });

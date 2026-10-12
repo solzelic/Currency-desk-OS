@@ -5,14 +5,22 @@ import type { FastifyInstance } from "fastify";
    midnight send `x-cd-now` and set CD_TEST_CLOCK=1 on the test server.
    Importing this module does nothing to the process: the header hook is
    registered only by bindTestClock, and only when the flag is allowed.
-   Production with the flag set never reaches a request. */
+   Production, and any Render host, with the flag set never reaches a
+   request. */
 const clock = new AsyncLocalStorage<Date>();
 
 export const TEST_CLOCK_PRODUCTION_ERROR = "CD_TEST_CLOCK must never be set in production";
 
-/** Production must not be able to honour a client-supplied clock. */
+/** A client-supplied clock is a test affordance. Production and Render
+    both refuse it, including a Render service whose NODE_ENV was
+    overridden in the dashboard. */
+function testClockForbiddenHost(): boolean {
+  const onRender = typeof process.env.RENDER === "string" && process.env.RENDER.length > 0;
+  return process.env.NODE_ENV === "production" || onRender;
+}
+
 export function assertTestClockAllowed(): void {
-  if (process.env.NODE_ENV === "production" && process.env.CD_TEST_CLOCK === "1") {
+  if (process.env.CD_TEST_CLOCK === "1" && testClockForbiddenHost()) {
     throw new Error(TEST_CLOCK_PRODUCTION_ERROR);
   }
 }
@@ -40,8 +48,8 @@ function testInstant(header: string | string[] | undefined): Date | null {
 export function bindTestClock(app: FastifyInstance): void {
   assertTestClockAllowed();
   /* No hook at all unless a test server asked for one. A production
-     process never reaches this with the flag set — it has already
-     refused to boot — and a production process without the flag does
+     or Render process never reaches this with the flag set — it has
+     already refused to boot — and a process without the flag does
      not grow a request hook that knows the header exists. */
   if (process.env.CD_TEST_CLOCK !== "1") return;
   app.addHook("onRequest", (req, reply, done) => {
