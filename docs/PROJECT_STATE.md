@@ -550,6 +550,15 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, serialization retry. A post that Postgres aborts with 40001 is run
+again, up to six times. The aborted attempt wrote nothing. The same
+idempotency key makes the next attempt the same post. A quote the other
+attempt has already posted is that stored post, not a refusal that the
+quote is no longer active. A key already saved with no stored answer
+posts once. It is not refused as IDEMPOTENCY_IN_PROGRESS. The teller
+sentence for that code is "This request is already being posted.
+Nothing else was posted."
+
 **2026-10-12**, platform write gates. An auditor on the platform team can
 read desks, applications, billing, people, and the audit trail. They
 cannot suspend or delete a desk, create one, change a plan, reset a

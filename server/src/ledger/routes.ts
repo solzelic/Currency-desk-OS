@@ -356,7 +356,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       app.log.warn(error, "ledger contention after retries");
       return reply.code(409).send({
         code: "LEDGER_BUSY",
-        message: "The ledger is handling another change to this till. Nothing was posted — try again.",
+        message: "The ledger is handling another change to this till. Nothing was posted. Try again.",
       });
     }
     if (!(error instanceof LedgerError)) {
