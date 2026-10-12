@@ -218,7 +218,15 @@ test("owner and teller phone homes stay honest", async ({ page }) => {
       await expect(back).toHaveCSS("font-size", "16px");
       await expect(back).toHaveCSS("line-height", "24px");
       await expect(back).toHaveCSS("font-weight", "600");
-      await expect(back).toHaveCSS("color", "rgb(22, 21, 19)");
+      const usesText = await back.evaluate((el) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--color-text)";
+        document.body.appendChild(probe);
+        const token = getComputedStyle(probe).color;
+        probe.remove();
+        return getComputedStyle(el).color === token;
+      });
+      expect(usesText).toBe(true);
       await expect(back).toHaveCSS("height", "44px");
       const backIcon = back.locator("svg");
       await expect(backIcon).toHaveAttribute("width", "24");
