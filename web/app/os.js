@@ -174,6 +174,9 @@
       if (to === home && from !== home) return "customer_sell_foreign";
       return "customer_cross";
     }
+    function sideOf(direction) {
+      return direction === "customer_buy_foreign" ? "sell" : direction === "customer_sell_foreign" ? "buy" : "cross";
+    }
     function priceAtRate(board, spec, from, to, home, raw) {
       var direction = directionOf(from, to, home);
       var amount = money(raw, "0.01", placesOf(from));
@@ -204,13 +207,13 @@
       var to = String(spec.to || "").toUpperCase();
       var home = String(spec.homeCurrency || "CAD").toUpperCase();
       var raw = spec.inputAmount == null ? "" : String(spec.inputAmount).trim();
-      if (raw === "") return { state: "empty" };
+      var direction = directionOf(from, to, home);
+      if (raw === "") return { state: "empty", side: sideOf(direction), direction: direction };
       try {
         if (spec.overrideRate != null && String(spec.overrideRate).trim() !== "") {
           return priceAtRate(board, spec, from, to, home, raw);
         }
-        if (!board || !board.rows) return { state: "unpriced" };
-        var direction = directionOf(from, to, home);
+        if (!board || !board.rows) return { state: "unpriced", side: sideOf(direction), direction: direction };
         var feeText = spec.feeCad == null || String(spec.feeCad).trim() === "" ? "0" : String(spec.feeCad).trim();
         var input = {
           direction: direction, from: from, to: to, inputAmount: raw, feeCad: feeText,
@@ -218,11 +221,11 @@
         };
         if (direction === "customer_cross") {
           var fromRow = board.rows[from], toRow = board.rows[to];
-          if (!fromRow || fromRow.show === false || !toRow || toRow.show === false) return { state: "unpriced" };
+          if (!fromRow || fromRow.show === false || !toRow || toRow.show === false) return { state: "unpriced", side: "cross", direction: direction };
           var fromMid = textOf(fromRow.mid), toMid = textOf(toRow.mid);
           var buy = textOf(fromRow.spread != null ? fromRow.spread : board.buyMargin);
           var sell = textOf(toRow.spread != null ? toRow.spread : board.sellMargin);
-          if (!fromMid || !toMid || !buy || !sell) return { state: "unpriced" };
+          if (!fromMid || !toMid || !buy || !sell) return { state: "unpriced", side: "cross", direction: direction };
           input.marketMid = fromMid;
           input.fromMid = fromMid;
           input.toMid = toMid;
@@ -231,10 +234,10 @@
         } else {
           var code = direction === "customer_buy_foreign" ? to : from;
           var row = board.rows[code];
-          if (!row || row.show === false) return { state: "unpriced" };
+          if (!row || row.show === false) return { state: "unpriced", side: sideOf(direction), direction: direction };
           var mid = textOf(row.mid);
           var margin = textOf(row.spread != null ? row.spread : (direction === "customer_buy_foreign" ? board.sellMargin : board.buyMargin));
-          if (!mid || !margin) return { state: "unpriced" };
+          if (!mid || !margin) return { state: "unpriced", side: sideOf(direction), direction: direction };
           input.marketMid = mid;
           input.margin = margin;
         }
