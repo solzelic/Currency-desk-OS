@@ -813,7 +813,14 @@
     const [rows, setRows] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null'); return Array.isArray(r) ? r : []; } catch (e) { return []; } });
     const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
-    useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clients)); } catch (e) {} }, [clients]);
+    useEffect(() => {
+      try {
+        const clean = window.CDOS.scrubClientMap ? window.CDOS.scrubClientMap(clients) : clients;
+        localStorage.setItem('cdos_clients_v1', JSON.stringify(clean));
+      } catch (error) {
+        console.error("[CurrencyDesk] could not save the client cache", error);
+      }
+    }, [clients]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {
       if (window.CDOS.KYC && window.CDOS.KYC.setProvider && settings.kycProvider) window.CDOS.KYC.setProvider(settings.kycProvider);
@@ -821,6 +828,7 @@
       window.CDOS.KYC.setContactSink((name, ex, at) => setClients(c => {
         const cur = c[name] || {}; const next = { ...cur };
         ['email', 'dob', 'address', 'city', 'province', 'postal', 'country', 'idType', 'idNum', 'idIssued', 'idExpiry'].forEach(k => { if (ex[k] && !String(next[k] || '').trim()) next[k] = ex[k]; });
+        if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(next.idType)) next.idNum = '';
         next.idVerifiedAt = at || next.idVerifiedAt;
         return { ...c, [name]: next };
       }));

@@ -192,14 +192,77 @@ one that drives the desk's KYC standing.
 
 `verification_status` is derived from the documents, not typed:
 
-- no document with a number → `unverified`
-- the primary document is past its expiry → `expired`
+- no non-health document with a number → `unverified`
+- the primary document, when it is not a health card, is past its expiry → `expired`
 - otherwise → `identified`
+
+A health card does not count as that number. Neither does `[redacted]`:
+the marker is not a number, so that document no longer identifies the
+client. A file whose only numbered document is a health card, or whose
+only number is the marker, stays `unverified`. `verified` is still never
+set by this derivation.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of
 adding or removing rows in this table can grant that, and nothing here
 may quietly take it away.
+
+## Health card numbers
+
+A health card is not valid ID. Ontario's Health Cards and Numbers
+Control Act, 1991 bars a business outside health care from collecting
+or using a health number, and FINTRAC says not to use a health card
+where provincial law prohibits it.
+
+The row can still be in `desk_client_identity_documents` — type,
+issuing province, expiry, who recorded it, and when. **No read returns
+the number.** `clientJson` omits `docNumber` (the key is absent, not
+null) for a health card. The names are one list,
+`shared/health-card-names.js`, loaded by the server and by the
+browser. A name matches the whole type after case, spacing, and
+apostrophes fold away. The list includes the provincial names, OHIP,
+RAMQ, MSP, Care Card, Carte d'assurance maladie, BC Services Card,
+Ontario Health Insurance Plan, and Medicare card. PR #108's catalogue
+(`server/src/ledger/id-document-types.mjs`) is not on this branch.
+When it merges, its health-card row should import this list.
+
+A new health-card document is refused. `addDocument` and
+`updateDocument` throw `HEALTH_CARD_NOT_ID` (HTTP 422), the same code
+and sentence PR #108 uses on its catalogue path. The picker, the
+Record-ID sheet, and the edit field do not offer Health Card.
+
+`/api/tenant/state` scrubs a health number on the way in and on the
+way out, including the conflict body, so an old tab cannot write one
+back. A localStorage write that fails is logged and the rest of the
+desk is left in place. An IndexedDB clear that does not finish is
+logged and given up after a few seconds.
+
+Sealed LCTR filings, and the teller scan reveal, are unchanged.
+Compliance is ruling on those.
+
+The same rule is applied in the browser. The client file shows the
+type, and the province, expiry, and recorded date when they are
+stored. It does not show a number. Search, the printable client
+report, and the KYC CSV do not include one. On load, and again when
+the tenant snapshot is saved or restored, any cached copy in
+`localStorage` or IndexedDB is removed. LCTR and STR prefill
+(`os-src/cdos-lctr.jsx`) takes the document the deal recorded, when
+the row carries one and that document is a current accepted photo ID.
+A Canadian deal does not snapshot that document today, so the field
+is empty on a live row and the prefill uses the client's current
+accepted photo ID instead: passport, driver's licence, provincial
+ID, permanent resident card, pre-2012 citizenship card, or Secure
+Certificate of Indian Status. The list is the photo rows of the
+catalogue on PR #108. A health card, an expired document, a document
+with no expiry except the pre-2012 citizenship card, and a type that
+catalogue does not accept as photo ID are not used. With no accepted
+ID, the identifier type, number, and jurisdiction stay blank and the
+worksheet shows: "No accepted ID on file. Record a valid ID before
+filing if you can, otherwise file with what you have and note why."
+That blank does not block the filing.
+
+This does not delete or rewrite the stored number. Redaction is a
+separate, owner-run command and does not run on deploy.
 
 ## Scans, and the photograph
 
@@ -269,6 +332,76 @@ be able to date.
 The **client photograph is not audited this way**. Treating a face the
 desk photographed itself as equivalent to a government document would
 fill the trail with noise and make the rows that matter harder to find.
+
+## Redacting a stored health number
+
+A health card is not valid ID. Ontario's Health Cards and Numbers
+Control Act, 1991 bars a business outside health care from collecting
+or using a health number, and FINTRAC says not to use a health card
+where provincial law prohibits it.
+
+`GET /api/clients/health-card-review` is a read-only list for one shop
+(the session's legal entity). It names every client with a health card
+number still stored, and every posted deal that relied on one: the
+primary document is a health card, or a health card is the only
+numbered document on the file. A reversed deal is not on the list. A
+client whose primary document is a passport is on the client list when
+a health card is also stored, and their deals are not, because the
+book does not record which document a deal used. The number is not in
+the response. The route is the owner (`administrator`) and the
+compliance officer only. A branch manager is not given it.
+
+The review is live. `server/src/clients/routes.ts` imports
+`health-numbers.js` and registers `GET /api/clients/health-card-review`.
+Replacing the stored number is a separate command. It is not a
+migration, `server/src/index.ts` does not import it, and it does not
+run on deploy. The owner runs it:
+
+```
+DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --actor j.masri
+DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --apply --actor j.masri
+```
+
+The first command is a dry-run. It prints counts for that actor's shop,
+the document ids that still hold a health number, and changes nothing.
+It does not print the number. `--apply` requires `--actor`. The actor
+must be the owner or the compliance officer. The command rewrites
+`doc_number` to `[redacted]` and leaves the type, issuing province,
+expiry, the date recorded, and who recorded it. It sets `updated_by`
+to the actor. It writes one `ledger_audit_events` row per redacted record,
+action `client.health_number.redact` (the number was redacted), with
+the date, the actor who ran it, and the reason "health number not
+lawful to keep, not valid ID". The original number is not in the
+audit row. A dry-run writes no audit row. A second `--apply` matches
+the marker and writes nothing.
+
+`--apply` also scrubs that shop's `tenant_state` copy, the same way a
+save and a read already do, and refreshes `verification_status` for
+the affected clients. A health card, and a document whose number is
+`[redacted]`, no longer leave the file `identified`. A provider
+`verified` result is left as stored. The client read omits `docNumber`
+for a health card (the key is absent). The review route says
+`numberStatus: "redacted"` and does not return the old number. The
+command prints the affected document ids and never the numbers.
+
+Sealed filings and the teller scan reveal are not changed. Compliance
+is ruling on those.
+
+The review route has to be available to the shop before anyone runs
+`--apply`. `--apply` stays inert until two decisions are on the
+record: Compliance signs off on retention under the Proceeds of Crime
+(Money Laundering) and Terrorist Financing Act, s.108 (five years),
+and Sol decides the command may run. It is not started by deploy.
+
+The production database is Neon (`render.yaml`, `DATABASE_URL`,
+`sync: false`). **The backup window is unknown.** This repository
+does not record how long Neon keeps a backup or a point-in-time
+history, and no day count is stated here because none is documented.
+A number replaced by `[redacted]` remains in any backup taken while
+it was stored, until that history ages out of the provider's window.
+Do not restore a pre-redaction backup over the live book. If a
+restore happens, run the command with `--apply` again immediately.
+Do not copy a health number out of a backup back into the live book.
 
 ## What retention obliges
 
@@ -393,6 +526,7 @@ be read as more than it is:
 | papers filed for them (label only) | `POST|PATCH|DELETE /api/clients/:clientId/files[/:fileId]` |
 | open one of those papers (audited) | `POST /api/clients/:clientId/files/:fileId/reveal` |
 | this person, as the till's counter record | `POST /api/clients/:clientId/counter-record` |
+| who has a stored health card, and which posted deals relied on one | `GET /api/clients/health-card-review` (owner and compliance officer) |
 
 ## Testing
 
@@ -404,6 +538,33 @@ every time.
   second till and a second branch and *not* from another tenant,
   documents as separate rows, the audit row a reveal writes, the
   identifying/signal boundary, and migration 019 run over a real blob.
+- `server/tests/health-number-read.postgres.test.ts` — a client whose
+  stored ID is a health card (OHIP, and "Health Card" with irregular
+  spacing). The API body for that client, the list entry, and the
+  lookup entry are deep-scanned: the number is neither a field nor a
+  value. The database column still holds it.
+- `server/tests/health-card.test.ts` — the alias detector, including
+  the names that must not match.
+- `tests/e2e/health-number-read.spec.ts` — after load, the number is
+  not in localStorage, IndexedDB, or on the client file; LCTR and STR
+  prefill uses a document the deal recorded when it is a current
+  accepted photo ID, falls back to a current accepted photo ID on
+  the file, and leaves the identifier blank — with the notice, and
+  without blocking the filing — when the file has only a health card
+  or only an expired document.
+- `server/tests/health-number-redaction.postgres.test.ts` — the review
+  lists the health-card clients and the posted deal that relied on one,
+  and not a reversed deal or a deal whose primary ID is a passport.
+  The number is not in the JSON. A teller and a branch manager are
+  refused; the owner and a compliance officer are not. Dry-run changes
+  nothing and writes no audit row. `--apply` replaces the number,
+  keeps the row, writes one audit entry per redacted record (the date,
+  who ran it, and the reason "health number not lawful to keep, not
+  valid ID"), scrubs the tenant-state copy, prints the document ids
+  and not the numbers, and leaves the health-card-only file
+  unverified. The client read omits `docNumber`. A second run writes
+  nothing. `src/index.ts` does not import the command.
+  `routes.ts` does import the review, and that route is live.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted
   deal, with the deal still resolving and the old name still finding

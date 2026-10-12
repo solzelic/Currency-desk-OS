@@ -555,6 +555,7 @@
       const ex = done.result.extracted;
       setClients(c => { const cur = c[name] || {}; const next = { ...cur };
         ['email', 'dob', 'address', 'city', 'province', 'postal', 'country', 'idType', 'idNum', 'idIssued', 'idExpiry'].forEach(k => { if (ex[k] && !String(next[k] || '').trim()) next[k] = ex[k]; });
+        if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(next.idType)) next.idNum = '';
         next.idVerifiedAt = done.result.completedAt;
         return { ...c, [name]: next };
       });
@@ -764,7 +765,7 @@
             </div>
             {ex && (<div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}>
               <div className="text-[10px] uppercase tracking-widest mb-2 flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="id" s={12} c={CD.faint} /> On the contact</div>
-              {[['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => (
+              {[['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(ex.idType)) ? ex.idType : `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => (
                 <div key={l} className="flex items-center justify-between py-1.5 text-[12.5px]" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span style={{ color: CD.mute }}>{l}</span><span style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{v}</span></div>
               ))}
               <div className="text-[10.5px] mt-2" style={{ color: CD.faint }}>Saved to the contact — review and edit anytime in Clients.</div>

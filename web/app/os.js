@@ -1938,6 +1938,187 @@
   });
 })();
 
+/* ---- shared/health-card-names.js ---- */
+/* One explicit list of health-card names.
+
+   The server and the browser both load this file. PR #108's catalogue
+   (server/src/ledger/id-document-types.mjs) is not on this branch, and
+   its health-card aliases do not yet include every name below. When
+   that catalogue merges, its health-card row should take this list
+   rather than grow a second one.
+
+   A name matches only as a whole type, after the same fold #108 uses:
+   lower case, apostrophes removed, every other non-letter turned into
+   a space. "healthcare" is not "health card". "mspaint" is not "MSP".
+   "BC Services Card" is on the list because that card, used as a
+   health card, is a health number. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  if (root) root.CDOS_HEALTH_CARDS = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var HEALTH_CARD_NAMES = [
+    "Health Card",
+    "OHIP",
+    "OHIP card",
+    "Ontario Health Insurance Plan",
+    "Ontario Health Card",
+    "Carte d'assurance maladie",
+    "RAMQ",
+    "RAMQ card",
+    "Régie de l'assurance maladie du Québec",
+    "Regie de l'assurance maladie du Quebec",
+    "MSP",
+    "MSP card",
+    "Medical Services Plan",
+    "BC Services Card",
+    "Care Card",
+    "BC Care Card",
+    "Alberta Health",
+    "Alberta Health Card",
+    "Alberta Health Care",
+    "Alberta Health Care Insurance Plan",
+    "Medicare",
+    "Medicare card",
+    "New Brunswick Medicare",
+    "Manitoba Health",
+    "Manitoba Health Card",
+    "Saskatchewan Health Card",
+    "Saskatchewan Health Services Card",
+    "Nova Scotia Health Card",
+    "MSI",
+    "Medical Services Insurance",
+    "PEI Health Card",
+    "Prince Edward Island Health Card",
+    "Newfoundland and Labrador Medical Care Plan",
+    "MCP",
+    "Medical Care Plan",
+    "Northwest Territories Health Care Card",
+    "NWT Health Care Card",
+    "Nunavut Health Care Card",
+    "Yukon Health Care Card",
+    "Yukon Health Care Insurance Plan",
+  ];
+
+  function typeKey(value) {
+    return String(value == null ? "" : value)
+      .toLowerCase()
+      .replace(/['\u2018\u2019]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/ +/g, " ")
+      .trim();
+  }
+
+  var KEYS = Object.create(null);
+  HEALTH_CARD_NAMES.forEach(function (name) {
+    var key = typeKey(name);
+    if (!key) throw new Error("A health-card name folded to nothing: " + name);
+    KEYS[key] = true;
+  });
+  var HEALTH_CARD_TYPE_KEYS = Object.keys(KEYS);
+
+  /* The marker the owner-run redaction writes. It is not a number, so
+     it does not identify a client. */
+  var REDACTED_HEALTH_NUMBER = "[redacted]";
+
+  function isHealthCardType(value) {
+    var key = typeKey(value);
+    return key !== "" && KEYS[key] === true;
+  }
+
+  var NUMBER_KEYS = { docNumber: 1, doc_number: 1, idNum: 1, num: 1, number: 1 };
+  var TYPE_KEYS = ["docType", "doc_type", "idType", "type"];
+
+  function objectIsHealthCard(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    for (var i = 0; i < TYPE_KEYS.length; i++) {
+      if (isHealthCardType(value[TYPE_KEYS[i]])) return true;
+    }
+    return false;
+  }
+
+  function scrubHealthNumbers(value) {
+    if (Array.isArray(value)) return value.map(scrubHealthNumbers);
+    if (typeof value === "string") {
+      if (value.charAt(0) !== "{" && value.charAt(0) !== "[") return value;
+      try {
+        var parsed = JSON.parse(value);
+        var cleaned = scrubHealthNumbers(parsed);
+        if (JSON.stringify(cleaned) === JSON.stringify(parsed)) return value;
+        return JSON.stringify(cleaned);
+      } catch (error) {
+        return value;
+      }
+    }
+    if (!value || typeof value !== "object") return value;
+    var drop = objectIsHealthCard(value);
+    var out = {};
+    Object.keys(value).forEach(function (key) {
+      if (drop && NUMBER_KEYS[key]) return;
+      out[key] = scrubHealthNumbers(value[key]);
+    });
+    return out;
+  }
+
+  /* Same fold as typeKey(), in Postgres. The doubled quote is one
+     apostrophe inside the SQL string. */
+  function healthCardExcludedSql(expr) {
+    var apostrophes = "[''\u2018\u2019]";
+    var folded =
+      "btrim(regexp_replace(regexp_replace(regexp_replace(lower(" +
+      expr +
+      "), '" +
+      apostrophes +
+      "', '', 'g'), '[^a-z0-9]+', ' ', 'g'), ' +', ' ', 'g'))";
+    var list = HEALTH_CARD_TYPE_KEYS.map(function (key) {
+      return "'" + key.replace(/'/g, "''") + "'";
+    }).join(", ");
+    return folded + " <> ALL (ARRAY[" + list + "]::text[])";
+  }
+
+  /* A stored id number that still counts. Blank does not. The redaction
+     marker does not: it records that a number was removed. */
+  function idNumberCountsSql(expr) {
+    var trimmed = "coalesce(btrim(" + expr + "),'')";
+    return trimmed + " <> '' AND " + trimmed + " <> '" + REDACTED_HEALTH_NUMBER.replace(/'/g, "''") + "'";
+  }
+
+  /* The CASE refreshVerification writes. `c` is desk_clients and `d` is
+     the document alias. `verified` is not in the CASE: the caller leaves
+     a provider result alone. */
+  function verificationCaseSql() {
+    var typeOk = healthCardExcludedSql("d.doc_type");
+    var numbered = idNumberCountsSql("d.doc_number");
+    return (
+      "CASE WHEN NOT EXISTS (" +
+      "SELECT 1 FROM desk_client_identity_documents d " +
+      "WHERE d.client_id=c.client_id AND " +
+      numbered +
+      " AND " +
+      typeOk +
+      ") THEN 'unverified' WHEN EXISTS (" +
+      "SELECT 1 FROM desk_client_identity_documents d " +
+      "WHERE d.client_id=c.client_id AND d.is_primary AND " +
+      typeOk +
+      " AND d.expires_on IS NOT NULL AND d.expires_on < current_date" +
+      ") THEN 'expired' ELSE 'identified' END"
+    );
+  }
+
+  return {
+    HEALTH_CARD_NAMES: HEALTH_CARD_NAMES,
+    HEALTH_CARD_TYPE_KEYS: HEALTH_CARD_TYPE_KEYS,
+    REDACTED_HEALTH_NUMBER: REDACTED_HEALTH_NUMBER,
+    typeKey: typeKey,
+    isHealthCardType: isHealthCardType,
+    scrubHealthNumbers: scrubHealthNumbers,
+    healthCardExcludedSql: healthCardExcludedSql,
+    idNumberCountsSql: idNumberCountsSql,
+    verificationCaseSql: verificationCaseSql,
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -2608,6 +2789,126 @@
   var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
   var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
 
+  /* The list is shared/health-card-names.js, loaded before this file.
+     This used to keep a second copy of the match. */
+  function isHealthCardType(value) {
+    var api = window.CDOS_HEALTH_CARDS;
+    if (!api || typeof api.isHealthCardType !== "function") {
+      throw new Error("CurrencyDesk has no health-card list loaded");
+    }
+    return api.isHealthCardType(value);
+  }
+  function scrubHealthValue(value) {
+    var api = window.CDOS_HEALTH_CARDS;
+    if (!api || typeof api.scrubHealthNumbers !== "function") {
+      throw new Error("CurrencyDesk has no health-card list loaded");
+    }
+    return api.scrubHealthNumbers(value);
+  }
+  function scrubLocalHealthNumbers() {
+    var keys = [];
+    var i;
+    for (i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    keys.forEach(function (key) {
+      if (!key) return;
+      var raw;
+      try { raw = localStorage.getItem(key); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not read " + key + " while clearing a cached health number", error);
+        return;
+      }
+      if (!raw || (raw.charAt(0) !== "{" && raw.charAt(0) !== "[")) return;
+      var parsed;
+      try { parsed = JSON.parse(raw); }
+      catch (error) {
+        /* A value that is not JSON cannot hold a client record. Say so
+           and keep going: stopping here would leave a later key's
+           health number in place. */
+        console.error("[CurrencyDesk] could not read " + key + " while clearing a cached health number", error);
+        return;
+      }
+      var next = JSON.stringify(scrubHealthValue(parsed));
+      if (next === raw) return;
+      try { localStorage.setItem(key, next); }
+      catch (error) {
+        /* One key that cannot be rewritten must not wipe the desk
+           and must not stop the next key being cleared. */
+        console.error("[CurrencyDesk] could not clear a cached health number in " + key, error);
+      }
+    });
+  }
+  var INDEXED_HEALTH_SCRUB_MS = 4000;
+  function scrubIndexedHealthNumbers() {
+    if (!window.indexedDB || typeof indexedDB.databases !== "function") return Promise.resolve();
+    return new Promise(function (resolve) {
+      var finished = false;
+      var timer = setTimeout(function () {
+        if (finished) return;
+        finished = true;
+        console.error("[CurrencyDesk] timed out clearing a cached health number");
+        resolve();
+      }, INDEXED_HEALTH_SCRUB_MS);
+      var finish = function (error) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        if (error) console.error("[CurrencyDesk] could not clear a cached health number", error);
+        resolve();
+      };
+      var listed;
+      try { listed = indexedDB.databases(); }
+      catch (error) { finish(error); return; }
+      Promise.resolve(listed).then(function (list) {
+        var pending = (list || []).filter(function (info) { return info && info.name; }).map(function (info) {
+          return new Promise(function (resolveStore, rejectStore) {
+            var open = indexedDB.open(info.name);
+            open.onerror = function () { rejectStore(open.error || new Error("Could not open " + info.name)); };
+            open.onsuccess = function () {
+              var db = open.result;
+              var names = [];
+              var n;
+              for (n = 0; n < db.objectStoreNames.length; n++) names.push(db.objectStoreNames[n]);
+              if (!names.length) { db.close(); resolveStore(); return; }
+              var tx = db.transaction(names, "readwrite");
+              tx.oncomplete = function () { db.close(); resolveStore(); };
+              tx.onerror = function () { db.close(); rejectStore(tx.error || new Error("Could not clear a cached health number in " + info.name)); };
+              names.forEach(function (storeName) {
+                var cursorReq = tx.objectStore(storeName).openCursor();
+                cursorReq.onerror = function () { rejectStore(cursorReq.error || new Error("Could not read " + storeName)); };
+                cursorReq.onsuccess = function () {
+                  var cursor = cursorReq.result;
+                  if (!cursor) return;
+                  var value = cursor.value;
+                  if (typeof value === "string" && (value.charAt(0) === "{" || value.charAt(0) === "[")) {
+                    try {
+                      var parsed = JSON.parse(value);
+                      var asText = JSON.stringify(scrubHealthValue(parsed));
+                      if (asText !== value) cursor.update(asText);
+                    } catch (error) {
+                      console.error("[CurrencyDesk] could not read a cached record in " + storeName, error);
+                    }
+                  } else if (value && typeof value === "object") {
+                    var cleaned = scrubHealthValue(value);
+                    if (JSON.stringify(cleaned) !== JSON.stringify(value)) cursor.update(cleaned);
+                  }
+                  cursor.continue();
+                };
+              });
+            };
+          });
+        });
+        return Promise.all(pending).then(function () { finish(); }, finish);
+      }, finish);
+    });
+  }
+  window.CDOS = window.CDOS || {};
+  window.CDOS.isHealthCardType = isHealthCardType;
+  window.CDOS.scrubClientMap = scrubHealthValue;
+  window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
+  window.CDOS.scrubIndexedHealthNumbers = scrubIndexedHealthNumbers;
+  scrubLocalHealthNumbers();
+  window.CDOS.healthNumberScrubbed = scrubIndexedHealthNumbers();
+
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
      document flattened onto it as idType / idNum / idIssued / idExpiry.
@@ -2619,7 +2920,7 @@
      that is the byte weight that was stopping the desk saving. */
   function toDeskRecord(record, local) {
     local = local || {};
-    var documents = record.documents || [];
+    var documents = (record.documents || []).map(function (d) { return scrubHealthValue(d); });
     var primary = documents.filter(function (d) { return d.isPrimary; })[0] || null;
     var extra = documents.filter(function (d) { return !d.isPrimary; });
     var serverHasPrimaryScan = !!(primary && primary.hasScan);
@@ -2656,7 +2957,9 @@
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
       idType: primary ? primary.docType : "",
-      idNum: primary ? (primary.docNumber || "") : "",
+      idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
+      idProvince: primary ? (primary.issuingJurisdiction || "") : "",
+      idRecorded: primary && primary.recordedAt ? String(primary.recordedAt).slice(0, 10) : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
       primaryDocumentId: primary ? primary.documentId : null,
@@ -2670,7 +2973,9 @@
         return {
           documentId: d.documentId,
           type: d.docType,
-          num: d.docNumber || "",
+          num: isHealthCardType(d.docType) ? "" : (d.docNumber || ""),
+          province: d.issuingJurisdiction || "",
+          recorded: d.recordedAt ? String(d.recordedAt).slice(0, 10) : "",
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
           hasScan: !!d.hasScan,
@@ -22101,9 +22406,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const client = api();
       if (!client || !clientId) return;
       if (!rec || !rec.idType && !rec.idNum && !rec.photo) return;
+      const health = window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType);
       await client.addDocument(clientId, {
         docType: rec.idType || 'Not stated',
-        docNumber: rec.idNum || null,
+        docNumber: health ? null : rec.idNum || null,
         issuedOn: rec.idIssued || null,
         expiresOn: rec.idExpiry || null,
         isPrimary: true,
@@ -22239,6 +22545,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const send = run => Promise.resolve().then(run).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
     const extraDoc = i => (rec.ids || [])[i] || {};
     function field(k, v) {
+      if ((k === 'idType' || k === 'type') && window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(v)) {
+        onError(HEALTH_CARD_REFUSAL);
+        return;
+      }
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
@@ -22726,7 +23036,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }), " Capture")))))));
   }
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
+  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Permanent Resident Card'];
+  /* A type already on the file stays selectable, except a health card.
+     That name is not an option in the picker, the Record-ID sheet, or
+     this edit field. */
+  const offeredType = (value, types) => {
+    if (!value || types.indexOf(value) >= 0) return null;
+    if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(value)) return null;
+    return value;
+  };
+  const HEALTH_CARD_REFUSAL = "Health cards can't be used as ID. Record a current photo ID.";
+  /* What client search is allowed to match. A health-card number is
+     not part of it, on the primary or on an extra document. */
+  function clientSearchText(rec) {
+    rec = rec || {};
+    const health = t => window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(t);
+    const ownNum = health(rec.idType) ? '' : rec.idNum || '';
+    const extra = (rec.ids || []).filter(d => d && !health(d.type)).map(d => d.num || '').join(' ');
+    return `${ownNum} ${extra}`.trim();
+  }
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
@@ -23126,7 +23454,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    const stated = offeredType(rec.idType, types);
     return /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(EditField, {
@@ -23143,7 +23471,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       key: stated
     }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t)))), !(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Business / document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23222,7 +23550,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    const stated = offeredType(doc.type, types);
     return /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
@@ -23261,7 +23589,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       key: stated
     }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t)))), !(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(doc.type)) && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23523,7 +23851,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
-<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
+<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType) ? '' : rec.idNum)}${window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType) ? row('Issuing province', rec.idProvince) + row('Recorded', rec.idRecorded) : ''}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
 <div class="card"><div class="ct">Activity</div><table class="kv">${row('First seen', mine.length ? mine[mine.length - 1].date : '')}${row('Last seen', st.last)}${row('Status', stat)}</table>${rec.notes ? `<div style="margin-top:8px;font-size:11.5px;color:#555;"><b>Notes:</b> ${esc(rec.notes)}</div>` : ''}</div>
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
@@ -23709,7 +24037,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       value: ""
     }, "\u2014"), (corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t)))), !(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) && /*#__PURE__*/React.createElement(EditField, {
       label: corp ? 'Number' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -25290,16 +25618,24 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       icon: "id",
       label: corp ? 'Document' : 'ID type',
       value: rec.idType
-    }), /*#__PURE__*/React.createElement(KV, {
+    }), !(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
       value: rec.idNum,
       mono: true
-    }), /*#__PURE__*/React.createElement(KV, {
+    }), window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType) && rec.idProvince ? /*#__PURE__*/React.createElement(KV, {
+      icon: "mappin",
+      label: "Issuing province",
+      value: rec.idProvince
+    }) : null, /*#__PURE__*/React.createElement(KV, {
       icon: "calendar",
       label: "Expiry",
       value: rec.idExpiry
-    }), (rec.photo || rec.primaryHasScan) && /*#__PURE__*/React.createElement("div", {
+    }), window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType) && rec.idRecorded ? /*#__PURE__*/React.createElement(KV, {
+      icon: "calendar",
+      label: "Recorded",
+      value: rec.idRecorded
+    }) : null, (rec.photo || rec.primaryHasScan) && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
     }, /*#__PURE__*/React.createElement(IdScan, {
       src: rec.photo,
@@ -25326,16 +25662,24 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       icon: "id",
       label: "Type",
       value: d.type
-    }), /*#__PURE__*/React.createElement(KV, {
+    }), !(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(d.type)) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
       value: d.num,
       mono: true
-    }), /*#__PURE__*/React.createElement(KV, {
+    }), window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(d.type) && d.province ? /*#__PURE__*/React.createElement(KV, {
+      icon: "mappin",
+      label: "Issuing province",
+      value: d.province
+    }) : null, /*#__PURE__*/React.createElement(KV, {
       icon: "calendar",
       label: "Expiry",
       value: d.expiry
-    }), (d.photo || d.hasScan) && /*#__PURE__*/React.createElement("div", {
+    }), window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(d.type) && d.recorded ? /*#__PURE__*/React.createElement(KV, {
+      icon: "calendar",
+      label: "Recorded",
+      value: d.recorded
+    }) : null, (d.photo || d.hasScan) && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
     }, /*#__PURE__*/React.createElement(IdScan, {
       src: d.photo,
@@ -25644,7 +25988,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${clientSearchText(r)} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
     const onClick = name => {
@@ -26118,6 +26462,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setErr('Type, number, and expiry are required.');
         return;
       }
+      if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(draft.idType)) {
+        setErr(HEALTH_CARD_REFUSAL);
+        return;
+      }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -26155,12 +26503,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           setClients(prev => shared.project(prev));
         } else {
           const today = new Date().toISOString().slice(0, 10);
+          const keepNum = !(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(payload.idType));
           setClients(c => ({
             ...c,
             [name]: {
               ...(c[name] || {}),
               idType: payload.idType,
-              idNum: payload.idNum,
+              idNum: keepNum ? payload.idNum : '',
               idIssued: payload.idIssued || '',
               idExpiry: payload.idExpiry,
               photo: payload.photo,
@@ -26316,7 +26665,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     ClientIdViewer,
     ClientRecords,
     IdScan,
-    RecordIdSheet
+    RecordIdSheet,
+    exportClientReport,
+    clientSearchText
   });
 })();
 
@@ -27701,11 +28052,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (!canSave) return;
       // create client inline if needed
       if (newClient && customer) {
+        const healthCard = window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(nc.idType);
         setClients(c => ({
           ...c,
           [customer]: {
             idType: nc.idType,
-            idNum: nc.idNum,
+            idNum: healthCard ? '' : nc.idNum,
             idExpiry: nc.idExpiry,
             photo: null
           }
@@ -42445,6 +42797,119 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      country line. */
   const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== homeCountry() ? rec.country : ''].filter(Boolean).join(', ');
 
+  /* Shown when the identifier is left blank. A blank does not stop
+     the filing. Staff record a valid ID first when they can, and
+     otherwise file and keep this note. */
+  const NO_ACCEPTED_ID_NOTICE = 'No accepted ID on file. Record a valid ID before filing if you can, otherwise file with what you have and note why.';
+
+  /* The accepted photo ID list from the catalogue on PR #108
+     (server/src/ledger/id-document-types.mjs). That file is not on
+     this branch. A health card is absent here on purpose, and the
+     2012-or-later citizenship certificate and a birth certificate
+     are absent because they are not photo ID. A blank expiry is
+     current only for the pre-2012 citizenship card. */
+  const ACCEPTED_PHOTO_ID = [{
+    name: 'Passport'
+  }, {
+    name: "Driver's Licence",
+    aliases: ['Driver licence', "Driver's License", 'Drivers Licence', 'Drivers License', 'Driver License']
+  }, {
+    name: 'Provincial ID'
+  }, {
+    name: 'Permanent Resident Card',
+    aliases: ['PR Card']
+  }, {
+    name: 'Canadian citizenship card (pre-2012)',
+    noExpiryAllowed: true
+  }, {
+    name: 'Secure Certificate of Indian Status'
+  }];
+  const photoTypeKey = value => String(value ?? '').toLowerCase().replace(/['\u2018\u2019]/g, '').replace(/[^a-z0-9]+/g, ' ').replace(/ +/g, ' ').trim();
+  const PHOTO_ID_BY_KEY = new Map();
+  ACCEPTED_PHOTO_ID.forEach(row => {
+    [row.name, ...(row.aliases || [])].forEach(name => {
+      const key = photoTypeKey(name);
+      if (key) PHOTO_ID_BY_KEY.set(key, row);
+    });
+  });
+  const isHealthType = type => !!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(type));
+  const filingAsOf = deal => {
+    const dated = deal && String(deal.date || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dated)) return dated;
+    try {
+      return window.CDOS.businessDate();
+    } catch (e) {
+      return new Date().toISOString().slice(0, 10);
+    }
+  };
+  /* A current accepted photo ID. A health card, an expired document,
+     a document with no number, and a type the catalogue does not
+     accept as photo ID all fail. */
+  function currentAcceptedPhoto(doc, asOf) {
+    if (!doc) return null;
+    const type = doc.type || doc.docType || doc.idType || '';
+    const num = String(doc.num || doc.docNumber || doc.idNum || '').trim();
+    if (!String(type).trim() || !num || isHealthType(type)) return null;
+    const row = PHOTO_ID_BY_KEY.get(photoTypeKey(type));
+    if (!row) return null;
+    const expiry = String(doc.expiry || doc.expiresOn || doc.idExpiry || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) {
+      if (!row.noExpiryAllowed) return null;
+    } else if (expiry < asOf) {
+      return null;
+    }
+    const jurisdiction = String(doc.jurisdiction || doc.issuingJurisdiction || doc.idProvince || doc.province || '').trim();
+    return {
+      type,
+      num,
+      jurisdiction
+    };
+  }
+  function clientPhotoIds(person) {
+    if (!person) return [];
+    return [person.idType || person.idNum ? {
+      type: person.idType,
+      num: person.idNum,
+      expiry: person.idExpiry,
+      jurisdiction: person.idProvince
+    } : null, ...(person.ids || []), ...(person.documents || [])].filter(Boolean);
+  }
+  /* The document the deal recorded, when the row carries one. A
+     Canadian deal does not snapshot that document today; the field is
+     read when it is present. */
+  function recordedOnDeal(deal) {
+    if (!deal) return null;
+    return deal.recordedId || deal.identityDocument || null;
+  }
+  function withJurisdiction(picked, person) {
+    let jurisdiction = picked.jurisdiction;
+    if (!jurisdiction && person && person.province) {
+      const country = person.country || homeCountry();
+      jurisdiction = country ? `${person.province}, ${country}` : person.province;
+    } else if (!jurisdiction && person) {
+      jurisdiction = person.country || '';
+    }
+    return {
+      type: picked.type,
+      num: picked.num,
+      jurisdiction,
+      notice: ''
+    };
+  }
+  function filingIdentifier(person, deal) {
+    const asOf = filingAsOf(deal);
+    const recorded = currentAcceptedPhoto(recordedOnDeal(deal), asOf);
+    if (recorded) return withJurisdiction(recorded, person);
+    const fallback = clientPhotoIds(person).map(doc => currentAcceptedPhoto(doc, asOf)).find(Boolean);
+    if (fallback) return withJurisdiction(fallback, person);
+    return {
+      type: '',
+      num: '',
+      jurisdiction: '',
+      notice: NO_ACCEPTED_ID_NOTICE
+    };
+  }
+
   /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
      each field: { id, label, cat, source, value, prompt, hint, missing } */
@@ -42471,8 +42936,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const cadIn = r => r.inCcy === cur ? Number(r.inAmt) || 0 : (Number(r.inAmt) || 0) / (window.CDOS.crossRate(cur, r.inCcy) || 1);
     const F = (id, label, cat, source, value, opts = {}) => {
       const has = value != null && String(value).trim() !== '';
-      // only a mandatory (*) / mandatory-for-processing (‡) empty blocks filing
-      const missing = !opts.prompt && source !== 'ENGINE' && !has && (cat === '*' || cat === '‡');
+      // only a mandatory (*) / mandatory-for-processing (‡) empty blocks filing.
+      // A blank identifier, when no accepted ID is on file, does not.
+      const blocksFiling = opts.blocksFiling !== false;
+      const missing = blocksFiling && !opts.prompt && source !== 'ENGINE' && !has && (cat === '*' || cat === '‡');
       return {
         id,
         label,
@@ -42481,8 +42948,24 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         value: has ? String(value) : '',
         prompt: !!opts.prompt,
         hint: opts.hint || '',
-        missing
+        missing,
+        notice: opts.notice || '',
+        blocksFiling
       };
+    };
+    const identifierFields = (prefix, id) => {
+      const open = !!id.notice;
+      return [F(`${prefix}_idtype`, 'Identifier type', open ? '' : '*', 'KYC', id.type, {
+        hint: 'Never a SIN. Never a health card.',
+        notice: id.notice || '',
+        blocksFiling: !open
+      }), F(`${prefix}_idnum`, 'Identifier number', open ? '' : '*', 'KYC', id.num, {
+        hint: 'Document number — never a SIN, never a health number',
+        blocksFiling: !open
+      }), F(`${prefix}_idjur`, 'Identifier jurisdiction', open ? '' : '*', 'KYC', id.jurisdiction, {
+        hint: 'Province / state + country that issued the ID',
+        blocksFiling: !open
+      })];
     };
     const partyName = name => clients && clients[name] || {};
 
@@ -42493,7 +42976,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : subj.country || '';
+      const subjectDeal = txns.find(r => r.recordedId || r.identityDocument) || txns[0] || null;
+      const subjectId = filingIdentifier(subj, subjectDeal);
       const win = settings && +settings.structuringDays || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
@@ -42512,13 +42996,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         hint: 'YYYY-MM-DD'
       }), F('su_occ', 'Occupation (descriptive)', '*', 'KYC', subj.occupation, {
         hint: 'e.g. "retail store manager"'
-      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), F('su_idtype', 'Identifier type', '*', 'KYC', subj.idType, {
-        hint: 'Never a SIN'
-      }), F('su_idnum', 'Identifier number', '*', 'KYC', subj.idNum, {
-        hint: 'Document number — never a SIN'
-      }), F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjJur, {
-        hint: 'Province / state + country that issued the ID'
-      }), F('su_tel', 'Telephone', '', 'KYC', subj.phone), F('su_rel', 'Relationship to your business', '', 'PROMPT', '', {
+      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), ...identifierFields('su', subjectId), F('su_tel', 'Telephone', '', 'KYC', subj.phone), F('su_rel', 'Relationship to your business', '', 'PROMPT', '', {
         prompt: true,
         hint: 'e.g. "walk-in since 2023, regular FX customer"'
       })];
@@ -42618,7 +43096,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : cond.country || '';
+      const condId = filingIdentifier(cond, r);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [F('sa_amount', 'Amount (starting action)', '*', 'LEDGER', num(r.inAmt)), F('sa_currency', 'Currency — report ORIGINAL, do not convert', '*', 'LEDGER', r.inCcy), F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)), F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : {
@@ -42646,13 +43124,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           hint: 'YYYY-MM-DD'
         }), F('cd_occ', 'Occupation (descriptive)', '*', 'KYC', cond.occupation, {
           hint: 'e.g. "retail store manager"'
-        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), F('cd_idtype', 'Identifier type', '*', 'KYC', cond.idType, {
-          hint: 'Never a SIN'
-        }), F('cd_idnum', 'Identifier number', '*', 'KYC', cond.idNum, {
-          hint: 'Document number — never a SIN'
-        }), F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', idJur, {
-          hint: 'Province / state + country that issued the ID'
-        }), F('cd_tel', 'Telephone', '', 'KYC', cond.phone), {
+        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), ...identifierFields('cd', condId), F('cd_tel', 'Telephone', '', 'KYC', cond.phone), {
           divider: 'Third party — acting on behalf of someone else?'
         }, F('tp_det', 'Third-party determination made? (Y/N)', '†', cap ? 'LEDGER' : 'PROMPT', cap ? cap.thirdParty ? 'Yes' : 'No' : '', cap ? {} : {
           prompt: true,
@@ -42828,7 +43300,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 
     // effective value of a field = the owner's override if present, else the desk's pre-fill
     const evOf = (f, k) => k in vals ? vals[k] : f.value || '';
-    const isMandatory = f => (f.cat === '*' || f.cat === '‡') && f.source !== 'ENGINE';
+    const isMandatory = f => f.blocksFiling !== false && (f.cat === '*' || f.cat === '‡') && f.source !== 'ENGINE';
 
     // every editable (non-divider) field key, in order
     const allKeys = useMemo(() => {
@@ -43262,7 +43734,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         style: {
           color: CD.faint
         }
-      }, "Normally pulled from ", f.source === 'CONFIG' ? 'Settings' : 'the client profile', " \u2014 fill it here and it\u2019s captured on the sealed copy."), f.hint && !f.prompt && !f.missing && dv.trim() && isFocused && /*#__PURE__*/React.createElement("div", {
+      }, "Normally pulled from ", f.source === 'CONFIG' ? 'Settings' : 'the client profile', " \u2014 fill it here and it\u2019s captured on the sealed copy."), f.notice && !dv.trim() && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-1 ml-0.5",
+        style: {
+          color: CD.ink
+        }
+      }, f.notice), f.hint && !f.prompt && !f.missing && dv.trim() && isFocused && /*#__PURE__*/React.createElement("div", {
         className: "text-[9.5px] mt-0.5 ml-0.5",
         style: {
           color: CD.faint
@@ -43587,7 +44064,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       regime
     } = ctx;
     const op = settings.operatingName || settings.bizName || 'CurrencyDesk OS';
-    const fieldRows = inst => (inst.fields || []).map(f => f.divider ? `<tr><td class="dv" colspan="3">${esc(f.divider)}</td></tr>` : `<tr><td class="cat">${esc(f.cat || '')}</td><td class="lbl">${esc(f.label)}${f.filledByTeller ? ' <span class="pr">prompt</span>' : ''}</td><td class="val${f.value ? '' : ' empty'}">${esc(f.value || '—')}</td></tr>`).join('');
+    const fieldRows = inst => (inst.fields || []).map(f => f.divider ? `<tr><td class="dv" colspan="3">${esc(f.divider)}</td></tr>` : `<tr><td class="cat">${esc(f.cat || '')}</td><td class="lbl">${esc(f.label)}${f.filledByTeller ? ' <span class="pr">prompt</span>' : ''}</td><td class="val${f.value ? '' : ' empty'}">${esc(f.value || '—')}${f.notice && !f.value ? `<div>${esc(f.notice)}</div>` : ''}</td></tr>`).join('');
     const blockHTML = b => `<div class="blk"><div class="bt">${esc(b.title)}</div>${b.instances.map(inst => `<div class="inst">${inst.label ? `<div class="il">${esc(inst.label)}</div>` : ''}<table class="ft">${fieldRows(inst)}</table></div>`).join('')}</div>`;
     const links = (filing.refs || []).map(r => `<span class="lk">${esc(r)}</span>`).join(' ');
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(filing.kind)} ${esc(filing.reportRef)} — filed copy</title>
@@ -47524,6 +48001,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         ['email', 'dob', 'address', 'city', 'province', 'postal', 'country', 'idType', 'idNum', 'idIssued', 'idExpiry'].forEach(k => {
           if (ex[k] && !String(next[k] || '').trim()) next[k] = ex[k];
         });
+        if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(next.idType)) next.idNum = '';
         next.idVerifiedAt = done.result.completedAt;
         return {
           ...c,
@@ -48228,7 +48706,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "id",
       s: 12,
       c: CD.faint
-    }), " On the contact"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
+    }), " On the contact"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(ex.idType) ? ex.idType : `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
       key: l,
       className: "flex items-center justify-between py-1.5 text-[12.5px]",
       style: {
@@ -50324,8 +50802,9 @@ ${snap}`;
           const tx = data.live.filter(r => r.customer === n);
           const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
           const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-          const st = !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified';
-          return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, csvMoney(v)];
+          const idNum = kycIdNumber(c);
+          const st = !c.idType || !idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified';
+          return [n, c.idType || '', idNum, c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
       }
       return [];
@@ -51563,7 +52042,8 @@ ${snap}`;
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = n => {
           const c = clients[n] || {};
-          if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft];
+          const idNum = kycIdNumber(c);
+          if (!c.idType || !idNum) return ['missing ID', CD.flag, CD.flagSoft];
           if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft];
           return ['verified', CD.green, CD.greenSoft];
         };
@@ -51625,7 +52105,7 @@ ${snap}`;
               fontSize: 11,
               color: CD.mute
             }
-          }, c.idNum || '—'), /*#__PURE__*/React.createElement("td", {
+          }, kycIdNumber(c) || '—'), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute
@@ -52871,9 +53351,18 @@ ${snap}`;
      localStorage. See docs/GENERATED_DOCUMENTS.md.
      ============================================================ */
 
+  /* The ID-number cell of the KYC register, shared by the sheet and
+     the CSV so a health number cannot be in one and absent from the
+     other. */
+  function kycIdNumber(client) {
+    const c = client || {};
+    if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType)) return '';
+    return c.idNum || '';
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Reports,
-    ReportHistory
+    ReportHistory,
+    kycIdNumber
   });
 })();
 
@@ -60381,6 +60870,7 @@ window.CDOS_PERSIST = (function () {
     return out;
   }
   function snapshot() {
+    if (window.CDOS && window.CDOS.scrubLocalHealthNumbers) window.CDOS.scrubLocalHealthNumbers();
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
@@ -60391,6 +60881,7 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+    if (window.CDOS && window.CDOS.scrubLocalHealthNumbers) window.CDOS.scrubLocalHealthNumbers();
   }
 
   /* ---- telling somebody ------------------------------------------------
@@ -63948,8 +64439,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, [rows]);
     useEffect(() => {
       try {
-        localStorage.setItem('cdos_clients_v1', JSON.stringify(clients));
-      } catch (e) {}
+        const clean = window.CDOS.scrubClientMap ? window.CDOS.scrubClientMap(clients) : clients;
+        localStorage.setItem('cdos_clients_v1', JSON.stringify(clean));
+      } catch (error) {
+        console.error("[CurrencyDesk] could not save the client cache", error);
+      }
     }, [clients]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {
@@ -63963,6 +64457,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         ['email', 'dob', 'address', 'city', 'province', 'postal', 'country', 'idType', 'idNum', 'idIssued', 'idExpiry'].forEach(k => {
           if (ex[k] && !String(next[k] || '').trim()) next[k] = ex[k];
         });
+        if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(next.idType)) next.idNum = '';
         next.idVerifiedAt = at || next.idVerifiedAt;
         return {
           ...c,

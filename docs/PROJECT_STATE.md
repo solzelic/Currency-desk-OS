@@ -71,6 +71,70 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **A health card number is not on a read, and a new one is refused.**
+  One list, `shared/health-card-names.js`, is what the server and the
+  browser match: the provincial names, OHIP, RAMQ, MSP, Care Card,
+  Carte d'assurance maladie, BC Services Card, Ontario Health Insurance
+  Plan, and Medicare card. The clients API (one file, the list, and
+  name lookup), the client file, search, the printable client report,
+  and the KYC CSV return the document type, the issuing province when
+  one was stored, the expiry, and the date recorded. The number is not
+  a field in that payload. `/api/tenant/state` scrubs a number on save
+  and on read, including a conflict response, so an old tab cannot
+  write one back. A copy cached in localStorage or IndexedDB is cleared
+  the next time the desk loads. A localStorage write that fails is
+  logged and does not blank the desk. An IndexedDB clear that does not
+  finish is logged and abandoned after a few seconds. `addDocument` and
+  `updateDocument` refuse a health card with `HEALTH_CARD_NOT_ID`
+  (HTTP 422). The picker, the Record-ID sheet, and the edit field do
+  not offer one. A health card does not make the file identified.
+  LCTR and STR prefill uses the document the deal recorded when that
+  document is a current accepted photo ID. Otherwise it uses the
+  client's current accepted photo ID: passport, driver's licence,
+  provincial ID, PR card, pre-2012 citizenship card, or Secure
+  Certificate of Indian Status. A health card, an expired document,
+  and any other type are not used. With none of those, the identifier
+  stays blank, staff see "No accepted ID on file. Record a valid ID
+  before filing if you can, otherwise file with what you have and note
+  why.", and the blank does not block the LCTR or the STR. Sealed
+  filings and the teller scan reveal are unchanged; Compliance is
+  ruling on them. The number is still in the database until an owner
+  runs redaction — that command is not part of this change and does
+  not run on deploy. Ontario's Health Cards and Numbers Control Act,
+  1991 bars a business outside health care from collecting or using a
+  health number, and FINTRAC says not to use a health card where
+  provincial law prohibits it. A health card is not valid ID. PR #108
+  owns the signed catalogue and the same 422 refusal on its path;
+  that file is not on this branch, and its health-card row should
+  import this list. PR #100 owns `displayIdStanding`, which is the
+  one label for the header and the card; it has not landed.
+- **A stored health number can be listed and, only when an owner asks,
+  replaced.** `GET /api/clients/health-card-review` names every client
+  in the shop with a health card number stored, and every posted deal
+  that relied on a health card (primary document, or the only numbered
+  document). Reversed deals are not listed. The number is not in the
+  response. The owner and the compliance officer can open it. A branch
+  manager cannot. The review is live: `routes.ts` imports
+  `health-numbers.js`. Replacing the number is
+  `npx tsx src/clients/redact-health-numbers-cli.ts`. That command is
+  not imported by `src/index.ts`, is not a migration, and does not run
+  on deploy. Dry-run prints counts and the document ids, and changes
+  nothing, including no audit row and no change to the tenant-state
+  copy. `--apply --actor` writes `[redacted]`, keeps the row, scrubs
+  that shop's tenant-state copy, refreshes standing so the marker is
+  not an identifying number, and appends one audit entry per redacted
+  record: the number was redacted, the date, who ran it, and the
+  reason "health number not lawful to keep, not valid ID". The output
+  lists document ids and never the numbers. Sealed filings and scans
+  are not changed; Compliance is ruling on them. The review has to be
+  available to that shop before `--apply` runs. `--apply` stays inert
+  until Compliance signs off on retention under the Proceeds of Crime
+  (Money Laundering) and Terrorist Financing Act, s.108 (five years),
+  and Sol decides. The backup window is unknown: this repository does
+  not record how long Neon keeps a backup. A redacted number remains
+  in backups until that window ages it out, and a pre-redaction backup
+  must not be restored over the live book. See
+  `docs/CLIENT_RECORDS.md`.
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile

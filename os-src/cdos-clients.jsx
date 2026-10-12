@@ -128,9 +128,10 @@
       const client = api();
       if (!client || !clientId) return;
       if (!rec || (!rec.idType && !rec.idNum && !rec.photo)) return;
+      const health = window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType);
       await client.addDocument(clientId, {
         docType: rec.idType || 'Not stated',
-        docNumber: rec.idNum || null,
+        docNumber: health ? null : (rec.idNum || null),
         issuedOn: rec.idIssued || null,
         expiresOn: rec.idExpiry || null,
         isPrimary: true,
@@ -258,6 +259,10 @@
     const extraDoc = (i) => (rec.ids || [])[i] || {};
 
     function field(k, v) {
+      if ((k === 'idType' || k === 'type') && window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(v)) {
+        onError(HEALTH_CARD_REFUSAL);
+        return;
+      }
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
@@ -460,7 +465,25 @@
   }
 
 
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
+  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Permanent Resident Card'];
+  /* A type already on the file stays selectable, except a health card.
+     That name is not an option in the picker, the Record-ID sheet, or
+     this edit field. */
+  const offeredType = (value, types) => {
+    if (!value || types.indexOf(value) >= 0) return null;
+    if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(value)) return null;
+    return value;
+  };
+  const HEALTH_CARD_REFUSAL = "Health cards can't be used as ID. Record a current photo ID.";
+  /* What client search is allowed to match. A health-card number is
+     not part of it, on the primary or on an extra document. */
+  function clientSearchText(rec) {
+    rec = rec || {};
+    const health = (t) => window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(t);
+    const ownNum = health(rec.idType) ? '' : (rec.idNum || '');
+    const extra = (rec.ids || []).filter(d => d && !health(d.type)).map(d => d.num || '').join(' ');
+    return `${ownNum} ${extra}`.trim();
+  }
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
@@ -615,10 +638,10 @@
      A covered ID that crashes the profile is the worst of both. */
   function KycEditor({ rec, set, kind, onUpload, canEdit, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    const stated = offeredType(rec.idType, types);
     return (<div className="grid grid-cols-2 gap-3">
       <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
-      <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
+      {!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) && <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
       <EditField label="Issued"><input disabled={!canEdit} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="ID document scan" full>
@@ -632,12 +655,12 @@
   // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
   function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    const stated = offeredType(doc.type, types);
     return (<div className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
       <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>{canEdit && <button type="button" onClick={() => rmId(i)} className="text-[11px] font-medium" style={{ color: CD.flag }}>Remove</button>}</div>
       <div className="grid grid-cols-2 gap-3">
         <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
-        <EditField label={kind === 'corporate' ? 'Document #' : 'ID number'}><input disabled={!canEdit} value={doc.num || ''} onChange={e => setId(i, 'num', e.target.value)} className={inCls} style={inSty} /></EditField>
+        {!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(doc.type)) && <EditField label={kind === 'corporate' ? 'Document #' : 'ID number'}><input disabled={!canEdit} value={doc.num || ''} onChange={e => setId(i, 'num', e.target.value)} className={inCls} style={inSty} /></EditField>}
         <EditField label="Issued"><input disabled={!canEdit} type="date" value={doc.issued || ''} onChange={e => setId(i, 'issued', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Expiry"><input disabled={!canEdit} type="date" value={doc.expiry || ''} onChange={e => setId(i, 'expiry', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Document scan" full>
@@ -728,7 +751,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
-<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
+<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) ? '' : rec.idNum)}${(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) ? row('Issuing province', rec.idProvince) + row('Recorded', rec.idRecorded) : ''}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
 <div class="card"><div class="ct">Activity</div><table class="kv">${row('First seen', mine.length ? mine[mine.length - 1].date : '')}${row('Last seen', st.last)}${row('Status', stat)}</table>${rec.notes ? `<div style="margin-top:8px;font-size:11.5px;color:#555;"><b>Notes:</b> ${esc(rec.notes)}</div>` : ''}</div>
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
@@ -778,7 +801,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{corp ? 'Document' : 'Identification'}</div>
           <div className="grid grid-cols-2 gap-2.5">
             <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select></EditField>
-            <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
+            {!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) && <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
             <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => setField('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
             <EditField label="ID scan">{(rec.photo || rec.primaryHasScan) ? <div className="flex items-center gap-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={36} who={name} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
           </div>
@@ -1305,14 +1328,18 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identification (KYC){(rec.ids || []).length > 0 && <span style={{ color: CD.mute }}> · {1 + (rec.ids || []).length} on file</span>}</div>
                 <KV icon="id" label={corp ? 'Document' : 'ID type'} value={rec.idType} />
-                <KV icon="scroll" label="Number" value={rec.idNum} mono />
+                {!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) && <KV icon="scroll" label="Number" value={rec.idNum} mono />}
+                {(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType) && rec.idProvince) ? <KV icon="mappin" label="Issuing province" value={rec.idProvince} /> : null}
                 <KV icon="calendar" label="Expiry" value={rec.idExpiry} />
+                {(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType) && rec.idRecorded) ? <KV icon="calendar" label="Recorded" value={rec.idRecorded} /> : null}
                 {(rec.photo || rec.primaryHasScan) && <div className="mt-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={120} who={name} what={rec.idType || 'primary ID'} log={log} /></div>}
                 {(rec.ids || []).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>
                   <KV icon="id" label="Type" value={d.type} />
-                  <KV icon="scroll" label="Number" value={d.num} mono />
+                  {!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(d.type)) && <KV icon="scroll" label="Number" value={d.num} mono />}
+                  {(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(d.type) && d.province) ? <KV icon="mappin" label="Issuing province" value={d.province} /> : null}
                   <KV icon="calendar" label="Expiry" value={d.expiry} />
+                  {(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(d.type) && d.recorded) ? <KV icon="calendar" label="Recorded" value={d.recorded} /> : null}
                   {(d.photo || d.hasScan) && <div className="mt-2"><IdScan src={d.photo} clientId={rec.clientId} documentId={d.documentId} hasScan={d.hasScan} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
                 </div>))}
               </div>
@@ -1425,7 +1452,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${clientSearchText(r)} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
 
@@ -1644,6 +1671,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const save = async () => {
       if (leaving || phase !== 'edit') return;
       if (!ready) { setErr('Type, number, and expiry are required.'); return; }
+      if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(draft.idType)) {
+        setErr(HEALTH_CARD_REFUSAL);
+        return;
+      }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -1679,7 +1710,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           setClients(prev => shared.project(prev));
         } else {
           const today = new Date().toISOString().slice(0, 10);
-          setClients(c => ({ ...c, [name]: { ...(c[name] || {}), idType: payload.idType, idNum: payload.idNum, idIssued: payload.idIssued || '', idExpiry: payload.idExpiry, photo: payload.photo, updatedAt: today } }));
+          const keepNum = !(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(payload.idType));
+          setClients(c => ({ ...c, [name]: { ...(c[name] || {}), idType: payload.idType, idNum: keepNum ? payload.idNum : '', idIssued: payload.idIssued || '', idExpiry: payload.idExpiry, photo: payload.photo, updatedAt: today } }));
         }
         log && log('ID document recorded', name + ' · ' + payload.idType);
         onDone();
@@ -1734,5 +1766,5 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      cdos-kyc.jsx, which can run from screens that never mount this
      one. `RecordIdSheet` is that same identity editor, opened from a
      deal that needs a document on the server. */
-  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan, RecordIdSheet });
+  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan, RecordIdSheet, exportClientReport, clientSearchText });
 })();

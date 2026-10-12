@@ -27,6 +27,7 @@ import { ensureLedgerPrincipal } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 import { isRetryable } from "../ledger/retry.js";
 import { ClientRecordService } from "./records.js";
+import { healthCardReview } from "./health-numbers.js";
 
 /* An ISO calendar day or nothing. Deliberately not `z.coerce.date()`:
    "1985-13-45" is not a date and a customer record is not the place to
@@ -221,6 +222,28 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   /* Registered before "/api/clients/:clientId" so that "lookup" is not
      read as an id. Fastify's radix router prefers the static segment
      either way; the order is here for the reader, not the router. */
+  /* The owner and the compliance officer. A branch manager holds
+     customer:view and must not see this list: it is a review of deals
+     that may have posted without valid ID, not a teller's screen.
+     Registered as a static path so "health-card-review" is not a client id.
+     Read-only. Redaction is the owner-run command, not this route. */
+  const healthReviewRoles = new Set(["administrator", "compliance_officer"]);
+  app.get("/api/clients/health-card-review", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      if (!healthReviewRoles.has(actor.role)) {
+        return reply.code(403).send({
+          code: "HEALTH_REVIEW_FORBIDDEN",
+          message: "The health-card review is available to the owner and the compliance officer.",
+        });
+      }
+      return reply.send(await healthCardReview(pool, actor.tenantId, actor.legalEntityId));
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   app.get("/api/clients/lookup", async (req, reply) => {
     try {
       const actor = await actorOrReply(req, reply);
