@@ -70,7 +70,10 @@ export const test = base.extend<{ page: Page }>({
     await page.route("**cdn.tailwindcss.com**", (route) =>
       route.fulfill({ status: 200, contentType: "application/javascript", body: "" }));
     /* Fonts. Same reasoning, and a blocked font request would otherwise
-       show up as a console error in every run. */
+       show up as a console error in every run. An empty sheet means the
+       desk paints the runner's fallback face. The 1280 picture does not
+       use that: desktop-unchanged.spec.ts registers a later route and
+       serves Archivo and Space Mono from tests/e2e/fonts. */
     await page.route("**fonts.googleapis.com/**", (route) =>
       route.fulfill({ status: 200, contentType: "text/css", body: "" }));
 

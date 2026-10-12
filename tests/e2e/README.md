@@ -10,6 +10,12 @@ chromium`, and the `postgres:16` service container. The same job renders
 that commit twice and keeps the pictures only when the two renders match.
 The branch is then compared to them.
 
+The text in that picture is Archivo and Space Mono from
+`tests/e2e/fonts/` (SIL Open Font License, `OFL.txt`). The spec serves
+those files in place of `fonts.googleapis.com`. The same files are used
+for the main capture and for the branch compare. A runner font change
+does not move the pixels. A shot is refused if those faces did not load.
+
 main-sha: 9f1efb81f285a69e1b0d30ee2f092e9734342a08
 
 Do not replace a PNG with a picture of a feature branch. A difference

@@ -12,6 +12,10 @@
    fails even when the count is inside the cap. The break proof parses
    the sentence this file throws.
 
+   Text is Archivo and Space Mono from tests/e2e/fonts, served in place
+   of fonts.googleapis.com. The runner's fontconfig is not a face in
+   this picture. A shot is refused when those faces have not loaded.
+
    The page clock is 2026-06-18T15:02:00.000Z. The menu bar is 24-hour,
    so it reads 15:02. The audit seed's 09:05 is the AM case: the desk
    paints it 9:05 AM, and 15:02 paints 3:02 PM. "2m 00s ago" is that
@@ -26,6 +30,21 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Locator, Page, TestInfo } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
+
+const FONT_DIR = path.join(process.cwd(), "tests", "e2e", "fonts");
+const DESK_FONTS_CSS = readFileSync(path.join(FONT_DIR, "desk-faces.css"), "utf8");
+/* Weights the desk actually asks for. A missing one means the shot
+   would be the runner's fallback, which is not a desktop picture. */
+const DESK_FONT_SPECS = [
+  "400 16px Archivo",
+  "500 16px Archivo",
+  "600 16px Archivo",
+  "700 16px Archivo",
+  "800 16px Archivo",
+  "900 16px Archivo",
+  "400 16px 'Space Mono'",
+  "700 16px 'Space Mono'",
+];
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
 const { decodePng, diffRgba } = require("./tests/e2e/helpers/desktop-pixels.cjs") as {
@@ -102,7 +121,33 @@ function seededCheque() {
    a later clear never finishes, so the timers stay real and only the
    clock is pinned. localStorage is written here, before the page
    scripts, and again on every navigation — the tests clear storage. */
+/* The shared fixture answers fonts.googleapis.com with an empty sheet,
+   and the desk then paints whatever fontconfig substitutes. This route
+   is registered later, so it wins: the same files for the main capture
+   and for the branch compare. */
+async function pinFonts(page: Page): Promise<void> {
+  await page.route("**fonts.googleapis.com/**", (route) => {
+    const url = route.request().url();
+    if (!/family=Archivo|family=Space\+Mono|family=Space%20Mono/i.test(url)) {
+      return route.fallback();
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "text/css; charset=utf-8",
+      body: DESK_FONTS_CSS,
+    });
+  });
+  await page.route("**/e2e-fonts/**", (route) => {
+    const name = new URL(route.request().url()).pathname.split("/").pop() || "";
+    if (!/^[A-Za-z0-9._-]+\.woff2$/.test(name)) return route.abort();
+    const file = path.join(FONT_DIR, name);
+    if (!existsSync(file)) return route.abort();
+    return route.fulfill({ path: file, contentType: "font/woff2" });
+  });
+}
+
 async function pinDesk(page: Page): Promise<void> {
+  await pinFonts(page);
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
   await page.addInitScript(({ ms, rate }) => {
     const RealDate = Date;
@@ -299,15 +344,36 @@ async function fontsReady(page: Page): Promise<void> {
     style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
     (document.head || document.documentElement).appendChild(style);
   };
+  const loaded = (specs: string[]) => {
+    const missing: string[] = [];
+    const fonts = document.fonts;
+    return fonts.ready.then(async () => {
+      for (const spec of specs) {
+        try {
+          await fonts.load(spec);
+        } catch {
+          missing.push(spec);
+          continue;
+        }
+        if (!fonts.check(spec)) missing.push(spec);
+      }
+      return missing;
+    });
+  };
   await page.evaluate(still);
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-  });
+  const missing = await page.evaluate(loaded, DESK_FONT_SPECS);
+  if (missing.length) {
+    throw new Error(`desktop fonts did not load: ${missing.join(", ")}`);
+  }
   for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue;
+    const url = frame.url();
+    if (!url.includes("YorkFX")) continue;
     await frame.evaluate(still).catch(() => {});
-    await frame.evaluate(async () => {
-      if (document.fonts) await document.fonts.ready;
-    }).catch(() => {});
+    const frameMissing = await frame.evaluate(loaded, DESK_FONT_SPECS).catch(() => ["frame"]);
+    if (frameMissing.length) {
+      throw new Error(`rate board fonts did not load: ${frameMissing.join(", ")}`);
+    }
   }
 }
 

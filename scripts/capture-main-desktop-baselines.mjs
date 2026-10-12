@@ -9,6 +9,9 @@
    The commit is rendered twice. The pictures are kept only when those
    two renders match at every pixel. A laptop render is not a substitute.
 
+   The spec serves Archivo and Space Mono from tests/e2e/fonts. The
+   picture does not use the runner's fontconfig fallback.
+
    The output directory must not sit inside Playwright's outputDir
    (test-results). Each capture starts a new Playwright run, and that
    run deletes test-results before the spec writes. A picture stored

@@ -409,8 +409,11 @@ not match main. The menu bar's brand dot stays the circle the desk
 draws. A pixel may differ by
 at most 1 in each channel, and only up to the cap named for that
 picture in the spec. A picture with no cap is exact. A channel that
-moves by 2 or more fails. A one-character change in a rate, a code, an
-amount, a fee, a hold date, or a cheque number fails the picture.
+moves by 2 or more fails. The text is Archivo and Space Mono from
+`tests/e2e/fonts/`, served in place of `fonts.googleapis.com`, for the
+main capture and for the branch compare. The picture is refused when
+those faces have not loaded. A one-character change in a rate, a code,
+an amount, a fee, a hold date, or a cheque number fails the picture.
 
 The page clock is `2026-06-18T15:02:00.000Z` (15:02 on the menu bar,
 3:02 PM where the desk uses a 12-hour clock). The audit seed's

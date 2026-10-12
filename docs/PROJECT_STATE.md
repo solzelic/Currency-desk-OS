@@ -581,8 +581,11 @@ differing pixels is within the cap in
 A channel that moves by 2 or more fails. The 34,080-pixel Ledger gap
 was not a phone rule at 1280. The committed picture and the Actions
 runner substituted different faces for weight 600 and for the Records
-tab. Shop name and the menu bar, which both machines resolved the same
-way, matched.
+tab, because the seam fixture answered `fonts.googleapis.com` with an
+empty stylesheet. The 1280 spec now serves Archivo and Space Mono from
+`tests/e2e/fonts/` for both the main capture and the branch compare.
+A shot is refused when those faces have not loaded. Shop name and the
+menu bar, which both machines resolved the same way, matched.
 
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the

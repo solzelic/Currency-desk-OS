@@ -130,7 +130,8 @@ and 13 of 17 specs skip; CI runs the full suite with an ephemeral Postgres
 (`.github/workflows/browser.yml`, `browser-seam` job) and fails if a seam spec skips.
 That job also checks out the main commit named in `tests/e2e/README.md` and
 renders the 1280 desktop pictures there (`scripts/capture-main-desktop-baselines.mjs`).
-The committed PNGs have to be that render. The branch is compared to them.
+The text is Archivo and Space Mono from `tests/e2e/fonts/`, not the runner's
+fallback face. The committed PNGs have to be that render. The branch is compared to them.
 `browser-validate` runs `npm run check:sanctions` after the OS build, so the
 committed `web/app/os.js` cannot name a sanctions list.
 `tests/e2e/a-day-at-the-desk.spec.ts` is the deployment gate. It trades on
