@@ -66,6 +66,7 @@ third-party screening, exports, or deployment architecture change.
 - Tenant and legal-entity scope are verified before permission checks.
 - Branch access is explicit; role alone does not grant branch access.
 - Sensitive actions are denied unless the actor has a named permission.
+- A platform write names its permission. The read-only auditor cannot suspend or delete a desk, change a plan, create a desk, reset a password or PIN, issue a CD-ID, block a person, invite a desk, or edit an application. Suspending and deleting a desk are `security:manage`. Changing a plan is `billing:write`. Creating a desk by hand is `desks:write`. Acting on a person is `people:write`. An invitation and an application edit are `applications:write`.
 - Audit history has no update or delete operation in the application port.
 - Audit events reference prior/new record versions without copying restricted payloads.
 - Demo reset does not erase audit history.

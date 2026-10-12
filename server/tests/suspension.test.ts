@@ -133,8 +133,11 @@ describe("a suspended desk goes offline", () => {
     /* Added to the team table directly: PLATFORM_ADMIN_EMAILS is read once,
        on first boot, and deliberately never overwrites an existing team —
        see seedOwner. */
+    /* Suspending a desk is security:manage. Support does not hold it,
+       so this operator is security, which is the role that can block
+       the desk their own staff account sits on. */
     await handle.db.insert(schema.platformUsers).values({
-      email: inHouse, name: "Jordan Masri", role: "support",
+      email: inHouse, name: "Jordan Masri", role: "security",
       status: "active", addedBy: "test",
     }).onConflictDoNothing();
     try {

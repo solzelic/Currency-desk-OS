@@ -311,10 +311,11 @@ function platformSession(resolved: SessionState) {
 export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // resolve the session and confirm platform-admin; returns the user or null
   // (having already sent 401/403).
-  /* `need` is the permission this route requires. Omitting it means "any
-     member of the platform team", which is right for the read-only shell
-     around everything else. */
-  async function gate(req: any, reply: any, need?: Permission) {
+  /* `need` is the permission this route requires. A write can require
+     more than one, and every one of them has to hold. Omitting it means
+     "any member of the platform team", which is right for the read-only
+     shell and wrong for a write. */
+  async function gate(req: any, reply: any, need?: Permission | readonly Permission[]) {
     const who = platformSession(await resolveSessionState(db, req.cookies[SESSION_COOKIE]));
     if (!who) {
       reply.code(401).send({ error: "unauthenticated" });
@@ -349,9 +350,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       reply.code(401).send({ error: "mfa_required", detail: "Enter the code from your authenticator." });
       return null;
     }
-    if (need && !can(me.role as PlatformRole, need)) {
-      reply.code(403).send({ error: "permission_denied", detail: `Your role (${me.role}) cannot ${need.replace(":", " ")}.` });
-      return null;
+    const needs: readonly Permission[] = need == null ? [] : typeof need === "string" ? [need] : need;
+    for (const n of needs) {
+      if (!can(me.role as PlatformRole, n)) {
+        reply.code(403).send({ error: "permission_denied", detail: `Your role (${me.role}) cannot ${n.replace(":", " ")}.` });
+        return null;
+      }
     }
     (who as any).platform = me;
     return who;
@@ -642,7 +646,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   });
 
   app.patch<{ Params: { id: string } }>("/api/admin/enquiries/:id", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const parsed = patchEnquiryBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -685,7 +689,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
   /* Labels — what an application is like, as opposed to where it is. */
   app.put<{ Params: { id: string } }>("/api/admin/enquiries/:id/labels", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const parsed = labelsBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -715,7 +719,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      and they need a different one. The old reference dies with it, so
      anybody holding it gets the same nothing as a stranger. */
   app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/rotate", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
@@ -1292,8 +1296,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     };
   });
 
+  /* Blocking a person, resetting a password or a PIN, and issuing a CD-ID
+     are people:write. Support holds that. Suspending the desk is a
+     different job and is not decided here. */
   app.patch<{ Params: { id: string } }>("/api/admin/staff/:id", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const parsed = z.object({ active: z.boolean() }).safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "active is required" });
@@ -1316,7 +1323,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      force a change at next sign-in, sign every device out, and email it. The
      operator never sees it, so it cannot be read back out of this panel. */
   app.post<{ Params: { id: string } }>("/api/admin/staff/:id/reset-password", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
     if (!p) return reply.code(404).send({ error: "not_found" });
@@ -1347,7 +1354,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      an email address — and a PIN is a local confirmation, not a credential
      that opens the desk on its own. */
   app.post<{ Params: { id: string } }>("/api/admin/staff/:id/reset-pin", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
     if (!p) return reply.code(404).send({ error: "not_found" });
@@ -1364,7 +1371,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
   // issue a CurrencyDesk ID, or replace one that has been given out too widely
   app.post<{ Params: { id: string } }>("/api/admin/staff/:id/cd-id", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
     if (!p) return reply.code(404).send({ error: "not_found" });
@@ -1386,12 +1393,21 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     return { ok: true, cdId, previous, delivered };
   });
 
-  // block/unblock a desk, or change its plan
+  /* Block or unblock a desk, or change its plan. Those are different
+     jobs: a suspension is security:manage, and support does not hold
+     it. A plan change is billing:write. A body that asks for both has
+     to hold both, and neither write happens until both checks pass. */
   app.patch<{ Params: { id: string } }>("/api/admin/tenants/:id", async (req, reply) => {
-    const who = await gate(req, reply);
-    if (!who) return;
     const parsed = patchTenantBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    if (!parsed.success) {
+      if (!(await gate(req, reply))) return;
+      return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    }
+    const needs: Permission[] = [];
+    if (parsed.data.suspended !== undefined) needs.push("security:manage");
+    if (parsed.data.plan !== undefined) needs.push("billing:write");
+    const who = await gate(req, reply, needs);
+    if (!who) return;
     const id = req.params.id;
     const t = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, id)).limit(1))[0];
     if (!t) return reply.code(404).send({ error: "not_found" });
@@ -1415,7 +1431,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      somebody's behalf, so a shop signed up at the counter and a shop that
      found the website arrive at exactly the same screen. */
   app.post("/api/admin/onboarding/invite", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const parsed = inviteBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -1486,7 +1502,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // create a desk by hand, skipping onboarding entirely. Kept for the cases
   // that genuinely need it; the panel's "add a desk" invites instead.
   app.post("/api/admin/tenants", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "desks:write");
     if (!who) return;
     const parsed = createTenantBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -1512,7 +1528,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
   // permanently delete a desk and ALL its data (cascade, FK-safe order)
   app.delete<{ Params: { id: string } }>("/api/admin/tenants/:id", async (req, reply) => {
-    const who = await gate(req, reply);
+    /* Deletion follows a suspension, and it uses the same permission.
+       desks:write would hand it to support, who cannot suspend. */
+    const who = await gate(req, reply, "security:manage");
     if (!who) return;
     const id = req.params.id;
     const t = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, id)).limit(1))[0];
