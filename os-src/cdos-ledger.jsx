@@ -1162,18 +1162,22 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {/* type-aware record facts */}
             <TxFacts row={row} onOpenClient={onOpenClient} />
 
-            {/* earnings — FX deals show fee + spread; flat services show the service fee */}
+            {/* earnings — FX deals show fee + spread; flat services show the service fee.
+               A role that cannot read earnings still sees the fee the customer
+               paid. The earned, margin, and spread cards are the book's take,
+               so they are not rendered — a dash would be a card with nothing in it. */}
             {!isVoid && (() => {
               const flat = row.inCcy === row.outCcy;
+              const withheld = !!row.earningsWithheld;
               return (<div>
-                <div className="text-[11px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Earnings on this deal</div>
+                <div className="text-[11px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{withheld ? 'Fee on this deal' : 'Earnings on this deal'}</div>
                 <div className="p-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
-                  <div className="grid grid-cols-2 gap-3 mb-1">
+                  {!withheld && <div className="grid grid-cols-2 gap-3 mb-1">
                     <div><div className="text-[11px]" style={{ color: CD.mute }}>Total earned</div><div className="text-xl font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(earned)}</div></div>
                     <div><div className="text-[11px]" style={{ color: CD.mute }}>{flat ? 'Fee on amount' : 'Margin on volume'}</div><div className="text-xl font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{marginPct == null ? '—' : `${marginPct.toFixed(2)}%`}</div></div>
-                  </div>
+                  </div>}
                   <DRow k={flat ? 'Service fee' : 'Commission / fee'} v={feeCad == null ? '—' : `${fmtHome(feeCad)}${inCad ? `  ·  ${((feeCad / inCad) * 100).toFixed(2)}%` : ''}`} mono />
-                  {!flat && <DRow k="FX spread (rate markup)" v={spreadCad > 0 ? `${fmtHome(spreadCad)}  ·  ${spreadPct.toFixed(2)}%` : '—'} mono />}
+                  {!withheld && !flat && <DRow k="FX spread (rate markup)" v={spreadCad > 0 ? `${fmtHome(spreadCad)}  ·  ${spreadPct.toFixed(2)}%` : '—'} mono />}
                   {row.marginOverride && (
                     <div className="mt-2 px-2.5 py-2 text-[11.5px]" style={{ background: CD.flagSoft, borderRadius: 8, color: CD.flag }}>
                       <div className="font-semibold flex items-center gap-1.5"><Ic n="alert" s={13} c={CD.flag} /> Below-floor margin override</div>
@@ -1181,7 +1185,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                     </div>
                   )}
                 </div>
-                <p className="mt-1.5 text-[11px]" style={{ color: CD.faint }}>{flat ? 'Flat service fee charged on this transaction.' : 'Fee is the flat commission charged on top. Spread is the markup baked into the rate vs. the live mid. Margin % = total earned ÷ pay-in.'}</p>
+                {!withheld && <p className="mt-1.5 text-[11px]" style={{ color: CD.faint }}>{flat ? 'Flat service fee charged on this transaction.' : 'Fee is the flat commission charged on top. Spread is the markup baked into the rate vs. the live mid. Margin % = total earned ÷ pay-in.'}</p>}
               </div>);
             })()}
 
@@ -1231,8 +1235,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   }
   function SubHead({ children }) { return <div className="text-[11px] uppercase tracking-widest mb-2 mt-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{children}</div>; }
 
-  function BreakdownModal({ rows, client, focus, onClose }) {
-    const [tab, setTab] = useState(focus || 'volume');
+  function BreakdownModal({ rows, client, focus, onClose, earningsHidden }) {
+    const [tab, setTab] = useState(earningsHidden ? 'volume' : (focus || 'volume'));
     const d = useMemo(() => {
       const live = rows.filter(r => r.status !== 'void' && (!client || r.customer === client));
       let vol = 0, fees = 0, margin = 0, feesKnown = true, marginKnown = true;
@@ -1273,7 +1277,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
           </div>
           {/* tabs */}
           <div className="flex-none flex gap-1.5 px-5 pt-3">
-            {[['volume', 'Pay-in volume'], ['fees', 'Fees & earnings']].map(([id, lbl]) => (
+            {(earningsHidden ? [['volume', 'Pay-in volume']] : [['volume', 'Pay-in volume'], ['fees', 'Fees & earnings']]).map(([id, lbl]) => (
               <button key={id} onClick={() => setTab(id)} className="text-sm px-3.5 py-2 font-medium" style={{ borderRadius: 8, background: tab === id ? CD.ink : 'transparent', color: tab === id ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${tab === id ? 'transparent' : CD.line}` }}>{lbl}</button>
             ))}
           </div>
@@ -1296,7 +1300,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
               <p className="mt-3 text-[11px]" style={{ color: CD.faint }}>All amounts converted to CAD at the live spot rate for comparison. Voided records excluded.</p>
             </div>)}
 
-            {tab === 'fees' && (<div>
+            {tab === 'fees' && !earningsHidden && (<div>
               <div className="grid grid-cols-4 gap-2 mb-4">
                 <Kpi label="Fees collected" value={fmtHome(d.fees)} accent={CD.green} />
                 <Kpi label="Est. FX spread" value={fmtHome(d.margin)} accent={CD.green} sub="rate markup" />
@@ -1424,6 +1428,10 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const [modal, setModal] = useState(false);
     const [detailId, setDetailId] = useState(null);
     const [breakdown, setBreakdown] = useState(null);   // 'volume' | 'fees' | null
+    /* The server omits spreadCad when this role cannot read earnings.
+       The sheet would rebuild Fees by teller from each row's fee, so
+       the sheet and its link stay off the screen. */
+    const earningsHidden = rows.some(r => r.earningsWithheld);
     const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
     const [helpOpen, setHelpOpen] = useState(false);
     /* Called after a deal posts and after a reversal. Both move the till on the
@@ -1710,7 +1718,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             neither of them, and a total quietly missing a deal reads as
             complete — docs/ABSENT_FIGURES.md. */}
         <StatCard label="Pay-in volume" value={stats.n ? fmtHome(stats.vol) : '—'} sub={!stats.n ? 'nothing posted in this range' : stats.unvalued ? `${stats.unvalued} deal${stats.unvalued === 1 ? '' : 's'} this book cannot value · view breakdown ›` : 'view breakdown ›'} onClick={() => stats.n && setBreakdown('volume')} />
-        <StatCard label="Fees collected" value={stats.n ? fmtHome(stats.fees) : '—'} sub={stats.n ? 'view earnings ›' : 'nothing posted in this range'} onClick={() => stats.n && setBreakdown('fees')} />
+        <StatCard label="Fees collected" value={stats.n ? fmtHome(stats.fees) : '—'} sub={earningsHidden ? (stats.n ? null : 'nothing posted in this range') : (stats.n ? 'view earnings ›' : 'nothing posted in this range')} onClick={earningsHidden ? undefined : () => stats.n && setBreakdown('fees')} />
         <StatCard label={`Reportable ≥ ${limit.label}`} value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
       </div>
 
@@ -1827,7 +1835,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 
       {modal && <Portal>{React.createElement((window.CDOS && window.CDOS.TxModal) || TxModal, { rows, clients, setClients, setRows, settings, me, log, prefillClient: client, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted: refreshServerLedger, onClose: () => setModal(false), onDone: (id) => { setModal(false); setView('open'); setDetailId(id); } })}</Portal>}
       {detail && <TxDetail key={detail.id} {...{ row: detail, flag: flags[detail.id] || {}, settings, me, can, log, setRows, clients, serverBacked }} onServerReversed={refreshServerLedger} onClose={() => setDetailId(null)} onReceipt={openReceipt} onFileLCTR={onFileLCTR} onOpenClient={(n, ref) => { setDetailId(null); openClientProfile ? openClientProfile(n, ref) : (openLedgerForClient && openLedgerForClient(n)); }} />}
-      {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} onClose={() => setBreakdown(null)} /></Portal>}
+      {breakdown && <Portal><BreakdownModal rows={rows.filter(r => inRange(r.date))} client={client} focus={breakdown} earningsHidden={earningsHidden} onClose={() => setBreakdown(null)} /></Portal>}
     </div>);
   }
 

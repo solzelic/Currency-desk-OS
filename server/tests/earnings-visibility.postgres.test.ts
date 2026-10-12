@@ -14,7 +14,10 @@ const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
 let pool: pg.Pool, app: FastifyInstance, handle: DbHandle;
 const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
-const SHOP = ["earningsHome", "realizedPnlHome", "costOfSaleHome", "spreadCad", "unrealizedPnlHome"];
+const SHOP = [
+  "earningsHome", "realizedPnlHome", "costOfSaleHome", "spreadCad", "unrealizedPnlHome",
+  "costBasisHome", "marketValueHome", "marketUnitHome", "avgCost", "marketMid", "fromMid", "toMid",
+];
 
 async function cookie(staffId: string) {
   const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { staffId, password: DEMO.password } });
@@ -28,7 +31,7 @@ const lacks = (value: unknown, keys: string[]) => {
   for (const key of keys) expect(body).not.toContain(`"${key}"`);
 };
 
-postgres("tellers do not receive fees or earnings", () => {
+postgres("tellers keep the customer fee and do not receive shop earnings", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     const real = await createDb();
@@ -50,7 +53,7 @@ postgres("tellers do not receive fees or earnings", () => {
 
   beforeEach(async () => {
     await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques,ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals,rate_boards,market_rates CASCADE");
-    for (const [staffId, role] of [["j.masri", "administrator"], ["m.costa", "teller"], ["a.singh", "supervisor"]] as const) {
+    for (const [staffId, role] of [["j.masri", "administrator"], ["m.costa", "teller"], ["a.singh", "supervisor"], ["r.haddad", "branch_manager"]] as const) {
       await handle.db.update(schema.staffUsers).set({ role, authorizedBranchIds: [DEMO.branchId] }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:${staffId}`));
     }
     await pool.query("INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING", [DEMO.tenantId]);
@@ -74,6 +77,10 @@ postgres("tellers do not receive fees or earnings", () => {
     );
     await pool.query("INSERT INTO market_rates (id,provider,mids,fetched_at) VALUES ('earn-snap','test','{\"USD\":1.4}',now())");
     await pool.query(
+      "INSERT INTO ledger_rates VALUES ($1,$2,$3,$4,'CAD',1),($1,$2,$3,$4,'USD',0.714285714286)",
+      scope.slice(0, 4),
+    );
+    await pool.query(
       `INSERT INTO rate_boards (id,tenant_id,legal_entity_id,branch_id,buy_margin,sell_margin,board_rows,market_snapshot_id,published_at)
        VALUES ('earn-board',$1,$2,$3,0.02,0.03,'{"USD":{"mid":1.4,"show":true}}','earn-snap',now())`,
       scope.slice(0, 3),
@@ -91,6 +98,8 @@ postgres("tellers do not receive fees or earnings", () => {
       payload: { idempotencyKey: "earn-one", purpose: "Personal travel", sourceOfFunds: "Employment income" },
     });
     expect(posted.statusCode, posted.body).toBe(201);
+    expect(posted.json().spreadCad).toEqual(expect.any(String));
+    expect(posted.json().marketMid).toEqual(expect.any(String));
     const transactionId = posted.json().transactionId as string;
     const cashed = await app.inject({
       method: "POST", url: "/api/ledger/cheques", cookies: owner,
@@ -124,8 +133,9 @@ postgres("tellers do not receive fees or earnings", () => {
     const tellerDeal = tellerTx.transactions.find((row: { transactionId: string }) => row.transactionId === transactionId);
     expect(deal).toMatchObject({ feeCad: "4.00", realizedPnlHome: "103.30" });
     expect(deal.spreadCad).toEqual(expect.any(String));
+    expect(deal.marketMid).toEqual(expect.any(String));
     expect(tellerDeal).toMatchObject({ inputAmount: "1443.30", feeCad: "4.00" });
-    lacks(tellerDeal, ["spreadCad", "costOfSaleHome", "realizedPnlHome"]);
+    lacks(tellerDeal, ["spreadCad", "costOfSaleHome", "realizedPnlHome", "marketMid"]);
 
     const tellerReceipt = await read("m.costa", `/api/ledger/transactions/${transactionId}/receipt`);
     const ownerReceipt = await read("j.masri", `/api/ledger/transactions/${transactionId}/receipt`);
@@ -135,14 +145,84 @@ postgres("tellers do not receive fees or earnings", () => {
     const tellerPosition = await read("m.costa", "/api/ledger/position");
     const ownerPosition = await read("j.masri", "/api/ledger/position");
     expect(JSON.stringify(ownerPosition)).toContain("unrealizedPnlHome");
-    lacks(tellerPosition, ["unrealizedPnlHome"]);
+    expect(JSON.stringify(ownerPosition)).toContain("costBasisHome");
+    expect(JSON.stringify(ownerPosition)).toContain("marketValueHome");
+    const tellerUsd = tellerPosition.currencies.find((row: { currency: string }) => row.currency === "USD");
+    const ownerUsd = ownerPosition.currencies.find((row: { currency: string }) => row.currency === "USD");
+    expect(tellerUsd.quantity).toMatch(/^\d+\.\d{2}$/);
+    expect(tellerUsd.till.quantity).toMatch(/^\d+\.\d{2}$/);
+    lacks(tellerPosition, ["unrealizedPnlHome", "costBasisHome", "marketValueHome", "marketUnitHome", "avgCost"]);
+    expect(ownerUsd.costBasisHome).toEqual(expect.any(String));
+    expect(ownerUsd.marketValueHome).toEqual(expect.any(String));
+    expect(ownerUsd.marketUnitHome).toEqual(expect.any(String));
+    expect(ownerUsd.till.avgCost).toEqual(expect.any(String));
 
     const tellerCheques = await read("m.costa", "/api/ledger/cheques");
     const ownerCheques = await read("j.masri", "/api/ledger/cheques");
     expect(ownerCheques.cheques[0].feeAmount).toBe("35.00");
     expect(tellerCheques.cheques[0]).toMatchObject({ faceAmount: "1000.00", feeAmount: "35.00" });
 
-    const leaked = JSON.stringify({ tellerSummary, tellerTx, tellerReceipt, tellerPosition, tellerCheques });
+    const tellerQuote = await read("m.costa", `/api/quotes/${quote.quoteId}`);
+    const ownerQuote = await read("j.masri", `/api/quotes/${quote.quoteId}`);
+    const managerQuote = await read("r.haddad", `/api/quotes/${quote.quoteId}`);
+    expect(tellerQuote).toMatchObject({ status: "posted", feeCad: "4.00" });
+    lacks(tellerQuote, ["spreadCad", "marketMid", "fromMid", "toMid"]);
+    expect(ownerQuote.spreadCad).toEqual(expect.any(String));
+    expect(ownerQuote.marketMid).toEqual(expect.any(String));
+    expect(managerQuote.spreadCad).toBe(ownerQuote.spreadCad);
+    expect(managerQuote.marketMid).toBe(ownerQuote.marketMid);
+
+    const teller = await cookie("m.costa");
+    const live = (await app.inject({
+      method: "POST", url: "/api/quotes", cookies: teller,
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "200.00", feeCad: "4.00", direction: "customer_buy_foreign" },
+    })).json();
+    expect(live.status).toBe("active");
+    expect(live.spreadCad).toEqual(expect.any(String));
+    const liveRead = await read("m.costa", `/api/quotes/${live.quoteId}`);
+    expect(liveRead).toMatchObject({ status: "active", spreadCad: live.spreadCad, feeCad: "4.00" });
+    const cancelled = await app.inject({ method: "POST", url: `/api/quotes/${live.quoteId}/cancel`, cookies: teller });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json()).toMatchObject({ status: "cancelled", feeCad: "4.00" });
+    lacks(cancelled.json(), ["spreadCad", "marketMid", "fromMid", "toMid"]);
+
+    const managerLive = (await app.inject({
+      method: "POST", url: "/api/quotes", cookies: await cookie("r.haddad"),
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "150.00", feeCad: "4.00", direction: "customer_buy_foreign" },
+    })).json();
+    const managerCancel = await app.inject({
+      method: "POST", url: `/api/quotes/${managerLive.quoteId}/cancel`, cookies: await cookie("r.haddad"),
+    });
+    expect(managerCancel.statusCode, managerCancel.body).toBe(200);
+    expect(managerCancel.json().spreadCad).toBe(managerLive.spreadCad);
+
+    const tellerMade = (await app.inject({
+      method: "POST", url: "/api/quotes", cookies: teller,
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "300.00", feeCad: "4.00", direction: "customer_buy_foreign" },
+    })).json();
+    const tellerPost = await app.inject({
+      method: "POST", url: `/api/quotes/${tellerMade.quoteId}/post`, cookies: teller,
+      payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+    });
+    expect(tellerPost.statusCode, tellerPost.body).toBe(201);
+    expect(tellerPost.json()).toMatchObject({ feeCad: "4.00", quoteId: tellerMade.quoteId });
+    lacks(tellerPost.json(), ["spreadCad", "marketMid", "fromMid", "toMid"]);
+    expect(tellerPost.json().receipt.lines.join("\n")).toContain("Fee paid separately: CAD 4.00");
+    const tellerReplay = await app.inject({
+      method: "POST", url: `/api/quotes/${tellerMade.quoteId}/post`, cookies: teller,
+      payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+    });
+    lacks(tellerReplay.json(), ["spreadCad", "marketMid"]);
+    const ownerReplay = await app.inject({
+      method: "POST", url: `/api/quotes/${tellerMade.quoteId}/post`, cookies: owner,
+      payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+    });
+    expect(ownerReplay.json().spreadCad).toEqual(expect.any(String));
+
+    const leaked = JSON.stringify({
+      tellerSummary, tellerTx, tellerReceipt, tellerPosition, tellerCheques, tellerQuote,
+      tellerPost: tellerPost.json(), tellerCancel: cancelled.json(),
+    });
     lacks(JSON.parse(leaked), SHOP);
     expect(leaked).not.toContain("107.30");
     expect(leaked).not.toContain("103.30");

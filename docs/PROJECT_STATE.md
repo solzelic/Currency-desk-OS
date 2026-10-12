@@ -554,12 +554,21 @@ and leaves off `earningsHome`, `realizedPnlHome`, `costOfSaleHome`,
 the same money on each teller (`feesHome`, `earningsHome`,
 `realizedPnlHome`), and `realizedPnlHome` on each currency. The
 transaction list keeps `feeCad` and leaves off `spreadCad`,
-`costOfSaleHome`, and `realizedPnlHome`. A reprinted receipt still
-prints the fee line. Position leaves off `unrealizedPnlHome`. The
-cheque register keeps `feeAmount`. The role needs `till:close` (close
-the day) or `report:earnings`. A teller has neither. An owner has
-both. A supervisor closes the day and still sees the figures. The
-quote being priced still returns the fee and the spread on that ticket.
+`costOfSaleHome`, `realizedPnlHome`, and `marketMid`. A reprinted
+receipt still prints the fee line. Position leaves off
+`unrealizedPnlHome`, `costBasisHome`, `marketValueHome`, the market
+unit, and the average cost, and it keeps the quantity. The cheque
+register keeps `feeAmount`. A quote that is still being priced keeps
+its fee and its spread. Once that quote is posted, cancelled, or
+expired, the read and the post and cancel acknowledgements leave off
+the spread and the mid. The ledger does not offer a teller the
+earnings sheet, the view-earnings link, or empty spread, revenue, and
+margin cards. The role needs `till:close` (close the day) or
+`report:earnings`. A teller has neither. An owner has both. A
+supervisor and a branch manager close the day and still see the
+figures. An auditor and a compliance officer have `report:earnings`
+and not close-day, because reading the book's take is their job and
+closing the drawer is a different act.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

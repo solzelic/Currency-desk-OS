@@ -159,6 +159,10 @@
       outCcy: transaction.to,
       outAmt: Number(transaction.outputAmount),
       fee: transaction.feeCad == null ? null : Number(transaction.feeCad),
+      /* A missing key is the server withholding the book's take. Null is
+         a deal the book has no figure for. Collapsing the two would let
+         the ledger rebuild a spread the read was not allowed to carry. */
+      earningsWithheld: !Object.prototype.hasOwnProperty.call(transaction, "spreadCad"),
       midRate: transaction.marketMid == null ? null : Number(transaction.marketMid),
       spreadCad: transaction.spreadCad == null ? null : Number(transaction.spreadCad),
       side: transaction.from === "CAD" ? "sell" : "buy",

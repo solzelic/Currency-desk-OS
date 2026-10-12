@@ -1,7 +1,14 @@
 /* Shop earnings, P&L, cost of sale, the booked spread, unrealized
-   P&L, and the per-teller money split. A teller can post a deal.
-   These reads do not hand the book's take back to a role that cannot
-   close the day and cannot read the earnings report.
+   P&L, cost basis, market value, the market mid, and the per-teller
+   money split. A teller can post a deal. These reads do not hand the
+   book's take back to a role that cannot close the day and cannot
+   read the earnings report.
+
+   Cost basis and market value go too. Leaving both, and leaving off
+   only the unrealized gain, is one subtraction. The unit cost and the
+   market unit go with them, because quantity times either one is the
+   same pair of figures. The market mid goes, because the amounts on
+   the deal and the mid the spread was booked against are the spread.
 
    The customer-facing fee stays. The customer was charged it: the
    deal's feeCad, the cheque's feeAmount, the receipt line, and the
@@ -17,6 +24,13 @@ const HIDDEN = new Set([
   "unrealizedPnlHome",
   "costOfSaleHome",
   "spreadCad",
+  "costBasisHome",
+  "marketValueHome",
+  "marketUnitHome",
+  "avgCost",
+  "marketMid",
+  "fromMid",
+  "toMid",
 ]);
 
 export function redactDeskEarnings<T>(role: string, value: T): T {

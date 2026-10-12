@@ -199,17 +199,24 @@ is written down in `ABSENT_FIGURES.md`. The short version: absent, visibly —
 never zero.
 
 Shop earnings, realized and unrealized P&L, cost of sale, the booked
-spread, and the per-teller money split are not part of the answer for a
-role that cannot close the day (`till:close`) and cannot read the earnings
-report (`report:earnings`). A teller has neither. Those fields are left off
-`GET /api/ledger/summary` (including each teller's money, and
+spread, cost basis, market value, the market mid, and the per-teller
+money split are not part of the answer for a role that cannot close the
+day (`till:close`) and cannot read the earnings report
+(`report:earnings`). A teller has neither. An auditor and a compliance
+officer have `report:earnings` without close-day: they read the book's
+take, and closing the drawer is a different act. Those fields are left
+off `GET /api/ledger/summary` (including each teller's money, and
 `realizedPnlHome` on each currency), each row of
 `GET /api/ledger/transactions` (`spreadCad`, `costOfSaleHome`,
-`realizedPnlHome`), and `unrealizedPnlHome` on `GET /api/ledger/position`.
-The customer-facing fee stays: the day's `feesHome`, the deal's `feeCad`,
-the cheque's `feeAmount`, and the fee line on a reprinted receipt. The
-quote a teller is pricing still returns the fee they typed and that quote's
-spread: that is the ticket, not the book.
+`realizedPnlHome`, `marketMid`), and `unrealizedPnlHome`,
+`costBasisHome`, `marketValueHome`, `marketUnitHome`, and `avgCost` on
+`GET /api/ledger/position`. The quantity stays. The customer-facing fee
+stays: the day's `feesHome`, the deal's `feeCad`, the cheque's
+`feeAmount`, and the fee line on a reprinted receipt. The quote a teller
+is pricing still returns the fee they typed and that quote's spread:
+that is the ticket, not the book. A posted, cancelled, or expired quote,
+and the acknowledgement from posting or cancelling one, leave the spread
+and the mid off.
 
 How a jurisdiction's number and a desk's own number relate — which one wins,
 which way "stricter" points, and what the posting gate does when neither can

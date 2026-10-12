@@ -447,9 +447,10 @@ test("the reporting threshold and the date on the ticket are the desk's own", as
 /* ------------------------------------------------------------------
    6. A TELLER'S SCREENS
 
-   The shop's take is left off the teller's reads. A missing key has
-   to render as a dash. The words "undefined" and "NaN" are a figure
-   the screen invented, which is the failure this file exists to catch.
+   The shop's take is left off the teller's reads. The earnings sheet
+   is not on the screen, and neither are empty spread, revenue, or
+   margin cards. The words "undefined" and "NaN" are a figure the
+   screen invented, which is the failure this file exists to catch.
    Reports is not on a cashier's dock. The window is opened directly
    so the sheet still has to render.
    ------------------------------------------------------------------ */
@@ -458,7 +459,15 @@ function noGarbage(text: string) {
   expect(text).not.toMatch(/\bNaN\b/);
 }
 
-test("a teller's ledger and reports render with no undefined or NaN", async ({ page }) => {
+const EARNINGS_BLOCK = /fees by teller|view earnings|est\. fx spread|total revenue|margin %|earnings per transaction|total earned|margin on volume|fx spread/i;
+
+async function shot(page: Page, name: string) {
+  const dir = process.env.EARNINGS_SHOTS;
+  if (!dir) return;
+  await page.screenshot({ path: `${dir}/${name}.png` });
+}
+
+test("a teller's ledger hides earnings and reports render with no undefined or NaN", async ({ page }) => {
   await signInAtDesk(page, "a.singh");
   expect(await ensureOpenSession(page)).toBe("open");
   const topUp = await ensureDrawerHas(page, { CAD: 5000, USD: 2000 });
@@ -467,21 +476,32 @@ test("a teller's ledger and reports render with no undefined or NaN", async ({ p
   expect(deal.ok, `no deal could be posted: ${deal.why}`).toBe(true);
 
   await signInAtDesk(page, "m.costa");
-  await openApp(page, /^Ledger$/);
-  await rendered(page, /Pay-in volume/i);
-  await expect.poll(() => bodyText(page), { timeout: 30_000 }).toMatch(/\d+ records?/);
-  noGarbage(await bodyText(page));
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+    await page.evaluate(() => window.CDOS.openApp("ledger"));
+    await rendered(page, /Pay-in volume/i);
+    await expect.poll(() => bodyText(page), { timeout: 30_000 }).toMatch(/\d+ records?/);
+    const ledgerText = await page.locator(".win.show.active").innerText();
+    noGarbage(ledgerText);
+    expect(ledgerText).not.toMatch(EARNINGS_BLOCK);
+    await expect(page.getByRole("button", { name: /Fees collected/ })).toBeDisabled();
+    await shot(page, `teller-${width}-ledger`);
 
-  await page.getByRole("button", { name: /Fees collected/ }).click();
-  await expect(page.getByText(/Volume & earnings/)).toBeVisible();
-  await page.getByRole("button", { name: "Fees & earnings" }).click();
-  noGarbage(await bodyText(page));
-  await page.mouse.click(8, 8);
+    await page.locator(".win.show.active tbody tr").first().click();
+    const detail = page.locator(".win.show.active");
+    await expect(detail.getByText("Fee on this deal")).toBeVisible();
+    await expect(detail.getByText("Commission / fee")).toBeVisible();
+    const detailText = await detail.innerText();
+    noGarbage(detailText);
+    expect(detailText).not.toMatch(EARNINGS_BLOCK);
+    expect(detailText).not.toMatch(/spot at deal/i);
+    await shot(page, `teller-${width}-deal`);
+    await page.keyboard.press("Escape").catch(() => {});
+    const back = page.getByRole("button", { name: "Back to records" });
+    if (await back.isVisible()) await back.click();
+  }
 
-  await page.locator(".win.show.active tbody tr").first().click();
-  await expect(page.getByText("Earnings on this deal")).toBeVisible();
-  noGarbage(await page.locator(".win.show.active").innerText());
-
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.evaluate(() => window.CDOS.openApp("reports"));
   await rendered(page, /End-of-Day Sign-Off/);
   noGarbage(await page.locator(".win.show.active").innerText());
@@ -495,5 +515,22 @@ test("a teller's ledger and reports render with no undefined or NaN", async ({ p
     noGarbage(await page.locator(".win.show.active").innerText());
     await page.getByRole("button", { name: /All reports/ }).click();
     await rendered(page, /End-of-Day Sign-Off/);
+  }
+
+  await signInAtDesk(page, "j.masri");
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+    await page.evaluate(() => window.CDOS.openApp("ledger"));
+    await rendered(page, /Pay-in volume/i);
+    const openEarnings = page.getByRole("button", { name: /view earnings/i });
+    await expect(openEarnings).toBeEnabled({ timeout: 30_000 });
+    await openEarnings.click();
+    await expect(page.getByText(/Fees by teller/i)).toBeVisible();
+    await expect(page.getByText(/Est\. FX spread/i)).toBeVisible();
+    await expect(page.getByText(/Total revenue/i)).toBeVisible();
+    await expect(page.getByText(/Earnings per transaction/i)).toBeVisible();
+    noGarbage(await bodyText(page));
+    await shot(page, `owner-${width}-earnings`);
+    await page.mouse.click(8, 8);
   }
 });

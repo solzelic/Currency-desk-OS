@@ -2103,6 +2103,10 @@
       outCcy: transaction.to,
       outAmt: Number(transaction.outputAmount),
       fee: transaction.feeCad == null ? null : Number(transaction.feeCad),
+      /* A missing key is the server withholding the book's take. Null is
+         a deal the book has no figure for. Collapsing the two would let
+         the ledger rebuild a spread the read was not allowed to carry. */
+      earningsWithheld: !Object.prototype.hasOwnProperty.call(transaction, "spreadCad"),
       midRate: transaction.marketMid == null ? null : Number(transaction.marketMid),
       spreadCad: transaction.spreadCad == null ? null : Number(transaction.spreadCad),
       side: transaction.from === "CAD" ? "sell" : "buy",
@@ -30149,20 +30153,21 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       onOpenClient: onOpenClient
     }), !isVoid && (() => {
       const flat = row.inCcy === row.outCcy;
+      const withheld = !!row.earningsWithheld;
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] uppercase tracking-widest mb-2",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, "Earnings on this deal"), /*#__PURE__*/React.createElement("div", {
+      }, withheld ? 'Fee on this deal' : 'Earnings on this deal'), /*#__PURE__*/React.createElement("div", {
         className: "p-3",
         style: {
           background: 'var(--cd-panel)',
           border: `1px solid ${CD.line}`,
           borderRadius: 10
         }
-      }, /*#__PURE__*/React.createElement("div", {
+      }, !withheld && /*#__PURE__*/React.createElement("div", {
         className: "grid grid-cols-2 gap-3 mb-1"
       }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
         className: "text-[11px]",
@@ -30190,7 +30195,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         k: flat ? 'Service fee' : 'Commission / fee',
         v: feeCad == null ? '—' : `${fmtHome(feeCad)}${inCad ? `  ·  ${(feeCad / inCad * 100).toFixed(2)}%` : ''}`,
         mono: true
-      }), !flat && /*#__PURE__*/React.createElement(DRow, {
+      }), !withheld && !flat && /*#__PURE__*/React.createElement(DRow, {
         k: "FX spread (rate markup)",
         v: spreadCad > 0 ? `${fmtHome(spreadCad)}  ·  ${spreadPct.toFixed(2)}%` : '—',
         mono: true
@@ -30212,7 +30217,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         style: {
           color: CD.ink
         }
-      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", row.marginOverride.at, row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), /*#__PURE__*/React.createElement("p", {
+      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", row.marginOverride.at, row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), !withheld && /*#__PURE__*/React.createElement("p", {
         className: "mt-1.5 text-[11px]",
         style: {
           color: CD.faint
@@ -30361,9 +30366,10 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     rows,
     client,
     focus,
-    onClose
+    onClose,
+    earningsHidden
   }) {
-    const [tab, setTab] = useState(focus || 'volume');
+    const [tab, setTab] = useState(earningsHidden ? 'volume' : focus || 'volume');
     const d = useMemo(() => {
       const live = rows.filter(r => r.status !== 'void' && (!client || r.customer === client));
       let vol = 0,
@@ -30475,7 +30481,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       c: CD.mute
     }))), /*#__PURE__*/React.createElement("div", {
       className: "flex-none flex gap-1.5 px-5 pt-3"
-    }, [['volume', 'Pay-in volume'], ['fees', 'Fees & earnings']].map(([id, lbl]) => /*#__PURE__*/React.createElement("button", {
+    }, (earningsHidden ? [['volume', 'Pay-in volume']] : [['volume', 'Pay-in volume'], ['fees', 'Fees & earnings']]).map(([id, lbl]) => /*#__PURE__*/React.createElement("button", {
       key: id,
       onClick: () => setTab(id),
       className: "text-sm px-3.5 py-2 font-medium",
@@ -30523,7 +30529,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.faint
       }
-    }, "All amounts converted to CAD at the live spot rate for comparison. Voided records excluded.")), tab === 'fees' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, "All amounts converted to CAD at the live spot rate for comparison. Voided records excluded.")), tab === 'fees' && !earningsHidden && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-4 gap-2 mb-4"
     }, /*#__PURE__*/React.createElement(Kpi, {
       label: "Fees collected",
@@ -31048,6 +31054,10 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     const [modal, setModal] = useState(false);
     const [detailId, setDetailId] = useState(null);
     const [breakdown, setBreakdown] = useState(null); // 'volume' | 'fees' | null
+    /* The server omits spreadCad when this role cannot read earnings.
+       The sheet would rebuild Fees by teller from each row's fee, so
+       the sheet and its link stay off the screen. */
+    const earningsHidden = rows.some(r => r.earningsWithheld);
     const [sort, setSort] = useState({
       key: 'date',
       dir: 'desc'
@@ -31631,8 +31641,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), /*#__PURE__*/React.createElement(StatCard, {
       label: "Fees collected",
       value: stats.n ? fmtHome(stats.fees) : '—',
-      sub: stats.n ? 'view earnings ›' : 'nothing posted in this range',
-      onClick: () => stats.n && setBreakdown('fees')
+      sub: earningsHidden ? stats.n ? null : 'nothing posted in this range' : stats.n ? 'view earnings ›' : 'nothing posted in this range',
+      onClick: earningsHidden ? undefined : () => stats.n && setBreakdown('fees')
     }), /*#__PURE__*/React.createElement(StatCard, {
       label: `Reportable ≥ ${limit.label}`,
       value: stats.openRpt > 0 ? `${stats.openRpt} open` : stats.rpt > 0 ? 'all filed' : '0',
@@ -32202,6 +32212,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rows: rows.filter(r => inRange(r.date)),
       client: client,
       focus: breakdown,
+      earningsHidden: earningsHidden,
       onClose: () => setBreakdown(null)
     })));
   }
