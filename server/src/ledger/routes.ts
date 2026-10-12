@@ -23,7 +23,7 @@ import {
 } from "./threshold-control.js";
 import { CurrencyService } from "./currency-control.js";
 import { BranchLocationService } from "./branch-location.js";
-import { currencyCode } from "./currencies.js";
+import { countProblem, currencyCode } from "./currencies.js";
 import { isRetryable } from "./retry.js";
 import {
   ChequeService,
@@ -109,16 +109,37 @@ const balancesBody = z.object({
 const transactionQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
-/* A count is in the currency's own minor units, checked in the till
-   service. Yen are whole numbers. A dinar has three, and the columns
-   hold two — the service refuses a figure they would have to round,
-   rather than this schema pretending every currency has cents. Two
-   places is what CAD has always sent, and it still matches. */
-const countAmount = z
-  .string()
-  .regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,3})?$/, "Expected a count with at most three decimal places.")
-  .refine((value) => new Decimal(value).gte(0) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
-const tillCounts = byCurrency(countAmount, "count");
+/* A count is in the currency's major units: "189175" yen, "125.005"
+   dinars, "1234.50" dollars. The format check runs here, before
+   Decimal is constructed. A string that fails it is a 400 with a
+   sentence. Parsing a comma or a blank inside refine is how this
+   route used to answer 500 with the library's own text. */
+const tillCounts = z
+  .record(
+    z.string().regex(/^[A-Z]{3}$/, "A currency is a three-letter ISO 4217 code."),
+    z.string({
+      required_error: "Enter the count.",
+      invalid_type_error: "Enter the count as a number like 1234.50.",
+    }),
+  )
+  .superRefine((map, ctx) => {
+    const currencies = Object.keys(map);
+    if (!currencies.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Enter at least one count." });
+      return;
+    }
+    for (const currency of currencies) {
+      const problem = countProblem(String(map[currency] ?? ""), currency);
+      if (problem) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem, path: [currency] });
+      }
+    }
+  });
+const countRefusal = (error: z.ZodError) => {
+  const sentences = [...new Set(error.issues.map((issue) => issue.message).filter(Boolean))];
+  const plain = sentences.filter((sentence) => !/Decimal|Invalid argument/i.test(sentence));
+  return plain.join(" ") || "Enter the count as a number like 1234.50.";
+};
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
@@ -657,7 +678,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   app.post("/api/ledger/till-counts", async (req, reply) => {
     const parsed = countBody.safeParse(req.body);
     if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
+      return reply.code(400).send({ code: "INVALID_REQUEST", message: countRefusal(parsed.error) });
     }
     try {
       const actor = await actorOrReply(req, reply);
@@ -678,7 +699,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   app.post("/api/ledger/till-sessions/:sessionId/close", async (req, reply) => {
     const parsed = closeTillBody.safeParse(req.body);
     if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
+      return reply.code(400).send({ code: "INVALID_REQUEST", message: countRefusal(parsed.error) });
     }
     /* An old tab, still open across the deploy that added the mark,
        posts the close it always posted: counts, and no generation.

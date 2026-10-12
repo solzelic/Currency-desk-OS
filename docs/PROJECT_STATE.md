@@ -548,12 +548,18 @@ authenticated narrative dashboard.
 ## Last reviewed
 
 **2026-10-12**, till close. The count sheet's chips are the currencies
-the till holds. A currency with no bill table is one total, in that
-currency's minor units: a whole number for yen, three decimal places
-for a dinar. The close refuses a missing currency by name ("Count JPY
-before closing.") and refuses a figure the columns would have to
-round. A Canadian drawer's bill rows are unchanged. The phone till
-is not part of this change.
+the till holds. A currency with no bill table is one total, in major
+units: 189175 yen, 125.005 dinars. The field is text. What was typed
+stays typed. A comma, a minus, an exponent, the wrong number of
+places, or an amount over 1000000000 is a sentence, and Close stays
+disabled until it is fixed. The same sentence is a 400 from the
+server. The expected amount is rounded to the currency's places, so
+189174.85 yen is 189175 and an exact count has variance 0. A currency
+with no rate says "No rate" and is left out of the CAD total. The
+places are one table, `os-src/currency-places.js`. "Balanced" is the
+server's word, after it has recorded variance 0 for that text. A
+stale close keeps the figures already entered. A Canadian drawer's
+bill rows are unchanged.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

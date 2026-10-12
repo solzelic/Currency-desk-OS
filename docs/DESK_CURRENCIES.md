@@ -89,9 +89,13 @@ derivable from the two sets alone.
 
 ## Minor units
 
-ISO 4217, in `currencies.ts`, and **not a column** — how many decimal places
-the yen has is a fact about the yen, not about a desk, and a column would be
-a place for a desk to be wrong about it.
+ISO 4217, in `os-src/currency-places.js`, and **not a column** — how many
+decimal places the yen has is a fact about the yen, not about a desk, and a
+column would be a place for a desk to be wrong about it. `currencies.ts`
+reads that file. The count sheet reads that file. `os-src/quote-terms.js`
+(the arithmetic PR #129 shares with the counter) must call `minorUnits`
+from there too. A second copy of the table is how a dinar and a yen
+disagree about what a typed figure means.
 
 | | |
 |---|---|

@@ -3,7 +3,14 @@ import Decimal from "decimal.js";
 import type pg from "pg";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
-import { assertTradeable, LEDGER_SCALE, minorUnitExceptions, minorUnits } from "./currencies.js";
+import {
+  assertTradeable,
+  countProblem,
+  countVariance,
+  expectedAtCount,
+  minorUnitExceptions,
+  storedCount,
+} from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
@@ -65,40 +72,27 @@ const scope = (actor: LedgerActor) => [
 const fixed = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
 
-/* A count, in the currency's own minor units, as a string the columns
-   can store.
+/* A count, in the currency's major units, as a string the columns
+   can store. "189175" yen. "125.005" dinars.
 
-   Yen have no minor unit, so "108252.50" is not a count of yen. A
-   dinar has three, and these columns hold two. Rounding that third
-   place off would be the close dropping cash and calling it balanced.
-   An amount that already fits — a whole yen, or "125.000" dinars —
-   is stored at the column's scale. One that does not fit is refused. */
+   The format check runs before Decimal sees the text. A comma, a
+   minus, an exponent, or a blank is a sentence, not a library error.
+   Yen have no decimals, so "108252.50" is not a count of yen. A dinar
+   has three, and these columns hold two. Rounding that third place
+   off would be the close dropping cash and calling it balanced. An
+   amount that already fits — a whole yen, or "125.000" dinars — is
+   stored at the column's scale. One that does not fit is refused,
+   and the sentence says what to enter instead. */
 function countedAmount(currency: string, raw: string): string {
-  const places = minorUnits(currency);
-  const shape =
-    places === 0
-      ? /^(?:0|[1-9]\d{0,11})(?:\.0{1,2})?$/
-      : new RegExp(`^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,${places}})?$`);
-  if (!shape.test(raw)) {
-    throw new LedgerError(
-      "INVALID_REQUEST",
-      places === 0
-        ? `${currency} is counted in whole units. ${currency} has no minor unit.`
-        : `${currency} is not an amount to ${places} decimal places.`,
-    );
-  }
-  const amount = new Decimal(raw);
-  if (amount.lt(0) || amount.gt("1000000000")) {
-    throw new LedgerError("INVALID_REQUEST", `${currency} is outside the permitted range.`);
-  }
-  const stored = amount.toDecimalPlaces(LEDGER_SCALE);
-  if (!stored.eq(amount)) {
-    throw new LedgerError(
-      "UNSUPPORTED_CURRENCY",
-      `${currency} is written to ${places} decimal places, and this ledger's amounts hold ${LEDGER_SCALE}. Counting ${raw} would drop a place.`,
-    );
-  }
-  return stored.toFixed(LEDGER_SCALE);
+  const problem = countProblem(raw, currency);
+  if (problem) throw new LedgerError("INVALID_REQUEST", problem);
+  return storedCount(raw);
+}
+
+function notHeldSentence(codes: string[]): string {
+  if (codes.length === 1) return `${codes[0]} is not held in this drawer.`;
+  if (codes.length === 2) return `${codes[0]} and ${codes[1]} are not held in this drawer.`;
+  return `${codes.slice(0, -1).join(", ")} and ${codes[codes.length - 1]} are not held in this drawer.`;
 }
 const sessionJson = (row: Record<string, unknown>) => ({
   sessionId: row.session_id,
@@ -433,7 +427,7 @@ export class TillControlService {
           ],
         );
         for (const [currency, stored] of storedCounts) {
-          const expected = fixed(balanceMap.get(currency)!);
+          const expected = expectedAtCount(currency, String(balanceMap.get(currency)));
           await client.query(
             `INSERT INTO ledger_till_counts
               (batch_id,currency,expected_amount,counted_amount,variance_amount)
@@ -443,7 +437,7 @@ export class TillControlService {
               currency,
               expected,
               stored,
-              fixed(new Decimal(stored).minus(expected)),
+              countVariance(stored, expected),
             ],
           );
         }
@@ -551,7 +545,7 @@ export class TillControlService {
         const sentences = [
           !balanceCurrencies.length ? "This till has no balances to close." : "",
           missing.length ? `Count ${missing.join(", ")} before closing.` : "",
-          unexpected.length ? `${unexpected.join(", ")} is not held in this drawer.` : "",
+          unexpected.length ? notHeldSentence(unexpected) : "",
         ].filter(Boolean);
         throw new LedgerError("INCOMPLETE_TILL_COUNT", sentences.join(" "));
       }
@@ -577,7 +571,7 @@ export class TillControlService {
       );
       for (const row of balances) {
         const currency = row.currency.trim() as Currency;
-        const expected = fixed(row.available_amount);
+        const expected = expectedAtCount(currency, String(row.available_amount));
         const counted = storedCounts.get(currency)!;
         await client.query(
           `INSERT INTO ledger_till_counts
@@ -588,7 +582,7 @@ export class TillControlService {
             currency,
             expected,
             counted,
-            fixed(new Decimal(counted).minus(expected)),
+            countVariance(counted, expected),
           ],
         );
         await client.query(

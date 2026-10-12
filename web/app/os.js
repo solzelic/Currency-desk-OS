@@ -2,6 +2,228 @@
    Edit os-src/*.jsx instead, then run: npm run build:os */
 
 
+/* ---- os-src/currency-places.js ---- */
+/* The one decimal-places table.
+
+   ISO 4217 exponents for the currencies this desk can reach. Anything
+   not named here has two places, which is true of most of ISO 4217.
+   Zero is a currency with no decimals at all (yen), not "unknown".
+   Three is a dinar: the count is still in major units (125.005), and
+   the money columns hold two, so a non-zero third place is refused
+   rather than rounded.
+
+   server/src/ledger/currencies.ts reads this file. The count sheet
+   reads it. The quote helper (os-src/quote-terms.js, the arithmetic
+   PR #129 shares with the counter) must call minorUnits from here.
+   A second copy of this table is how a dinar and a yen disagree
+   about what a typed figure means. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  var host = root.CDOS || (root.CDOS = {});
+  host.currencyPlacesTable = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var EXCEPTIONS = {
+    BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
+    PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0,
+    XPF: 0,
+    BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  };
+  /* The drawer columns are numeric(24, 2). A count past this is not
+     a drawer a teller counted. */
+  var CAP = "1000000000";
+
+  function minorUnits(code) {
+    return EXCEPTIONS[String(code || "").toUpperCase()] ?? 2;
+  }
+
+  function canonical(value) {
+    if (value == null) return null;
+    var text = String(value).trim();
+    if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return null;
+    return text;
+  }
+
+  function fracOf(text) {
+    var dot = text.indexOf(".");
+    return dot < 0 ? "" : text.slice(dot + 1);
+  }
+
+  function toScaled(value, scale) {
+    var text = String(value);
+    var neg = text.charAt(0) === "-";
+    if (neg) text = text.slice(1);
+    var parts = text.split(".");
+    var digits = (parts[0] || "0") + (parts[1] || "") + "0".repeat(Math.max(0, scale - (parts[1] || "").length));
+    digits = digits.replace(/^0+(?=\d)/, "");
+    var n = BigInt(digits || "0");
+    return neg ? -n : n;
+  }
+
+  function formatScaled(n, scale) {
+    var neg = n < 0n;
+    var abs = neg ? -n : n;
+    var digits = abs.toString().padStart(scale + 1, "0");
+    var whole = scale ? digits.slice(0, digits.length - scale) : digits;
+    var frac = scale ? digits.slice(digits.length - scale) : "";
+    frac = frac.replace(/0+$/, "");
+    whole = whole.replace(/^0+(?=\d)/, "") || "0";
+    var body = frac ? whole + "." + frac : whole;
+    if (body === "0") return "0";
+    return neg ? "-" + body : body;
+  }
+
+  function sumAmounts(values) {
+    var list = values || [];
+    if (!list.length) return "0";
+    var scale = 0;
+    for (var i = 0; i < list.length; i++) {
+      var text = canonical(list[i]);
+      if (text == null) return null;
+      var frac = fracOf(text.charAt(0) === "-" ? text.slice(1) : text);
+      if (frac.length > scale) scale = frac.length;
+    }
+    var total = 0n;
+    for (var j = 0; j < list.length; j++) total += toScaled(canonical(list[j]), scale);
+    return formatScaled(total, scale);
+  }
+
+  function negate(value) {
+    var text = canonical(value);
+    if (text == null) return null;
+    if (text === "0" || text === "-0") return "0";
+    return text.charAt(0) === "-" ? text.slice(1) : "-" + text;
+  }
+
+  function subtractAmounts(left, right) {
+    var minus = negate(right);
+    if (minus == null) return null;
+    return sumAmounts([left, minus]);
+  }
+
+  function amountsEqual(left, right) {
+    var gap = subtractAmounts(left, right);
+    return gap === "0";
+  }
+
+  function greaterThan(left, right) {
+    var gap = subtractAmounts(left, right);
+    return !!gap && gap !== "0" && gap.charAt(0) !== "-";
+  }
+
+  /* Half up, away from zero, in the currency's own places. The same
+     rule Decimal.ROUND_HALF_UP applies on the server. "189174.85" yen
+     (no decimals) is "189175". */
+  function roundHalfUp(amount, places) {
+    var text = canonical(amount);
+    if (text == null) return null;
+    var neg = text.charAt(0) === "-";
+    var body = neg ? text.slice(1) : text;
+    var parts = body.split(".");
+    var whole = parts[0];
+    var frac = parts[1] || "";
+    var keep = Math.max(0, places);
+    if (frac.length <= keep) return text;
+    var next = frac.charAt(keep);
+    var base = whole + frac.slice(0, keep);
+    var rounded = BigInt(base.replace(/^0+(?=\d)/, "") || "0");
+    if (next >= "5") rounded += 1n;
+    var out = formatScaled(neg ? -rounded : rounded, keep);
+    return out;
+  }
+
+  /* amount / units-per-CAD. A missing or non-positive rate is null.
+     It is not 1. A 1:1 stand-in counts a dong as a dollar. */
+  function cadOf(amount, unitsPerCad) {
+    var left = canonical(amount);
+    var rate = canonical(unitsPerCad);
+    if (left == null || rate == null) return null;
+    if (rate === "0" || /^-?0(?:\.0+)?$/.test(rate)) return null;
+    if (rate.charAt(0) === "-") return null;
+    var scale = Math.max(fracOf(left).length, fracOf(rate).length, 2);
+    var num = toScaled(left, scale);
+    var den = toScaled(rate, scale);
+    if (den === 0n) return null;
+    var scaled = num * (10n ** BigInt(scale));
+    var neg = scaled < 0n;
+    var abs = neg ? -scaled : scaled;
+    var denAbs = den < 0n ? -den : den;
+    var q = abs / denAbs;
+    var rem = abs % denAbs;
+    if (rem * 2n >= denAbs) q += 1n;
+    return formatScaled(neg ? -q : q, scale);
+  }
+
+  /* Rows are { amount, unitsPerCad }. A row with no rate is left out.
+     The total of the rows that have a rate is what the drawer can say
+     in Canadian dollars. Null when none of them can. */
+  function cadTotal(rows) {
+    var parts = [];
+    var list = rows || [];
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i];
+      if (!row) continue;
+      var cad = cadOf(row.amount, row.unitsPerCad);
+      if (cad == null) continue;
+      parts.push(cad);
+    }
+    if (!parts.length) return null;
+    return sumAmounts(parts);
+  }
+
+  /* What is wrong with a typed count, as a sentence the cashier can
+     act on. Empty when the text is a count in this currency's major
+     units. The text is not rewritten: a comma, a minus, or an exponent
+     stays on screen and this says so. Decimal is not called. A string
+     that fails here must not be parsed. */
+  function countProblem(raw, currency) {
+    var code = String(currency || "").toUpperCase();
+    var text = raw == null ? "" : String(raw);
+    if (text === "") return "Enter the " + code + " you counted.";
+    if (text.indexOf(",") >= 0) return "Enter " + code + " without commas. Type 1234.50.";
+    if (text.indexOf("-") >= 0) return "Enter the " + code + " you counted as zero or more. A minus is not a count.";
+    if (/[eE]/.test(text)) return "Enter " + code + " in digits. An exponent is not a count.";
+    if (text !== text.trim() || !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) {
+      return code + " count must be a number like 1234.50.";
+    }
+    var places = minorUnits(code);
+    var frac = fracOf(text);
+    if (places === 0) {
+      if (frac && !/^0{1,2}$/.test(frac)) return code + " has no decimals. Enter a whole number.";
+    } else if (frac.length > places) {
+      var sample = places === 3 ? "125.005" : (places === 2 ? "1234.50" : "1234." + "0".repeat(places));
+      return code + " takes " + places + " decimal places. Enter a figure like " + sample + ".";
+    }
+    if (greaterThan(text, CAP)) return "Enter a " + code + " count of " + CAP + " or less.";
+    var significant = frac.replace(/0+$/, "");
+    if (significant.length > 2) {
+      /* Half-up would turn 125.005 into 125.01. The place that does
+         not fit is noted, not added. Truncate toward zero. */
+      var truncated = text.split(".")[0] + "." + (frac + "00").slice(0, 2);
+      truncated = truncated.replace(/0+$/, "").replace(/\.$/, "");
+      if (truncated.indexOf(".") < 0) truncated = text.split(".")[0] + ".00";
+      else if (fracOf(truncated).length < 2) truncated = truncated + "0".repeat(2 - fracOf(truncated).length);
+      return "Counting " + text + " " + code + " would drop a place. Enter " + truncated + " and note the rest with the owner.";
+    }
+    return "";
+  }
+
+  return {
+    EXCEPTIONS: EXCEPTIONS,
+    CAP: CAP,
+    minorUnits: minorUnits,
+    canonical: canonical,
+    sumAmounts: sumAmounts,
+    subtractAmounts: subtractAmounts,
+    amountsEqual: amountsEqual,
+    roundHalfUp: roundHalfUp,
+    cadOf: cadOf,
+    cadTotal: cadTotal,
+    countProblem: countProblem,
+  };
+});
+
+
 /* ---- os-src/cdos-base.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — base layer
@@ -555,8 +777,13 @@
      ============================================================ */
   let _currencies = null;
   const deskCurrencies = () => _currencies;
-  /** How many decimal places this currency is actually paid in. */
+  /** How many decimal places this currency is actually paid in.
+      The shared table in currency-places.js is the source. The
+      jurisdiction payload names the same exceptions; it is not a
+      second table. */
   const currencyPlaces = code => {
+    const table = window.CDOS && window.CDOS.currencyPlacesTable;
+    if (table && typeof table.minorUnits === 'function') return table.minorUnits(code);
     const known = _currencies && _currencies.minorUnits;
     const stated = known && known[String(code || '').toUpperCase()];
     return typeof stated === 'number' ? stated : 2;
@@ -2218,8 +2445,9 @@
             balances: results[0].balances || {},
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             /* Exceptions only: yen is 0, a dinar is 3, and a missing
-               key is the ordinary two. The count sheet must not keep
-               a second copy of that table. */
+               key is the ordinary two. The places themselves live in
+               os-src/currency-places.js. This payload is not a second
+               copy of that table. */
             minorUnits: results[0].minorUnits || {},
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
@@ -13027,7 +13255,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
   /* Bill tables. Not the list of currencies a till may hold — that
      list is the till's balances. A code with no row here is counted
-     as one total, in that currency's own minor units. */
+     as one total, in that currency's major units. */
   const DEN = {
     CAD: [[100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [2, 'coin'], [1, 'coin'], [0.25, 'coin'], [0.10, 'coin'], [0.05, 'coin']],
     USD: [[100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [1, 'bill'], [0.25, 'coin'], [0.10, 'coin'], [0.05, 'coin'], [0.01, 'coin']],
@@ -13040,19 +13268,29 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     AED: [[1000, 'bill'], [500, 'bill'], [200, 'bill'], [100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [1, 'coin'], [0.5, 'coin'], [0.25, 'coin']]
   };
   const CCYS = Object.keys(DEN);
-  /* A typed total, limited to the places that currency is paid in.
-     Two-place currencies are left alone: the field they already have
-     accepts what the teller types, and clamping it would change the
-     digits on screen for CAD. Yen cannot take a decimal. A dinar
-     stops at the third place. */
-  const clampCount = (raw, places) => {
-    const cleaned = String(raw).replace(/[^0-9.]/g, '');
-    if (places <= 0) return cleaned.split('.')[0];
-    const dot = cleaned.indexOf('.');
-    if (dot < 0) return cleaned;
-    return cleaned.slice(0, dot + 1 + places);
-  };
+  /* What the cashier typed, unchanged. A comma, a minus, or an
+     exponent stays in the field and the sentence under it says why
+     Close is disabled. The wire value is that same string. */
+  const placesTable = () => window.CDOS.currencyPlacesTable;
   const countPlaceholder = places => places <= 0 ? '0' : '0.' + '0'.repeat(places);
+  const clock12 = (ms, withSeconds) => {
+    if (!ms) return '';
+    return new Date(ms).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: withSeconds ? '2-digit' : undefined,
+      hour12: true
+    });
+  };
+  const dated12 = ms => {
+    if (!ms) return '';
+    const date = new Date(ms);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    }) + ', ' + clock12(date.getTime(), true);
+  };
   const flagOf = c => {
     try {
       return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || '';
@@ -13096,17 +13334,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   };
   const SHIFT_KEY = 'cdos_till_operator_v1',
     HANDOFF_KEY = 'cdos_till_handoffs_v1';
-  const shiftStamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  const shiftStamp = () => {
+    const now = new Date();
+    const day = now.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    return day + ', ' + clock12(now.getTime(), true);
+  };
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = id => String(id || '').split(':').pop() || '—';
-  const clockOf = ms => ms ? new Date(ms).toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }) : '';
+  const clockOf = ms => clock12(ms, false);
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
       `seedHistory()` stood here. On first open of the Cash Drawer it wrote
@@ -13607,11 +13847,38 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        home currency IS the Canadian dollar. Elsewhere there is no total to
        show and the screen says which currencies it is holding instead. */
     const canTotal = homeCcy === 'CAD';
-    const homeOf = (amt, ccy) => !homeCcy ? null : ccy === homeCcy ? +amt || 0 : canTotal ? (+amt || 0) / (crossRate('CAD', ccy) || 1) : null;
-    const totalHome = parts => {
-      const values = parts.map(([amt, ccy]) => homeOf(amt, ccy));
-      return values.length && values.every(v => v != null) ? values.reduce((s, v) => s + v, 0) : null;
+    /* Units of `ccy` per 1 CAD. Missing, NaN, or zero is no rate.
+       It is not 1 — a dong is not a dollar. */
+    const unitsPerCad = ccy => {
+      if (!canTotal || !ccy) return null;
+      if (ccy === 'CAD') return '1';
+      const rate = crossRate('CAD', ccy);
+      if (typeof rate === 'number' && isFinite(rate) && rate > 0) return String(rate);
+      return null;
     };
+    const homeText = (amt, ccy) => {
+      if (!homeCcy || amt == null || amt === '') return null;
+      const table = placesTable();
+      if (!table) return null;
+      if (ccy === homeCcy) return table.canonical(amt);
+      if (!canTotal) return null;
+      return table.cadOf(amt, unitsPerCad(ccy));
+    };
+    const homeOf = (amt, ccy) => homeText(amt, ccy);
+    /* Currencies with no rate are left out. The total is the ones
+       that have a rate. Null only when none of them do. */
+    const totalHome = parts => {
+      const table = placesTable();
+      if (!table) return null;
+      const values = [];
+      parts.forEach(([amt, ccy]) => {
+        const text = homeText(amt, ccy);
+        if (text != null) values.push(text);
+      });
+      if (!values.length) return null;
+      return table.sumAmounts(values);
+    };
+    const noRate = ccy => !!(ccy && ccy !== homeCcy && canTotal && unitsPerCad(ccy) == null);
     /* A total this screen cannot produce, said once. */
     const fmtHome = v => v == null ? '—' : fmt(v, homeCcy);
     const [dayBook, setDayBook] = useState({
@@ -13650,7 +13917,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const at = new Date(record.countedAt).getTime();
         nextAt[currency] = at;
         nextSaved[currency] = {
-          amt: Number(record.counted),
+          amt: String(record.counted),
+          variance: String(record.variance),
           ts: at,
           by: personOf(record.actorId)
         };
@@ -14140,28 +14408,69 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const d = Math.floor(h / 24);
       return `${d} day${d > 1 ? 's' : ''} ago`;
     };
-    const atLabel = ts => ts ? new Date(ts).toLocaleTimeString('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }) : null;
-    // total held per currency — quick-entered total overrides the denomination count
-    const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
-    const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
-    /* A total of zero is a count. The old test was "greater than zero",
-       so a drawer the ledger holds at zero could never be closed: the
-       button waited for a chip the teller had already filled with 0.
-       A blank field is still not a count. */
-    const isCounted = c => ccyMode(c) === 'total' ? quick[c] != null && String(quick[c]).trim() !== '' && Number.isFinite(parseFloat(quick[c])) && parseFloat(quick[c]) >= 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
-    const placesOf = c => {
-      if (typeof heldPlaces[c] === 'number') return heldPlaces[c];
-      return window.CDOS.currencyPlaces ? window.CDOS.currencyPlaces(c) : 2;
+    const atLabel = ts => clock12(ts, false);
+    // total held per currency — quick-entered total overrides the denomination count.
+    // The sum is decimal text. 0.1 + 0.2 is "0.3", not a binary float.
+    const denTotal = c => {
+      const table = placesTable();
+      const parts = [];
+      (DEN[c] || []).forEach(([v], i) => {
+        const n = parseInt((counts[c] || {})[i], 10) || 0;
+        if (!n || !table) return;
+        for (let k = 0; k < n; k++) parts.push(String(v));
+      });
+      return table ? table.sumAmounts(parts) || '0' : '0';
     };
-    /* What the close and the saved count send. Two places for CAD, so
-       the payload of a dollar count does not change. Whole units for
-       yen. Three places for a dinar, which the server keeps only when
-       that third place is zero. */
-    const wireAmount = c => ccyTotal(c).toFixed(placesOf(c));
+    const ccyTotal = c => ccyMode(c) === 'total' ? String(quick[c] ?? '') : denTotal(c);
+    const placesOf = c => placesTable() ? placesTable().minorUnits(c) : window.CDOS.currencyPlaces ? window.CDOS.currencyPlaces(c) : 2;
+    /* Empty when the typed text is a count. The sentence is what the
+       cashier does next. Close stays disabled while one is showing. */
+    const countError = c => {
+      if (ccyMode(c) !== 'total') return '';
+      const raw = quick[c];
+      if (raw == null || String(raw) === '') return '';
+      const table = placesTable();
+      return table ? table.countProblem(String(raw), c) || '' : '';
+    };
+    /* A total of zero is a count. A blank field is not. A field with
+       a comma, a minus, an exponent, or the wrong number of places is
+       not a count either — Close stays disabled and the sentence says
+       why. The digits on screen are the ones that were typed. */
+    const isCounted = c => ccyMode(c) === 'total' ? quick[c] != null && String(quick[c]) !== '' && !countError(c) : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
+    /* What the close and the saved count send. The string the cashier
+       typed, not a float rounded with toFixed. */
+    const wireAmount = c => ccyTotal(c);
+    const expectedCount = c => {
+      const raw = expectedOf(c);
+      const table = placesTable();
+      if (raw == null || !table) return raw;
+      return table.roundHalfUp(String(raw), placesOf(c));
+    };
+    /* "Balanced" is the server's word. A local subtraction that lands
+       on zero, including one the columns will refuse, does not say it. */
+    const confirmedBalance = c => {
+      const saved = lastSaved[c];
+      const table = placesTable();
+      if (!saved || saved.variance == null || !table || !isCounted(c)) return false;
+      return table.amountsEqual(wireAmount(c), saved.amt) && table.amountsEqual(String(saved.variance), '0');
+    };
+    const gapLabel = c => {
+      if (!isCounted(c)) return '';
+      if (confirmedBalance(c)) return 'balanced';
+      const table = placesTable();
+      const expected = expectedCount(c);
+      if (!table || expected == null) return '';
+      const gap = table.subtractAmounts(wireAmount(c), expected);
+      if (gap == null || gap === '0') return '';
+      return gap.charAt(0) === '-' ? `${gap.slice(1)} short` : `+${gap} over`;
+    };
+    const countHint = c => {
+      if (DEN[c]) return `Skip the breakdown — just enter the total ${c} you counted in the drawer.`;
+      const places = placesOf(c);
+      if (places === 0) return `Enter the total ${c} you counted. ${c} has no decimals. Enter a whole number.`;
+      if (places === 3) return `Enter the total ${c} you counted, in major units, to 3 decimal places. 125.005 is five fils.`;
+      return `Enter the total ${c} you counted, to ${places} decimal places.`;
+    };
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
     // an untouched currency would be written back at whatever we sent.
@@ -14201,7 +14510,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        a desk running with no ledger at all, both have no expected float —
        and a count sheet that prints 0.00 there invites a teller to write a
        variance against a number nobody stood behind. See ABSENT_FIGURES.md. */
-    const expectedOf = c => serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : null;
+    const expectedOf = c => serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? String(serverBalances[c]) : null;
     // reveal + read out the expected float (audible cue for a blind / hands-busy count)
     const announceExpected = c => {
       try {
@@ -14259,11 +14568,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const bookDate = serverSession && serverSession.businessDate || window.CDOS.businessDate();
       const snap = {
         byCcy,
-        grand: grandLocal == null ? null : Math.round(grandLocal),
+        grand: grandLocal == null ? null : Math.round(Number(grandLocal)),
         currency: homeCcy || null,
-        at: new Date().toLocaleString('en-CA', {
-          hour12: false
-        }).replace(',', ''),
+        at: shiftStamp(),
         by: me.name,
         denoms: JSON.parse(JSON.stringify(counts))
       };
@@ -14340,9 +14647,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        Locally it stays the old derived list. */
     const reconCcys = serverBacked ? serverCcys : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || c === homeCcy);
     const recon = reconCcys.map(c => {
-      const expected = expectedOf(c);
+      const rawExpected = expectedOf(c);
+      const table = placesTable();
+      /* 189174.85 yen is counted against 189175. The column still
+         holds the unrounded book until the close writes the count. */
+      const expected = rawExpected == null || !table ? rawExpected : table.roundHalfUp(String(rawExpected), placesOf(c));
       const counted = countedCcys.includes(c) ? ccyTotal(c) : null;
-      const variance = counted == null ? null : counted - expected;
+      const variance = counted == null || expected == null || !table ? null : table.subtractAmounts(counted, expected);
       return {
         c,
         expected,
@@ -14366,6 +14677,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
+    /* A bad figure is not a blank. The sentence is the reason Close
+       stays disabled, and it says what to type instead. */
+    const countProblems = chipCcys.map(c => countError(c)).filter(Boolean);
+    /* Balanced is the server's variance, after a save or a close, for
+       the same text that is on the sheet. A local gap of zero is not
+       that word. */
+    const confirmedAll = recon.length > 0 && recon.every(r => confirmedBalance(r.c));
+    const showGap = gap => {
+      if (gap == null || gap === '') return '—';
+      const text = String(gap);
+      if (text === '0' || text === '-0') return '0';
+      return text.charAt(0) === '-' ? text : '+' + text;
+    };
+    const gapTone = r => r.variance == null ? CD.mute : confirmedBalance(r.c) ? CD.green : offOf(r) ? CD.flag : CD.ink;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     /* Cross-currency totals for the reconcile footer. Null where any row
@@ -14397,8 +14722,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         ccys: recon.length,
         counted: countedN,
         offCount: offRows.length,
-        offSum: offSumHome == null ? null : Math.round(offSumHome),
-        grand: grandHome == null ? null : Math.round(grandHome),
+        offSum: offSumHome == null ? null : Math.round(Number(offSumHome)),
+        grand: grandHome == null ? null : Math.round(Number(grandHome)),
         earnedHome,
         earnedCurrency: book && book.homeCurrency || homeCcy || null,
         earnedWhy: book ? earnedHome == null ? 'nothing posted on this trading day' : null : dayBook.error || 'the ledger could not be reached',
@@ -14448,18 +14773,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const message = error.message || 'The server rejected the till close.';
         setSessionErr(message);
         log && log('Day close failed', message);
-        /* The count was of a drawer that has since moved. Read the book
-           again and drop the figures, so the next close is a new count
-           and not the same one sent against the new mark. */
+        /* Money moved. The figures already typed stay on the sheet.
+           Drop the pin and take the new mark, so the next close is
+           against the drawer as it is now. */
         if (error.code === 'TILL_COUNT_STALE') {
           try {
-            /* Drop the pin first. Reading the book while it is still
-               stored would put the old mark back, and the next count
-               would close against the drawer that just moved. */
-            clearAllCounts();
+            /* The figures already entered stay. Wiping them made the
+               cashier count every currency again, including the ones
+               that had not moved. Drop the pin and read the new mark
+               so the next close is against the drawer as it is now. */
+            dropCountMark();
             const fresh = await window.CDOS.Backend.loadTill();
-            applyBook(fresh);
-            applySession(fresh);
+            setServerBalances(fresh && fresh.balances || {});
+            setHeldPlaces(fresh && fresh.minorUnits || {});
+            setBalanceGeneration(fresh && fresh.balanceGeneration != null ? String(fresh.balanceGeneration) : null);
+            setServerSession(fresh && fresh.session || null);
           } catch (refreshError) {
             setServerBalanceError(refreshError.message || 'Server balances unavailable');
           }
@@ -14713,7 +15041,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const _tRec = (_ab && _ab.tills || []).find(t => t.id === (station && station.tillId));
       // server-backed, the drawer holds what the LEDGER says it holds —
       // the local rail figure is a demo store and would quietly disagree
-      const _tc = serverBacked ? serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null : _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
+      const _tc = serverBacked ? serverBalances ? totalHome(serverCcys.map(c => [serverBalances[c], c])) : null : _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
       return /*#__PURE__*/React.createElement(React.Fragment, null, _tc != null && /*#__PURE__*/React.createElement("span", {
         className: "till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]",
         style: {
@@ -14922,13 +15250,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 13,
       c: CD.flag
     }), /*#__PURE__*/React.createElement("span", {
-      className: "flex-1 min-w-0"
+      className: "flex-1 min-w-0 text-[13px]"
     }, sessionErr || serverBalanceError), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         setSessionErr('');
-        refreshTill().catch(error => setServerBalanceError(error.message || 'Server balances unavailable'));
+        if (!serverBacked || !window.CDOS.Backend) return;
+        /* A retry reads the book. It does not replace what was
+           typed — a stale refusal had already asked for another
+           close of these same figures. */
+        window.CDOS.Backend.loadTill().then(fresh => {
+          setServerBalances(fresh && fresh.balances || {});
+          setHeldPlaces(fresh && fresh.minorUnits || {});
+          setServerSession(fresh && fresh.session || null);
+          const pinned = readCountMark();
+          setBalanceGeneration(pinned != null ? pinned : fresh && fresh.balanceGeneration != null ? String(fresh.balanceGeneration) : null);
+          setServerBalanceError('');
+        }).catch(error => setServerBalanceError(error.message || 'Server balances unavailable'));
       },
-      className: "flex-none text-[11px] font-semibold px-2.5 py-1",
+      className: "flex-none text-[13px] font-semibold px-2.5 py-1",
       style: {
         border: `1px solid ${CD.flag}`,
         borderRadius: 7,
@@ -15060,8 +15399,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       return /*#__PURE__*/React.createElement("button", {
         key: c,
         onClick: () => setCcy(c),
-        className: "till-chip flex items-center gap-1.5 px-2.5 py-1.5 text-xs",
+        className: "till-chip flex items-center gap-1.5 px-3 text-xs",
         style: {
+          minHeight: 44,
           borderRadius: 8,
           border: `1px solid ${on ? CD.ink : CD.line}`,
           background: on ? CD.ink : CD.panel,
@@ -15096,8 +15436,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         ...o,
         [ccy]: m
       })),
-      className: "text-[11.5px] px-3 py-1.5",
+      className: "till-mode text-[13px] px-3",
       style: {
+        minHeight: 44,
         background: ccyMode(ccy) === m ? CD.ink : 'transparent',
         color: ccyMode(ccy) === m ? 'var(--cd-on-ink)' : CD.mute,
         fontFamily: 'Space Mono, monospace'
@@ -15117,12 +15458,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       "data-tour": "till-count",
       className: "flex items-center justify-between mb-3"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px] px-3 py-1.5",
+      className: "text-[13px]",
       style: {
-        background: CD.ink,
-        color: 'var(--cd-on-ink)',
-        fontFamily: 'Space Mono, monospace',
-        borderRadius: 8
+        color: CD.ink
       }
     }, "Enter total"), isCounted(ccy) && /*#__PURE__*/React.createElement("button", {
       onClick: () => clearCount(ccy),
@@ -15131,55 +15469,73 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "Clear ", ccy)), ccyMode(ccy) === 'total' ? /*#__PURE__*/React.createElement("div", {
-      className: "p-4",
+      className: "till-total-card p-4",
       style: {
         background: CD.panel,
         border: `1px solid ${CD.line}`,
-        borderRadius: 12
+        borderRadius: 12,
+        maxWidth: '100%',
+        minWidth: 0
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mb-2",
+      className: "text-[13px] mb-2",
       style: {
         color: CD.mute
       }
-    }, DEN[ccy] ? `Skip the breakdown — just enter the total ${ccy} you counted in the drawer.` : placesOf(ccy) === 0 ? `Enter the total ${ccy} you counted. ${ccy} has no minor unit, so this is a whole number.` : `Enter the total ${ccy} you counted, to ${placesOf(ccy)} decimal places.`), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
+    }, countHint(ccy)), /*#__PURE__*/React.createElement("div", {
+      className: "till-total-box flex items-center min-w-0",
       style: {
         border: `1px solid ${CD.ink}`,
         borderRadius: 10,
-        maxWidth: 340
+        maxWidth: '100%',
+        width: '100%'
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: "px-3 text-sm",
+      className: "px-3 text-sm flex-none",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace',
         borderRight: `1px solid ${CD.line}`
       }
     }, ccy), /*#__PURE__*/React.createElement("input", {
-      type: "number",
+      type: "text",
+      inputMode: "decimal",
+      autoComplete: "off",
       autoFocus: true,
       value: quick[ccy] ?? '',
       onChange: e => {
-        const places = placesOf(ccy);
         setQuick(o => ({
           ...o,
-          [ccy]: places === 2 ? e.target.value : clampCount(e.target.value, places)
+          [ccy]: e.target.value
         }));
         stampCount(ccy);
       },
-      placeholder: placesOf(ccy) === 2 ? '0.00' : countPlaceholder(placesOf(ccy)),
-      className: "flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none",
+      placeholder: countPlaceholder(placesOf(ccy)),
+      "aria-invalid": countError(ccy) ? 'true' : undefined,
+      className: "till-total-input flex-1 min-w-0 px-3 text-2xl font-bold text-right outline-none",
       style: {
         fontVariantNumeric: 'tabular-nums',
-        fontFamily: 'Space Mono, monospace'
+        fontFamily: 'Space Mono, monospace',
+        minWidth: 0,
+        width: 0,
+        minHeight: 44
       }
-    })), ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && /*#__PURE__*/React.createElement("div", {
-      className: "mt-2 text-[12px]",
+    })), countError(ccy) && /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[13px]",
+      style: {
+        color: CD.flag
+      }
+    }, countError(ccy)), ccy !== homeCcy && isCounted(ccy) && (noRate(ccy) ? /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[13px]",
       style: {
         color: CD.mute
       }
-    }, "\u2248 ", fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy))) : /*#__PURE__*/React.createElement("div", {
+    }, "No rate") : homeOf(wireAmount(ccy), ccy) != null && /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[13px]",
+      style: {
+        color: CD.mute
+      }
+    }, "\u2248 ", fmt(homeOf(wireAmount(ccy), ccy), homeCcy)))) : /*#__PURE__*/React.createElement("div", {
       className: "grid md:grid-cols-2 gap-x-5 gap-y-0"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1 mt-1",
@@ -15241,7 +15597,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("input", {
       type: "text",
       inputMode: "decimal",
-      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : num(ccyTotal(ccy)),
+      autoComplete: "off",
+      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : ccyTotal(ccy),
       readOnly: ccyMode(ccy) !== 'total',
       onFocus: () => {
         if (ccyMode(ccy) !== 'total') {
@@ -15251,22 +15608,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           }));
           setQuick(o => ({
             ...o,
-            [ccy]: String(denTotal(ccy) || '')
+            [ccy]: denTotal(ccy)
           }));
         }
       },
       onChange: e => {
-        const raw = e.target.value.replace(/[^0-9.]/g, '');
-        const places = placesOf(ccy);
         setQuick(o => ({
           ...o,
-          [ccy]: places === 2 ? raw : clampCount(raw, places)
+          [ccy]: e.target.value
         }));
         stampCount(ccy);
       },
       className: "min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
       style: {
-        width: 150,
+        width: '100%',
+        maxWidth: '100%',
         fontVariantNumeric: 'tabular-nums',
         fontFamily: 'Space Mono, monospace',
         color: CD.ink,
@@ -15303,23 +15659,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         transition: 'filter .15s',
         userSelect: 'none'
       }
-    }, num(expectedOf(ccy)), " ", ccy), isCounted(ccy) && (() => {
-      const v = ccyTotal(ccy) - expectedOf(ccy);
-      const off = Math.abs(v) > 0.005;
-      return /*#__PURE__*/React.createElement("b", {
-        style: {
-          color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
-          fontFamily: 'Space Mono, monospace',
-          filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
-          transition: 'filter .15s',
-          userSelect: 'none'
-        }
-      }, off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
-    })(), /*#__PURE__*/React.createElement(Ic, {
+    }, expectedCount(ccy) == null ? '—' : expectedCount(ccy), " ", ccy), gapLabel(ccy) && /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: revealExp[ccy] ? gapLabel(ccy) === 'balanced' ? CD.green : CD.flag : CD.faint,
+        fontFamily: 'Space Mono, monospace',
+        filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
+        transition: 'filter .15s',
+        userSelect: 'none'
+      }
+    }, gapLabel(ccy) === 'balanced' ? '\u2713 balanced' : gapLabel(ccy)), /*#__PURE__*/React.createElement(Ic, {
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
       c: CD.faint
-    })), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), /*#__PURE__*/React.createElement("div", {
+    })), ccy !== homeCcy && isCounted(ccy) && (noRate(ccy) ? /*#__PURE__*/React.createElement("span", null, "\xB7 No rate") : homeOf(wireAmount(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(wireAmount(ccy), ccy), homeCcy)))), /*#__PURE__*/React.createElement("div", {
       className: "till-counted-when text-[11px] mt-1",
       style: {
         color: CD.faint
@@ -15368,7 +15720,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 15,
       c: "var(--cd-on-ink)"
     }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
-      className: "till-count-hint text-[10.5px] py-2",
+      className: "till-count-hint text-[13px] py-2",
       style: {
         color: CD.faint
       }
@@ -15409,9 +15761,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: '#3a7a56'
       }
-    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? new Date(serverSession.closedAt).toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '') : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
+    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? dated12(serverSession.closedAt) : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -15681,9 +16031,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
-          color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
+          color: gapTone(r)
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, showGap(r.variance)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
@@ -15746,17 +16096,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: CD.faint
     }), " Closing the day isn\u2019t in your role \u2014 the owner enables it in Settings \u203A Permissions."), canCloseDay && closeBlocked && /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+      className: "text-[13px]",
       style: {
-        color: serverBalanceError ? CD.flag : CD.mute
+        color: countProblems.length || serverBalanceError ? CD.flag : CD.mute
       }
-    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing — the close writes your count back as the balance`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+    }, countProblems[0] || (!serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing — the close writes your count back as the balance`)), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
+      className: "text-[13px]",
       style: {
         color: CD.flag
       }
-    }, offRows.length, " drawer(s) off"), canCloseDay && offRows.length === 0 && countedN > 0 && /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+    }, offRows.length, " drawer(s) off"), canCloseDay && confirmedAll && /*#__PURE__*/React.createElement("span", {
+      className: "text-[13px]",
       style: {
         color: CD.green
       }
@@ -16201,10 +16551,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         className: "py-1.5 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
-          color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag,
+          color: gapTone(r),
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, showGap(r.variance)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`

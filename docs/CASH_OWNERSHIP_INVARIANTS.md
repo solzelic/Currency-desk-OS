@@ -104,18 +104,28 @@ the daily close overwrites the evidence that they did.
   that names a currency the drawer does not hold is refused too, and
   that code is named; it is not dropped. The count sheet's chips are
   those holdings, not a fixed bill table. A currency with no bill table
-  is one total, in that currency's minor units (a whole yen; three
-  places for a dinar). An amount the columns cannot store without
-  rounding is refused — "Counting 125.001 would drop a place." — and
-  the drawer is left as it stands. The close also names the
+  is one total, in that currency's major units (189175 yen; 125.005
+  dinars). The places are the one table in `os-src/currency-places.js`.
+  The expected amount is rounded to those places before the variance,
+  so 189174.85 yen is counted against 189175 and an exact count has
+  variance 0. A figure the columns cannot store without dropping a
+  place is refused — "Counting 125.005 KWD would drop a place. Enter
+  125.00 and note the rest with the owner." — and the drawer is left
+  as it stands. A comma, a minus, an exponent, a blank, or an amount
+  over 1000000000 is a 400 with a sentence, and the text the cashier
+  typed is left on the sheet. A currency with no rate is shown as
+  "No rate" and left out of the Canadian total. It is not valued 1:1.
+  The word balanced waits until the server has recorded a variance of
+  zero for the same text. The close also names the
   mark the count was taken against. The screen pins that mark when the
   first figure is entered and keeps it until close or clear, including
   across a refresh. If money has moved since that mark, the close is
   refused — "Money moved since you counted. Count again." — and the
-  drawer is left as it stands. The screen reads the book again and
-  drops the pin, so the next count starts on the new mark. A close
-  that names no mark (a tab opened before the mark existed) is refused
-  with "The desk was updated. Reload, then count again."
+  drawer is left as it stands. The figures already entered stay. The
+  screen reads the book again and drops the pin, so the next close
+  uses the new mark. A close that names no mark (a tab opened before
+  the mark existed) is refused with "The desk was updated. Reload,
+  then count again."
 
 - **There is no offline mode.** This is a deliberate product decision, not an
   oversight. A desk that cannot reach the ledger cannot post; it says so and

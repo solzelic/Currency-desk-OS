@@ -186,7 +186,7 @@ test("a till that sold yen can be counted and closed from the sheet", async ({ p
 
   await press(page.locator('button.till-chip', { hasText: "JPY" }).first());
   await expect(page.getByText("Enter total", { exact: true })).toBeVisible();
-  await expect(page.getByText(/no minor unit/i)).toBeVisible();
+  await expect(page.getByText(/no decimals/i)).toBeVisible();
   const yenField = page.locator('input[placeholder="0"]').first();
   await expect(yenField).toBeVisible();
   const drawer = page.locator(".win.show.active").first();
@@ -202,12 +202,24 @@ test("a till that sold yen can be counted and closed from the sheet", async ({ p
   await drawer.screenshot({ path: `${SHOTS}/till-close-cad-1280.png` });
 
   await press(page.getByRole("button", { name: "Enter total" }).first());
-  await page.locator('input[placeholder="0.00"]').first().fill(String(Number(balances.CAD)));
+  const cadField = page.locator('input[placeholder="0.00"]').first();
+  await cadField.fill("5000.005");
+  await expect(page.getByText("CAD takes 2 decimal places. Enter a figure like 1234.50.")).toBeVisible();
+  await press(page.locator('button.till-chip', { hasText: "JPY" }).first());
+  await yenField.fill("1000.5");
+  await expect(page.getByText("JPY has no decimals. Enter a whole number.", { exact: true })).toBeVisible();
+  await press(page.getByRole("button", { name: /Reconcile & close/i }).first());
+  const closeDay = page.getByRole("button", { name: /Close day & lock book/i }).first();
+  await expect(closeDay).toBeDisabled();
+  await expect(page.getByText("CAD takes 2 decimal places. Enter a figure like 1234.50.")).toBeVisible();
+
+  await press(page.getByRole("button", { name: "Cash drawer" }).first());
+  await press(page.locator('button.till-chip', { hasText: "CAD" }).first());
+  await cadField.fill(String(Number(balances.CAD)));
   await press(page.locator('button.till-chip', { hasText: "JPY" }).first());
   await yenField.fill(wholeYen);
 
   await press(page.getByRole("button", { name: /Reconcile & close/i }).first());
-  const closeDay = page.getByRole("button", { name: /Close day & lock book/i }).first();
   await expect(closeDay).toBeEnabled({ timeout: 15_000 });
   await press(closeDay);
   await press(page.getByRole("button", { name: /Close day & lock book/i }).last());
