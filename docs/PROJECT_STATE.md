@@ -83,8 +83,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   midnight is that day and not the UTC day. A branch with no timezone
   on file keeps the open session's stored business date. A signed-off
   day stays. A receive is refused.
-  The sheet reads that one transaction. A transfer the partner has
-  already paid out is refused. The phone contract is
+  The sheet reads that one transaction. Paid, settled, and held
+  transfers are refused with their own sentences. A send needs a
+  recorded partner check and a reason of at least three characters.
+  Hold and release each write who, when, and why. A teller may hold.
+  A teller may not release a hold. Paying out a cancelled transfer,
+  or one that is on hold, is refused in plain words. The phone contract is
   `docs/TRANSFER_CANCEL.md`. Before this, desktop Cancel only changed a
   local status, so the cash stayed in the drawer and the partner stayed
   owed.
@@ -598,7 +602,8 @@ not the newest page of the list. `paid_out_at` (migration 042) makes a
 paid-out transfer refuse cancel. The reversal is dated to the branch's
 calendar day (`branches.timezone`). PR #128's `businessDate` helper is
 not on main. A branch with no timezone keeps the open session's stored
-business date. Phone files are unchanged; the contract is
+business date. Hold and release are audited. A teller may hold and
+may not release. Phone files are unchanged; the contract is
 `docs/TRANSFER_CANCEL.md`.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the

@@ -254,11 +254,19 @@ that person a Cancel button.
 The reversal is refused if the drawer can no longer fund the cash going back
 out (`REVERSAL_NOT_ALLOWED`, "The drawer does not have the cash to give back.") and refused
 once the partner has paid the beneficiary or the obligation is settled. That
-refusal is "This transfer was already paid out. It cannot be cancelled."
+refusal is "Already paid out to the customer." A held transfer is "On hold.
+Release it first, then cancel." An already reversed transfer is "Already
+cancelled." A send also needs the manager's recorded confirmation that the
+partner has not paid it out.
 `paid_out_at` (migration 042) is set by
 `POST /api/ledger/obligation-deals/:transactionId/payout`, which moves no cash.
-A written-off or otherwise discharged obligation keeps the older message: a
-discharged promise is undone by a new deal.
+A written-off transfer is refused with "This transfer was written off. It cannot be cancelled."
+Any other status that is not open is "This transfer cannot be cancelled."
+Paying out a cancelled transfer is "This transfer was cancelled. It cannot be paid out."
+Paying out a held transfer is "On hold. Release it before paying out."
+Hold and release each write an audit row: who, when, and the reason.
+A teller may hold. A teller may not release: that is 403 "Only a manager can release a hold."
+and the refusal is on the audit. A 400 from these routes includes a plain sentence.
 
 ### Write off — the counterparty did not perform
 

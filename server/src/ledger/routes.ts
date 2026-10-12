@@ -77,6 +77,25 @@ const postBody = z.object({
   .refine((value) => !value.thirdParty || !!value.thirdPartyName, { message: "Third-party name is required.", path: ["thirdPartyName"] })
   .refine((value) => value.thirdParty || !value.thirdPartyName, { message: "Third-party name requires third-party status.", path: ["thirdPartyName"] });
 const reverseBody = z.object({ idempotencyKey: z.string().min(1).max(200), reason: z.string().trim().min(1).max(1000) });
+/* Transfer cancel is not the exchange void. The reason is a sentence,
+   and a send names the partner check. Exchange reversal keeps min 1. */
+const say = (message: string) =>
+  z.string({ required_error: message, invalid_type_error: message }).trim().min(3, message).max(1000, message);
+const keyOf = z.string({
+  required_error: "An idempotency key is required.",
+  invalid_type_error: "An idempotency key is required.",
+}).min(1, "An idempotency key is required.").max(200, "An idempotency key is required.");
+const obligationReverseBody = z.object({
+  idempotencyKey: keyOf,
+  reason: say("Say why this transfer is being cancelled."),
+  partnerConfirmedNotPaid: z.boolean().optional(),
+});
+const holdBody = z.object({
+  reason: say("Say why this transfer is being held."),
+}).strict();
+const releaseBody = z.object({
+  reason: say("Say why this hold is being released."),
+}).strict();
 const customerBody = z.object({
   externalRef: z.string().trim().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
@@ -344,6 +363,16 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     const actor = { userId: user.id, tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: workspace.branchId, workspaceId: workspace.id, tillId: workspace.tillId, role: user.role, authorizedBranchIds: user.authorizedBranchIds };
     await ensureLedgerPrincipal(pool, actor);
     return { kind: "authenticated", actor };
+  }
+
+  function plainInvalid(
+    reply: { code(status: number): { send(value: unknown): unknown } },
+    error: { issues: Array<{ message?: string }> },
+  ) {
+    return reply.code(400).send({
+      code: "INVALID_REQUEST",
+      message: error.issues[0]?.message || "That request is not complete.",
+    });
   }
 
   function failure(reply: { code(status: number): { send(value: unknown): unknown } }, error: unknown) {
@@ -1477,8 +1506,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
      the counter. */
   /* The beneficiary collected. No cash moves. Cancel after this is refused. */
   app.post("/api/ledger/obligation-deals/:transactionId/payout", async (req, reply) => {
-    const parsed = z.object({ idempotencyKey: z.string().min(1).max(200) }).strict().safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    const parsed = z.object({ idempotencyKey: keyOf }).strict().safeParse(req.body);
+    if (!parsed.success) return plainInvalid(reply, parsed.error);
     try {
       const actor = await actorOrReply(req, reply);
       return actor
@@ -1507,8 +1536,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.post("/api/ledger/obligation-deals/:transactionId/reversal", async (req, reply) => {
-    const parsed = reverseBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    const parsed = obligationReverseBody.safeParse(req.body);
+    if (!parsed.success) return plainInvalid(reply, parsed.error);
     try {
       const actor = await actorOrReply(req, reply);
       return actor
@@ -1518,8 +1547,35 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
               (req.params as { transactionId: string }).transactionId,
               parsed.data.idempotencyKey,
               parsed.data.reason,
+              parsed.data.partnerConfirmedNotPaid === true,
             ),
           )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/obligation-deals/:transactionId/hold", async (req, reply) => {
+    const parsed = holdBody.safeParse(req.body);
+    if (!parsed.success) return plainInvalid(reply, parsed.error);
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await obligations.hold(actor, (req.params as { transactionId: string }).transactionId, parsed.data.reason))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/obligation-deals/:transactionId/release", async (req, reply) => {
+    const parsed = releaseBody.safeParse(req.body);
+    if (!parsed.success) return plainInvalid(reply, parsed.error);
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await obligations.release(actor, (req.params as { transactionId: string }).transactionId, parsed.data.reason))
         : undefined;
     } catch (error) {
       return failure(reply, error);

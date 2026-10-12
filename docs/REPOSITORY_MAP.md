@@ -125,6 +125,12 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   with no timezone keeps the open session's stored `business_date`.
   Boot applies this file. A copy of the live schema has not been used
   to rehearse it. The cancel contract is `docs/TRANSFER_CANCEL.md`.
+- Migration `043_transfer_cancel_hold` adds `held` to the obligation
+  status check and `ledger_reversals.partner_confirmed_not_paid`. The
+  same live-schema rule applies: a running database changes only when
+  this migration applies. It does not backfill `paid_out_at`. Boot
+  applies this file. A copy of the live schema has not been used to
+  rehearse it.
 
 ## Test commands
 

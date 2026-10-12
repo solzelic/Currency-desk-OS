@@ -48,6 +48,9 @@ const migrations: readonly Migration[] = [
   ["039_live_cheque_paper", "src/db/migrations/039_live_cheque_paper.sql"],
   ["040_till_balance_generation", "src/db/migrations/040_till_balance_generation.sql"],
   ["042_transfer_paid_out", "src/db/migrations/042_transfer_paid_out.sql"],
+  /* 043 is hold, and the recorded partner check on a cancel. 042 is the
+     paid-out timestamp. Neither is on main yet. */
+  ["043_transfer_cancel_hold", "src/db/migrations/043_transfer_cancel_hold.sql"],
 ] as const;
 
 export async function runMigrations(

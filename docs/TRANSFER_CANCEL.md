@@ -14,12 +14,14 @@ transfer screens. It publishes `window.CDOS.transferCancel`.
 |---|---|
 | `TELLER_MESSAGE` | `Only a manager can cancel a transfer that took cash. Ask a manager to cancel.` |
 | `RECEIVE_MESSAGE` | `A received transfer can't be cancelled here. Ask a manager.` |
-| `PAID_OUT_MESSAGE` | `This transfer was already paid out. It cannot be cancelled.` |
+| `PAID_OUT_MESSAGE` | `Already paid out to the customer.` |
+| `HELD_MESSAGE` | `On hold. Release it first, then cancel.` |
+| `PARTNER_LABEL` | `I checked with the partner: it has not been paid out` |
 | `canPost(role)` | true for Owner, Manager, and Senior teller. Those OS roles already map to `transaction:reverse`. Cashier and Trainee are false. This grants nothing. |
 | `review(obligation)` | `{ kind: "confirm", sentence }` or `{ kind, message }`. The sentence is built from the one obligation row `GET /api/ledger/obligation-deals/:transactionId` returned. It does not add the fee and it does not price the corridor. A receive is refused with `RECEIVE_MESSAGE`. |
 | `idempotencyKey(transactionId)` | `web:transfer-cancel:<transactionId>`. Stable for the life of the deal, so a second tap replays. |
 | `paidOutKey(transactionId)` | `web:transfer-paid:<transactionId>`. |
-| `postCancel(transactionId)` | `POST /api/ledger/obligation-deals/:transactionId/reversal` with that key and reason `Cancelled at the counter`. Retries once on `IDEMPOTENCY_IN_PROGRESS`. Any other error is thrown. |
+| `postCancel(transactionId, reason)` | `POST /api/ledger/obligation-deals/:transactionId/reversal` with that key, the reason (at least 3 characters), and `partnerConfirmedNotPaid: true`. Retries once on `IDEMPOTENCY_IN_PROGRESS`. Any other error is thrown. |
 | `postPaidOut(transactionId)` | `POST /api/ledger/obligation-deals/:transactionId/payout`. Same retry. |
 
 A cashier must not be offered Cancel. Show `TELLER_MESSAGE` and do not call
@@ -74,8 +76,29 @@ a successful reversal finds the obligation already reversed and is
 
 Payout requires `transaction:post`. It writes `ledger_obligations.paid_out_at`
 and moves no cash. A later reversal is **422** `REVERSAL_NOT_ALLOWED` with
-`PAID_OUT_MESSAGE`. A settled obligation gets the same refusal: the partner
-has already been funded.
+"Already paid out to the customer." A settled obligation gets the same
+refusal. A reversed obligation is "Already cancelled." A held obligation
+is "On hold. Release it first, then cancel." Paying out a cancelled
+transfer is **422** "This transfer was cancelled. It cannot be paid out."
+Paying out a held transfer is **422** "On hold. Release it before paying out."
+A written-off transfer is "This transfer was written off. It cannot be cancelled."
+
+Hold and release are `POST .../hold` and `POST .../release` with
+`{ "reason": "..." }` of at least 3 characters. They change the server
+status and move no cash. Each writes an audit row: who, when, and the
+reason. A teller may hold. Release requires `transaction:reverse`. A
+teller receives **403** "Only a manager can release a hold." and that
+refusal is audited. A body these routes cannot read is **400**
+`INVALID_REQUEST` with a plain sentence.
+
+A send that is still open needs `partnerConfirmedNotPaid: true`. The
+reversal stores that on `ledger_reversals.partner_confirmed_not_paid`,
+with the reason. The reason is at least 3 characters. The timeline line
+is `Cancelled by <name> at <h:mm AM>, <reason>`.
+
+Transfers that were marked paid only in the browser, before `paid_out_at`
+existed, stay open with `paid_out_at` null. Nothing backfills that
+timestamp. Cancelling one still requires the partner confirmation.
 
 A cancel needs an open till session. With none, the response is **422**
 `REVERSAL_NOT_ALLOWED` and the message "Open the till before cancelling a
