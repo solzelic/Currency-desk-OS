@@ -132,8 +132,8 @@ That job also checks out the main commit named in `tests/e2e/README.md` and
 renders the 1280 desktop pictures there (`scripts/capture-main-desktop-baselines.mjs`).
 The text is Archivo and Space Mono from `tests/e2e/fonts/`, not the runner's
 fallback face. The committed PNGs have to be that render. The branch is compared to them.
-Sign-in may differ by one channel level on at most 10 pixels; every other
-picture is exact (`tests/desktop-pixels.test.mjs`).
+The sign-in capture turns the glass blur off so that picture is exact,
+the same as every other picture (`tests/desktop-pixels.test.mjs`).
 `browser-validate` runs `npm run check:sanctions` after the OS build, so the
 committed `web/app/os.js` cannot name a sanctions list. The same job runs
 `npm run test:phone-format`, which includes the dark phone token contrast

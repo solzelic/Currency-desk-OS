@@ -131,33 +131,41 @@ function diffRgba(actual, expected) {
   return { diffPixels, maxDelta, overOne };
 }
 
-/* Sign-in only. Browser-seam run 38225974487 rendered main
-   5216ef4780b750c2dcce5847296288920d63b443 twice. Animations were
-   paused, the caret was hidden, the desk fonts had loaded, and the
-   shot was CSS pixels. sign-in-1280 still differed by 4 pixels.
-   The largest channel gap was 1, and no pixel moved by 2 or more.
-   The other twelve pictures were identical. The card is glass
-   (saturate + blur, plus the shadow). Chromium does not paint that
-   blur to the same channel values twice. The capture waits until
-   the blur and the shadow are applied and the device scale is 1.
-   What remains may be at most this many pixels, and only when every
-   one of them moved by a single level. An 11th pixel, or a channel
-   gap of 2 or more, is a desktop change and fails. Every other
-   picture stays exact. */
-const SIGN_IN_PIXEL_CAP = 10;
+/* Sign-in. Two renders of main 5216ef4 with the glass blur left on
+   did not match. Run 38225974487: 4 pixels, max channel delta 1.
+   Run 38227304873 (head 623ab12), after the entrance was paused and
+   the blur had been waited on: 6 pixels, max channel delta 8, and
+   2 of those pixels were above one level. Waiting does not make
+   backdrop-filter deterministic. The capture turns that filter off
+   (the product keeps it), pauses animations, hides the caret, waits
+   for document.fonts.ready, and requires device scale 1. With the
+   filter off, sign-in is exact: these caps are 0. A later residual
+   is allowed only by raising both, and the guard test rejects 13
+   pixels and a channel delta of 13. Every other picture stays exact. */
+const SIGN_IN_PIXEL_CAP = 0;
+const SIGN_IN_DELTA_CAP = 0;
+
+function pictureName(name) {
+  return String(name).replace(/-chromium-[a-z0-9]+\.png$/i, ".png");
+}
 
 function capFor(name) {
-  const base = String(name).replace(/-chromium-[a-z0-9]+\.png$/i, ".png");
-  if (base === "sign-in-1280.png") return SIGN_IN_PIXEL_CAP;
+  if (pictureName(name) === "sign-in-1280.png") return SIGN_IN_PIXEL_CAP;
+  return 0;
+}
+
+function deltaCapFor(name) {
+  if (pictureName(name) === "sign-in-1280.png") return SIGN_IN_DELTA_CAP;
   return 0;
 }
 
 function withinDesktopCap(name, diff) {
   if (!diff || typeof diff.diffPixels !== "number" || typeof diff.maxDelta !== "number") return false;
   if (diff.diffPixels < 0 || diff.maxDelta < 0) return false;
-  if (diff.maxDelta > 1) return false;
-  if (typeof diff.overOne === "number" && diff.overOne > 0) return false;
+  const deltaCap = deltaCapFor(name);
+  if (diff.maxDelta > deltaCap) return false;
+  if (deltaCap <= 1 && typeof diff.overOne === "number" && diff.overOne > 0) return false;
   return diff.diffPixels <= capFor(name);
 }
 
-module.exports = { decodePng, diffRgba, capFor, withinDesktopCap, SIGN_IN_PIXEL_CAP };
+module.exports = { decodePng, diffRgba, capFor, deltaCapFor, withinDesktopCap, SIGN_IN_PIXEL_CAP, SIGN_IN_DELTA_CAP };

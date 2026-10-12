@@ -409,20 +409,16 @@ Reports, Settings, Pricing, Transfers, Cheques, Vault, and Audit — and
 the sign-in screen (`#lock`). The PNGs are a render of the main commit
 named in `tests/e2e/README.md`, taken in the browser-seam job, not a
 render of a feature branch and not a laptop. The same job renders that
-commit twice. Twelve pictures have to match at every pixel. Sign-in
-may differ by at most 10 pixels, and only by one level in a channel:
-two renders of main `5216ef4` differed by 4 pixels there after the
-animation was paused, the caret hidden, the fonts loaded, and the
-shot taken at device scale 1. The glass blur and shadow are what
-move. An 11th pixel, or a channel gap of 2 or more, fails. Animations
-and the caret are off. The sign-in card is the glass card, blur and
-shadow included. Turning those off and swapping the PNG hid the desktop:
-the old picture was not a mid-animation frame, and the replacement did
-not match main. The menu bar's brand dot stays the circle the desk
-draws. A pixel may differ by
-at most 1 in each channel, and only up to the cap for that
-picture. Every picture except sign-in is exact. A channel that
-moves by 2 or more fails. The text is Archivo and Space Mono from
+commit twice, and all 13 pictures have to match at every pixel.
+Animations and the caret are off. The sign-in card in the product is
+still the glass card. The capture turns `backdrop-filter` off for
+that shot, because two renders of main with the blur on differed by
+6 pixels at channel delta 8. The fonts are loaded and the device
+scale is 1. Turning the blur off in the product and swapping the PNG
+hid the desktop: the old picture was not a mid-animation frame, and
+the replacement did not match main. The menu bar's brand dot stays
+the circle the desk draws. Any differing pixel fails. A channel that
+moves fails. The text is Archivo and Space Mono from
 `tests/e2e/fonts/`, served in place of `fonts.googleapis.com`, for the
 main capture and for the branch compare. The picture is refused when
 those faces have not loaded. A one-character change in a rate, a code,

@@ -7,14 +7,13 @@ rendered from one commit on main. They are not a render of this branch.
 captures it in the browser-seam job: `ubuntu-latest`, Node from `.nvmrc`,
 Playwright Chromium installed with `npx playwright install --with-deps
 chromium`, and the `postgres:16` service container. The same job renders
-that commit twice. Twelve pictures have to match at every pixel. Sign-in
-may differ by at most 10 pixels, and only by one level in a channel.
-Browser-seam run 38225974487 rendered main `5216ef4` twice with animations
-paused, the caret hidden, the desk fonts loaded, and the shot in CSS
-pixels. Sign-in still differed by 4 pixels, max channel delta 1, and
-nothing else moved. The glass blur and shadow are what move. The shot
-waits until that blur and shadow are applied and the device scale is 1.
-A channel gap of 2 or more, or an 11th pixel, fails. The branch is then
+that commit twice, and all 13 pictures have to match at every pixel.
+The sign-in card keeps its glass in the product. The capture turns
+`backdrop-filter` off for that shot only: two renders of main with the
+blur on differed by 4 pixels at channel delta 1, and then by 6 pixels
+at channel delta 8 after the entrance was paused and the blur had been
+waited on. The shot also pauses animations, hides the caret, waits for
+`document.fonts.ready`, and requires device scale 1. The branch is then
 compared to that render with the same rule.
 
 The text in that picture is Archivo and Space Mono from

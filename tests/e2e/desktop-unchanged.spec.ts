@@ -6,16 +6,13 @@
    A changed rate, code, amount, fee, hold date, or cheque number fails
    the picture. Nothing rewrites the text after it renders.
 
-   A pixel may differ by at most 1 in each channel (red, green, blue,
-   alpha). Sign-in is the only picture with a count: 10 pixels.
-   Browser-seam run 38225974487 rendered main 5216ef4 twice. After
-   animations were paused, the caret hidden, the fonts loaded, and
-   the shot taken in CSS pixels, sign-in still differed by 4 pixels
-   and the largest channel gap was 1. The glass blur and shadow are
-   what move. The shot waits until that blur and shadow are applied
-   and the device scale is 1. An 11th pixel, or a gap of 2 or more,
-   fails. Every other picture is exact. The break proof parses the
-   sentence this file throws.
+   Every picture is exact, including sign-in. The sign-in card's
+   backdrop-filter does not paint twice to the same pixels (4 pixels
+   at channel delta 1, then 6 pixels at channel delta 8). The capture
+   turns that filter off. The product keeps the glass. Animations are
+   paused, the caret is hidden, document.fonts.ready has resolved,
+   and the device scale is 1. A channel that moves, or any pixel,
+   fails. The break proof parses the sentence this file throws.
 
    Text is Archivo and Space Mono from tests/e2e/fonts, served in place
    of fonts.googleapis.com. The runner's fontconfig is not a face in
@@ -437,41 +434,38 @@ function remember(name: string, row: Record<string, unknown>): void {
   writeFileSync(file, JSON.stringify(prev, null, 2));
 }
 
-/* The sign-in card animates in (cdWinIn) and then sits on a blur and
-   a shadow. Pause the animation, wait until the glass is actually
-   applied, and refuse a device scale other than 1. The caret is
-   hidden on the screenshot. The focus ring stays: that is the
-   product, and blurring the field would be a different picture. */
+/* The sign-in card animates in (cdWinIn) and then blurs what is
+   behind it. That blur is the nondeterministic part: two renders of
+   main differed by 6 pixels at channel delta 8 after the animation
+   was paused and the blur had been waited on. The product keeps the
+   glass. This shot turns the filter off, pauses the animation, hides
+   the caret, waits for the fonts, and refuses a device scale other
+   than 1. The focus ring stays. */
 async function settleSignIn(page: Page): Promise<void> {
   await page.evaluate(async () => {
     if (window.devicePixelRatio !== 1) {
       throw new Error(`device scale is ${window.devicePixelRatio}, expected 1`);
     }
+    await document.fonts.ready;
     const style = document.getElementById("shot-still") || document.createElement("style");
     style.id = "shot-still";
-    style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
+    style.textContent = [
+      "*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }",
+      "#lock, #lock * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }",
+    ].join("\n");
     (document.head || document.documentElement).appendChild(style);
     for (const animation of document.getAnimations()) {
-      try { animation.finish(); } catch { /* an infinite animation has no end */ }
-      try { animation.pause(); } catch { /* already finished */ }
+      try { animation.cancel(); } catch { /* already finished */ }
     }
-    const card = [...document.querySelectorAll("#lock > div")].find((el) => {
-      const filter = getComputedStyle(el).backdropFilter;
-      return filter.includes("blur");
-    });
-    if (!card) throw new Error("sign-in glass layer is not painted");
-    const computed = getComputedStyle(card);
-    if (!computed.backdropFilter.includes("blur")) {
-      throw new Error(`sign-in glass blur is not applied: ${computed.backdropFilter || "none"}`);
-    }
-    if (!computed.boxShadow || computed.boxShadow === "none") {
-      throw new Error("sign-in glass shadow is not applied");
-    }
-    if (computed.opacity !== "1") throw new Error(`sign-in glass opacity is ${computed.opacity}`);
-    if (computed.transform !== "none") throw new Error(`sign-in glass transform is ${computed.transform}`);
     await new Promise((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined)));
     });
+    if (!document.querySelector("#lock h1")) throw new Error("sign-in glass layer is not painted");
+    const stillBlurred = [...document.querySelectorAll("#lock, #lock *")].filter((el) => {
+      const filter = getComputedStyle(el).backdropFilter;
+      return Boolean(filter) && filter !== "none";
+    });
+    if (stillBlurred.length) throw new Error("sign-in glass blur is still applied");
   });
 }
 

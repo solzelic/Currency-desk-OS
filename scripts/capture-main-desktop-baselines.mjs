@@ -4,13 +4,13 @@
    that job installs it. The product files come from that commit. The
    measurement (this branch's desktop-unchanged spec) is what takes the
    picture, so the branch is later compared with the same clock and stubs.
-   The card keeps its glass blur and shadow. The menu-bar dot stays a circle.
+   The product keeps the sign-in card's glass blur. The capture turns
+   that filter off, because two renders of main with it on did not
+   match (4 pixels at channel delta 1, then 6 pixels at channel delta
+   8). The menu-bar dot stays a circle.
 
-   The commit is rendered twice. Twelve pictures have to match at
-   every pixel. Sign-in may differ by at most 10 pixels, and only by
-   one level in a channel: two renders of main 5216ef4 differed by 4
-   pixels there, and the glass blur is what moves. A laptop render is
-   not a substitute.
+   The commit is rendered twice. All 13 pictures have to match at
+   every pixel. A laptop render is not a substitute.
 
    The spec serves Archivo and Space Mono from tests/e2e/fonts. The
    picture does not use the runner's fontconfig fallback.

@@ -43,9 +43,9 @@ jobs:
       - name: Phone formatters and dark shell contrast
         run: npm run test:phone-format
 
-      # Sign-in may move by one channel level on at most 10 pixels.
-      # A wider gap, or any gap on another picture, has to fail here
-      # before the seam job spends a runner on it.
+      # Sign-in is exact once the capture turns the glass blur off.
+      # 13 pixels, or a channel delta of 13, has to fail here, and so
+      # does any gap on another picture.
       - name: Desktop pixel allowance
         run: node --test tests/desktop-pixels.test.mjs
 
