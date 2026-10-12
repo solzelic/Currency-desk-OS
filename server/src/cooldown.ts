@@ -60,6 +60,14 @@ export function sent(key: string): void {
   lastSent.set(key, now);
 }
 
+/** Drop the gap for `key`. A locked sign-in has already deleted the
+    code. Leaving the two-minute wait up would block the replacement,
+    and every number they typed would be expired because nothing new
+    was allowed out. */
+export function clearSent(key: string): void {
+  lastSent.delete(key);
+}
+
 /** The refusal, in the shape every one of these routes answers with. */
 export function tooSoon(seconds: number): { error: string; detail: string; retryAfter: number } {
   return {

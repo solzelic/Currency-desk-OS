@@ -6,11 +6,16 @@
    is sent once when the sixth digit lands, even if the field reports
    that value twice. Pasting six digits fills every box and sends once. */
 import { mkdirSync } from "node:fs";
+import path from "node:path";
+import { tmpdir } from "node:os";
 import type { Page, Route } from "@playwright/test";
 import { test, expect, codeFor, logSize } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
-const SHOTS = "/opt/cursor/artifacts";
+/* A temp directory, not a fixed artifact path. The run that writes
+   the pictures and the run that links them have to agree, and a
+   missing file must not be a link to a box that was never filled. */
+const SHOTS = path.join(tmpdir(), "currencydesk-phone-signin");
 mkdirSync(SHOTS, { recursive: true });
 
 async function shot(page: Page, name: string): Promise<void> {
@@ -631,6 +636,15 @@ test("resize and landscape keep the phone code step", async ({ page }) => {
     await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
     if (size.width === 430) await shot(page, "signin_code_430");
   }
+  /* Crossing to the desk has to run the matchMedia listener. A reload
+     at 1280 would take the desktop tree from the first read, and the
+     missing listener would stay green. */
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator("[data-phone-signin]"), "resize listener").toHaveCount(0);
+  await expect(page.getByText("A fresh 6-digit code just went to")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("[data-phone-signin]")).toHaveCount(1);
+  await expect(page.locator(".si-code i")).toHaveCount(6);
   expect(await storedText(page), "password kept").not.toContain(password);
   await shot(page, "signin_code_landscape");
 
@@ -703,7 +717,7 @@ test("paste keeps one 6-digit run and spends no try otherwise", async ({ page })
   await reachCode(page, email, password);
   expect(await page.locator("#si-code").getAttribute("maxlength")).toBeNull();
 
-  const good = [" 482913", "482 913", "Till 2: your code is 482913"];
+  const good = [" 482913", "482 913", "Till 2: your code is 482913", "٤٨٢٩١٣", "４８２９１３"];
   for (const text of good) {
     const before = hits;
     hold = true;
@@ -727,6 +741,49 @@ test("paste keeps one 6-digit run and spends no try otherwise", async ({ page })
     await expect(page.locator(".si-code i").first()).toHaveText("");
     expect(hits, text).toBe(before);
   }
+
+  /* The paste handler has to cancel the browser's own insert. Without
+     preventDefault the field also takes the raw text, and this is the
+     assertion that goes red when that line is removed. */
+  const prevented = await page.locator("#si-code").evaluate((el) => new Promise((resolve) => {
+    const done = (event: Event) => {
+      window.removeEventListener("paste", done);
+      resolve((event as ClipboardEvent).defaultPrevented);
+    };
+    window.addEventListener("paste", done);
+    const data = new DataTransfer();
+    data.setData("text/plain", "Till 2: your code is 482913");
+    const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: data });
+    el.dispatchEvent(event);
+  }));
+  expect(prevented, "paste preventDefault").toBe(true);
+});
+
+test("the sixth digit is sent once when the field reports it twice", async ({ page }) => {
+  await phone(page, 390);
+  const { email, password } = await makeTeller(page, "once");
+  let hits = 0;
+  let release: (() => void) | null = null;
+  await page.route("**/api/auth/login/verify", async (route) => {
+    hits += 1;
+    await new Promise<void>((resolve) => { release = resolve; });
+    await route.continue();
+  });
+  await reachCode(page, email, password);
+  await page.locator("#si-code").evaluate((el) => {
+    const input = el as HTMLInputElement;
+    const set = (value: string) => {
+      const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+      desc!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    set("482913");
+    set("482913");
+  });
+  await expect.poll(() => hits, { timeout: 5_000 }).toBe(1);
+  release?.();
+  expect(await storedText(page), "password kept").not.toContain(password);
 });
 
 test("expired, locked, and a server failure each have their own sentence", async ({ page }) => {
@@ -777,6 +834,52 @@ test("expired, locked, and a server failure each have their own sentence", async
   await expect(page.locator("#si-id")).toBeVisible();
   await expect(page.getByText(CODE_LOCKED)).toHaveCount(0);
   await expect(page.locator(".si-code")).toHaveCount(0);
+
+  /* The lock deleted the code and the send wait. Sign in again has
+     to email a new one now, not open empty boxes for two minutes. */
+  const since = logSize();
+  await page.locator("#si-pw").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  const fresh = await codeFor(email, since);
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await expect(page.getByText("A code went out moments ago")).toHaveCount(0);
+  await page.locator("#si-code").fill(fresh);
+  await expect(page.getByText(CODE_EXPIRED)).toHaveCount(0);
+  await expect(page.getByText(CODE_LOCKED)).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeHidden();
+});
+
+const NEED_CURRENT = "Enter the password you were given. Then you can set your own.";
+
+test("a refresh on the code step asks for the temporary password again", async ({ page }) => {
+  await phone(page, 390);
+  const { email, password } = await makeTeller(page, "first");
+  const since = logSize();
+  await reachCode(page, email, password);
+  await page.reload();
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  const code = await codeFor(email, since);
+  await page.locator("#si-code").fill(code);
+  await expect(page.getByText(NEED_CURRENT)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Set your own password" })).toHaveCount(0);
+  await expect(page.locator("#si-id")).toHaveValue(email);
+  await expect(page.locator("#si-pw")).toHaveValue("");
+  expect(await storedText(page), "password kept").not.toContain(password);
+
+  let current = "";
+  await page.route("**/api/auth/change-password", async (route) => {
+    current = JSON.parse(route.request().postData() || "{}").currentPassword || "";
+    await route.continue();
+  });
+  await page.locator("#si-pw").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Set your own password" })).toBeVisible();
+  await page.getByPlaceholder("at least 8 characters").fill("fresh-pass-2026");
+  await page.getByPlaceholder("••••••••").fill("fresh-pass-2026");
+  await page.getByRole("button", { name: "Save & continue" }).click();
+  await expect(page.getByRole("heading", { name: "Set your own password" })).toBeHidden({ timeout: 20_000 });
+  expect(current, "re-entered password").toBe(password);
+  await expect(page.getByText(/400/)).toHaveCount(0);
 });
 
 test("resend checks the server answer before saying a code is on its way", async ({ page }) => {

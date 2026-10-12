@@ -98,6 +98,32 @@ describe("signing in", () => {
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 429]);
   });
 
+  /* Five wrong codes, then the sixth locks and deletes the challenge.
+     The send gap has to die with it. Otherwise Sign in again is told
+     a code went out moments ago, and there is no live code to type. */
+  it("clears the send wait when the code locks, so a new code can go out at once", async () => {
+    const owner = await anOwner();
+    clearLog();
+    expect((await start(owner)).statusCode).toBe(200);
+    for (let i = 0; i < 5; i++) {
+      const wrong = await app.inject({
+        method: "POST", url: "/api/auth/login/verify",
+        payload: { staffId: owner, code: "000000", tenantId: TENANT },
+      });
+      expect(wrong.statusCode).toBe(401);
+    }
+    const locked = await app.inject({
+      method: "POST", url: "/api/auth/login/verify",
+      payload: { staffId: owner, code: "111111", tenantId: TENANT },
+    });
+    expect(locked.statusCode).toBe(429);
+    expect(locked.json().error).toBe("too_many_attempts");
+    const again = await start(owner);
+    expect(again.statusCode).toBe(200);
+    expect(again.json().needsCode).toBe(true);
+    expect(logged().filter((l) => l.includes(`to=${owner}`)).length).toBe(2);
+  });
+
   it("lets them through once the gap has passed", async () => {
     const owner = await anOwner();
     expect((await start(owner)).statusCode).toBe(200);

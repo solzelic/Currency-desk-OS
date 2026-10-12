@@ -24,7 +24,7 @@ import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
 import { smsConfigured } from "../sms.js";
 import { randomUUID } from "node:crypto";
-import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
+import { waitBefore, sent as markSent, tooSoon, clearSent } from "../cooldown.js";
 
 const loginBody = z.object({
   staffId: z.string().min(1).max(120),
@@ -221,7 +221,14 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const ch = loginChallenges.get(user.id);
     if (!ch) return reply.code(410).send({ error: "no_challenge", detail: "Start sign-in again." });
     if (ch.expiresAt < Date.now()) { loginChallenges.delete(user.id); return reply.code(410).send({ error: "expired", detail: "That code expired — sign in again." }); }
-    if (ch.attempts >= CHALLENGE_MAX_ATTEMPTS) { loginChallenges.delete(user.id); return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries — sign in again." }); }
+    if (ch.attempts >= CHALLENGE_MAX_ATTEMPTS) {
+      loginChallenges.delete(user.id);
+      /* The code is dead. The two-minute gap from the send that
+         produced it has to go with it, or Sign in again opens empty
+         boxes and every new number comes back expired. */
+      clearSent("login:" + user.id);
+      return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries — sign in again." });
+    }
     if (!codeMatches(code, ch.codeHash)) {
       ch.attempts += 1;
       return reply.code(401).send({ error: "wrong_code", detail: "That code isn't right — check your email." });

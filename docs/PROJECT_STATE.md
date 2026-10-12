@@ -125,10 +125,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   code step, so Back, refresh, the browser back button, and Use another
   account return to the boxes with the wait that is left. A wrong code,
   an expired code, and a lock after 5 tries each have their own sentence.
-  The lock has a Sign in again button, and the wait is cleared. A server
-  failure says sign-in is having trouble, and does not show a status
-  number. A paste is one 6-digit run, or it says to paste only that code
-  and does not spend a try. The phone sign-in stays on the light tokens
+  The lock has a Sign in again button. The server drops the two-minute
+  send wait with the code, so the next sign-in can email a new one at
+  once. A server failure says sign-in is having trouble, and does not
+  show a status number. A paste is one 6-digit run, including
+  Arabic-Indic and full-width digits, or it says to paste only that
+  code and does not spend a try. A new teller who refreshes on the code
+  step is sent back to the password form: the code's session is not
+  enough to set a password, and the temporary password has to be
+  typed again. The phone sign-in stays on the light tokens
   when the desk is dark, so the error, the links, and the grey text stay
   at least 4.5:1. A landscape phone keeps this code step. Sign in stays
   52px tall and scrolls into view when a field is focused. That ID, and
@@ -618,9 +623,13 @@ password together, then six boxes. This tab keeps the code step.
 The password and the code are not stored. Back, refresh, browser
 back, and Use another account return to the boxes with the wait
 that is left. A wrong code, an expired code, a lock after 5 tries,
-and a server failure each have their own sentence. The failure
-does not show a status number. A paste that is not one 6-digit run
-does not spend a try. The screen stays on the light tokens in dark
+and a server failure each have their own sentence. The lock clears
+the send wait, so Sign in again can email a new code at once. A
+new teller who refreshes on the code step goes back to the password
+form and types the temporary password again before setting their
+own. The failure does not show a status number. A paste that is not
+one 6-digit run does not spend a try. Arabic-Indic and full-width
+digits count. The screen stays on the light tokens in dark
 mode. Landscape keeps the code step. Sign in stays 52px and scrolls
 into view. Wider than 430px, except a short landscape phone, sign-in
 is unchanged.

@@ -58976,6 +58976,10 @@ ${snap}`;
   const SIGNIN_TROUBLE = 'Sign-in is having trouble. Try again in a minute.';
   const PASTE_ONLY = 'Paste only the 6-digit code.';
   const RESEND_SENT = 'A new code is on its way.';
+  /* The code made a session, and the temporary password is gone.
+     change-password will not accept an empty current password, so
+     the set-password card is the wrong next screen. */
+  const NEED_CURRENT = 'Enter the password you were given. Then you can set your own.';
   const SRV2OS_ROLE = {
     administrator: 'Owner',
     branch_manager: 'Manager',
@@ -58989,7 +58993,10 @@ ${snap}`;
       sessionStorage.removeItem(STEP_KEY);
     } catch (e) {}
   };
-  const readCodeStep = () => {
+  /* `code` is the boxes. `need-password` is the bounce after a code
+     that signed a new teller in when this tab no longer has the
+     temporary password. The password itself is never in the record. */
+  const readSignInStep = () => {
     let raw = '';
     try {
       raw = sessionStorage.getItem(STEP_KEY) || '';
@@ -59004,12 +59011,14 @@ ${snap}`;
       clearCodeStep();
       return null;
     }
-    if (!d || d.step !== 'code' || typeof d.staffId !== 'string' || !d.staffId || typeof d.sentAt !== 'number') {
+    const kind = d && (d.step === 'code' || d.step === 'need-password');
+    if (!kind || typeof d.staffId !== 'string' || !d.staffId || typeof d.sentAt !== 'number') {
       clearCodeStep();
       return null;
     }
     /* Ten minutes is the server's challenge life. After that the
-       boxes would only collect a code the server has already dropped. */
+       boxes would only collect a code the server has already dropped,
+       and the bounce back to the password is no longer the same sign-in. */
     if (Date.now() - d.sentAt > CODE_TTL_MS) {
       clearCodeStep();
       return null;
@@ -59033,6 +59042,31 @@ ${snap}`;
         role: d.user.role,
         tenantId: d.user.tenantId,
         mustChangePassword: !!d.user.mustChangePassword
+      } : null
+    };
+    try {
+      sessionStorage.setItem(STEP_KEY, JSON.stringify(safe));
+    } catch (e) {}
+    return safe;
+  };
+  /* The code already created a session. What is missing is the
+     temporary password, which a refresh threw away. The record says
+     to ask for it. It does not contain it. */
+  const writeNeedPassword = a => {
+    const u = a.srvUser || a.user || null;
+    const safe = {
+      step: 'need-password',
+      staffId: a.staffId,
+      maskedEmail: a.maskedEmail || '',
+      tenantId: a.tenantId || u && u.tenantId || '',
+      mustChange: true,
+      sentAt: Date.now(),
+      user: u ? {
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        tenantId: u.tenantId,
+        mustChangePassword: true
       } : null
     };
     try {
@@ -59073,6 +59107,10 @@ ${snap}`;
       mustChange: !!saved.mustChange || !!(u && u.mustChangePassword)
     };
   };
+  /* Arabic-Indic, Persian, and full-width digits are the same six
+     numbers. A phone keyboard in those scripts must not be told the
+     paste is not a code. */
+  const asciiDigits = text => String(text || '').replace(/[\u0660-\u0669]/g, ch => String(ch.charCodeAt(0) - 0x0660)).replace(/[\u06F0-\u06F9]/g, ch => String(ch.charCodeAt(0) - 0x06F0)).replace(/[\uFF10-\uFF19]/g, ch => String(ch.charCodeAt(0) - 0xFF10));
   /* One code, or nothing. A run is digits in a row. One run of six
      is the code, including when a sentence also has a shorter number
      ("Till 2: your code is 482913"). Spaces that only split a single
@@ -59080,7 +59118,7 @@ ${snap}`;
      gone. Seven or eight digits, two codes, or letters are not a code:
      the screen says so and does not spend a try. */
   const oneSixDigitCode = text => {
-    const raw = String(text || '');
+    const raw = asciiDigits(text);
     const runs = raw.match(/\d+/g) || [];
     const sixes = runs.filter(r => r.length === 6);
     if (sixes.length === 1) return sixes[0];
@@ -59266,9 +59304,9 @@ ${snap}`;
     /* Read once. A later render must not pull a cleared record back. */
     const savedStep = useRef(null);
     const [step, setStep] = useState(() => {
-      const saved = phoneNow() ? readCodeStep() : null;
+      const saved = phoneNow() ? readSignInStep() : null;
       savedStep.current = saved;
-      return saved ? 'code' : 'id';
+      return saved && saved.step === 'code' ? 'code' : 'id';
     }); // id | password | code | forgot | reset
     const [phone, setPhone] = useState(phoneNow);
     const [idInput, setIdInput] = useState(() => savedStep.current ? savedStep.current.staffId : phoneNow() ? readStaffId() : '');
@@ -59283,7 +59321,8 @@ ${snap}`;
     const [err, setErr] = useState('');
     const [busy, setBusy] = useState(false);
     const [verifying, setVerifying] = useState(false);
-    const [note, setNote] = useState('');
+    const [note, setNote] = useState(() => savedStep.current && savedStep.current.step === 'need-password' ? NEED_CURRENT : '');
+    const [resumePass, setResumePass] = useState(() => !!(savedStep.current && savedStep.current.step === 'need-password'));
     const [resetEmail, setResetEmail] = useState('');
     const [newPw, setNewPw] = useState('');
     /* HOW LONG UNTIL ANOTHER CODE MAY BE ASKED FOR.
@@ -59317,8 +59356,20 @@ ${snap}`;
     useEffect(() => {
       if (!phone) return undefined;
       const onPop = () => {
-        const saved = readCodeStep();
+        const saved = readSignInStep();
         if (!saved || !phoneNow()) return;
+        if (saved.step === 'need-password') {
+          authRef.current = stepRecord(saved);
+          setIdInput(saved.staffId);
+          setResumePass(true);
+          setNote(NEED_CURRENT);
+          setPw('');
+          setCode('');
+          setErr('');
+          setLocked(false);
+          setStep('id');
+          return;
+        }
         authRef.current = stepRecord(saved);
         setIdInput(saved.staffId);
         setCool(waitLeft(saved.waitUntil));
@@ -59521,11 +59572,14 @@ ${snap}`;
       } // sign-in continues; the ID just will not be here next time
     };
     const forgetStaff = () => {
+      setResumePass(false);
+      clearCodeStep();
       setIdInput('');
       setHeld(false);
       setPw('');
       setErr('');
       setBadPw(false);
+      setNote('');
       try {
         localStorage.removeItem(STAFF_KEY);
       } catch (e) {
@@ -59617,6 +59671,26 @@ ${snap}`;
     async function phoneSubmit(e) {
       e && e.preventDefault();
       if (sending.current) return;
+      /* The code already signed them in. This press only hands the
+         temporary password to the set-password screen. It must not
+         ask for another code. */
+      if (resumePass) {
+        const a = authRef.current;
+        const same = a && a.staffId && idInput.trim().toLowerCase() === String(a.staffId).toLowerCase();
+        if (same && pw) {
+          sending.current = true;
+          clearCodeStep();
+          setResumePass(false);
+          setNote('');
+          onMustChange(a.rec, {
+            current: pw
+          }, a.srvPlan, a.srvUser);
+          return;
+        }
+        setResumePass(false);
+        clearCodeStep();
+        setNote('');
+      }
       if (!idInput.trim() || !pw) return;
       sending.current = true;
       setBusy(true);
@@ -59678,8 +59752,8 @@ ${snap}`;
             return;
           }
           const retry = Math.max(1, Math.round(d && d.retryAfter || 120));
-          const prev = readCodeStep();
-          const same = prev && prev.staffId === staffId ? prev : null;
+          const prev = readSignInStep();
+          const same = prev && prev.step === 'code' && prev.staffId === staffId ? prev : null;
           const u = d && d.user || same && same.user || null;
           const saved = writeCodeStep({
             staffId,
@@ -59952,7 +60026,33 @@ ${snap}`;
         }
         clearCodeStep();
         const u = data && data.user || a.srvUser;
-        if (a.mustChange) {
+        const must = !!a.mustChange || !!(u && u.mustChangePassword);
+        if (must) {
+          /* A refresh or Back drops the password. The session from
+             the code is not enough: change-password answers 400 to an
+             empty current password. Ask for the temporary one again. */
+          if (phoneNow() && !pw) {
+            const next = {
+              rec: a.rec,
+              srvPlan: u && u.plan || a.srvPlan,
+              srvUser: u || a.srvUser,
+              staffId: a.staffId,
+              tenantId: u && u.tenantId || a.tenantId,
+              maskedEmail: a.maskedEmail,
+              mustChange: true
+            };
+            authRef.current = next;
+            writeNeedPassword(next);
+            setResumePass(true);
+            setNote(NEED_CURRENT);
+            setErr('');
+            setCode('');
+            setPw('');
+            setVerifying(false);
+            codeOnce.current = false;
+            setStep('id');
+            return;
+          }
           onMustChange(a.rec, {
             current: pw
           }, u && u.plan || a.srvPlan, u);
@@ -59996,8 +60096,8 @@ ${snap}`;
         }
         if (res.status === 429) {
           const retry = Math.max(1, Math.round(d && d.retryAfter || 120));
-          const prev = readCodeStep();
-          if (prev) writeCodeStep({
+          const prev = readSignInStep();
+          if (prev && prev.step === 'code') writeCodeStep({
             ...prev,
             waitUntil: Date.now() + retry * 1000,
             user: prev.user
@@ -60106,7 +60206,7 @@ ${snap}`;
          from Mail. Other phones do not fill it from the email. */
       const applyDigits = (raw, fromPaste) => {
         if (locked || verifying) return;
-        const text = String(raw || '');
+        const text = asciiDigits(raw);
         const digitsOnly = text.replace(/\D/g, '');
         const typed = !fromPaste && text === digitsOnly && digitsOnly.length <= 6;
         if (typed) {
