@@ -16,7 +16,7 @@ import {
   type LedgerActor,
 } from "../ledger/service.js";
 import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
-import { calculateQuoteTerms, minorUnits, roundOutput, type QuoteDirection } from "./terms.js";
+import { amountShown, calculateQuoteTerms, minorUnits, roundOutput, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* quote-terms throws plain Error. A zero payout is 422. Everything else
@@ -96,6 +96,13 @@ const complianceFact = (value: string, label: string) => {
     throw new LedgerError("INVALID_REQUEST", `${label} is required and must be at most 500 characters.`);
   return value.trim();
 };
+/* What the teller was looking at, as a number. Commas are display. */
+function parseShown(value: string | undefined): Decimal | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim().replace(/,/g, "");
+  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,12})?$/.test(cleaned)) return null;
+  return new Decimal(cleaned);
+}
 
 export class QuoteService {
   constructor(
@@ -623,6 +630,7 @@ export class QuoteService {
       usdNoteSerials?: string[];
       reportSuspicion?: boolean;
     },
+    shownAmount?: string,
   ) {
     const validatedPurpose = complianceFact(purpose, "Purpose");
     const validatedSourceOfFunds = complianceFact(sourceOfFunds, "Source of funds");
@@ -660,6 +668,25 @@ export class QuoteService {
         throw new LedgerError("QUOTE_NOT_ACTIVE", "Quote cannot be posted.");
       if (new Date(q.expires_at).getTime() <= Date.now())
         throw new LedgerError("QUOTE_EXPIRED", "Quote has expired.");
+      /* Recompute the figure on Customer receives and refuse unless the
+         post carries that same amount. A tab that never sent it, or one
+         that painted a different figure, does not get to post. */
+      const home = String((await resolvePack(client, actor.legalEntityId)).homeCurrency).trim();
+      const recomputed = roundOutput(
+        new Decimal(q.input_amount),
+        new Decimal(value.customerRate),
+        q.to_currency,
+      );
+      const expected = new Decimal(amountShown({
+        inputAmount: q.input_amount,
+        outputAmount: recomputed.toFixed(minorUnits(q.to_currency)),
+        feeCad: q.fee_cad,
+        from: q.from_currency,
+        to: q.to_currency,
+      }, home));
+      const shown = parseShown(shownAmount);
+      if (!recomputed.eq(new Decimal(value.outputAmount)) || !shown || !shown.eq(expected))
+        throw new LedgerError("RELOAD_REQUIRED", "This screen is out of date. Reload to continue.");
       await client.query("COMMIT");
       return this.forReader(
         role,

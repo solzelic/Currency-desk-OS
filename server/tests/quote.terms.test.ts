@@ -13,7 +13,10 @@ describe("quote terms",()=>{
   it("refuses a payout the fee would consume",()=>{expect(()=>calculateQuoteTerms({direction:"customer_sell_foreign",from:"USD",to:"CAD",inputAmount:"0.01",feeCad:"1.50",marketMid:"1.4",margin:"0.02"})).toThrow("This quote pays out nothing.");});
   it("states the cash a fee adds or takes",()=>{
     expect(cashHands("100.00","72.21","1.50","CAD","USD","CAD").give).toBe("101.50 CAD (100.00 + 1.50 fee)");
+    expect(cashHands("100.00","72.21","1.50","CAD","USD","CAD").receiveWire).toBe("72.21");
     expect(cashHands("100.00","134.36","1.50","USD","CAD","CAD").receive).toBe("132.86 CAD (134.36 less 1.50 fee)");
+    expect(cashHands("100.00","134.36","1.50","USD","CAD","CAD").receiveWire).toBe("132.86");
     expect(cashHands("3500.00","4702.63","0","USD","CAD","CAD").receive).toBe("4,702.63 CAD");
+    expect(cashHands("3500.00","4702.63","0","USD","CAD","CAD").receiveWire).toBe("4702.63");
   });
 });

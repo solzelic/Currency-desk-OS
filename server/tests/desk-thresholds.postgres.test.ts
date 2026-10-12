@@ -30,6 +30,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { readDeskThresholds } from "../src/ledger/thresholds.js";
 import { provisionDesk } from "../src/onboarding/provision.js";
@@ -615,15 +616,16 @@ postgres("the gate on the frozen-quote path", () => {
       })
     ).json();
 
-  const postQuote = async (quoteId: string, key: string) =>
+  const postQuote = async (quote: { quoteId: string; inputAmount: string; outputAmount: string; feeCad: string; from: string; to: string }, key: string) =>
     app.inject({
       method: "POST",
-      url: `/api/quotes/${quoteId}/post`,
+      url: `/api/quotes/${quote.quoteId}/post`,
       cookies: await cookieFor("m.costa"),
       payload: {
         idempotencyKey: key,
         purpose: "Personal travel",
         sourceOfFunds: "Employment income",
+        shownAmount: amountShown(quote),
       },
     });
 
@@ -717,7 +719,7 @@ postgres("the gate on the frozen-quote path", () => {
     /* 2,000 Canadian dollars: over nothing at the pack's 3,000, and over
        everything once this desk decides 1,500 is where it wants to be. */
     const under = await quoteFor("2000.00");
-    expect((await postQuote(under.quoteId, "quote-under")).statusCode).toBe(201);
+    expect((await postQuote(under, "quote-under")).statusCode).toBe(201);
 
     await app.inject({
       method: "PUT",
@@ -727,7 +729,7 @@ postgres("the gate on the frozen-quote path", () => {
     });
 
     const over = await quoteFor("2000.00");
-    const refused = await postQuote(over.quoteId, "quote-over");
+    const refused = await postQuote(over, "quote-over");
     expect(refused.statusCode).toBe(422);
     expect(refused.json().code).toBe("COMPLIANCE_BLOCKED");
     /* The refusal has to have stopped the POSTING, not merely returned a

@@ -156,6 +156,7 @@ async function attemptDeal(page: Page, customerId: string, inputAmount: string, 
           idempotencyKey,
           purpose: "Personal travel",
           sourceOfFunds: "Employment income",
+          shownAmount: frozen.outputAmount,
         }),
       });
       return {

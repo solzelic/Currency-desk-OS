@@ -167,6 +167,7 @@ const posted = await request(`/api/quotes/${frozen.quoteId}/post`, {
     idempotencyKey: "dist-boot-3500",
     purpose: "Personal travel",
     sourceOfFunds: "Employment income",
+    shownAmount: frozen.outputAmount,
   }),
 }, quote.cookie);
 if (posted.status !== 201) fail(`check-dist-boot: post ${posted.status} ${posted.text}`);

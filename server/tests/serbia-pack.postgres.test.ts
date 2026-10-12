@@ -10,6 +10,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import {
   SERBIA_AIRSIDE_REQUIRED,
@@ -262,6 +263,7 @@ postgres("Serbia pack-rs-v1", () => {
         idempotencyKey: key,
         purpose: "Personal travel",
         sourceOfFunds: "Employment income",
+        shownAmount: amountShown(quote.json()),
         ...extra,
       },
     });
@@ -337,6 +339,7 @@ postgres("Serbia pack-rs-v1", () => {
           idempotencyKey: key,
           purpose: "Personal travel",
           sourceOfFunds: "Employment income",
+          shownAmount: amountShown(made.json()),
           ...extra,
         },
       });

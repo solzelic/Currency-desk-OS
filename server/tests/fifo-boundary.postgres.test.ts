@@ -28,6 +28,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -202,6 +203,7 @@ async function sellAThousandDollars(idempotencyKey: string) {
       idempotencyKey,
       purpose: "Personal travel",
       sourceOfFunds: "Employment income",
+      shownAmount: amountShown(quote),
     },
   });
   expect(posted.json()).toMatchObject({ transactionId: expect.any(String) });

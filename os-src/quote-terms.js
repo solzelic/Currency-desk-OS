@@ -87,6 +87,10 @@
       function amountOf(value, currency) {
         return formatAmount(value, currency);
       }
+      function wireOf(value, currency) {
+        var places = placesOf(currency);
+        return value.toDecimalPlaces(places, Decimal.ROUND_HALF_UP).toFixed(places);
+      }
       function side(net, currency, detail) {
         var amount = amountOf(net, currency);
         return {
@@ -118,6 +122,7 @@
         receiveAmount: receive.amount,
         receiveCurrency: receive.currency,
         receiveDetail: receive.detail,
+        receiveWire: wireOf(to === homeCode && fee.gt(0) ? output.minus(fee) : output, to),
       };
     }
     function plainQuoteError(error) {
@@ -248,6 +253,7 @@
         receiveAmount: hands.receiveAmount,
         receiveCurrency: hands.receiveCurrency,
         receiveDetail: hands.receiveDetail,
+        receiveWire: hands.receiveWire,
       };
     }
     function directionOf(from, to, home) {

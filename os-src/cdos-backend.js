@@ -55,12 +55,20 @@
     var body = {};
     try { body = await response.json(); } catch (_) {}
     if (!response.ok) {
-      var error = new Error(body.message || ({
+      /* These three arrive as the server's own sentence. The sheet says
+         the desk version instead, and never the raw text. */
+      var rawDesk = {
+        "Quote has expired.": "Quote expired. Get a new rate.",
+        "Missing quote:post.": "You do not have permission to post this quote.",
+        "Rate publication is stale.": "The rate board is out of date. Publish the board and try again.",
+      };
+      var byCode = {
         AUTHENTICATION_REQUIRED: "Your session expired. Sign in again before posting.",
         PLAN_NOT_ENTITLED: "This workspace plan does not include server ledger posting.",
         SCOPE_DENIED: "The active workspace is not authorized for this account.",
         UNSUPPORTED_CURRENCY_PAIR: "Server posting currently supports CAD exchanges with USD, EUR, or GBP.",
         QUOTE_EXPIRED: "Quote expired. Get a new rate.",
+        RATE_PUBLICATION_STALE: "The rate board is out of date. Publish the board and try again.",
         RELOAD_REQUIRED: "This screen is out of date. Reload to continue.",
         ZERO_PAYOUT: "This quote pays out nothing.",
         INSUFFICIENT_TILL_LIQUIDITY: "The till does not have enough currency to complete this exchange.",
@@ -83,7 +91,9 @@
         CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
         CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
-      })[body.code] || "The ledger server rejected this request. Nothing was posted.");
+      };
+      var named = body.code === "QUOTE_EXPIRED" || body.code === "RATE_PUBLICATION_STALE" ? byCode[body.code] : null;
+      var error = new Error(rawDesk[body.message] || named || body.message || byCode[body.code] || "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       throw error;

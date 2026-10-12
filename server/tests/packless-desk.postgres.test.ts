@@ -12,6 +12,7 @@ import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { DEMO, seed } from "../src/seed.js";
+import { amountShown } from "../src/quotes/terms.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -174,6 +175,7 @@ postgres("a desk with no country pack uses the baseline", () => {
           idempotencyKey: "packless-post",
           purpose: "Travel",
           sourceOfFunds: "Cash",
+          shownAmount: amountShown(quoted.json()),
         },
       }),
     );
@@ -279,6 +281,7 @@ postgres("a desk with no country pack uses the baseline", () => {
         idempotencyKey: "packless-frozen",
         purpose: "Personal travel",
         sourceOfFunds: "Employment income",
+        shownAmount: amountShown(quote),
       },
     });
     expect(posted.statusCode, posted.body).toBe(201);

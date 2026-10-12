@@ -52,3 +52,20 @@ export function roundOutput(amount: Decimal, rate: Decimal, currency: string): D
 export function minorUnits(code: string): number {
   return quoteTerms.minorUnits(code);
 }
+
+/** The Customer receives figure on the sheet, as a money string.
+    Output less the fee when that fee comes out of a home payout,
+    otherwise the exchange output. */
+export function amountShown(
+  quote: { inputAmount: string; outputAmount: string; feeCad: string; from: string; to: string },
+  home = "CAD",
+): string {
+  return quoteTerms.cashHands(
+    quote.inputAmount,
+    quote.outputAmount,
+    quote.feeCad,
+    quote.from,
+    quote.to,
+    home,
+  ).receiveWire as string;
+}

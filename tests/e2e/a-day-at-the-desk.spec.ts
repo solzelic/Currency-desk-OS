@@ -194,6 +194,7 @@ test("the counter trades — an exchange, over the counter, both ways", async ({
     idempotencyKey: `day-exchange-${Date.now()}`,
     purpose: "Personal travel",
     sourceOfFunds: "Employment income",
+    shownAmount: quote.body.outputAmount,
   });
   expect(posted.status, `the deal did not post: ${JSON.stringify(posted.body)}`).toBe(201);
 
@@ -300,6 +301,7 @@ test("the desk refuses what it should, and says why", async ({ page }) => {
     idempotencyKey: `day-refused-${Date.now()}`,
     purpose: "Personal travel",
     sourceOfFunds: "Employment income",
+    shownAmount: quote.body.outputAmount,
   });
   expect(
     refused.status,

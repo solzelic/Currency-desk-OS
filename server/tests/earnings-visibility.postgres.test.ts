@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -96,7 +97,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     })).json();
     const posted = await app.inject({
       method: "POST", url: `/api/quotes/${quote.quoteId}/post`, cookies: owner,
-      payload: { idempotencyKey: "earn-one", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+      payload: { idempotencyKey: "earn-one", purpose: "Personal travel", sourceOfFunds: "Employment income", shownAmount: amountShown(quote) },
     });
     expect(posted.statusCode, posted.body).toBe(201);
     expect(posted.json().spreadCad).toEqual(expect.any(String));
@@ -203,7 +204,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     })).json();
     const tellerPost = await app.inject({
       method: "POST", url: `/api/quotes/${tellerMade.quoteId}/post`, cookies: teller,
-      payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+      payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income", shownAmount: amountShown(tellerMade) },
     });
     expect(tellerPost.statusCode, tellerPost.body).toBe(201);
     expect(tellerPost.json()).toMatchObject({ feeCad: "4.00", quoteId: tellerMade.quoteId });
@@ -244,7 +245,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     })).json();
     const posted = await app.inject({
       method: "POST", url: `/api/quotes/${quote.quoteId}/post`, cookies: owner,
-      payload: { idempotencyKey: "earn-roles", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+      payload: { idempotencyKey: "earn-roles", purpose: "Personal travel", sourceOfFunds: "Employment income", shownAmount: amountShown(quote) },
     });
     expect(posted.statusCode, posted.body).toBe(201);
 

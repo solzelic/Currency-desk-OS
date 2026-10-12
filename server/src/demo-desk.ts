@@ -37,7 +37,7 @@ import { LedgerError, type LedgerActor } from "./ledger/service.js";
 import { TillControlService } from "./ledger/till-control.js";
 import { VaultControlService } from "./ledger/vault-control.js";
 import { QuoteService, boardMaxAgeSeconds } from "./quotes/service.js";
-import type { QuoteDirection } from "./quotes/terms.js";
+import { amountShown, type QuoteDirection } from "./quotes/terms.js";
 import { DEMO } from "./seed.js";
 
 export const DEMO_STAFF_ID = "demo";
@@ -538,7 +538,7 @@ async function postDemoDeals(
       feeCad: deal.feeCad,
       direction: quoteDirectionForPair(deal.from, deal.to, home),
     });
-    await quotes.post(actor, quote.quoteId, deal.key, deal.purpose, deal.sourceOfFunds);
+    await quotes.post(actor, quote.quoteId, deal.key, deal.purpose, deal.sourceOfFunds, false, undefined, undefined, amountShown(quote, home));
     posted += 1;
   }
   return { posted, reused };

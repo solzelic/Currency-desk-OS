@@ -185,6 +185,7 @@ async function postOneDeal(page: Page, key: string) {
           idempotencyKey: `${k}-${attempt.from}${attempt.to}`,
           purpose: "Personal travel",
           sourceOfFunds: "Employment income",
+          shownAmount: (window as unknown as { CDOS: { quoteTerms: { cashHands: (...args: string[]) => { receiveWire: string } } } }).CDOS.quoteTerms.cashHands(frozen.inputAmount, frozen.outputAmount, frozen.feeCad, frozen.from, frozen.to, "CAD").receiveWire,
         }),
       });
       if (!posted.ok) { refused.push(`post ${attempt.from}→${attempt.to}: ${posted.status} ${await posted.text()}`); continue; }

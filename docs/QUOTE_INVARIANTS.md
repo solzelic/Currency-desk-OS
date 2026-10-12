@@ -17,6 +17,9 @@
   alter the original financial terms.
 - Ledger posting consumes the frozen quote terms and validates quote scope,
   expiry, customer, permission, liquidity, idempotency, and balanced journal.
+- A post carries the Customer receives amount the teller was shown. The
+  server recomputes that amount and refuses with `409 RELOAD_REQUIRED`
+  when it is missing or different. Nothing is posted.
 - The current fee contract is separate CAD tender. It is explicit in receipt,
   till movements, and the CAD functional-currency journal.
 - A quote-originated transaction retains `quote_id`, `market_mid`, rate-board

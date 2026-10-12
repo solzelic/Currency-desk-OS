@@ -292,7 +292,12 @@ test("renaming somebody does not orphan their transactions", async ({ page }) =>
         const frozen = await quote.json();
         const post = await fetch(`/api/quotes/${frozen.quoteId}/post`, {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ idempotencyKey: `${key}-${attempt.from}${attempt.to}`, purpose: "Personal travel", sourceOfFunds: "Employment income" }),
+          body: JSON.stringify({
+            idempotencyKey: `${key}-${attempt.from}${attempt.to}`,
+            purpose: "Personal travel",
+            sourceOfFunds: "Employment income",
+            shownAmount: (window as unknown as { CDOS: { quoteTerms: { cashHands: (...args: string[]) => { receiveWire: string } } } }).CDOS.quoteTerms.cashHands(frozen.inputAmount, frozen.outputAmount, frozen.feeCad, frozen.from, frozen.to, "CAD").receiveWire,
+          }),
         });
         if (!post.ok) { refused.push(`post ${attempt.from}->${attempt.to}: ${post.status} ${await post.text()}`); continue; }
         return { ok: true, ...(await post.json()) };

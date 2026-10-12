@@ -82,9 +82,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   A fee is in the headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
   and buying shows `132.86 CAD (134.36 less 1.50 fee)`. That net is the
   cash the till moves. Yen rounds to a whole yen, and `1000.5` yen reads
-  `Yen has no decimals.` KWD and BHD stay out of the picker until
-  three-decimal currencies are quoted end to end. The page carries a
-  build id; a tab from another build gets `409 RELOAD_REQUIRED`.
+  `Yen has no decimals.` Every currency whose scale is three minor
+  units (JOD, OMR, TND, IQD, LYD, KWD, BHD) stays out of the picker.
+  That filter reads the scale table in `os-src/quote-terms.js`, the
+  same list the ledger uses. The page carries a build id; a tab from
+  another build gets `409 RELOAD_REQUIRED`. A post also carries the
+  Customer receives amount the teller was shown. The server recomputes
+  it and answers `409 RELOAD_REQUIRED` when that amount is missing or
+  different, and nothing is posted. A request with no build id is still
+  accepted, because the desk on main does not send one. Once that
+  script sends the id, a missing id is the same refusal.
   `decimal.js` and the quote arithmetic ship as
   `web/app/quote-terms.min.js`, loaded ahead of the desk script. `os.js`
   and `admin.js` are still the unminified concatenation; minifying those

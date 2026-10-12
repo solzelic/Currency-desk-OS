@@ -31,7 +31,16 @@ refused with `422 ZERO_PAYOUT`.
 
 The desk page carries the build id from `web/app/build-id.txt` and sends
 it as `x-currencydesk-build` on quote create and post. A different id is
-`409 RELOAD_REQUIRED`. A request with no id is still accepted.
+`409 RELOAD_REQUIRED`. A request with no id is still accepted, because
+the desk on main does not send one. Once that script sends the id, a
+missing id is the same refusal.
+
+`POST /api/quotes/:quoteId/post` also carries `shownAmount`, the Customer
+receives figure the teller was looking at. The server recomputes that
+figure from the frozen input, rate, fee, and currencies, and answers
+`409 RELOAD_REQUIRED` when the field is missing or different. Nothing
+is posted. The sheet shows `This screen is out of date. Reload to continue.`
+with a Reload button.
 
 Endpoints: `POST /api/quotes`, `GET /api/quotes/:quoteId`,
 `POST /api/quotes/:quoteId/cancel`, `POST /api/quotes/:quoteId/override`, and

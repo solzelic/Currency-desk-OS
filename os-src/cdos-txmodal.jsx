@@ -102,6 +102,13 @@
   const CCY_NAME = { CAD: 'Canadian Dollar', USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', INR: 'Indian Rupee', PHP: 'Philippine Peso', CNY: 'Chinese Yuan', MXN: 'Mexican Peso', AED: 'UAE Dirham' };
   // mirror the staff-published rate-board order so this picker matches the board
   // (reorder currencies on the Rate Board and they reorder here too).
+  /* Currencies the money columns cannot hold. The scale table is
+     quote-terms, the same list the ledger uses. A code with more than
+     two minor units never enters the picker. */
+  function offDeskScale(code) {
+    const api = window.CDOS && window.CDOS.quoteTerms;
+    return !!(api && api.minorUnits(code) > 2);
+  }
   function boardOrderedCCY() {
     const home = deskHome();
     const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY.slice();
@@ -113,19 +120,17 @@
           const row = rows[code];
           if (!row || row.show === false) return;
           const c = String(code || '').toUpperCase();
-          /* Three-decimal currencies are not quoted end to end. Till
-             counts for them are a separate change. */
-          if (c === 'KWD' || c === 'BHD') return;
+          if (offDeskScale(c)) return;
           if (/^[A-Z]{3}$/.test(c) && base.indexOf(c) < 0) base.push(c);
         });
       }
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
         const rank = {}; order.forEach((c, i) => { rank[c] = i; });
-        return [...base].filter((c) => c !== 'KWD' && c !== 'BHD').sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
+        return [...base].filter((c) => !offDeskScale(c)).sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
       }
     } catch (e) {}
-    return base.filter((c) => c !== 'KWD' && c !== 'BHD');
+    return base.filter((c) => !offDeskScale(c));
   }
   // remittance destinations → payout currency
   const DEST = [
@@ -649,6 +654,7 @@
       receiveAmount: frozenHands.receiveAmount,
       receiveCurrency: frozenHands.receiveCurrency,
       receiveDetail: frozenHands.receiveDetail,
+      receiveWire: frozenHands.receiveWire,
     } : (exchangeQuote || { state: 'bad', message: 'Quote pricing did not load.' }));
     const rateN = isExchange ? 0 : pricing.rate;
     const exchangeReady = !!(fx && fx.state === 'ok');
@@ -923,6 +929,7 @@
         const serbia = packId === 'pack-rs-v1';
         const posted = await window.CDOS.Backend.postQuote(serverQuote.quoteId, {
           idempotencyKey: `web:${serverQuote.quoteId}`,
+          shownAmount: fx && fx.receiveWire,
           purpose: purpose.trim(),
           sourceOfFunds: cap.source.trim(),
           thirdParty: !!cap.thirdParty,

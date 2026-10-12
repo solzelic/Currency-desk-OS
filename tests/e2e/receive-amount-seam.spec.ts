@@ -628,19 +628,24 @@ test("an old build id is refused and nothing posts", async ({ page, request }) =
 test("the picker hides three-decimal currencies and a yen fraction is not READY", async ({ page, request }) => {
   try {
     await prepareDesk(page, 1280);
-    await page.evaluate(() => {
+    const three = ["JOD", "OMR", "TND", "IQD", "LYD", "KWD", "BHD"];
+    await page.evaluate((codes) => {
       const cfg = JSON.parse(localStorage.getItem("yorkfx_rates_v1") || "{}");
       cfg.rows = cfg.rows || {};
-      cfg.rows.KWD = { mid: 0.44, show: true, spread: 0.015 };
-      cfg.rows.BHD = { mid: 3.6, show: true, spread: 0.015 };
+      for (const code of codes) cfg.rows[code] = { mid: 1.5, show: true, spread: 0.015 };
+      cfg.rows.AUD = { mid: 0.91, show: true, spread: 0.015 };
       localStorage.setItem("yorkfx_rates_v1", JSON.stringify(cfg));
-    });
+    }, three);
     await openNewTransaction(page);
+    const scales = await page.evaluate((codes) => codes.map((code) => (window as unknown as { CDOS: { quoteTerms: { minorUnits: (c: string) => number } } }).CDOS.quoteTerms.minorUnits(code)), three);
+    expect(scales).toEqual([3, 3, 3, 3, 3, 3, 3]);
     await page.locator(".cd-money input").first().fill("1");
     const trigger = page.locator(".cd-money").first().locator("button");
     await trigger.click();
-    await expect(page.getByRole("button", { name: /^KWD\b/ })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^BHD\b/ })).toHaveCount(0);
+    for (const code of three) {
+      await expect(page.getByRole("button", { name: new RegExp("^" + code + "\\b") })).toHaveCount(0);
+    }
+    await expect(page.getByRole("button", { name: /^AUD\b/ }).first()).toBeAttached();
     await page.getByRole("button", { name: /^JPY\b/ }).last().evaluate((el: HTMLButtonElement) => el.click());
     await expect(trigger).toContainText("JPY");
     await page.locator(".cd-tx-customer input").fill("Amina Diallo");
@@ -655,6 +660,55 @@ test("the picker hides three-decimal currencies and a yen fraction is not READY"
     await chooseCurrency(page, 1, "GBP");
     await expect(page.locator(".cd-tx-side")).toHaveText("Exchange EUR for GBP");
     await expect(page.locator(".cd-tx-side")).not.toContainText(/cross/i);
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
+test("the sheet does not show a raw server error", async ({ page, request }) => {
+  const raw = [
+    { message: "Quote has expired.", code: "QUOTE_EXPIRED", desk: "Quote expired. Get a new rate." },
+    { message: "Rate publication is stale.", code: "RATE_PUBLICATION_STALE", desk: "The rate board is out of date. Publish the board and try again." },
+  ];
+  try {
+    await prepareDesk(page, 1280);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().fill("40");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    for (const item of raw) {
+      expect(item.desk).not.toMatch(/[-\u2013\u2014]/);
+      await page.route("**/api/quotes", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        await route.fulfill({
+          status: 422,
+          contentType: "application/json",
+          body: JSON.stringify({ code: item.code, message: item.message }),
+        });
+      });
+      await page.getByRole("button", { name: "Get server quote" }).click();
+      const alert = page.getByRole("alert");
+      await expect(alert).toHaveText(item.desk);
+      await expect(page.locator(".cd-tx")).not.toContainText(item.message);
+      await page.unroute("**/api/quotes");
+    }
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toBeVisible();
+    await page.route("**/api/quotes/**/post", async (route) => {
+      await route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "AUTHORIZATION_DENIED", message: "Missing quote:post." }),
+      });
+    });
+    await page.getByRole("button", { name: "Post frozen quote" }).click();
+    const posted = page.getByRole("alert");
+    await expect(posted).toHaveText("You do not have permission to post this quote.");
+    expect("You do not have permission to post this quote.").not.toMatch(/[-\u2013\u2014]/);
+    await expect(page.locator(".cd-tx")).not.toContainText("Missing quote:post.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Quote has expired.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Rate publication is stale.");
   } finally {
     await restoreBoard(request);
   }

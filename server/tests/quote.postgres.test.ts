@@ -13,6 +13,7 @@ import {
   type FrozenQuote,
   type LedgerActor,
 } from "../src/ledger/service.js";
+import { amountShown } from "../src/quotes/terms.js";
 import { DEMO, seed } from "../src/seed.js";
 
 const quotePreview = createRequire(import.meta.url)("../../os-src/quote-terms.js").create(Decimal).preview;
@@ -223,11 +224,61 @@ postgres("quote service against real PostgreSQL", () => {
       url: `/api/quotes/${made.json().quoteId}/post`,
       cookies: await cookie(),
       headers: stale,
-      payload: postBody("stale-build"),
+      payload: postBody("stale-build", { shownAmount: amountShown(made.json()) }),
     });
     expect(posted.statusCode).toBe(409);
     expect(posted.json().code).toBe("RELOAD_REQUIRED");
     expect((await pool.query("SELECT count(*)::int AS n FROM ledger_transactions")).rows[0].n).toBe(0);
+  });
+  it("refuses an old tab that posts without the amount it showed", async () => {
+    const made = await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: body });
+    expect(made.statusCode).toBe(201);
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/quotes/${made.json().quoteId}/post`,
+      cookies: await cookie(),
+      payload: postBody("old-tab"),
+    });
+    expect(posted.statusCode).toBe(409);
+    expect(posted.json()).toMatchObject({
+      code: "RELOAD_REQUIRED",
+      message: "This screen is out of date. Reload to continue.",
+    });
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_transactions")).rows[0].n).toBe(0);
+    expect((await pool.query("SELECT status FROM quotes WHERE quote_id=$1", [made.json().quoteId])).rows[0].status).toBe("active");
+  });
+  it("refuses 4,702.73 when the recomputed amount is 4,702.63", async () => {
+    await pool.query(
+      "UPDATE rate_boards SET buy_margin=0.015, sell_margin=0.015, board_rows=$1::jsonb, published_at=now() WHERE id='board-1'",
+      [JSON.stringify({ USD: { mid: 1.36407, show: true } })],
+    );
+    const made = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: { ...body, from: "USD", to: "CAD", inputAmount: "3500.00", feeCad: "0.00", direction: "customer_sell_foreign" },
+    });
+    expect(made.statusCode, made.body).toBe(201);
+    expect(made.json().outputAmount).toBe("4702.63");
+    for (const shownAmount of ["4702.73", "4,702.73"]) {
+      const refused = await app.inject({
+        method: "POST",
+        url: `/api/quotes/${made.json().quoteId}/post`,
+        cookies: await cookie(),
+        payload: postBody(`wrong-${shownAmount}`, { shownAmount }),
+      });
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json().code).toBe("RELOAD_REQUIRED");
+    }
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_transactions")).rows[0].n).toBe(0);
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/quotes/${made.json().quoteId}/post`,
+      cookies: await cookie(),
+      payload: postBody("right-4702", { shownAmount: "4,702.63" }),
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+    expect(posted.json().outputAmount).toBe("4702.63");
   });
   it("creates a customer-buy quote using We Sell with board and snapshot lineage", async () => {
     const res = await app.inject({
@@ -309,7 +360,7 @@ postgres("quote service against real PostgreSQL", () => {
           method: "POST",
           url: `/api/quotes/${made.quoteId}/post`,
           cookies: await cookie(),
-          payload: postBody("expired"),
+          payload: postBody("expired", { shownAmount: amountShown(made) }),
         })
       ).statusCode,
     ).toBe(422);
@@ -336,7 +387,7 @@ postgres("quote service against real PostgreSQL", () => {
           method: "POST",
           url: `/api/quotes/${cancelled.quoteId}/post`,
           cookies: await cookie(),
-          payload: postBody("cancelled"),
+          payload: postBody("cancelled", { shownAmount: amountShown(cancelled) }),
         })
       ).statusCode,
     ).toBe(422);
@@ -432,6 +483,7 @@ postgres("quote service against real PostgreSQL", () => {
       url: `/api/quotes/${made.quoteId}/post`,
       cookies: await cookie(),
       payload: postBody("quote-post", {
+        shownAmount: amountShown(made),
         thirdParty: true,
         thirdPartyName: "Jane Beneficial Owner",
       }),
@@ -483,7 +535,7 @@ postgres("quote service against real PostgreSQL", () => {
   it("atomically deduplicates simultaneous quote posts", async () => {
     const made = (await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: body })).json();
     const cookies = await cookie();
-    const responses = await Promise.all(["same-key", "same-key"].map((idempotencyKey) => app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies, payload: postBody(idempotencyKey) })));
+    const responses = await Promise.all(["same-key", "same-key"].map((idempotencyKey) => app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies, payload: postBody(idempotencyKey, { shownAmount: amountShown(made) }) })));
     expect([201, 409]).toContain(responses[0]!.statusCode);
     expect([201, 409]).toContain(responses[1]!.statusCode);
     expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("1");
@@ -508,7 +560,7 @@ postgres("quote service against real PostgreSQL", () => {
       expect(response.statusCode).toBe(400);
       expect(response.json().code).toBe("INVALID_REQUEST");
     }
-    const first = await app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies: await cookie(), payload: postBody("facts") });
+    const first = await app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies: await cookie(), payload: postBody("facts", { shownAmount: amountShown(made) }) });
     const retry = await app.inject({ method: "POST", url: `/api/quotes/${made.quoteId}/post`, cookies: await cookie(), payload: postBody("facts", { purpose: "Different purpose", sourceOfFunds: "Different funds" }) });
     expect(retry.json().transactionId).toBe(first.json().transactionId);
     expect((await pool.query("SELECT purpose,source_of_funds FROM ledger_transactions WHERE transaction_id=$1", [first.json().transactionId])).rows[0]).toEqual({ purpose: "Personal travel", source_of_funds: "Employment income" });
@@ -626,7 +678,7 @@ postgres("quote service against real PostgreSQL", () => {
         method: "POST",
         url: `/api/quotes/${quote.quoteId}/post`,
         cookies,
-        payload: postBody(`parity-${from}-${to}`),
+        payload: postBody(`parity-${from}-${to}`, { shownAmount: amountShown(quote) }),
       });
       expect(posted.statusCode, posted.body).toBe(201);
       expect(posted.json().outputAmount).toBe(output);
@@ -651,7 +703,7 @@ postgres("quote service against real PostgreSQL", () => {
       method: "POST",
       url: `/api/quotes/${feeCreated.json().quoteId}/post`,
       cookies,
-      payload: postBody("parity-fee-sell"),
+      payload: postBody("parity-fee-sell", { shownAmount: amountShown(feeCreated.json()) }),
     });
     expect(feePosted.statusCode, feePosted.body).toBe(201);
     expect(feePosted.json().outputAmount).toBe("72.21");
@@ -690,7 +742,7 @@ postgres("quote service against real PostgreSQL", () => {
       method: "POST",
       url: `/api/quotes/${halfCreated.json().quoteId}/post`,
       cookies,
-      payload: postBody("parity-half-up"),
+      payload: postBody("parity-half-up", { shownAmount: amountShown(halfCreated.json()) }),
     });
     expect(halfPosted.statusCode, halfPosted.body).toBe(201);
     expect(halfPosted.json().outputAmount).toBe("1.01");

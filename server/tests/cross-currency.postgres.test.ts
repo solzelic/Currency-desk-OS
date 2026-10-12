@@ -23,6 +23,7 @@ import Decimal from "decimal.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import {
   LedgerService,
@@ -48,10 +49,11 @@ const cross = {
   direction: "customer_cross",
 };
 
-const postBody = (idempotencyKey: string) => ({
+const postBody = (idempotencyKey: string, quote: { inputAmount: string; outputAmount: string; feeCad: string; from: string; to: string }) => ({
   idempotencyKey,
   purpose: "Personal travel",
   sourceOfFunds: "Employment income",
+  shownAmount: amountShown(quote),
 });
 
 const actor: LedgerActor = {
@@ -150,12 +152,12 @@ const quoteFor = async (payload: Record<string, unknown> = {}) =>
     })
   ).json();
 
-const postQuote = async (quoteId: string, key: string) =>
+const postQuote = async (quote: { quoteId: string; inputAmount: string; outputAmount: string; feeCad: string; from: string; to: string }, key: string) =>
   app.inject({
     method: "POST",
-    url: `/api/quotes/${quoteId}/post`,
+    url: `/api/quotes/${quote.quoteId}/post`,
     cookies: await cookie(),
-    payload: postBody(key),
+    payload: postBody(key, quote),
   });
 
 const journalOf = async (transactionId: string) =>
@@ -248,7 +250,7 @@ postgres("one deal, two foreign currencies", () => {
 
   it("posts a USD to EUR deal whose journal balances", async () => {
     const made = await quoteFor();
-    const posted = await postQuote(made.quoteId, "cross-post");
+    const posted = await postQuote(made, "cross-post");
     expect(posted.statusCode).toBe(201);
     const transactionId = posted.json().transactionId;
 
@@ -296,7 +298,7 @@ postgres("one deal, two foreign currencies", () => {
        the moment of disposal and neither is earned before. */
     await setEuroBasis("1.200000000000");
     const made = await quoteFor();
-    const posted = await postQuote(made.quoteId, "cross-cheap-euros");
+    const posted = await postQuote(made, "cross-cheap-euros");
     const transactionId = posted.json().transactionId;
 
     const tx = await pool.query(
@@ -354,7 +356,7 @@ postgres("one deal, two foreign currencies", () => {
        in the spread would be telling the desk it made money. */
     await setEuroBasis("1.600000000000");
     const made = await quoteFor();
-    const posted = await postQuote(made.quoteId, "cross-expensive-euros");
+    const posted = await postQuote(made, "cross-expensive-euros");
     const transactionId = posted.json().transactionId;
 
     const tx = await pool.query(
@@ -437,7 +439,7 @@ postgres("one deal, two foreign currencies", () => {
       [TILL],
     );
     const made = await quoteFor();
-    const posted = await postQuote(made.quoteId, "cross-dry");
+    const posted = await postQuote(made, "cross-dry");
     expect(posted.statusCode).toBe(422);
     expect(posted.json().code).toBe("INSUFFICIENT_TILL_LIQUIDITY");
     expect(
@@ -471,7 +473,7 @@ postgres("one deal, two foreign currencies", () => {
     expect(made.customerRate).toBe("0.692857142857");
     expect(made.outputAmount).toBe("692.86");
 
-    const posted = await postQuote(made.quoteId, "home-unchanged");
+    const posted = await postQuote(made, "home-unchanged");
     expect(posted.statusCode).toBe(201);
     const rows = await journalOf(posted.json().transactionId);
     expect(rows).toEqual([
