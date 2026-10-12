@@ -243,7 +243,10 @@ test("owner and teller phone homes stay honest", async ({ page }) => {
       await expect(sanctions).toContainText("Not connected");
       expect(await sanctions.locator(".phone-row-sub").innerText()).not.toContain("Sanctions screening");
       expect(await tile.innerText()).not.toMatch(/\d/);
-      const idRow = home.getByRole("button", { name: /Automatic ID checks/ });
+      const idRow = home.getByRole("button", { name: /ID checks/ });
+      await expect(idRow.locator(".phone-row-title")).toHaveText("ID checks");
+      const titleFits = await idRow.locator(".phone-row-title").evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+      expect(titleFits).toBe(true);
       await expect(idRow.locator(".phone-row-sub")).toHaveText("Check ID in person for now");
       await expect(idRow.locator(".phone-row-sub")).toHaveCSS("white-space", "nowrap");
       await expect(idRow.locator(".phone-row-chev")).toBeVisible();
@@ -409,10 +412,10 @@ test("each phone detail is a list, and the filing form stays on a computer", asy
   await shot(page, "not_connected");
   await shell.getByRole("button", { name: "Compliance", exact: true }).click();
   await expect(home).toBeVisible();
-  await home.getByRole("button", { name: /Automatic ID checks/ }).click();
+  await home.getByRole("button", { name: /ID checks/ }).click();
   const idExplain = shell.getByTestId("compliance-id-not-connected");
   await expect(idExplain).toBeVisible();
-  await expect(shell.locator("h1")).toHaveText("Automatic ID checks");
+  await expect(shell.locator("h1")).toHaveText("ID checks");
   await expect(idExplain).toContainText("Not connected");
   await expect(idExplain).toContainText("Check ID in person and keep it on the client file.");
 });

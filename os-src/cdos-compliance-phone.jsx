@@ -8,7 +8,7 @@
 
    Honesty, on purpose:
    - Sanctions screening is not connected. The tile has no count.
-   - Automatic ID checks are not connected.
+   - ID checks are not connected.
    - The desk does not file. The owner files in the regulator's portal.
    - Possible split deals are warnings. Nothing here is blocked.
    - A failed load shows "Not loaded", not a stale zero.
@@ -346,7 +346,7 @@
       backLabel = 'Compliance';
       back = () => setDrill(null);
     } else if (explain) {
-      title = explain === 'identity' ? 'Automatic ID checks' : 'Sanctions screening';
+      title = explain === 'identity' ? 'ID checks' : 'Sanctions screening';
       subtitle = '';
       backLabel = 'Compliance';
       back = () => setExplain(null);
@@ -565,7 +565,7 @@
                 </div>
                 <Phone.ListRow
                   className="cph-check"
-                  title="Automatic ID checks"
+                  title="ID checks"
                   subtitle="Check ID in person for now"
                   badge={{ label: 'Not connected', tone: 'neutral' }}
                   chevron

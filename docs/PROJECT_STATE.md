@@ -166,7 +166,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   compliance accent. Each detail reached from the home is a phone list
   or an empty state. The sanctions row is "Check names by hand for now"
   and opens the not-connected explanation, which shows no count.
-  Automatic ID checks say "Check ID in person for now" and open theirs.
+  ID checks say "Check ID in person for now" and open theirs.
   Neither row repeats its title. Possible split
   deals are warnings. The desk does not send the report. The filing
   worksheet is not shown on a phone: that screen says to open it on a
