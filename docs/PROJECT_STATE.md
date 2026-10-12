@@ -600,8 +600,14 @@ out and captured twice in that job. The sign-in card in that render
 keeps its glass blur and shadow. The menu-bar dot stays a circle.
 A picture matches when every channel is within 1 and the number of
 differing pixels is within the cap in
-`tests/e2e/desktop-unchanged.spec.ts`. A picture with no cap is exact.
-A channel that moves by 2 or more fails. The 34,080-pixel Ledger gap
+`tests/e2e/desktop-unchanged.spec.ts`. Sign-in is the only picture
+with a cap, and the cap is 10 pixels. Two renders of main `5216ef4`
+in browser-seam run 38225974487 differed by 4 pixels on sign-in,
+max channel delta 1, after animations were paused, the caret hidden,
+the fonts loaded, and the shot taken in CSS pixels. The glass blur
+and shadow are what move. The shot waits until that blur and shadow
+are applied and the device scale is 1. An 11th pixel, or a channel
+gap of 2 or more, fails. Every other picture is exact. The 34,080-pixel Ledger gap
 was not a phone rule at 1280. The committed picture and the Actions
 runner substituted different faces for weight 600 and for the Records
 tab, because the seam fixture answered `fonts.googleapis.com` with an
@@ -614,8 +620,9 @@ menu bar, which both machines resolved the same way, matched.
 rewrite text after render. The clock is 15:02 on 18 June 2026, the
 audit seed still shows 9:05 AM, and the Cheques picture is the seeded
 cheque 48120 (hold 2026-06-23, fee 5.00). The Rates picture is the
-editor, opened from the desk session, with USD mid 1.3914. Comparison
-is exact (threshold 0, maxDiffPixels 0). The clients list and the
+rate-board sign-in form, which is what main paints at 1280, with USD
+mid 1.3914. Sign-in may differ by one channel level on at most 10
+pixels. Every other picture is exact. The clients list and the
 till roster in that picture are pinned, so other tests' contacts and
 extra drawers stay out of it. The earlier rewrite to
 `#00898` and the 20-pixel ceiling are retired.

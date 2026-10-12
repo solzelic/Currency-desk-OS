@@ -131,4 +131,33 @@ function diffRgba(actual, expected) {
   return { diffPixels, maxDelta, overOne };
 }
 
-module.exports = { decodePng, diffRgba };
+/* Sign-in only. Browser-seam run 38225974487 rendered main
+   5216ef4780b750c2dcce5847296288920d63b443 twice. Animations were
+   paused, the caret was hidden, the desk fonts had loaded, and the
+   shot was CSS pixels. sign-in-1280 still differed by 4 pixels.
+   The largest channel gap was 1, and no pixel moved by 2 or more.
+   The other twelve pictures were identical. The card is glass
+   (saturate + blur, plus the shadow). Chromium does not paint that
+   blur to the same channel values twice. The capture waits until
+   the blur and the shadow are applied and the device scale is 1.
+   What remains may be at most this many pixels, and only when every
+   one of them moved by a single level. An 11th pixel, or a channel
+   gap of 2 or more, is a desktop change and fails. Every other
+   picture stays exact. */
+const SIGN_IN_PIXEL_CAP = 10;
+
+function capFor(name) {
+  const base = String(name).replace(/-chromium-[a-z0-9]+\.png$/i, ".png");
+  if (base === "sign-in-1280.png") return SIGN_IN_PIXEL_CAP;
+  return 0;
+}
+
+function withinDesktopCap(name, diff) {
+  if (!diff || typeof diff.diffPixels !== "number" || typeof diff.maxDelta !== "number") return false;
+  if (diff.diffPixels < 0 || diff.maxDelta < 0) return false;
+  if (diff.maxDelta > 1) return false;
+  if (typeof diff.overOne === "number" && diff.overOne > 0) return false;
+  return diff.diffPixels <= capFor(name);
+}
+
+module.exports = { decodePng, diffRgba, capFor, withinDesktopCap, SIGN_IN_PIXEL_CAP };

@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { deflateSync } from "node:zlib";
 
 const require = createRequire(import.meta.url);
-const { decodePng, diffRgba } = require("./e2e/helpers/desktop-pixels.cjs");
+const { decodePng, diffRgba, capFor, withinDesktopCap, SIGN_IN_PIXEL_CAP } = require("./e2e/helpers/desktop-pixels.cjs");
 
 function crc32(bytes) {
   let crc = ~0;
@@ -93,4 +93,42 @@ test("a 1-level gap and a 2-level gap are counted apart", () => {
   next[5] = 12;
   const diff = diffRgba(next, base);
   assert.deepEqual(diff, { diffPixels: 2, maxDelta: 2, overOne: 1 });
+});
+
+const OTHER_PICTURES = [
+  "ledger-1280.png",
+  "clients-1280.png",
+  "rates-1280.png",
+  "till-1280.png",
+  "compliance-1280.png",
+  "reports-1280.png",
+  "settings-1280.png",
+  "pricing-1280.png",
+  "transfers-1280.png",
+  "cheques-1280.png",
+  "vault-1280.png",
+  "audit-1280.png",
+];
+
+test("sign-in allows one-level glass pixels and rejects a real change", () => {
+  assert.equal(SIGN_IN_PIXEL_CAP, 10);
+  assert.equal(capFor("sign-in-1280.png"), 10);
+  assert.equal(capFor("sign-in-1280-chromium-linux.png"), 10);
+  const oneLevel = { diffPixels: 4, maxDelta: 1, overOne: 0 };
+  assert.equal(withinDesktopCap("sign-in-1280.png", oneLevel), true);
+  assert.equal(withinDesktopCap("sign-in-1280.png", { diffPixels: 10, maxDelta: 1, overOne: 0 }), true);
+  assert.equal(withinDesktopCap("sign-in-1280.png", { diffPixels: 11, maxDelta: 1, overOne: 0 }), false);
+  assert.equal(withinDesktopCap("sign-in-1280.png", { diffPixels: 1, maxDelta: 2, overOne: 1 }), false);
+  assert.equal(withinDesktopCap("sign-in-1280-chromium-linux.png", { diffPixels: 4, maxDelta: 2, overOne: 1 }), false);
+});
+
+test("every other desktop picture stays exact", () => {
+  for (const name of OTHER_PICTURES) {
+    assert.equal(capFor(name), 0, name);
+    assert.equal(capFor(name.replace(".png", "-chromium-linux.png")), 0, name);
+    assert.equal(withinDesktopCap(name, { diffPixels: 0, maxDelta: 0, overOne: 0 }), true, name);
+    assert.equal(withinDesktopCap(name, { diffPixels: 1, maxDelta: 1, overOne: 0 }), false, name);
+    assert.equal(withinDesktopCap(name, { diffPixels: 4, maxDelta: 1, overOne: 0 }), false, name);
+    assert.equal(withinDesktopCap(name, { diffPixels: 1, maxDelta: 2, overOne: 1 }), false, name);
+  }
 });

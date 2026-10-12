@@ -409,14 +409,19 @@ Reports, Settings, Pricing, Transfers, Cheques, Vault, and Audit — and
 the sign-in screen (`#lock`). The PNGs are a render of the main commit
 named in `tests/e2e/README.md`, taken in the browser-seam job, not a
 render of a feature branch and not a laptop. The same job renders that
-commit twice and keeps the pictures only when they match. Animations
+commit twice. Twelve pictures have to match at every pixel. Sign-in
+may differ by at most 10 pixels, and only by one level in a channel:
+two renders of main `5216ef4` differed by 4 pixels there after the
+animation was paused, the caret hidden, the fonts loaded, and the
+shot taken at device scale 1. The glass blur and shadow are what
+move. An 11th pixel, or a channel gap of 2 or more, fails. Animations
 and the caret are off. The sign-in card is the glass card, blur and
 shadow included. Turning those off and swapping the PNG hid the desktop:
 the old picture was not a mid-animation frame, and the replacement did
 not match main. The menu bar's brand dot stays the circle the desk
 draws. A pixel may differ by
-at most 1 in each channel, and only up to the cap named for that
-picture in the spec. A picture with no cap is exact. A channel that
+at most 1 in each channel, and only up to the cap for that
+picture. Every picture except sign-in is exact. A channel that
 moves by 2 or more fails. The text is Archivo and Space Mono from
 `tests/e2e/fonts/`, served in place of `fonts.googleapis.com`, for the
 main capture and for the branch compare. The picture is refused when
@@ -432,8 +437,9 @@ The Cheques picture is one seeded cheque: number `48120`, hold date
 `2026-06-23`, face `1200.00`, fee `5.00`, customer
 `cust_11111111-1111-4111-8111-111111111111`. The USD mid on the rate
 board is `1.3914`, written into `yorkfx_rates_v1` before the page
-scripts run. The embedded board opens from the desk session, so the
-editor is what the Rates picture shows. The "Updated" line is written
+scripts run. The embedded board stays on its sign-in form at 1280, which is what
+main paints. The editor opens only when the parent page is at most
+430px wide. The "Updated" line is written
 only when the words change. Ledger lists that other tests already posted
 are not drawn. The clients list is the empty server answer, and the
 cash drawer is told the branch has one till, so a contact or a second

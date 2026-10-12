@@ -7,10 +7,15 @@
    the picture. Nothing rewrites the text after it renders.
 
    A pixel may differ by at most 1 in each channel (red, green, blue,
-   alpha), and only as many pixels as AA_CAPS names for that picture.
-   A picture with no cap is exact. A channel that moves by 2 or more
-   fails even when the count is inside the cap. The break proof parses
-   the sentence this file throws.
+   alpha). Sign-in is the only picture with a count: 10 pixels.
+   Browser-seam run 38225974487 rendered main 5216ef4 twice. After
+   animations were paused, the caret hidden, the fonts loaded, and
+   the shot taken in CSS pixels, sign-in still differed by 4 pixels
+   and the largest channel gap was 1. The glass blur and shadow are
+   what move. The shot waits until that blur and shadow are applied
+   and the device scale is 1. An 11th pixel, or a gap of 2 or more,
+   fails. Every other picture is exact. The break proof parses the
+   sentence this file throws.
 
    Text is Archivo and Space Mono from tests/e2e/fonts, served in place
    of fonts.googleapis.com. The runner's fontconfig is not a face in
@@ -47,16 +52,12 @@ const DESK_FONT_SPECS = [
 ];
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
-const { decodePng, diffRgba } = require("./tests/e2e/helpers/desktop-pixels.cjs") as {
+const { decodePng, diffRgba, capFor, withinDesktopCap } = require("./tests/e2e/helpers/desktop-pixels.cjs") as {
   decodePng: (buffer: Buffer) => { width: number; height: number; data: Buffer };
   diffRgba: (actual: Buffer, expected: Buffer) => { diffPixels: number; maxDelta: number; overOne: number };
+  capFor: (name: string) => number;
+  withinDesktopCap: (name: string, diff: { diffPixels: number; maxDelta: number; overOne: number }) => boolean;
 };
-
-/* Measured against the pinned main render in the seam job. A non-zero
-   value is the count of pixels that differed by exactly one level, and
-   it is a hard cap. Leave a picture out when it matched exactly.
-   Do not raise a cap to hide a layout or colour change. */
-const AA_CAPS: Record<string, number> = {};
 
 const DESKTOP = { width: 1280, height: 800 };
 const AFTERNOON = Date.parse("2026-06-18T15:02:00.000Z");
@@ -436,9 +437,50 @@ function remember(name: string, row: Record<string, unknown>): void {
   writeFileSync(file, JSON.stringify(prev, null, 2));
 }
 
+/* The sign-in card animates in (cdWinIn) and then sits on a blur and
+   a shadow. Pause the animation, wait until the glass is actually
+   applied, and refuse a device scale other than 1. The caret is
+   hidden on the screenshot. The focus ring stays: that is the
+   product, and blurring the field would be a different picture. */
+async function settleSignIn(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    if (window.devicePixelRatio !== 1) {
+      throw new Error(`device scale is ${window.devicePixelRatio}, expected 1`);
+    }
+    const style = document.getElementById("shot-still") || document.createElement("style");
+    style.id = "shot-still";
+    style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
+    (document.head || document.documentElement).appendChild(style);
+    for (const animation of document.getAnimations()) {
+      try { animation.finish(); } catch { /* an infinite animation has no end */ }
+      try { animation.pause(); } catch { /* already finished */ }
+    }
+    const card = [...document.querySelectorAll("#lock > div")].find((el) => {
+      const filter = getComputedStyle(el).backdropFilter;
+      return filter.includes("blur");
+    });
+    if (!card) throw new Error("sign-in glass layer is not painted");
+    const computed = getComputedStyle(card);
+    if (!computed.backdropFilter.includes("blur")) {
+      throw new Error(`sign-in glass blur is not applied: ${computed.backdropFilter || "none"}`);
+    }
+    if (!computed.boxShadow || computed.boxShadow === "none") {
+      throw new Error("sign-in glass shadow is not applied");
+    }
+    if (computed.opacity !== "1") throw new Error(`sign-in glass opacity is ${computed.opacity}`);
+    if (computed.transform !== "none") throw new Error(`sign-in glass transform is ${computed.transform}`);
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined)));
+    });
+  });
+}
+
 /* The thrown sentence is parsed by scripts/prove-desktop-baseline-breaks.mjs.
    Keep the shape: "<name>: <n> pixels differ, max channel delta <n>, <n> pixels exceed 1 level, cap <n>." */
 async function shoot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+  const scale = await page.evaluate(() => window.devicePixelRatio);
+  if (scale !== 1) throw new Error(`${name}: device scale is ${scale}, expected 1`);
+  if (name.startsWith("sign-in-1280")) await settleSignIn(page);
   const shot = await page.screenshot({ animations: "disabled", caret: "hide", scale: "css" });
   const file = baselineFile(testInfo, name);
   if (process.env.DESKTOP_UPDATE_BASELINES === "1") {
@@ -454,13 +496,13 @@ async function shoot(page: Page, testInfo: TestInfo, name: string): Promise<void
     throw new Error(`${name}: size ${actual.width}x${actual.height} vs baseline ${expected.width}x${expected.height}`);
   }
   const diff = diffRgba(actual.data, expected.data);
-  const cap = AA_CAPS[name] ?? 0;
+  const cap = capFor(name);
   remember(name, { ...diff, cap, width: actual.width, height: actual.height });
   await testInfo.attach(`${name}-pixels`, {
     body: JSON.stringify({ ...diff, cap }),
     contentType: "application/json",
   });
-  if (diff.maxDelta > 1 || diff.diffPixels > cap) {
+  if (!withinDesktopCap(name, diff)) {
     throw new Error(
       `${name}: ${diff.diffPixels} pixels differ, max channel delta ${diff.maxDelta}, ` +
       `${diff.overOne} pixels exceed 1 level, cap ${cap}. ` +

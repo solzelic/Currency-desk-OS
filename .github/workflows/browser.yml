@@ -43,6 +43,12 @@ jobs:
       - name: Phone formatters and dark shell contrast
         run: npm run test:phone-format
 
+      # Sign-in may move by one channel level on at most 10 pixels.
+      # A wider gap, or any gap on another picture, has to fail here
+      # before the seam job spends a runner on it.
+      - name: Desktop pixel allowance
+        run: node --test tests/desktop-pixels.test.mjs
+
       # The served pages are generated from the designs and committed. If a
       # re-export landed without a rebuild, what we ship is not the design
       # that was approved — so say so here rather than letting it reach a

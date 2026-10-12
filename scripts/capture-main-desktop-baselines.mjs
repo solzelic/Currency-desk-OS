@@ -6,8 +6,11 @@
    picture, so the branch is later compared with the same clock and stubs.
    The card keeps its glass blur and shadow. The menu-bar dot stays a circle.
 
-   The commit is rendered twice. The pictures are kept only when those
-   two renders match at every pixel. A laptop render is not a substitute.
+   The commit is rendered twice. Twelve pictures have to match at
+   every pixel. Sign-in may differ by at most 10 pixels, and only by
+   one level in a channel: two renders of main 5216ef4 differed by 4
+   pixels there, and the glass blur is what moves. A laptop render is
+   not a substitute.
 
    The spec serves Archivo and Space Mono from tests/e2e/fonts. The
    picture does not use the runner's fontconfig fallback.
@@ -34,7 +37,7 @@ const readmePath = path.join(root, "tests", "e2e", "README.md");
 const committedDir = path.join(root, "tests", "e2e", "desktop-unchanged.spec.ts-snapshots");
 const require = createRequire(path.join(root, "server", "package.json"));
 const { Client } = require("pg");
-const { decodePng, diffRgba } = require(path.join(root, "tests", "e2e", "helpers", "desktop-pixels.cjs"));
+const { decodePng, diffRgba, withinDesktopCap } = require(path.join(root, "tests", "e2e", "helpers", "desktop-pixels.cjs"));
 
 const SHA_LINE = /^main-sha:\s*([0-9a-f]{40})\s*$/m;
 
@@ -155,7 +158,7 @@ function compareDirs(leftDir, rightDir) {
 }
 
 function exact(rows) {
-  return rows.length === 13 && rows.every((row) => row.diffPixels === 0 && row.maxDelta === 0 && row.overOne === 0);
+  return rows.length === 13 && rows.every((row) => withinDesktopCap(row.name, row));
 }
 
 async function render(outDir) {
@@ -179,7 +182,10 @@ async function render(outDir) {
       console.error(JSON.stringify(rows, null, 2));
       throw new Error("two renders of main did not match. The pictures are not stable enough to commit.");
     }
-    console.log(`main ${sha} rendered twice, 13 pictures, 0 pixels apart`);
+    const signIn = rows.find((row) => String(row.name).startsWith("sign-in-1280"));
+    console.log(
+      `main ${sha} rendered twice, 13 pictures. sign-in: ${signIn ? signIn.diffPixels : "missing"} pixels, max channel delta ${signIn ? signIn.maxDelta : "missing"}. every other picture is exact.`,
+    );
     await resetSeamDatabase(database);
   } finally {
     spawnSync("git", ["worktree", "remove", "--force", work], { cwd: root, stdio: "inherit" });
