@@ -1253,11 +1253,11 @@
       const data = await readBody(res);
       if (data == null) { fail('The desk answered, but not in a way this screen could read.'); return; }
       if (res.ok) { onOk && onOk(data); return; }
-      if (res.status === 429 || (res.status === 401 && data.locked)) {
+      if (res.status === 429 || (res.status === 401 && data.locked) || (res.status === 409 && data.error === 'no_pin')) {
         lockOut(data.detail);
         return;
       }
-      if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+      if (data.detail && data.error === 'weak_pin') {
         fail(data.detail);
         return;
       }

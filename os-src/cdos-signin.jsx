@@ -577,12 +577,12 @@
         }
         if (res.ok) { onConfirm(pick, data); return; }
         setVerifying(false); setPin('');
-        if (res.status === 429 || (res.status === 401 && data.locked)) {
+        if (res.status === 429 || (res.status === 401 && data.locked) || (res.status === 409 && data.error === 'no_pin')) {
           setLockedOut(true);
           setErr(data.detail || 'Too many wrong tries.');
           return;
         }
-        if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+        if (data.detail && data.error === 'weak_pin') {
           setErr(data.detail);
           return;
         }

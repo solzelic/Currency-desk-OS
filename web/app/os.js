@@ -1686,11 +1686,11 @@
         onOk && onOk(data);
         return;
       }
-      if (res.status === 429 || res.status === 401 && data.locked) {
+      if (res.status === 429 || res.status === 401 && data.locked || res.status === 409 && data.error === 'no_pin') {
         lockOut(data.detail);
         return;
       }
-      if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+      if (data.detail && data.error === 'weak_pin') {
         fail(data.detail);
         return;
       }
@@ -31610,7 +31610,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: "var(--cd-on-ink)"
     }), /*#__PURE__*/React.createElement("span", {
       className: "text-[12.5px]"
-    }, "The trading day is closed \u2014 the book is read-only. Reopen from Till & Cash Drawer to post new transactions."), onOpenDayClose && /*#__PURE__*/React.createElement("button", {
+    }, "The trading day is closed. The book is read-only. Reopen from Till & Cash Drawer to post new transactions."), onOpenDayClose && /*#__PURE__*/React.createElement("button", {
       onClick: onOpenDayClose,
       className: "ml-auto text-[11px] font-semibold px-2.5 py-1",
       style: {
@@ -60412,12 +60412,12 @@ ${snap}`;
         }
         setVerifying(false);
         setPin('');
-        if (res.status === 429 || res.status === 401 && data.locked) {
+        if (res.status === 429 || res.status === 401 && data.locked || res.status === 409 && data.error === 'no_pin') {
           setLockedOut(true);
           setErr(data.detail || 'Too many wrong tries.');
           return;
         }
-        if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+        if (data.detail && data.error === 'weak_pin') {
           setErr(data.detail);
           return;
         }
