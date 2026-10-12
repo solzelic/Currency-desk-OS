@@ -43,8 +43,8 @@ const migrations: readonly Migration[] = [
   ["037_pack_in_v1", "src/db/migrations/037_pack_in_v1.sql"],
   ["038_pack_ph_v1", "src/db/migrations/038_pack_ph_v1.sql"],
   /* 039 is the live-cheque index, now on main. 040 is the till mark.
-     041 is claimed by open drafts #96 and #132, 042 by #130, and 043 by #138.
-     044 is shop sign-in failure counts and the emailed-code marker. */
+     041 is claimed by open drafts #96, #110, #120, and #132. 042 is #130.
+     043 is #138. 044 is shop sign-in failure counts and the emailed-code marker. */
   ["039_live_cheque_paper", "src/db/migrations/039_live_cheque_paper.sql"],
   ["040_till_balance_generation", "src/db/migrations/040_till_balance_generation.sql"],
   ["044_signin_rate_limit", "src/db/migrations/044_signin_rate_limit.sql"],

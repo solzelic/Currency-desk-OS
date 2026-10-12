@@ -43,18 +43,48 @@ export const CODE_REFUSAL = {
 export type SignInDecision =
   | { result: "pass" }
   | { result: "fail" }
-  | { result: "locked"; minutes: number; retryAfter: number; scope: "account" | "ip" };
+  | { result: "locked"; minutes: number; retryAfter: number; retryAt: Date; scope: "account" | "ip" };
 
-export function lockBody(locked: { minutes: number; retryAfter: number }): {
+/** 12-hour clock in the branch's zone: "10:42 AM". The phone lock screen
+    prints this. An unusable zone is a thrown error, not a UTC fallback
+    that would tell the desk the wrong time. */
+export function formatLockClock(at: Date, timeZone: string): string {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).formatToParts(at);
+  } catch (err) {
+    throw new Error(`Sign-in lock could not be shown in ${timeZone}.`, { cause: err });
+  }
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+  const dayPeriod = parts.find((part) => part.type === "dayPeriod")?.value?.replace(/\s/g, "").toUpperCase();
+  if (!hour || !minute || (dayPeriod !== "AM" && dayPeriod !== "PM")) {
+    throw new Error(`Sign-in lock could not be shown in ${timeZone}.`);
+  }
+  return `${hour}:${minute} ${dayPeriod}`;
+}
+
+export function lockBody(locked: { minutes: number; retryAfter: number; retryAt: Date }, timeZone: string): {
   error: "too_many_attempts";
   detail: string;
   retryAfter: number;
+  retryAt: string;
+  timeZone: string;
+  until: string;
 } {
   const unit = locked.minutes === 1 ? "minute" : "minutes";
   return {
     error: "too_many_attempts",
     detail: `Too many tries. Try again in ${locked.minutes} ${unit}.`,
     retryAfter: locked.retryAfter,
+    retryAt: locked.retryAt.toISOString(),
+    timeZone,
+    until: formatLockClock(locked.retryAt, timeZone),
   };
 }
 
@@ -65,25 +95,6 @@ export function accountKeyFor(userId: string | undefined, tenantId: string, staf
 
 export function ipBucket(ip: string): string {
   return `ip:${ip}`;
-}
-
-/* Render's proxy appends the address it saw. The rightmost hop is that
-   address; the leftmost is whatever the caller typed, so it is not the
-   one we count. With no header (tests, a process that is not behind the
-   proxy) the socket address is the client. A direct caller can still
-   put a header on the request — the deployed process is reached through
-   Render, which is the hop that appends. */
-export function clientIp(req: { ip?: string; headers: { [name: string]: unknown } }): string {
-  const header = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(header) ? header.join(",") : header;
-  if (typeof raw === "string" && raw.trim()) {
-    const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
-    const addedByProxy = parts[parts.length - 1];
-    if (addedByProxy) return addedByProxy;
-  }
-  const ip = req.ip?.trim();
-  if (!ip) throw new Error("Sign-in has no client address to count.");
-  return ip;
 }
 
 type Bucket = { failures: number; windowStartedAt: Date };
@@ -98,26 +109,26 @@ function timeLeft(windowStartedAt: Date, now: number): { minutes: number; retryA
   };
 }
 
-function lockFrom(row: Bucket | undefined, max: number, scope: "account" | "ip", now: number): SignInDecision | null {
-  if (!row || row.failures < max) return null;
-  const left = timeLeft(row.windowStartedAt, now);
-  if (!left) return null;
-  return { result: "locked", scope, ...left };
+/* `pastOnly` is the correct-password case. Five failures is the limit,
+   so the attempt that lands on five can still be the right password.
+   The attempt that lands on six is past it, right password or not. */
+function lockFrom(row: Bucket, max: number, scope: "account" | "ip", pastOnly: boolean): SignInDecision | null {
+  const tripped = pastOnly ? row.failures > max : row.failures >= max;
+  if (!tripped) return null;
+  const left = timeLeft(row.windowStartedAt, Date.now());
+  if (!left) throw new Error("Sign-in lock window was not stored.");
+  return {
+    result: "locked",
+    scope,
+    ...left,
+    retryAt: new Date(row.windowStartedAt.getTime() + SIGNIN_WINDOW_MS),
+  };
 }
 
 function stricter(a: SignInDecision | null, b: SignInDecision | null): SignInDecision | null {
   if (!a || a.result !== "locked") return b;
   if (!b || b.result !== "locked") return a;
   return a.retryAfter >= b.retryAfter ? a : b;
-}
-
-async function readBucket(db: Db, bucket: string): Promise<Bucket | undefined> {
-  const rows = await db
-    .select({ failures: schema.signinFailures.failures, windowStartedAt: schema.signinFailures.windowStartedAt })
-    .from(schema.signinFailures)
-    .where(eq(schema.signinFailures.bucket, bucket))
-    .limit(1);
-  return rows[0];
 }
 
 /* The 15-minute literal matches SIGNIN_WINDOW_MS. A window that has
@@ -148,34 +159,52 @@ async function bump(db: Db, bucket: string): Promise<Bucket> {
   return { failures: Number(row.failures), windowStartedAt };
 }
 
+/* A success is not a failed guess. The increment above already counted
+   it, so the decision could see a number. Take that one back, and clear
+   the account only when this attempt is still the latest row. A burst
+   that has already run past the limit keeps its count: wiping it would
+   hand the next correct password a fresh five. */
+async function releaseSuccess(db: Db, accountKey: string, accountCount: number, ipKey: string): Promise<void> {
+  await db.execute(sql`DELETE FROM signin_failures WHERE bucket = ${accountKey} AND failures = ${accountCount}`);
+  await db.execute(sql`UPDATE signin_failures SET failures = failures - 1 WHERE bucket = ${ipKey} AND failures > 0`);
+  await db.execute(sql`DELETE FROM signin_failures WHERE bucket = ${ipKey} AND failures <= 0`);
+}
+
+/** An owner, a manager, or a break-glass reset. The address counter stays.
+    No row is a finished clear, not a failure: they were not locked. */
+export async function clearSignInLock(db: Db, userId: string): Promise<void> {
+  await db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, `acct:${userId}`));
+}
+
 /**
- * Always checks the password, including when the account is already
- * locked or missing, so those answers are not the fast ones. A correct
- * password during a lock still fails. A pass clears only the account
- * bucket — the address keeps what it has earned.
+ * The count is written before the decision, in one statement, and the
+ * number that statement returns is the one we judge. A read-then-write
+ * lets a burst all see "four" and a correct password walk through after
+ * the fifth failure has already landed.
+ *
+ * The password is still checked on every attempt, including a lock and a
+ * missing account (the dummy hash), so those answers are not the fast
+ * ones. A correct password past the limit still fails. A pass under the
+ * limit clears the account count and puts back the address increment.
  */
 export async function judgeSignIn(
   db: Db,
   input: { password: string; storedHash: string | null; accountKey: string; ip: string; eligible: boolean },
 ): Promise<SignInDecision> {
-  const passwordOk = await verifyPassword(input.password, input.storedHash ?? DUMMY_PASSWORD_HASH);
-  const now = Date.now();
   const ipKey = ipBucket(input.ip);
-  const [accountRow, ipRow] = await Promise.all([readBucket(db, input.accountKey), readBucket(db, ipKey)]);
-  const already = stricter(
-    lockFrom(accountRow, SIGNIN_ACCOUNT_MAX, "account", now),
-    lockFrom(ipRow, SIGNIN_IP_MAX, "ip", now),
+  /* Account, then address. The same order on every request, so two
+     guesses cannot each hold the other's row. */
+  const accountNext = await bump(db, input.accountKey);
+  const ipNext = await bump(db, ipKey);
+  const passwordOk = await verifyPassword(input.password, input.storedHash ?? DUMMY_PASSWORD_HASH);
+  const under = passwordOk && input.eligible;
+  const locked = stricter(
+    lockFrom(accountNext, SIGNIN_ACCOUNT_MAX, "account", under),
+    lockFrom(ipNext, SIGNIN_IP_MAX, "ip", under),
   );
-  if (already) return already;
-  if (!input.eligible || !passwordOk) {
-    const [accountNext, ipNext] = await Promise.all([bump(db, input.accountKey), bump(db, ipKey)]);
-    const tripped = stricter(
-      lockFrom(accountNext, SIGNIN_ACCOUNT_MAX, "account", Date.now()),
-      lockFrom(ipNext, SIGNIN_IP_MAX, "ip", Date.now()),
-    );
-    return tripped ?? { result: "fail" };
-  }
-  await db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, input.accountKey));
+  if (locked) return locked;
+  if (!under) return { result: "fail" };
+  await releaseSuccess(db, input.accountKey, accountNext.failures, ipKey);
   return { result: "pass" };
 }
 

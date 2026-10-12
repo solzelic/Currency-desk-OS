@@ -19,7 +19,7 @@
    file stays the desk: a staff id that is not an email is password-only.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -34,12 +34,13 @@ import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordRes
 import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
+import { clientIp } from "../auth/client-ip.js";
 import {
   CODE_REFUSAL,
   DUMMY_CODE_HASH,
   LOGIN_PROOF_COOKIE,
   accountKeyFor,
-  clientIp,
+  clearSignInLock,
   createLoginProof,
   deleteLoginProof,
   judgeSignIn,
@@ -134,10 +135,26 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     return !!r[0]?.s;
   };
 
+  /* The clock on the lock screen is the branch's clock. The person's own
+     branch when we know them; the desk's branch when the id is unknown,
+     so the sentence does not change shape between the two. No zone is a
+     thrown error. A UTC stand-in would show the wrong hour. */
+  async function branchZone(user: typeof schema.staffUsers.$inferSelect | undefined, tenantId: string): Promise<string> {
+    if (user) {
+      const own = await db.select({ timezone: schema.branches.timezone }).from(schema.branches).where(eq(schema.branches.id, user.branchId)).limit(1);
+      const zone = own[0]?.timezone?.trim();
+      if (zone) return zone;
+    }
+    const desk = await db.select({ timezone: schema.branches.timezone }).from(schema.branches).where(eq(schema.branches.tenantId, tenantId)).limit(1);
+    const zone = desk[0]?.timezone?.trim();
+    if (!zone) throw new Error("Sign-in lock has no branch time zone.");
+    return zone;
+  }
+
   /* One refusal for both doors. A lock and a wrong password are different
      sentences on purpose; a missing account and a real one are not.
      The audit row names the lock, never the password. */
-  async function passwordRefusal(user: typeof schema.staffUsers.$inferSelect | undefined, decision: SignInDecision) {
+  async function passwordRefusal(user: typeof schema.staffUsers.$inferSelect | undefined, decision: SignInDecision, tenantId: string) {
     if (decision.result === "pass") throw new Error("passwordRefusal called after the password matched.");
     if (user) {
       await audit(db, {
@@ -149,7 +166,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         detail: decision.result === "locked" ? { scope: decision.scope, retryAfter: decision.retryAfter } : {},
       });
     }
-    if (decision.result === "locked") return { status: 429 as const, body: lockBody(decision) };
+    if (decision.result === "locked") return { status: 429 as const, body: lockBody(decision, await branchZone(user, tenantId)) };
     return { status: 401 as const, body: { error: "invalid_credentials" as const } };
   }
 
@@ -160,12 +177,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     }
     const { staffId, password, tenantId } = parsed.data;
 
-    const users = await db
-      .select()
-      .from(schema.staffUsers)
-      .where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.staffId, staffId)))
-      .limit(1);
-    const user = users[0];
+    const user = await findStaffForLogin(db, staffId, tenantId);
     const decision = await judgeSignIn(db, {
       password,
       storedHash: user?.passwordHash ?? null,
@@ -174,7 +186,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       eligible: !!user && user.active,
     });
     if (decision.result !== "pass") {
-      const refused = await passwordRefusal(user, decision);
+      const refused = await passwordRefusal(user, decision, tenantId);
       return reply.code(refused.status).send(refused.body);
     }
     if (!user) throw new Error("Sign-in passed without a staff user.");
@@ -227,10 +239,37 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     plan: await tenantPlan(db, user.tenantId),
   });
   // resolve a staff user by staff id — shared with the platform-admin door
-  // so the two cannot drift into two different people.
+  // so the two cannot drift into two different people. Case folds the same
+  // way the failure counter does.
   async function findLoginUser(staffId: string, tenantId: string) {
     return findStaffForLogin(db, staffId, tenantId);
   }
+
+  /* An owner or a manager clears the account counter. A teller does not.
+     There is no device trust here: unlocking does not remember this
+     browser, and it does not touch the address counter. */
+  const unlockBody = z.object({ staffId: z.string().min(1).max(120) });
+  app.post("/api/auth/login/unlock", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (who.role !== "administrator" && who.role !== "branch_manager") {
+      return reply.code(403).send({ error: "forbidden", detail: "Only an owner or a manager can unlock a sign-in." });
+    }
+    const parsed = unlockBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const target = await findStaffForLogin(db, parsed.data.staffId, who.tenantId);
+    if (!target || target.tenantId !== who.tenantId) return reply.code(404).send({ error: "not_found" });
+    await clearSignInLock(db, target.id);
+    await audit(db, {
+      tenantId: who.tenantId,
+      legalEntityId: who.legalEntityId,
+      branchId: who.branchId,
+      actorId: who.id,
+      action: "auth.login_unlocked",
+      detail: { staffId: target.staffId },
+    });
+    return { ok: true };
+  });
 
   // Step 1 of an email-verified sign-in: prove the password, then email a code.
   // Users without an email on file (e.g. seeded staff ids) sign in on the
@@ -248,7 +287,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       eligible: !!user && user.active,
     });
     if (decision.result !== "pass") {
-      const refused = await passwordRefusal(user, decision);
+      const refused = await passwordRefusal(user, decision, tenantId);
       return reply.code(refused.status).send(refused.body);
     }
     if (!user) throw new Error("Sign-in passed without a staff user.");
