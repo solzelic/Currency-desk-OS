@@ -472,7 +472,8 @@
               <ul className="phq-time">
                 {(detail.timeline || []).map(function (event, index) {
                   const label = (K().STATUS[event.status] && K().STATUS[event.status].label) || event.status;
-                  return <li key={index}><b>{label}</b><span>{event.ts} · {event.by || 'the desk'}{event.note ? ' — ' + event.note : ''}</span></li>;
+                  const when = event.at ? K().historyTime(event.at) : (event.ts || '');
+                  return <li key={index}><b>{label}</b><span>{when} · {event.by || 'the desk'}{event.note ? ' — ' + event.note : ''}</span></li>;
                 })}
               </ul>
               {detail.status === 'held' && ask === '' && (

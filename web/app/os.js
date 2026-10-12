@@ -64555,9 +64555,10 @@ window.CDOS_PERSIST = (function () {
       className: "phq-time"
     }, (detail.timeline || []).map(function (event, index) {
       const label = K().STATUS[event.status] && K().STATUS[event.status].label || event.status;
+      const when = event.at ? K().historyTime(event.at) : event.ts || '';
       return /*#__PURE__*/React.createElement("li", {
         key: index
-      }, /*#__PURE__*/React.createElement("b", null, label), /*#__PURE__*/React.createElement("span", null, event.ts, " \xB7 ", event.by || 'the desk', event.note ? ' — ' + event.note : ''));
+      }, /*#__PURE__*/React.createElement("b", null, label), /*#__PURE__*/React.createElement("span", null, when, " \xB7 ", event.by || 'the desk', event.note ? ' — ' + event.note : ''));
     })), detail.status === 'held' && ask === '' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phq-btn",
