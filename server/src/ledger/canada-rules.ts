@@ -234,10 +234,9 @@ async function largeCashRule(
    across a daylight-saving change. The instant is named by
    `staticAggregationWindow`, which uses the shared branch midnight.
 
-   The browser lets an owner move the anchor off midnight
-   (settings.aggWindowStart). That choice is not on the server. The
-   gate uses midnight, which is the product default. A desk that
-   moves the anchor is a known gap: docs/CANADA_PACK.md. */
+   The browser control shows "Branch midnight" and does not apply a
+   stored aggWindowStart. The gate uses midnight. A server window
+   per desk is not ruled yet. */
 export function staticWindow(
   at: Date,
   timeZone: string,

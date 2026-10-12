@@ -118,9 +118,10 @@ These are not implemented. The pack does not pretend they are.
 - Statutory holidays. Working days here are Monday to Friday.
   FINTRAC also drops statutory holidays. There is no holiday
   calendar in the pack.
-- The browser lets an owner move the 24-hour anchor off midnight
-  (`settings.aggWindowStart`). That choice is not stored on the
-  server. The identity gate uses midnight in the branch's time zone.
+- The browser 24-hour control is read-only and shows "Branch midnight".
+  A stored `settings.aggWindowStart` is left as it is and is not
+  applied. The clusters and the identity gate both use midnight in
+  the branch's time zone. A server window per desk is not ruled yet.
   A branch row with no readable zone is refused. A missing branch
   row still falls back to `America/Toronto`. The end of the window
   is that instant plus 24 hours, not the next local midnight.

@@ -10556,23 +10556,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         key: `${pack && pack.packId || 'pack'}-${packRev}`
       }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' || regime && regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(Row, {
         title: "24-hour window starts at",
-        desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
-      }, isOwner ? /*#__PURE__*/React.createElement("input", {
-        type: "time",
-        value: settings.aggWindowStart || '00:00',
-        onChange: e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`),
-        className: "text-sm px-2.5 py-2 outline-none",
-        style: {
-          ...inSty,
-          width: 130
-        }
-      }) : /*#__PURE__*/React.createElement("span", {
+        desc: "The window is branch midnight, then 24 hours, the same cut the server uses. It stays there until a server window per desk is ruled. A stored start time is left as it is and is not applied."
+      }, /*#__PURE__*/React.createElement("span", {
+        "data-testid": "agg-window-anchor",
         className: "text-[12px] px-2.5 py-1.5",
         style: {
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, settings.aggWindowStart || '00:00')), paused || !(regime && regime.windowKind === 'calendar_month') ? null : /*#__PURE__*/React.createElement(Row, {
+      }, "Branch midnight")), paused || !(regime && regime.windowKind === 'calendar_month') ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Cash report window",
         desc: "A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND."
       }, /*#__PURE__*/React.createElement("span", {
@@ -42382,9 +42374,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
-       • STATIC declared window — a fixed 24h period the owner anchors
-         (settings.aggWindowStart, e.g. 00:00 or a 09:00 business-day cut).
-         Every report declares the exact window it was aggregated over.
+       • STATIC declared window — branch midnight, then 24 hours.
+         A stored aggWindowStart is not applied, so the browser
+         cannot move off the server's cut. Every report declares
+         the exact window it was aggregated over.
        • DUAL BASIS — sub-threshold cash-in is aggregated BOTH by conductor
          (who handed over the cash) AND by beneficiary (who it's destined for).
          Three different people sending $4k each to one beneficiary is a
@@ -42393,10 +42386,6 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
          transactions, BOTH reports are emitted — we never pick one.
        • Singles (≥ threshold on their own) are filed individually elsewhere,
          so the aggregate rule sums only the sub-threshold cash-in. */
-  function parseHHMM(s) {
-    const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
-    return m ? +m[1] * 60 + +m[2] : 0;
-  }
   /* The static 24h window a timestamp falls into, anchored at startMins
      past midnight in the zone the till session names. The end is that
      instant plus H hours, not the next midnight. The day key is that
@@ -42498,7 +42487,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       beneficiary: e => e.beneficiary
     };
     const axes = includeAll ? policy.axes || ['conductor', 'on_behalf_of', 'beneficiary'] : ['conductor', 'beneficiary'];
-    const startMins = parseHHMM(settings && settings.aggWindowStart || '00:00');
+    /* Branch midnight. settings.aggWindowStart is not read and not written. */
+    const startMins = 0;
     const buckets = {};
     (events || []).forEach(e => {
       if (!(e.amt > 0)) return;
@@ -44543,7 +44533,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }, r.name)))));
     }
     const total = clusters.reduce((s, c) => s + c.total, 0);
-    const winStart = settings && settings.aggWindowStart || '00:00';
+    const winStart = 'Branch midnight';
     const benCount = clusters.filter(c => c.basis === 'beneficiary').length;
     const eftCount = clusters.filter(c => c.kind === regime.wireCode).length;
     const basisPill = b => b === 'beneficiary' ? /*#__PURE__*/React.createElement("span", {

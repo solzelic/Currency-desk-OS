@@ -287,7 +287,7 @@
       </div>);
     }
     const total = clusters.reduce((s, c) => s + c.total, 0);
-    const winStart = (settings && settings.aggWindowStart) || '00:00';
+    const winStart = 'Branch midnight';
     const benCount = clusters.filter(c => c.basis === 'beneficiary').length;
     const eftCount = clusters.filter(c => c.kind === regime.wireCode).length;
     const basisPill = (b) => b === 'beneficiary'
