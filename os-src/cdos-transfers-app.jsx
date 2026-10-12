@@ -438,13 +438,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, 0);
     }, [transfers, settlements]);
     const TABS = [['pipeline', 'Pipeline', 'send'], ['settlement', 'Settlement', 'coins'], ['beneficiaries', 'Beneficiaries', 'users'], ['corridors', 'Corridors', 'globe'], ['reports', 'EFT reports', 'shield']];
+    const prefill = modal && typeof modal === 'object' ? modal : null;
 
     if (phoneLayout && window.CDOS.PhoneTransfers) {
       const PhoneTransfers = window.CDOS.PhoneTransfers;
       return (
         <div className="phone-transfers">
-          <PhoneTransfers transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} clients={clients} me={me} log={log} setTransfers={setTransfers} timeZone={settings && settings.timezone} onNew={() => setModal(true)} openId={phoneOpen} onOpened={() => setPhoneOpen(null)} />
-          {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setPhoneOpen(id); }} />}
+          <PhoneTransfers transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} clients={clients} me={me} log={log} setTransfers={setTransfers} setBeneficiaries={setBeneficiaries} timeZone={settings && settings.timezone} onNew={(next) => setModal(next && typeof next === 'object' ? next : true)} openId={phoneOpen} onOpened={() => setPhoneOpen(null)} />
+          {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged, initialSender: prefill && prefill.sender ? prefill.sender : '', initialBeneficiaryId: prefill && prefill.benId ? prefill.benId : '' }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setPhoneOpen(id); }} />}
         </div>
       );
     }

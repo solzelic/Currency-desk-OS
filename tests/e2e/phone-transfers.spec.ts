@@ -496,3 +496,67 @@ test("amounts match the stored ledger row", async ({ page }) => {
   await expect(detail.getByRole("button", { name: "Put on hold" })).toHaveCount(0);
   await expect(detail.getByRole("button", { name: "Release" })).toHaveCount(0);
 });
+
+test("saved beneficiaries stay on the sender file", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page);
+  const posts: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST") posts.push(req.url());
+  });
+  await openTransfers(page);
+  const list = page.locator(".phone-transfers");
+  await list.getByRole("tab", { name: "Saved beneficiaries" }).click();
+  await expect(list.getByText("Maria Carter")).toBeVisible();
+  await expect(list.getByText("Rohan Miller")).toBeVisible();
+  await expect(list.getByText("Lin Wei")).toBeVisible();
+  await expect(list).not.toContainText("Joel Carter");
+  await expect(list).not.toContainText("Example data");
+  await expect(list).not.toContainText("Mumbai");
+  await expect(list).not.toContainText("\u2014");
+  await expect(list).not.toContainText("\u2013");
+
+  await list.getByText("Maria Carter").click();
+  await expect(list.getByRole("heading", { level: 1, name: "Rachel Carter" })).toBeVisible();
+  await expect(list.getByText("Not on file")).toBeVisible();
+  await expect(list).not.toContainText("C4410");
+  await expect(list).not.toContainText("Driver's licence");
+  await expect(list.getByRole("button", { name: "Use Maria Carter" })).toBeVisible();
+  await list.getByRole("button", { name: "New record for Rachel" }).click();
+  await expect(page.getByText("Rachel's beneficiary")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /Customer pays/ })).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await list.getByRole("button", { name: "Use Maria Carter" }).click();
+  await expect(page.getByText("Maria Carter").first()).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /Customer pays/ })).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
+
+  const before = posts.length;
+  await list.getByRole("button", { name: "Add a beneficiary" }).click();
+  const sheet = page.locator(".phone-ben-sheet");
+  await expect(sheet.getByRole("alert")).toHaveText("1 thing missing: Full name");
+  await expect(sheet).not.toContainText("Needed for large transfers");
+  await expect(sheet.getByText("Optional").first()).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Save beneficiary" })).toBeDisabled();
+  await expect(sheet.getByText("Add the full name to save.")).toBeVisible();
+  await expect(sheet.getByText("Type the name as it is on their ID.")).toBeVisible();
+  await phoneSweep(page, {
+    roots: [".phone-ben-sheet", ".phone-head", "#phone-dock"],
+  });
+  await sheet.getByPlaceholder("Receiver's name").fill("Ada Carter");
+  await expect(sheet.getByRole("alert")).toHaveCount(0);
+  await sheet.getByRole("button", { name: "Save beneficiary" }).click();
+  await expect(list.getByText("Ada Carter")).toBeVisible();
+  const stored = await page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_beneficiaries_v1") || "[]");
+    return rows.some((item: { name?: string; sender?: string }) => item.name === "Ada Carter" && item.sender === "Rachel Carter");
+  });
+  expect(stored).toBe(true);
+  expect(posts.slice(before).some((url) => url.includes("/api/"))).toBe(false);
+  await expect(list).not.toContainText("Joel Carter");
+
+  await phoneSweep(page, {
+    roots: [".phone-transfers", ".phone-head", "#phone-dock"],
+  });
+});

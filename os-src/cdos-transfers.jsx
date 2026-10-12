@@ -273,7 +273,7 @@
   }
 
   /* ===================== NEW TRANSFER MODAL ===================== */
-  function TransferModal({ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, onClose, onDone, serverBacked, onServerPosted }) {
+  function TransferModal({ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, onClose, onDone, serverBacked, onServerPosted, initialSender, initialBeneficiaryId }) {
     /* One idempotency key per ticket — see the long note on `attemptKey`
        in cdos-txmodal.jsx. The key used to be the browser's guessed
        TR-<date>-NNN, which restarts at 001 on every fresh sign-in, so a
@@ -290,8 +290,8 @@
       return attempt.current;
     };
     const [direction, setDirection] = useState('send');
-    const [senderName, setSenderName] = useState('');
-    const [benId, setBenId] = useState('');
+    const [senderName, setSenderName] = useState(initialSender || '');
+    const [benId, setBenId] = useState(initialBeneficiaryId || '');
     const [receiveBeneficiaryName, setReceiveBeneficiaryName] = useState('');
     const [receiveBeneficiaryAddress, setReceiveBeneficiaryAddress] = useState('');
     const [addBen, setAddBen] = useState(false);
@@ -755,6 +755,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, bookTransfers, bookBeneficiaries, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
+    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, bookTransfers, bookBeneficiaries, FLOW, STATUS, statusLabel, METHODS, methodLabel, RELATIONSHIPS, StatusPill, flagOf, cadOf, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
   });
 })();

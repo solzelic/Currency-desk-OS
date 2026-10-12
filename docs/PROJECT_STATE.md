@@ -116,8 +116,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the two names, the TR number sits under it, then sender, beneficiary,
   purpose, source of funds, and the status. The phone does not change
   that status. Amounts are the ledger row and the obligation face, or
-  they are absent. The desktop pipeline is unchanged. Saved beneficiaries
-  are not on the phone yet. The bar is five
+  they are absent. Saved beneficiaries are the second tab: a sender's ID,
+  the people already saved for them, and a new-beneficiary sheet.
+  Use and New record open the existing cash step with that sender
+  filled in. The desktop pipeline is unchanged. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -625,6 +627,12 @@ empty stylesheet. The 1280 spec now serves Archivo and Space Mono from
 `tests/e2e/fonts/` for both the main capture and the branch compare.
 A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
+
+**2026-10-12**, phone saved beneficiaries. The Transfers list has a
+second tab. A sender file shows the ID already stored for that
+client, or Not on file. A new beneficiary asks for the same fields
+the desktop modal saves, and an address is required only on a
+Canada version 2 pack. York is not that pack.
 
 **2026-10-12**, phone transfer record. A row opens the record. The
 title is the two names, at 22px and weight 700, and the TR number sits

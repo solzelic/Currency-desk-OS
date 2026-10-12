@@ -1,6 +1,5 @@
-/* Phone Transfers. The list, and the record a row opens.
+/* Phone Transfers. The list, the record, and saved beneficiaries.
    The cash step stays the existing New transfer sheet.
-   Saved beneficiaries come in a later PR.
    A tracking PIN, a receipt, and an EFT report stay off this screen.
    A status note that claims a partner moved the money is not shown. */
 (function () {
@@ -212,11 +211,163 @@
     );
   }
 
-  function PhoneTransfers({ transfers, beneficiaries, corridors, clients, me, log, setTransfers, onNew, onOpen, openId, onOpened, timeZone }) {
+  function needsAddress() {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    return !!(pack && pack.packId === 'pack-ca-v2');
+  }
+
+  function maskId(num) {
+    const s = String(num || '').replace(/\s+/g, '');
+    if (!s) return '';
+    if (s.length <= 4) return '\u2022\u2022\u2022\u2022' + s.slice(-2);
+    return s.slice(0, Math.min(5, s.length - 4)) + '\u2022\u2022\u2022' + s.slice(-2);
+  }
+
+  function idFacts(client) {
+    if (!client || !client.idType || !client.idNum) return null;
+    const { day } = shell();
+    const expiry = client.idExpiry ? String(client.idExpiry).slice(0, 10) : '';
+    const expired = !!(expiry && today() && expiry < today());
+    return { type: client.idType, number: maskId(client.idNum), expiry: expiry ? shown(day(expiry)) : '', current: !expired };
+  }
+
+  function payoutBits(b) {
+    const { T } = shell();
+    const how = T.methodLabel(b.method) + (b.partner ? ', ' + b.partner : '');
+    if (b.method === 'cash' && b.pickupCity) return how + ' \u00b7 ' + b.pickupCity;
+    if (b.method === 'bank' && b.account) return how + ' \u00b7 acct ' + b.account;
+    if (b.method === 'wallet' && b.walletId) return how + ' \u00b7 ' + b.walletId;
+    return how;
+  }
+
+  function BenSheet({ sender, lockSender, corridors, onClose, onSave }) {
+    const { T, Ic } = shell();
+    const first = corridors.find((c) => c.active) || corridors[0];
+    const [b, setB] = useState(() => ({
+      id: 'b' + Date.now(), name: '', relationship: 'Parent', sender: sender || '',
+      corridor: first ? first.id : '', method: 'cash', partner: '', pickupCity: '', phone: '',
+      address: '', bank: '', branch: '', account: '', walletId: '',
+    }));
+    const cor = corridors.find((c) => c.id === b.corridor) || first || { partners: [] };
+    const methods = T.METHODS.filter((m) => (cor.partners || []).some((p) => p.methods.includes(m[0])));
+    const partners = (cor.partners || []).filter((p) => p.methods.includes(b.method));
+    const set = (k, v) => setB((s) => ({ ...s, [k]: v }));
+    useEffect(() => {
+      if (!methods.find((m) => m[0] === b.method) && methods[0]) setB((s) => ({ ...s, method: methods[0][0] }));
+    }, [b.corridor]);
+    useEffect(() => {
+      if (!partners.find((p) => p.name === b.partner)) setB((s) => ({ ...s, partner: partners[0] ? partners[0].name : '' }));
+    }, [b.corridor, b.method]);
+    if (!first) throw new Error('Phone transfers: this desk has no corridors.');
+    const large = needsAddress();
+    const missing = [];
+    if (!b.name.trim()) missing.push('Full name');
+    if (!b.partner) missing.push('Payout partner');
+    if (large && !String(b.address || '').trim()) missing.push('Address');
+    const valid = !!(b.name.trim() && b.partner);
+    const why = !b.name.trim() ? 'Add the full name to save.' : (!b.partner ? 'Choose a payout partner to save.' : '');
+    const short = { bank: 'Bank', cash: 'Cash pickup', wallet: 'Wallet' };
+    const count = missing.length === 1 ? '1 thing missing: ' : missing.length + ' things missing: ';
+    return ReactDOM.createPortal(
+      <div className="phone-task phone-ben-sheet fixed inset-0" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }}>
+        <div role="dialog" aria-label="New beneficiary" className="phone-task-sheet" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="phone-task-head phone-ben-head">
+            <button type="button" className="phone-ben-cancel" onClick={onClose}>Cancel</button>
+            <h2>New beneficiary</h2>
+            <span />
+          </div>
+          <div className="phone-task-body">
+            {missing.length ? <div className="phone-miss" role="alert">{count + missing.join(', ')}</div> : null}
+            <label className="phone-field"><span className="phone-flabel">Sender</span>
+              {lockSender
+                ? <div className="phone-input is-locked">{Ic ? <Ic n="users" s={18} /> : null} {b.sender}</div>
+                : <input value={b.sender} onChange={(e) => set('sender', e.target.value)} placeholder="Who sends to this person" />}
+            </label>
+            <label className="phone-field"><span className="phone-flabel">Full name <span className="phone-req">Required</span></span>
+              <input className={!b.name.trim() ? 'is-err' : ''} value={b.name} onChange={(e) => set('name', e.target.value)} placeholder="Receiver's name" aria-invalid={!b.name.trim()} />
+              {!b.name.trim() ? <span className="phone-errtx">Type the name as it is on their ID.</span> : null}
+            </label>
+            <label className="phone-field"><span className="phone-flabel">Relationship to sender</span>
+              <select value={b.relationship} onChange={(e) => set('relationship', e.target.value)}>{T.RELATIONSHIPS.map((r) => <option key={r}>{r}</option>)}</select>
+            </label>
+            <label className="phone-field"><span className="phone-flabel">Destination</span>
+              <select value={b.corridor} onChange={(e) => set('corridor', e.target.value)}>{corridors.map((c) => <option key={c.id} value={c.id}>{c.country + ' \u00b7 ' + c.ccy}</option>)}</select>
+            </label>
+            <div className="phone-field"><span className="phone-flabel">Payout method</span>
+              <div className="phone-segm" role="group" aria-label="Payout method">
+                {methods.map((m) => <button key={m[0]} type="button" className={b.method === m[0] ? 'on' : ''} aria-pressed={b.method === m[0]} onClick={() => set('method', m[0])}>{short[m[0]] || m[1]}</button>)}
+              </div>
+            </div>
+            <label className="phone-field"><span className="phone-flabel">Payout partner <span className="phone-req">Required</span></span>
+              <select className={!b.partner ? 'is-err' : ''} value={b.partner} onChange={(e) => set('partner', e.target.value)} aria-invalid={!b.partner}>
+                {partners.map((p) => <option key={p.name}>{p.name}</option>)}
+                {!partners.length ? <option value="">No partner for this method</option> : null}
+              </select>
+            </label>
+            <label className="phone-field"><span className="phone-flabel">Address {large ? <span className="phone-req">Needed for large transfers</span> : <span className="phone-opt">Optional</span>}</span>
+              <input className={large && !String(b.address || '').trim() ? 'is-err' : ''} value={b.address || ''} onChange={(e) => set('address', e.target.value)} placeholder="Street, city, country" />
+            </label>
+            {b.method === 'bank' ? <label className="phone-field"><span className="phone-flabel">Account number <span className="phone-opt">Optional</span></span><input value={b.account} onChange={(e) => set('account', e.target.value)} /></label> : null}
+            {b.method === 'cash' ? <label className="phone-field"><span className="phone-flabel">Pickup city <span className="phone-opt">Optional</span></span><input value={b.pickupCity} onChange={(e) => set('pickupCity', e.target.value)} /></label> : null}
+            {b.method === 'wallet' ? <label className="phone-field"><span className="phone-flabel">Wallet ID / number <span className="phone-opt">Optional</span></span><input value={b.walletId} onChange={(e) => set('walletId', e.target.value)} /></label> : null}
+            <label className="phone-field"><span className="phone-flabel">Phone <span className="phone-opt">Optional</span></span><input value={b.phone} onChange={(e) => set('phone', e.target.value)} inputMode="tel" /></label>
+          </div>
+          <div className="phone-task-foot">
+            <button type="button" className="phone-task-go" disabled={!valid} onClick={() => onSave({ ...b, createdAt: stamp() })}>Save beneficiary</button>
+            {why ? <p className="phone-sticky-why">{why}</p> : null}
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
+
+  function SenderFile({ name, clients, beneficiaries, corridors, onBack, onUse, onAdd, onNew }) {
+    const { Phone, Ic } = shell();
+    const facts = idFacts(clients && clients[name]);
+    const mine = beneficiaries.filter((b) => b.sender === name);
+    const corOf = (id) => corridors.find((c) => c.id === id) || {};
+    const first = String(name || '').trim().split(/\s+/)[0] || name;
+    return (
+      <Phone.Screen app="transfers" className="phone-drill" sticky={<Phone.StickyAction label={'New record for ' + first} onClick={() => onNew({ sender: name })} />}>
+        <Crumb onBack={onBack} />
+        <h1 className="phone-drill-title">{name}</h1>
+        <section className="phone-card">
+          <h2>Sender ID on file</h2>
+          {facts ? (
+            <>
+              <Kv rows={[{ k: 'ID type', v: facts.type }, { k: 'Number', v: facts.number }, { k: 'Expires', v: facts.expiry }]} />
+              <span className={'phone-badge tone-' + (facts.current ? 'pos' : 'neg')}>{facts.current ? 'ID current' : 'ID expired'}</span>
+            </>
+          ) : <p className="phone-absent">Not on file</p>}
+        </section>
+        {mine.length ? (
+          <Phone.ListSection title="Saved beneficiaries" meta={mine.length + ' on file'}>
+            {mine.map((b) => (
+              <div key={b.id} className="phone-ben">
+                <div>
+                  <b>{b.name}</b>
+                  <small>{[b.relationship, corOf(b.corridor).country].filter(Boolean).join(' \u00b7 ')}</small>
+                  <small>{payoutBits(b)}</small>
+                </div>
+                <button type="button" aria-label={'Use ' + b.name} onClick={() => onUse(b)}>Use</button>
+              </div>
+            ))}
+          </Phone.ListSection>
+        ) : <Phone.EmptyState title="No saved beneficiaries" message={'No one is saved for ' + first + ' yet.'} />}
+        <button type="button" className="phone-secondary phone-block" onClick={onAdd}>{Ic ? <Ic n="plus" s={18} /> : null} Add a beneficiary</button>
+      </Phone.Screen>
+    );
+  }
+
+  function PhoneTransfers({ transfers, beneficiaries, corridors, clients, me, log, setTransfers, setBeneficiaries, onNew, onOpen, openId, onOpened, timeZone }) {
     const { Phone, T, time } = shell();
+    const [tab, setTab] = useState('records');
     const [q, setQ] = useState('');
     const [filter, setFilter] = useState('active');
     const [detailId, setDetailId] = useState(null);
+    const [sender, setSender] = useState('');
+    const [sheet, setSheet] = useState(null);
     useEffect(() => {
       if (!openId) return;
       setDetailId(openId);
@@ -253,6 +404,16 @@
       setDetailId(id);
       if (onOpen) onOpen(id);
     };
+    const people = beneficiaries.filter((b) => !needle || (b.name + ' ' + b.sender + ' ' + b.partner).toLowerCase().indexOf(needle) >= 0);
+    const saveBen = (b) => {
+      if (!setBeneficiaries) throw new Error('Phone transfers: cannot store a beneficiary.');
+      setBeneficiaries((rows) => {
+        const ex = rows.find((x) => x.id === b.id);
+        return ex ? rows.map((x) => x.id === b.id ? b : x) : [b, ...rows];
+      });
+      if (log) log('Beneficiary saved', b.name + ' \u00b7 ' + b.partner);
+      setSheet(null);
+    };
     const detail = detailId ? transfers.find((t) => t.id === detailId) : null;
     if (detailId) {
       if (!detail) {
@@ -265,20 +426,59 @@
       }
       return <RecordDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} clients={clients} timeZone={timeZone} onBack={() => setDetailId(null)} />;
     }
+    if (sender) {
+      return (
+        <>
+          <SenderFile
+            name={sender}
+            clients={clients}
+            beneficiaries={beneficiaries}
+            corridors={corridors}
+            onBack={() => setSender('')}
+            onUse={(b) => { if (onNew) onNew({ sender: sender, benId: b.id }); }}
+            onAdd={() => setSheet({ sender: sender, lock: true })}
+            onNew={onNew}
+          />
+          {sheet ? <BenSheet sender={sheet.sender} lockSender={!!sheet.lock} corridors={corridors} onClose={() => setSheet(null)} onSave={saveBen} /> : null}
+        </>
+      );
+    }
     const emptyCopy = filter === 'hold' ? 'Nothing is on hold.' : filter === 'paid' ? 'Nothing has been paid out.' : filter === 'all' ? 'No transfers yet.' : 'Nothing is in progress.';
     const empty = needle
       ? <Phone.EmptyState title="No records" message="Nothing matches that search." />
       : <Phone.EmptyState title="No transfers here" message={emptyCopy} />;
+    const sticky = tab === 'records'
+      ? <Phone.StickyAction label="+ New transfer record" onClick={() => { if (onNew) onNew(true); }} />
+      : <Phone.StickyAction label="Add a beneficiary" onClick={() => setSheet({ sender: '', lock: false })} />;
     return (
-      <Phone.Screen app="transfers" title="Transfers" sticky={<Phone.StickyAction label="+ New transfer record" onClick={() => { if (onNew) onNew(); }} />}>
-        <Phone.Search value={q} onChange={setQ} placeholder="Sender, beneficiary or TR number" label="Sender, beneficiary or TR number" />
-        <Phone.FilterChips value={filter} onChange={setFilter} chips={[
+      <Phone.Screen app="transfers" title="Transfers" sticky={sticky}>
+        <div className="phone-seg" role="tablist">
+          <button type="button" role="tab" aria-selected={tab === 'records'} className={'phone-seg-btn' + (tab === 'records' ? ' on' : '')} onClick={() => { setTab('records'); setQ(''); }}>Records</button>
+          <button type="button" role="tab" aria-selected={tab === 'people'} className={'phone-seg-btn' + (tab === 'people' ? ' on' : '')} onClick={() => { setTab('people'); setQ(''); }}>Saved beneficiaries</button>
+        </div>
+        <Phone.Search value={q} onChange={setQ} placeholder={tab === 'records' ? 'Sender, beneficiary or TR number' : 'Name, sender or partner'} label={tab === 'records' ? 'Sender, beneficiary or TR number' : 'Name, sender or partner'} />
+        {tab === 'people' ? (
+          people.length ? (
+            <Phone.ListSection title="Saved beneficiaries" meta={people.length + ' on file'}>
+              {people.map((b) => (
+                <Phone.ListRow
+                  key={b.id}
+                  title={b.name}
+                  subtitle={[b.relationship, corOf(b.corridor).country, b.sender].filter(Boolean).join(' \u00b7 ')}
+                  note={payoutBits(b)}
+                  onClick={() => { if (b.sender) setSender(b.sender); }}
+                />
+              ))}
+            </Phone.ListSection>
+          ) : <Phone.EmptyState title="No saved beneficiaries" message={needle ? 'Nothing matches that search.' : 'Save a person from a sender file.'} />
+        ) : null}
+        {tab === 'records' ? <Phone.FilterChips value={filter} onChange={setFilter} chips={[
           { id: 'active', label: 'In progress', count: counts.active },
           { id: 'hold', label: 'On hold', count: counts.hold },
           { id: 'paid', label: 'Paid out', count: counts.paid },
           { id: 'all', label: 'All', count: counts.all },
-        ]} />
-        {groups.length ? groups.map((g, i) => (
+          ]} /> : null}
+        {tab === 'records' && groups.length ? groups.map((g, i) => (
           <Phone.ListSection key={g.key || String(i)} title={g.title} meta={i === 0 ? 'Sender to beneficiary' : null}>
             {g.rows.map((t) => {
               const ben = benOf(t.beneficiaryId);
@@ -299,7 +499,9 @@
               );
             })}
           </Phone.ListSection>
-        )) : empty}
+        )) : null}
+        {tab === 'records' && !groups.length ? empty : null}
+        {sheet ? <BenSheet sender={sheet.sender} lockSender={!!sheet.lock} corridors={corridors} onClose={() => setSheet(null)} onSave={saveBen} /> : null}
       </Phone.Screen>
     );
   }
