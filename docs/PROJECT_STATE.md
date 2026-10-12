@@ -531,7 +531,9 @@ the day before.
 **2026-10-11**, till date. Opening a till just after midnight stores the
 branch calendar date, and a later read returns that same date. Deal
 references on an open till use it. The date on a posted deal is the
-branch calendar date of the posting instant.
+branch calendar date of the posting instant. A dashboard or report
+window counted from that date uses the branch's midnight, so a deal
+posted after UTC midnight still sits inside a Toronto trading day.
 
 **2026-10-11**, sign-off business date. The sheet's trading day is the
 open till session's business date in the branch time zone, and the

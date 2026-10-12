@@ -457,22 +457,45 @@
       const answer = await B.loadTillSession();
       if (answer && answer.day && answer.day.timeZone) setBranchTimeZone(answer.day.timeZone);
       if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
+      _tradingWindow = answer && answer.day && answer.day.from && answer.day.to ? {
+        from: answer.day.from,
+        to: answer.day.to
+      } : null;
     } catch (e) {/* no session, no server, or not signed in: the clock stands in */}
     return businessDate();
   }
-  /* A browser-local window, for screens that ask "the last N days" and
-     are not the signed close-out. It reads midnight on THIS machine.
-     The end-of-day sign-off does not use it. That sheet asks for the
-     window the till session returns (`day.from`, `day.to`), which the
-     server computed in the branch's time zone. */
+  /* The span a screen asks the book for. Once the till session has named
+     the branch zone, midnight is that zone's midnight. A browser-local
+     midnight drops a deal posted in the evening in Toronto once UTC has
+     already rolled to the next day: the session is still on that Toronto
+     date, and the deal is inside it, but the window ended at UTC midnight.
+     Before the zone is known, the machine's own midnight stands in.
+     The signed close-out does not use this. That sheet asks for the
+     window the session returns. */
   function businessDayWindow(days) {
-    const end = new Date(businessDate() + 'T00:00:00');
-    end.setDate(end.getDate() + 1);
-    const start = new Date(end);
-    start.setDate(start.getDate() - Math.max(1, days || 1));
+    const n = Math.max(1, days || 1);
+    const date = String(businessDate() || '').slice(0, 10);
+    if (_branchTimeZone && CALENDAR_DATE.test(date)) {
+      const end = zonedMidnight(addCalendarDays(date, 1), _branchTimeZone);
+      const start = zonedMidnight(addCalendarDays(date, 1 - n), _branchTimeZone);
+      if (_tradingWindow && new Date(_tradingWindow.to).getTime() > end.getTime()) {
+        return {
+          from: start.toISOString(),
+          to: new Date(_tradingWindow.to).toISOString()
+        };
+      }
+      return {
+        from: start.toISOString(),
+        to: end.toISOString()
+      };
+    }
+    const endLocal = new Date(date + 'T00:00:00');
+    endLocal.setDate(endLocal.getDate() + 1);
+    const startLocal = new Date(endLocal);
+    startLocal.setDate(startLocal.getDate() - n);
     return {
-      from: start.toISOString(),
-      to: end.toISOString()
+      from: startLocal.toISOString(),
+      to: endLocal.toISOString()
     };
   }
   const TODAY = wallClock();
@@ -501,10 +524,54 @@
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   }
   let _branchTimeZone = null;
+  /* The session's own window, when the server has named one. A desk
+     still open after branch midnight keeps deals posted after that
+     midnight inside the trading day. */
+  let _tradingWindow = null;
   const setBranchTimeZone = zone => {
     _branchTimeZone = zone ? String(zone) : null;
     return _branchTimeZone;
   };
+  function addCalendarDays(isoDate, days) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const utc = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    utc.setUTCDate(utc.getUTCDate() + days);
+    return utc.toISOString().slice(0, 10);
+  }
+  function zoneOffsetMs(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(at);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? Number(found.value) : NaN;
+    };
+    let hour = pick('hour');
+    if (hour === 24) hour = 0;
+    const asUtc = Date.UTC(pick('year'), pick('month') - 1, pick('day'), hour, pick('minute'), pick('second'));
+    if (Number.isNaN(asUtc)) throw new Error('The branch time zone could not be read.');
+    return asUtc - at.getTime();
+  }
+  function zonedMidnight(isoDate, timeZone) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3]);
+    const offset = zoneOffsetMs(new Date(guess), timeZone);
+    let start = guess - offset;
+    const corrected = zoneOffsetMs(new Date(start), timeZone);
+    if (corrected !== offset) start = guess - corrected;
+    const result = new Date(start);
+    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no midnight on ' + isoDate + '.');
+    return result;
+  }
   const branchCalendarDate = at => {
     const when = at instanceof Date ? at : new Date();
     if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
@@ -2442,8 +2509,8 @@
          are optional; omitting them means "everything this till has ever
          posted", which is the only window that needs no timezone to be
          right. The sign-off sheet passes the window the till session
-         named. businessDayWindow() is a browser-local span for other
-         screens, and it is the wrong window for a close-out. */
+         named. businessDayWindow() uses that same zone's midnight for
+         other screens once the session has named it. */
       loadLedgerSummary: function (window) {
         var query = [];
         if (window && window.from) query.push("from=" + encodeURIComponent(window.from));
