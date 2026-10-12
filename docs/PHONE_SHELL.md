@@ -593,15 +593,22 @@ disabled, labelled "Cancel is being fixed", until the reversal
 contract is wired. A send detail shows Amount sent, Fee, and Total paid together, then
 Rate, Method, and Partner. The rate multiplies Amount sent back to
 the foreign payout, to the cent, using at most 12 places. A receive
-detail shows Amount received, Rate, Gross (the payout plus the fee
-the partner owes), the fee kept from the proceeds, and Hand to
-customer. Hand to customer is bold and is the last money row. Method
-and Partner follow it. The rate multiplies the amount to Gross. That
+detail shows Sender paid (the foreign amount), Rate, Gross (the payout plus the fee
+the partner owes), the fee kept from the proceeds, and Customer receives
+(the desk currency). Customer receives is bold and is the last money row. Method
+and Partner follow it. The rate multiplies Sender paid to Gross. That
 last money row is the cash the ledger takes out of the drawer. A receive's
 button uses the receive status words: Mark funded, Mark ready for
-pickup, Mark paid to customer. The reference is "Desk reference", in normal text, with
-"Our own reference. Not a partner pickup code." The phone does not
-call it a PIN. A history line is the
+pickup, Mark paid to customer. Desk reference is the transfer's own
+reference, a plain summary row, with "Our own reference. Not a partner
+pickup code." It is not styled as a code. The browser-minted `pin` is
+not shown. A partner PIN appears only when staff typed `partnerPin`,
+as a normal summary row labelled "Partner PIN (typed in by staff)",
+with a 44px Copy. Cancel stays disabled until `docs/TRANSFER_CANCEL.md`.
+The prepared sheet says "Cancel this transfer?" and "This reverses it
+in the ledger and the drawer. Give the customer back <amount>." The
+amount is the server's stored figure. The toast would read "Transfer
+cancelled. Give back <amount>." The sheet is not opened. A history line is the
 status, the person, and the time, as in
 `Sent · M. Costa · Jun 18, 2026, 10:14 AM`. Under History, one muted
 line reads "Updated by staff, not by the partner." The back chevron is 24px

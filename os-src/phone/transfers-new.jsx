@@ -289,5 +289,29 @@
   }
 
 
-  window.CDOS = Object.assign(window.CDOS || {}, { PhoneTransferWizard: Wizard });
+  /* Not opened. The detail's Cancel button stays disabled until
+     docs/TRANSFER_CANCEL.md. `refund` is the server's stored amount,
+     already formatted. This sheet does not estimate it. */
+  function cancelSheetCopy(refund) {
+    return {
+      title: "Cancel this transfer?",
+      body: "This reverses it in the ledger and the drawer. Give the customer back " + refund + ".",
+      toast: "Transfer cancelled. Give back " + refund + ".",
+    };
+  }
+  function CancelConfirm({ refund, onStay }) {
+    const copy = cancelSheetCopy(refund);
+    return (
+      <div className="ph-confirm" role="alertdialog" aria-labelledby="ph-cancel-title">
+        <div className="ph-confirm-card">
+          <h2 id="ph-cancel-title">{copy.title}</h2>
+          <p>{copy.body}</p>
+          <button type="button" className="ph-btn" disabled>Cancel is being fixed</button>
+          <button type="button" className="ph-btn quiet" onClick={onStay}>Keep the transfer</button>
+        </div>
+      </div>
+    );
+  }
+
+  window.CDOS = Object.assign(window.CDOS || {}, { PhoneTransferWizard: Wizard, CancelConfirm });
 })();

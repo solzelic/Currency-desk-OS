@@ -593,14 +593,17 @@ A send detail shows Amount sent, Fee, and Total paid, then the rate,
 the method, and the partner (a 600 CAD send with the 9.99 fee is
 609.99 CAD). The rate is the one that multiplies Amount sent back to
 the foreign payout, to the cent, at up to 12 places. A receive shows
-Amount received, that same kind of rate, Gross, the fee kept from the
-proceeds, and Hand to customer, then the method and the partner. The
-rate multiplies the amount to Gross (10,000 PHP at 0.024935 is 249.35
-CAD). Hand to customer is bold and is the cash the ledger takes out
+Sender paid in the foreign currency, that same kind of rate, Gross, the fee kept from the
+proceeds, and Customer receives in the desk currency, then the method and the partner. The
+rate multiplies Sender paid to Gross (10,000 PHP at 0.024935 is 249.35
+CAD). Customer receives is bold and is the cash the ledger takes out
 of the drawer. The fee is not subtracted from it, and the customer
 does not pay it on the side. A receive is marked Funded,
-Ready for pickup, then Paid to customer. The reference is "Desk reference", ordinary text,
-with "Our own reference. Not a partner pickup code." Release returns
+Ready for pickup, then Paid to customer. Desk reference is the transfer's
+own reference, a plain row, with "Our own reference. Not a partner pickup code."
+The browser-minted tracking number is not shown. A partner PIN is shown
+only when staff typed one. Cancel stays disabled until the reversal
+contract in `docs/TRANSFER_CANCEL.md`. Release returns
 a held transfer to the status it had before the hold. The desktop
 pipeline, including its sample history wording, is unchanged.
 

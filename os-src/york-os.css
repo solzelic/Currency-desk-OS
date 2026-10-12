@@ -3274,11 +3274,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     width: 24px; height: 24px; border-radius: 50%; background: #157A3E; color: #fff;
     display: grid; place-items: center; flex: none;
   }
-  .ph-ref {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    margin: 0 0 4px; font-size: 16px; line-height: 22px; color: var(--color-text, #161513);
-  }
-  .ph-ref button {
+  /* A typed partner PIN sits in a normal summary row. Copy is 44px.
+     The desk reference does not use this. It is not a code to hand over. */
+  .ph-pin-row { position: relative; }
+  .ph-pin-row .phone-summary dd { padding-right: 72px; }
+  .ph-pin-row button {
+    position: absolute; right: 8px; top: 4px;
     min-width: 44px; min-height: 44px; padding: 0 12px; border-radius: 12px;
     border: 1px solid #C9C5BC; background: #fff; color: var(--color-text, #161513);
     font: inherit; font-size: 16px; font-weight: 600;

@@ -64152,18 +64152,50 @@ window.CDOS_PERSIST = (function () {
       onSave: saveBen
     })), document.body);
   }
+
+  /* Not opened. The detail's Cancel button stays disabled until
+     docs/TRANSFER_CANCEL.md. `refund` is the server's stored amount,
+     already formatted. This sheet does not estimate it. */
+  function cancelSheetCopy(refund) {
+    return {
+      title: "Cancel this transfer?",
+      body: "This reverses it in the ledger and the drawer. Give the customer back " + refund + ".",
+      toast: "Transfer cancelled. Give back " + refund + "."
+    };
+  }
+  function CancelConfirm({
+    refund,
+    onStay
+  }) {
+    const copy = cancelSheetCopy(refund);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ph-confirm",
+      role: "alertdialog",
+      "aria-labelledby": "ph-cancel-title"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "ph-confirm-card"
+    }, /*#__PURE__*/React.createElement("h2", {
+      id: "ph-cancel-title"
+    }, copy.title), /*#__PURE__*/React.createElement("p", null, copy.body), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-btn",
+      disabled: true
+    }, "Cancel is being fixed"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-btn quiet",
+      onClick: onStay
+    }, "Keep the transfer")));
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
-    PhoneTransferWizard: Wizard
+    PhoneTransferWizard: Wizard,
+    CancelConfirm
   });
 })();
 
 /* ---- os-src/phone/transfers.jsx ---- */
-/* Phone Transfers. Only mounted at 430px and under.
-   The desktop pipeline is a different function and is not restyled.
-
-   Partners are not connected. The cashier writes a status on the
-   transfer's detail, when the partner confirms. Creating a transfer
-   records the cash on the ledger. It does not send anything to the partner. */
+/* Phone Transfers, only at 430px. The desktop pipeline is not restyled.
+   Partners are not connected. Creating a transfer records the cash.
+   It does not send anything to the partner. */
 (function () {
   const {
     useState,
@@ -64328,15 +64360,14 @@ window.CDOS_PERSIST = (function () {
         value: rate ? rate + " " + t.ccy + "/" + home : ""
       }].concat(tail);
     }
-    /* The ledger pays `recvAmt` out of the drawer and keeps the fee
-       from the proceeds. The partner owes both. Gross is that sum,
-       in cents. Hand to customer is the cash that leaves, last. */
+    /* recvAmt leaves the drawer. The fee stays in the proceeds.
+       payAmt is what the sender paid, in the foreign currency. */
     const payout = Math.round(Number(t.recvAmt) * 100);
     const fee = Math.round(Number(t.fee) * 100);
     const grossCents = Number.isFinite(payout) && Number.isFinite(fee) ? payout + fee : NaN;
     const rate = rateShown(t.payAmt, grossCents);
     return [{
-      label: "Amount received",
+      label: "Sender paid",
       value: money(t.payAmt, t.ccy)
     }, {
       label: "Rate",
@@ -64348,10 +64379,17 @@ window.CDOS_PERSIST = (function () {
       label: "Fee",
       value: Number.isFinite(fee) ? money(-fee / 100, home) : ""
     }, {
-      label: "Hand to customer",
+      label: "Customer receives",
       value: money(t.recvAmt, home),
       mark: "transfer-hand"
     }].concat(tail);
+  }
+
+  /* `pin` is minted in the browser. A partner PIN is `partnerPin`, typed by staff. */
+  function typedPartnerPin(t) {
+    const typed = String(t && t.partnerPin || "").trim();
+    if (!typed || typed === String(t && t.pin || "").trim()) return "";
+    return typed;
   }
   function toneOf(status) {
     if (status === "transit") return "buy";
@@ -64628,15 +64666,16 @@ window.CDOS_PERSIST = (function () {
     const home = pack && pack.homeCurrency || "CAD";
     const owner = !!(me && me.role === "Owner");
     const open = t.status !== "paid" && t.status !== "cancelled";
+    const partnerPin = typedPartnerPin(t);
     const [copyError, setCopyError] = useState(null);
     const [copied, setCopied] = useState(false);
-    const copy = async () => {
+    const copyPin = async () => {
       try {
-        await navigator.clipboard.writeText(t.pin || "");
+        await navigator.clipboard.writeText(partnerPin);
         setCopied(true);
         setCopyError(null);
       } catch (error) {
-        setCopyError(error instanceof Error ? error : new Error("The reference could not be copied."));
+        setCopyError(error instanceof Error ? error : new Error("The PIN could not be copied."));
       }
     };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
@@ -64681,15 +64720,24 @@ window.CDOS_PERSIST = (function () {
       rows: detailRows(t, home)
     }), t.direction !== "send" && /*#__PURE__*/React.createElement("p", {
       className: "ph-hist"
-    }, "The fee is kept from the proceeds. It does not leave the drawer."), /*#__PURE__*/React.createElement("div", {
-      className: "ph-label"
-    }, "Desk reference"), /*#__PURE__*/React.createElement("p", {
+    }, "The fee is kept from the proceeds. It does not leave the drawer."), SummaryList && /*#__PURE__*/React.createElement(SummaryList, {
+      rows: [{
+        label: "Desk reference",
+        value: t.ref || ""
+      }]
+    }), /*#__PURE__*/React.createElement("p", {
       className: "ph-hist"
-    }, "Our own reference. Not a partner pickup code."), /*#__PURE__*/React.createElement("div", {
-      className: "ph-ref"
-    }, /*#__PURE__*/React.createElement("span", null, t.pin), /*#__PURE__*/React.createElement("button", {
+    }, "Our own reference. Not a partner pickup code."), partnerPin && SummaryList && /*#__PURE__*/React.createElement("div", {
+      className: "ph-pin-row"
+    }, /*#__PURE__*/React.createElement(SummaryList, {
+      rows: [{
+        label: "Partner PIN (typed in by staff)",
+        value: partnerPin,
+        mark: "transfer-pin"
+      }]
+    }), /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: copy
+      onClick: copyPin
     }, copied ? "Copied" : "Copy")), copyError && /*#__PURE__*/React.createElement("p", {
       className: "ph-fault",
       role: "alert"

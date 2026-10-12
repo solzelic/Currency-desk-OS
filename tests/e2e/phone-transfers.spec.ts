@@ -212,23 +212,21 @@ for (const width of [360, 390]) {
     const sentRate = await summaryValue(detail, "Rate").innerText();
     expect(productCents(sentAmount, sentRate)).toBe(Math.round(stored!.recvAmt * 100));
     expect(await detail.locator(".phone-summary dt").allTextContents()).toEqual([
-      "Amount sent", "Fee", "Total paid", "Rate", "Method", "Partner",
+      "Amount sent", "Fee", "Total paid", "Rate", "Method", "Partner", "Desk reference",
     ]);
     await expect(summaryValue(detail, "Amount sent")).not.toHaveClass(/is-pos/);
     await expect(detail.getByText("Customer paid")).toHaveCount(0);
     await expect(detail.getByText("Receiver gets")).toHaveCount(0);
-    await expect(detail.getByText("Desk reference")).toBeVisible();
+    await expect(summaryValue(detail, "Desk reference")).toHaveText("TR-260618-003");
     await expect(detail.getByText("Our own reference. Not a partner pickup code.")).toBeVisible();
-    await expect(detail.getByText("48 221 905")).toBeVisible();
-    await expect(detail.getByText(/PIN/)).toHaveCount(0);
-    await expect(detail.locator(".ph-pin")).toHaveCount(0);
-    const refFace = detail.locator(".ph-ref span");
-    await expect(refFace).toHaveCSS("font-size", "16px");
+    await expect(detail.getByText("48 221 905")).toHaveCount(0);
+    await expect(detail.getByText("Partner PIN (typed in by staff)")).toHaveCount(0);
+    await expect(detail.getByText("Tracking PIN")).toHaveCount(0);
+    await expect(detail.locator(".ph-pin, .ph-pin-row, .ph-ref")).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Copy" })).toHaveCount(0);
+    const refFace = summaryValue(detail, "Desk reference");
     await expect(refFace).toHaveCSS("color", "rgb(22, 21, 19)");
-    const copy = detail.getByRole("button", { name: "Copy" });
-    const copyBox = await copy.boundingBox();
-    expect(copyBox && copyBox.width).toBeGreaterThanOrEqual(44);
-    expect(copyBox && copyBox.height).toBeGreaterThanOrEqual(44);
+    await expect(refFace).not.toHaveCSS("color", "rgb(255, 255, 255)");
     const historyFit = await detail.locator(".ph-time li").evaluateAll((els) => els.map((el) => ({
       text: el.textContent || "",
       wraps: el.getClientRects().length > 1 || el.scrollHeight > 36,
@@ -393,22 +391,27 @@ for (const width of [360, 390]) {
     await showTransfers(page);
     await page.getByText("Ana Cruz").click();
     const detail = page.getByRole("dialog");
-    await expect(summaryValue(detail, "Amount received")).toHaveText("10,000.00 PHP");
+    await expect(summaryValue(detail, "Sender paid")).toHaveText("10,000.00 PHP");
     await expect(summaryValue(detail, "Rate")).toHaveText("0.024935 CAD/PHP");
     await expect(summaryValue(detail, "Gross")).toHaveText("249.35 CAD");
     await expect(summaryValue(detail, "Fee")).toHaveText("\u22129.99 CAD");
-    await expect(summaryValue(detail, "Hand to customer")).toHaveText("239.36 CAD");
-    const received = await summaryValue(detail, "Amount received").innerText();
+    await expect(summaryValue(detail, "Customer receives")).toHaveText("239.36 CAD");
+    const received = await summaryValue(detail, "Sender paid").innerText();
     const receivedRate = await summaryValue(detail, "Rate").innerText();
     const grossText = await summaryValue(detail, "Gross").innerText();
+    expect(received.endsWith("PHP")).toBe(true);
+    expect((await summaryValue(detail, "Customer receives").innerText()).endsWith("CAD")).toBe(true);
     expect(productCents(received, receivedRate)).toBe(Math.round(money(grossText) * 100));
     expect(productCents(received, receivedRate)).toBe(24935);
     expect(await detail.locator(".phone-summary dt").allTextContents()).toEqual([
-      "Amount received", "Rate", "Gross", "Fee", "Hand to customer", "Method", "Partner",
+      "Sender paid", "Rate", "Gross", "Fee", "Customer receives", "Method", "Partner", "Desk reference",
     ]);
-    await expect(summaryValue(detail, "Hand to customer")).not.toHaveClass(/is-pos/);
-    await expect(summaryValue(detail, "Hand to customer")).toHaveCSS("color", "rgb(22, 21, 19)");
-    await expect(summaryValue(detail, "Hand to customer")).toHaveCSS("font-weight", "700");
+    await expect(summaryValue(detail, "Customer receives")).not.toHaveClass(/is-pos/);
+    await expect(summaryValue(detail, "Customer receives")).toHaveCSS("color", "rgb(22, 21, 19)");
+    await expect(summaryValue(detail, "Customer receives")).toHaveCSS("font-weight", "700");
+    await expect(detail.getByText("Partner PIN (typed in by staff)")).toHaveCount(0);
+    await expect(detail.getByText("Tracking PIN")).toHaveCount(0);
+    await expect(detail.locator(".ph-pin, .ph-pin-row, .ph-ref")).toHaveCount(0);
     await expect(detail.getByText("The fee is kept from the proceeds. It does not leave the drawer.")).toBeVisible();
     await expect(detail.getByText("229.37")).toHaveCount(0);
     await expect(detail.getByText("Customer pays the 9.99 CAD fee")).toHaveCount(0);
@@ -566,6 +569,30 @@ for (const width of [360, 390]) {
   });
 }
 
+test("a typed partner PIN is a normal row, and the minted number stays hidden", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 844 });
+  await atDesk(page);
+  await page.evaluate(() => {
+    const pack = (window as unknown as { CDOS: { _transfers: { TKEY: string; defaultTransfers: () => Array<Record<string, unknown>> } } }).CDOS._transfers;
+    const list = pack.defaultTransfers();
+    const row = list.find((item) => item.ref === "TR-260618-003");
+    if (row) row.partnerPin = "P-4419";
+    localStorage.setItem(pack.TKEY, JSON.stringify(list));
+  });
+  await showTransfers(page);
+  await page.locator(".ph-xfer-row").filter({ hasText: "In transit" }).click();
+  const detail = page.getByRole("dialog");
+  await expect(summaryValue(detail, "Partner PIN (typed in by staff)")).toHaveText("P-4419");
+  await expect(summaryValue(detail, "Desk reference")).toHaveText("TR-260618-003");
+  await expect(detail.getByText("48 221 905")).toHaveCount(0);
+  await expect(detail.getByText("Tracking PIN")).toHaveCount(0);
+  await expect(detail.locator(".ph-ref")).toHaveCount(0);
+  const copy = detail.getByRole("button", { name: "Copy" });
+  const copyBox = await copy.boundingBox();
+  expect(copyBox && copyBox.width).toBeGreaterThanOrEqual(44);
+  expect(copyBox && copyBox.height).toBeGreaterThanOrEqual(44);
+});
+
 test("a receive pays the stored payout out of the drawer", async ({ page }) => {
   test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
   await page.setViewportSize({ width: 360, height: 844 });
@@ -588,10 +615,10 @@ test("a receive pays the stored payout out of the drawer", async ({ page }) => {
   await page.getByTestId("transfer-create").click();
   await expect(page.getByText(/Transfer created\./)).toBeVisible({ timeout: 30_000 });
   const detail = page.getByRole("dialog");
-  const hand = money(await summaryValue(detail, "Hand to customer").innerText());
+  const hand = money(await summaryValue(detail, "Customer receives").innerText());
   const fee = money(await summaryValue(detail, "Fee").innerText());
   const gross = money(await summaryValue(detail, "Gross").innerText());
-  const received = await summaryValue(detail, "Amount received").innerText();
+  const received = await summaryValue(detail, "Sender paid").innerText();
   const receivedRate = await summaryValue(detail, "Rate").innerText();
   expect(Math.round(gross * 100)).toBe(Math.round(hand * 100) + Math.round(fee * 100));
   expect(productCents(received, receivedRate)).toBe(Math.round(gross * 100));

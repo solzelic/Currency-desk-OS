@@ -1,9 +1,6 @@
-/* Phone Transfers. Only mounted at 430px and under.
-   The desktop pipeline is a different function and is not restyled.
-
-   Partners are not connected. The cashier writes a status on the
-   transfer's detail, when the partner confirms. Creating a transfer
-   records the cash on the ledger. It does not send anything to the partner. */
+/* Phone Transfers, only at 430px. The desktop pipeline is not restyled.
+   Partners are not connected. Creating a transfer records the cash.
+   It does not send anything to the partner. */
 (function () {
   const { useState, useEffect, useMemo, useRef } = React;
   /* The foundation formatter. A missing one is a broken shell, not a
@@ -132,20 +129,26 @@
         { label: "Rate", value: rate ? rate + " " + t.ccy + "/" + home : "" },
       ].concat(tail);
     }
-    /* The ledger pays `recvAmt` out of the drawer and keeps the fee
-       from the proceeds. The partner owes both. Gross is that sum,
-       in cents. Hand to customer is the cash that leaves, last. */
+    /* recvAmt leaves the drawer. The fee stays in the proceeds.
+       payAmt is what the sender paid, in the foreign currency. */
     const payout = Math.round(Number(t.recvAmt) * 100);
     const fee = Math.round(Number(t.fee) * 100);
     const grossCents = Number.isFinite(payout) && Number.isFinite(fee) ? payout + fee : NaN;
     const rate = rateShown(t.payAmt, grossCents);
     return [
-      { label: "Amount received", value: money(t.payAmt, t.ccy) },
+      { label: "Sender paid", value: money(t.payAmt, t.ccy) },
       { label: "Rate", value: rate ? rate + " " + home + "/" + t.ccy : "" },
       { label: "Gross", value: Number.isFinite(grossCents) ? money(grossCents / 100, home) : "" },
       { label: "Fee", value: Number.isFinite(fee) ? money(-fee / 100, home) : "" },
-      { label: "Hand to customer", value: money(t.recvAmt, home), mark: "transfer-hand" },
+      { label: "Customer receives", value: money(t.recvAmt, home), mark: "transfer-hand" },
     ].concat(tail);
+  }
+
+  /* `pin` is minted in the browser. A partner PIN is `partnerPin`, typed by staff. */
+  function typedPartnerPin(t) {
+    const typed = String((t && t.partnerPin) || "").trim();
+    if (!typed || typed === String((t && t.pin) || "").trim()) return "";
+    return typed;
   }
 
   function toneOf(status) {
@@ -321,15 +324,16 @@
     const home = (pack && pack.homeCurrency) || "CAD";
     const owner = !!(me && me.role === "Owner");
     const open = t.status !== "paid" && t.status !== "cancelled";
+    const partnerPin = typedPartnerPin(t);
     const [copyError, setCopyError] = useState(null);
     const [copied, setCopied] = useState(false);
-    const copy = async () => {
+    const copyPin = async () => {
       try {
-        await navigator.clipboard.writeText(t.pin || "");
+        await navigator.clipboard.writeText(partnerPin);
         setCopied(true);
         setCopyError(null);
       } catch (error) {
-        setCopyError(error instanceof Error ? error : new Error("The reference could not be copied."));
+        setCopyError(error instanceof Error ? error : new Error("The PIN could not be copied."));
       }
     };
     return ReactDOM.createPortal(
@@ -352,9 +356,14 @@
           </div>
           {SummaryList && <SummaryList rows={detailRows(t, home)} />}
           {t.direction !== "send" && <p className="ph-hist">The fee is kept from the proceeds. It does not leave the drawer.</p>}
-          <div className="ph-label">Desk reference</div>
+          {SummaryList && <SummaryList rows={[{ label: "Desk reference", value: t.ref || "" }]} />}
           <p className="ph-hist">Our own reference. Not a partner pickup code.</p>
-          <div className="ph-ref"><span>{t.pin}</span><button type="button" onClick={copy}>{copied ? "Copied" : "Copy"}</button></div>
+          {partnerPin && SummaryList && (
+            <div className="ph-pin-row">
+              <SummaryList rows={[{ label: "Partner PIN (typed in by staff)", value: partnerPin, mark: "transfer-pin" }]} />
+              <button type="button" onClick={copyPin}>{copied ? "Copied" : "Copy"}</button>
+            </div>
+          )}
           {copyError && <p className="ph-fault" role="alert">{copyError.message}</p>}
           <div className="ph-label">History</div>
           <p className="ph-hist">Updated by staff, not by the partner.</p>
@@ -371,6 +380,7 @@
             {(t.status !== "hold" || owner) && (
               <div className="ph-secondary">
                 {t.status !== "hold" && <button type="button" onClick={() => onAdvance(t, "hold", "marked by hand")}>Hold</button>}
+                {/* CancelConfirm stays closed until docs/TRANSFER_CANCEL.md. */}
                 {owner && <button type="button" className="is-cancel" disabled>Cancel is being fixed</button>}
               </div>
             )}
