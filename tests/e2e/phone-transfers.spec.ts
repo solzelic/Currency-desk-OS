@@ -87,7 +87,7 @@ test("the record list names who sent to whom", async ({ page }) => {
   await expect(list.getByText("Jun 17, 2026")).toBeVisible();
 
   await list.getByRole("tab", { name: "Paid out 1" }).click();
-  await expect(list.getByText("Paid out")).toBeVisible();
+  await expect(list.getByText("Paid out", { exact: true })).toBeVisible();
   await expect(list.getByText("Jun 16, 2026")).toBeVisible();
   await expect(list.getByText("Brooke Lawson to Lin Wei")).toHaveCount(0);
 
@@ -121,7 +121,7 @@ test("the record list names who sent to whom", async ({ page }) => {
 
   await again.getByRole("button", { name: "+ New transfer record" }).click();
   await expect(page.getByText("Enter an amount to begin")).toBeVisible();
-  await expect(page.locator('.phone-task-sheet input[placeholder="0.00"]')).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /Customer pays/ })).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
   await expect(page.locator(".phone-task-sheet")).toHaveCount(0);
 
@@ -139,8 +139,8 @@ test("the desktop pipeline stays at 1280", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   const win = page.locator('.win.show.active[data-app="transfers"]');
   await expect(win.locator(".phone-transfers")).toHaveCount(0);
-  await expect(win.getByText("Transfer pipeline")).toBeVisible();
-  await expect(win.getByRole("button", { name: "New transfer" })).toBeVisible();
+  await expect(win.getByText("Transfer pipeline", { exact: true })).toBeVisible();
+  await expect(win.getByRole("button", { name: "New transfer" })).toHaveCount(2);
   await expect(win.locator("h1")).toHaveCount(0);
   await expect(win.getByText("Rachel Carter")).toBeVisible();
 });
