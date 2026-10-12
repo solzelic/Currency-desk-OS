@@ -18,8 +18,12 @@
    of fonts.googleapis.com. The runner's fontconfig is not a face in
    this picture. A shot is refused when those faces have not loaded.
 
-   The page clock is 2026-06-18T15:02:00.000Z. The menu bar is 24-hour,
-   so it reads 15:02. The audit seed's 09:05 is the AM case: the desk
+   The page clock is 2026-06-18T15:02:00.000Z, and the browser zone is
+   UTC. The menu bar is 24-hour local time, so it reads 15:02. The
+   timezone seam jobs set the process zone to Toronto or Jerusalem;
+   without this pin the same instant paints 11:02 or 18:02 and the
+   picture is no longer the UTC render of main. The audit seed's
+   09:05 is the AM case: the desk
    paints it 9:05 AM, and 15:02 paints 3:02 PM. "2m 00s ago" is that
    same clock minus two minutes, stored as the rate board's publishedAt
    before the page scripts run.
@@ -32,6 +36,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Locator, Page, TestInfo } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
+
+/* The committed pictures are the UTC render. A Toronto or Jerusalem
+   process zone must not move the menu-bar clock. */
+test.use({ timezoneId: "UTC" });
 
 const FONT_DIR = path.join(process.cwd(), "tests", "e2e", "fonts");
 const DESK_FONTS_CSS = readFileSync(path.join(FONT_DIR, "desk-faces.css"), "utf8");
