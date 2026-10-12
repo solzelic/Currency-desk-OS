@@ -578,9 +578,11 @@ was trimming the spaces, so a closed line read
 
 **2026-10-12**, desktop pictures committed. The 1280 PNGs in
 `tests/e2e/desktop-unchanged.spec.ts-snapshots/` are the Actions render
-from run 38187138637 (frozen refs). Inter is loaded only at
-`max-width: 430px`. Wider than that the desk uses Archivo, the same
-face as main, so those pictures are not painted in Inter.
+from run 38187138637 (frozen refs). A cheque customer id is `cust_`
+plus a UUID, and the freeze now replaces that UUID too. Inter is
+loaded only at `max-width: 430px`. Wider than that the desk uses
+Archivo, the same face as main, so those pictures are not painted
+in Inter.
 
 **2026-10-12**, phone new-transaction sweep. On the phone sheet the
 stat labels are sentence case, including Usually, and they use
