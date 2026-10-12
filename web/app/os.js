@@ -63227,8 +63227,10 @@ window.CDOS_PERSIST = (function () {
 
   /* A row date is "Today", "Yesterday", or "Oct 9" in the current
      year. A deal heading keeps the calendar day: "Today, Oct 11".
-     Times are 12-hour, with AM or PM: "10:15 AM". formatPhoneDate and
-     formatPhoneTime win when the shell provides them. */
+     formatPhoneDate always prints the year ("Oct 11, 2026"), so a
+     row does not use it. Times are 12-hour, with AM or PM: "10:15 AM".
+     formatPhoneTime is used when the shell provides it, and its
+     suffix is shown in capitals. */
   function asDate(value) {
     if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
     const text = String(value || '');
@@ -63256,11 +63258,6 @@ window.CDOS_PERSIST = (function () {
     return MONTHS[date.getMonth()] + ' ' + date.getDate();
   }
   function phoneDate(value) {
-    const shared = window.CDOS.formatPhoneDate;
-    if (typeof shared === 'function') {
-      const text = shared(value);
-      if (text) return text;
-    }
     const date = asDate(value);
     if (!date) return '';
     const today = businessDay();
