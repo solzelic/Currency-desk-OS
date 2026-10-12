@@ -23,7 +23,7 @@
    never be confused with each other.
    ============================================================ */
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop, rendered } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -60,10 +60,18 @@ const followThePack = (page: Page) =>
    about how the product works is setup that stops catching it breaking.
    And both report what actually happened, because a fixture that fires and
    forgets is how a swallowed 500 passes for a passing test. */
-async function deskCanTrade(page: Page) {
-  const report = await page.evaluate(async (): Promise<string[]> => {
+/* The till belongs to whoever counted it. An earlier file may have left
+   it open under someone else. Trading means a handover count, and the
+   caller hands it back so the next file still finds that person. */
+async function deskCanTrade(page: Page, taken: { by: string | null }) {
+  const report = await page.evaluate(async (): Promise<{ notes: string[]; heldBy: string | null }> => {
     const notes: string[] = [];
+    const me = await fetch("/api/auth/me").then((r) => r.json());
+    const staffId = String(me.user?.id ?? "");
     const current = await fetch("/api/ledger/till-session").then((r) => r.json());
+    const opener = String(current.session?.openedBy ?? "");
+    const mine = opener === staffId || opener.endsWith(`:${staffId}`);
+    let heldBy: string | null = null;
     if (current.session?.status !== "open") {
       const opened = await fetch("/api/ledger/till-sessions/open", {
         method: "POST",
@@ -71,6 +79,19 @@ async function deskCanTrade(page: Page) {
         body: "{}",
       });
       notes.push(opened.ok ? "session:open" : `session:${opened.status} ${await opened.text()}`);
+    } else if (!mine) {
+      heldBy = opener;
+      const heldNow = await fetch("/api/ledger/till-balances").then((r) => r.json());
+      const counts: Record<string, string> = {};
+      for (const [currency, amount] of Object.entries(heldNow.balances ?? {})) {
+        counts[currency] = Number(amount).toFixed(2);
+      }
+      const handed = await fetch("/api/ledger/till-sessions/handover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idempotencyKey: `thr-take-${Date.now()}`, counts }),
+      });
+      notes.push(handed.ok ? "session:open" : `session:${handed.status} ${await handed.text()}`);
     }
     const held = await fetch("/api/ledger/till-balances").then((r) => r.json());
     for (const [currency, wanted] of [["CAD", 60000], ["USD", 60000]] as const) {
@@ -91,18 +112,43 @@ async function deskCanTrade(page: Page) {
       });
       notes.push(answer.ok ? `${currency}:ok` : `${currency}:${answer.status} ${await answer.text()}`);
     }
-    return notes;
+    return { notes, heldBy };
   });
   /* Every step is asserted, not merely attempted. A drawer that failed to
      fill turns the deal below into a refusal for INSUFFICIENT_TILL_LIQUIDITY
      — which looks exactly like the compliance refusal this file is here to
      prove, and would pass. A fixture that fires and forgets is worse than
      no fixture. */
-  const failed = report.filter((note) => !/:ok$|:open$/.test(note));
-  expect(failed, `the desk could not be made ready: ${report.join(" · ")}`).toEqual([]);
+  taken.by = report.heldBy;
+  const failed = report.notes.filter((note) => !/:ok$|:open$/.test(note));
+  expect(failed, `the desk could not be made ready: ${report.notes.join(" · ")}`).toEqual([]);
   await page.reload();
   await landOnDesktop(page);   // a reload returns an owner to the station chooser
-  return report.join(" · ");
+}
+
+/* Hand the till back to the person who had counted it, through the same
+   handover route, on a cookie that is not the owner's. */
+async function returnTill(request: APIRequestContext, opener: string): Promise<string> {
+  const staffId = opener.includes(":") ? opener.slice(opener.lastIndexOf(":") + 1) : opener;
+  const login = await request.post("/api/auth/login", {
+    data: { staffId, password: "yorkville", tenantId: "tnt-yorkfx" },
+  });
+  if (!login.ok()) return `login ${login.status()} ${await login.text()}`;
+  const held = await request.get("/api/ledger/till-balances");
+  if (!held.ok()) return `balances ${held.status()} ${await held.text()}`;
+  const body = (await held.json()) as { balances?: Record<string, string> };
+  const counts: Record<string, string> = {};
+  for (const [currency, amount] of Object.entries(body.balances ?? {})) {
+    counts[currency] = Number(amount).toFixed(2);
+  }
+  const handed = await request.post("/api/ledger/till-sessions/handover", {
+    data: { idempotencyKey: `thr-return-${Date.now()}`, counts },
+  });
+  if (!handed.ok()) return `handover ${handed.status()} ${await handed.text()}`;
+  const next = (await handed.json()) as { session?: { openedBy?: string } };
+  const openedBy = String(next.session?.openedBy ?? "");
+  const back = openedBy === opener || openedBy.endsWith(`:${staffId}`);
+  return back ? "returned" : `still ${openedBy}`;
 }
 
 /* A customer nobody has identified. The identification gate is about
@@ -219,43 +265,56 @@ test("the rows show the ledger's lines, not a local default", async ({ page }) =
   await expect(page.getByText(/Following FINTRAC \(\$?10,000/i).first()).toBeVisible();
 });
 
-test("tightening the line in Settings is what the ledger then refuses at", async ({ page }) => {
+test("tightening the line in Settings is what the ledger then refuses at", async ({ page, playwright }) => {
   await signInAtDesk(page, OWNER);
   expect(await followThePack(page)).toBe(200);
-  await deskCanTrade(page);
-  const walkIn = await walkInCustomer(page);
+  const taken = { by: null as string | null };
+  try {
+    await deskCanTrade(page, taken);
+    const walkIn = await walkInCustomer(page);
 
-  /* Under FINTRAC's 3,000 this deal is fine, and the ledger takes it.
-     This is the control: without it, a refusal below could just as easily
-     mean an empty drawer. */
-  const before = await attemptDeal(page, walkIn, "2500.00", `thr-before-${Date.now()}`);
-  expect(before.status, `first deal: ${before.stage} ${before.body}`).toBe(201);
+    /* Under FINTRAC's 3,000 this deal is fine, and the ledger takes it.
+       This is the control: without it, a refusal below could just as easily
+       mean an empty drawer. */
+    const before = await attemptDeal(page, walkIn, "2500.00", `thr-before-${Date.now()}`);
+    expect(before.status, `first deal: ${before.stage} ${before.body}`).toBe(201);
 
-  await openComplianceSettings(page);
-  await typeIdThreshold(page, "1000");
+    await openComplianceSettings(page);
+    await typeIdThreshold(page, "1000");
 
-  /* The server, not the screen. A box that held its own value and posted
-     nothing would look exactly like this test passing. */
-  await expect
-    .poll(async () => (await thresholds(page)).idThreshold.effective, { timeout: 15_000 })
-    .toBe("1000.00");
-  expect((await thresholds(page)).idThreshold.posture).toBe("stricter");
+    /* The server, not the screen. A box that held its own value and posted
+       nothing would look exactly like this test passing. */
+    await expect
+      .poll(async () => (await thresholds(page)).idThreshold.effective, { timeout: 15_000 })
+      .toBe("1000.00");
+    expect((await thresholds(page)).idThreshold.posture).toBe("stricter");
 
-  /* THE SEAM. Same customer, same shape of deal, an amount that FINTRAC
-     would have let through and this desk has decided it will not. Before
-     this change the ledger compared against a hardcoded 3,000 and posted
-     it. */
-  const after = await attemptDeal(page, walkIn, "2500.00", `thr-after-${Date.now()}`);
-  expect(after.status, `refused deal: ${after.stage} ${after.body}`).toBe(422);
-  expect(after.body).toContain("COMPLIANCE_BLOCKED");
+    /* THE SEAM. Same customer, same shape of deal, an amount that FINTRAC
+       would have let through and this desk has decided it will not. Before
+       this change the ledger compared against a hardcoded 3,000 and posted
+       it. */
+    const after = await attemptDeal(page, walkIn, "2500.00", `thr-after-${Date.now()}`);
+    expect(after.status, `refused deal: ${after.stage} ${after.body}`).toBe(422);
+    expect(after.body).toContain("COMPLIANCE_BLOCKED");
 
-  // and below the desk's new line it still trades, so the gate is a line
-  // and not a wall
-  const small = await attemptDeal(page, walkIn, "500.00", `thr-small-${Date.now()}`);
-  expect(small.status, `small deal: ${small.stage} ${small.body}`).toBe(201);
+    // and below the desk's new line it still trades, so the gate is a line
+    // and not a wall
+    const small = await attemptDeal(page, walkIn, "500.00", `thr-small-${Date.now()}`);
+    expect(small.status, `small deal: ${small.stage} ${small.body}`).toBe(201);
 
-  // put the desk back where it shipped
-  expect(await followThePack(page)).toBe(200);
+    // put the desk back where it shipped
+    expect(await followThePack(page)).toBe(200);
+  } finally {
+    if (taken.by) {
+      const api = await playwright.request.newContext({ baseURL: "http://127.0.0.1:4173" });
+      try {
+        const back = await returnTill(api, taken.by);
+        expect(back, back).toBe("returned");
+      } finally {
+        await api.dispose();
+      }
+    }
+  }
 });
 
 test("a stricter desk is told it is stricter, and a looser one that it is not compliant", async ({ page }) => {
