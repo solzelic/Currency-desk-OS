@@ -668,5 +668,42 @@
   .phone-xfer-row .phone-row-sub { grid-column: 1 / -1; grid-row: 2; white-space: normal; color: var(--gray-700, #3D3A35); }
   .phone-xfer-row .phone-row-note { grid-column: 1; grid-row: 3; }
   .phone-xfer-row .phone-row-meta { grid-column: 2; grid-row: 3; justify-self: end; }
+  .phone-drill .phone-scroll { padding-top: 4px; }
+  .phone-crumb {
+    display: inline-flex; align-items: center; gap: 4px; min-height: 44px;
+    margin: 0 0 4px -4px; padding: 0 8px; border: 0; background: transparent;
+    color: var(--brand-primary, #1F7269); font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .phone-detail-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px; }
+  .phone-detail-title h1 {
+    margin: 0; font-family: var(--font-mono), ui-monospace, Menlo, monospace;
+    font-size: 20px; font-weight: 600; line-height: 28px; color: var(--gray-900, #161513);
+  }
+  .phone-card {
+    background: #fff; border: 1px solid var(--color-border, #E2DFD8);
+    border-radius: var(--radius-lg, 14px); padding: 12px 16px; margin: 0 0 12px;
+  }
+  .phone-card h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; line-height: 16px; color: var(--color-text-muted, #6B6760); }
+  .phone-kv div {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--color-border, #E2DFD8); font-size: 14px;
+  }
+  .phone-kv div:last-child { border-bottom: 0; }
+  .phone-kv span { color: var(--color-text-muted, #6B6760); }
+  .phone-kv b { font-weight: 600; text-align: right; color: var(--gray-900, #161513); }
+  .phone-xfer-actions { display: flex; gap: 8px; }
+  .phone-xfer-actions > button { flex: 1 1 0; min-height: 48px; height: 48px; }
+  .phone-money summary {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    min-height: 44px; font-size: 13px; font-weight: 600; color: var(--color-text-muted, #6B6760); cursor: pointer;
+  }
+  .phone-money summary span:last-child { font-weight: 500; text-align: right; color: var(--gray-900, #161513); }
+  .phone-tl { list-style: none; margin: 0; padding: 0; }
+  .phone-tl li {
+    display: flex; justify-content: space-between; gap: 12px; padding: 8px 0;
+    border-bottom: 1px solid var(--color-border, #E2DFD8); font-size: 14px;
+  }
+  .phone-tl li:last-child { border-bottom: 0; }
+  .phone-tl li span:last-child { color: var(--color-text-muted, #6B6760); text-align: right; }
 }
 

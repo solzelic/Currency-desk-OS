@@ -112,8 +112,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   (Jun 18). The row shows the 12-hour time in the branch zone. A sample
   row is labelled Demo. Amounts, the tracking PIN, a
   receipt, and the EFT report stay off that list. New transfer record
-  opens the existing cash step. The desktop pipeline is unchanged.
-  Saved beneficiaries and the record page are not on the phone yet. The bar is five
+  opens the existing cash step. A row opens the record: sender, beneficiary,
+  purpose, source of funds, the hand-set status, and amounts collapsed
+  at the end. The desktop pipeline is unchanged. Saved beneficiaries
+  are not on the phone yet. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -621,6 +623,11 @@ empty stylesheet. The 1280 spec now serves Archivo and Space Mono from
 `tests/e2e/fonts/` for both the main capture and the branch compare.
 A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
+
+**2026-10-12**, phone transfer record. A row opens the record kept in
+the browser. Status moves one step, the same way the desktop drawer
+does, and the actor is the person signed in. Amounts sit in a collapsed
+row. The tracking PIN, the receipt, and the EFT report stay off.
 
 **2026-10-12**, phone Transfers list. Under 430px the Transfers window is
 the record list (who sent to whom, the pipeline chips, grouped under

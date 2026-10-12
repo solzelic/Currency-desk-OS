@@ -413,6 +413,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const [settlements, setSettlements] = useState(() => { try { return JSON.parse(localStorage.getItem(SKEY) || '[]') || []; } catch (e) { return []; } });
     const [modal, setModal] = useState(false);
     const [detailId, setDetailId] = useState(null);
+    const [phoneOpen, setPhoneOpen] = useState(null);
     useEffect(() => { try { localStorage.setItem(SKEY, JSON.stringify(settlements)); } catch (e) {} }, [settlements]);
     useEffect(() => { if (!pSetBen) { try { localStorage.setItem(BKEY, JSON.stringify(lBen)); } catch (e) {} } }, [lBen]);
     useEffect(() => { if (!pSetCor) { try { localStorage.setItem(CKEY, JSON.stringify(lCor)); } catch (e) {} } }, [lCor]);
@@ -442,8 +443,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       const PhoneTransfers = window.CDOS.PhoneTransfers;
       return (
         <div className="phone-transfers">
-          <PhoneTransfers transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} timeZone={settings && settings.timezone} onNew={() => setModal(true)} />
-          {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={() => setModal(false)} />}
+          <PhoneTransfers transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} clients={clients} me={me} log={log} setTransfers={setTransfers} timeZone={settings && settings.timezone} onNew={() => setModal(true)} openId={phoneOpen} onOpened={() => setPhoneOpen(null)} />
+          {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setPhoneOpen(id); }} />}
         </div>
       );
     }

@@ -39788,6 +39788,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     });
     const [modal, setModal] = useState(false);
     const [detailId, setDetailId] = useState(null);
+    const [phoneOpen, setPhoneOpen] = useState(null);
     useEffect(() => {
       try {
         localStorage.setItem(SKEY, JSON.stringify(settlements));
@@ -39855,8 +39856,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         transfers: transfers,
         beneficiaries: beneficiaries,
         corridors: corridors,
+        clients: clients,
+        me: me,
+        log: log,
+        setTransfers: setTransfers,
         timeZone: settings && settings.timezone,
-        onNew: () => setModal(true)
+        onNew: () => setModal(true),
+        openId: phoneOpen,
+        onOpened: () => setPhoneOpen(null)
       }), modal && /*#__PURE__*/React.createElement(TransferModal, {
         rows,
         setRows,
@@ -39873,7 +39880,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         serverBacked,
         onServerPosted: onTillChanged,
         onClose: () => setModal(false),
-        onDone: () => setModal(false)
+        onDone: id => {
+          setModal(false);
+          setPhoneOpen(id);
+        }
       }));
     }
     return /*#__PURE__*/React.createElement("div", {
@@ -63103,27 +63113,31 @@ window.CDOS_PERSIST = (function () {
 })();
 
 /* ---- os-src/cdos-transfers-phone.jsx ---- */
-/* Phone Transfers list. Who sent to whom, and where it stands.
+/* Phone Transfers. The list, and the record a row opens.
    The cash step stays the existing New transfer sheet.
-   Saved beneficiaries and the record page come in later PRs.
-   A tracking PIN, a receipt, and an EFT report stay off this screen. */
+   Saved beneficiaries come in a later PR.
+   A tracking PIN, a receipt, and an EFT report stay off this screen.
+   A status note that claims a partner moved the money is not shown. */
 (function () {
   const {
-    useState
+    useState,
+    useEffect
   } = React;
   function shell() {
     const C = window.CDOS || {};
     const Phone = C.Phone;
     const T = C._transfers;
-    if (!Phone || !T || typeof C.formatPhoneTime !== 'function' || typeof C.formatPhoneDate !== 'function' || typeof C.formatPhoneListGroup !== 'function') {
+    if (!Phone || !T || typeof C.formatPhoneMoney !== 'function' || typeof C.formatPhoneTime !== 'function' || typeof C.formatPhoneDate !== 'function' || typeof C.formatPhoneListGroup !== 'function') {
       throw new Error('Phone transfers: the phone shell did not load.');
     }
     return {
       Phone: Phone,
       T: T,
+      money: C.formatPhoneMoney,
       time: C.formatPhoneTime,
       day: C.formatPhoneDate,
-      group: C.formatPhoneListGroup
+      group: C.formatPhoneListGroup,
+      Ic: C.Ic
     };
   }
   function shown(text) {
@@ -63134,14 +63148,17 @@ window.CDOS_PERSIST = (function () {
     const fn = window.CDOS && window.CDOS.businessDate;
     return typeof fn === 'function' ? fn() : '';
   }
+  function homeCode() {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    const limit = window.CDOS.reportingLimit && window.CDOS.reportingLimit(null);
+    return pack && pack.homeCurrency || limit && limit.currency || '';
+  }
   function toneOf(status) {
     if (status === 'paid') return 'pos';
     if (status === 'hold') return 'warn';
     if (status === 'cancelled') return 'neg';
     return 'neutral';
   }
-
-  /* The last time a person moved the record. A System stamp is not that. */
   function handStamp(t) {
     const events = t.timeline || [];
     let pick = null;
@@ -63172,12 +63189,202 @@ window.CDOS_PERSIST = (function () {
     if (month < 1 || month > 12) return '';
     return MONTHS[month - 1] + ' ' + dayNum;
   }
+  function stamp() {
+    return new Date().toLocaleString('en-CA', {
+      hour12: false
+    }).replace(',', '');
+  }
+  function idLine(client) {
+    if (!client || !client.idType || !client.idNum) return 'Not on file';
+    const {
+      day
+    } = shell();
+    const expiry = client.idExpiry ? String(client.idExpiry).slice(0, 10) : '';
+    const when = expiry ? shown(day(expiry)) : '';
+    const expired = !!(expiry && today() && expiry < today());
+    return client.idType + (when ? ', exp. ' + when : '') + (expired ? ', expired' : '');
+  }
+  function Kv({
+    rows
+  }) {
+    const items = (rows || []).filter(row => row && row.v);
+    if (!items.length) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-kv"
+    }, items.map(row => /*#__PURE__*/React.createElement("div", {
+      key: row.k
+    }, /*#__PURE__*/React.createElement("span", null, row.k), /*#__PURE__*/React.createElement("b", null, row.v))));
+  }
+  function Crumb({
+    onBack
+  }) {
+    const {
+      Ic
+    } = shell();
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-crumb",
+      onClick: onBack
+    }, Ic ? /*#__PURE__*/React.createElement(Ic, {
+      n: "arrowleft",
+      s: 16
+    }) : null, " Transfers");
+  }
+  function RecordDetail({
+    t,
+    beneficiaries,
+    corridors,
+    clients,
+    me,
+    log,
+    setTransfers,
+    onBack
+  }) {
+    const {
+      Phone,
+      T,
+      money,
+      time
+    } = shell();
+    const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
+    const cor = corridors.find(c => c.id === t.corridor) || {};
+    const home = homeCode();
+    const payCode = t.direction === 'send' ? home : t.ccy;
+    const recvCode = t.direction === 'send' ? t.ccy : home;
+    const pay = shown(money(t.payAmt, payCode));
+    const recv = shown(money(t.recvAmt, recvCode));
+    const fee = shown(money(t.fee, home));
+    const idx = T.FLOW.indexOf(t.status);
+    const nextKey = idx >= 0 && idx < T.FLOW.length - 1 ? T.FLOW[idx + 1] : null;
+    const terminal = t.status === 'paid' || t.status === 'cancelled';
+    const advance = (to, note) => {
+      if (!me || !me.name) throw new Error('Phone transfers: cannot record who set the status.');
+      setTransfers(list => list.map(x => x.id === t.id ? {
+        ...x,
+        status: to,
+        timeline: [...(x.timeline || []), {
+          status: to,
+          ts: stamp(),
+          by: me.name,
+          note: note
+        }]
+      } : x));
+      if (log) log('Transfer ' + T.statusLabel(to, t.direction).toLowerCase(), t.ref + ' \u00b7 ' + (cor.country || ''));
+    };
+    const mark = key => {
+      const label = T.statusLabel(key, t.direction);
+      return 'Mark ' + label.charAt(0).toLowerCase() + label.slice(1);
+    };
+    let sticky = null;
+    if (!terminal) {
+      sticky = /*#__PURE__*/React.createElement("div", {
+        className: "phone-sticky phone-xfer-actions"
+      }, t.status === 'hold' ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-sticky-btn",
+        onClick: () => advance('sent', 'Released after review')
+      }, "Release") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-secondary",
+        onClick: () => advance('hold', 'Placed on hold')
+      }, "Put on hold"), nextKey ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-sticky-btn",
+        onClick: () => advance(nextKey)
+      }, mark(nextKey)) : null));
+    }
+    return /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: "transfers",
+      className: "phone-drill",
+      sticky: sticky
+    }, /*#__PURE__*/React.createElement(Crumb, {
+      onBack: onBack
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "phone-detail-title"
+    }, /*#__PURE__*/React.createElement("h1", null, t.ref), /*#__PURE__*/React.createElement("span", {
+      className: 'phone-badge tone-' + toneOf(t.status)
+    }, T.statusLabel(t.status, t.direction))), /*#__PURE__*/React.createElement("section", {
+      className: "phone-card"
+    }, /*#__PURE__*/React.createElement("h2", null, "Sender"), /*#__PURE__*/React.createElement(Kv, {
+      rows: [{
+        k: 'Name',
+        v: t.senderName
+      }, {
+        k: 'ID',
+        v: idLine(clients && clients[t.senderName])
+      }]
+    })), /*#__PURE__*/React.createElement("section", {
+      className: "phone-card"
+    }, /*#__PURE__*/React.createElement("h2", null, "Beneficiary"), /*#__PURE__*/React.createElement(Kv, {
+      rows: [{
+        k: 'Name',
+        v: ben ? ben.name + (ben.relationship ? ', ' + ben.relationship : '') : ''
+      }, {
+        k: 'Destination',
+        v: cor.country || ''
+      }, {
+        k: 'Payout',
+        v: T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')
+      }, {
+        k: 'Pickup city',
+        v: ben && ben.method === 'cash' ? ben.pickupCity : ''
+      }, {
+        k: 'Account',
+        v: ben && ben.method === 'bank' ? ben.account : ''
+      }, {
+        k: 'Wallet',
+        v: ben && ben.method === 'wallet' ? ben.walletId : ''
+      }]
+    })), /*#__PURE__*/React.createElement("section", {
+      className: "phone-card"
+    }, /*#__PURE__*/React.createElement("h2", null, "Why and from where"), /*#__PURE__*/React.createElement(Kv, {
+      rows: [{
+        k: 'Purpose',
+        v: t.purpose || ''
+      }, {
+        k: 'Source of funds',
+        v: t.sourceOfFunds || ''
+      }]
+    })), /*#__PURE__*/React.createElement("section", {
+      className: "phone-card"
+    }, /*#__PURE__*/React.createElement("h2", null, "Status, set by hand"), /*#__PURE__*/React.createElement("ul", {
+      className: "phone-tl"
+    }, (t.timeline || []).map((evt, i) => {
+      const when = shown(time(evt.ts));
+      const who = evt.by && evt.by !== 'System' ? evt.by : '';
+      return /*#__PURE__*/React.createElement("li", {
+        key: evt.status + i
+      }, /*#__PURE__*/React.createElement("span", null, T.statusLabel(evt.status, t.direction)), /*#__PURE__*/React.createElement("span", null, [when, who].filter(Boolean).join(', ')));
+    }))), /*#__PURE__*/React.createElement("details", {
+      className: "phone-card phone-money"
+    }, /*#__PURE__*/React.createElement("summary", null, /*#__PURE__*/React.createElement("span", null, "Amounts"), /*#__PURE__*/React.createElement("span", null, pay && recv ? pay + ' to ' + recv : '')), /*#__PURE__*/React.createElement(Kv, {
+      rows: [{
+        k: t.direction === 'send' ? 'Customer pays' : 'Amount in',
+        v: pay
+      }, {
+        k: 'Fee',
+        v: fee
+      }, {
+        k: 'Rate',
+        v: t.rate ? String(t.rate) : ''
+      }, {
+        k: t.direction === 'send' ? 'Beneficiary gets' : 'Customer gets',
+        v: recv
+      }]
+    })));
+  }
   function PhoneTransfers({
     transfers,
     beneficiaries,
     corridors,
+    clients,
+    me,
+    log,
+    setTransfers,
     onNew,
     onOpen,
+    openId,
+    onOpened,
     timeZone
   }) {
     const {
@@ -63187,6 +63394,12 @@ window.CDOS_PERSIST = (function () {
     } = shell();
     const [q, setQ] = useState('');
     const [filter, setFilter] = useState('active');
+    const [detailId, setDetailId] = useState(null);
+    useEffect(() => {
+      if (!openId) return;
+      setDetailId(openId);
+      if (onOpened) onOpened();
+    }, [openId]);
     const benOf = id => beneficiaries.find(b => b.id === id);
     const corOf = id => corridors.find(c => c.id === id) || {};
     const counts = {
@@ -63220,6 +63433,34 @@ window.CDOS_PERSIST = (function () {
         rows: [t]
       });
     });
+    const open = id => {
+      setDetailId(id);
+      if (onOpen) onOpen(id);
+    };
+    const detail = detailId ? transfers.find(t => t.id === detailId) : null;
+    if (detailId) {
+      if (!detail) {
+        return /*#__PURE__*/React.createElement(Phone.Screen, {
+          app: "transfers",
+          className: "phone-drill"
+        }, /*#__PURE__*/React.createElement(Crumb, {
+          onBack: () => setDetailId(null)
+        }), /*#__PURE__*/React.createElement(Phone.EmptyState, {
+          title: "Record not on this desk",
+          message: "It is not in the transfers kept on this browser."
+        }));
+      }
+      return /*#__PURE__*/React.createElement(RecordDetail, {
+        t: detail,
+        beneficiaries: beneficiaries,
+        corridors: corridors,
+        clients: clients,
+        me: me,
+        log: log,
+        setTransfers: setTransfers,
+        onBack: () => setDetailId(null)
+      });
+    }
     const emptyCopy = filter === 'hold' ? 'Nothing is on hold.' : filter === 'paid' ? 'Nothing has been paid out.' : filter === 'all' ? 'No transfers yet.' : 'Nothing is in progress.';
     const empty = needle ? /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No records",
@@ -63282,7 +63523,7 @@ window.CDOS_PERSIST = (function () {
           label: T.statusLabel(t.status, t.direction),
           tone: toneOf(t.status)
         },
-        onClick: onOpen ? () => onOpen(t.id) : undefined
+        onClick: () => open(t.id)
       });
     }))) : empty);
   }

@@ -261,3 +261,84 @@ test.describe("a Toronto branch seen from another zone", () => {
     await expect(list).not.toContainText("24:00");
   });
 });
+
+test("a record shows the people and the hand-set status", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page);
+  const posts: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST") posts.push(req.url());
+  });
+  await openTransfers(page);
+  const list = page.locator(".phone-transfers");
+
+  await list.getByText("Jakob Miller to Rohan Miller").click();
+  await expect(list.getByRole("heading", { level: 1, name: "TR-260618-002" })).toBeVisible();
+  await expect(list.getByRole("button", { name: "Mark in transit" })).toBeVisible();
+  await expect(list.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
+  await expect(list.getByText("Rohan Miller, Sibling")).toBeVisible();
+  await expect(list.getByText("Bank deposit, ICICI Bank")).toBeVisible();
+  await expect(list).not.toContainText("Mumbai");
+  await expect(list).not.toContainText("\u2014");
+  await list.getByRole("button", { name: "Transfers" }).click();
+
+  await list.getByRole("tab", { name: "On hold 1" }).click();
+  await list.getByText("Brooke Lawson to Lin Wei").click();
+  await expect(list.getByRole("button", { name: "Release" })).toBeVisible();
+  await expect(list.getByRole("button", { name: "Put on hold" })).toHaveCount(0);
+  await expect(list).not.toContainText("Reportable EFT");
+  await list.getByRole("button", { name: "Transfers" }).click();
+
+  await list.getByRole("tab", { name: "Paid out 1" }).click();
+  await list.getByText("Rachel Carter to Maria Carter").click();
+  await expect(list.getByRole("button", { name: "Put on hold" })).toHaveCount(0);
+  await expect(list.getByRole("button", { name: "Release" })).toHaveCount(0);
+  await expect(list.getByRole("button", { name: /Mark / })).toHaveCount(0);
+  await expect(list).not.toContainText("Collected in Cebu");
+  await list.getByRole("button", { name: "Transfers" }).click();
+
+  await list.getByRole("tab", { name: "In progress 2" }).click();
+  await list.getByText("Rachel Carter to Maria Carter").click();
+  const detail = page.locator(".phone-transfers");
+  await expect(detail.getByRole("heading", { level: 1, name: "TR-260618-003" })).toBeVisible();
+  await expect(detail.getByText("Maria Carter, Parent")).toBeVisible();
+  await expect(detail.getByText("Philippines")).toBeVisible();
+  await expect(detail.getByText("Cash pickup, Cebuana Lhuillier")).toBeVisible();
+  await expect(detail.getByText("Cebu City")).toBeVisible();
+  await expect(detail.getByText("Family support")).toBeVisible();
+  await expect(detail.getByText("Salary")).toBeVisible();
+  await expect(detail.getByText("Not on file")).toBeVisible();
+  await expect(detail.getByText("10:12 AM, M. Costa")).toBeVisible();
+  await expect(detail.getByText("10:14 AM, M. Costa")).toBeVisible();
+  await expect(detail.getByText("In transit").first()).toBeVisible();
+  await expect(detail).not.toContainText("System");
+  await expect(detail).not.toContainText("Partner acknowledged");
+  await expect(detail).not.toContainText("48 221 905");
+  await expect(detail).not.toContainText("Tracking PIN");
+  await expect(detail).not.toContainText("Print receipt");
+  await expect(detail).not.toContainText("Generate report");
+  await expect(detail).not.toContainText("Example data");
+  await expect(detail).not.toContainText("C4410");
+  await expect(detail).not.toContainText("Driver's licence");
+  await expect(detail.getByText("Amounts")).toBeVisible();
+  await detail.locator("summary").click();
+  await expect(detail.getByText("Customer pays")).toBeVisible();
+  await expect(detail.getByText("Beneficiary gets")).toBeVisible();
+  await expect(detail.getByText("Fee")).toBeVisible();
+
+  const before = posts.length;
+  await detail.getByRole("button", { name: "Mark paid out" }).click();
+  await expect(detail.locator(".phone-badge")).toHaveText("Paid out");
+  await expect(detail.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
+  const stored = await page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
+    const row = rows.find((item: { ref?: string }) => item.ref === "TR-260618-003");
+    return row ? row.status : "";
+  });
+  expect(stored).toBe("paid");
+  expect(posts.slice(before).some((url) => url.includes("/api/"))).toBe(false);
+
+  await phoneSweep(page, {
+    roots: [".phone-transfers", ".phone-head", "#phone-dock"],
+  });
+});
