@@ -8,24 +8,29 @@ import type { Page } from "@playwright/test";
 import { expect } from "../fixtures";
 
 const SCREENS: Record<string, { label: string; text: RegExp }> = {
-  rates: { label: "Rate Board", text: /Buy|Sell|Mid|Rate/ },
+  /* The board is an iframe. The window body itself has no text, and
+     the frame's own words are uppercase. */
+  rates: { label: "Rate Board", text: /Buy|Sell|Mid/i },
   ledger: { label: "Ledger", text: /Pay-in volume|Records/ },
-  clients: { label: "Clients · KYC", text: /New contact|Needs attention/ },
-  till: { label: "Cash Drawer", text: /Cash drawer|Reconcile|Open the till/ },
-  transfers: { label: "Transfers", text: /Transfer|Send|Beneficiar/ },
-  cheques: { label: "Cheques", text: /Cheque|Hold/ },
-  vault: { label: "Cash on Hand · Vault", text: /Vault|safe|float/i },
+  /* The list says "New contact". It does not say "Client", "KYC", or
+     "Search" — those live in the window title and the search field's
+     placeholder, which innerText omits. */
+  clients: { label: "Clients · KYC", text: /New contact/ },
+  till: { label: "Cash Drawer", text: /Cash Drawer|Reconcile|Open the till/ },
+  transfers: { label: "Transfers", text: /New transfer/ },
+  cheques: { label: "Cheques", text: /Cash a cheque/ },
+  vault: { label: "Cash on Hand · Vault", text: /\bVault\b/ },
   compliance: { label: "Compliance", text: /Not connected/ },
-  tagged: { label: "Tagged", text: /Tag/ },
-  audit: { label: "Audit Trail", text: /APPEND-ONLY|Transaction posted/ },
+  tagged: { label: "Tagged", text: /Tagged transactions/ },
+  audit: { label: "Audit Trail", text: /APPEND-ONLY|All actions|Transaction posted/ },
   reports: { label: "Reports", text: /End-of-Day Sign-Off/ },
-  dashboard: { label: "Dashboard", text: /Cash position|Dashboard/ },
-  telegraph: { label: "Texts", text: /Text|Message/ },
-  calc: { label: "Calculator", text: /Calculator|[0-9]/ },
-  loan: { label: "Loan Centre", text: /Loan|payment|Monthly/ },
-  pricing: { label: "Pricing & Rates", text: /Pric|Spread|Rate/ },
-  store: { label: "Store", text: /Store|App/ },
-  settings: { label: "Settings", text: /Settings|Business|PIN/ },
+  dashboard: { label: "Dashboard", text: /Cash position/ },
+  telegraph: { label: "Texts", text: /\bTexts\b/ },
+  calc: { label: "Calculator", text: /Calculator/ },
+  loan: { label: "Loan Centre", text: /Loan terms/ },
+  pricing: { label: "Pricing & Rates", text: /Default spread|Publish to Rate Board/ },
+  store: { label: "Store", text: /On your dock/ },
+  settings: { label: "Settings", text: /Business profile/ },
 };
 
 export async function expectPhoneMore(page: Page): Promise<void> {
