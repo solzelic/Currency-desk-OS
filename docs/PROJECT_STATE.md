@@ -114,8 +114,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   receipt, and the EFT report stay off that list. New transfer record
   opens the existing cash step. A row opens the record: the title is
   the two names, the TR number sits under it, then sender, beneficiary,
-  purpose, source of funds, the hand-set status, and amounts collapsed
-  at the end. The desktop pipeline is unchanged. Saved beneficiaries
+  purpose, source of funds, and the status. The phone does not change
+  that status. Amounts are the ledger row and the obligation face, or
+  they are absent. The desktop pipeline is unchanged. Saved beneficiaries
   are not on the phone yet. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
@@ -625,12 +626,15 @@ empty stylesheet. The 1280 spec now serves Archivo and Space Mono from
 A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
 
-**2026-10-12**, phone transfer record. A row opens the record kept in
-the browser. The title is the two names, at 22px and weight 700, and
-the TR number sits under it in mono 13px muted. Status moves one step,
-the same way the desktop drawer does, and the actor is the person
-signed in. Amounts sit in a collapsed row. The tracking PIN, the
-receipt, and the EFT report stay off.
+**2026-10-12**, phone transfer record. A row opens the record. The
+title is the two names, at 22px and weight 700, and the TR number sits
+under it in mono 13px muted. Status is view only: this phone does not
+mark a transfer in transit, on hold, or released. Those posts are the
+server's, tracked in #138. Rate, fee, and the amount in are copied
+from the ledger transaction. Receiver gets is the obligation's stored
+face. A record with no ledger row shows no amount. A browser gross,
+a per-100 rate, and the local pay and receive fields are not shown.
+The tracking PIN, the receipt, and the EFT report stay off.
 
 **2026-10-12**, phone Transfers list. Under 430px the Transfers window is
 the record list (who sent to whom, the pipeline chips, grouped under

@@ -63148,11 +63148,6 @@ window.CDOS_PERSIST = (function () {
     const fn = window.CDOS && window.CDOS.businessDate;
     return typeof fn === 'function' ? fn() : '';
   }
-  function homeCode() {
-    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
-    const limit = window.CDOS.reportingLimit && window.CDOS.reportingLimit(null);
-    return pack && pack.homeCurrency || limit && limit.currency || '';
-  }
   function toneOf(status) {
     if (status === 'paid') return 'pos';
     if (status === 'hold') return 'warn';
@@ -63189,11 +63184,6 @@ window.CDOS_PERSIST = (function () {
     if (month < 1 || month > 12) return '';
     return MONTHS[month - 1] + ' ' + dayNum;
   }
-  function stamp() {
-    return new Date().toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '');
-  }
   function idLine(client) {
     if (!client || !client.idType || !client.idNum) return 'Not on file';
     const {
@@ -63213,7 +63203,10 @@ window.CDOS_PERSIST = (function () {
       className: "phone-kv"
     }, items.map(row => /*#__PURE__*/React.createElement("div", {
       key: row.k
-    }, /*#__PURE__*/React.createElement("span", null, row.k), /*#__PURE__*/React.createElement("b", null, row.v))));
+    }, /*#__PURE__*/React.createElement("span", null, row.k), /*#__PURE__*/React.createElement("b", {
+      "data-ledger": row.kind || undefined,
+      "data-stored": row.raw == null ? undefined : String(row.raw)
+    }, row.v))));
   }
   function Crumb({
     onBack
@@ -63230,14 +63223,16 @@ window.CDOS_PERSIST = (function () {
       s: 16
     }) : null, " Transfers");
   }
+
+  /* Figures are copied off the ledger row and the obligation.
+     Nothing here multiplies a rate, invents a gross, or reads the
+     browser record's pay, fee, or receive amount. */
   function RecordDetail({
     t,
     beneficiaries,
     corridors,
     clients,
-    me,
-    log,
-    setTransfers,
+    timeZone,
     onBack
   }) {
     const {
@@ -63248,63 +63243,107 @@ window.CDOS_PERSIST = (function () {
     } = shell();
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
-    const home = homeCode();
-    const payCode = t.direction === 'send' ? home : t.ccy;
-    const recvCode = t.direction === 'send' ? t.ccy : home;
-    const pay = shown(money(t.payAmt, payCode));
-    const recv = shown(money(t.recvAmt, recvCode));
-    const fee = shown(money(t.fee, home));
-    const idx = T.FLOW.indexOf(t.status);
-    const nextKey = idx >= 0 && idx < T.FLOW.length - 1 ? T.FLOW[idx + 1] : null;
-    const terminal = t.status === 'paid' || t.status === 'cancelled';
-    const advance = (to, note) => {
-      if (!me || !me.name) throw new Error('Phone transfers: cannot record who set the status.');
-      setTransfers(list => list.map(x => x.id === t.id ? {
-        ...x,
-        status: to,
-        timeline: [...(x.timeline || []), {
-          status: to,
-          ts: stamp(),
-          by: me.name,
-          note: note
-        }]
-      } : x));
-      if (log) log('Transfer ' + T.statusLabel(to, t.direction).toLowerCase(), t.ref + ' \u00b7 ' + (cor.country || ''));
+    const [book, setBook] = useState(() => t.serverTransactionId ? null : {
+      absent: true
+    });
+    useEffect(() => {
+      let gone = false;
+      const id = t.serverTransactionId;
+      if (!id) {
+        setBook({
+          absent: true
+        });
+        return undefined;
+      }
+      setBook(null);
+      const backend = window.CDOS.Backend;
+      if (!backend || typeof backend.request !== 'function') {
+        setBook({
+          absent: true,
+          label: 'The ledger is not on this desk. No amount is shown.'
+        });
+        return undefined;
+      }
+      Promise.all([backend.request('/api/ledger/transactions?limit=100'), backend.request('/api/ledger/obligations?limit=200')]).then(pair => {
+        if (gone) return;
+        const tx = (pair[0].transactions || []).find(row => row && row.transactionId === id) || null;
+        const ob = (pair[1].obligations || []).find(row => row && (row.transactionId === id || t.serverObligationId && row.obligationId === t.serverObligationId)) || null;
+        setBook(tx ? {
+          tx: tx,
+          obligation: ob
+        } : {
+          absent: true
+        });
+      }).catch(error => {
+        if (gone) return;
+        const offline = error && error.code === 'NETWORK_ERROR';
+        const denied = error && (error.status === 401 || error.code === 'AUTHENTICATION_REQUIRED');
+        setBook({
+          absent: true,
+          label: offline ? 'Offline. No amount is shown.' : denied ? 'Sign in again. No amount is shown.' : 'The ledger refused this record. No amount is shown.'
+        });
+      });
+      return () => {
+        gone = true;
+      };
+    }, [t.id, t.serverTransactionId, t.serverObligationId]);
+    const asMoney = (amount, code) => {
+      if (amount == null || String(amount).trim() === '') return '';
+      return shown(money(String(amount).trim(), code));
     };
-    const mark = key => {
-      const label = T.statusLabel(key, t.direction);
-      return 'Mark ' + label.charAt(0).toLowerCase() + label.slice(1);
-    };
-    const who = t.direction === 'send' ? ben ? ben.name : cor.country || '' : t.senderName;
-    let sticky = null;
-    if (!terminal) {
-      sticky = /*#__PURE__*/React.createElement("div", {
-        className: "phone-sticky phone-xfer-actions"
-      }, t.status === 'hold' ? /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        className: "phone-sticky-btn",
-        onClick: () => advance('sent', 'Released after review')
-      }, "Release") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        className: "phone-secondary",
-        onClick: () => advance('hold', 'Placed on hold')
-      }, "Put on hold"), nextKey ? /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        className: "phone-sticky-btn",
-        onClick: () => advance(nextKey)
-      }, mark(nextKey)) : null));
+    let rows = null;
+    if (book && book.tx) {
+      const tx = book.tx;
+      const ob = book.obligation;
+      const home = ob && ob.homeCurrency;
+      rows = [{
+        k: t.direction === 'send' ? 'Customer pays' : 'Amount in',
+        v: asMoney(tx.inputAmount, tx.from),
+        raw: tx.inputAmount,
+        kind: 'input'
+      }];
+      if (tx.feeCad != null && String(tx.feeCad).trim() !== '') {
+        rows.push({
+          k: 'Fee',
+          v: home ? asMoney(tx.feeCad, home) : String(tx.feeCad).trim(),
+          raw: tx.feeCad,
+          kind: 'fee'
+        });
+      }
+      if (tx.rate != null && String(tx.rate).trim() !== '') {
+        rows.push({
+          k: 'Rate',
+          v: String(tx.rate).trim(),
+          raw: String(tx.rate).trim(),
+          kind: 'rate'
+        });
+      }
+      if (ob && ob.faceAmount != null && String(ob.faceAmount).trim() !== '') {
+        rows.push({
+          k: 'Receiver gets',
+          v: asMoney(ob.faceAmount, ob.faceCurrency),
+          raw: ob.faceAmount,
+          kind: 'face'
+        });
+      }
     }
+    const paid = rows && rows[0] ? rows[0].v : '';
+    const face = rows ? rows.filter(row => row.kind === 'face')[0] : null;
+    const country = cor.country || '';
+    const who = t.direction === 'send' ? ben ? ben.name : country : t.senderName;
+    const amountNote = book == null ? 'Reading the ledger.' : book && book.label || 'Not on the ledger.';
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "transfers",
-      className: "phone-drill",
-      sticky: sticky
+      className: "phone-drill"
     }, /*#__PURE__*/React.createElement(Crumb, {
       onBack: onBack
     }), /*#__PURE__*/React.createElement("div", {
       className: "phone-detail-title"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", null, t.senderName + ' to ' + who), /*#__PURE__*/React.createElement("p", {
       className: "phone-detail-ref"
-    }, t.ref)), /*#__PURE__*/React.createElement("span", {
+    }, t.ref), t.sample ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-demo"
+    }, "Demo") : null), /*#__PURE__*/React.createElement("span", {
       className: 'phone-badge tone-' + toneOf(t.status)
     }, T.statusLabel(t.status, t.direction))), /*#__PURE__*/React.createElement("section", {
       className: "phone-card"
@@ -63324,7 +63363,7 @@ window.CDOS_PERSIST = (function () {
         v: ben ? ben.name + (ben.relationship ? ', ' + ben.relationship : '') : ''
       }, {
         k: 'Destination',
-        v: cor.country || ''
+        v: who === country ? '' : country
       }, {
         k: 'Payout',
         v: T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')
@@ -63350,31 +63389,26 @@ window.CDOS_PERSIST = (function () {
       }]
     })), /*#__PURE__*/React.createElement("section", {
       className: "phone-card"
-    }, /*#__PURE__*/React.createElement("h2", null, "Status, set by hand"), /*#__PURE__*/React.createElement("ul", {
+    }, /*#__PURE__*/React.createElement("h2", null, "Status"), /*#__PURE__*/React.createElement("p", {
+      className: "phone-absent"
+    }, "View only. This phone does not change it."), /*#__PURE__*/React.createElement("ul", {
       className: "phone-tl"
     }, (t.timeline || []).map((evt, i) => {
-      const when = shown(time(evt.ts));
-      const who = evt.by && evt.by !== 'System' ? evt.by : '';
+      const when = shown(time(evt.ts, timeZone));
+      const actor = evt.by && evt.by !== 'System' ? evt.by : '';
       return /*#__PURE__*/React.createElement("li", {
         key: evt.status + i
-      }, /*#__PURE__*/React.createElement("span", null, T.statusLabel(evt.status, t.direction)), /*#__PURE__*/React.createElement("span", null, [when, who].filter(Boolean).join(', ')));
-    }))), /*#__PURE__*/React.createElement("details", {
+      }, /*#__PURE__*/React.createElement("span", null, T.statusLabel(evt.status, t.direction)), /*#__PURE__*/React.createElement("span", null, [when, actor].filter(Boolean).join(', ')));
+    }))), rows ? /*#__PURE__*/React.createElement("details", {
       className: "phone-card phone-money"
-    }, /*#__PURE__*/React.createElement("summary", null, /*#__PURE__*/React.createElement("span", null, "Amounts"), /*#__PURE__*/React.createElement("span", null, pay && recv ? pay + ' to ' + recv : '')), /*#__PURE__*/React.createElement(Kv, {
-      rows: [{
-        k: t.direction === 'send' ? 'Customer pays' : 'Amount in',
-        v: pay
-      }, {
-        k: 'Fee',
-        v: fee
-      }, {
-        k: 'Rate',
-        v: t.rate ? String(t.rate) : ''
-      }, {
-        k: t.direction === 'send' ? 'Beneficiary gets' : 'Customer gets',
-        v: recv
-      }]
-    })));
+    }, /*#__PURE__*/React.createElement("summary", null, /*#__PURE__*/React.createElement("span", null, "Amounts"), /*#__PURE__*/React.createElement("span", null, paid && face ? paid + ' to ' + face.v : '')), /*#__PURE__*/React.createElement(Kv, {
+      rows: rows
+    })) : /*#__PURE__*/React.createElement("section", {
+      className: "phone-card phone-money"
+    }, /*#__PURE__*/React.createElement("h2", null, "Amounts"), /*#__PURE__*/React.createElement("p", {
+      className: "phone-absent",
+      role: book && book.label ? 'status' : undefined
+    }, amountNote)));
   }
   function PhoneTransfers({
     transfers,
@@ -63458,9 +63492,7 @@ window.CDOS_PERSIST = (function () {
         beneficiaries: beneficiaries,
         corridors: corridors,
         clients: clients,
-        me: me,
-        log: log,
-        setTransfers: setTransfers,
+        timeZone: timeZone,
         onBack: () => setDetailId(null)
       });
     }

@@ -259,10 +259,14 @@ test.describe("a Toronto branch seen from another zone", () => {
     await expect(list).not.toContainText("6:05 PM");
     await expect(list).not.toContainText("24:05");
     await expect(list).not.toContainText("24:00");
+    await list.getByText("Rachel Carter to Maria Carter").click();
+    await expect(list.getByText("12:05 AM, M. Costa")).toBeVisible();
+    await expect(list).not.toContainText("6:05 PM");
+    await expect(list).not.toContainText("24:05");
   });
 });
 
-test("a record shows the people and the hand-set status", async ({ page }) => {
+test("a record shows the people and does not change the status", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
   const posts: string[] = [];
@@ -275,8 +279,10 @@ test("a record shows the people and the hand-set status", async ({ page }) => {
   await list.getByText("Jakob Miller to Rohan Miller").click();
   await expect(list.getByRole("heading", { level: 1, name: "Jakob Miller to Rohan Miller" })).toBeVisible();
   await expect(list.locator(".phone-detail-ref")).toHaveText("TR-260618-002");
-  await expect(list.getByRole("button", { name: "Mark in transit" })).toBeVisible();
-  await expect(list.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
+  await expect(list.getByText("View only. This phone does not change it.")).toBeVisible();
+  await expect(list.getByRole("button", { name: "Mark in transit" })).toHaveCount(0);
+  await expect(list.getByRole("button", { name: "Put on hold" })).toHaveCount(0);
+  await expect(list.getByRole("button", { name: "Release" })).toHaveCount(0);
   await expect(list.getByText("Rohan Miller, Sibling")).toBeVisible();
   await expect(list.getByText("Bank deposit, ICICI Bank")).toBeVisible();
   await expect(list).not.toContainText("Mumbai");
@@ -285,8 +291,9 @@ test("a record shows the people and the hand-set status", async ({ page }) => {
 
   await list.getByRole("tab", { name: "On hold 1" }).click();
   await list.getByText("Brooke Lawson to Lin Wei").click();
-  await expect(list.getByRole("button", { name: "Release" })).toBeVisible();
+  await expect(list.getByRole("button", { name: "Release" })).toHaveCount(0);
   await expect(list.getByRole("button", { name: "Put on hold" })).toHaveCount(0);
+  await expect(list.getByRole("button", { name: /Mark / })).toHaveCount(0);
   await expect(list).not.toContainText("Reportable EFT");
   await list.getByRole("button", { name: "Transfers" }).click();
 
@@ -330,25 +337,162 @@ test("a record shows the people and the hand-set status", async ({ page }) => {
   await expect(detail).not.toContainText("Example data");
   await expect(detail).not.toContainText("C4410");
   await expect(detail).not.toContainText("Driver's licence");
-  await expect(detail.getByText("Amounts")).toBeVisible();
-  await detail.locator("summary").click();
-  await expect(detail.getByText("Customer pays")).toBeVisible();
-  await expect(detail.getByText("Beneficiary gets")).toBeVisible();
-  await expect(detail.getByText("Fee")).toBeVisible();
-
-  const before = posts.length;
-  await detail.getByRole("button", { name: "Mark paid out" }).click();
-  await expect(detail.locator(".phone-badge")).toHaveText("Paid out");
-  await expect(detail.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
+  await expect(detail.getByText("Demo")).toBeVisible();
+  await expect(detail.getByText("Not on the ledger.")).toBeVisible();
+  await expect(detail.getByText("Customer pays")).toHaveCount(0);
+  await expect(detail.getByText("Beneficiary gets")).toHaveCount(0);
+  await expect(detail.getByText("Gross")).toHaveCount(0);
+  await expect(detail.getByText("Fee")).toHaveCount(0);
+  expect(((await detail.innerText()).match(/Philippines/g) || []).length).toBe(1);
+  await expect(detail.locator(".phone-badge")).toHaveText("In transit");
   const stored = await page.evaluate(() => {
     const rows = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
-    const row = rows.find((item: { ref?: string }) => item.ref === "TR-260618-003");
-    return row ? row.status : "";
+    const row = rows.find((item: { ref?: string; recvAmt?: number; rate?: number; status?: string }) => item.ref === "TR-260618-003");
+    if (!row) throw new Error("seed transfer TR-260618-003 is not in the browser book");
+    return { status: row.status, recv: String(row.recvAmt), rate: String(row.rate) };
   });
-  expect(stored).toBe("paid");
-  expect(posts.slice(before).some((url) => url.includes("/api/"))).toBe(false);
+  expect(stored.status).toBe("transit");
+  await expect(detail).not.toContainText(stored.recv);
+  await expect(detail).not.toContainText(stored.rate);
+  expect(posts.some((url) => url.includes("/api/"))).toBe(false);
 
   await phoneSweep(page, {
     roots: [".phone-transfers", ".phone-head", "#phone-dock"],
   });
+});
+
+test("amounts match the stored ledger row", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page);
+  await openTransfers(page);
+  const send = {
+    transactionId: "tx_send",
+    rate: "21.500000000000",
+    inputAmount: "600.50",
+    outputAmount: "12910.75",
+    from: "CAD",
+    to: "PHP",
+    feeCad: "9.99",
+  };
+  const sendFace = { obligationId: "ob_send", transactionId: "tx_send", faceAmount: "12910.75", faceCurrency: "PHP", homeCurrency: "CAD" };
+  const recv = {
+    transactionId: "tx_recv",
+    rate: "0.023936",
+    inputAmount: "10000.00",
+    outputAmount: "239.36",
+    from: "PHP",
+    to: "CAD",
+    feeCad: null,
+  };
+  const recvFace = { obligationId: "ob_recv", transactionId: "tx_recv", faceAmount: "239.36", faceCurrency: "CAD", homeCurrency: "CAD" };
+  const perHundred = (Number(recv.rate) * 100).toFixed(4);
+  await page.evaluate(({ sendTx, recvTx }) => {
+    const rows = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
+    const rachel = rows.find((item: { ref?: string }) => item.ref === "TR-260618-003");
+    const jakob = rows.find((item: { ref?: string }) => item.ref === "TR-260618-002");
+    const brooke = rows.find((item: { ref?: string }) => item.ref === "TR-260617-019");
+    if (!rachel || !jakob || !brooke) throw new Error("seed transfers are not in the browser book");
+    rachel.serverTransactionId = sendTx;
+    rachel.serverObligationId = "ob_send";
+    jakob.serverTransactionId = recvTx;
+    jakob.serverObligationId = "ob_recv";
+    jakob.direction = "receive";
+    brooke.serverTransactionId = "tx_hold";
+    brooke.serverObligationId = "ob_hold";
+    localStorage.setItem("cdos_transfers_v1", JSON.stringify(rows));
+  }, { sendTx: send.transactionId, recvTx: recv.transactionId });
+  await page.reload();
+  await dismissTour(page);
+  await openTransfers(page);
+
+  await page.route("**/api/ledger/transactions**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ transactions: [send, recv] }),
+  }));
+  await page.route("**/api/ledger/obligations**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ obligations: [sendFace, recvFace], outstanding: { payable: null, receivable: null } }),
+  }));
+
+  const list = page.locator(".phone-transfers");
+  await list.getByText("Rachel Carter to Maria Carter").click();
+  const detail = page.locator(".phone-transfers");
+  await detail.locator("summary").click();
+  await expect(detail.locator('[data-ledger="input"]')).toHaveAttribute("data-stored", send.inputAmount);
+  await expect(detail.locator('[data-ledger="rate"]')).toHaveAttribute("data-stored", send.rate);
+  await expect(detail.locator('[data-ledger="face"]')).toHaveAttribute("data-stored", sendFace.faceAmount);
+  await expect(detail.locator('[data-ledger="fee"]')).toHaveAttribute("data-stored", send.feeCad);
+  await expect(detail.getByText("Customer pays")).toBeVisible();
+  await expect(detail.getByText("Amount in")).toHaveCount(0);
+  await expect(detail.getByText("Receiver gets")).toBeVisible();
+  await expect(detail.getByText("Gross")).toHaveCount(0);
+  await expect(detail).not.toContainText("per 100");
+  await detail.getByRole("button", { name: "Transfers" }).click();
+
+  await list.getByText("Jakob Miller to Jakob Miller").click();
+  await detail.locator("summary").click();
+  await expect(detail.locator('[data-ledger="rate"]')).toHaveAttribute("data-stored", recv.rate);
+  await expect(detail.locator('[data-ledger="face"]')).toHaveAttribute("data-stored", recvFace.faceAmount);
+  await expect(detail.locator('[data-ledger="input"]')).toHaveAttribute("data-stored", recv.inputAmount);
+  await expect(detail.locator('[data-ledger="fee"]')).toHaveCount(0);
+  await expect(detail.getByText("Amount in")).toBeVisible();
+  await expect(detail.getByText("Customer pays")).toHaveCount(0);
+  await expect(detail.getByText("Receiver gets")).toBeVisible();
+  await expect(detail.locator('[data-ledger="face"]')).toHaveText("239.36 CAD");
+  await expect(detail).not.toContainText("2.4935");
+  await expect(detail).not.toContainText("249.35");
+  await expect(detail).not.toContainText(perHundred);
+  await expect(detail).not.toContainText("Gross");
+  await expect(detail).not.toContainText("per 100");
+  await expect(detail.getByRole("button", { name: /Mark / })).toHaveCount(0);
+  const local = await page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
+    const row = rows.find((item: { ref?: string }) => item.ref === "TR-260618-002");
+    return row ? { status: row.status as string, recv: String(row.recvAmt) } : { status: "", recv: "" };
+  });
+  expect(local.status).toBe("sent");
+  await expect(detail).not.toContainText(local.recv);
+  await detail.getByRole("button", { name: "Transfers" }).click();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.route("**/api/ledger/**", (route) => route.fulfill({
+    status: 401,
+    contentType: "application/json",
+    body: JSON.stringify({ code: "AUTHENTICATION_REQUIRED" }),
+  }));
+  await list.getByRole("tab", { name: "On hold 1" }).click();
+  await list.getByText("Brooke Lawson to Lin Wei").click();
+  await expect(detail.getByText("Sign in again. No amount is shown.")).toBeVisible();
+  await expect(detail.getByText("Customer pays")).toHaveCount(0);
+  await expect(detail.getByText("Receiver gets")).toHaveCount(0);
+  await expect(detail.getByText("Gross")).toHaveCount(0);
+  await expect(detail.locator(".phone-badge")).toHaveText("On hold");
+  const covered = await detail.locator(".phone-detail-title").evaluate((title) => {
+    const box = title.getBoundingClientRect();
+    return [...document.querySelectorAll("[role=status]")].some((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+    });
+  });
+  expect(covered).toBe(false);
+  const held = await page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
+    const row = rows.find((item: { ref?: string }) => item.ref === "TR-260617-019");
+    return row ? row.status : "";
+  });
+  expect(held).toBe("hold");
+  await detail.getByRole("button", { name: "Transfers" }).click();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.route("**/api/ledger/**", (route) => route.abort("internetdisconnected"));
+  await list.getByRole("tab", { name: "In progress 2" }).click();
+  await list.getByText("Rachel Carter to Maria Carter").click();
+  await expect(detail.getByText("Offline. No amount is shown.")).toBeVisible();
+  await expect(detail.getByText("600.50")).toHaveCount(0);
+  await expect(detail.locator(".phone-badge")).toHaveText("In transit");
+  await expect(detail.getByRole("button", { name: "Put on hold" })).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "Release" })).toHaveCount(0);
 });

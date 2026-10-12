@@ -26,12 +26,6 @@
     return typeof fn === 'function' ? fn() : '';
   }
 
-  function homeCode() {
-    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
-    const limit = window.CDOS.reportingLimit && window.CDOS.reportingLimit(null);
-    return (pack && pack.homeCurrency) || (limit && limit.currency) || '';
-  }
-
   function toneOf(status) {
     if (status === 'paid') return 'pos';
     if (status === 'hold') return 'warn';
@@ -70,10 +64,6 @@
     return MONTHS[month - 1] + ' ' + dayNum;
   }
 
-  function stamp() {
-    return new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
-  }
-
   function idLine(client) {
     if (!client || !client.idType || !client.idNum) return 'Not on file';
     const { day } = shell();
@@ -88,7 +78,12 @@
     if (!items.length) return null;
     return (
       <div className="phone-kv">
-        {items.map((row) => <div key={row.k}><span>{row.k}</span><b>{row.v}</b></div>)}
+        {items.map((row) => (
+          <div key={row.k}>
+            <span>{row.k}</span>
+            <b data-ledger={row.kind || undefined} data-stored={row.raw == null ? undefined : String(row.raw)}>{row.v}</b>
+          </div>
+        ))}
       </div>
     );
   }
@@ -102,51 +97,79 @@
     );
   }
 
-  function RecordDetail({ t, beneficiaries, corridors, clients, me, log, setTransfers, onBack }) {
+  /* Figures are copied off the ledger row and the obligation.
+     Nothing here multiplies a rate, invents a gross, or reads the
+     browser record's pay, fee, or receive amount. */
+  function RecordDetail({ t, beneficiaries, corridors, clients, timeZone, onBack }) {
     const { Phone, T, money, time } = shell();
     const ben = beneficiaries.find((b) => b.id === t.beneficiaryId);
     const cor = corridors.find((c) => c.id === t.corridor) || {};
-    const home = homeCode();
-    const payCode = t.direction === 'send' ? home : t.ccy;
-    const recvCode = t.direction === 'send' ? t.ccy : home;
-    const pay = shown(money(t.payAmt, payCode));
-    const recv = shown(money(t.recvAmt, recvCode));
-    const fee = shown(money(t.fee, home));
-    const idx = T.FLOW.indexOf(t.status);
-    const nextKey = idx >= 0 && idx < T.FLOW.length - 1 ? T.FLOW[idx + 1] : null;
-    const terminal = t.status === 'paid' || t.status === 'cancelled';
-    const advance = (to, note) => {
-      if (!me || !me.name) throw new Error('Phone transfers: cannot record who set the status.');
-      setTransfers((list) => list.map((x) => x.id === t.id ? { ...x, status: to, timeline: [...(x.timeline || []), { status: to, ts: stamp(), by: me.name, note: note }] } : x));
-      if (log) log('Transfer ' + T.statusLabel(to, t.direction).toLowerCase(), t.ref + ' \u00b7 ' + (cor.country || ''));
+    const [book, setBook] = useState(() => (t.serverTransactionId ? null : { absent: true }));
+    useEffect(() => {
+      let gone = false;
+      const id = t.serverTransactionId;
+      if (!id) {
+        setBook({ absent: true });
+        return undefined;
+      }
+      setBook(null);
+      const backend = window.CDOS.Backend;
+      if (!backend || typeof backend.request !== 'function') {
+        setBook({ absent: true, label: 'The ledger is not on this desk. No amount is shown.' });
+        return undefined;
+      }
+      Promise.all([
+        backend.request('/api/ledger/transactions?limit=100'),
+        backend.request('/api/ledger/obligations?limit=200'),
+      ]).then((pair) => {
+        if (gone) return;
+        const tx = (pair[0].transactions || []).find((row) => row && row.transactionId === id) || null;
+        const ob = (pair[1].obligations || []).find((row) => row && (row.transactionId === id || (t.serverObligationId && row.obligationId === t.serverObligationId))) || null;
+        setBook(tx ? { tx: tx, obligation: ob } : { absent: true });
+      }).catch((error) => {
+        if (gone) return;
+        const offline = error && error.code === 'NETWORK_ERROR';
+        const denied = error && (error.status === 401 || error.code === 'AUTHENTICATION_REQUIRED');
+        setBook({
+          absent: true,
+          label: offline ? 'Offline. No amount is shown.' : (denied ? 'Sign in again. No amount is shown.' : 'The ledger refused this record. No amount is shown.'),
+        });
+      });
+      return () => { gone = true; };
+    }, [t.id, t.serverTransactionId, t.serverObligationId]);
+    const asMoney = (amount, code) => {
+      if (amount == null || String(amount).trim() === '') return '';
+      return shown(money(String(amount).trim(), code));
     };
-    const mark = (key) => {
-      const label = T.statusLabel(key, t.direction);
-      return 'Mark ' + label.charAt(0).toLowerCase() + label.slice(1);
-    };
-    const who = t.direction === 'send' ? (ben ? ben.name : (cor.country || '')) : t.senderName;
-    let sticky = null;
-    if (!terminal) {
-      sticky = (
-        <div className="phone-sticky phone-xfer-actions">
-          {t.status === 'hold'
-            ? <button type="button" className="phone-sticky-btn" onClick={() => advance('sent', 'Released after review')}>Release</button>
-            : (
-              <>
-                <button type="button" className="phone-secondary" onClick={() => advance('hold', 'Placed on hold')}>Put on hold</button>
-                {nextKey ? <button type="button" className="phone-sticky-btn" onClick={() => advance(nextKey)}>{mark(nextKey)}</button> : null}
-              </>
-            )}
-        </div>
-      );
+    let rows = null;
+    if (book && book.tx) {
+      const tx = book.tx;
+      const ob = book.obligation;
+      const home = ob && ob.homeCurrency;
+      rows = [{ k: t.direction === 'send' ? 'Customer pays' : 'Amount in', v: asMoney(tx.inputAmount, tx.from), raw: tx.inputAmount, kind: 'input' }];
+      if (tx.feeCad != null && String(tx.feeCad).trim() !== '') {
+        rows.push({ k: 'Fee', v: home ? asMoney(tx.feeCad, home) : String(tx.feeCad).trim(), raw: tx.feeCad, kind: 'fee' });
+      }
+      if (tx.rate != null && String(tx.rate).trim() !== '') {
+        rows.push({ k: 'Rate', v: String(tx.rate).trim(), raw: String(tx.rate).trim(), kind: 'rate' });
+      }
+      if (ob && ob.faceAmount != null && String(ob.faceAmount).trim() !== '') {
+        rows.push({ k: 'Receiver gets', v: asMoney(ob.faceAmount, ob.faceCurrency), raw: ob.faceAmount, kind: 'face' });
+      }
     }
+    const paid = rows && rows[0] ? rows[0].v : '';
+    const face = rows ? rows.filter((row) => row.kind === 'face')[0] : null;
+    const country = cor.country || '';
+    const who = t.direction === 'send' ? (ben ? ben.name : country) : t.senderName;
+    const amountNote = book == null ? 'Reading the ledger.' : ((book && book.label) || 'Not on the ledger.');
     return (
-      <Phone.Screen app="transfers" className="phone-drill" sticky={sticky}>
+      <Phone.Screen app="transfers" className="phone-drill">
         <Crumb onBack={onBack} />
         <div className="phone-detail-title">
           <div>
             <h1>{t.senderName + ' to ' + who}</h1>
             <p className="phone-detail-ref">{t.ref}</p>
+            {t.sample ? <p className="phone-demo">Demo</p> : null}
           </div>
           <span className={'phone-badge tone-' + toneOf(t.status)}>{T.statusLabel(t.status, t.direction)}</span>
         </div>
@@ -155,7 +178,7 @@
           <h2>Beneficiary</h2>
           <Kv rows={[
             { k: 'Name', v: ben ? ben.name + (ben.relationship ? ', ' + ben.relationship : '') : '' },
-            { k: 'Destination', v: cor.country || '' },
+            { k: 'Destination', v: who === country ? '' : country },
             { k: 'Payout', v: T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '') },
             { k: 'Pickup city', v: ben && ben.method === 'cash' ? ben.pickupCity : '' },
             { k: 'Account', v: ben && ben.method === 'bank' ? ben.account : '' },
@@ -164,24 +187,27 @@
         </section>
         <section className="phone-card"><h2>Why and from where</h2><Kv rows={[{ k: 'Purpose', v: t.purpose || '' }, { k: 'Source of funds', v: t.sourceOfFunds || '' }]} /></section>
         <section className="phone-card">
-          <h2>Status, set by hand</h2>
+          <h2>Status</h2>
+          <p className="phone-absent">View only. This phone does not change it.</p>
           <ul className="phone-tl">
             {(t.timeline || []).map((evt, i) => {
-              const when = shown(time(evt.ts));
-              const who = evt.by && evt.by !== 'System' ? evt.by : '';
-              return <li key={evt.status + i}><span>{T.statusLabel(evt.status, t.direction)}</span><span>{[when, who].filter(Boolean).join(', ')}</span></li>;
+              const when = shown(time(evt.ts, timeZone));
+              const actor = evt.by && evt.by !== 'System' ? evt.by : '';
+              return <li key={evt.status + i}><span>{T.statusLabel(evt.status, t.direction)}</span><span>{[when, actor].filter(Boolean).join(', ')}</span></li>;
             })}
           </ul>
         </section>
-        <details className="phone-card phone-money">
-          <summary><span>Amounts</span><span>{pay && recv ? pay + ' to ' + recv : ''}</span></summary>
-          <Kv rows={[
-            { k: t.direction === 'send' ? 'Customer pays' : 'Amount in', v: pay },
-            { k: 'Fee', v: fee },
-            { k: 'Rate', v: t.rate ? String(t.rate) : '' },
-            { k: t.direction === 'send' ? 'Beneficiary gets' : 'Customer gets', v: recv },
-          ]} />
-        </details>
+        {rows ? (
+          <details className="phone-card phone-money">
+            <summary><span>Amounts</span><span>{paid && face ? paid + ' to ' + face.v : ''}</span></summary>
+            <Kv rows={rows} />
+          </details>
+        ) : (
+          <section className="phone-card phone-money">
+            <h2>Amounts</h2>
+            <p className="phone-absent" role={book && book.label ? 'status' : undefined}>{amountNote}</p>
+          </section>
+        )}
       </Phone.Screen>
     );
   }
@@ -237,7 +263,7 @@
           </Phone.Screen>
         );
       }
-      return <RecordDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} clients={clients} me={me} log={log} setTransfers={setTransfers} onBack={() => setDetailId(null)} />;
+      return <RecordDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} clients={clients} timeZone={timeZone} onBack={() => setDetailId(null)} />;
     }
     const emptyCopy = filter === 'hold' ? 'Nothing is on hold.' : filter === 'paid' ? 'Nothing has been paid out.' : filter === 'all' ? 'No transfers yet.' : 'Nothing is in progress.';
     const empty = needle
