@@ -63,6 +63,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 | Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
+| Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
+| Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. A session that is already open keeps the date it stored. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt`. `branches.timezone` is NOT NULL and defaults to America/Toronto. A blank zone or a zone the server cannot read is refused as `BRANCH_TIMEZONE_UNSET` (409) |
+| Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
 
 ## Production/build surfaces
 
@@ -578,6 +581,63 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-11**, identity expiry. An ID is current through the end of its expiry
+date in the branch time zone. That date and today are compared as
+YYYY-MM-DD. A UTC conversion was marking the last valid day expired
+and, where the process zone is ahead of UTC, printing the expiry as
+the day before.
+
+**2026-10-12**, branch time zone. Signup, the demo seed, the platform
+admin, and a location opened from the desk write `America/Toronto` when
+they do not name a zone. The column has been `NOT NULL` with that
+default since the desk table was created. A blank value or a string
+that is not a time zone is `BRANCH_TIMEZONE_UNSET`, HTTP 409. The
+header `x-cd-now` is read only when `CD_TEST_CLOCK=1` on a process
+outside production and outside Render. The hook that reads it is
+registered only in that case. `CD_TEST_CLOCK=1` with
+`NODE_ENV=production`, or with `RENDER` set, refuses to boot
+(`CD_TEST_CLOCK must never be set in production`) before the database
+is opened.
+
+**2026-10-11**, till date. Opening a till just after midnight stores the
+branch calendar date, and a later read returns that same date. Deal
+references on an open till use it. The date on a posted deal is the
+branch calendar date of the posting instant. A dashboard or report
+window counted from that date uses the branch's midnight, so a deal
+posted after UTC midnight still sits inside a Toronto trading day.
+
+**2026-10-11**, sign-off business date. The sheet's trading day is the
+open till session's business date in the branch time zone, and the
+figures are the ledger totals for the window that session returns.
+A desk still open after midnight stays on the date it opened on.
+The close panel is headed "Close the day" and that calendar date
+(Mon Oct 12). Its subtitle is "Expected is what the system says
+should be in the drawer. Counted is what you count." The close
+button says "Close the day". The tab says "Count & close".
+The session line, the session strip, and the heading chip all
+read the same till count ("0 of 1 counted" when this branch has
+one drawer and nothing is counted). That count is tills, not
+currencies. One drawer reads "Count the drawer before closing.
+Your count becomes the new till balance." "Count all 2 drawers"
+is only when the branch has several drawers. The grey line under
+the table is "Closing saves your count. Any difference is
+recorded under your name." At 430 and under that line clears
+the phone bar. Those widths drop Source and Last count so
+Counted now and Variance stay on the screen.
+An empty Total or Variance cell says "Not counted". The drawer
+bar has no lone dash. With no session its second line is
+"No open session", and it wraps instead of ending in
+"No open sessi…". The History tab shows the whole word. The
+sign-off sheet names the drawer "Till 1, Main counter". At 430
+and under, Earned today and its amount stay inside the sheet.
+Money shows its currency's decimal places: CAD is two, so a total
+is 23,640.70 and never 23,640.7. The drawer bar
+reads "On the drawer: A. Singh, Senior teller": initial and surname,
+a comma, then the role. The session line and the closed banner say
+the trading day as Oct 12 (the banner says "trading day Oct 12"),
+not a YYYY-MM-DD date. A time on that screen is 12-hour with no
+leading zero (6:09 AM). A date with a time is Oct 12, 6:09 AM.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

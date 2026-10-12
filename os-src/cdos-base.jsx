@@ -344,23 +344,126 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return businessDate();
       const answer = await B.loadTillSession();
+      if (answer && answer.day && answer.day.timeZone) setBranchTimeZone(answer.day.timeZone);
       if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
+      _tradingWindow = answer && answer.day && answer.day.from && answer.day.to
+        ? { from: answer.day.from, to: answer.day.to }
+        : null;
     } catch (e) { /* no session, no server, or not signed in: the clock stands in */ }
     return businessDate();
   }
-  /* The window a "today" figure covers, as two instants, from the desk's
-     own midnight. The server deliberately refuses to guess this — see the
-     note on LedgerReportingService.summary — because a business day
-     belongs to a branch's clock and this browser is standing in the
-     branch. `days` looks back that many days from the business date. */
+  /* The span a screen asks the book for. Once the till session has named
+     the branch zone, midnight is that zone's midnight. A browser-local
+     midnight drops a deal posted in the evening in Toronto once UTC has
+     already rolled to the next day: the session is still on that Toronto
+     date, and the deal is inside it, but the window ended at UTC midnight.
+     Before the zone is known, the machine's own midnight stands in.
+     The signed close-out does not use this. That sheet asks for the
+     window the session returns. */
   function businessDayWindow(days) {
-    const end = new Date(businessDate() + 'T00:00:00');
-    end.setDate(end.getDate() + 1);
-    const start = new Date(end);
-    start.setDate(start.getDate() - Math.max(1, days || 1));
-    return { from: start.toISOString(), to: end.toISOString() };
+    const n = Math.max(1, days || 1);
+    const date = String(businessDate() || '').slice(0, 10);
+    if (_branchTimeZone && CALENDAR_DATE.test(date)) {
+      const end = zonedMidnight(addCalendarDays(date, 1), _branchTimeZone);
+      const start = zonedMidnight(addCalendarDays(date, 1 - n), _branchTimeZone);
+      if (_tradingWindow && new Date(_tradingWindow.to).getTime() > end.getTime()) {
+        return { from: start.toISOString(), to: new Date(_tradingWindow.to).toISOString() };
+      }
+      return { from: start.toISOString(), to: end.toISOString() };
+    }
+    const endLocal = new Date(date + 'T00:00:00');
+    endLocal.setDate(endLocal.getDate() + 1);
+    const startLocal = new Date(endLocal);
+    startLocal.setDate(startLocal.getDate() - n);
+    return { from: startLocal.toISOString(), to: endLocal.toISOString() };
   }
   const TODAY = wallClock();
+  /* An ID expiry is a calendar date. It stays current through that
+     day in the branch's zone. The session's trading day is a different
+     question — a till opened yesterday is still on yesterday after
+     midnight — and the UTC date is a third, wrong one. `new Date` of
+     a YYYY-MM-DD string is UTC midnight, which is already the previous
+     evening in Toronto and the next morning's display in Jerusalem. */
+  const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+  function calendarDate(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(at);
+    const pick = (type) => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '';
+    };
+    const year = pick('year'), month = pick('month'), day = pick('day');
+    if (!year || !month || !day) throw new Error('The branch time zone could not be read.');
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  let _branchTimeZone = null;
+  /* The session's own window, when the server has named one. A desk
+     still open after branch midnight keeps deals posted after that
+     midnight inside the trading day. */
+  let _tradingWindow = null;
+  const setBranchTimeZone = (zone) => { _branchTimeZone = zone ? String(zone) : null; return _branchTimeZone; };
+  function addCalendarDays(isoDate, days) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const utc = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    utc.setUTCDate(utc.getUTCDate() + days);
+    return utc.toISOString().slice(0, 10);
+  }
+  function zoneOffsetMs(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(at);
+    const pick = (type) => {
+      const found = parts.find(part => part.type === type);
+      return found ? Number(found.value) : NaN;
+    };
+    let hour = pick('hour');
+    if (hour === 24) hour = 0;
+    const asUtc = Date.UTC(pick('year'), pick('month') - 1, pick('day'), hour, pick('minute'), pick('second'));
+    if (Number.isNaN(asUtc)) throw new Error('The branch time zone could not be read.');
+    return asUtc - at.getTime();
+  }
+  function zonedMidnight(isoDate, timeZone) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3]);
+    const offset = zoneOffsetMs(new Date(guess), timeZone);
+    let start = guess - offset;
+    const corrected = zoneOffsetMs(new Date(start), timeZone);
+    if (corrected !== offset) start = guess - corrected;
+    const result = new Date(start);
+    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no midnight on ' + isoDate + '.');
+    return result;
+  }
+  const branchCalendarDate = (at) => {
+    const when = at instanceof Date ? at : new Date();
+    if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
+    if (_branchTimeZone) return calendarDate(when, _branchTimeZone);
+    return when.toLocaleDateString('en-CA');
+  };
+  const readCalendarDate = (value) => {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) throw new Error('expiry is not a date');
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${value.getFullYear()}-${month}-${day}`;
+    }
+    const match = CALENDAR_DATE.exec(String(value == null ? '' : value).slice(0, 10));
+    if (!match) throw new Error('expiry is not a calendar date');
+    return match[0];
+  };
+  const calendarBefore = (left, right) => readCalendarDate(left) < readCalendarDate(right);
+  /* Day count from the year, month and day fields. Date.UTC here is
+     the arithmetic, not a conversion of the expiry into an instant. */
+  const calendarDaysUntil = (expiry, on) => {
+    const from = readCalendarDate(on).split('-').map(Number);
+    const to = readCalendarDate(expiry).split('-').map(Number);
+    return Math.round((Date.UTC(to[0], to[1] - 1, to[2]) - Date.UTC(from[0], from[1] - 1, from[2])) / 86400000);
+  };
 
   /* ============================================================
      THE REPORTING LINE — one number, in the desk's own money
@@ -723,12 +826,25 @@
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
 
-  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
-  const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
-  /* Phone ticket amounts: grouped digits, two places, then the code.
+  /* How many places this money shows. The pack's minorUnits win; otherwise
+     two, which is CAD, USD, EUR and GBP. Both bounds are set, so 23640.7
+     CAD is 23,640.70 and never 23,640.7, and yen stays a whole number. */
+  const moneyDigits = (code) => {
+    const places = currencyPlaces(code);
+    return { minimumFractionDigits: places, maximumFractionDigits: places };
+  };
+  const fmt = (n, c) => {
+    if (n == null || n === '' || isNaN(n)) return '';
+    const code = c || 'CAD';
+    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: code, ...moneyDigits(code) }).format(Number(n));
+  };
+  /* Plain money. Pass the currency. With none, the desk default is two
+     places — the same default currencyPlaces uses. */
+  const num = (n, c) => new Intl.NumberFormat('en-CA', moneyDigits(c)).format(Number(n) || 0);
+  /* Phone ticket amounts: grouped digits, the currency's places, then the code.
      '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
   const formatPhoneMoney = (n, ccy) => {
-    const body = new Intl.NumberFormat('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+    const body = new Intl.NumberFormat('en-CA', moneyDigits(ccy)).format(Number(n) || 0);
     return ccy ? body + ' ' + ccy : body;
   };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
@@ -1286,6 +1402,7 @@
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
+    setBranchTimeZone, branchCalendarDate, calendarBefore, calendarDaysUntil,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
     deskPack, deskReports, deskIdLines, deskIdThresholds, setDeskIdThresholds, setDeskPack, refreshJurisdiction, useDeskFacts,

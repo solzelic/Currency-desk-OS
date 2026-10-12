@@ -63,6 +63,7 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import pg from "pg";
+import { refDay } from "./business-date.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.js";
@@ -79,6 +80,7 @@ import {
 } from "./philippines-pack.js";
 import {
   assertIndiaPurpose,
+  branchCalendarDate,
   LedgerError,
   requireIdentification,
   requireInstalledPack,
@@ -532,9 +534,9 @@ export class ObligationService {
     client: pg.PoolClient,
     actor: LedgerActor,
     kind: ObligationKind,
-    now: Date,
+    tradingDay: string,
   ): Promise<string> {
-    const day = now.toISOString().slice(2, 10).replace(/-/g, "");
+    const day = refDay(tradingDay);
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const candidate = `${OBLIGATION_REF_PREFIX[kind]}-${day}-${randomUUID()
         .replace(/-/g, "")
@@ -566,7 +568,7 @@ export class ObligationService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "transaction:post");
-      await requireOpenTill(client, actor);
+      const tradingDay = await requireOpenTill(client, actor);
       const pack = await resolvePack(client, actor.legalEntityId);
       requireInstalledPack(pack);
       const home = pack.homeCurrency;
@@ -775,7 +777,7 @@ export class ObligationService {
 
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${refDay(tradingDay)}-${transactionId.slice(-6)}`;
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,
@@ -824,7 +826,7 @@ export class ObligationService {
         client,
         actor,
         spec.obligation.kind,
-        now,
+        tradingDay,
       );
       await client.query(
         `INSERT INTO ledger_obligations
@@ -1062,8 +1064,9 @@ export class ObligationService {
               ];
 
       const now = new Date();
+      const tradingDay = await branchCalendarDate(client, actor);
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${refDay(tradingDay)}-${transactionId.slice(-6)}`;
       const settling = ending === "settled";
       /* No pack: new deals paused; voids and settling existing deals
          still work. Paying out or writing off an obligation already on

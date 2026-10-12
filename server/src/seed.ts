@@ -10,6 +10,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { seedWalkthrough } from "./onboarding/walkthrough.js";
 import { createDb, schema } from "./db/index.js";
+import { DEFAULT_BRANCH_TIMEZONE } from "./ledger/branch-zone.js";
 import { hashPassword } from "./auth/password.js";
 
 export const DEMO = {
@@ -41,7 +42,7 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     .onConflictDoNothing();
   await db
     .insert(schema.branches)
-    .values({ id: DEMO.branchId, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, name: "Yorkville Desk" })
+    .values({ id: DEMO.branchId, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, name: "Yorkville Desk", timezone: DEFAULT_BRANCH_TIMEZONE })
     .onConflictDoNothing();
   await db
     .insert(schema.workspaces)

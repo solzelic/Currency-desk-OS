@@ -164,6 +164,13 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
        VALUES ('le-1','tenant-1','Obligation tests','CAD','pack-obl-v1',1)
        ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id='pack-obl-v1'`,
     );
+    /* A settlement reference is dated in the branch zone. The default
+       zone is Toronto; the row has to exist or that date cannot be named. */
+    await pool.query(
+      `INSERT INTO branches (id,tenant_id,legal_entity_id,name)
+       VALUES ('branch-1','tenant-1','le-1','Obligation tests')
+       ON CONFLICT (id) DO NOTHING`,
+    );
   });
   afterAll(async () => {
     await handle.close();

@@ -1356,7 +1356,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <Row title="Blind count" desc="Hide the expected float until the teller reveals it, so a count isn't anchored to what the drawer 'should' hold.">
             <Sw on={settings.tillBlindCount !== false} click={() => toggleSet('tillBlindCount', 'Blind count')} />
           </Row>
-          <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reconcile & close</div>
+          <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Count & close</div>
           <Row title="Variance tolerance" desc="A drawer counted within this of expected reads as balanced; beyond it, it's flagged off on the reconcile and at close.">
             <div className="flex items-center" style={inSty}><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{base}</span><input type="number" min="0" step="1" value={settings.tillVarianceTol ?? 0} onChange={e => set('tillVarianceTol', Math.max(0, +e.target.value), `variance tolerance ${e.target.value}`)} className="text-sm px-2 py-2 outline-none text-right bg-transparent" style={{ width: 90, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} /></div>
           </Row>

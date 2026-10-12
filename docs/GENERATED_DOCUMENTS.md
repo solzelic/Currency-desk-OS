@@ -120,13 +120,20 @@ seeds every pack's field list EMPTY:
 
 `window.CDOS.businessDate()` — the till session's `business_date`, which the
 server decides — not `wallClock()` and never the `TODAY` snapshot taken when
-the page loaded. A session opened before midnight is still on yesterday's
+the page loaded. The server names that date with `businessDate()` in the
+branch's time zone at the moment the session opens, and the session keeps it
+after midnight. A session opened before midnight is still on yesterday's
 trading day at 00:05, and that is the correct answer.
 
-A document's date, a movement reference minted from a date, and the window a
-"today" figure covers are all the business date. The wall clock is for "posted
-at 14:32", for greeting somebody good morning, and for asking whether an ID has
-expired.
+The sign-off sheet does not turn that date into a window itself. The till
+session returns `day.from` and `day.to`: branch midnight of the business
+date, through the next branch midnight, or through now when the desk is
+still open past midnight. The sheet asks the ledger for that window and
+prints the date the session named. A browser clock, a server clock, and a
+UTC date are the wrong source for both.
+
+The wall clock is for "posted at 14:32", for greeting somebody good morning,
+and for asking whether an ID has expired.
 
 ### 7. Nothing is manufactured
 

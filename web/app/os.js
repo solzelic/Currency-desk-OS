@@ -455,26 +455,148 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return businessDate();
       const answer = await B.loadTillSession();
+      if (answer && answer.day && answer.day.timeZone) setBranchTimeZone(answer.day.timeZone);
       if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
+      _tradingWindow = answer && answer.day && answer.day.from && answer.day.to ? {
+        from: answer.day.from,
+        to: answer.day.to
+      } : null;
     } catch (e) {/* no session, no server, or not signed in: the clock stands in */}
     return businessDate();
   }
-  /* The window a "today" figure covers, as two instants, from the desk's
-     own midnight. The server deliberately refuses to guess this — see the
-     note on LedgerReportingService.summary — because a business day
-     belongs to a branch's clock and this browser is standing in the
-     branch. `days` looks back that many days from the business date. */
+  /* The span a screen asks the book for. Once the till session has named
+     the branch zone, midnight is that zone's midnight. A browser-local
+     midnight drops a deal posted in the evening in Toronto once UTC has
+     already rolled to the next day: the session is still on that Toronto
+     date, and the deal is inside it, but the window ended at UTC midnight.
+     Before the zone is known, the machine's own midnight stands in.
+     The signed close-out does not use this. That sheet asks for the
+     window the session returns. */
   function businessDayWindow(days) {
-    const end = new Date(businessDate() + 'T00:00:00');
-    end.setDate(end.getDate() + 1);
-    const start = new Date(end);
-    start.setDate(start.getDate() - Math.max(1, days || 1));
+    const n = Math.max(1, days || 1);
+    const date = String(businessDate() || '').slice(0, 10);
+    if (_branchTimeZone && CALENDAR_DATE.test(date)) {
+      const end = zonedMidnight(addCalendarDays(date, 1), _branchTimeZone);
+      const start = zonedMidnight(addCalendarDays(date, 1 - n), _branchTimeZone);
+      if (_tradingWindow && new Date(_tradingWindow.to).getTime() > end.getTime()) {
+        return {
+          from: start.toISOString(),
+          to: new Date(_tradingWindow.to).toISOString()
+        };
+      }
+      return {
+        from: start.toISOString(),
+        to: end.toISOString()
+      };
+    }
+    const endLocal = new Date(date + 'T00:00:00');
+    endLocal.setDate(endLocal.getDate() + 1);
+    const startLocal = new Date(endLocal);
+    startLocal.setDate(startLocal.getDate() - n);
     return {
-      from: start.toISOString(),
-      to: end.toISOString()
+      from: startLocal.toISOString(),
+      to: endLocal.toISOString()
     };
   }
   const TODAY = wallClock();
+  /* An ID expiry is a calendar date. It stays current through that
+     day in the branch's zone. The session's trading day is a different
+     question — a till opened yesterday is still on yesterday after
+     midnight — and the UTC date is a third, wrong one. `new Date` of
+     a YYYY-MM-DD string is UTC midnight, which is already the previous
+     evening in Toronto and the next morning's display in Jerusalem. */
+  const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+  function calendarDate(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(at);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '';
+    };
+    const year = pick('year'),
+      month = pick('month'),
+      day = pick('day');
+    if (!year || !month || !day) throw new Error('The branch time zone could not be read.');
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  let _branchTimeZone = null;
+  /* The session's own window, when the server has named one. A desk
+     still open after branch midnight keeps deals posted after that
+     midnight inside the trading day. */
+  let _tradingWindow = null;
+  const setBranchTimeZone = zone => {
+    _branchTimeZone = zone ? String(zone) : null;
+    return _branchTimeZone;
+  };
+  function addCalendarDays(isoDate, days) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const utc = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    utc.setUTCDate(utc.getUTCDate() + days);
+    return utc.toISOString().slice(0, 10);
+  }
+  function zoneOffsetMs(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(at);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? Number(found.value) : NaN;
+    };
+    let hour = pick('hour');
+    if (hour === 24) hour = 0;
+    const asUtc = Date.UTC(pick('year'), pick('month') - 1, pick('day'), hour, pick('minute'), pick('second'));
+    if (Number.isNaN(asUtc)) throw new Error('The branch time zone could not be read.');
+    return asUtc - at.getTime();
+  }
+  function zonedMidnight(isoDate, timeZone) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3]);
+    const offset = zoneOffsetMs(new Date(guess), timeZone);
+    let start = guess - offset;
+    const corrected = zoneOffsetMs(new Date(start), timeZone);
+    if (corrected !== offset) start = guess - corrected;
+    const result = new Date(start);
+    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no midnight on ' + isoDate + '.');
+    return result;
+  }
+  const branchCalendarDate = at => {
+    const when = at instanceof Date ? at : new Date();
+    if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
+    if (_branchTimeZone) return calendarDate(when, _branchTimeZone);
+    return when.toLocaleDateString('en-CA');
+  };
+  const readCalendarDate = value => {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) throw new Error('expiry is not a date');
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${value.getFullYear()}-${month}-${day}`;
+    }
+    const match = CALENDAR_DATE.exec(String(value == null ? '' : value).slice(0, 10));
+    if (!match) throw new Error('expiry is not a calendar date');
+    return match[0];
+  };
+  const calendarBefore = (left, right) => readCalendarDate(left) < readCalendarDate(right);
+  /* Day count from the year, month and day fields. Date.UTC here is
+     the arithmetic, not a conversion of the expiry into an instant. */
+  const calendarDaysUntil = (expiry, on) => {
+    const from = readCalendarDate(on).split('-').map(Number);
+    const to = readCalendarDate(expiry).split('-').map(Number);
+    return Math.round((Date.UTC(to[0], to[1] - 1, to[2]) - Date.UTC(from[0], from[1] - 1, from[2])) / 86400000);
+  };
 
   /* ============================================================
      THE REPORTING LINE — one number, in the desk's own money
@@ -918,21 +1040,33 @@
     if (!book) return '';
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
-  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency: c || 'CAD',
-    maximumFractionDigits: 2
-  }).format(Number(n));
-  const num = n => new Intl.NumberFormat('en-CA', {
-    maximumFractionDigits: 2
-  }).format(Number(n) || 0);
-  /* Phone ticket amounts: grouped digits, two places, then the code.
+
+  /* How many places this money shows. The pack's minorUnits win; otherwise
+     two, which is CAD, USD, EUR and GBP. Both bounds are set, so 23640.7
+     CAD is 23,640.70 and never 23,640.7, and yen stays a whole number. */
+  const moneyDigits = code => {
+    const places = currencyPlaces(code);
+    return {
+      minimumFractionDigits: places,
+      maximumFractionDigits: places
+    };
+  };
+  const fmt = (n, c) => {
+    if (n == null || n === '' || isNaN(n)) return '';
+    const code = c || 'CAD';
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: code,
+      ...moneyDigits(code)
+    }).format(Number(n));
+  };
+  /* Plain money. Pass the currency. With none, the desk default is two
+     places — the same default currencyPlaces uses. */
+  const num = (n, c) => new Intl.NumberFormat('en-CA', moneyDigits(c)).format(Number(n) || 0);
+  /* Phone ticket amounts: grouped digits, the currency's places, then the code.
      '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
   const formatPhoneMoney = (n, ccy) => {
-    const body = new Intl.NumberFormat('en-CA', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(n) || 0);
+    const body = new Intl.NumberFormat('en-CA', moneyDigits(ccy)).format(Number(n) || 0);
     return ccy ? body + ' ' + ccy : body;
   };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
@@ -1908,6 +2042,10 @@
     setBusinessDate,
     refreshBusinessDate,
     businessDayWindow,
+    setBranchTimeZone,
+    branchCalendarDate,
+    calendarBefore,
+    calendarDaysUntil,
     /* the one reporting line, and the pack it comes from */
     reportingLimit,
     overReportingLimit,
@@ -2045,8 +2183,12 @@
     var risk = riskText.indexOf("high") >= 0 ? "high"
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
+    /* Expired only when the expiry calendar date is before the branch's
+       calendar date. The same day is still current. The UTC date is
+       already tomorrow on a Toronto evening, which is how a valid ID
+       was refused on its last day. */
     var idStatus = !record.idType || !record.idNum ? "missing"
-      : record.idExpiry && record.idExpiry < new Date().toISOString().slice(0, 10) ? "expired"
+      : record.idExpiry && window.CDOS.calendarBefore(record.idExpiry, window.CDOS.branchCalendarDate()) ? "expired"
       : "verified";
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
     return { externalRef: externalRef, name: String(name).trim(), risk: risk, idStatus: idStatus };
@@ -2084,7 +2226,10 @@
       serverTransactionId: transaction.transactionId,
       serverQuoteId: transaction.quoteId || null,
       ref: transaction.transactionRef,
-      date: posted.toISOString().slice(0, 10),
+      /* The calendar date in the branch zone. toISOString is the UTC
+         date, which is still yesterday just after midnight in a zone
+         ahead of UTC. */
+      date: window.CDOS.branchCalendarDate(posted),
       time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
       customer: customerName || transaction.customerId,
       beneficiary: "",
@@ -2226,6 +2371,7 @@
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
+            day: results[1].day || null,
           };
         });
       },
@@ -2391,9 +2537,9 @@
       /* Totals over a window. `from` and `to` are ISO instants and BOTH
          are optional; omitting them means "everything this till has ever
          posted", which is the only window that needs no timezone to be
-         right. The server deliberately does not decide where a day starts
-         — see businessDayWindow() in cdos-base.jsx, which builds the
-         window from the till session's own business date. */
+         right. The sign-off sheet passes the window the till session
+         named. businessDayWindow() uses that same zone's midnight for
+         other screens once the session has named it. */
       loadLedgerSummary: function (window) {
         var query = [];
         if (window && window.from) query.push("from=" + encodeURIComponent(window.from));
@@ -8114,7 +8260,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Reconcile & close"), /*#__PURE__*/React.createElement(Row, {
+    }, "Count & close"), /*#__PURE__*/React.createElement(Row, {
       title: "Variance tolerance",
       desc: "A drawer counted within this of expected reads as balanced; beyond it, it's flagged off on the reconcile and at close."
     }, /*#__PURE__*/React.createElement("div", {
@@ -13003,7 +13149,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
    of every currency. Saves a dated snapshot, reconciles against the
    ledger's expected float, closes the trading day, and keeps a
    year of daily history you can scroll back through.
-   Day Close is folded in here as the "Reconcile & close" tab.
+   Day Close is folded in here as the "Count & close" tab.
    ============================================================ */
 (function () {
   const {
@@ -13084,17 +13230,82 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   };
   const SHIFT_KEY = 'cdos_till_operator_v1',
     HANDOFF_KEY = 'cdos_till_handoffs_v1';
-  const shiftStamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  /* A time on this drawer is 12-hour, with no leading zero and AM/PM in
+     capitals. en-CA's hour12 clock is "06:09 a.m.", which is not that.
+     A date beside a time is "Oct 12, 12:24 PM". Both are built from the
+     parts so the space and the day period do not depend on the locale's
+     own punctuation. */
+  const deskParts = (ms, options) => {
+    const date = new Date(ms);
+    if (Number.isNaN(date.getTime())) return null;
+    return new Intl.DateTimeFormat('en-US', options).formatToParts(date);
+  };
+  const deskPick = (parts, type) => (parts.find(part => part.type === type) || {}).value || '';
+  const deskTime = ms => {
+    const parts = deskParts(ms, {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    if (!parts) return '';
+    return deskPick(parts, 'hour') + ':' + deskPick(parts, 'minute') + ' ' + deskPick(parts, 'dayPeriod');
+  };
+  const deskStamp = ms => {
+    const parts = deskParts(ms, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    if (!parts) return '';
+    return deskPick(parts, 'month') + ' ' + deskPick(parts, 'day') + ', ' + deskPick(parts, 'hour') + ':' + deskPick(parts, 'minute') + ' ' + deskPick(parts, 'dayPeriod');
+  };
+  const shiftStamp = () => deskStamp(Date.now());
+  /* The close panel is headed with the session's trading day, not a
+     counter kept in the browser. Noon UTC keeps the calendar date. */
+  const closeDayLabel = iso => {
+    const day = String(iso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return 'Close the day';
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    }).formatToParts(new Date(day + 'T12:00:00Z'));
+    return 'Close the day, ' + deskPick(parts, 'weekday') + ' ' + deskPick(parts, 'month') + ' ' + deskPick(parts, 'day');
+  };
+  /* A calendar date on this screen is "Oct 12". The stored value stays
+     YYYY-MM-DD; that string is not what a teller reads. */
+  const deskDay = iso => {
+    const day = String(iso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      month: 'short',
+      day: 'numeric'
+    }).formatToParts(new Date(day + 'T12:00:00Z'));
+    return deskPick(parts, 'month') + ' ' + deskPick(parts, 'day');
+  };
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
-  const personOf = id => String(id || '').split(':').pop() || '—';
-  const clockOf = ms => ms ? new Date(ms).toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }) : '';
+  const personOf = id => String(id || '').split(':').pop() || '';
+  /* "A. Singh" from a roster name, or from a staff id "a.singh". */
+  const initialSurname = name => {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+    const words = raw.split(/\s+/).filter(Boolean);
+    const shape = (first, last) => first.charAt(0).toUpperCase() + '. ' + last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
+    if (words.length >= 2) {
+      const first = words[0].replace(/\./g, '');
+      const last = words[words.length - 1].replace(/\./g, '');
+      if (first && last) return shape(first, last);
+    }
+    const bits = raw.split('.').filter(Boolean);
+    if (bits.length >= 2) return shape(bits[0], bits[bits.length - 1]);
+    return raw;
+  };
+  const clockOf = ms => ms ? deskTime(ms) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
       `seedHistory()` stood here. On first open of the Cash Drawer it wrote
@@ -13211,7 +13422,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         fontWeight: sub ? 600 : 400
       }
-    }, sub ? num(sub) : '—'));
+    }, sub ? num(sub, ccy) : '—'));
   }
 
   /* =====================================================================
@@ -13411,7 +13622,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, requireCount ? 'Your shop requires a count at handoff.' : 'Optional — skip it if it’s a quick swap and the same drawer.'), /*#__PURE__*/React.createElement("div", {
+    }, requireCount ? 'Your shop requires a count at handoff.' : 'Optional. Skip it if it’s a quick swap and the same drawer.'), /*#__PURE__*/React.createElement("div", {
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 11,
@@ -13452,14 +13663,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, num(x.units))), /*#__PURE__*/React.createElement("input", {
+      }, num(x.units, x.ccy))), /*#__PURE__*/React.createElement("input", {
         value: val,
         onChange: e => setCounts(o => ({
           ...o,
           [x.ccy]: e.target.value
         })),
         inputMode: "decimal",
-        placeholder: num(x.units),
+        placeholder: num(x.units, x.ccy),
         className: "text-right outline-none text-[13px] px-2 py-1.5",
         style: {
           width: 96,
@@ -13480,7 +13691,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: variance != null && Math.abs(variance) > 0.005 ? CD.flag : variance == null && anyEntered ? CD.mute : CD.green
       }
-    }, !anyEntered ? 'Not counted yet' : variance == null ? 'Counted — no single currency to state the variance in' : Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), homeCcy)), /*#__PURE__*/React.createElement("span", {
+    }, !anyEntered ? 'Not counted yet' : variance == null ? 'Counted. No single currency to state the variance in' : Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), homeCcy)), /*#__PURE__*/React.createElement("span", {
       className: "text-[12px]",
       style: {
         color: CD.mute,
@@ -13509,7 +13720,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         background: 'var(--cd-on-ink)'
       }
-    }, "Skip \u2014 hand off as-is"), /*#__PURE__*/React.createElement("button", {
+    }, "Skip, hand off as-is"), /*#__PURE__*/React.createElement("button", {
       onClick: () => finish(true),
       className: "flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white",
       style: {
@@ -13567,6 +13778,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        matches and the close is refused. */
     const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
+    const [serverDay, setServerDay] = useState(null);
+    const [sessionLoaded, setSessionLoaded] = useState(false);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
         This screen totalled every drawer "in CAD" and labelled it so — a
@@ -13660,6 +13873,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const applySession = result => {
       const session = result && result.session || null;
       setServerSession(session);
+      setServerDay(result && result.day || null);
+      if (result && result.day && result.day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(result.day.timeZone);
+      /* The trading day is the one the server named for this session.
+         Opening the till after midnight has to move the desk onto that
+         date. The wall clock is only the stand-in before a session exists. */
+      if (session && session.businessDate && window.CDOS.setBusinessDate) window.CDOS.setBusinessDate(session.businessDate);
+      setSessionLoaded(true);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
@@ -13676,8 +13896,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         });
         return;
       }
+      if (!sessionLoaded) return;
+      if (!serverDay || !serverDay.from || !serverDay.to) {
+        setDayBook({
+          loading: false,
+          summary: null,
+          error: serverSession ? 'the till session did not name its trading day' : 'no till session'
+        });
+        return;
+      }
       let live = true;
-      window.CDOS.Backend.loadLedgerSummary(window.CDOS.businessDayWindow(1)).then(summary => {
+      window.CDOS.Backend.loadLedgerSummary({
+        from: serverDay.from,
+        to: serverDay.to
+      }).then(summary => {
         if (live) setDayBook({
           loading: false,
           summary,
@@ -13693,7 +13925,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       return () => {
         live = false;
       };
-    }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
+    }, [serverBacked, deskFacts, sessionLoaded, serverSession, serverDay && serverDay.from, serverDay && serverDay.to]);
     const applyBook = result => {
       setServerBalances(result && result.balances || {});
       /* A count in progress keeps the mark it started on. Adopting the
@@ -13715,6 +13947,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setServerBalances(null);
         setBalanceGeneration(null);
         setServerSession(null);
+        setServerDay(null);
+        setSessionLoaded(false);
         setServerBalanceError('');
         return;
       }
@@ -13728,6 +13962,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setServerBalances(null);
         setBalanceGeneration(null);
         setServerSession(null);
+        setServerDay(null);
+        setSessionLoaded(true);
         setServerBalanceError(error.message || 'Server balances unavailable');
       });
       return () => {
@@ -13867,7 +14103,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         applyBook(resolved);
         applySession(resolved);
         setSessionErr('');
-        setSwitchNote(`Now counting ${resolved.tillId}.` + (dropped.length ? ` The ${dropped.join(', ')} figure${dropped.length === 1 ? '' : 's'} on screen stayed with the drawer you counted ${dropped.length === 1 ? 'it' : 'them'} at — count this one afresh.` : ''));
+        setSwitchNote(`Now counting ${resolved.tillId}.` + (dropped.length ? ` The ${dropped.join(', ')} figure${dropped.length === 1 ? '' : 's'} on screen stayed with the drawer you counted ${dropped.length === 1 ? 'it' : 'them'} at. Count this one afresh.` : ''));
       } catch (error) {
         // the OS logs the refusal; the drawer says it out loud, because the
         // screen deliberately did not move and that needs explaining
@@ -13981,9 +14217,26 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        people over the same cash. When the ledger has no open session for this
        till there is no operator to name, and the strip says so rather than
        falling back to a roster. */
+    const staffMatch = actorId => {
+      const id = personOf(actorId);
+      return roster.find(s => s.staffId === id || s.code === id || s.name === id) || null;
+    };
+    const roleOf = actorId => {
+      const id = personOf(actorId);
+      const match = staffMatch(actorId);
+      if (match && match.role) return match.role;
+      if (me && me.role && (me.name === id || me.code === id)) return me.role;
+      return '';
+    };
+    const named = actorId => {
+      const id = personOf(actorId);
+      const match = staffMatch(actorId);
+      const source = match && match.name || (me && (me.name === id || me.code === id) ? me.name : '') || id;
+      return initialSurname(source) || id;
+    };
     const serverShift = serverBacked && serverSession && serverSession.status === 'open' ? {
-      operator: personOf(serverSession.openedBy),
-      role: '',
+      operator: named(serverSession.openedBy),
+      role: roleOf(serverSession.openedBy),
       since: new Date(serverSession.openedAt).getTime()
     } : null;
     const current = serverBacked ? serverShift : shifts[tillId];
@@ -14119,11 +14372,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const d = Math.floor(h / 24);
       return `${d} day${d > 1 ? 's' : ''} ago`;
     };
-    const atLabel = ts => ts ? new Date(ts).toLocaleTimeString('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }) : null;
+    const atLabel = ts => ts ? deskTime(ts) : null;
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
@@ -14208,13 +14457,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
          session's business date, and filing it under the calendar date is
          how a drawer's history came to show two rows for one count. */
       const bookDate = serverSession && serverSession.businessDate || window.CDOS.businessDate();
+      /* `at` is "Oct 12, 6:09 AM" for a count saved from this build.
+         A snapshot already in this browser keeps the string it was
+         saved with. This does not rewrite those. */
       const snap = {
         byCcy,
         grand: grandLocal == null ? null : Math.round(grandLocal),
         currency: homeCcy || null,
-        at: new Date().toLocaleString('en-CA', {
-          hour12: false
-        }).replace(',', ''),
+        at: deskStamp(now),
         by: me.name,
         denoms: JSON.parse(JSON.stringify(counts))
       };
@@ -14261,7 +14511,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const serverCounts = Object.fromEntries(countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, ccyTotal(c).toFixed(2)]));
         if (Object.keys(serverCounts).length) {
           if (!serverSession || serverSession.status !== 'open') {
-            setSessionErr('Open the till before saving a count — there is no session to record it against.');
+            setSessionErr('Open the till before saving a count. There is no session to record it against.');
             saveLock.current = 0;
             return;
           }
@@ -14317,6 +14567,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
+    /* Drawers, not currencies. Two currencies in one drawer is still one
+       drawer: "Count the drawer", and "0 of 1 counted". "Count all N
+       drawers" is only when this branch actually has several. */
+    const drawerTotal = Math.max(1, ledgerScope && ledgerScope.workspaces && ledgerScope.workspaces.length || 0);
+    const drawersCounted = recon.length > 0 && countedN >= recon.length ? 1 : 0;
+    /* One count, in three places: the session line, the session strip,
+       and the heading chip. It is tills, never currencies. Two currencies
+       in one drawer is still "0 of 1 counted", not "0/2". */
+    const drawerCountLabel = `${drawersCounted} of ${drawerTotal} counted`;
+    const balanceSentence = 'Your count becomes the new till balance.';
+    const countBeforeClose = drawerTotal === 1 ? `Count the drawer before closing. ${balanceSentence}` : `Count all ${drawerTotal} drawers before closing. ${balanceSentence}`;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     /* Cross-currency totals for the reconcile footer. Null where any row
@@ -14365,7 +14626,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         // would silently overwrite real money with a guess, so refuse instead.
         const missing = recon.filter(r => r.counted == null).map(r => r.c);
         if (missing.length) {
-          throw new Error(`Count ${missing.join(', ')} before closing — the close writes your count back as the till balance.`);
+          throw new Error(`Count ${missing.join(', ')} before closing. ${balanceSentence}`);
         }
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
@@ -14437,7 +14698,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedEarnedCcy = closedBook && closedBook.homeCurrency || day.summary && day.summary.earnedCurrency || homeCcy;
     const closedEarnedWhy = dayBook.error || day.summary && day.summary.earnedWhy || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
-    const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Count & close', 'coins'], ['history', 'History', 'clock']];
 
     /* The phone count panel covers the bottom of the scrolling
        column. Its height is the pad that lets the last denomination
@@ -14641,16 +14902,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
       className: "till-statusline"
-    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? serverSession ? `Session ${serverSession.sessionNumber}` : 'No session' : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", drawerCountLabel), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
       }
-    }, "\xB7 ", serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'), serverBacked && ledgerTill && /*#__PURE__*/React.createElement("span", {
-      title: "The till the server ledger is answering for",
+    }, "\xB7 ", serverBalanceError ? 'figures unavailable' : serverBalancesReady ? 'figures are in' : 'loading figures'), serverBacked && ledgerTill && /*#__PURE__*/React.createElement("span", {
+      className: "till-which",
+      title: "The drawer these figures belong to",
       style: {
         color: ledgerAmbiguous ? CD.brass : CD.faint
       }
-    }, "\xB7 ledger till ", /*#__PURE__*/React.createElement("b", {
+    }, "\xB7 drawer ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono, monospace',
         color: ledgerAmbiguous ? CD.brass : CD.mute
@@ -14673,8 +14935,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           background: 'var(--cd-chip)',
           color: CD.mute
         },
-        title: serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'
-      }, serverBacked ? 'In drawer · ledger' : 'Float in drawer', " ", /*#__PURE__*/React.createElement("b", {
+        title: serverBacked ? 'What the system says this drawer holds, across every currency' : 'What this drawer holds. Floats are issued and returned at the vault'
+      }, serverBacked ? 'In drawer' : 'Float in drawer', " ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink,
           fontFamily: 'Space Mono, monospace',
@@ -14686,7 +14948,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           bId: _ab && _ab.id,
           tId: station && station.tillId
         }),
-        title: "Issue a float from the vault, or return cash to it \u2014 recorded on the ledger",
+        title: "Issue a float from the vault, or return cash to it. The system records it.",
         className: "till-move flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium",
         style: {
           border: `1px solid ${CD.line}`,
@@ -14742,7 +15004,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       c: CD.brass
     }), /*#__PURE__*/React.createElement("span", {
       className: "flex-1 min-w-0"
-    }, "This branch has ", ledgerScope.workspaces.length, " tills on the ledger. Everything on this screen \u2014 the expected figures, the counts, the close \u2014 belongs to ", /*#__PURE__*/React.createElement("b", {
+    }, "This branch has ", ledgerScope.workspaces.length, " drawers. Everything on this screen (the expected figures, the counts, the close) belongs to ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono, monospace'
       }
@@ -14808,7 +15070,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Open it to start a session \u2014 counts, cash movements and posted deals all record against it.")), /*#__PURE__*/React.createElement("button", {
+    }, "Open it to start a session. Counts, cash movements and posted deals all record against it.")), /*#__PURE__*/React.createElement("button", {
       onClick: openTill,
       disabled: !!tillBusy,
       className: "flex items-center gap-1.5 px-3.5 py-2 text-[12.5px] font-semibold text-white flex-none",
@@ -14841,12 +15103,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
-      className: "ml-auto flex-none",
+    }, "#", serverSession.sessionNumber), " open \xB7 ", deskDay(serverSession.businessDate), " \xB7 opened by ", named(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
+      className: "till-session-count ml-auto flex-none",
       style: {
         color: CD.faint
       }
-    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+    }, drawerCountLabel)), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -14861,7 +15123,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), " at ", clockOf(new Date(serverSession.closedAt).getTime()), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
+    }, "#", serverSession.sessionNumber), " closed by ", named(serverSession.closedBy), " at ", clockOf(new Date(serverSession.closedAt).getTime()), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]",
       style: {
         background: CD.flagSoft,
@@ -14877,7 +15139,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, sessionErr || serverBalanceError), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         setSessionErr('');
-        refreshTill().catch(error => setServerBalanceError(error.message || 'Server balances unavailable'));
+        refreshTill().catch(error => setServerBalanceError(error.message || 'Drawer figures unavailable'));
       },
       className: "flex-none text-[11px] font-semibold px-2.5 py-1",
       style: {
@@ -14918,10 +15180,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 10.5
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), /*#__PURE__*/React.createElement("div", {
+    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : ''), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0 leading-tight"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px]",
+      className: "till-operator text-[12.5px]",
       style: {
         color: CD.ink
       }
@@ -14929,21 +15191,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.operator : '—'), current && current.role ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+    }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.role ? `${current.operator}, ${current.role}` : current.operator : 'nobody')), /*#__PURE__*/React.createElement("div", {
+      className: "till-drawer-note text-[10.5px]",
       style: {
         color: CD.faint
       }
-    }, " \xB7 ", current.role) : null), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px]",
-      style: {
-        color: CD.faint
-      }
-    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
+    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'No open session' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
-      title: serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session — close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
+      title: serverBacked ? 'Records a handover note and a count for this desk. Who the system holds responsible stays the person who opened this session. Close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
       className: "flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5",
       style: {
         border: `1px solid ${CD.line}`,
@@ -14997,7 +15254,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 8
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
+    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : ''), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
       className: "till-count-sheet p-4 pb-0"
@@ -15071,7 +15328,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Skip the breakdown \u2014 just enter the total ", ccy, " you counted in the drawer."), /*#__PURE__*/React.createElement("div", {
+    }, "Skip the breakdown. Just enter the total ", ccy, " you counted in the drawer."), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center",
       style: {
         border: `1px solid ${CD.ink}`,
@@ -15169,7 +15426,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("input", {
       type: "text",
       inputMode: "decimal",
-      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : num(ccyTotal(ccy)),
+      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : num(ccyTotal(ccy), ccy),
       readOnly: ccyMode(ccy) !== 'total',
       onFocus: () => {
         if (ccyMode(ccy) !== 'total') {
@@ -15212,7 +15469,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
+      title: revealExp[ccy] ? 'Hide expected. Keep the count blind' : 'Reveal and read out the expected float',
       className: "inline-flex items-center gap-1.5",
       style: {
         border: 0,
@@ -15229,7 +15486,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         transition: 'filter .15s',
         userSelect: 'none'
       }
-    }, num(expectedOf(ccy)), " ", ccy), isCounted(ccy) && (() => {
+    }, num(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
       const v = ccyTotal(ccy) - expectedOf(ccy);
       const off = Math.abs(v) > 0.005;
       return /*#__PURE__*/React.createElement("b", {
@@ -15240,7 +15497,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           transition: 'filter .15s',
           userSelect: 'none'
         }
-      }, off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
+      }, off ? `${v > 0 ? '+' : ''}${num(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
     })(), /*#__PURE__*/React.createElement(Ic, {
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
@@ -15330,14 +15587,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: '#1c5c3a'
       }
-    }, serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`, " closed \u2014 nicely done"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-0.5",
+    }, serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`, " closed. Nicely done"), /*#__PURE__*/React.createElement("div", {
+      className: "till-closedbanner text-[12px] mt-0.5",
       style: {
         color: '#3a7a56'
       }
-    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? new Date(serverSession.closedAt).toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '') : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
+    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? named(serverSession.closedBy) : day.closedBy || 'nobody', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? deskStamp(serverSession.closedAt) : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${deskDay(serverSession.businessDate)}` : '', ". ", serverBacked ? 'Your counts are now what the drawer holds. The system is locked until the next session is opened.' : 'The drawer is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -15373,7 +15628,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Transactions",
       value: closedTxns == null ? '—' : `${closedTxns}`,
-      sub: closedTxns == null ? dayBook.error || 'the ledger has no answer' : dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null
+      sub: closedTxns == null ? dayBook.error || 'the system has no answer' : dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Drawers off",
       value: day.summary && day.summary.offCount || 0,
@@ -15421,7 +15676,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: 'var(--cd-on-ink-soft)'
       }
-    }, "The signed close-out: drawer counts, day totals & compliance \u2014 ready to print, sign and file.")), /*#__PURE__*/React.createElement("span", {
+    }, "The signed close-out: drawer counts, day totals and compliance. Ready to print, sign and file.")), /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-1.5 flex-none px-3 py-2 text-[12.5px] font-semibold",
       style: {
         background: 'var(--cd-on-ink-faint)',
@@ -15448,7 +15703,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint,
         maxWidth: 360
       }
-    }, "Ready for a new session? Opening the next ", serverBacked ? 'session' : 'day', " unlocks the book and starts ", serverBacked ? `session #${(day.num || 1) + 1}` : `Day ${(day.num || 1) + 1}`, serverBacked ? ' with a fresh, uncounted drawer' : '', "."), canCloseDay ? /*#__PURE__*/React.createElement("button", {
+    }, "Ready for a new session? Opening the next ", serverBacked ? 'session' : 'day', " unlocks the drawer and starts ", serverBacked ? `session #${(day.num || 1) + 1}` : `Day ${(day.num || 1) + 1}`, serverBacked ? ' with a fresh, uncounted drawer' : '', "."), canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: startNextSession,
       disabled: opening,
       className: "till-save flex items-center gap-2 px-4 py-2.5 text-sm font-semibold flex-none",
@@ -15494,21 +15749,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Reconcile & close \u2014 Day ", day && day.num || 1), /*#__PURE__*/React.createElement("div", {
+    }, closeDayLabel(serverSession && serverSession.businessDate || window.CDOS.businessDate())), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
       }
-    }, serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals", " \xB7 counted is your physical count \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px] px-2.5 py-1",
+    }, "Expected is what the system says should be in the drawer. Counted is what you count.")), /*#__PURE__*/React.createElement("span", {
+      className: "till-count-chip text-[11px] px-2.5 py-1",
       style: {
-        background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)',
-        color: countedN === recon.length ? CD.green : CD.mute,
+        background: drawersCounted === drawerTotal ? CD.greenSoft : 'var(--cd-chip)',
+        color: drawersCounted === drawerTotal ? CD.green : CD.mute,
         borderRadius: 999,
         fontFamily: 'Space Mono, monospace'
       }
-    }, countedN, "/", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+    }, drawerCountLabel)), /*#__PURE__*/React.createElement("div", {
+      className: "till-close-table overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -15527,7 +15782,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Currency"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, /*#__PURE__*/React.createElement("span", {
-      title: serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault — not editable here',
+      title: serverBacked ? 'What the system says should be in the drawer' : 'Issued by the vault. Not editable here',
       className: "inline-flex items-center gap-1"
     }, serverBacked ? 'Source' : 'Opening · vault', " ", /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
@@ -15559,30 +15814,30 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, flagOf(r.c)), " ", r.c), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
-        title: serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing',
+        title: serverBacked ? 'What the system says should be in the drawer' : 'What the vault issued to this drawer. Change it with Issue float or Return at the vault, never by typing',
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: serverBacked ? CD.green : CD.mute
         }
-      }, serverBacked ? 'Server ledger' : '—'), /*#__PURE__*/React.createElement("td", {
+      }, serverBacked ? 'The system' : '—'), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.expected == null ? CD.faint : CD.ink
         }
-      }, r.expected == null ? '—' : num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? '—' : num(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           color: ls ? CD.mute : CD.faint
         }
       }, ls ? /*#__PURE__*/React.createElement("span", {
-        title: `${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`,
+        title: `${num(ls.amt, r.c)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`,
         style: {
           cursor: 'help',
           borderBottom: `1px dotted ${CD.line}`,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, sinceLabel(ls.ts)) : '— never'), /*#__PURE__*/React.createElement("td", {
+      }, sinceLabel(ls.ts)) : 'Never'), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
@@ -15598,18 +15853,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.mute
         }
-      }, "count \u2192") : /*#__PURE__*/React.createElement("span", {
+      }, "Count") : /*#__PURE__*/React.createElement("span", {
         title: countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : '',
         style: {
           cursor: countedAt[r.c] ? 'help' : 'default'
         }
-      }, num(r.counted))), /*#__PURE__*/React.createElement("td", {
+      }, num(r.counted, r.c))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? 'Not counted' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
@@ -15626,24 +15881,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? 'Not counted' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? 'Not counted' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)))))), /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? 'Not counted' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy)))))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3 mt-3"
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
       disabled: closing || closeBlocked,
-      title: closeBlocked ? !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer' : '',
+      title: closeBlocked ? !serverBalancesReady ? serverBalanceError || 'Waiting for the drawer figures' : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every currency before closing' : 'Count every drawer first. Required in Settings, Cash drawer' : '',
       className: "till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white",
       style: {
         background: closing ? CD.green : CD.ink,
@@ -15660,7 +15915,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: closing ? 'checkcircle' : 'lock',
       s: 14,
       c: "var(--cd-on-ink)"
-    }), " ", closing ? 'Closing…' : 'Close day & lock book') : /*#__PURE__*/React.createElement("span", {
+    }), " ", closing ? 'Closing…' : 'Close the day') : /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-2 px-3 py-2 text-[12px]",
       style: {
         background: 'var(--cd-chip)',
@@ -15671,12 +15926,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "lock",
       s: 14,
       c: CD.faint
-    }), " Closing the day isn\u2019t in your role \u2014 the owner enables it in Settings \u203A Permissions."), canCloseDay && closeBlocked && /*#__PURE__*/React.createElement("span", {
+    }), " Closing the day isn\u2019t in your role. The owner enables it in Settings, Permissions."), canCloseDay && closeBlocked && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: serverBalanceError ? CD.flag : CD.mute
       }
-    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing — the close writes your count back as the balance`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
+    }, !serverBalancesReady ? serverBalanceError || 'Waiting for the drawer figures' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This drawer has no figures yet' : countBeforeClose), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.flag
@@ -15693,16 +15948,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 8,
         color: CD.mute
       }
-    }, "Counted but not on the server ledger: ", /*#__PURE__*/React.createElement("b", {
+    }, "Counted, but not in the system: ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, offLedgerCcys.join(', ')), ". These are recorded in your local history only and are left out of the close, so they can\u2019t disturb a real balance."), /*#__PURE__*/React.createElement("p", {
-      className: "mt-2 text-[11px]",
+    }, offLedgerCcys.join(', ')), ". These stay in your own history and are left out of the close, so they cannot change a real balance."), /*#__PURE__*/React.createElement("p", {
+      className: "till-close-note mt-2 text-[11px]",
       style: {
         color: CD.faint
       }
-    }, serverBacked ? /*#__PURE__*/React.createElement(React.Fragment, null, "The server ledger is the source of ", /*#__PURE__*/React.createElement("b", null, "expected"), " cash, including posted exchanges, reversals and vault movements. Closing writes each ", /*#__PURE__*/React.createElement("b", null, "counted"), " figure back as the till\u2019s balance.") : /*#__PURE__*/React.createElement(React.Fragment, null, "The vault issues your ", /*#__PURE__*/React.createElement("b", null, "opening"), " and the day's deals produce ", /*#__PURE__*/React.createElement("b", null, "expected"), "."), " Your physical count is ", /*#__PURE__*/React.createElement("b", null, "counted"), ", and ", /*#__PURE__*/React.createElement("b", null, "variance"), " = counted \u2212 expected \u2014 it lands on the operator. Closing locks the ledger until the next day is opened."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
+    }, "Closing saves your count. Any difference is recorded under your name."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, (() => {
       const _tRec = (_ab && _ab.tills || []).find(t => t.id === (station && station.tillId));
@@ -15735,7 +15990,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           border: `1px solid ${CD.line}`,
           borderRadius: 10
         }
-      }, "No floats yet \u2014 cash issued to or returned from this drawer is recorded here.") : /*#__PURE__*/React.createElement("div", {
+      }, "No floats yet. Cash issued to or returned from this drawer is recorded here.") : /*#__PURE__*/React.createElement("div", {
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 11,
@@ -15786,7 +16041,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontVariantNumeric: 'tabular-nums',
             color: out ? CD.mute : CD.green
           }
-        }, out ? '−' : '+', num(m.amount), " ", m.ccy));
+        }, out ? '−' : '+', num(m.amount, m.ccy), " ", m.ccy));
       })));
     })(), /*#__PURE__*/React.createElement("div", {
       className: "mb-4"
@@ -15815,7 +16070,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         border: `1px solid ${CD.line}`,
         borderRadius: 10
       }
-    }, "No handoffs yet \u2014 the drawer has stayed with ", current ? current.operator : 'one operator', ".") : /*#__PURE__*/React.createElement("div", {
+    }, "No handoffs yet. The drawer has stayed with ", current ? current.operator : 'one operator', ".") : /*#__PURE__*/React.createElement("div", {
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 11,
@@ -15881,7 +16136,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, viewDay, history[viewDay].grand == null ? '' : ' · ' + fmt(history[viewDay].grand, history[viewDay].currency || homeCcy)), /*#__PURE__*/React.createElement("div", {
+    }, deskDay(viewDay) || viewDay, history[viewDay].grand == null ? '' : ' · ' + fmt(history[viewDay].grand, history[viewDay].currency || homeCcy)), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] mb-3",
       style: {
         color: CD.faint
@@ -15914,7 +16169,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, num(amt)), " ", c !== homeCcy && homeOf(amt, c) != null && /*#__PURE__*/React.createElement("span", {
+    }, num(amt, c)), " ", c !== homeCcy && homeOf(amt, c) != null && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.mute
@@ -15983,7 +16238,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, k, k === (serverSession && serverSession.businessDate || window.CDOS.businessDate()) && /*#__PURE__*/React.createElement("span", {
+      }, deskDay(k) || k, k === (serverSession && serverSession.businessDate || window.CDOS.businessDate()) && /*#__PURE__*/React.createElement("span", {
         className: "ml-2 text-[9px] px-1.5 py-0.5",
         style: {
           background: CD.greenSoft,
@@ -16060,12 +16315,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Close out the day \u2014 Day ", day && day.num || 1), /*#__PURE__*/React.createElement("div", {
+    }, closeDayLabel(serverSession && serverSession.businessDate || window.CDOS.businessDate())), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-0.5",
       style: {
         color: CD.mute
       }
-    }, "Review each drawer against expected, then lock the book. You won't be able to post again until you open the next day."))), /*#__PURE__*/React.createElement("div", {
+    }, "Review each drawer against expected, then lock the system. You won't be able to post again until you open the next day."))), /*#__PURE__*/React.createElement("div", {
       className: "overflow-auto px-5 py-3",
       style: {
         flex: 1
@@ -16111,14 +16366,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, num(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.counted == null ? CD.faint : CD.ink,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.counted == null ? '— not counted' : num(r.counted)), /*#__PURE__*/React.createElement("td", {
+      }, r.counted == null ? 'Not counted' : num(r.counted, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right text-[11px]",
         style: {
           color: ts ? CD.mute : CD.faint
@@ -16130,7 +16385,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? 'Not counted' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`
@@ -16147,28 +16402,28 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? 'Not counted' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? 'Not counted' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? 'Not counted' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[11.5px] px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
         borderRadius: 8,
         color: CD.mute
       }
-    }, recon.length - countedN, " drawer(s) not counted yet \u2014 they'll lock at expected with no variance. Go back and count them first if you want a true close.")), /*#__PURE__*/React.createElement("div", {
+    }, recon.length - countedN, " drawer(s) not counted yet. They will lock at expected with no variance. Go back and count them first if you want a true close.")), /*#__PURE__*/React.createElement("div", {
       className: "px-5 py-3 flex items-center justify-between gap-3 flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`
@@ -16185,7 +16440,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 9,
         background: 'transparent'
       }
-    }, "\u2190 Back to count"), /*#__PURE__*/React.createElement("button", {
+    }, "Back to count"), /*#__PURE__*/React.createElement("button", {
       onClick: confirmAndClose,
       className: "till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white",
       style: {
@@ -16198,7 +16453,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "lock",
       s: 14,
       c: "var(--cd-on-ink)"
-    }), " Close day & lock book")))), handoffOpen && /*#__PURE__*/React.createElement(HandoffModal, {
+    }), " Close the day")))), handoffOpen && /*#__PURE__*/React.createElement(HandoffModal, {
       tillId: tillId,
       tillName: tillNm,
       current: current,
@@ -22793,11 +23048,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
+    /* Has this document expired? The expiry and today are both
+       YYYY-MM-DD in the branch zone. The same calendar day is still
+       current. A UTC Date would call it yesterday. */
+    const on = window.CDOS.branchCalendarDate();
+    const expired = rec && rec.idExpiry && window.CDOS.calendarBefore(rec.idExpiry, on);
     // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
@@ -22808,7 +23063,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
     if (warn && rec.idExpiry) {
-      const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
+      const days = window.CDOS.calendarDaysUntil(rec.idExpiry, on);
       if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
     }
     return ['ID on hand', CD.amber, CD.amberSoft];
@@ -39745,10 +40000,15 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
+  /* Calendar arithmetic on the year, month and day. Local midnight plus
+     toISOString moves a hold date back a day where the machine is ahead
+     of UTC. */
   const addDays = (date, n) => {
-    const d = new Date(date + 'T00:00:00');
-    d.setDate(d.getDate() + (+n || 0));
-    return d.toISOString().slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''));
+    if (!match) return '';
+    const at = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    at.setUTCDate(at.getUTCDate() + (+n || 0));
+    return at.toISOString().slice(0, 10);
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 
@@ -49721,6 +49981,7 @@ ${snap}`;
     items
   }) {
     return /*#__PURE__*/React.createElement("div", {
+      className: "signoff-kpis",
       style: {
         display: 'grid',
         gridTemplateColumns: `repeat(${items.length}, 1fr)`,
@@ -49731,9 +49992,12 @@ ${snap}`;
       }
     }, items.map((k, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
+      className: "signoff-kpi",
+      "data-kpi": k.label,
       style: {
         background: 'var(--cd-panel)',
-        padding: '13px 15px'
+        padding: '13px 15px',
+        minWidth: 0
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -49743,6 +50007,7 @@ ${snap}`;
         letterSpacing: '0.06em'
       }
     }, k.label), /*#__PURE__*/React.createElement("div", {
+      className: "signoff-kpi-value",
       style: {
         fontSize: 20,
         fontWeight: 700,
@@ -49977,32 +50242,55 @@ ${snap}`;
           error: error && error.message || 'the ledger could not be reached'
         });
       });
-      backend.loadLedgerSummary(window.CDOS.businessDayWindow(1)).then(summary => {
-        if (live) setDayBook({
+      /* The session first, then the book for the window the session
+         names. The two used to start together, and the book was asked
+         for a window this browser built from its own midnight. Just
+         after midnight, in a zone ahead of UTC, that window was
+         yesterday and the sheet printed 0. */
+      backend.loadTillSession().then(answer => {
+        if (!live) return null;
+        const session = answer && answer.session || null;
+        const day = answer && answer.day || null;
+        setTillDay({
+          loading: false,
+          session,
+          day,
+          counts: answer && answer.latestCounts || {},
+          error: ''
+        });
+        if (day && day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(day.timeZone);
+        if (session && session.businessDate) window.CDOS.setBusinessDate(session.businessDate);
+        if (!day || !day.from || !day.to) {
+          setDayBook({
+            loading: false,
+            summary: null,
+            error: session ? 'the till session did not name its trading day' : 'no till session'
+          });
+          return null;
+        }
+        return backend.loadLedgerSummary({
+          from: day.from,
+          to: day.to
+        });
+      }).then(summary => {
+        if (live && summary) setDayBook({
           loading: false,
           summary,
           error: ''
         });
       }).catch(error => {
-        if (live) setDayBook({
+        if (!live) return;
+        const message = error && error.message || 'the ledger could not be reached';
+        setDayBook({
           loading: false,
           summary: null,
-          error: error && error.message || 'the ledger could not be reached'
+          error: message
         });
-      });
-      backend.loadTillSession().then(answer => {
-        if (live) setTillDay({
-          loading: false,
-          session: answer && answer.session || null,
-          counts: answer && answer.latestCounts || {},
-          error: ''
-        });
-      }).catch(error => {
-        if (live) setTillDay({
+        setTillDay(current => current.session || current.error ? current : {
           loading: false,
           session: null,
           counts: {},
-          error: error && error.message || 'the ledger could not be reached'
+          error: message
         });
       });
       return () => {
@@ -50359,6 +50647,10 @@ ${snap}`;
       const sub = book ? `${book.posted} posted transaction${book.posted === 1 ? '' : 's'}${book.reversed ? ` · ${book.reversed} voided` : ''} · valued in ${homeCcy}` : `the ledger has no figures for this period — ${noBook}`;
       const branchName = station && branches && (branches.find(b => b.id === station.branchId) || {}).name || settings && (settings.operatingName || settings.bizName) || 'York Currency Exchange';
       const tillName = station && station.tillId ? (((branches || []).find(b => b.id === station.branchId) || {}).tills || []).find(t => t.id === station.tillId)?.name : null;
+      /* The stored name is "Till 1 — Main counter". The sheet says it
+         with a comma. A dash in that name is the cutoff the close review
+         rejected. */
+      const sheetTill = tillName ? String(tillName).replace(/\s*[—–]\s*/g, ', ') : null;
       if (id === 'endofday') {
         const d = dayBook.summary;
         /* Why the day's money reads "—", said once and reused. "Nothing was
@@ -50385,9 +50677,13 @@ ${snap}`;
            replaces "Day 1", which was a counter kept in the browser. */
         const sheetDate = tillDay.session && tillDay.session.businessDate || businessDate();
         const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
+        /* Noon UTC, then formatted in UTC, so the heading is the calendar
+           date the server named. Local midnight would move it a day on a
+           browser whose zone is not the branch's. */
         const longDate = (() => {
           try {
-            return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', {
+            return new Date(sheetDate + 'T12:00:00Z').toLocaleDateString('en-CA', {
+              timeZone: 'UTC',
               weekday: 'long',
               month: 'long',
               day: 'numeric',
@@ -50400,7 +50696,7 @@ ${snap}`;
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "End-of-Day Sign-Off",
-          subtitle: `${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`,
+          subtitle: `${branchName}${sheetTill ? ' · ' + sheetTill : ''} · ${longDate} · ${dayLabel}`,
           rangeLabel: effRangeLabel
         }), /*#__PURE__*/React.createElement("div", {
           style: {
@@ -50506,7 +50802,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null ? CD.faint : CD.ink
             }
-          }, x.units == null ? '— not in this drawer' : num(x.units)), /*#__PURE__*/React.createElement("td", {
+          }, x.units == null ? '— not in this drawer' : num(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -50520,7 +50816,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.counted == null ? CD.faint : CD.ink
             }
-          }, x.counted == null ? '— not counted' : num(x.counted)), /*#__PURE__*/React.createElement("td", {
+          }, x.counted == null ? '— not counted' : num(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -50528,14 +50824,14 @@ ${snap}`;
               fontWeight: x.variance != null ? 600 : 400,
               color: x.variance == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance)), /*#__PURE__*/React.createElement("td", {
+          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
               color: CD.mute
             }
-          }, x.vaultUnits == null ? '—' : num(x.vaultUnits)));
+          }, x.vaultUnits == null ? '—' : num(x.vaultUnits, x.ccy)));
         }), (() => {
           /* The counted and variance totals are only offered in the
              desk's own money when every counted line can BE valued in

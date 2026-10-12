@@ -9,6 +9,7 @@ import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/ses
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
+import { BranchTimeZoneUnset } from "./branch-zone.js";
 import { ensureLedgerPrincipal } from "./principal.js";
 import {
   LedgerProvisioningService,
@@ -31,6 +32,7 @@ import {
   type ChequeReturnInput,
 } from "./cheques.js";
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
+import { bindTestClock } from "./clock.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
 
@@ -327,6 +329,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
+  bindTestClock(app);
 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
     const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
@@ -358,6 +361,12 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
         code: "LEDGER_BUSY",
         message: "The ledger is handling another change to this till. Nothing was posted — try again.",
       });
+    }
+    /* A missing or unreadable branch zone is a desk that cannot name its
+       day. Intl throws RangeError for a garbage zone; that is this same
+       refusal, not an unexpected fault. */
+    if (error instanceof BranchTimeZoneUnset) {
+      return reply.code(409).send({ code: error.code, message: error.message });
     }
     if (!(error instanceof LedgerError)) {
       app.log.error(error, "ledger route failure");
@@ -393,7 +402,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "OBLIGATION_NOT_OPEN" ||
                 error.code === "OPENING_BALANCES_ALREADY_SET" ||
                 error.code === "PACK_OPT_IN_REFUSED" ||
-                error.code === "JURISDICTION_PACK_CONFLICT" ? 409
+                error.code === "JURISDICTION_PACK_CONFLICT" ||
+                error.code === "BRANCH_TIMEZONE_UNSET" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
   }

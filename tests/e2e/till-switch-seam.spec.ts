@@ -139,21 +139,25 @@ async function openingBalances(page: Page, workspaceId: string, balances: Record
 }
 
 async function openCashDrawer(page: Page) {
-  await page.getByText(/Cash Drawer/i).first().click();
-  await expect(page.getByText(/ledger till/i).first()).toBeVisible({ timeout: 45_000 });
+  /* "Till & Cash Drawer" in the closed-day line matches the words
+     before the dock does, and it is not a way into the drawer. */
+  const tab = page.locator('#appbar [data-app="till"]');
+  await tab.scrollIntoViewIfNeeded();
+  await tab.click();
+  await expect(page.locator(".till-which").first()).toBeVisible({ timeout: 45_000 });
 }
 
-/* The till this screen says the ledger is answering for. It is one line of
-   the Cash Drawer's own header and it is the contradiction made visible: it
-   read "ledger till till-01" while the title beside it read "Till 2". */
+/* The drawer this screen says the figures belong to. It is one line of the
+   Cash Drawer's own header and it is the contradiction made visible: it
+   read "drawer till-01" while the title beside it read "Till 2". */
 async function ledgerTillOnScreen(page: Page) {
-  const body = await page.locator("body").innerText();
-  const match = body.match(/ledger till\s+(\S+)/);
+  const body = await page.locator(".till-which").first().innerText();
+  const match = body.match(/drawer\s+(\S+)/i);
   return match ? match[1]! : null;
 }
 
 /* The Cash Drawer's OWN switcher, not the one in the tenant bar — both carry
-   the same title, and only this one sits next to the ledger till label. */
+   the same title, and only this one sits next to the drawer label. */
 const switcher = (page: Page) =>
   page.locator(
     'xpath=//button[@title="Switch till at this location" and not(ancestor::*[@id="tenantbar"])]',

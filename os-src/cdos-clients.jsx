@@ -503,11 +503,11 @@
   // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
+    /* Has this document expired? The expiry and today are both
+       YYYY-MM-DD in the branch zone. The same calendar day is still
+       current. A UTC Date would call it yesterday. */
+    const on = window.CDOS.branchCalendarDate();
+    const expired = rec && rec.idExpiry && window.CDOS.calendarBefore(rec.idExpiry, on);
     // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
@@ -517,7 +517,7 @@
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
-    if (warn && rec.idExpiry) { const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
+    if (warn && rec.idExpiry) { const days = window.CDOS.calendarDaysUntil(rec.idExpiry, on); if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
     return ['ID on hand', CD.amber, CD.amberSoft];
   }
   const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';

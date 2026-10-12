@@ -14,8 +14,8 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no 
 const MESSAGE = "Money moved since you counted. Count again.";
 
 async function settleCashDrawerChrome(page: Page) {
-  await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/server balances live/i)).toBeVisible();
+  await expect(page.locator(".till-which")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/figures are in/i)).toBeVisible();
   const scroller = page.locator(".win.show.active .win-body .overflow-auto").first();
   if (await scroller.count()) {
     await scroller.evaluate((el) => {
@@ -152,9 +152,9 @@ async function postFortyCad(page: Page, key: string) {
 }
 
 async function closeTheDay(page: Page) {
-  await clickDrawerTab(page, /Reconcile & close/i);
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).first());
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).last());
+  await clickDrawerTab(page, /Count & close/i);
+  await press(page.getByRole("button", { name: "Close the day", exact: true }).first());
+  await press(page.getByRole("button", { name: "Close the day", exact: true }).last());
 }
 
 test("a close after money moved is refused, on screen and in the book", async ({ page }, testInfo) => {
@@ -206,7 +206,7 @@ test("a refresh in the middle of a count still closes against the mark it starte
   /* The till is already open. While the session is still loading the
      screen briefly offers "Open the till", and clicking that races
      the session arriving. Wait until the open session is back. */
-  await page.getByText(/Cash Drawer/i).first().click();
+  await page.locator('#appbar [data-app="till"]').click();
   await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 20_000 });
   await settleCashDrawerChrome(page);
   await closeTheDay(page);

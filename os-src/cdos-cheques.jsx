@@ -44,7 +44,16 @@
   const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
-  const addDays = (date, n) => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + (+n || 0)); return d.toISOString().slice(0, 10); };
+  /* Calendar arithmetic on the year, month and day. Local midnight plus
+     toISOString moves a hold date back a day where the machine is ahead
+     of UTC. */
+  const addDays = (date, n) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''));
+    if (!match) return '';
+    const at = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    at.setUTCDate(at.getUTCDate() + (+n || 0));
+    return at.toISOString().slice(0, 10);
+  };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 
   /* ---- default fee schedule by cheque type (editable in the Fee schedule tab) ---- */

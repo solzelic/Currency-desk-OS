@@ -209,10 +209,10 @@
     </div>);
   }
   function KpiRow({ items }) {
-    return (<div style={{ display: 'grid', gridTemplateColumns: `repeat(${items.length}, 1fr)`, gap: 1, background: CD.line, border: `1px solid ${CD.line}`, marginBottom: 22 }}>
-      {items.map((k, i) => (<div key={i} style={{ background: 'var(--cd-panel)', padding: '13px 15px' }}>
+    return (<div className="signoff-kpis" style={{ display: 'grid', gridTemplateColumns: `repeat(${items.length}, 1fr)`, gap: 1, background: CD.line, border: `1px solid ${CD.line}`, marginBottom: 22 }}>
+      {items.map((k, i) => (<div key={i} className="signoff-kpi" data-kpi={k.label} style={{ background: 'var(--cd-panel)', padding: '13px 15px', minWidth: 0 }}>
         <div style={{ fontSize: 10.5, color: CD.mute, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k.label}</div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: k.accent || CD.ink, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{k.value}</div>
+        <div className="signoff-kpi-value" style={{ fontSize: 20, fontWeight: 700, color: k.accent || CD.ink, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{k.value}</div>
         {k.sub && <div style={{ fontSize: 10, color: CD.faint, marginTop: 1 }}>{k.sub}</div>}
       </div>))}
     </div>);
@@ -291,12 +291,36 @@
       backend.loadLedgerPosition()
         .then(position => { if (live) setHeld({ loading: false, position, error: '' }); })
         .catch(error => { if (live) setHeld({ loading: false, position: null, error: (error && error.message) || 'the ledger could not be reached' }); });
-      backend.loadLedgerSummary(window.CDOS.businessDayWindow(1))
-        .then(summary => { if (live) setDayBook({ loading: false, summary, error: '' }); })
-        .catch(error => { if (live) setDayBook({ loading: false, summary: null, error: (error && error.message) || 'the ledger could not be reached' }); });
+      /* The session first, then the book for the window the session
+         names. The two used to start together, and the book was asked
+         for a window this browser built from its own midnight. Just
+         after midnight, in a zone ahead of UTC, that window was
+         yesterday and the sheet printed 0. */
       backend.loadTillSession()
-        .then(answer => { if (live) setTillDay({ loading: false, session: (answer && answer.session) || null, counts: (answer && answer.latestCounts) || {}, error: '' }); })
-        .catch(error => { if (live) setTillDay({ loading: false, session: null, counts: {}, error: (error && error.message) || 'the ledger could not be reached' }); });
+        .then(answer => {
+          if (!live) return null;
+          const session = (answer && answer.session) || null;
+          const day = (answer && answer.day) || null;
+          setTillDay({ loading: false, session, day, counts: (answer && answer.latestCounts) || {}, error: '' });
+          if (day && day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(day.timeZone);
+          if (session && session.businessDate) window.CDOS.setBusinessDate(session.businessDate);
+          if (!day || !day.from || !day.to) {
+            setDayBook({
+              loading: false,
+              summary: null,
+              error: session ? 'the till session did not name its trading day' : 'no till session',
+            });
+            return null;
+          }
+          return backend.loadLedgerSummary({ from: day.from, to: day.to });
+        })
+        .then(summary => { if (live && summary) setDayBook({ loading: false, summary, error: '' }); })
+        .catch(error => {
+          if (!live) return;
+          const message = (error && error.message) || 'the ledger could not be reached';
+          setDayBook({ loading: false, summary: null, error: message });
+          setTillDay(current => current.session || current.error ? current : { loading: false, session: null, counts: {}, error: message });
+        });
       return () => { live = false; };
     }, [deskFacts]);
     const [active, setActive] = useState(null);
@@ -542,6 +566,10 @@
         : `the ledger has no figures for this period — ${noBook}`;
       const branchName = (station && branches && (branches.find(b => b.id === station.branchId) || {}).name) || (settings && (settings.operatingName || settings.bizName)) || 'York Currency Exchange';
       const tillName = (station && station.tillId) ? (((branches || []).find(b => b.id === station.branchId) || {}).tills || []).find(t => t.id === station.tillId)?.name : null;
+      /* The stored name is "Till 1 — Main counter". The sheet says it
+         with a comma. A dash in that name is the cutoff the close review
+         rejected. */
+      const sheetTill = tillName ? String(tillName).replace(/\s*[—–]\s*/g, ', ') : null;
 
       if (id === 'endofday') {
         const d = dayBook.summary;
@@ -569,10 +597,13 @@
            replaces "Day 1", which was a counter kept in the browser. */
         const sheetDate = (tillDay.session && tillDay.session.businessDate) || businessDate();
         const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
-        const longDate = (() => { try { return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
+        /* Noon UTC, then formatted in UTC, so the heading is the calendar
+           date the server named. Local midnight would move it a day on a
+           browser whose zone is not the branch's. */
+        const longDate = (() => { try { return new Date(sheetDate + 'T12:00:00Z').toLocaleDateString('en-CA', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return (<div>
-          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} />
+          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${sheetTill ? ' · ' + sheetTill : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, padding: '10px 14px', background: closed ? CD.greenSoft : 'var(--cd-chip)', border: `1px solid ${closed ? CD.green : CD.line}`, borderRadius: 9 }}>
             <span style={{ width: 26, height: 26, borderRadius: '50%', background: closed ? CD.green : CD.mute, display: 'grid', placeItems: 'center', flex: 'none' }}><span style={{ color: 'var(--cd-on-ink)', fontSize: 14 }}>{closed ? '✓' : '·'}</span></span>
             <div style={{ fontSize: 12.5, color: closed ? '#14543a' : CD.mute }}>
@@ -600,11 +631,11 @@
             <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>In the drawer</th><th style={{ ...thS, textAlign: 'right' }}>{homeCcy} value</th><th style={{ ...thS, textAlign: 'right' }}>Counted</th><th style={{ ...thS, textAlign: 'right' }}>Variance</th><th style={{ ...thS, textAlign: 'right' }}>In the safe</th></tr></thead>
               <tbody>{data.cash.map(x => { const off = x.variance != null && Math.abs(x.variance) > 0.005; return (<tr key={x.ccy}>
                 <td style={tdS}><b>{x.ccy}</b></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : num(x.units)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : num(x.units, x.ccy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : fmt(x.home, homeCcy)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : num(x.counted)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: x.variance != null ? 600 : 400, color: x.variance == null ? CD.faint : off ? CD.flag : CD.green }}>{x.variance == null ? '—' : (Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance))}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : num(x.vaultUnits)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : num(x.counted, x.ccy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: x.variance != null ? 600 : 400, color: x.variance == null ? CD.faint : off ? CD.flag : CD.green }}>{x.variance == null ? '—' : (Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance, x.ccy))}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : num(x.vaultUnits, x.ccy)}</td>
               </tr>); })}
               {(() => {
                 /* The counted and variance totals are only offered in the

@@ -178,11 +178,14 @@ describe("PINs are checked by the server", () => {
   it("a stale snapshot cannot roll a PIN back to an old one", async () => {
     const singh = await staffRow("a.singh");
     const current = (await app.inject({ method: "POST", url: `/api/admin/staff/${singh.id}/reset-pin`, cookies: adminCookie })).json().pin as string;
-    const stale = { cdos_settings: { employees: [{ id: "e3", name: "Amrit Singh", code: "a.singh", pin: "7391" }] } };
+    /* The reset issues a random PIN. If that draw is the fixture, verifying
+       the fixture is 200 for the live PIN, and this assertion goes red. */
+    const stalePin = current === "7391" ? "8264" : "7391";
+    const stale = { cdos_settings: { employees: [{ id: "e3", name: "Amrit Singh", code: "a.singh", pin: stalePin }] } };
     await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: costaCookie, payload: { state: stale } as Record<string, unknown> });
 
     const singhCookie = cookieOf(await signIn("a.singh"));
-    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin: "7391" } })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin: stalePin } })).statusCode).toBe(401);
     expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin: current } })).statusCode).toBe(200);
   });
 

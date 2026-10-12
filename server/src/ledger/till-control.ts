@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { civilDate, civilToday } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { currentBasis } from "./cost-basis.js";
@@ -7,6 +6,9 @@ import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
+import { businessDate, readDateOnly, signOffWindow } from "./business-date.js";
+import { loadBranchTimeZone } from "./branch-zone.js";
+import { now as clockNow } from "./clock.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   applyVaultLeg,
@@ -68,11 +70,7 @@ const fixed = (value: Decimal.Value) =>
 const sessionJson = (row: Record<string, unknown>) => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
-  businessDate: (() => {
-    const day = civilDate(row.business_date);
-    if (!day) throw new Error("Till session is missing its business date");
-    return day;
-  })(),
+  businessDate: readDateOnly(row.business_date),
   status: row.status,
   openedBy: row.opened_by,
   openedAt: new Date(row.opened_at as string | Date).toISOString(),
@@ -100,7 +98,7 @@ export class TillControlService {
       scope(actor),
     );
     if (!session.rowCount) {
-      return { session: null, latestCounts: {} };
+      return { session: null, latestCounts: {}, day: null };
     }
     const counts = await client.query(
       `SELECT DISTINCT ON (c.currency)
@@ -128,7 +126,29 @@ export class TillControlService {
           },
         ]),
       ),
+      day: await this.signOffDay(client, actor, session.rows[0]),
     };
+  }
+
+  /** The window the sign-off sheet must request. Branch midnight of the
+   *  session's business date, through the next branch midnight. A desk
+   *  still open after that midnight keeps this business date, and the
+   *  window runs out to now so those later deals stay on this sheet. */
+  private async signOffDay(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+    row: Record<string, unknown>,
+  ) {
+    const timeZone = await loadBranchTimeZone(client, actor);
+    const date = readDateOnly(row.business_date);
+    const closedAt = row.closed_at == null ? null : new Date(row.closed_at as string);
+    const window = signOffWindow({
+      businessDate: date,
+      timeZone,
+      closedAt,
+      now: clockNow(),
+    });
+    return { businessDate: date, timeZone, from: window.from, to: window.to };
   }
 
   async current(actor: LedgerActor) {
@@ -231,7 +251,7 @@ export class TillControlService {
     try {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "ledger:view");
-      const now = new Date();
+      const now = clockNow();
       await this.audit(
         client,
         actor,
@@ -304,7 +324,8 @@ export class TillControlService {
               AND workspace_id=$4 AND till_id=$5`,
           scope(actor),
         );
-        const now = new Date();
+        const now = clockNow();
+        const timeZone = await loadBranchTimeZone(client, actor);
         const sessionId = `till_session_${randomUUID()}`;
         await client.query(
           `INSERT INTO ledger_till_sessions
@@ -315,7 +336,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            civilToday(now),
+            businessDate(now, timeZone),
             actor.userId,
             now,
           ],
@@ -377,7 +398,7 @@ export class TillControlService {
           }
         }
         const batchId = `till_count_${randomUUID()}`;
-        const now = new Date();
+        const now = clockNow();
         await client.query(
           `INSERT INTO ledger_till_count_batches
             (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
@@ -511,7 +532,7 @@ export class TillControlService {
         );
       }
       const batchId = `till_close_${randomUUID()}`;
-      const now = new Date();
+      const now = clockNow();
       await client.query(
         `INSERT INTO ledger_till_count_batches
           (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
@@ -725,7 +746,7 @@ export class TillControlService {
           [...scope(actor), input.currency, fixed(next)],
         );
       }
-      const now = new Date();
+      const now = clockNow();
       const movementId = `cash_move_${randomUUID()}`;
       /* THE OTHER HALF OF THE FLOAT.
          Cash into a drawer came out of the branch's strong room, so the
