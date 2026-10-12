@@ -577,6 +577,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, a refused rate publish. A teller or a supervisor who
+posts `/api/rates/publish` gets 403 and the sentence "Only a manager
+or an admin can publish rates." The refusal is an audit row,
+`rates.publish_denied`. The board is unchanged. A manager and an
+admin still hold `rates:change`.
+
 **2026-10-12**, phone Rates. Under 430px the Rates tab is the board
 editor. Publish is the existing POST, and a teller is read-only.
 Phone More no longer lists Pricing. The desktop Rate Board iframe

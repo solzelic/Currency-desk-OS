@@ -252,7 +252,11 @@ test("a teller sees the list and the server refuses the post", async ({ page }) 
     const body = await response.json();
     return { status: response.status, error: body.error, detail: body.detail };
   });
-  expect(refused).toEqual({ status: 403, error: "permission_denied", detail: "rates:change required" });
+  expect(refused).toEqual({
+    status: 403,
+    error: "permission_denied",
+    detail: "Only a manager or an admin can publish rates.",
+  });
   await expect(screen.getByRole("alert")).toHaveCount(0);
   await expect(screen).toContainText("Ask a manager to change rates");
 

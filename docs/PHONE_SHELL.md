@@ -338,9 +338,13 @@ board, and the order. The first six places are the homepage group.
 Public preview shows what the homepage will show after publish, and
 it says it is not live yet. One Publish button posts
 `/api/rates/publish`. The server permission `rates:change` is what
-allows it. A teller sees the list and the buy and sell prices, with
-no steppers, no drag, no board switch, and no Publish button. The
-line asks them to find a manager.
+allows it, and only a manager or an admin holds it. A teller or a
+supervisor who posts the route gets 403 and the sentence "Only a
+manager or an admin can publish rates." The refusal is an audit row,
+`rates.publish_denied`, and the board does not change. A teller sees
+the list and the buy and sell prices, with no steppers, no drag, no
+board switch, and no Publish button. The line asks them to find a
+manager.
 
 Currency names are `BY[code].name` in `yorkfx-converter.js`. This
 screen does not quote and does not start a deal.
