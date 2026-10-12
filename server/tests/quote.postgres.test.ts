@@ -1,5 +1,7 @@
+import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import Decimal from "decimal.js";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -13,6 +15,7 @@ import {
 } from "../src/ledger/service.js";
 import { DEMO, seed } from "../src/seed.js";
 
+const quotePreview = createRequire(import.meta.url)("../../os-src/quote-terms.js").create(Decimal).preview;
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
 let pool: pg.Pool, app: FastifyInstance, handle: DbHandle;
@@ -534,5 +537,60 @@ postgres("quote service against real PostgreSQL", () => {
     await expect(new LedgerService(pool).postFrozenQuote(actor, frozen, "other-publication")).rejects.toMatchObject({ code: "QUOTE_MISMATCH" });
     await expect(new LedgerService(pool).postFrozenQuote({ ...actor, branchId: "br-quote-isolation", workspaceId: "ws-other", tillId: "till-other", authorizedBranchIds: ["br-quote-isolation"] }, { ...frozen, rateBoardPublicationId: made.rateBoardPublicationId, marketSnapshotId: made.marketSnapshotId }, "other-branch")).rejects.toMatchObject({ code: "SCOPE_DENIED" });
     expect((await pool.query("SELECT count(*) FROM ledger_transactions WHERE quote_id=$1", [made.quoteId])).rows[0].count).toBe("0");
+  });
+  it("posts the amount the counter preview shows, including the 3,500 USD case", async () => {
+    const rows = {
+      USD: { mid: 1.36407, show: true },
+      EUR: { mid: 1.47102, show: true },
+      PHP: { mid: 0.024301, show: true },
+      INR: { mid: 0.016582, show: true },
+      JPY: { mid: 0.00909918, show: true },
+    };
+    await pool.query(
+      "UPDATE rate_boards SET buy_margin=0.015, sell_margin=0.015, board_rows=$1::jsonb, published_at=now() WHERE id='board-1'",
+      [JSON.stringify(rows)],
+    );
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',500000)",
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"],
+    );
+    const board = { buyMargin: 0.015, sellMargin: 0.015, rows };
+    const deals = [
+      ["USD", "CAD", "3500.00", "customer_sell_foreign", "4702.63"],
+      ["CAD", "USD", "3500.00", "customer_buy_foreign", "2527.36"],
+      ["CAD", "JPY", "1000.00", "customer_buy_foreign", "108252.00"],
+    ] as const;
+    const cookies = await cookie();
+    for (const [from, to, inputAmount, direction, output] of deals) {
+      const shown = quotePreview(board, { from, to, inputAmount, feeCad: "0", homeCurrency: "CAD" });
+      expect(shown.outputWire, `${from}→${to}`).toBe(output);
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/quotes",
+        cookies,
+        payload: { ...body, from, to, inputAmount, feeCad: "0.00", direction },
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      const quote = created.json();
+      expect(quote.outputAmount).toBe(output);
+      const posted = await app.inject({
+        method: "POST",
+        url: `/api/quotes/${quote.quoteId}/post`,
+        cookies,
+        payload: postBody(`parity-${from}-${to}`),
+      });
+      expect(posted.statusCode, posted.body).toBe(201);
+      expect(posted.json().outputAmount).toBe(output);
+      const stored = await pool.query("SELECT output_amount FROM ledger_transactions WHERE quote_id=$1", [quote.quoteId]);
+      expect(stored.rows[0].output_amount).toBe(output);
+    }
+    const yen = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies,
+      payload: { ...body, from: "JPY", to: "CAD", inputAmount: "1000.50", feeCad: "0.00", direction: "customer_sell_foreign" },
+    });
+    expect(yen.statusCode).toBe(400);
+    expect(yen.json().code).toBe("INVALID_REQUEST");
   });
 });

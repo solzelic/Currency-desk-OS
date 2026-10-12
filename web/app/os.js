@@ -2,6 +2,264 @@
    Edit os-src/*.jsx instead, then run: npm run build:os */
 
 
+/* ---- os-src/quote-terms.js ---- */
+/* One price for a deal, shared by the server and the counter.
+
+   The sheet used to multiply a mid that had already been rounded to four
+   decimal places, in floating point, and on a sale it used a different
+   spread from the one the ledger posts. The cashier read that figure and
+   counted cash against it. This is the arithmetic the quote service
+   already used: the customer rate is not rounded before the multiply, and
+   the amount handed over is that product rounded half-up to the currency's
+   own minor units. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  if (typeof document !== "undefined") {
+    if (!root.Decimal) throw new Error("Quote pricing needs decimal.js, and it did not load.");
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.quoteTerms = api.create(root.Decimal);
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  /* Same exceptions as server/src/ledger/currencies.ts. A parity test
+     locks the two lists together. Three-decimal currencies are not
+     carried: the money columns hold two places. */
+  var EXCEPTIONS = {
+    BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
+    PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+    BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  };
+
+  function create(Decimal) {
+    Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+
+    function minorUnits(code) {
+      return EXCEPTIONS[String(code || "").toUpperCase()] ?? 2;
+    }
+    function placesOf(code) {
+      var places = minorUnits(code);
+      if (places > 2) throw new Error("unsupported currency scale");
+      return places;
+    }
+    function money(value, min, places) {
+      if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(String(value))) throw new Error("invalid money");
+      var out = new Decimal(value);
+      if (out.lt(min) || out.gt("1000000000")) throw new Error("out of range");
+      if (!out.eq(out.toDecimalPlaces(places))) throw new Error("invalid money");
+      return out.toDecimalPlaces(places);
+    }
+    function rateOf(value, what) {
+      var out = new Decimal(value == null || value === "" ? NaN : value);
+      if (!out.isFinite() || out.lte(0)) throw new Error("invalid " + what);
+      return out;
+    }
+    function marginOf(value) {
+      var out = new Decimal(value);
+      if (!out.isFinite() || out.lt(0) || out.gte(1)) throw new Error("invalid board terms");
+      return out;
+    }
+    function roundOutput(amount, rate, currency) {
+      return new Decimal(amount).mul(rate).toDecimalPlaces(placesOf(currency));
+    }
+    function formatRate(value) {
+      return new Decimal(value).toDecimalPlaces(12).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+    }
+    function formatAmount(value, currency) {
+      var places = placesOf(currency);
+      var dec = new Decimal(value).toDecimalPlaces(places);
+      var sign = dec.isNeg() ? "-" : "";
+      var parts = dec.abs().toFixed(places).split(".");
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      return sign + (parts[1] != null ? parts[0] + "." + parts[1] : parts[0]);
+    }
+    /* The quote row stores the customer rate at 12 decimal places. Two
+       rates are the same rate when they agree there. */
+    function sameRate(a, b) {
+      return new Decimal(a).toDecimalPlaces(12).eq(new Decimal(b).toDecimalPlaces(12));
+    }
+    function lessThan(a, b) {
+      return new Decimal(a).lt(new Decimal(b));
+    }
+    function profitShare(spreadCad, feeCad, inputCad) {
+      var profit = new Decimal(spreadCad).plus(feeCad || 0);
+      var basis = new Decimal(inputCad);
+      return {
+        profit: profit.toFixed(2),
+        pct: basis.gt(0) ? profit.div(basis).mul(100).toFixed(2) : "0.00",
+      };
+    }
+
+    function calculateQuoteTerms(input) {
+      var home = String(input.homeCurrency || "CAD").toUpperCase();
+      var from = String(input.from || "").toUpperCase();
+      var to = String(input.to || "").toUpperCase();
+      var homePlaces = placesOf(home);
+      var amount = money(input.inputAmount, "0.01", placesOf(from));
+      var fee = money(input.feeCad, "0", homePlaces);
+      var margin = marginOf(input.margin);
+      if (from === to) throw new Error("direction and currencies disagree");
+      var shape = from === home && to !== home
+        ? "customer_buy_foreign"
+        : to === home && from !== home
+          ? "customer_sell_foreign"
+          : "customer_cross";
+      if (shape !== input.direction) throw new Error("direction and currencies disagree");
+
+      if (shape === "customer_cross") {
+        var fromMid = rateOf(input.fromMid, "board terms");
+        var toMid = rateOf(input.toMid, "board terms");
+        var outMargin = marginOf(input.outMargin == null ? input.margin : input.outMargin);
+        var inputHome = amount.mul(fromMid).toDecimalPlaces(homePlaces);
+        var kept = new Decimal(1).minus(margin).mul(new Decimal(1).minus(outMargin));
+        var crossRate = fromMid.div(toMid).mul(kept);
+        var crossOut = roundOutput(amount, crossRate, to);
+        var outputHome = crossOut.mul(toMid).toDecimalPlaces(homePlaces);
+        var crossSpread = inputHome.minus(outputHome).toDecimalPlaces(homePlaces);
+        if (crossSpread.lt(0)) throw new Error("negative spread");
+        return {
+          input: amount, fee: fee, mid: fromMid, fromMid: fromMid, toMid: toMid,
+          customerRate: crossRate, outputAmount: crossOut, inputCad: inputHome,
+          outputCad: outputHome, spreadCad: crossSpread, buyOrSellSide: "we_cross",
+        };
+      }
+
+      var mid = rateOf(input.marketMid, "board terms");
+      /* Buying foreign, the customer hands over home currency and receives
+         units, so their rate is units per home. Selling, they hand over
+         units and receive home currency. The rate is not rounded here. */
+      var customerRate = shape === "customer_buy_foreign"
+        ? new Decimal(1).div(mid).mul(new Decimal(1).minus(margin))
+        : mid.mul(new Decimal(1).minus(margin));
+      var outputAmount = roundOutput(amount, customerRate, to);
+      var inputCad = from === home ? amount : amount.mul(mid).toDecimalPlaces(homePlaces);
+      var outputCad = to === home ? outputAmount : outputAmount.mul(mid).toDecimalPlaces(homePlaces);
+      var spreadCad = inputCad.minus(outputCad).toDecimalPlaces(homePlaces);
+      if (spreadCad.lt(0)) throw new Error("negative spread");
+      return {
+        input: amount, fee: fee, mid: mid,
+        fromMid: from === home ? new Decimal(1) : mid,
+        toMid: to === home ? new Decimal(1) : mid,
+        customerRate: customerRate, outputAmount: outputAmount,
+        inputCad: inputCad, outputCad: outputCad, spreadCad: spreadCad,
+        buyOrSellSide: shape === "customer_buy_foreign" ? "we_sell" : "we_buy",
+      };
+    }
+
+    function textOf(value) {
+      if (typeof value === "string" && value.trim() !== "") return value.trim();
+      if (typeof value === "number" && isFinite(value)) return String(value);
+      return null;
+    }
+    function packed(terms, from, to, direction) {
+      return {
+        state: "ok",
+        direction: direction,
+        from: from,
+        to: to,
+        side: terms.buyOrSellSide === "we_buy" ? "buy" : terms.buyOrSellSide === "we_sell" ? "sell" : "cross",
+        inputWire: terms.input.toFixed(2),
+        feeWire: terms.fee.toFixed(2),
+        outputWire: terms.outputAmount.toFixed(2),
+        customerRate: formatRate(terms.customerRate),
+        rateWire: terms.customerRate.toString(),
+        paysLabel: formatAmount(terms.input.toFixed(2), from),
+        receivesLabel: formatAmount(terms.outputAmount.toFixed(2), to),
+        rateLabel: formatRate(terms.customerRate),
+        spreadCad: terms.spreadCad.toFixed(2),
+        inputCad: terms.inputCad.toFixed(2),
+      };
+    }
+    function directionOf(from, to, home) {
+      if (from === home && to !== home) return "customer_buy_foreign";
+      if (to === home && from !== home) return "customer_sell_foreign";
+      return "customer_cross";
+    }
+    function priceAtRate(board, spec, from, to, home, raw) {
+      var direction = directionOf(from, to, home);
+      var amount = money(raw, "0.01", placesOf(from));
+      var feeText = spec.feeCad == null || String(spec.feeCad).trim() === "" ? "0" : String(spec.feeCad).trim();
+      var fee = money(feeText, "0", placesOf(home));
+      var rate = rateOf(spec.overrideRate, "rate");
+      var output = roundOutput(amount, rate, to);
+      var homePlaces = placesOf(home);
+      var side = function (currency) {
+        if (currency === home) return new Decimal(1);
+        var row = board && board.rows && board.rows[currency];
+        var mid = row && textOf(row.mid);
+        return mid ? new Decimal(mid) : null;
+      };
+      var fromMid = side(from), toMid = side(to);
+      var inputCad = fromMid ? amount.mul(fromMid).toDecimalPlaces(homePlaces) : amount;
+      var outputCad = toMid ? output.mul(toMid).toDecimalPlaces(homePlaces) : output;
+      var spread = fromMid && toMid ? inputCad.minus(outputCad).toDecimalPlaces(homePlaces) : new Decimal(0);
+      if (spread.lt(0)) throw new Error("negative spread");
+      return packed({
+        input: amount, fee: fee, customerRate: rate, outputAmount: output,
+        spreadCad: spread, inputCad: inputCad,
+        buyOrSellSide: direction === "customer_buy_foreign" ? "we_sell" : direction === "customer_sell_foreign" ? "we_buy" : "we_cross",
+      }, from, to, direction);
+    }
+    function preview(board, spec) {
+      var from = String(spec.from || "").toUpperCase();
+      var to = String(spec.to || "").toUpperCase();
+      var home = String(spec.homeCurrency || "CAD").toUpperCase();
+      var raw = spec.inputAmount == null ? "" : String(spec.inputAmount).trim();
+      if (raw === "") return { state: "empty" };
+      try {
+        if (spec.overrideRate != null && String(spec.overrideRate).trim() !== "") {
+          return priceAtRate(board, spec, from, to, home, raw);
+        }
+        if (!board || !board.rows) return { state: "unpriced" };
+        var direction = directionOf(from, to, home);
+        var feeText = spec.feeCad == null || String(spec.feeCad).trim() === "" ? "0" : String(spec.feeCad).trim();
+        var input = {
+          direction: direction, from: from, to: to, inputAmount: raw, feeCad: feeText,
+          homeCurrency: home, marketMid: "1", margin: "0",
+        };
+        if (direction === "customer_cross") {
+          var fromRow = board.rows[from], toRow = board.rows[to];
+          if (!fromRow || fromRow.show === false || !toRow || toRow.show === false) return { state: "unpriced" };
+          var fromMid = textOf(fromRow.mid), toMid = textOf(toRow.mid);
+          var buy = textOf(fromRow.spread != null ? fromRow.spread : board.buyMargin);
+          var sell = textOf(toRow.spread != null ? toRow.spread : board.sellMargin);
+          if (!fromMid || !toMid || !buy || !sell) return { state: "unpriced" };
+          input.marketMid = fromMid;
+          input.fromMid = fromMid;
+          input.toMid = toMid;
+          input.margin = buy;
+          input.outMargin = sell;
+        } else {
+          var code = direction === "customer_buy_foreign" ? to : from;
+          var row = board.rows[code];
+          if (!row || row.show === false) return { state: "unpriced" };
+          var mid = textOf(row.mid);
+          var margin = textOf(row.spread != null ? row.spread : (direction === "customer_buy_foreign" ? board.sellMargin : board.buyMargin));
+          if (!mid || !margin) return { state: "unpriced" };
+          input.marketMid = mid;
+          input.margin = margin;
+        }
+        return packed(calculateQuoteTerms(input), from, to, direction);
+      } catch (error) {
+        return { state: "bad", message: error && error.message ? error.message : "The quote could not be priced." };
+      }
+    }
+
+    return {
+      calculateQuoteTerms: calculateQuoteTerms,
+      roundOutput: roundOutput,
+      preview: preview,
+      minorUnits: minorUnits,
+      formatAmount: formatAmount,
+      formatRate: formatRate,
+      sameRate: sameRate,
+      lessThan: lessThan,
+      profitShare: profitShare,
+    };
+  }
+  return { create: create };
+});
+
+
 /* ---- os-src/cdos-base.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — base layer
@@ -33098,7 +33356,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     readOnly,
     accent,
     autoFocus,
-    mark
+    mark,
+    testId
   }) {
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-money flex items-stretch",
@@ -33113,6 +33372,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onChange: onCcy,
       disabled: !onCcy
     }), readOnly ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": testId,
       className: 'flex-1 min-w-0 px-3 py-2.5 font-semibold text-right' + (mark ? ' ' + mark : ''),
       style: {
         fontVariantNumeric: 'tabular-nums',
@@ -33883,15 +34143,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (lock && lock.until <= nowMs) setLock(null);
     }, [nowMs, lock]);
 
-    // pricing: exchange uses both legs; send uses CAD→payout; receive/mo/bill are face-value
-    const priceArgs = isExchange ? {
-      inCcy,
-      outCcy,
-      inAmt: amtN,
-      settings,
-      lockedRate: lockLive && !override ? lockLive.rate : null,
-      overrideRate: override && manualRate !== '' ? manualRate : null
-    } : isSend ? {
+    // Remittance send still prices through priceDeal. Exchange does not:
+    // the figure on this sheet is the quote the server will post.
+    const quoteApi = window.CDOS.quoteTerms;
+    const priceArgs = isSend ? {
       inCcy: home,
       outCcy: payoutCcy,
       inAmt: amtN,
@@ -33909,7 +34164,56 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       deskRate: 1,
       outAmtRaw: amtN
     }, [JSON.stringify(priceArgs), rateVersion]);
-    const rateN = pricing.rate;
+    const exchangeQuote = useMemo(() => {
+      if (!isExchange) return null;
+      if (!quoteApi) return {
+        state: 'bad',
+        message: 'Quote pricing did not load.'
+      };
+      let board = null;
+      try {
+        const raw = localStorage.getItem('yorkfx_rates_v1');
+        if (raw == null || raw === '') return {
+          state: 'unpriced'
+        };
+        board = JSON.parse(raw);
+      } catch (e) {
+        return {
+          state: 'bad',
+          message: 'The published board on this desk could not be read.'
+        };
+      }
+      const hand = override && String(manualRate).trim() !== '' ? String(manualRate).trim() : null;
+      const held = !hand && lockLive && lockLive.rate != null ? String(lockLive.rate) : null;
+      return quoteApi.preview(board, {
+        from: inCcy,
+        to: outCcy,
+        inputAmount: inAmt,
+        feeCad: fee,
+        homeCurrency: home,
+        overrideRate: hand || held
+      });
+    }, [isExchange, inCcy, outCcy, inAmt, fee, override, manualRate, lockLive && lockLive.rate, home, rateVersion, quoteApi]);
+    const fx = !isExchange ? null : serverQuote && quoteApi ? {
+      state: 'ok',
+      side: serverQuote.buyOrSellSide === 'we_buy' ? 'buy' : serverQuote.buyOrSellSide === 'we_sell' ? 'sell' : 'cross',
+      paysLabel: quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from),
+      receivesLabel: quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to),
+      rateLabel: quoteApi.formatRate(serverQuote.customerRate),
+      customerRate: quoteApi.formatRate(serverQuote.customerRate),
+      rateWire: serverQuote.customerRate,
+      spreadCad: serverQuote.spreadCad,
+      inputCad: exchangeQuote && exchangeQuote.state === 'ok' ? exchangeQuote.inputCad : null,
+      inputWire: serverQuote.inputAmount,
+      feeWire: serverQuote.feeCad,
+      outputWire: serverQuote.outputAmount,
+      direction: exchangeQuote && exchangeQuote.direction
+    } : exchangeQuote || {
+      state: 'bad',
+      message: 'Quote pricing did not load.'
+    };
+    const rateN = isExchange ? 0 : pricing.rate;
+    const exchangeReady = !!(fx && fx.state === 'ok');
     useEffect(() => {
       setServerQuote(null);
       setServerError('');
@@ -33929,7 +34233,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     // what the customer receives / what we collect, per type
     const feeN = parseFloat(fee) || 0;
     const out = isExchange ? {
-      amt: pricing.outAmt,
+      amt: exchangeReady ? fx.outputWire : 0,
+      label: exchangeReady ? fx.receivesLabel : '—',
       ccy: outCcy
     } : isSend ? {
       amt: pricing.outAmt,
@@ -33951,14 +34256,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
 
     // margin (exchange + send carry FX spread; others are fee-only)
-    const spreadCadLive = isExchange || isSend ? pricing.marginCad || 0 : 0;
-    const profitCad = +(spreadCadLive + (isCheque ? chequeFee : feeN)).toFixed(2);
-    const marginBasis = isExchange || isSend ? pricing.midCadIn || 0 : inCadEquiv;
-    const marginPct = marginBasis > 0 ? profitCad / marginBasis * 100 : 0;
+    const sendSpread = isSend ? pricing.marginCad || 0 : 0;
+    const sendProfit = +(sendSpread + (isCheque ? chequeFee : feeN)).toFixed(2);
+    const sendBasis = isSend ? pricing.midCadIn || 0 : inCadEquiv;
+    const sendPct = sendBasis > 0 ? sendProfit / sendBasis * 100 : 0;
+    const exchangeShare = isExchange && exchangeReady && quoteApi && fx.inputCad != null && fx.spreadCad != null ? quoteApi.profitShare(fx.spreadCad, fee === '' ? '0' : fee, fx.inputCad) : null;
+    const spreadCadLive = isExchange ? fx && fx.spreadCad != null ? fx.spreadCad : 0 : sendSpread;
+    const profitCad = isExchange ? exchangeShare ? exchangeShare.profit : 0 : sendProfit;
+    const marginPct = isExchange ? exchangeShare ? +exchangeShare.pct : 0 : sendPct;
     const mFloor = settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mEnforce = settings && settings.marginEnforce || 'block';
-    const belowFloor = amtN > 0 && (isExchange || isSend) && marginPct < mFloor;
+    const belowFloor = isExchange ? !!(exchangeShare && amtN > 0 && quoteApi.lessThan(exchangeShare.pct, mFloor)) : amtN > 0 && isSend && sendPct < mFloor;
     const needOverride = belowFloor && mEnforce === 'block';
 
     // ---- compliance ----
@@ -34158,7 +34467,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     });
     const hardReqs = reqs.filter(r => !r.soft);
     const allGreen = hardReqs.every(r => r.ok);
-    const canSave = amtN > 0 && allGreen;
+    const canSave = amtN > 0 && allGreen && (!isExchange || exchangeReady);
     const remaining = hardReqs.filter(r => !r.ok).length;
     const stepsLabel = `${remaining} ${remaining === 1 ? 'step' : 'steps'} left`;
     const missField = !missKey ? '' : missKey === 'id' ? customer ? 'id' : 'cust' : missKey === 'cap' || missKey === 'server-facts' ? 'facts' : missKey;
@@ -34195,11 +34504,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       resetPricing();
     };
     const lockRate = () => {
+      const src = exchangeQuote;
+      if (!src || src.state !== 'ok') return;
       const mins = settings && settings.rateLockMins || 15;
       setOverride(false);
       setManualRate('');
       setLock({
-        rate: pricing.deskRate,
+        ...src,
+        rate: src.rateWire,
         until: Date.now() + mins * 60000,
         ref: 'Q-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(live.filter(r => r.date === TODAY).length + 1).padStart(3, '0'),
         mins
@@ -34318,17 +34630,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             ledgerExternalRef: synced.externalRef
           }
         }));
+        if (!fx || fx.state !== 'ok' || !quoteApi) throw new Error('This deal is not priced.');
         let quote = await window.CDOS.Backend.createQuote({
           customerId: synced.customerId,
           from: inCcy,
           to: outCcy,
-          inputAmount: window.CDOS.Backend.asMoney(amtN),
-          feeCad: window.CDOS.Backend.asMoney(feeN),
-          direction: inCcy === home ? 'customer_buy_foreign' : 'customer_sell_foreign'
+          inputAmount: fx.inputWire,
+          feeCad: fx.feeWire,
+          direction: fx.direction
         });
-        if ((override || lockLive) && Math.abs(Number(quote.customerRate) - rateN) > 0.000000000001) {
+        if ((override || lockLive) && !quoteApi.sameRate(quote.customerRate, fx.rateWire || fx.customerRate)) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
-            customerRate: String(rateN),
+            customerRate: fx.rateWire || fx.customerRate,
             reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : lockLive ? `Rate lock ${lockLive.ref || ''}`.trim() : 'Manual counter rate')
           });
         }
@@ -34572,14 +34885,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         tx = newTx({
           ...base,
           inCcy,
-          inAmt: amtN,
-          rate: rateN,
+          inAmt: fx && fx.inputWire ? fx.inputWire : amtN,
+          rate: fx ? fx.customerRate : rateN,
           outCcy,
-          outAmt: pricing.outAmt,
+          outAmt: fx ? fx.outputWire : 0,
           fee: feeN,
-          midRate: pricing.midRate,
-          spreadCad: pricing.marginCad,
-          side: pricing.side,
+          midRate: null,
+          spreadCad: fx ? fx.spreadCad : 0,
+          side: fx ? fx.side : null,
           priced: override ? 'override' : lockLive ? 'locked' : 'desk',
           quoteRef: tq ? tq.ref : lockLive ? lockLive.ref : null,
           quotePhone: tq ? tq.phone : null,
@@ -34752,12 +35065,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     } : {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Your quote',
-      tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
+      tag: fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
-      give: `${num(amtN)} ${inCcy}`,
-      rateLine: `1 ${inCcy} = ${rateShown(rateN)} ${outCcy}`,
+      give: `${exchangeReady ? fx.paysLabel : num(amtN)} ${inCcy}`,
+      rateLine: `1 ${inCcy} = ${exchangeReady ? fx.rateLabel : '—'} ${outCcy}`,
       getLbl: 'You receive',
-      get: `${num(out.amt)} ${outCcy}`,
+      get: `${exchangeReady ? fx.receivesLabel : '—'} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
@@ -35015,21 +35328,21 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     })), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rate-line flex items-center justify-center gap-2 py-2"
     }, /*#__PURE__*/React.createElement("span", {
-      "data-side": pricing.side || '',
+      "data-side": fx && fx.side || '',
       className: "cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
       style: {
         borderRadius: 5,
-        background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft,
-        color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute,
+        background: fx && fx.side === 'buy' ? CD.flagSoft : fx && fx.side === 'sell' ? CD.greenSoft : CD.lineSoft,
+        color: fx && fx.side === 'buy' ? CD.flag : fx && fx.side === 'sell' ? CD.green : CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
+    }, fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker cd-tx-quiet text-[11px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", inCcy, " = ", rateShown(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
+    }, "1 ", inCcy, " = ", exchangeReady ? fx.rateLabel : '—', " ", outCcy), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       "aria-label": "Swap",
@@ -35043,7 +35356,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
-      value: out.amt ? num(out.amt) : '—',
+      testId: "tx-receives",
+      value: exchangeReady ? fx.receivesLabel : '—',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);
@@ -35053,7 +35367,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       accent: CD.green,
       mark: "cd-tx-receive",
       big: true
-    }), /*#__PURE__*/React.createElement("div", {
+    }), fx && fx.state === 'bad' && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "text-[11px] mt-2",
+      style: {
+        color: CD.flag
+      }
+    }, fx.message), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-2 mt-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rate-field"
@@ -35066,10 +35386,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : rateShown(rateN),
+      value: override ? manualRate : exchangeReady ? fx.rateLabel : '',
       onFocus: () => {
         if (!override && !lockLive) {
-          setManualRate(pricing.deskRate > 0 ? phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate) : '');
+          setManualRate(exchangeReady ? fx.customerRate : '');
           setOverride(true);
         }
       },
@@ -35144,7 +35464,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           setOverride(false);
           setManualRate('');
         } else {
-          setManualRate(num(pricing.deskRate));
+          setManualRate(exchangeReady ? fx.customerRate : '');
           setOverride(true);
           setLock(null);
         }
@@ -35824,6 +36144,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-on-ink-soft)'
       }
     }, isExchange ? 'Customer gives' : isCheque ? 'Cheque face' : isReceive ? 'Pay out' : 'Customer pays'), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "tx-ticket-pays",
       style: {
         fontWeight: 800,
         fontSize: 26,
@@ -35831,13 +36152,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1
       }
-    }, phoneSheet ? phoneMoney(amtN > 0 ? isExchange || isCheque || isReceive ? amtN : amtN + feeN : 0, isExchange ? inCcy : isReceive ? out.ccy : home) : /*#__PURE__*/React.createElement(React.Fragment, null, amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.paysLabel : amtN > 0 ? num(amtN) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, isExchange ? inCcy : isReceive ? out.ccy : home)))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
+    }, inCcy)) : phoneSheet ? phoneMoney(amtN > 0 ? isCheque || isReceive ? amtN : amtN + feeN : 0, isReceive ? out.ccy : home) : /*#__PURE__*/React.createElement(React.Fragment, null, amtN > 0 ? num(isCheque || isReceive ? amtN : amtN + feeN) : '0', " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 500,
+        fontSize: 15,
+        color: 'var(--cd-on-ink-soft)'
+      }
+    }, isReceive ? out.ccy : home)))), (isExchange || isSend || isCheque) && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 py-1",
       style: {
         color: 'var(--cd-on-ink-faint)'
@@ -35866,6 +36193,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-on-ink-soft)'
       }
     }, isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "tx-ticket-receives",
       className: "cd-tx-ticket-get",
       style: {
         fontWeight: 800,
@@ -35875,7 +36203,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: '#7fd1a3',
         lineHeight: 1.1
       }
-    }, phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, out.amt ? num(out.amt) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.receivesLabel : '—', " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 500,
+        fontSize: 15,
+        color: 'rgba(127,209,163,0.7)'
+      }
+    }, out.ccy)) : phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, out.amt ? num(out.amt) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -35892,7 +36226,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker"
-    }, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? `1 ${inCcy} = ${exchangeReady ? fx.rateLabel : '—'} ${out.ccy}` : isSend ? `1 ${home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange && exchangeShare || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
@@ -35915,7 +36249,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(profitCad, home), " \xB7 ", marginPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("div", {
+    }, isExchange && exchangeShare ? `${quoteApi.formatAmount(exchangeShare.profit, home)} ${home}` : fmt(profitCad, home), " \xB7 ", marginPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("div", {
       className: "px-3.5 py-3",
       style: {
         background: 'var(--cd-panel)',
@@ -35970,12 +36304,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, (isExchange || isSend) && /*#__PURE__*/React.createElement("button", {
       onClick: () => setPresent(true),
-      disabled: !(amtN > 0 && rateN > 0),
+      disabled: !(amtN > 0 && (isExchange ? exchangeReady : rateN > 0)),
       className: "w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 9,
-        color: amtN > 0 && rateN > 0 ? CD.ink : CD.faint
+        color: amtN > 0 && (isExchange ? exchangeReady : rateN > 0) ? CD.ink : CD.faint
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "smartphone",
@@ -35989,13 +36323,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.flag
       }
     }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "tx-frozen",
       className: "px-3 py-2 text-[11px]",
       style: {
         background: CD.greenSoft,
         borderRadius: 9,
         color: CD.green
       }
-    }, "Frozen quote \xB7 ", serverQuote.inputAmount, " ", serverQuote.from, " \u2192 ", serverQuote.outputAmount, " ", serverQuote.to, " \xB7 expires ", new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', {
+    }, "Frozen quote \xB7 ", quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount, " ", serverQuote.from, " \u2192 ", quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount, " ", serverQuote.to, " \xB7 expires ", new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'

@@ -10,10 +10,19 @@ The current Canadian pilot accepts an exchange only when CAD is exactly one
 leg. This is a pilot configuration, not a universal product rule; a future
 jurisdiction-pack migration will make home currency legal-entity specific.
 
-Direction semantics: `customer_buy_foreign` means CAD to foreign currency and
-uses the board's **We Sell** margin. `customer_sell_foreign` means foreign
-currency to CAD and uses **We Buy**. `customerRate` is always output units per
-input unit; `marketMid` remains CAD per unit of foreign currency.
+Direction semantics: `customer_buy_foreign` means home currency to foreign
+currency and uses the board's **We Sell** margin. `customer_sell_foreign`
+means foreign currency to home currency and uses **We Buy**. `customerRate`
+is always output units per input unit; `marketMid` remains home currency per
+unit of foreign currency.
+
+The output amount is `input × customerRate`, rounded half-up to the output
+currency's minor units (a yen to a whole yen, a dollar to a cent). The
+customer rate is not rounded before that multiply, and the published mid is
+not rounded to four places before the margin. `os-src/quote-terms.js` is
+that function. The New transaction sheet previews with it, and once a quote
+is frozen the sheet shows the frozen input, output, and rate rather than a
+second product. The rate stored on the quote is still 12 decimal places.
 
 Endpoints: `POST /api/quotes`, `GET /api/quotes/:quoteId`,
 `POST /api/quotes/:quoteId/cancel`, `POST /api/quotes/:quoteId/override`, and

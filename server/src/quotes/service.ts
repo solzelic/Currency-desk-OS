@@ -16,7 +16,7 @@ import {
   type LedgerActor,
 } from "../ledger/service.js";
 import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
-import { calculateQuoteTerms, type QuoteDirection } from "./terms.js";
+import { calculateQuoteTerms, minorUnits, roundOutput, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -540,15 +540,21 @@ export class QuoteService {
           : currency === home
             ? new Decimal(1)
             : mid;
+      const homePlaces = minorUnits(home);
+      if (homePlaces > 2)
+        throw new LedgerError(
+          "UNSUPPORTED_CURRENCY",
+          `${home} is written to ${homePlaces} decimal places, and this ledger's amounts hold two.`,
+        );
       const input = new Decimal(q.input_amount),
-        output = input.mul(rate).toDecimalPlaces(2),
+        output = roundOutput(input, rate, q.to_currency),
         inputCad = input
           .mul(sideMid(q.from_currency, q.from_mid))
-          .toDecimalPlaces(2),
+          .toDecimalPlaces(homePlaces),
         outputCad = output
           .mul(sideMid(q.to_currency, q.to_mid))
-          .toDecimalPlaces(2),
-        spread = inputCad.sub(outputCad).toDecimalPlaces(2);
+          .toDecimalPlaces(homePlaces),
+        spread = inputCad.sub(outputCad).toDecimalPlaces(homePlaces);
       if (spread.lt(0))
         throw new LedgerError(
           "OVERRIDE_LIMIT_EXCEEDED",

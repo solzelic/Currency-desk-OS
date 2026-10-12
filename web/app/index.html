@@ -73,6 +73,10 @@
 <script src="/web/vendor/react.production.min.js"></script>
 <script src="/web/vendor/react-dom.production.min.js"></script>
 
+<!-- decimal.js, then the quote function the sheet and the server share.
+     It has to run before the OS bundle: the counter prices with it. -->
+<script src="web/vendor/decimal.js"></script>
+
 <!-- live rate engine (reads the published / locked rate board) -->
 <script src="yorkfx-converter.js"></script>
 

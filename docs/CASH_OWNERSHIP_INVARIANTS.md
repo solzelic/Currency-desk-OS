@@ -35,7 +35,10 @@ the daily close overwrites the evidence that they did.
 - **The client never computes cash.** It may render a figure the server sent,
   convert it for display, and total it for presentation. It may not derive a
   holding from transactions, and it may not reconcile two sources — if it can
-  see two figures for the same money, one of them should not exist.
+  see two figures for the same money, one of them should not exist. A quote
+  preview on the counter is the quote function the server uses, not a second
+  book of what the drawer holds. Once the quote is frozen, the sheet shows
+  the frozen amounts.
 
 - **Every movement of money is a server call that returns the new state.** A
   movement that succeeded on the server and failed to reach the browser is a

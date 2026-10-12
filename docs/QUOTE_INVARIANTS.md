@@ -4,6 +4,9 @@
   and creator. A supplied out-of-scope workspace fails closed.
 - An active quote freezes input, output, rate, market mid, fee, spread, board
   publication, and snapshot lineage. Later board publications do not alter it.
+- The figure on Customer receives, on the ticket, and on the quote handed to
+  the customer is that frozen output. Before the quote exists, the preview
+  is the same function (`os-src/quote-terms.js`), not a second rounding.
 - Activated quote terms are immutable in PostgreSQL. Status may progress from
   active to expired, cancelled, or posted; posted and cancelled quotes cannot
   be posted.

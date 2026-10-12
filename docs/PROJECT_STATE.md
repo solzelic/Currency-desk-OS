@@ -72,6 +72,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Customer receives is the posted amount.** On the New transaction
+  sheet, Customer receives, the ticket, and the quote shown to the
+  customer are the quote the server will post, to the currency's minor
+  unit. Before the quote is frozen the preview is that same function
+  (`os-src/quote-terms.js`). A frozen quote is shown from the server's
+  amounts. Yen rounds to a whole yen.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -570,6 +577,17 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-11**, receive amount. The New transaction sheet was pricing
+Customer receives in the browser: the published mid was rounded to four
+decimal places, then a float spread was applied, and a sale used
+`1 / (mid × (1 + spread))` instead of `(1 / mid) × (1 − margin)`. On
+USD 3,500 at mid 1.36407 and a 1.5% margin the sheet said CAD 4,702.73
+and the ledger posted CAD 4,702.63. The sheet now uses the server's
+quote function for the preview and, once the quote is frozen, the
+server's input, output, and rate. The amount is rounded half-up to the
+output currency's minor units. The rate is not rounded before the
+multiply.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the
