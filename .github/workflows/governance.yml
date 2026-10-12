@@ -6,6 +6,8 @@
 # architecture-sensitive surfaces must do the same for the
 # architecture/repository docs. The check itself lives in
 # scripts/check-repository-governance.mjs so it can also run locally.
+# CI calls scripts/run-governance-check.mjs. That runs the diff on
+# pull_request and passes on push.
 name: Governance
 
 on:
