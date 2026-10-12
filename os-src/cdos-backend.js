@@ -456,8 +456,8 @@
          are optional; omitting them means "everything this till has ever
          posted", which is the only window that needs no timezone to be
          right. The sign-off sheet passes the window the till session
-         named. businessDayWindow() is a browser-local span for other
-         screens, and it is the wrong window for a close-out. */
+         named. businessDayWindow() uses that same zone's midnight for
+         other screens once the session has named it. */
       loadLedgerSummary: function (window) {
         var query = [];
         if (window && window.from) query.push("from=" + encodeURIComponent(window.from));
