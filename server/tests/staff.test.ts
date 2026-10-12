@@ -48,6 +48,26 @@ describe("staff roster access control", () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it("names a locked sign-in on the roster, and four failures is not a lock", async () => {
+    const costa = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, "m.costa")))[0];
+    expect(costa).toBeTruthy();
+    const bucket = `acct:${costa!.id}`;
+    await handle.db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, bucket));
+    await handle.db.insert(schema.signinFailures).values({ bucket, failures: 5, windowStartedAt: new Date() });
+    const mgr = await login("r.haddad", DEMO.password);
+    const res = await app.inject({ method: "GET", url: "/api/staff", cookies: cookieOf(mgr) });
+    expect(res.statusCode).toBe(200);
+    const staff = res.json().staff as { staffId: string; lockedUntil: string | null }[];
+    expect(staff.find((row) => row.staffId === "m.costa")?.lockedUntil).toMatch(/^\d{1,2}:\d{2} (AM|PM)$/);
+    for (const row of staff) {
+      if (row.staffId !== "m.costa") expect(row.lockedUntil).toBeNull();
+    }
+    await handle.db.update(schema.signinFailures).set({ failures: 4 }).where(eq(schema.signinFailures.bucket, bucket));
+    const again = await app.inject({ method: "GET", url: "/api/staff", cookies: cookieOf(mgr) });
+    expect((again.json().staff as { staffId: string; lockedUntil: string | null }[]).find((row) => row.staffId === "m.costa")?.lockedUntil).toBeNull();
+    await handle.db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, bucket));
+  });
+
   it("lists the roster for a manager, without password material", async () => {
     const mgr = await login("r.haddad", DEMO.password);
     const res = await app.inject({ method: "GET", url: "/api/staff", cookies: cookieOf(mgr) });
