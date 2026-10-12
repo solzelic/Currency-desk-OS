@@ -1859,7 +1859,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: var(--f-display);
     font-size: 12px;
     font-weight: 600;
-    color: var(--gray-500);
+    color: var(--color-text-muted, #6B6760);
     line-height: 16px;
   }
   /* One line. The desk name (first segment) is cut first. The till
@@ -1930,7 +1930,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 44px;
     border-radius: 50%;
     background: #161513;
-    color: var(--gray-0);
+    color: #fff;
     font-size: 13px;
     font-weight: 600;
   }
@@ -2024,8 +2024,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: var(--phone-dock-h);
     box-sizing: border-box;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
+    background: #fff;
+    border-top: 1px solid #E2DFD8;
     box-shadow: none;
   }
   #phonebar {

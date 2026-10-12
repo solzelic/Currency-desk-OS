@@ -608,7 +608,9 @@ date on a held row. Sample cheques are labelled and only appear when
 the desk has no ledger. A cashier is not offered Reverse. The detail
 sheet is portaled onto the body. In dark mode its title and
 values use the phone ink `#F6F3EC` on `#14130F`, above 4.5:1. In the
-light theme those figures are `--gray-900` on the light surface. A history time on the phone is the branch
+light theme those figures are `--gray-900` on the light surface. The
+bottom bar stays white, and the till line uses the muted token, so
+both clear 4.5:1 in the dark theme. A history time on the phone is the branch
 zone, 12-hour, with a lowercase suffix. The cash-flow sheet is the next slice.
 
 **2026-10-12**, cheque fee. The server computes the fee from the desk's
