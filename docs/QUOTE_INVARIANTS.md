@@ -26,8 +26,14 @@
 - The sheet reads quote errors from one table in `os-src/quote-terms.js`.
   A message that table does not name is `Couldn't get a price. Reload and
   try again.`, never the server's own sentence.
-- The current fee contract is separate CAD tender. It is explicit in receipt,
-  till movements, and the CAD functional-currency journal.
+- The fee is home-currency tender, recorded as its own journal line
+  (`till` debit and `revenue:fee`). The drawer movement and the receipt
+  are the net cash from `cashHands` in `os-src/quote-terms.js`: the
+  customer hands over input plus the fee, or receives output less the
+  fee. The receipt prints that same `You give` / `You receive` and the
+  service-fee line. A till that cannot pay the currency answers
+  `INSUFFICIENT_TILL_LIQUIDITY` with `The till doesn't have enough USD.
+  Ask a manager to move cash in.`
 - A quote-originated transaction retains `quote_id`, `market_mid`, rate-board
   publication and market-snapshot IDs, rate source type, and any override ID.
   The posted transaction is append-only, so later board or quote changes cannot

@@ -683,6 +683,19 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       fromL = 'We received'; toL = 'We paid out';
       toS = row.side === 'buy' ? `Bought ${row.inCcy}` : row.side === 'sell' ? `Sold ${row.outCcy}` : 'Exchange';
       center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      const terms = window.CDOS && window.CDOS.quoteTerms;
+      const home = (window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().homeCurrency) || 'CAD';
+      if (terms && row.inAmt != null && row.outAmt != null && row.inCcy && row.outCcy && row.inCcy !== row.outCcy) {
+        try {
+          const hands = terms.cashHands(String(row.inAmt), String(row.outAmt), String(fee || 0), row.inCcy, row.outCcy, home);
+          fromV = hands.giveAmount;
+          fromC = hands.giveCurrency;
+          fromS = hands.giveNote || fromS;
+          toV = hands.receiveAmount;
+          toC = hands.receiveCurrency;
+          toS = hands.receiveNote || toS;
+        } catch (e) {}
+      }
     } else if (t === 'Remittance — Send') {
       fromL = 'Sender pays'; toL = 'Beneficiary gets';
       toS = ben.name + (ben.place ? ` · ${ben.place}` : '');

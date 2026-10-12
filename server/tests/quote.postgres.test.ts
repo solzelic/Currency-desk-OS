@@ -522,14 +522,14 @@ postgres("quote service against real PostgreSQL", () => {
       home_currency: "CAD",
     });
     expect(tx.rows[0].compliance_captured_at).toBeInstanceOf(Date);
-    expect(
-      (
-        await pool.query(
-          "SELECT count(*) FROM ledger_till_movements WHERE transaction_id=$1",
-          [first.json().transactionId],
-        )
-      ).rows[0].count,
-    ).toBe("3");
+    const moves = await pool.query(
+      "SELECT currency,direction,amount FROM ledger_till_movements WHERE transaction_id=$1 ORDER BY currency",
+      [first.json().transactionId],
+    );
+    expect(moves.rows).toEqual([
+      { currency: "CAD", direction: "in", amount: "1004.00" },
+      { currency: "USD", direction: "out", amount: made.outputAmount },
+    ]);
     expect(first.json().receipt.lines.join(" ")).toContain(made.outputAmount);
   });
   it("atomically deduplicates simultaneous quote posts", async () => {
@@ -540,7 +540,7 @@ postgres("quote service against real PostgreSQL", () => {
     expect([201, 409]).toContain(responses[1]!.statusCode);
     expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("1");
     expect((await pool.query("SELECT count(*) FROM ledger_journal_entries")).rows[0].count).toBe("5");
-    expect((await pool.query("SELECT count(*) FROM ledger_till_movements")).rows[0].count).toBe("3");
+    expect((await pool.query("SELECT count(*) FROM ledger_till_movements")).rows[0].count).toBe("2");
     expect((await pool.query("SELECT count(*) FROM ledger_audit_events")).rows[0].count).toBe("1");
     const quote = await pool.query("SELECT status,posted_transaction_id FROM quotes WHERE quote_id=$1", [made.quoteId]);
     expect(quote.rows[0]).toMatchObject({ status: "posted" });

@@ -73,9 +73,9 @@ scoped quote, Decimal-compares every financial and lineage term, creates the
 transaction, journal, till movements, audit event, receipt response, and quote
 status transition atomically.
 
-For this Canadian pilot, `feeCad` is separate CAD tender, not part of the
-exchange input. The journal records it as a dedicated `till:CAD` debit and
-`revenue:fee` credit. Quote-originated transactions permanently retain quote
+`feeCad` is home-currency tender, not part of the exchange input. The
+journal records it as a dedicated till debit and `revenue:fee` credit.
+The till movement and the receipt use the net from `cashHands`. Quote-originated transactions permanently retain quote
 ID, market mid, publication ID, snapshot ID, source type, and optional override
 ID; later board publications cannot alter that history.
 

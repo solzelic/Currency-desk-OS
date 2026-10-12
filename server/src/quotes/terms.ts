@@ -56,6 +56,22 @@ export function minorUnits(code: string): number {
 /** The Customer receives figure on the sheet, as a money string.
     Output less the fee when that fee comes out of a home payout,
     otherwise the exchange output. */
+/** Net cash the customer hands over, the till movement, and the receipt
+    lines. The journal still records the exchange and the fee apart. */
+export function cashHands(
+  inputAmount: string,
+  outputAmount: string,
+  feeCad: string,
+  from: string,
+  to: string,
+  home = "CAD",
+) {
+  return quoteTerms.cashHands(inputAmount, outputAmount, feeCad, from, to, home) as {
+    receiptCash: string[];
+    tillMoves: { currency: string; direction: "in" | "out"; amount: string }[];
+  };
+}
+
 export function amountShown(
   quote: { inputAmount: string; outputAmount: string; feeCad: string; from: string; to: string },
   home = "CAD",

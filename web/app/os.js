@@ -4653,7 +4653,13 @@
       style: {
         borderTop: `1px dashed ${CD.line}`
       }
-    }), /*#__PURE__*/React.createElement(Line, {
+    }), row.serverReceipt && row.serverReceipt.lines ? row.serverReceipt.lines.map((line, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      className: "text-[11px] leading-snug",
+      style: {
+        color: CD.ink
+      }
+    }, line)) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Line, {
       k: "Pay-in",
       v: `${num(row.inAmt)} ${row.inCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
@@ -4665,7 +4671,7 @@
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Fee",
       v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
-    }), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
+    })), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
       k: "Pricing",
       v: row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross'
     }), row.quoteRef && /*#__PURE__*/React.createElement(Line, {
@@ -28770,6 +28776,19 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       toL = 'We paid out';
       toS = row.side === 'buy' ? `Bought ${row.inCcy}` : row.side === 'sell' ? `Sold ${row.outCcy}` : 'Exchange';
       center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      const terms = window.CDOS && window.CDOS.quoteTerms;
+      const home = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().homeCurrency || 'CAD';
+      if (terms && row.inAmt != null && row.outAmt != null && row.inCcy && row.outCcy && row.inCcy !== row.outCcy) {
+        try {
+          const hands = terms.cashHands(String(row.inAmt), String(row.outAmt), String(fee || 0), row.inCcy, row.outCcy, home);
+          fromV = hands.giveAmount;
+          fromC = hands.giveCurrency;
+          fromS = hands.giveNote || fromS;
+          toV = hands.receiveAmount;
+          toC = hands.receiveCurrency;
+          toS = hands.receiveNote || toS;
+        } catch (e) {}
+      }
     } else if (t === 'Remittance — Send') {
       fromL = 'Sender pays';
       toL = 'Beneficiary gets';
@@ -32576,20 +32595,43 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const row = typeof BY !== 'undefined' && BY[code] || (typeof CUR !== 'undefined' && CUR.find ? CUR.find(c => c.code === code) : null);
     return row && row.name ? row.name : '';
   }
-  /* One extra keystroke past this currency's places is refused.
-     A paste, or any value that is not a single added character,
-     still arrives so the quote can say how many places it uses. */
+  /* Digits past this currency's places never stay in the field.
+     A paste of 12.345 becomes 12.34, and the sheet says how many
+     places the currency uses. */
   function clampTypedAmount(previous, next, currency) {
     const api = window.CDOS && window.CDOS.quoteTerms;
     const places = api && typeof api.minorUnits === 'function' ? api.minorUnits(currency) : 2;
     const prev = String(previous == null ? '' : previous);
     const incoming = String(next == null ? '' : next);
-    if (incoming.length !== prev.length + 1) return incoming;
+    if (incoming === '') return {
+      value: '',
+      refused: ''
+    };
+    if (!/^\d*\.?\d*$/.test(incoming)) return {
+      value: prev,
+      refused: ''
+    };
     const dot = incoming.indexOf('.');
-    const frac = dot < 0 ? '' : incoming.slice(dot + 1);
-    if (places === 0 && dot >= 0) return prev;
-    if (frac.length > places) return prev;
-    return incoming;
+    const whole = dot < 0 ? incoming : incoming.slice(0, dot);
+    const frac = dot < 0 ? null : incoming.slice(dot + 1);
+    const sentence = raw => (api && typeof api.overScaleMessage === 'function' ? api.overScaleMessage(currency, raw) : '') || '';
+    if (places === 0 && dot >= 0) {
+      return {
+        value: whole,
+        refused: sentence(whole === '' ? '0.' + (frac || '0') : incoming)
+      };
+    }
+    if (frac != null && frac.length > places) {
+      const kept = whole + '.' + frac.slice(0, places);
+      return {
+        value: kept,
+        refused: sentence(incoming)
+      };
+    }
+    return {
+      value: incoming,
+      refused: ''
+    };
   }
   // mirror the staff-published rate-board order so this picker matches the board
   // (reorder currencies on the Rate Board and they reorder here too).
@@ -33171,7 +33213,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     accent,
     autoFocus,
     mark,
-    testId
+    testId,
+    onRefuse
   }) {
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-money flex items-stretch",
@@ -33197,11 +33240,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       value: value,
       onChange: e => {
         const next = clampTypedAmount(value, e.target.value, ccy);
-        if (next === value) {
-          e.target.value = value;
-          return;
-        }
-        onChange(next);
+        e.target.value = next.value;
+        if (onRefuse) onRefuse(next.refused);
+        if (next.value !== value) onChange(next.value);
       },
       inputMode: "decimal",
       autoFocus: autoFocus,
@@ -33667,7 +33708,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.02
       }
-    }, q.get))), /*#__PURE__*/React.createElement("div", {
+    }, q.get), q.receiveNote ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8,
+        fontSize: 20,
+        lineHeight: 1.3,
+        color: 'var(--cd-on-ink-soft)',
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }, q.receiveNote) : null)), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-10 py-6",
       style: {
         borderTop: '1px solid var(--cd-on-ink-faint)',
@@ -33849,6 +33898,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       setOutCcy(seeded);
     }, []);
     const [inAmt, setInAmt] = useState('');
+    const [amountNotice, setAmountNotice] = useState('');
     const [override, setOverride] = useState(false);
     const [manualRate, setManualRate] = useState('');
     const [lock, setLock] = useState(null);
@@ -34061,13 +34111,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       receiveAmount: frozenHands.receiveAmount,
       receiveCurrency: frozenHands.receiveCurrency,
       receiveDetail: frozenHands.receiveDetail,
-      receiveWire: frozenHands.receiveWire
+      receiveWire: frozenHands.receiveWire,
+      receiveNote: frozenHands.receiveNote
     } : exchangeQuote || {
       state: 'bad',
       message: sheetWords('Quote pricing did not load.')
     };
     const rateN = isExchange ? 0 : pricing.rate;
-    const exchangeReady = !!(fx && fx.state === 'ok');
+    const exchangeReady = !!(fx && fx.state === 'ok') && !amountNotice;
     useEffect(() => {
       setServerQuote(null);
       setServerError('');
@@ -34321,7 +34372,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       sub: marginAck && marginReason.trim() ? null : 'Acknowledge & give a reason below'
     });
     const hardReqs = reqs.filter(r => !r.soft);
-    const quoteFailed = !!(isExchange && fx && fx.state === 'bad');
+    const quoteFailed = !!(isExchange && (fx && fx.state === 'bad' || amountNotice));
     const allGreen = hardReqs.every(r => r.ok) && !quoteFailed;
     const canSave = amtN > 0 && allGreen && (!isExchange || exchangeReady);
     const remaining = hardReqs.filter(r => !r.ok).length;
@@ -34940,11 +34991,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       title: 'Your quote',
       tag: fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `Exchange ${inCcy} for ${outCcy}`,
       giveLbl: 'You give',
-      give: exchangeReady && fx.giveNote ? `${fx.giveAmount} ${fx.giveCurrency}` : exchangeReady && fx.give ? fx.give : `${num(amtN)} ${inCcy}`,
+      give: exchangeReady && fx.giveAmount ? `${fx.giveAmount} ${fx.giveCurrency}` : `${num(amtN)} ${inCcy}`,
       giveNote: exchangeReady && fx.giveNote ? fx.giveNote : '',
       rateLine: `1 ${inCcy} = ${fourRate || '—'} ${outCcy}`,
       getLbl: 'You receive',
-      get: exchangeReady && fx.receive ? fx.receive : `— ${outCcy}`,
+      get: exchangeReady && fx.receiveAmount ? `${fx.receiveAmount} ${fx.receiveCurrency}` : `— ${outCcy}`,
+      receiveNote: exchangeReady && fx.receiveNote ? fx.receiveNote : '',
       foot: fx && (fx.giveDetail || fx.receiveDetail) ? lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now' : feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
@@ -35192,6 +35244,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement(Money, {
       value: inAmt,
       onChange: setInAmt,
+      onRefuse: setAmountNotice,
       ccy: inCcy,
       onCcy: v => {
         setInCcy(v);
@@ -35199,7 +35252,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       },
       big: true,
       autoFocus: true
-    })), /*#__PURE__*/React.createElement("div", {
+    }), amountNotice && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-testid": "tx-amount-alert",
+      className: "text-[11px] mt-2",
+      style: {
+        color: CD.flag
+      }
+    }, amountNotice)), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-rate-line flex items-center justify-center gap-2 py-2"
     }, /*#__PURE__*/React.createElement("span", {
       "data-side": fx && fx.side || '',
@@ -35241,7 +35301,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       accent: CD.green,
       mark: "cd-tx-receive",
       big: true
-    }), fx && fx.state === 'bad' && /*#__PURE__*/React.createElement("div", {
+    }), fx && fx.state === 'bad' && !amountNotice && /*#__PURE__*/React.createElement("div", {
       role: "alert",
       className: "text-[11px] mt-2",
       style: {
@@ -35294,11 +35354,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       value: fee,
       onChange: e => {
         const next = clampTypedAmount(fee, e.target.value, home);
-        if (next === fee) {
-          e.target.value = fee;
-          return;
-        }
-        setFee(next);
+        e.target.value = next.value;
+        if (next.value !== fee) setFee(next.value);
       },
       inputMode: "decimal",
       placeholder: "0.00",

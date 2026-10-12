@@ -141,8 +141,9 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
 
     const tellerReceipt = await read("m.costa", `/api/ledger/transactions/${transactionId}/receipt`);
     const ownerReceipt = await read("j.masri", `/api/ledger/transactions/${transactionId}/receipt`);
-    expect(ownerReceipt.lines.join("\n")).toContain("Fee paid separately");
-    expect(tellerReceipt.lines.join("\n")).toContain("Fee paid separately: CAD 4.00");
+    expect(ownerReceipt.lines.join("\n")).toContain("4.00 CAD service fee");
+    expect(tellerReceipt.lines.join("\n")).toContain("4.00 CAD service fee");
+    expect(tellerReceipt.lines.join("\n")).toContain("You give");
 
     const tellerPosition = await read("m.costa", "/api/ledger/position");
     const ownerPosition = await read("j.masri", "/api/ledger/position");
@@ -209,7 +210,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     expect(tellerPost.statusCode, tellerPost.body).toBe(201);
     expect(tellerPost.json()).toMatchObject({ feeCad: "4.00", quoteId: tellerMade.quoteId });
     lacks(tellerPost.json(), ["spreadCad", "marketMid", "fromMid", "toMid"]);
-    expect(tellerPost.json().receipt.lines.join("\n")).toContain("Fee paid separately: CAD 4.00");
+    expect(tellerPost.json().receipt.lines.join("\n")).toContain("4.00 CAD service fee");
     const tellerReplay = await app.inject({
       method: "POST", url: `/api/quotes/${tellerMade.quoteId}/post`, cookies: teller,
       payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },

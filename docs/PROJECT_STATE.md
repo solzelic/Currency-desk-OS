@@ -85,14 +85,21 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   load. Reload the page.`
   A fee is in the teller headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
   and buying shows `132.86 CAD (134.36 less 1.50 fee)`. That net is the
-  cash the till moves. On the customer screen the same sale reads
-  `101.50 CAD`, with `100.00 CAD + 1.50 CAD service fee` in 20px under
-  it, and the footer stays `Rate as quoted now`. The customer screen
-  and the phone rate field show the rate to 4 decimals (`1 CAD = 0.7221 USD`).
-  The multiply still uses the full rate, and the posted amount does not
-  change. An amount with too many decimals reads `CAD uses 2 decimals. Try 12.35.`
-  A yen fraction reads `JPY uses 0 decimals. Try 1001.` Typing one more
-  place than the currency has is blocked. The currency picker reads
+  cash the till moves, in one movement. The journal still keeps the
+  exchange and the fee as separate lines. The receipt prints the same
+  numbers as the customer screen: `You give 105.00 CAD` and
+  `100.00 CAD + 5.00 CAD service fee`, or `You receive 129.36 CAD` and
+  `134.36 CAD less 5.00 CAD service fee`. A till that cannot pay the
+  currency says `The till doesn't have enough USD. Ask a manager to move cash in.`
+  On the customer screen the sale reads `101.50 CAD`, with
+  `100.00 CAD + 1.50 CAD service fee` in 20px under it, and the footer
+  stays `Rate as quoted now`. The customer screen and the phone rate
+  field show the rate to 4 decimals (`1 CAD = 0.7221 USD`).
+  The multiply still uses the full rate, and the exchange amount stored
+  on the transaction does not change. An amount with too many decimals
+  is cut back to the currency's places, so `12.345` stays `12.34`, and
+  the sheet says `CAD uses 2 decimals. Try 12.35.` under Customer pays in.
+  A yen fraction reads `JPY uses 0 decimals. Try 1001.` The currency picker reads
   names from the shared catalog (`Swiss Franc`, `Australian Dollar`,
   `Japanese Yen`). Every currency whose scale is three minor
   units (JOD, OMR, TND, IQD, LYD, KWD, BHD) stays out of the picker.

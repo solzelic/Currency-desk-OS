@@ -238,6 +238,11 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   const posted = await postedRes.json();
   expect(postedRes.status(), JSON.stringify(posted)).toBe(201);
   expect(posted.outputAmount, "posted output").toBe("4702.63");
+  const buyLines = posted.receipt.lines.join("\n");
+  expect(buyLines, "receipt matches the screen").toContain("You give 3,500.00 USD");
+  expect(buyLines).toContain("You receive 4,702.63 CAD");
+  expect(buyLines).not.toContain("Fee paid separately");
+  expect(buyLines).not.toContain("Paid exchange");
   const listed = await page.evaluate(async () => {
     const res = await fetch("/api/ledger/transactions?limit=20");
     return res.json();
@@ -266,6 +271,10 @@ test("desktop Customer receives is the posted amount for USD 3,500", async ({ pa
     const sellPosted = await sellRes.json();
     expect(sellRes.status(), JSON.stringify(sellPosted)).toBe(201);
     expect(sellPosted.outputAmount).toBe("2527.36");
+    const sellLines = sellPosted.receipt.lines.join("\n");
+    expect(sellLines).toContain("You give 3,500.00 CAD");
+    expect(sellLines).toContain("You receive 2,527.36 USD");
+    expect(sellLines).not.toContain("Fee paid separately");
   } finally {
     await restoreBoard(request);
   }
@@ -394,7 +403,7 @@ async function ensureYenTill(request: APIRequestContext): Promise<string> {
 /* The desk remembers which drawer this teller is standing at, and the
    quote posts to that drawer. Name it before the reload so the sheet
    and the book are the yen till, not the shared one. */
-async function standAtYenTill(page: Page, workspaceId: string): Promise<void> {
+async function standAtYenTill(page: Page, workspaceId: string, tillId = YEN_TILL): Promise<void> {
   await page.addInitScript((id) => {
     localStorage.setItem("cdesk.ledger.till.m.costa", id);
   }, workspaceId);
@@ -412,10 +421,10 @@ async function standAtYenTill(page: Page, workspaceId: string): Promise<void> {
     window.CDOS.Backend.setWorkspace(resolved.workspaceId);
     return resolved.tillId;
   }, workspaceId);
-  expect(stood).toBe(YEN_TILL);
+  expect(stood).toBe(tillId);
 }
 
-async function postFrozen(page: Page, output: string, fee?: string): Promise<void> {
+async function postFrozen(page: Page, output: string, fee?: string) {
   const postedWait = page.waitForResponse((res) => res.url().includes("/api/quotes/") && res.url().endsWith("/post") && res.request().method() === "POST");
   await page.getByRole("button", { name: "Post frozen quote" }).click();
   const postedRes = await postedWait;
@@ -431,6 +440,7 @@ async function postFrozen(page: Page, output: string, fee?: string): Promise<voi
   expect(row, "ledger row").toBeTruthy();
   expect(row.outputAmount).toBe(output);
   if (fee) expect(row.feeCad).toBe(fee);
+  return posted;
 }
 
 test("whole yen Customer receives is the posted amount", async ({ page, request }) => {
@@ -505,7 +515,13 @@ test("a we-sell fee is cash the till takes, and the headline says so", async ({ 
     await presented.getByRole("button", { name: "Back to desk" }).click();
     const before = await sharedBalances(request);
     const headline = (await page.getByTestId("tx-ticket-pays").innerText()).replace(/\s+/g, " ");
-    await postFrozen(page, "72.21", "1.50");
+    const posted = await postFrozen(page, "72.21", "1.50");
+    const lines = posted.receipt.lines.join("\n");
+    expect(lines).toContain("You give 101.50 CAD");
+    expect(lines).toContain("100.00 CAD + 1.50 CAD service fee");
+    expect(lines).toContain("You receive 72.21 USD");
+    expect(lines).not.toContain("Fee paid separately");
+    expect(lines).not.toContain("Paid exchange");
     const after = await sharedBalances(request);
     expect(centsOf(after.CAD) - centsOf(before.CAD), "till CAD movement").toBe(leadingCents(headline));
     expect(centsOf(after.USD) - centsOf(before.USD), "till USD movement").toBe(-7221);
@@ -533,11 +549,19 @@ test("a we-buy fee is cash the till pays out, and the headline says so", async (
     await page.getByRole("button", { name: "Show customer the quote" }).click();
     const presented = page.locator("div.fixed.inset-0").last();
     await expect(presented).toContainText("You receive");
-    await expect(presented).toContainText("132.86 CAD (134.36 less 1.50 fee)");
+    await expect(presented).toContainText("132.86 CAD");
+    await expect(presented).toContainText("134.36 CAD less 1.50 CAD service fee");
+    await expect(presented).not.toContainText("(134.36 less 1.50 fee)");
     await presented.getByRole("button", { name: "Back to desk" }).click();
     const before = await sharedBalances(request);
     const headline = (await page.getByTestId("tx-ticket-receives").innerText()).replace(/\s+/g, " ");
-    await postFrozen(page, "134.36", "1.50");
+    const posted = await postFrozen(page, "134.36", "1.50");
+    const lines = posted.receipt.lines.join("\n");
+    expect(lines).toContain("You give 100.00 USD");
+    expect(lines).toContain("You receive 132.86 CAD");
+    expect(lines).toContain("134.36 CAD less 1.50 CAD service fee");
+    expect(lines).not.toContain("Fee paid separately");
+    expect(lines).not.toContain("Received: 134.36");
     const after = await sharedBalances(request);
     expect(centsOf(before.CAD) - centsOf(after.CAD), "till CAD movement").toBe(leadingCents(headline));
     expect(centsOf(after.USD) - centsOf(before.USD), "till USD movement").toBe(10000);
@@ -661,10 +685,10 @@ test("the picker hides three-decimal currencies and a yen fraction is not READY"
     await expect(trigger).toContainText("JPY");
     await page.locator(".cd-tx-customer input").fill("Amina Diallo");
     await page.locator(".cd-money input").first().fill("1000.5");
+    await expect(page.locator(".cd-money input").first()).toHaveValue("1000");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
-    await expect(page.getByText("JPY uses 0 decimals. Try 1001.")).toBeVisible();
-    await expect(page.getByTestId("tx-checklist")).toHaveText("NOT PRICED");
+    await expect(page.locator('[data-req-field="amt"]').getByRole("alert")).toHaveText("JPY uses 0 decimals. Try 1001.");
     await expect(page.getByTestId("tx-checklist")).not.toHaveText(/READY/);
     await expect(page.locator(".cd-tx")).not.toContainText("invalid money");
     await chooseCurrency(page, 0, "EUR");
@@ -737,6 +761,108 @@ test("the sheet does not show a raw server error", async ({ page, request }) => 
   }
 });
 
+test("a short till names the currency it cannot pay", async ({ page, request }) => {
+  const tillId = "till-short-usd";
+  try {
+    await prepareDesk(page, 1280);
+    await asManager(request);
+    const created = await request.post("/api/desk/branches/br-yorkville/tills", { data: { tillId } });
+    const made = await created.json();
+    const workspaceId = made.till?.workspaceId as string | undefined;
+    expect(created.ok(), JSON.stringify(made)).toBeTruthy();
+    expect(workspaceId).toBeTruthy();
+    const opened = await request.post("/api/ledger/till-sessions/open", {
+      headers: { "x-workspace-id": workspaceId! },
+      data: {},
+    });
+    expect([201, 409], await opened.text()).toContain(opened.status());
+    const funded = await request.post("/api/ledger/till-movements", {
+      headers: { "x-workspace-id": workspaceId! },
+      data: {
+        idempotencyKey: "short-usd-cad",
+        direction: "in",
+        currency: "CAD",
+        amount: "500.00",
+        counterpartyType: "other",
+        counterpartyRef: "short till",
+        reason: "Fund the short till",
+      },
+    });
+    expect([201, 409], await funded.text()).toContain(funded.status());
+    const dollars = await request.post("/api/ledger/till-movements", {
+      headers: { "x-workspace-id": workspaceId! },
+      data: {
+        idempotencyKey: "short-usd-ten",
+        direction: "in",
+        currency: "USD",
+        amount: "10.00",
+        counterpartyType: "other",
+        counterpartyRef: "short till",
+        reason: "Leave ten dollars so a sale is refused",
+      },
+    });
+    expect([201, 409], await dollars.text()).toContain(dollars.status());
+    await standAtYenTill(page, workspaceId!, tillId);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().fill("100");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toBeVisible();
+    await page.getByRole("button", { name: "Post frozen quote" }).click();
+    const alert = page.getByRole("alert").last();
+    await expect(alert).toHaveText("The till doesn't have enough USD. Ask a manager to move cash in.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Reload and try again");
+    await expect(page.locator(".cd-tx")).not.toContainText("Till movement rejected.");
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
+test("yen with a fee matches the screen, the receipt and the drawer", async ({ page, request }) => {
+  try {
+    await prepareDesk(page, 1280);
+    const yenWorkspace = await ensureYenTill(request);
+    await standAtYenTill(page, yenWorkspace);
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem("yorkfx_rates_v1");
+      if (!raw) return false;
+      const board = JSON.parse(raw);
+      const mid = board.rows && board.rows.JPY && board.rows.JPY.mid;
+      return typeof mid === "number" && Math.abs(mid - 0.00909918) < 1e-12;
+    });
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await chooseCurrency(page, 1, "JPY");
+    await page.locator(".cd-money input").first().fill("100");
+    await page.locator(".cd-tx-fee").fill("5");
+    await expect(page.getByTestId("tx-ticket-pays")).toContainText("105.00 CAD (100.00 + 5.00 fee)");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    const shown = (await page.getByTestId("tx-receives").innerText()).trim();
+    const before = await request.get("/api/ledger/till-balances", { headers: { "x-workspace-id": yenWorkspace } });
+    const prior = (await before.json()).balances;
+    const postedWait = page.waitForResponse((res) => res.url().includes("/api/quotes/") && res.url().endsWith("/post") && res.request().method() === "POST");
+    await page.getByRole("button", { name: "Post frozen quote" }).click();
+    const postedRes = await postedWait;
+    const posted = await postedRes.json();
+    expect(postedRes.status(), JSON.stringify(posted)).toBe(201);
+    const lines = posted.receipt.lines.join("\n");
+    expect(lines).toContain("You give 105.00 CAD");
+    expect(lines).toContain("100.00 CAD + 5.00 CAD service fee");
+    expect(lines).toContain(`You receive ${shown} JPY`);
+    expect(lines).not.toContain("Fee paid separately");
+    const after = await request.get("/api/ledger/till-balances", { headers: { "x-workspace-id": yenWorkspace } });
+    const next = (await after.json()).balances;
+    expect(centsOf(next.CAD) - centsOf(prior.CAD)).toBe(10500);
+    expect(Number(String(prior.JPY).replace(/,/g, "")) - Number(String(next.JPY).replace(/,/g, ""))).toBe(Number(shown.replace(/,/g, "")));
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
 test("a malformed amount does not show invalid money", async ({ page, request }) => {
   try {
     await prepareDesk(page, 1280);
@@ -746,8 +872,9 @@ test("a malformed amount does not show invalid money", async ({ page, request })
     await amount.press("5");
     await expect(amount).toHaveValue("12.34");
     await amount.fill("");
-    await amount.fill("12.345");
-    const alert = page.locator(".cd-tx").getByRole("alert");
+    await amount.pressSequentially("12.345");
+    await expect(amount).toHaveValue("12.34");
+    const alert = page.locator('[data-req-field="amt"]').getByRole("alert");
     await expect(alert).toHaveText("CAD uses 2 decimals. Try 12.35.");
     expect("CAD uses 2 decimals. Try 12.35.").not.toMatch(/[-\u2013\u2014]/);
     await expect(page.locator(".cd-tx")).not.toContainText("invalid money");

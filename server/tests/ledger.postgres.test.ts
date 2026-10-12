@@ -81,7 +81,7 @@ postgres("real PostgreSQL ledger posting", () => {
     expect(String(stamped.rows[0].home_currency).trim()).toBe("CAD");
     expect((await pool.query("SELECT * FROM ledger_transactions")).rowCount).toBe(1);
     expect((await pool.query("SELECT * FROM ledger_journal_entries WHERE transaction_id=$1", [posted.transactionId])).rowCount).toBe(5);
-    expect((await pool.query("SELECT * FROM ledger_till_movements WHERE transaction_id=$1", [posted.transactionId])).rowCount).toBe(3);
+    expect((await pool.query("SELECT * FROM ledger_till_movements WHERE transaction_id=$1", [posted.transactionId])).rowCount).toBe(2);
     expect((await pool.query("SELECT * FROM ledger_audit_events WHERE target_id=$1", [posted.transactionId])).rowCount).toBe(1);
     const entries = await pool.query("SELECT account_code,side,amount_cad FROM ledger_journal_entries WHERE transaction_id=$1", [posted.transactionId]);
     expect(entries.rows).toContainEqual({ account_code: "till:CAD", side: "debit", amount_cad: "4.00" });
@@ -123,7 +123,7 @@ postgres("real PostgreSQL ledger posting", () => {
     const posted = await service.post(teller, request);
     const reversed = await service.reverse(supervisor, posted.transactionId, "reverse-1", "Correction");
     expect((await pool.query("SELECT * FROM ledger_reversal_entries")).rowCount).toBe(5);
-    expect((await pool.query("SELECT * FROM ledger_till_movements WHERE reversal_id=$1 AND movement_kind='reversal'", [reversed.reversalId])).rowCount).toBe(3);
+    expect((await pool.query("SELECT * FROM ledger_till_movements WHERE reversal_id=$1 AND movement_kind='reversal'", [reversed.reversalId])).rowCount).toBe(2);
     expect((await service.reverse(supervisor, posted.transactionId, "reverse-1", "Correction")).reversalId).toBe(reversed.reversalId);
     await expect(service.reverse(supervisor, posted.transactionId, "reverse-2", "Again")).rejects.toMatchObject({ code: "REVERSAL_ALREADY_EXISTS" });
   });

@@ -20,6 +20,43 @@ describe("quote terms",()=>{
     expect(cashHands("100.00","134.36","1.50","USD","CAD","CAD").receiveWire).toBe("132.86");
     expect(cashHands("3500.00","4702.63","0","USD","CAD","CAD").receive).toBe("4,702.63 CAD");
     expect(cashHands("3500.00","4702.63","0","USD","CAD","CAD").receiveWire).toBe("4702.63");
+    const sell = cashHands("100.00","72.21","5.00","CAD","USD","CAD");
+    expect(sell.giveAmount).toBe("105.00");
+    expect(sell.giveNote).toBe("100.00 CAD + 5.00 CAD service fee");
+    expect(sell.tillMoves).toEqual([
+      { currency: "CAD", direction: "in", amount: "105.00" },
+      { currency: "USD", direction: "out", amount: "72.21" },
+    ]);
+    expect(sell.receiptCash).toEqual([
+      "You give 105.00 CAD",
+      "100.00 CAD + 5.00 CAD service fee",
+      "You receive 72.21 USD",
+    ]);
+    const buy = cashHands("100.00","134.36","5.00","USD","CAD","CAD");
+    expect(buy.receiveAmount).toBe("129.36");
+    expect(buy.receiveNote).toBe("134.36 CAD less 5.00 CAD service fee");
+    expect(buy.tillMoves).toEqual([
+      { currency: "USD", direction: "in", amount: "100.00" },
+      { currency: "CAD", direction: "out", amount: "129.36" },
+    ]);
+    expect(buy.receiptCash).toEqual([
+      "You give 100.00 USD",
+      "You receive 129.36 CAD",
+      "134.36 CAD less 5.00 CAD service fee",
+    ]);
+    const yen = cashHands("1000","108252","5.00","CAD","JPY","CAD");
+    expect(yen.giveAmount).toBe("1,005.00");
+    expect(yen.receiveAmount).toBe("108,252");
+    expect(yen.tillMoves).toEqual([
+      { currency: "CAD", direction: "in", amount: "1005.00" },
+      { currency: "JPY", direction: "out", amount: "108252.00" },
+    ]);
+    const plain = cashHands("100.00","72.21","0","CAD","USD","CAD");
+    expect(plain.receiptCash).toEqual(["You give 100.00 CAD", "You receive 72.21 USD"]);
+    expect(plain.tillMoves).toEqual([
+      { currency: "CAD", direction: "in", amount: "100.00" },
+      { currency: "USD", direction: "out", amount: "72.21" },
+    ]);
   });
   it("says the desk sentence for every quote error the sheet can be handed",()=>{
     const said = (raw: string) => quoteTerms.deskWording(raw);
@@ -34,6 +71,8 @@ describe("quote terms",()=>{
     expect(said("JPY uses 0 decimals. Try 1001.")).toBe("JPY uses 0 decimals. Try 1001.");
     expect(said("unsupported currency scale")).toBe("That currency is not available on this desk.");
     expect(said("Enter a valid amount.")).toBe("Enter a valid amount.");
+    expect(said("The till doesn't have enough USD. Ask a manager to move cash in.")).toBe("The till doesn't have enough USD. Ask a manager to move cash in.");
+    expect(said("Till movement rejected.")).toBe("The till doesn't have enough of that currency. Ask a manager to move cash in.");
     expect(said("A brand new server sentence.")).toBeNull();
     expect(quoteTerms.quoteFallback).toBe("Couldn't get a price. Reload and try again.");
     const board = { rows: { USD: { mid: "1.36", show: true, spread: "0.015" }, JOD: { mid: "1.8", show: true, spread: "0.015" }, JPY: { mid: "0.00909918", show: true, spread: "0.015" } }, buyMargin: "0.015", sellMargin: "0.015" };

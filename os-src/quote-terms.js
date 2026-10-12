@@ -117,6 +117,7 @@
     "Do this as two deals through the home currency.": "Do this as two deals through the home currency.",
     "Open the till before posting.": "Open the till before posting.",
     "The till does not have enough of that currency.": "The till does not have enough of that currency.",
+    "Till movement rejected.": "The till doesn't have enough of that currency. Ask a manager to move cash in.",
     "Couldn't get a price. Reload and try again.": "Couldn't get a price. Reload and try again.",
     "Prices didn't load. Reload the page.": "Prices didn't load. Reload the page.",
   };
@@ -141,6 +142,9 @@
     /* "CAD uses 2 decimals. Try 12.35." is already the desk sentence.
        A second pass returns it unchanged. */
     if (/^[A-Z]{3} uses \d+ decimals\. Try [0-9]+(?:\.[0-9]+)?\.$/.test(text)) return text;
+    /* The liquidity refusal names the currency the drawer is short of.
+       A second pass returns that sentence unchanged. */
+    if (/^The till doesn't have enough [A-Z]{3}\. Ask a manager to move cash in\.$/.test(text)) return text;
     return null;
   }
 
@@ -149,6 +153,14 @@
 
     function minorUnits(code) {
       return EXCEPTIONS[String(code || "").toUpperCase()] ?? 2;
+    }
+    function overScaleMessage(currency, raw) {
+      var code = String(currency || "").toUpperCase();
+      var places = minorUnits(code);
+      var out = new Decimal(raw);
+      if (!out.isFinite()) return null;
+      var suggestion = out.toDecimalPlaces(places, Decimal.ROUND_HALF_UP).toFixed(places);
+      return code + " uses " + places + " decimals. Try " + suggestion + ".";
     }
     function placesOf(code) {
       var places = minorUnits(code);
@@ -217,7 +229,7 @@
           detail: detail,
         };
       }
-      var give, receive, giveNote;
+      var give, receive, giveNote, receiveNote = null;
       if (from === homeCode) {
         var paid = fee.gt(0) ? amountOf(input, from) + " + " + amountOf(fee, homeCode) + " fee" : null;
         give = side(input.plus(fee), from, paid);
@@ -232,11 +244,35 @@
         give = side(input, from, null);
         receive = side(output.minus(fee), to, kept);
         giveNote = null;
+        receiveNote = fee.gt(0)
+          ? amountOf(output, to) + " " + to + " less " + amountOf(fee, homeCode) + " " + homeCode + " service fee"
+          : null;
       } else {
         give = side(input, from, null);
         receive = side(output, to, null);
         giveNote = null;
       }
+      /* The drawer moves the net cash. The journal still keeps the
+         exchange and the fee as separate lines. A cross has no home
+         leg in the exchange, so the fee is its own home movement. */
+      var moves = [];
+      function pushMove(currency, direction, value) {
+        if (!value.gt(0)) return;
+        moves.push({
+          currency: currency,
+          direction: direction,
+          amount: value.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
+        });
+      }
+      if (from === homeCode) pushMove(from, "in", input.plus(fee));
+      else pushMove(from, "in", input);
+      if (to === homeCode) pushMove(to, "out", output.minus(fee));
+      else pushMove(to, "out", output);
+      if (from !== homeCode && to !== homeCode) pushMove(homeCode, "in", fee);
+      var receiptCash = ["You give " + give.amount + " " + give.currency];
+      if (giveNote) receiptCash.push(giveNote);
+      receiptCash.push("You receive " + receive.amount + " " + receive.currency);
+      if (receiveNote) receiptCash.push(receiveNote);
       return {
         give: give.sentence,
         giveAmount: give.amount,
@@ -247,7 +283,10 @@
         receiveAmount: receive.amount,
         receiveCurrency: receive.currency,
         receiveDetail: receive.detail,
+        receiveNote: receiveNote,
         receiveWire: wireOf(to === homeCode && fee.gt(0) ? output.minus(fee) : output, to),
+        tillMoves: moves,
+        receiptCash: receiptCash,
       };
     }
     function plainQuoteError(error) {
@@ -378,6 +417,9 @@
         receiveCurrency: hands.receiveCurrency,
         receiveDetail: hands.receiveDetail,
         receiveWire: hands.receiveWire,
+        receiveNote: hands.receiveNote,
+        tillMoves: hands.tillMoves,
+        receiptCash: hands.receiptCash,
       };
     }
     function directionOf(from, to, home) {
@@ -463,6 +505,7 @@
       calculateQuoteTerms: calculateQuoteTerms,
       roundOutput: roundOutput,
       cashHands: cashHands,
+      overScaleMessage: overScaleMessage,
       preview: preview,
       minorUnits: minorUnits,
       formatAmount: formatAmount,
