@@ -631,12 +631,15 @@ not get Vault, and does get Audit trail.
 
 Calculator and Tagged deals are callers of `LongTailScreen`
 (`os-src/cdos-phone-apps.jsx`). Dashboard, Loan calculator, and Store
-are `Phone.EmptyState` with the title "Open this on a computer" and
-one sentence. At 430px none of them mount the desktop window.
+are `Phone.EmptyState`: an icon, the title "Open this on a computer",
+and one sentence. Dashboard's sentence is "Full dashboard is on a
+computer", and its primary button is "See today in Reports", which
+opens Reports. The loan calculator and Store have no phone next step.
+At 430px none of them mount the desktop window.
 
 | App | Summary card | Sub-views | Rows | Main button |
 | --- | --- | --- | --- | --- |
-| Dashboard | none | none | Open this on a computer. Today's totals are on a computer. | none |
+| Dashboard | none | none | Open this on a computer. Full dashboard is on a computer. | See today in Reports |
 | Calculator | Result | Add up / Convert / Margin | The scratch total, or the convert and margin fields | Use in a new deal, on Convert only |
 | Loan calculator | none | none | Open this on a computer. The payment schedule is on a computer. | none |
 | Tagged | Count still open | chips: Open / Done | The tag reason, the date, the pay-in | Mark as checked, on the detail |

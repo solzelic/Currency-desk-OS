@@ -240,8 +240,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   built-in reorder bands stay on the desktop pill. Assistant
   stays off More. `openApp` also refuses it on a phone unless
   `window.claude.complete` exists, so no other door can raise it.
-  Calculator and Tagged deals use the same screen. Dashboard, the
-  loan calculator, and Store say to open them on a computer.
+  Calculator and Tagged deals use the same screen. Dashboard is an
+  empty state — icon, title, and "Full dashboard is on a computer" —
+  with a primary "See today in Reports" that opens Reports. The loan
+  calculator and Store use the same empty state. The payment schedule
+  and adding or removing apps are not on the phone, so those two have
+  no next step.
   Wider than 430px, these apps render the desktop they already did.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money

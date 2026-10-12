@@ -174,7 +174,7 @@ ${snap}`;
     const money = (v) => v.toLocaleString('en-CA', { style: 'currency', currency: loanCcy, maximumFractionDigits: 2 });
     if (phone) {
       if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
-      return <window.CDOS.PhoneApps.Computer app="loan" title="Loan calculator" sentence="The payment schedule is on a computer." />;
+      return <window.CDOS.PhoneApps.Computer app="loan" title="Loan calculator" icon="loancentre" sentence="The payment schedule is on a computer." />;
     }
 
     return (<div className="ln-wrap">
@@ -269,7 +269,7 @@ ${snap}`;
     const phone = window.CDOS.LongTail.usePhone();
     if (phone) {
       if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
-      return <window.CDOS.PhoneApps.Computer app="store" title="Apps" sentence="Adding and removing apps is on a computer." />;
+      return <window.CDOS.PhoneApps.Computer app="store" title="Apps" icon="storefront" sentence="Adding and removing apps is on a computer." />;
     }
     const planName = { basic: 'Basic', pro: 'Pro', premium: 'Premium' }[plan] || '';
     return (<div className="st-wrap">

@@ -12012,7 +12012,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.Computer, {
         app: "dashboard",
         title: "Dashboard",
-        sentence: "Today's totals are on a computer."
+        icon: "dashboardgrid",
+        sentence: "Full dashboard is on a computer.",
+        action: "See today in Reports",
+        onAction: () => onOpenApp && onOpenApp('reports')
       });
     }
     return /*#__PURE__*/React.createElement("div", {
@@ -49437,6 +49440,7 @@ ${snap}`;
       return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.Computer, {
         app: "loan",
         title: "Loan calculator",
+        icon: "loancentre",
         sentence: "The payment schedule is on a computer."
       });
     }
@@ -49628,6 +49632,7 @@ ${snap}`;
       return /*#__PURE__*/React.createElement(window.CDOS.PhoneApps.Computer, {
         app: "store",
         title: "Apps",
+        icon: "storefront",
         sentence: "Adding and removing apps is on a computer."
       });
     }
@@ -64089,14 +64094,30 @@ window.CDOS_PERSIST = (function () {
   function Computer({
     app,
     title,
-    sentence
+    sentence,
+    icon,
+    action,
+    onAction
   }) {
     const Phone = window.CDOS.Phone;
+    const Ic = window.CDOS.Ic;
+    const Back = window.CDOS.LongTail && window.CDOS.LongTail.BackLink;
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: app,
       className: "longtail",
-      title: title
-    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: title,
+      action: Back ? /*#__PURE__*/React.createElement(Back, null) : null,
+      sticky: action ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
+        label: action,
+        onClick: onAction
+      }) : null
+    }, Ic && icon ? /*#__PURE__*/React.createElement("div", {
+      className: "phone-empty-ico",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: icon,
+      s: 28
+    })) : null, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "Open this on a computer",
       message: sentence
     }));

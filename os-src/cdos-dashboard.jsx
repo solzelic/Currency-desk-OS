@@ -317,7 +317,7 @@
     const noBook = book.error || (book.loading ? 'reading the book…' : 'nothing posted in this period');
     if (phone) {
       if (!window.CDOS.PhoneApps) throw new Error('Phone apps did not load.');
-      return <window.CDOS.PhoneApps.Computer app="dashboard" title="Dashboard" sentence="Today's totals are on a computer." />;
+      return <window.CDOS.PhoneApps.Computer app="dashboard" title="Dashboard" icon="dashboardgrid" sentence="Full dashboard is on a computer." action="See today in Reports" onAction={() => onOpenApp && onOpenApp('reports')} />;
     }
 
     return (<div style={{ height: '100%', overflow: 'auto', background: CD.paper }}>

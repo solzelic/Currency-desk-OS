@@ -89,21 +89,30 @@ test("every remaining more app is a phone screen at 360 and 390", async ({ page 
   }
   await phoneSweep(page, { roots: ['.longtail[data-app="tagged"]'] });
 
-  const computers: Array<[string, string]> = [
-    ["dashboard", "Today's totals are on a computer."],
-    ["loan", "The payment schedule is on a computer."],
-    ["store", "Adding and removing apps is on a computer."],
+  const computers: Array<[string, string, string]> = [
+    ["dashboard", "Full dashboard is on a computer.", "See today in Reports"],
+    ["loan", "The payment schedule is on a computer.", ""],
+    ["store", "Adding and removing apps is on a computer.", ""],
   ];
-  for (const [id, sentence] of computers) {
+  for (const [id, sentence, action] of computers) {
     await openMore(page, id);
     const screen = page.locator(`.longtail[data-app="${id}"]`);
     await expect(screen.getByRole("heading", { name: "Open this on a computer" })).toBeVisible();
     await expect(screen.getByText(sentence)).toBeVisible();
+    await expect(screen.getByRole("button", { name: "More" })).toBeVisible();
+    if (action) await expect(screen.getByRole("button", { name: action })).toBeVisible();
+    else await expect(screen.locator(".phone-sticky")).toHaveCount(0);
     await expect(page.locator(".ln-wrap, .st-wrap")).toHaveCount(0);
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
       await shot(page, `longtail_${id}_${width}`);
     }
     await phoneSweep(page, { roots: [`.longtail[data-app="${id}"]`] });
+    if (action) {
+      await screen.getByRole("button", { name: action }).click();
+      const reports = page.locator('.win.show.active[data-app="reports"]');
+      await expect(reports).toBeVisible();
+      await expect(reports).toContainText("Today");
+    }
   }
 });

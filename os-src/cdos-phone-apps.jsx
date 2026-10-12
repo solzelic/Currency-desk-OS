@@ -5,10 +5,19 @@
 (function () {
   const { useState } = React;
 
-  function Computer({ app, title, sentence }) {
+  function Computer({ app, title, sentence, icon, action, onAction }) {
     const Phone = window.CDOS.Phone;
+    const Ic = window.CDOS.Ic;
+    const Back = window.CDOS.LongTail && window.CDOS.LongTail.BackLink;
     return (
-      <Phone.Screen app={app} className="longtail" title={title}>
+      <Phone.Screen
+        app={app}
+        className="longtail"
+        title={title}
+        action={Back ? <Back /> : null}
+        sticky={action ? <Phone.StickyAction label={action} onClick={onAction} /> : null}
+      >
+        {Ic && icon ? <div className="phone-empty-ico" aria-hidden="true"><Ic n={icon} s={28} /></div> : null}
         <Phone.EmptyState title="Open this on a computer" message={sentence} />
       </Phone.Screen>
     );
