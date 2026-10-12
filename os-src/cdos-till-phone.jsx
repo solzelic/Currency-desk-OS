@@ -354,23 +354,23 @@
 
           {showWork && p.tab !== 'history' && (
             <section className="till-phone-card">
-              <div className="till-phone-head">
-                <div className="till-phone-id">
+              <div className="till-phone-id">
+                <div className="till-phone-head">
                   {tillLabel ? <button type="button" className="till-phone-till" onClick={() => setSheet(true)}>{tillLabel}</button> : null}
-                  <div className="till-phone-meta">
-                    <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '')) : 'Nobody on this till'}</div>
-                    <div>
-                      {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open') : 'No open session'}
-                      {', ' + p.countedN + ' of ' + p.reconCount + ' counted'}
+                  {showDrawer ? (
+                    <div className="till-phone-drawer">
+                      <div className="till-phone-k">Drawer value, all currencies in {p.homeCcy}</div>
+                      <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy)}</div>
                     </div>
+                  ) : null}
+                </div>
+                <div className="till-phone-meta">
+                  <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '')) : 'Nobody on this till'}</div>
+                  <div>
+                    {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open') : 'No open session'}
+                    {', ' + p.countedN + ' of ' + p.reconCount + ' counted'}
                   </div>
                 </div>
-                {showDrawer ? (
-                  <div className="till-phone-drawer">
-                    <div className="till-phone-k">Drawer value, all currencies in {p.homeCcy}</div>
-                    <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy)}</div>
-                  </div>
-                ) : null}
               </div>
               {/* Hand off is a desktop dialog and a dead end on a phone.
                   Put the button back beside these two when a phone hand-off exists. */}

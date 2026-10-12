@@ -3120,7 +3120,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-phone-card {
     background: #fff; border: 1px solid var(--color-border, #E2DFD8);
-    border-radius: 14px; padding: 4px 12px 8px; margin-bottom: 4px;
+    border-radius: 14px; padding: 2px 12px 4px; margin-bottom: 4px;
   }
   .till-phone-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 44px; }
   .till-phone-drawer { min-width: 0; flex: 1 1 auto; }
@@ -3140,23 +3140,23 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-weight: 600; font-size: 13px; padding: 0 4px; color: var(--gray-900, #161513);
   }
   .till-phone-actions button:disabled { color: var(--gray-500, #6B6760); }
+  .till-phone-card .till-phone-id { min-width: 0; }
   .till-phone-card .till-phone-head {
     display: flex; align-items: flex-start; justify-content: flex-start;
     gap: 8px;
   }
-  .till-phone-card .till-phone-id { flex: 1 1 auto; min-width: 0; }
   .till-phone-card .till-phone-till {
-    display: block; width: 100%; box-sizing: border-box;
-    margin: 0; min-height: 44px; padding: 8px 0 0;
+    display: block; flex: 1 1 auto; width: auto; min-width: 44px;
+    box-sizing: border-box; margin: 0; min-height: 32px; padding: 4px 0 0;
     border: 0; background: transparent; text-align: left;
     font-size: 17px; line-height: 22px; font-weight: 600;
     color: var(--gray-900, #161513);
   }
-  .till-phone-card .till-phone-drawer { flex: 0 1 auto; min-width: 0; margin: 8px 0 0; text-align: right; align-self: flex-start; }
+  .till-phone-card .till-phone-drawer { flex: 0 1 auto; min-width: 0; margin: 4px 0 0; text-align: right; }
   .till-phone-card .till-phone-k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .till-phone-card .till-phone-amount { font-size: 17px; line-height: 22px; font-weight: 600; }
   .till-phone-card .till-phone-meta {
-    font-size: 13px; line-height: 18px; margin-top: 2px;
+    font-size: 13px; line-height: 18px; margin-top: 0;
     color: var(--color-text-muted, #6B6760);
   }
   .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--tap-min); }

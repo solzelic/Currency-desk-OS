@@ -63633,22 +63633,22 @@ window.CDOS_PERSIST = (function () {
     }), showWork && p.tab !== 'history' && /*#__PURE__*/React.createElement("section", {
       className: "till-phone-card"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "till-phone-head"
-    }, /*#__PURE__*/React.createElement("div", {
       className: "till-phone-id"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-head"
     }, tillLabel ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-phone-till",
       onClick: () => setSheet(true)
-    }, tillLabel) : null, /*#__PURE__*/React.createElement("div", {
-      className: "till-phone-meta"
-    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ', ' + p.countedN + ' of ' + p.reconCount + ' counted'))), showDrawer ? /*#__PURE__*/React.createElement("div", {
+    }, tillLabel) : null, showDrawer ? /*#__PURE__*/React.createElement("div", {
       className: "till-phone-drawer"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-phone-k"
     }, "Drawer value, all currencies in ", p.homeCcy), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-amount"
     }, amount(p.drawerTotal, p.homeCcy))) : null), /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-meta"
+    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ', ' + p.countedN + ' of ' + p.reconCount + ' counted'))), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-actions"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
