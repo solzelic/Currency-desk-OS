@@ -59385,7 +59385,7 @@ ${snap}`;
         fontFamily: MONO,
         fontSize: 8.5,
         letterSpacing: '0.2em',
-        color: 'var(--si-faint)'
+        color: 'var(--si-mute)'
       }
     }, "OS")), children);
 
@@ -59731,7 +59731,7 @@ ${snap}`;
       }, showPw ? 'HIDE' : 'SHOW')), /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 11.5,
-          color: 'var(--si-faint)',
+          color: 'var(--si-mute)',
           marginTop: 8
         }
       }, "Forgot it?", ' ', /*#__PURE__*/React.createElement("button", {

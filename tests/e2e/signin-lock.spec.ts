@@ -9,13 +9,13 @@
    It comes back as Send my code when the server's lock time passes.
    The sentence names that time once, without a zone label.
    A 503 is intercepted, so it does not spend a guess. */
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 
 const SENTENCE = /Too many tries\. Try again at \d{1,2}:\d{2} (AM|PM)\./;
 
-async function contrastAgainstWhite(page: Page, text: RegExp): Promise<number> {
-  return page.getByText(text).evaluate((el) => {
+async function contrastAgainstWhite(target: Locator): Promise<number> {
+  return target.evaluate((el) => {
     const match = getComputedStyle(el).color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
     const channels = match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [255, 255, 255];
     const lin = (channel: number) => {
@@ -57,7 +57,9 @@ test.describe("locked sign-in", () => {
 
       const status = page.getByText(SENTENCE);
       await expect(status).toBeVisible();
-      expect(await contrastAgainstWhite(page, SENTENCE)).toBeGreaterThanOrEqual(4.5);
+      expect(await contrastAgainstWhite(status)).toBeGreaterThanOrEqual(4.5);
+      expect(await contrastAgainstWhite(page.getByText(/Forgot it\?/))).toBeGreaterThanOrEqual(4.5);
+      expect(await contrastAgainstWhite(page.getByText("OS", { exact: true }))).toBeGreaterThanOrEqual(4.5);
       const signIn = page.getByRole("button", { name: "Sign in" });
       await expect(signIn).toBeDisabled();
       await expect(signIn.locator("svg")).toBeVisible();

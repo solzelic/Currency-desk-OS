@@ -363,7 +363,7 @@
         <div style={{ position: 'absolute', top: 26, left: 30, display: 'flex', alignItems: 'center', gap: 10 }}>
           <Mark w={30} h={21} cut="#e7e4dd" />
           <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 13, letterSpacing: '0.12em' }}>CURRENCYDESK</span>
-          <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.2em', color: 'var(--si-faint)' }}>OS</span>
+          <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.2em', color: 'var(--si-mute)' }}>OS</span>
         </div>
         {children}
       </div>
@@ -435,7 +435,7 @@
             onBlur={e => { e.target.style.borderColor = 'var(--si-line)'; e.target.style.boxShadow = 'none'; }} />
           <button type="button" onClick={() => setShowPw(s => !s)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', height: 44, minWidth: 44, padding: '0 12px', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--si-ink)', background: 'var(--si-soft)', border: 'none', borderRadius: 7, cursor: 'pointer' }}>{showPw ? 'HIDE' : 'SHOW'}</button>
         </div>
-        <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 8 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--si-mute)', marginTop: 8 }}>
           Forgot it?{' '}
           <button type="button" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); }}
             style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 4px', background: 'none', border: 'none', color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>
