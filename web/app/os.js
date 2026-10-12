@@ -1073,6 +1073,9 @@
   // exact booked margin for a posted row: prefer the stored figure, else the
   // legacy live-mid estimate (so historical rows still show a spread)
   function dealMargin(r) {
+    /* A server row with no stored spread had it withheld. Estimating one
+       from the live mid would put the earnings back on the screen. */
+    if (r && r.serverTransactionId && r.spreadCad == null) return null;
     if (r && r.spreadCad != null && !isNaN(r.spreadCad)) return Math.max(0, +r.spreadCad);
     const mid = (+r.inAmt || 0) * crossRate(r.inCcy, r.outCcy);
     const d = mid - (+r.outAmt || 0);
@@ -2099,9 +2102,9 @@
       rate: Number(transaction.rate),
       outCcy: transaction.to,
       outAmt: Number(transaction.outputAmount),
-      fee: Number(transaction.feeCad),
+      fee: transaction.feeCad == null ? null : Number(transaction.feeCad),
       midRate: transaction.marketMid == null ? null : Number(transaction.marketMid),
-      spreadCad: Number(transaction.spreadCad || 0),
+      spreadCad: transaction.spreadCad == null ? null : Number(transaction.spreadCad),
       side: transaction.from === "CAD" ? "sell" : "buy",
       quoteRef: transaction.quoteId || null,
       rateBoardPublicationId: transaction.rateBoardPublicationId || null,
@@ -29665,10 +29668,10 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     // the deal was two-side priced; falls back to the live-mid estimate for legacy rows)
     const inCad = homeOf(row.inAmt, row.inCcy) || 0;
     const spreadCad = dealMargin(row);
-    const feeCad = +row.fee || 0;
-    const earned = feeCad + spreadCad;
-    const marginPct = inCad ? earned / inCad * 100 : 0;
-    const spreadPct = inCad ? spreadCad / inCad * 100 : 0;
+    const feeCad = row.fee == null ? null : +row.fee;
+    const earned = feeCad == null || spreadCad == null ? null : feeCad + spreadCad;
+    const marginPct = earned == null || !inCad ? null : earned / inCad * 100;
+    const spreadPct = spreadCad == null || !inCad ? null : spreadCad / inCad * 100;
     return /*#__PURE__*/React.createElement("div", {
       className: "absolute inset-0 flex flex-col",
       style: {
@@ -30183,9 +30186,9 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, marginPct.toFixed(2), "%"))), /*#__PURE__*/React.createElement(DRow, {
+      }, marginPct == null ? '—' : `${marginPct.toFixed(2)}%`))), /*#__PURE__*/React.createElement(DRow, {
         k: flat ? 'Service fee' : 'Commission / fee',
-        v: `${fmtHome(feeCad)}${inCad ? `  ·  ${(feeCad / inCad * 100).toFixed(2)}%` : ''}`,
+        v: feeCad == null ? '—' : `${fmtHome(feeCad)}${inCad ? `  ·  ${(feeCad / inCad * 100).toFixed(2)}%` : ''}`,
         mono: true
       }), !flat && /*#__PURE__*/React.createElement(DRow, {
         k: "FX spread (rate markup)",
@@ -30365,7 +30368,9 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       const live = rows.filter(r => r.status !== 'void' && (!client || r.customer === client));
       let vol = 0,
         fees = 0,
-        margin = 0;
+        margin = 0,
+        feesKnown = true,
+        marginKnown = true;
       const byCcy = {},
         byType = {},
         feeType = {},
@@ -30373,15 +30378,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         perTx = [];
       live.forEach(r => {
         const v = homeOf(r.inAmt, r.inCcy) || 0;
-        const fee = +r.fee || 0;
+        const fee = r.fee == null ? null : +r.fee;
         const m = dealMargin(r);
         vol += v;
-        fees += fee;
-        margin += m;
+        if (fee == null) feesKnown = false;else fees += fee;
+        if (m == null) marginKnown = false;else margin += m;
         byCcy[r.inCcy] = (byCcy[r.inCcy] || 0) + v;
         byType[r.type] = (byType[r.type] || 0) + v;
-        feeType[r.type] = (feeType[r.type] || 0) + fee;
-        feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee;
+        if (fee != null) feeType[r.type] = (feeType[r.type] || 0) + fee;
+        if (fee != null) feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee;
         perTx.push({
           ref: r.ref,
           customer: r.customer,
@@ -30391,15 +30396,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           vol: v,
           fee,
           margin: m,
-          total: fee + m
+          total: fee == null || m == null ? null : fee + m
         });
       });
       const sortE = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
       return {
         vol,
-        fees,
-        margin,
-        rev: fees + margin,
+        fees: feesKnown ? fees : null,
+        margin: marginKnown ? margin : null,
+        rev: feesKnown && marginKnown ? fees + margin : null,
         n: live.length,
         byCcy: sortE(byCcy),
         byType: sortE(byType),
@@ -30409,8 +30414,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       };
     }, [rows, client]);
     const avgTicket = d.n ? d.vol / d.n : 0;
-    const avgFee = d.n ? d.fees / d.n : 0;
-    const effRate = d.vol ? d.rev / d.vol * 100 : 0;
+    const avgFee = d.n && d.fees != null ? d.fees / d.n : null;
+    const effRate = d.vol && d.rev != null ? d.rev / d.vol * 100 : null;
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -30535,7 +30540,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       accent: CD.green
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Margin %",
-      value: `${effRate.toFixed(2)}%`,
+      value: effRate == null ? '—' : `${effRate.toFixed(2)}%`,
       accent: CD.green,
       sub: "of pay-in volume"
     })), /*#__PURE__*/React.createElement("div", {
@@ -30631,7 +30636,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, t.vol ? (t.total / t.vol * 100).toFixed(2) + '%' : '—'))), d.perTx.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    }, t.total == null || !t.vol ? '—' : (t.total / t.vol * 100).toFixed(2) + '%'))), d.perTx.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       colSpan: 6,
       className: "px-4 py-8 text-center",
       style: {
@@ -30642,7 +30647,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.faint
       }
-    }, "Revenue = posted fees + estimated FX spread (live spot value \u2212 actual pay-out). Effective take \u2248 ", effRate.toFixed(2), "% of volume."))))), document.body);
+    }, "Revenue = posted fees + estimated FX spread (live spot value \u2212 actual pay-out). Effective take \u2248 ", effRate == null ? '—' : `${effRate.toFixed(2)}%`, " of volume."))))), document.body);
   }
 
   /* =====================================================================
@@ -31279,11 +31284,12 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       // pay-in volume in the desk's own money — the home leg of each deal,
       // and a count of the deals that have no home leg to take. See dealHome.
       const volume = sumDealHome(src, homeCcy());
+      const feesKnown = src.every(x => x.fee != null);
       return {
         n: src.length,
         vol: volume.total,
         unvalued: volume.unvalued,
-        fees: src.reduce((s, x) => s + (+x.fee || 0), 0),
+        fees: feesKnown ? src.reduce((s, x) => s + (+x.fee || 0), 0) : null,
         rpt,
         openRpt,
         str: str.size,
@@ -31298,7 +31304,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         posted = 0;
       const liveRows = filtered.filter(r => r.status !== 'void');
       posted = liveRows.length;
-      liveRows.forEach(r => {
+      if (liveRows.some(r => r.fee == null)) fees = null;else liveRows.forEach(r => {
         fees += +r.fee || 0;
       });
       vol = sumDealHome(liveRows, homeCcy()).total;
@@ -31346,7 +31352,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         n = 0;
       const liveRecs = recs.filter(r => r.status !== 'void');
       n = liveRecs.length;
-      liveRecs.forEach(r => {
+      if (liveRecs.some(r => r.fee == null)) fees = null;else liveRecs.forEach(r => {
         fees += +r.fee || 0;
       });
       vol = sumDealHome(liveRecs, homeCcy()).total;

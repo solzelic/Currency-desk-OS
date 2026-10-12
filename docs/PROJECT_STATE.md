@@ -547,6 +547,18 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, teller earnings. A teller can post a deal and still cannot
+read what the desk earned. `GET /api/ledger/summary` leaves off
+`feesHome`, `earningsHome`, `realizedPnlHome`, `costOfSaleHome`, and
+the same money fields on each teller and each currency. The transaction
+list leaves off `feeCad`, `spreadCad`, `costOfSaleHome`, and
+`realizedPnlHome`. A reprinted receipt leaves off the fee line.
+Position leaves off `unrealizedPnlHome`. The cheque register leaves
+off `feeAmount`. The role needs `till:close` (close the day) or
+`report:earnings`. A teller has neither. An owner has both. A
+supervisor closes the day and still sees the figures. The quote being
+priced still returns the fee and the spread on that ticket.
+
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the
 profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,

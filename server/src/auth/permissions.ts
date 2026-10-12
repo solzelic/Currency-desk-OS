@@ -56,16 +56,26 @@ export type BackendPermission =
      the standing policy of the registered business, and the registered
      business is one person. A compliance officer or a manager who wants it
      moved asks the owner, which is a conversation worth having out loud. */
-  | "compliance:thresholds";
+  | "compliance:thresholds"
+  /* Fees, realized margin, and the per-teller split. Closing the day
+     (`till:close`) is one way to read them. Reading the same figures
+     without closing is this permission. A teller posts the deal and
+     has neither. */
+  | "report:earnings";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {
   teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view", "till:count", "vault:view", "compliance:file"],
   supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "compliance:file"],
-  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file"],
+  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file", "report:earnings"],
   branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file"],
-  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "compliance:thresholds"],
-  auditor: ["quote:view", "customer:view", "ledger:view", "vault:view"],
+  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "compliance:thresholds", "report:earnings"],
+  auditor: ["quote:view", "customer:view", "ledger:view", "vault:view", "report:earnings"],
 };
+
+/** Close-day is `till:close`. The earnings report is `report:earnings`. */
+export function canReadDeskEarnings(role: string) {
+  return hasBackendPermission(role, "till:close") || hasBackendPermission(role, "report:earnings");
+}
 
 export function hasBackendPermission(role: string, permission: BackendPermission) {
   return backendRolePermissions[role]?.includes(permission) ?? false;

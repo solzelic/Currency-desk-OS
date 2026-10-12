@@ -1049,10 +1049,10 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     // the deal was two-side priced; falls back to the live-mid estimate for legacy rows)
     const inCad = homeOf(row.inAmt, row.inCcy) || 0;
     const spreadCad = dealMargin(row);
-    const feeCad = +row.fee || 0;
-    const earned = feeCad + spreadCad;
-    const marginPct = inCad ? (earned / inCad) * 100 : 0;
-    const spreadPct = inCad ? (spreadCad / inCad) * 100 : 0;
+    const feeCad = row.fee == null ? null : +row.fee;
+    const earned = feeCad == null || spreadCad == null ? null : feeCad + spreadCad;
+    const marginPct = earned == null || !inCad ? null : (earned / inCad) * 100;
+    const spreadPct = spreadCad == null || !inCad ? null : (spreadCad / inCad) * 100;
 
     return (
       <div className="absolute inset-0 flex flex-col" style={{ background: CD.paper, zIndex: 50, transform: shown ? 'translateX(0)' : 'translateX(2.5%)', opacity: shown ? 1 : 0, transition: 'transform .22s ease, opacity .2s ease' }}>
@@ -1170,9 +1170,9 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 <div className="p-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
                   <div className="grid grid-cols-2 gap-3 mb-1">
                     <div><div className="text-[11px]" style={{ color: CD.mute }}>Total earned</div><div className="text-xl font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(earned)}</div></div>
-                    <div><div className="text-[11px]" style={{ color: CD.mute }}>{flat ? 'Fee on amount' : 'Margin on volume'}</div><div className="text-xl font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{marginPct.toFixed(2)}%</div></div>
+                    <div><div className="text-[11px]" style={{ color: CD.mute }}>{flat ? 'Fee on amount' : 'Margin on volume'}</div><div className="text-xl font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{marginPct == null ? '—' : `${marginPct.toFixed(2)}%`}</div></div>
                   </div>
-                  <DRow k={flat ? 'Service fee' : 'Commission / fee'} v={`${fmtHome(feeCad)}${inCad ? `  ·  ${((feeCad / inCad) * 100).toFixed(2)}%` : ''}`} mono />
+                  <DRow k={flat ? 'Service fee' : 'Commission / fee'} v={feeCad == null ? '—' : `${fmtHome(feeCad)}${inCad ? `  ·  ${((feeCad / inCad) * 100).toFixed(2)}%` : ''}`} mono />
                   {!flat && <DRow k="FX spread (rate markup)" v={spreadCad > 0 ? `${fmtHome(spreadCad)}  ·  ${spreadPct.toFixed(2)}%` : '—'} mono />}
                   {row.marginOverride && (
                     <div className="mt-2 px-2.5 py-2 text-[11.5px]" style={{ background: CD.flagSoft, borderRadius: 8, color: CD.flag }}>
@@ -1235,27 +1235,30 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const [tab, setTab] = useState(focus || 'volume');
     const d = useMemo(() => {
       const live = rows.filter(r => r.status !== 'void' && (!client || r.customer === client));
-      let vol = 0, fees = 0, margin = 0;
+      let vol = 0, fees = 0, margin = 0, feesKnown = true, marginKnown = true;
       const byCcy = {}, byType = {}, feeType = {}, feeTeller = {}, perTx = [];
       live.forEach(r => {
-        const v = homeOf(r.inAmt, r.inCcy) || 0; const fee = +r.fee || 0;
+        const v = homeOf(r.inAmt, r.inCcy) || 0;
+        const fee = r.fee == null ? null : +r.fee;
         const m = dealMargin(r);
-        vol += v; fees += fee; margin += m;
+        vol += v;
+        if (fee == null) feesKnown = false; else fees += fee;
+        if (m == null) marginKnown = false; else margin += m;
         byCcy[r.inCcy] = (byCcy[r.inCcy] || 0) + v;
         byType[r.type] = (byType[r.type] || 0) + v;
-        feeType[r.type] = (feeType[r.type] || 0) + fee;
-        feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee;
-        perTx.push({ ref: r.ref, customer: r.customer, type: r.type, inAmt: r.inAmt, inCcy: r.inCcy, vol: v, fee, margin: m, total: fee + m });
+        if (fee != null) feeType[r.type] = (feeType[r.type] || 0) + fee;
+        if (fee != null) feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee;
+        perTx.push({ ref: r.ref, customer: r.customer, type: r.type, inAmt: r.inAmt, inCcy: r.inCcy, vol: v, fee, margin: m, total: fee == null || m == null ? null : fee + m });
       });
       const sortE = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
-      return { vol, fees, margin, rev: fees + margin, n: live.length,
+      return { vol, fees: feesKnown ? fees : null, margin: marginKnown ? margin : null, rev: feesKnown && marginKnown ? fees + margin : null, n: live.length,
         byCcy: sortE(byCcy), byType: sortE(byType), feeType: sortE(feeType), feeTeller: sortE(feeTeller),
         perTx: perTx.sort((a, b) => b.total - a.total) };
     }, [rows, client]);
 
     const avgTicket = d.n ? d.vol / d.n : 0;
-    const avgFee = d.n ? d.fees / d.n : 0;
-    const effRate = d.vol ? (d.rev / d.vol) * 100 : 0;
+    const avgFee = d.n && d.fees != null ? d.fees / d.n : null;
+    const effRate = d.vol && d.rev != null ? (d.rev / d.vol) * 100 : null;
 
     return ReactDOM.createPortal((
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
@@ -1298,7 +1301,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 <Kpi label="Fees collected" value={fmtHome(d.fees)} accent={CD.green} />
                 <Kpi label="Est. FX spread" value={fmtHome(d.margin)} accent={CD.green} sub="rate markup" />
                 <Kpi label="Total revenue" value={fmtHome(d.rev)} accent={CD.green} />
-                <Kpi label="Margin %" value={`${effRate.toFixed(2)}%`} accent={CD.green} sub="of pay-in volume" />
+                <Kpi label="Margin %" value={effRate == null ? '—' : `${effRate.toFixed(2)}%`} accent={CD.green} sub="of pay-in volume" />
               </div>
               <div className="grid md:grid-cols-2 gap-3 mb-3">
                 <div className="p-4" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
@@ -1324,13 +1327,13 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                       <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtHome(t.fee)}</td>
                       <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{t.margin > 0 ? fmtHome(t.margin) : '—'}</td>
                       <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green }}>{fmtHome(t.total)}</td>
-                      <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{t.vol ? ((t.total / t.vol) * 100).toFixed(2) + '%' : '—'}</td>
+                      <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{t.total == null || !t.vol ? '—' : ((t.total / t.vol) * 100).toFixed(2) + '%'}</td>
                     </tr>))}
                     {d.perTx.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center" style={{ color: CD.mute }}>No transactions.</td></tr>}
                   </tbody>
                 </table>
               </div>
-              <p className="mt-3 text-[11px]" style={{ color: CD.faint }}>Revenue = posted fees + estimated FX spread (live spot value − actual pay-out). Effective take ≈ {effRate.toFixed(2)}% of volume.</p>
+              <p className="mt-3 text-[11px]" style={{ color: CD.faint }}>Revenue = posted fees + estimated FX spread (live spot value − actual pay-out). Effective take ≈ {effRate == null ? '—' : `${effRate.toFixed(2)}%`} of volume.</p>
             </div>)}
           </div>
         </div>
@@ -1558,7 +1561,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       // pay-in volume in the desk's own money — the home leg of each deal,
       // and a count of the deals that have no home leg to take. See dealHome.
       const volume = sumDealHome(src, homeCcy());
-      return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: src.reduce((s, x) => s + (+x.fee || 0), 0), rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
+      const feesKnown = src.every(x => x.fee != null);
+      return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: feesKnown ? src.reduce((s, x) => s + (+x.fee || 0), 0) : null, rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
     }, [rows, client, flags, range]);
 
     // live summary of exactly what's on screen (CAD-equivalent)
@@ -1566,7 +1570,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       let vol = 0, fees = 0, posted = 0;
       const liveRows = filtered.filter(r => r.status !== 'void');
       posted = liveRows.length;
-      liveRows.forEach(r => { fees += (+r.fee || 0); });
+      if (liveRows.some(r => r.fee == null)) fees = null;
+      else liveRows.forEach(r => { fees += (+r.fee || 0); });
       vol = sumDealHome(liveRows, homeCcy()).total;
       return { count: filtered.length, posted, vol, fees };
     }, [filtered]);
@@ -1592,7 +1597,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       let vol = 0, fees = 0, n = 0;
       const liveRecs = recs.filter(r => r.status !== 'void');
       n = liveRecs.length;
-      liveRecs.forEach(r => { fees += (+r.fee || 0); });
+      if (liveRecs.some(r => r.fee == null)) fees = null;
+      else liveRecs.forEach(r => { fees += (+r.fee || 0); });
       vol = sumDealHome(liveRecs, homeCcy()).total;
       const chips = filterChips();
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
