@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { civilDate, civilToday } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
-import { civilDate } from "./civil-date.js";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable } from "./currencies.js";
@@ -68,7 +68,11 @@ const fixed = (value: Decimal.Value) =>
 const sessionJson = (row: Record<string, unknown>) => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
-  businessDate: civilDate(row.business_date),
+  businessDate: (() => {
+    const day = civilDate(row.business_date);
+    if (!day) throw new Error("Till session is missing its business date");
+    return day;
+  })(),
   status: row.status,
   openedBy: row.opened_by,
   openedAt: new Date(row.opened_at as string | Date).toISOString(),
@@ -168,7 +172,7 @@ export class TillControlService {
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workspace_id)
               workspace_id,till_id,session_id,session_number,status,
-              opened_by,opened_at,closed_by,closed_at
+              business_date,opened_by,opened_at,closed_by,closed_at
          FROM ledger_till_sessions
         WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
         ORDER BY workspace_id,session_number DESC`,
@@ -311,7 +315,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            civilDate(now),
+            civilToday(now),
             actor.userId,
             now,
           ],

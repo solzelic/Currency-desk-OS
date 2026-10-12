@@ -92,5 +92,13 @@ export default defineConfig({
     ...(process.env.PW_CHROMIUM ? { launchOptions: { executablePath: process.env.PW_CHROMIUM } } : {}),
   },
 
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  /* When a run sets TZ, the browser follows it. The desktop clock spec
+     pins its own zone with test.use and is not covered by this. */
+  projects: [{
+    name: "chromium",
+    use: {
+      ...devices["Desktop Chrome"],
+      ...(process.env.TZ ? { timezoneId: process.env.TZ } : {}),
+    },
+  }],
 });

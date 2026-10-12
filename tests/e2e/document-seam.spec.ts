@@ -286,19 +286,18 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   /* The document fetches for itself, so "the node is visible" and "the
      answers have landed" are different moments. The footer date is also
      the wall clock when the session has not arrived yet, so wait for the
-     session number, which only that fetch can print. The drawer table
-     is a second fetch. The session number can be on the sheet while
-     that table still says "Reading the ledger…", and a snapshot taken
-     in between has no currency codes on it. */
-  const counts = till.latestCounts ?? {};
-  const counted = Object.keys(counts);
-  expect(counted.length, "the close recorded counts on the ledger").toBeGreaterThan(0);
+     session number, which only that fetch can print. */
+  /* Session number and the day's count come from different fetches.
+     The number can paint while the summary is still "reading the ledger",
+     which is what a zone just past midnight (Pacific/Auckland) hit. */
   await expect
     .poll(() => sheet(page), { timeout: 30_000 })
-    .toContain(`Session #${till.session.sessionNumber}`);
-  await expect
-    .poll(() => sheet(page), { timeout: 30_000 })
-    .toContain(counted[0]);
+    .toMatch(
+      new RegExp(
+        `Session #${till.session.sessionNumber}[\\s\\S]*Transactions\\s*\\n?\\s*${day.posted}\\b`,
+        "i",
+      ),
+    );
   const doc = await sheet(page);
 
   // ---- the date and the day ----
@@ -333,6 +332,8 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
      variance on this sheet is zero and it says "balanced". The old sheet
      compared a count of the DRAWER against the drawer PLUS THE SAFE and
      printed a six-figure discrepancy above the signature lines. */
+  const counts = till.latestCounts ?? {};
+  expect(Object.keys(counts).length, "the close recorded counts on the ledger").toBeGreaterThan(0);
   for (const [currency, record] of Object.entries<any>(counts)) {
     expect(doc).toContain(currency);
     expect(

@@ -49,8 +49,8 @@
    see `CHEQUE_CURRENCY_NOT_HOME` below — rather than mis-posted quietly.
    ============================================================ */
 import { randomUUID } from "node:crypto";
+import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
-import { civilDate } from "./civil-date.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import {
@@ -158,7 +158,11 @@ const money = (value: string, minimum: Decimal.Value) => {
 const fixed = (value: Decimal.Value, places = 2) =>
   new Decimal(value).toDecimalPlaces(places).toFixed(places);
 
-const dateOnly = (value: unknown) => civilDate(value);
+const dateOnly = (value: unknown) => {
+  const day = civilDate(value);
+  if (!day) throw new Error("A cheque date is missing");
+  return day;
+};
 
 /** One cheque, in the shape the desk's screens already speak. */
 const chequeJson = (row: Record<string, any>) => ({
@@ -421,12 +425,6 @@ export class ChequeService {
         scope(actor),
       );
       const businessDate = dateOnly(session.rows[0].business_date);
-      if (!businessDate) {
-        throw new LedgerError(
-          "INVALID_REQUEST",
-          "This till has no business date.",
-        );
-      }
 
       /* THE GUARD THIS DEAL TYPE EXISTS TO NEED. Cashing takes cash OUT
          of the drawer, so a drawer that has not got it must refuse — the

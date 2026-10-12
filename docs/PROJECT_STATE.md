@@ -62,6 +62,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
+| Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
 
 ## Production/build surfaces
 
@@ -576,7 +577,8 @@ is a calendar day. Reading it with `toISOString()` named the previous
 day in Asia/Jerusalem, so an identity document stored as 1 April 2030
 came back as 31 March 2030, and the till's business date did the same
 thing to the sign-off heading and the reporting window. Those values
-are now the local year, month, and day. A phone clock or date that is
+are now the local year, month, and day, through `server/src/civil-date.ts`
+(the helper main landed in #169, including `civilToday`). A phone clock or date that is
 not the whole string is the word Unknown. The 1280 capture pins the
 browser zone to UTC, so 15:02Z stays 15:02, and it serves DejaVu Sans
 and DejaVu Sans Mono for → and ≥. The shot loads those two characters
