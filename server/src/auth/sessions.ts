@@ -18,11 +18,15 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export async function createSession(
   db: Db,
   userId: string,
-  opts?: { platformMfa?: boolean },
+  opts?: { platformMfa?: boolean; workspaceId?: string | null },
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  const workspaceId = await homeWorkspaceId(db, userId);
+  /* A switch names the workspace, including "none" when the next person
+     has to pick a till. Login omits it and keeps the home till. */
+  const workspaceId = opts && "workspaceId" in opts
+    ? opts.workspaceId || undefined
+    : await homeWorkspaceId(db, userId);
   await db.insert(schema.sessions).values({
     tokenHash: sha256(token),
     userId,

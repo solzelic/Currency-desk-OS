@@ -523,6 +523,7 @@
   function Handover({ operators, current, onCancel, onConfirm }) {
     const [pick, setPick] = useState(null);
     const [pin, setPin] = useState(''); const [verifying, setVerifying] = useState(false);
+    const [err, setErr] = useState('');
     const others = (operators || []).filter(o => o.active !== false);
     if (!pick) {
       return (<div style={Scrim}><style>{cdKeyframes}</style>
@@ -548,13 +549,52 @@
         </div>
       </div>);
     }
-    const push = (d) => { if (verifying || pin.length >= 4) return; const n = (pin + d).slice(0, 4); setPin(n); if (n.length === 4) { setVerifying(true); setTimeout(() => onConfirm(pick), 850); } };
+    const push = (d) => {
+      if (verifying || pin.length >= 4) return;
+      const n = (pin + d).slice(0, 4);
+      setPin(n);
+      if (n.length !== 4) return;
+      setVerifying(true);
+      setErr('');
+      if (!pick.code) {
+        setVerifying(false);
+        setPin('');
+        setErr('This account has no staff id.');
+        return;
+      }
+      fetch('/api/auth/switch', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+        body: JSON.stringify({ staffId: pick.code, pin: n }),
+      }).then(async (res) => {
+        let data = null;
+        try { data = await res.json(); }
+        catch (e) { data = null; }
+        if (data == null) {
+          setVerifying(false); setPin('');
+          setErr('The desk answered, but not in a way this screen could read.');
+          return;
+        }
+        if (res.ok) { onConfirm(pick, data); return; }
+        setVerifying(false); setPin('');
+        if (res.status === 409 && data.error === 'no_pin') {
+          setErr('No PIN is set for this person. Set one before switching.');
+          return;
+        }
+        if (res.status === 429) { setErr('Too many tries — wait a few minutes'); return; }
+        if (res.status === 401) { setErr('Incorrect PIN'); return; }
+        setErr(data.detail || 'Could not switch to that account.');
+      }).catch((e) => {
+        setVerifying(false); setPin('');
+        setErr((e && e.message) || 'Could not reach the desk to switch accounts.');
+      });
+    };
     return (<div style={Scrim}><style>{cdKeyframes}</style>
       <div style={PinCard}>
         <Pill>PIN required</Pill>
         <Avatar name={pick.name} />
         <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 4 }}>Confirm it's you</div>
         <div style={{ fontSize: 13.5, color: 'var(--si-mute)', marginBottom: 4 }}>{firstOf(pick.name)}, enter your PIN to take this drawer.</div>
+        {err ? <div style={{ fontSize: 12.5, color: 'var(--si-flag)', margin: '8px 0' }}>{err}</div> : null}
         <Dots n={4} filled={pin.length} />
         <Keypad value={pin} max={4} onDigit={push} onBack={() => { if (!verifying) setPin(pin.slice(0, -1)); }} leftLabel="Cancel" onLeft={() => { setPick(null); setPin(''); }} verifying={verifying} />
       </div>

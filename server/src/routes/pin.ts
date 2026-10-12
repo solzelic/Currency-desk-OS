@@ -53,7 +53,6 @@ export function lockState(userId: string): { locked: boolean; remaining: number 
   if (t.until) { tries.delete(userId); return { locked: false, remaining: MAX_TRIES }; }
   return { locked: false, remaining: Math.max(0, MAX_TRIES - t.count) };
 }
-
 /* Take the guess before the slow check. A check that runs first, then waits
    on the hash, lets every request in that wait through: they all read
    "four left" and all go on to be counted afterwards. The count moves
@@ -98,6 +97,14 @@ export function releasePinAttempt(userId: string): void {
   }
   t.count -= 1;
   tries.set(userId, t);
+}
+
+export function recordFailure(userId: string): { locked: boolean; remaining: number } {
+  const t = tries.get(userId) ?? { count: 0, until: 0 };
+  t.count += 1;
+  if (t.count >= MAX_TRIES) { t.until = Date.now() + LOCK_MS; t.count = 0; }
+  tries.set(userId, t);
+  return lockState(userId);
 }
 
 export const clearPinAttempts = (userId: string): void => { tries.delete(userId); };

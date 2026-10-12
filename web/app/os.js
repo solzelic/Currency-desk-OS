@@ -1605,6 +1605,7 @@
     name,
     staffId,
     expected,
+    purpose,
     onOk,
     onCancel
   }) {
@@ -1634,7 +1635,66 @@
        devtools, or stepped over entirely. A desk whose PINs have not been set
        on the server yet answers 409, and only then do we fall back to the old
        local check so nothing breaks mid-migration. */
+    const readBody = async res => {
+      try {
+        return await res.json();
+      } catch (e) {
+        return null;
+      }
+    };
+    /* Account switch is a new sign-in. A 409 used to fall through to
+       comparing 0000 in this browser, which made the keypad optional.
+       A missing PIN is said in words. It is not treated as 0000. */
+    const submitSwitch = async val => {
+      if (!staffId) {
+        fail('This account has no staff id.');
+        return;
+      }
+      let res;
+      try {
+        res = await fetch('/api/auth/switch', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            staffId: staffId,
+            pin: val
+          })
+        });
+      } catch (e) {
+        fail('Could not reach the desk to switch accounts.');
+        return;
+      }
+      const data = await readBody(res);
+      if (data == null) {
+        fail('The desk answered, but not in a way this screen could read.');
+        return;
+      }
+      if (res.ok) {
+        onOk && onOk(data);
+        return;
+      }
+      if (res.status === 409 && data.error === 'no_pin') {
+        fail('No PIN is set for this person. Set one before switching.');
+        return;
+      }
+      if (res.status === 429) {
+        fail('Too many tries — wait a few minutes');
+        return;
+      }
+      if (res.status === 401) {
+        fail();
+        return;
+      }
+      fail(data.detail || 'Could not switch to that account.');
+    };
     const submit = async val => {
+      if (purpose === 'switch') {
+        await submitSwitch(val);
+        return;
+      }
       try {
         const res = await fetch('/api/staff/pin/verify', {
           method: 'POST',
@@ -60156,6 +60216,7 @@ ${snap}`;
     const [pick, setPick] = useState(null);
     const [pin, setPin] = useState('');
     const [verifying, setVerifying] = useState(false);
+    const [err, setErr] = useState('');
     const others = (operators || []).filter(o => o.active !== false);
     if (!pick) {
       return /*#__PURE__*/React.createElement("div", {
@@ -60278,10 +60339,62 @@ ${snap}`;
       if (verifying || pin.length >= 4) return;
       const n = (pin + d).slice(0, 4);
       setPin(n);
-      if (n.length === 4) {
-        setVerifying(true);
-        setTimeout(() => onConfirm(pick), 850);
+      if (n.length !== 4) return;
+      setVerifying(true);
+      setErr('');
+      if (!pick.code) {
+        setVerifying(false);
+        setPin('');
+        setErr('This account has no staff id.');
+        return;
       }
+      fetch('/api/auth/switch', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          staffId: pick.code,
+          pin: n
+        })
+      }).then(async res => {
+        let data = null;
+        try {
+          data = await res.json();
+        } catch (e) {
+          data = null;
+        }
+        if (data == null) {
+          setVerifying(false);
+          setPin('');
+          setErr('The desk answered, but not in a way this screen could read.');
+          return;
+        }
+        if (res.ok) {
+          onConfirm(pick, data);
+          return;
+        }
+        setVerifying(false);
+        setPin('');
+        if (res.status === 409 && data.error === 'no_pin') {
+          setErr('No PIN is set for this person. Set one before switching.');
+          return;
+        }
+        if (res.status === 429) {
+          setErr('Too many tries — wait a few minutes');
+          return;
+        }
+        if (res.status === 401) {
+          setErr('Incorrect PIN');
+          return;
+        }
+        setErr(data.detail || 'Could not switch to that account.');
+      }).catch(e => {
+        setVerifying(false);
+        setPin('');
+        setErr(e && e.message || 'Could not reach the desk to switch accounts.');
+      });
     };
     return /*#__PURE__*/React.createElement("div", {
       style: Scrim
@@ -60302,7 +60415,13 @@ ${snap}`;
         color: 'var(--si-mute)',
         marginBottom: 4
       }
-    }, firstOf(pick.name), ", enter your PIN to take this drawer."), /*#__PURE__*/React.createElement(Dots, {
+    }, firstOf(pick.name), ", enter your PIN to take this drawer."), err ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: 'var(--si-flag)',
+        margin: '8px 0'
+      }
+    }, err) : null, /*#__PURE__*/React.createElement(Dots, {
       n: 4,
       filled: pin.length
     }), /*#__PURE__*/React.createElement(Keypad, {
@@ -65199,9 +65318,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       } catch (e) {}
     };
     const can = k => me.role === 'Owner' ? true : !!perms.Teller[k];
-    // switching account previews a role: it sets that person AND applies their
-    // role preset to the shared (all-tellers) permission set, so the whole UI
-    // reflects exactly what that role is allowed to do. Owner = all access.
+    const SRV2OS = {
+      administrator: 'Owner',
+      branch_manager: 'Manager',
+      supervisor: 'Senior teller',
+      compliance_officer: 'Manager',
+      teller: 'Cashier',
+      auditor: 'Trainee'
+    };
+    // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null); // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null); // { title, sub, name, expected, onOk } when a PIN is being asked
     const applyRole = s => {
@@ -65247,18 +65372,84 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return e ? e.requirePin !== false : true;
     };
     const askPin = opts => setPinGate(opts);
+    /* The menu used to call applyRole and stop. The cookie, and therefore
+       every deal, stayed with whoever had signed in. Switching now asks
+       the server to revoke that session and open one for this person.
+       There is no path that skips the PIN: a local "0000" is not a session. */
+    const finishSwitch = async switched => {
+      let res;
+      try {
+        res = await fetch('/api/auth/me', {
+          credentials: 'same-origin'
+        });
+      } catch (e) {
+        log('Account switch failed', e && e.message || 'The desk could not be reached after the switch.');
+        setStage('lock');
+        return;
+      }
+      if (!res.ok) {
+        log('Account switch failed', 'The session did not come back as the person who just took the desk.');
+        setStage('lock');
+        return;
+      }
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        log('Account switch failed', 'The desk did not say who is signed in.');
+        setStage('lock');
+        return;
+      }
+      const u = data && data.user;
+      if (!u || !u.id) {
+        log('Account switch failed', 'The desk did not name who is signed in.');
+        setStage('lock');
+        return;
+      }
+      srvUserRef.current = u;
+      setSrvUser(u);
+      setUser(u.id);
+      const pickTill = !!(switched && switched.pickTill);
+      if (window.CDOS.Backend) {
+        try {
+          if (pickTill) window.CDOS.Backend.setWorkspace(null);else if (switched && switched.workspaceId) window.CDOS.Backend.setWorkspace(switched.workspaceId);
+          const tills = await window.CDOS.Backend.loadWorkspaces();
+          const list = tills && tills.workspaces || [];
+          const wanted = !pickTill && switched && switched.workspaceId;
+          const active = wanted ? list.find(w => w.workspaceId === switched.workspaceId) || null : list[0] || null;
+          if (!pickTill && active) {
+            window.CDOS.Backend.setWorkspace(active.workspaceId);
+            await window.CDOS.Backend.loadTillSession();
+          }
+        } catch (e) {
+          log('Ledger tills unavailable', e && e.message || 'Could not read this branch’s tills after the switch.');
+        }
+      }
+      const local = (settings.employees || []).find(e => e.code === u.id);
+      applyRole({
+        name: u.name || local && local.name || u.id,
+        role: SRV2OS[u.role] || 'Cashier',
+        apps: local && Array.isArray(local.apps) ? local.apps : null
+      });
+      if (pickTill) {
+        setStage('station');
+        return;
+      }
+      setCashVersion(v => v + 1);
+    };
     const switchTo = s => {
       setAcctMenu(false);
       if (s.name === me.name) return;
-      const need = settings.pinOnSwitch !== false && s.requirePin !== false;
-      if (need) askPin({
+      askPin({
         title: 'Switch account',
         sub: 'Enter ' + s.name + '’s PIN to continue',
         name: s.name,
         staffId: s.code,
-        expected: s.pin || '0000',
-        onOk: () => applyRole(s)
-      });else applyRole(s);
+        purpose: 'switch',
+        onOk: switched => {
+          finishSwitch(switched);
+        }
+      });
     };
     const tillGate = fn => {
       const need = settings.pinOnTill !== false && reqPin(me.name);
@@ -65360,14 +65551,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           if (stageRef.current !== 'lock') return;
           const u = d.user;
           if (u.mustChangePassword) return; // that has its own screen, and a password we do not have
-          const SRV2OS = {
-            administrator: 'Owner',
-            branch_manager: 'Manager',
-            supervisor: 'Senior teller',
-            compliance_officer: 'Manager',
-            teller: 'Cashier',
-            auditor: 'Trainee'
-          };
           const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
           const rec = known || {
             id: 'e_' + Date.now(),
@@ -67056,9 +67239,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       operators: settings.employees && settings.employees.length ? settings.employees : STAFF,
       current: me,
       onCancel: () => setHandover(false),
-      onConfirm: op => {
+      onConfirm: (op, switched) => {
         setHandover(false);
-        applyRole(op);
+        finishSwitch(switched);
         log && log('operator.handover', {
           to: op.name
         });
@@ -67684,10 +67867,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       settings: settings,
       onClose: () => setReceipt(null)
     }), pinGate && window.CDOS.PinPrompt && /*#__PURE__*/React.createElement(window.CDOS.PinPrompt, _extends({}, pinGate, {
-      onOk: () => {
+      onOk: result => {
         const f = pinGate.onOk;
         setPinGate(null);
-        f && f();
+        if (f) f(result);
       },
       onCancel: () => setPinGate(null)
     })), moveCash && _ST.MoveModal && React.createElement(_ST.MoveModal, {

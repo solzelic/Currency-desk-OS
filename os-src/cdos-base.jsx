@@ -1206,7 +1206,7 @@
   /* ---- shared 4-digit PIN gate: reused at account switch, till switch, void.
      A proper mandatory-PIN screen — dot indicators + on-screen keypad, and the
      physical keyboard works too. ---- */
-  function PinPrompt({ title, sub, name, staffId, expected, onOk, onCancel }) {
+  function PinPrompt({ title, sub, name, staffId, expected, purpose, onOk, onCancel }) {
     const [pin, setPin] = React.useState('');
     const [err, setErr] = React.useState('');
     const [shake, setShake] = React.useState(false);
@@ -1221,7 +1221,38 @@
        devtools, or stepped over entirely. A desk whose PINs have not been set
        on the server yet answers 409, and only then do we fall back to the old
        local check so nothing breaks mid-migration. */
+    const readBody = async (res) => {
+      try { return await res.json(); }
+      catch (e) { return null; }
+    };
+    /* Account switch is a new sign-in. A 409 used to fall through to
+       comparing 0000 in this browser, which made the keypad optional.
+       A missing PIN is said in words. It is not treated as 0000. */
+    const submitSwitch = async (val) => {
+      if (!staffId) { fail('This account has no staff id.'); return; }
+      let res;
+      try {
+        res = await fetch('/api/auth/switch', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ staffId: staffId, pin: val }),
+        });
+      } catch (e) {
+        fail('Could not reach the desk to switch accounts.');
+        return;
+      }
+      const data = await readBody(res);
+      if (data == null) { fail('The desk answered, but not in a way this screen could read.'); return; }
+      if (res.ok) { onOk && onOk(data); return; }
+      if (res.status === 409 && data.error === 'no_pin') {
+        fail('No PIN is set for this person. Set one before switching.');
+        return;
+      }
+      if (res.status === 429) { fail('Too many tries — wait a few minutes'); return; }
+      if (res.status === 401) { fail(); return; }
+      fail(data.detail || 'Could not switch to that account.');
+    };
     const submit = async (val) => {
+      if (purpose === 'switch') { await submitSwitch(val); return; }
       try {
         const res = await fetch('/api/staff/pin/verify', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',

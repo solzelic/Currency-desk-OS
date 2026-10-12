@@ -60,7 +60,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Financial ledger — every balance, movement, P&L | Server Postgres ledger (`server/src/ledger/`). One book. The browser renders cash, never computes it |
 | Customers / KYC files | Server: `desk_clients` (+ documents/images tables). `ledger_customers` is the ledger-side counterparty record — deliberately distinct |
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
-| Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
+| Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers. Switching staff replaces the session. The name on a deal is that session |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 | Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
 
@@ -555,6 +555,17 @@ refusal does not count. Only a wrong current PIN, or a wrong password
 on that door, counts. A right PIN on the keypad gives the run back.
 A burst of wrong guesses still stops at five. The lock still lives in
 memory on this process.
+
+**2026-10-12**, staff switch. Taking the desk from the avatar menu is a new
+session. `POST /api/auth/switch` checks the next person's server-held
+PIN, refuses a missing PIN, and refuses `0000`. It revokes the cookie
+that was live and issues one for them. The till stays only when they
+may use it; otherwise they pick one. The screen applies the role
+`/api/auth/me` returns after that. The Settings toggle that used to
+skip the PIN does not skip the server. A deal, a till open, and an
+audit row carry the new session. Before this, a successful switch
+wrote nothing, so a deal whose screen said one person and whose
+`actor_id` is another cannot be found with a query.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
