@@ -27,6 +27,11 @@ test.describe.configure({ mode: "serial" });
 test.use({ timezoneId: "UTC" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
+/* cash-seam needs the demo drawer never to have been opened. This
+   file trades on its own till, the same way the day-long shift does. */
+const GAP_TILL = "till-date-gap";
+let gapWorkspaceId = "";
+
 const JERUSALEM_AFTER_MIDNIGHT = "2026-10-12T00:30:00+03:00";
 const TORONTO_BEFORE_MIDNIGHT = "2026-10-11T23:30:00-04:00";
 const TORONTO_AFTER_UTC_MIDNIGHT = "2026-10-12T00:30:00Z";
@@ -75,6 +80,50 @@ async function restoreBranchZone(timeZone: string) {
   } finally {
     await pool.end();
   }
+}
+
+async function ensureGapTill(page: Page): Promise<void> {
+  if (!gapWorkspaceId) {
+    const created = await page.evaluate(async (tillId) => {
+      const response = await fetch("/api/desk/branches/br-yorkville/tills", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ tillId }),
+      });
+      return { status: response.status, body: await response.json().catch(() => ({})) };
+    }, GAP_TILL);
+    const id = created.body.till?.workspaceId ?? created.body.workspaceId;
+    if (!id) throw new Error(`the date-gap till could not be added: ${JSON.stringify(created)}`);
+    gapWorkspaceId = id as string;
+  }
+  const ws = gapWorkspaceId;
+  await page.addInitScript((workspaceId) => {
+    const orig = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.includes("/api/ledger") && !url.includes("/api/quotes")) return orig(input, init);
+      const headers = new Headers(init?.headers);
+      if (!headers.has("x-workspace-id")) headers.set("x-workspace-id", workspaceId as string);
+      return orig(input, { ...init, headers });
+    };
+  }, ws);
+  await page.evaluate(async (workspaceId) => {
+    const orig = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.includes("/api/ledger") && !url.includes("/api/quotes")) return orig(input, init);
+      const headers = new Headers(init?.headers);
+      if (!headers.has("x-workspace-id")) headers.set("x-workspace-id", workspaceId);
+      return orig(input, { ...init, headers });
+    };
+    const me = await fetch("/api/auth/me").then((r) => r.json());
+    if (me.user?.id) localStorage.setItem(`cdesk.ledger.till.${me.user.id}`, workspaceId);
+    if (window.CDOS?.Backend?.selectWorkspace) {
+      const resolved = await window.CDOS.Backend.selectWorkspace(workspaceId);
+      window.CDOS.Backend.setWorkspace(resolved.workspaceId || workspaceId);
+    }
+  }, ws);
 }
 
 async function countExactlyAndClose(page: Page, key: string) {
@@ -159,7 +208,10 @@ async function ensureBoard(page: Page) {
     });
     return answer.ok ? "published" : `publish: ${answer.status} ${await answer.text()}`;
   });
-  if (published === "published") await signInAtDesk(page, "j.masri");
+  if (published === "published") {
+    await signInAtDesk(page, "j.masri");
+    await ensureGapTill(page);
+  }
   return published;
 }
 
@@ -276,6 +328,7 @@ test("the cash drawer asks for the session window, not the browser's midnight", 
     await arm(page, at, seen);
     previous = await setBranchZone("Asia/Jerusalem");
     await signInAtDesk(page, "j.masri");
+    await ensureGapTill(page);
     const closed = await countExactlyAndClose(page, `gap-till-close-${Date.now()}`);
     expect(closed.ok, closed.why).toBe(true);
     const opened = await openSession(page);
@@ -329,6 +382,7 @@ test("an ID expiring today stays current in Toronto, on the status and the badge
     await arm(page, at, seen, true);
     previous = await setBranchZone("America/Toronto");
     await signInAtDesk(page, "j.masri");
+    await ensureGapTill(page);
     const closed = await countExactlyAndClose(page, `gap-tor-id-close-${Date.now()}`);
     expect(closed.ok, closed.why).toBe(true);
     const opened = await openSession(page);
@@ -365,6 +419,7 @@ test("an ID expiring today stays current in Jerusalem, and one that expired yest
     await arm(page, at, seen, true);
     previous = await setBranchZone("Asia/Jerusalem");
     await signInAtDesk(page, "j.masri");
+    await ensureGapTill(page);
     const closed = await countExactlyAndClose(page, `gap-jlem-id-close-${stamp}`);
     expect(closed.ok, closed.why).toBe(true);
     const opened = await openSession(page);
@@ -407,6 +462,7 @@ test("the dashboard's 30-day window ends at the branch midnight", async ({ page 
     await arm(page, at, seen);
     previous = await setBranchZone("America/Toronto");
     await signInAtDesk(page, "j.masri");
+    await ensureGapTill(page);
     const closed = await countExactlyAndClose(page, `gap-dash-close-${Date.now()}`);
     expect(closed.ok, closed.why).toBe(true);
     const opened = await openSession(page);
@@ -456,6 +512,7 @@ test("a ledger row shows the branch calendar date of the posting, not the UTC da
     await arm(page, at, seen);
     previous = await setBranchZone("Asia/Jerusalem");
     await signInAtDesk(page, "j.masri");
+    await ensureGapTill(page);
     const closed = await countExactlyAndClose(page, `gap-row-close-${Date.now()}`);
     expect(closed.ok, closed.why).toBe(true);
     const opened = await openSession(page);
