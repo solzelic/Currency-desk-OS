@@ -1689,10 +1689,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-honest-tiles { grid-template-columns: 1fr; }
 }
 
-/* Back out of a ledger record. On the desktop this lives in the
-   window title bar. That bar is hidden on a phone, so the record
-   shows its own control. Hidden here so a wide window is unchanged. */
-.phone-tx-back { display: none; }
+/* Back out of a phone screen. The desktop keeps Back in the
+   window title bar, so this control stays off a wide window. */
+.phone-back { display: none; }
 /* These wrappers exist so a phone can restack the drawer header.
    contents keeps the desktop flex items where they already were. */
 .till-statusline, .till-tabwrap { display: contents; }
@@ -1749,19 +1748,38 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      #desktop beats the 44px phone rule on .win-body. */
   #desktop .win > .win-body,
   #desktop .win.bar-hidden > .win-body { padding-top: 0 !important; }
-  .phone-tx-back {
-    display: grid;
-    place-items: center;
-    width: 44px;
+  .phone-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    box-sizing: border-box;
     height: 44px;
-    flex: none;
-    margin-left: -6px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 8px 0 0;
     border: 0;
-    border-radius: 8px;
     background: transparent;
-    color: var(--ink, #111);
+    color: var(--color-text);
+    font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
     cursor: pointer;
-    padding: 0;
+    flex: none;
+    white-space: nowrap;
+  }
+  .phone-back-chevron {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    display: block;
+  }
+  .phone-back-chevron path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .phone-head {
