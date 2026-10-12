@@ -113,21 +113,55 @@
        the time the desk can actually try again. */
     const [locked, setLocked] = useState(false);
     const [lockUntil, setLockUntil] = useState('');
+    const [lockAt, setLockAt] = useState(0);
+    const [lockZone, setLockZone] = useState('');
     const sending = useRef(false);
     useEffect(() => {
       if (cool <= 0) return;
       const t = setTimeout(() => setCool(c => c - 1), 1000);
       return () => clearTimeout(t);
     }, [cool]);
+    /* The lock ends when the server's time passes. The page clock is
+       what the button watches, so a wait on this screen is enough.
+       There is no reload. */
+    useEffect(() => {
+      if (!locked || !lockAt) return undefined;
+      const tick = () => {
+        if (Date.now() < lockAt) return;
+        setLocked(false);
+        setLockUntil('');
+        setLockAt(0);
+        setLockZone('');
+      };
+      tick();
+      const t = setInterval(tick, 1000);
+      return () => clearInterval(t);
+    }, [locked, lockAt]);
     const startCooldown = (secs) => setCool(Math.max(1, Math.round(secs || 120)));
     const applyLock = (d) => {
       if (!d || d.error !== 'too_many_attempts') return false;
+      const at = typeof d.retryAt === 'string' ? Date.parse(d.retryAt) : NaN;
       setLocked(true);
       setLockUntil(typeof d.until === 'string' ? d.until : '');
+      setLockZone(typeof d.timeZone === 'string' ? d.timeZone : '');
+      setLockAt(Number.isFinite(at) ? at : 0);
       setErr('');
       return true;
     };
-    const clearLock = () => { setLocked(false); setLockUntil(''); };
+    const clearLock = () => { setLocked(false); setLockUntil(''); setLockAt(0); setLockZone(''); };
+    const zoneLabel = (timeZone) => {
+      if (!timeZone) return '';
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(new Date());
+        const name = parts.find(part => part.type === 'timeZoneName');
+        return name && name.value ? name.value : '';
+      } catch (e) { return ''; }
+    };
+    const lockSentence = !locked ? ''
+      : !lockUntil ? 'Too many tries. Try again in a few minutes.'
+      : zoneLabel(lockZone)
+        ? 'Too many tries. Try again at ' + lockUntil + ' (' + zoneLabel(lockZone) + ').'
+        : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
@@ -176,7 +210,7 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId, password: pw }),
         });
-        if (res && res.status === 401) { sending.current = false; setBusy(false); setErr('That password doesn’t match this ID. Try again — or reset it below.'); return; }
+        if (res && res.status === 401) { sending.current = false; setBusy(false); setErr('That password doesn\u2019t match this ID. Try again, or reset it below.'); return; }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
           sending.current = false; setBusy(false);
@@ -185,7 +219,8 @@
           setErr((d && d.detail) || 'A code went out moments ago. Check your email.');
           return;
         }
-        if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + ') — try again in a moment.'); return; }
+        if (res && res.status === 503) { sending.current = false; setBusy(false); setErr('Sign-in is having trouble. Try again in a minute.'); return; }
+        if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + '). Try again in a moment.'); return; }
         const data = await res.json().catch(() => null);
         const u = (data && data.user) || null;
         const srvPlan = (u && u.plan) || null;
@@ -397,29 +432,26 @@
         </div>
         <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{first ? 'Welcome back, ' + first : 'Welcome back'}</h1>
         <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--si-mute)', marginBottom: 18 }}>
-          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); clearLock(); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
+          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); clearLock(); }} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px', background: 'none', border: 'none', color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
         </div>
         <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>PASSWORD</div>
         <div style={{ position: 'relative' }}>
           <input type={showPw ? 'text' : 'password'} value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} autoFocus placeholder="••••••••" autoComplete="current-password"
-            style={{ width: '100%', boxSizing: 'border-box', padding: '13px 62px 13px 14px', fontSize: 15, border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }}
+            style={{ width: '100%', boxSizing: 'border-box', minHeight: 56, padding: '6px 88px 6px 14px', fontSize: 15, border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }}
             onFocus={e => { e.target.style.borderColor = 'var(--si-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(29,107,69,0.14)'; }}
             onBlur={e => { e.target.style.borderColor = 'var(--si-line)'; e.target.style.boxShadow = 'none'; }} />
-          <button type="button" onClick={() => setShowPw(s => !s)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--si-mute)', background: 'var(--si-soft)', border: 'none', borderRadius: 7, padding: '5px 9px', cursor: 'pointer' }}>{showPw ? 'HIDE' : 'SHOW'}</button>
+          <button type="button" onClick={() => setShowPw(s => !s)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', height: 44, minWidth: 44, padding: '0 12px', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--si-ink)', background: 'var(--si-soft)', border: 'none', borderRadius: 7, cursor: 'pointer' }}>{showPw ? 'HIDE' : 'SHOW'}</button>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 8 }}>
           Forgot it?{' '}
           <button type="button" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); }}
-            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 11.5 }}>
+            style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 4px', background: 'none', border: 'none', color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>
             Send yourself a reset code</button>.
         </div>
-        {/* The clock is the lock. 22px is the same size as the code
-            digits, so a phone can read the time without zooming. The
-            old line was 12px and sat under a countdown of retryAfter. */}
-        {lockUntil && <div style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--si-ink)', marginTop: 16, lineHeight: 1.35 }}>Try again at {lockUntil}</div>}
-        {err && !lockUntil && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
+        {locked && <div style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--si-ink)', marginTop: 16, lineHeight: 1.35 }}>{lockSentence}</div>}
+        {err && !locked && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
         <button type="submit" disabled={busy || locked || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4), marginTop: 16 }}>
-          {busy ? 'Checking…' : locked ? 'Locked' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
+          {busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
         {/* A staff id with no @ has nowhere to send a code. Saying we
             will email one tells them the wrong next step, and it is
             worse on a lock, where the button is not going to send. */}

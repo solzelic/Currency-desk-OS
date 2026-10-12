@@ -561,8 +561,11 @@ authenticated narrative dashboard.
 Postgres, five per account and twenty per address, for fifteen
 minutes. The count is written before the answer, so a burst cannot
 slip a correct password through after the limit. The lock says "Too
-many tries. Try again in N minutes." and an unknown staff id gets
-that same sentence. The address is `CF-Connecting-IP` when the
+many tries. Try again in N minutes." The screen says "Too many tries.
+Try again at 10:42 AM (EDT)." in the branch's zone, and the button
+comes back when that time passes. With no time from the server it
+says "Too many tries. Try again in a few minutes." An unknown staff
+id gets that same sentence. The address is `CF-Connecting-IP` when the
 hop is in Cloudflare's published ranges and that header is an IP. A
 missing or invalid header counts the socket peer and logs a warning
 that does not include the header value. Otherwise the address is the

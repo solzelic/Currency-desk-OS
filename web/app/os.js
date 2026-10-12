@@ -58832,24 +58832,61 @@ ${snap}`;
        the time the desk can actually try again. */
     const [locked, setLocked] = useState(false);
     const [lockUntil, setLockUntil] = useState('');
+    const [lockAt, setLockAt] = useState(0);
+    const [lockZone, setLockZone] = useState('');
     const sending = useRef(false);
     useEffect(() => {
       if (cool <= 0) return;
       const t = setTimeout(() => setCool(c => c - 1), 1000);
       return () => clearTimeout(t);
     }, [cool]);
+    /* The lock ends when the server's time passes. The page clock is
+       what the button watches, so a wait on this screen is enough.
+       There is no reload. */
+    useEffect(() => {
+      if (!locked || !lockAt) return undefined;
+      const tick = () => {
+        if (Date.now() < lockAt) return;
+        setLocked(false);
+        setLockUntil('');
+        setLockAt(0);
+        setLockZone('');
+      };
+      tick();
+      const t = setInterval(tick, 1000);
+      return () => clearInterval(t);
+    }, [locked, lockAt]);
     const startCooldown = secs => setCool(Math.max(1, Math.round(secs || 120)));
     const applyLock = d => {
       if (!d || d.error !== 'too_many_attempts') return false;
+      const at = typeof d.retryAt === 'string' ? Date.parse(d.retryAt) : NaN;
       setLocked(true);
       setLockUntil(typeof d.until === 'string' ? d.until : '');
+      setLockZone(typeof d.timeZone === 'string' ? d.timeZone : '');
+      setLockAt(Number.isFinite(at) ? at : 0);
       setErr('');
       return true;
     };
     const clearLock = () => {
       setLocked(false);
       setLockUntil('');
+      setLockAt(0);
+      setLockZone('');
     };
+    const zoneLabel = timeZone => {
+      if (!timeZone) return '';
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          timeZoneName: 'short'
+        }).formatToParts(new Date());
+        const name = parts.find(part => part.type === 'timeZoneName');
+        return name && name.value ? name.value : '';
+      } catch (e) {
+        return '';
+      }
+    };
+    const lockSentence = !locked ? '' : !lockUntil ? 'Too many tries. Try again in a few minutes.' : zoneLabel(lockZone) ? 'Too many tries. Try again at ' + lockUntil + ' (' + zoneLabel(lockZone) + ').' : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = raw => {
@@ -58939,7 +58976,7 @@ ${snap}`;
         if (res && res.status === 401) {
           sending.current = false;
           setBusy(false);
-          setErr('That password doesn’t match this ID. Try again — or reset it below.');
+          setErr('That password doesn\u2019t match this ID. Try again, or reset it below.');
           return;
         }
         if (res && res.status === 429) {
@@ -58951,10 +58988,16 @@ ${snap}`;
           setErr(d && d.detail || 'A code went out moments ago. Check your email.');
           return;
         }
+        if (res && res.status === 503) {
+          sending.current = false;
+          setBusy(false);
+          setErr('Sign-in is having trouble. Try again in a minute.');
+          return;
+        }
         if (res && !res.ok) {
           sending.current = false;
           setBusy(false);
-          setErr('Sign-in service error (' + res.status + ') — try again in a moment.');
+          setErr('Sign-in service error (' + res.status + '). Try again in a moment.');
           return;
         }
         const data = await res.json().catch(() => null);
@@ -59525,9 +59568,12 @@ ${snap}`;
           clearLock();
         },
         style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          minHeight: 44,
+          padding: '0 8px',
           background: 'none',
           border: 'none',
-          padding: 0,
           color: 'var(--si-primary)',
           cursor: 'pointer',
           fontWeight: 700
@@ -59557,7 +59603,8 @@ ${snap}`;
         style: {
           width: '100%',
           boxSizing: 'border-box',
-          padding: '13px 62px 13px 14px',
+          minHeight: 56,
+          padding: '6px 88px 6px 14px',
           fontSize: 15,
           border: '1px solid var(--si-line)',
           borderRadius: 11,
@@ -59577,18 +59624,20 @@ ${snap}`;
         onClick: () => setShowPw(s => !s),
         style: {
           position: 'absolute',
-          right: 8,
+          right: 6,
           top: '50%',
           transform: 'translateY(-50%)',
+          height: 44,
+          minWidth: 44,
+          padding: '0 12px',
           fontFamily: MONO,
           fontSize: 10.5,
           fontWeight: 700,
           letterSpacing: '0.06em',
-          color: 'var(--si-mute)',
+          color: 'var(--si-ink)',
           background: 'var(--si-soft)',
           border: 'none',
           borderRadius: 7,
-          padding: '5px 9px',
           cursor: 'pointer'
         }
       }, showPw ? 'HIDE' : 'SHOW')), /*#__PURE__*/React.createElement("div", {
@@ -59606,16 +59655,19 @@ ${snap}`;
           setStep('forgot');
         },
         style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          minHeight: 44,
+          padding: '0 4px',
           background: 'none',
           border: 'none',
-          padding: 0,
           color: 'var(--si-primary)',
           fontWeight: 700,
           cursor: 'pointer',
           textDecoration: 'underline',
-          fontSize: 11.5
+          fontSize: 13
         }
-      }, "Send yourself a reset code"), "."), lockUntil && /*#__PURE__*/React.createElement("div", {
+      }, "Send yourself a reset code"), "."), locked && /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 22,
@@ -59625,7 +59677,7 @@ ${snap}`;
           marginTop: 16,
           lineHeight: 1.35
         }
-      }, "Try again at ", lockUntil), err && !lockUntil && /*#__PURE__*/React.createElement("div", {
+      }, lockSentence), err && !locked && /*#__PURE__*/React.createElement("div", {
         style: {
           color: 'var(--si-flag)',
           fontSize: 12,
@@ -59638,7 +59690,7 @@ ${snap}`;
           ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4),
           marginTop: 16
         }
-      }, busy ? 'Checking…' : locked ? 'Locked' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
+      }, busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 11.5,
