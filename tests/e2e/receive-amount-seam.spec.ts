@@ -147,7 +147,11 @@ async function restoreBoard(request: APIRequestContext): Promise<void> {
   boardBefore = null;
 }
 
-async function quoteUsdToCad(page: Page, width: number): Promise<void> {
+/* Signs in at the shared till with the QA board. Does not post.
+   A USD 3,500 we-buy pays 4,702.63 CAD out of a 25,000 opening, so
+   only the viewport cases (and the yen case's one setup post) may
+   call quoteUsdToCad. */
+async function prepareDesk(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
   await page.addInitScript(() => {
     const key = "cdos_clients_v1";
@@ -183,7 +187,6 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   await pinQaBoard(page);
   await signInAtDesk(page, "m.costa");
   await dismissTour(page);
-  await openNewTransaction(page);
   await page.waitForFunction(() => {
     const raw = localStorage.getItem("yorkfx_rates_v1");
     if (!raw) return false;
@@ -191,6 +194,11 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
     const mid = board.rows && board.rows.USD && board.rows.USD.mid;
     return typeof mid === "number" && Math.abs(mid - 1.36407) < 1e-9 && Math.abs(board.buyMargin - 0.015) < 1e-9;
   });
+}
+
+async function quoteUsdToCad(page: Page, width: number): Promise<void> {
+  await prepareDesk(page, width);
+  await openNewTransaction(page);
   await page.locator(".cd-tx-customer input").fill("Amina Diallo");
   await page.locator(".cd-money input").first().click();
   await page.locator(".cd-tx-swap").click();
@@ -466,7 +474,7 @@ test("whole yen Customer receives is the posted amount", async ({ page, request 
 
 test("a we-sell fee is cash the till takes, and the headline says so", async ({ page, request }) => {
   try {
-    await quoteUsdToCad(page, 1280);
+    await prepareDesk(page, 1280);
     await openNewTransaction(page);
     await page.locator(".cd-tx-customer input").fill("Amina Diallo");
     await page.locator(".cd-money input").first().fill("100");
@@ -499,7 +507,7 @@ test("a we-sell fee is cash the till takes, and the headline says so", async ({ 
 
 test("a we-buy fee is cash the till pays out, and the headline says so", async ({ page, request }) => {
   try {
-    await quoteUsdToCad(page, 1280);
+    await prepareDesk(page, 1280);
     await openNewTransaction(page);
     await page.locator(".cd-tx-customer input").fill("Amina Diallo");
     await page.locator(".cd-money input").first().click();
@@ -531,7 +539,7 @@ test("a we-buy fee is cash the till pays out, and the headline says so", async (
 
 test("half-up Customer receives is the posted amount, not banker's rounding", async ({ page, request }) => {
   try {
-    await quoteUsdToCad(page, 1280);
+    await prepareDesk(page, 1280);
     await page.evaluate(async () => {
       const login = await fetch("/api/auth/login", {
         method: "POST",
@@ -581,7 +589,7 @@ test("half-up Customer receives is the posted amount, not banker's rounding", as
 
 test("an old build id is refused and nothing posts", async ({ page, request }) => {
   try {
-    await quoteUsdToCad(page, 1280);
+    await prepareDesk(page, 1280);
     const sources = await page.locator("script[src]").evaluateAll((els) => els.map((el) => el.getAttribute("src") || ""));
     expect(sources.some((src) => /\/web\/app\/quote-terms\.min\.js\?v=[0-9a-f]+/.test(src)), sources.join(" ")).toBeTruthy();
     expect(sources.some((src) => /\/web\/app\/os\.js\?v=[0-9a-f]+/.test(src)), sources.join(" ")).toBeTruthy();
@@ -619,7 +627,7 @@ test("an old build id is refused and nothing posts", async ({ page, request }) =
 
 test("the picker hides three-decimal currencies and a yen fraction is not READY", async ({ page, request }) => {
   try {
-    await quoteUsdToCad(page, 1280);
+    await prepareDesk(page, 1280);
     await page.evaluate(() => {
       const cfg = JSON.parse(localStorage.getItem("yorkfx_rates_v1") || "{}");
       cfg.rows = cfg.rows || {};
@@ -656,7 +664,7 @@ test.describe("a frozen quote counts down outside Toronto", () => {
   test.use({ timezoneId: "Pacific/Kiritimati" });
   test("shows the time left, then disables Post", async ({ page, request }) => {
     try {
-      await quoteUsdToCad(page, 1280);
+      await prepareDesk(page, 1280);
       expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe("Pacific/Kiritimati");
       await page.clock.install();
       await openNewTransaction(page);
