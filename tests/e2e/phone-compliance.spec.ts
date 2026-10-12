@@ -240,14 +240,18 @@ test("owner and teller phone homes stay honest", async ({ page }) => {
       await expect(sanctions.locator(".phone-row-sub")).toHaveText("Check names by hand for now");
       await expect(sanctions.locator(".phone-row-sub")).toHaveCSS("white-space", "nowrap");
       await expect(sanctions.locator(".phone-row-chev")).toBeVisible();
+      await expect(sanctions).toContainText("Not connected");
       expect(await sanctions.locator(".phone-row-sub").innerText()).not.toContain("Sanctions screening");
       expect(await tile.innerText()).not.toMatch(/\d/);
       const idRow = home.getByRole("button", { name: /Automatic ID checks/ });
       await expect(idRow.locator(".phone-row-sub")).toHaveText("Check ID in person for now");
       await expect(idRow.locator(".phone-row-sub")).toHaveCSS("white-space", "nowrap");
       await expect(idRow.locator(".phone-row-chev")).toBeVisible();
-      const subFits = await idRow.locator(".phone-row-sub").evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
-      expect(subFits).toBe(true);
+      await expect(idRow).toContainText("Not connected");
+      const subFits = await Promise.all([sanctions, idRow].map((row) =>
+        row.locator(".phone-row-sub").evaluate((el) => el.scrollWidth <= el.clientWidth + 1)
+      ));
+      expect(subFits).toEqual([true, true]);
       await expect(home.getByRole("button", { name: "Open Clients" })).toBeVisible();
       await expect(page.locator("#phone-fab")).toHaveCount(0);
       await expectTillGaps(page);

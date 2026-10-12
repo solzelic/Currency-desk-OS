@@ -558,6 +558,7 @@
                     className="cph-check"
                     title="Sanctions screening"
                     subtitle="Check names by hand for now"
+                    badge={{ label: 'Not connected', tone: 'neutral' }}
                     chevron
                     onClick={() => setExplain('screening')}
                   />
@@ -566,6 +567,7 @@
                   className="cph-check"
                   title="Automatic ID checks"
                   subtitle="Check ID in person for now"
+                  badge={{ label: 'Not connected', tone: 'neutral' }}
                   chevron
                   onClick={() => setExplain('identity')}
                 />

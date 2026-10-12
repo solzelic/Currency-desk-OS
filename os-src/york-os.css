@@ -3157,6 +3157,25 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding-left: 16px;
     padding-right: 16px;
   }
+  /* Line 1 is the title, the badge, and the chevron. Line 2 is the
+     subtitle across the row, so it still fits at 360. */
+  [data-phone-shell][data-app="compliance"] .cph-check {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 12px;
+    row-gap: 0;
+    align-items: center;
+  }
+  [data-phone-shell][data-app="compliance"] .cph-check .phone-row-main { display: contents; }
+  [data-phone-shell][data-app="compliance"] .cph-check .phone-row-title { grid-column: 1; grid-row: 1; }
+  [data-phone-shell][data-app="compliance"] .cph-check .phone-row-end {
+    grid-column: 2;
+    grid-row: 1;
+    flex-direction: row;
+    max-width: none;
+  }
+  [data-phone-shell][data-app="compliance"] .cph-check .phone-row-chev { grid-column: 3; grid-row: 1; }
+  [data-phone-shell][data-app="compliance"] .cph-check .phone-row-sub { grid-column: 1 / -1; grid-row: 2; }
   [data-app="compliance"] .cph-note {
     margin: 0 0 12px;
     font-size: 14px;

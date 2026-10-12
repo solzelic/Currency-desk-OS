@@ -63696,12 +63696,20 @@ window.CDOS_PERSIST = (function () {
       className: "cph-check",
       title: "Sanctions screening",
       subtitle: "Check names by hand for now",
+      badge: {
+        label: 'Not connected',
+        tone: 'neutral'
+      },
       chevron: true,
       onClick: () => setExplain('screening')
     })), /*#__PURE__*/React.createElement(Phone.ListRow, {
       className: "cph-check",
       title: "Automatic ID checks",
       subtitle: "Check ID in person for now",
+      badge: {
+        label: 'Not connected',
+        tone: 'neutral'
+      },
       chevron: true,
       onClick: () => setExplain('identity')
     }), /*#__PURE__*/React.createElement(Phone.ListRow, {
