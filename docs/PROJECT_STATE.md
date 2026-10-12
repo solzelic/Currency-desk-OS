@@ -635,6 +635,10 @@ empty stylesheet. The 1280 spec now serves Archivo and Space Mono from
 A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
 
+**2026-10-12**, phone toast. The shared toast sits at the bottom, 16px
+above the sticky action, inset 16px, `--radius-md`, `--gray-900`
+with white 14/20 text. It leaves after 4 seconds. `role="status"`.
+
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the
 audit seed still shows 9:05 AM, and the Cheques picture is the seeded
