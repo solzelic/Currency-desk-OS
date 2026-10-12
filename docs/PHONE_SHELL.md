@@ -40,7 +40,8 @@ window.CDOS.Phone.formatMoney(amount, code)   // the same function
 A negative uses a minus sign (U+2212): `formatPhoneMoney(-5, 'USD')` is
 `−5.00 USD`.
 
-Grouping is `Intl` `en-CA` with fraction digits set by hand. It is not
+Grouping is en-CA (commas, a period, the code after the number). The
+digits are formatted from the string, not from a float. It is not
 `style: 'currency'`, which prints `$`.
 
 Minor units match `EXCEPTIONS` in `server/src/ledger/currencies.ts`.
@@ -51,9 +52,11 @@ The browser cannot import that file. The lists live in
 - 3 places: BHD IQD JOD KWD LYD OMR TND
 - everything else: 2
 
-`null`, `undefined`, `''`, a non-finite number, or a code that is not three
-letters returns `''`. A real zero is `0.00 CAD` (or `0 JPY`). Absent stays
-absent.
+`null`, `undefined`, and `''` return `''`. A code that is not three
+letters returns `''`. A malformed amount (`0x10`, `1,2,3`, `1e2`, a
+number past `Number.MAX_SAFE_INTEGER`) is an em dash (`—`), never a
+parsed guess. A real zero is `0.00 CAD` (or `0 JPY`). Absent stays
+absent. A decimal string such as `9007199254740993.25` keeps every digit.
 
 `os-src/cdos-base.jsx` still has an earlier helper of the same name. The
 script in `os-src/phone/format.js` loads later and is the one the phone
@@ -71,18 +74,20 @@ window.CDOS.Phone.formatTime(value, timeZone)   // the same function
 uppercase, as in `10:16 AM`. The phone does not follow the desktop
 24-hour setting.
 
-`timeZone` is the branch zone (`settings.timezone`). Omit it and the
-formatter uses `America/Toronto`, the desk default.
+`timeZone` is the branch zone (`settings.timezone`). A wall clock does
+not need one. An instant with no zone is an em dash. The formatter
+does not assume Toronto.
 
 A wall clock (`15:02`, `2026-06-18 15:02`, `2026-06-18T15:02:00` with no
 `Z` and no numeric offset) is already a local time. The zone does not
-move it.
+move it. `13:02 AM` is not a clock. It is an em dash. `13:02` with no
+suffix is `1:02 PM`.
 
 A `Date`, or a string that ends in `Z` or a numeric offset, is an
 instant. `2026-06-18T19:02:00Z` is `3:02 PM` in `America/Toronto` and
-`7:02 PM` in `UTC`.
+`7:02 PM` in `UTC`. The same instant with no zone is an em dash.
 
-A bad zone, a blank, or a value with no clock returns `''`.
+A blank returns `''`. A bad zone or a value with no clock is an em dash.
 
 ## Date
 
@@ -97,12 +102,16 @@ window.CDOS.Phone.formatDate(value, timeZone)   // the same function
 the string. It does not pass that string to `Date`, so UTC midnight
 cannot move the day.
 
-An instant uses the calendar day in the branch zone.
+An instant uses the calendar day in the branch zone the caller passes.
 `2026-06-18T03:30:00Z` is `Jun 17, 2026` in `America/Toronto`.
 A `Date` built from `2026-06-18` alone is that UTC midnight instant,
 and it does move. Callers pass the `YYYY-MM-DD` string.
+An instant with no zone is an em dash.
 
-A blank or a value with no calendar day returns `''`.
+`2026-02-31` and `2026-02-29` are not days. They are an em dash.
+`2024-02-29` is `Feb 29, 2024`.
+
+A blank returns `''`. A value with no calendar day is an em dash.
 
 ## List groups
 
@@ -386,51 +395,38 @@ the dialogs they were.
 ## Desktop baselines
 
 `tests/e2e/desktop-unchanged.spec.ts` is the one desktop picture for the
-whole desk. At 1280×800 it captures the open window of every app —
-Ledger, Clients, Rates, Till, Compliance, Reports, Settings, Pricing,
-Transfers, Cheques, Vault, and Audit trail — and the sign-in screen
-(`#lock`). The comparison is `maxDiffPixels: 20` and `threshold: 0.2`.
-On Actions run 38188660101 the Till window matched, then the retry
-differed by 6 pixels of antialiasing. 20 is the ceiling for that
-noise on one window. A content change is larger — the Cheques
-customer id on that run was 592 pixels — and still fails.
+whole desk. At 1280×800 it captures the menu bar, the open window, and
+the dock for every app — Ledger, Clients, Rates, Till, Compliance,
+Reports, Settings, Pricing, Transfers, Cheques, Vault, and Audit — and
+the sign-in screen (`#lock`). The comparison is `maxDiffPixels: 0` and
+`threshold: 0`. Animations and the caret are off. A one-character
+change in a rate, a code, an amount, a fee, a hold date, or a cheque
+number fails the picture.
 
-The PNG files in `tests/e2e/desktop-unchanged.spec.ts-snapshots/` are
-the GitHub Actions render of the foundation head. A laptop and Actions
-do not paint the fallback font the same way. The difference is thousands
-of pixels, with no layout change. Those files are downloaded from the
-`desktop-unchanged-baselines` artifact and committed. They are not
-generated on a laptop. The pictures in the tree were written by Actions
-run 38187138637.
+The page clock is `2026-06-18T15:02:00.000Z` (15:02 on the menu bar,
+3:02 PM where the desk uses a 12-hour clock). The audit seed's
+`2026-06-18 09:05` paints 9:05 AM, so an AM/PM swap is in the Audit
+picture. "2m ago" is that same clock, not a string written after render.
 
-The capture replaces a transaction ref (`CD-` plus a random suffix),
-a six-character seam-run token, and a UUID with fixed text of the
-same length before it takes the picture. The UUID match does not
-require a word boundary, so `cust_` plus an id is frozen too.
-The Northwood cheque number is still minted as `00` plus the
-millisecond, so a second day on the same database is a new piece
-of paper. The picture rewrites that one `#` to `#00898`, the digits
-in the committed Cheques PNG. Sample numbers 004821, 1180, 00917,
-and 88204 are left as they are. On Actions run 38193394311 that
-number was the whole Cheques miss: 29 pixels, identical on both
-attempts. The PNG was not replaced.
-Those values change every suite run. The first committed pictures
-did not freeze the ref, so the next Actions run differed by that
-column. The Cheques picture in the tree is the Actions render from
-run 38189339979, with the customer id frozen. Those pictures were
-not regenerated. Before the shot the page clock is pinned, a rate
-poll replays its first response (`RATES_SYNC` is already off),
-animations and the caret are off, and `document.fonts.ready` has
-resolved.
+The Cheques picture is one seeded cheque: number `48120`, hold date
+`2026-06-23`, face `1200.00`, fee `5.00`, customer
+`cust_11111111-1111-4111-8111-111111111111`. The USD mid on the rate
+board is `1.3914`, written into `yorkfx_rates_v1` before the page
+scripts run. The embedded board opens from the desk session, so the
+editor is what the Rates picture shows. The "Updated" line is written
+only when the words change. Ledger lists that other tests already posted
+are not drawn. The clients list is the empty server answer, and the
+cash drawer is told the branch has one till, so a contact or a second
+drawer created earlier in the suite cannot enter the picture. Nothing
+rewrites the text after it renders.
 
-Inter is loaded only at `max-width: 430px` (`media` on the stylesheet
-link, and `--font-ui` in `os-src/tokens.css`). Wider than that the desk
-uses Archivo, the same face as main. A desktop picture that names Inter
-does not match main.
+Inter's CSS is added only when `matchMedia('(max-width: 430px)')`
+matches. A desktop load does not request it. `--font-ui` names Inter
+only inside that same query in `os-src/tokens.css`.
 
 A screen PR must never update these baselines. Do not run
 `--update-snapshots` on this spec. Do not replace a PNG to make the
-check pass. If the spec fails, the desktop window changed. That is a
+check pass. If the spec fails, the desktop changed. That is a
 blocker. Phone work stays inside `max-width: 430px` and leaves these
 pixels alone.
 

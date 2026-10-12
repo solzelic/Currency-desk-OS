@@ -1,58 +1,40 @@
 /* One desktop picture for the whole desk.
-   At 1280 the open window of every app, and the sign-in screen, must
-   match the PNG committed from the GitHub Actions artifact
-   desktop-unchanged-baselines.
 
-   maxDiffPixels is 20 and threshold is 0.2. On Actions run
-   38188660101 the Till window matched on the first attempt and
-   differed by 6 pixels on the retry. Those pixels are antialiasing
-   on the "Hand off" control and a lower rule, not different text.
-   threshold 0.2 is how far a pixel's colour may move before it counts.
-   20 is the ceiling for the pixels that still count. The Till retry
-   was 6. A content change is not in that budget.
-   The Cheques window on the same run differed by 592 pixels in one
-   band: the customer id `cust_` plus a live UUID. That is content.
-   It is frozen below, and 20 pixels does not cover it.
-   After that freeze, Cheques still missed on both attempts of a run:
-   34 pixels on 38193282295, 29 pixels on 38193394311. The two attempts
-   were the same picture. The band is the Northwood cheque number,
-   `00` plus the millisecond. The book keeps minting a new number,
-   because a second day on the same database is a new piece of paper.
-   The picture rewrites that one `#` to `#00898`, the digits already
-   in the committed PNG. The other pictures stay.
+   At 1280×800 the menu bar, the open window, and the dock of every app,
+   and the sign-in screen, must match the committed PNG. The comparison
+   is maxDiffPixels 0 and threshold 0. Animations and the caret are off.
+   A changed rate, code, amount, fee, hold date, or cheque number fails
+   the picture. Nothing rewrites the text after it renders.
 
-   A laptop paints the fallback font differently from Actions. That
-   gap is thousands of pixels and is not a layout change. Do not
-   regenerate these files locally. A screen PR that needs a new PNG
-   has changed the desktop. That is a blocker. See docs/PHONE_SHELL.md. */
+   The page clock is 2026-06-18T15:02:00.000Z. The menu bar is 24-hour,
+   so it reads 15:02. The audit seed's 09:05 is the AM case: the desk
+   paints it 9:05 AM, and 15:02 paints 3:02 PM. "2m 00s ago" is that
+   same clock minus two minutes, stored as the rate board's publishedAt
+   before the page scripts run.
+
+   Cheques is one seeded cheque. The number, the hold date, the fee, and
+   the customer id come from the constants below and from the stub, not
+   from a string written onto the DOM after paint. */
 import type { Locator, Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
 
 const DESKTOP = { width: 1280, height: 800 };
-
-/* The strings already painted in the committed PNGs. A later run
-   rewrites the live text to these before the shot, so the pictures
-   stay the ones Actions rendered. Do not point them at new copy. */
-const FROZEN_DAY = "Monday, October 12, 2026";
-const FROZEN_ISO = "2026-06-18";
-const FROZEN_TIME = "14:30";
-const FROZEN_UUID = "00000000-0000-4000-8000-000000000000";
-/* The digits painted beside Northwood in the committed Cheques PNG.
-   The day-at-the-desk seam posts `00` plus the millisecond so a
-   leftover database can cash the cheque again. That post stays.
-   Only the picture is pinned, and only this row: 004821, 1180,
-   00917, and 88204 are the desk's own samples. */
-const FROZEN_CHEQUE = "#00898";
+const AFTERNOON = Date.parse("2026-06-18T15:02:00.000Z");
+const CHEQUE_NUMBER = "48120";
+const HOLD_UNTIL = "2026-06-23";
+const FEE = "5.00";
+const RATE = 1.3914;
+const CUSTOMER_ID = "cust_11111111-1111-4111-8111-111111111111";
+const CHEQUE_ID = "chq_11111111-1111-4111-8111-111111111111";
 
 const SHOT = {
-  maxDiffPixels: 20,
-  threshold: 0.2,
+  maxDiffPixels: 0,
+  threshold: 0,
   animations: "disabled" as const,
   caret: "hide" as const,
   scale: "css" as const,
 };
 
-/* The dock id, and the title the open window must show. */
 const APPS: { id: string; title: RegExp }[] = [
   { id: "ledger", title: /Ledger/ },
   { id: "clients", title: /Clients/ },
@@ -68,114 +50,48 @@ const APPS: { id: string; title: RegExp }[] = [
   { id: "audit", title: /Audit/ },
 ];
 
-async function dismissTour(page: Page): Promise<void> {
-  const skip = page.locator(".cdos-tour-skip");
-  for (let i = 0; i < 15; i++) {
-    if (await skip.isVisible()) {
-      await skip.click();
-      break;
-    }
-    await page.waitForTimeout(200);
-  }
+function seededCheque() {
+  return {
+    chequeId: CHEQUE_ID,
+    ref: "CHQ-260618-48120",
+    chequeNumber: CHEQUE_NUMBER,
+    maker: "Northwood Property Management",
+    draweeBank: "RBC Royal Bank",
+    customerId: CUSTOMER_ID,
+    customerName: "Northwood Property Management",
+    chequeType: "business",
+    typeLabel: "Business",
+    currency: "USD",
+    faceAmount: "1200.00",
+    feeAmount: FEE,
+    netAmount: "1195.00",
+    endorsed: true,
+    holdDays: 5,
+    holdUntil: HOLD_UNTIL,
+    receivedDate: "2026-06-18",
+    status: "held",
+    nsf: false,
+    fraud: false,
+    returnedReason: "",
+    timeline: [{
+      status: "held",
+      at: "2026-06-18T15:02:00.000Z",
+      actorId: "user:j.masri",
+      note: "Cashed at the till",
+    }],
+    cashingTransactionId: null,
+    cashingTransactionRef: null,
+    createdBy: "user:j.masri",
+  };
 }
 
-/* Dates, clock times, transaction refs, and seam-run name suffixes
-   change every run. The same replacement runs on every capture, so
-   the committed PNG and the next run show the same text.
-
-   The Cheques band on run 38188660101 was `cust_` plus a new UUID
-   each suite. The ledger mints that id with randomUUID. "_" is a
-   word character, so a boundary in front of the UUID never matched
-   and the id stayed live (592 pixels). The replacement below has
-   no boundary. The audit picture also has two day headings. Only the
-   suite day moves; "Thursday, June 18, 2026" stays as painted. AM and
-   PM stay as painted too. */
-async function freezeWindowText(page: Page): Promise<void> {
-  /* The walk stays in the page. A round trip per text node timed the
-     test out on the ledger. */
-  await page.locator(".win.show.active").evaluate((root, frozen) => {
-    const rewrite = (text: string) => {
-      let next = text.replace(/refreshed\s+\S+(\s+\S+)?/g, "refreshed 2m ago");
-      next = next.replace(
-        /\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}\b/g,
-        (match) => (match.includes("June 18, 2026") ? match : frozen.day),
-      );
-      next = next.replace(/\b\d{4}-\d{2}-\d{2}\b/g, frozen.iso);
-      next = next.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, frozen.time);
-      next = next.replace(/\b\d+h \d+m(?: \d+s)?\b/g, "2h 00m");
-      next = next.replace(/\b\d+m \d+s\b/g, "2m 00s");
-      next = next.replace(/\b\d+s\b/g, "00s");
-      next = next.replace(/\bCD-\d{6}-[0-9a-z]+\b/gi, "CD-260618-frozen");
-      next = next.replace(/\b(?=[A-Z0-9]*\d)[A-Z0-9]{6}\b/g, "000000");
-      next = next.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, frozen.uuid);
-      return next;
-    };
-    const stopIntervals = (win: Window) => {
-      const probe = win.setInterval(() => {}, 1_000_000_000);
-      win.clearInterval(probe);
-      /* A faked clock hands out timer ids from 1e12. Walking those
-         never finishes. Native ids stay small. */
-      if (probe > 100000) return;
-      for (let i = 1; i < probe; i++) win.clearInterval(i);
-    };
-    const fix = (scope: ParentNode) => {
-      const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
-      let node = walker.nextNode();
-      while (node) {
-        const text = node.textContent || "";
-        const next = rewrite(text);
-        if (next !== text) node.textContent = next;
-        node = walker.nextNode();
-      }
-      scope.querySelectorAll("input, textarea").forEach((el) => {
-        const field = el as HTMLInputElement;
-        const next = rewrite(field.value || "");
-        if (next !== field.value) field.value = next;
-      });
-      scope.querySelectorAll("[title], [aria-label], [placeholder]").forEach((el) => {
-        for (const attr of ["title", "aria-label", "placeholder"]) {
-          const value = el.getAttribute(attr);
-          if (value == null) continue;
-          const next = rewrite(value);
-          if (next !== value) el.setAttribute(attr, next);
-        }
-      });
-    };
-    /* A ticking interval repaints a clock between this walk and the
-       shot. Stop the window's intervals, then the text. */
-    stopIntervals(window);
-    fix(root);
-    /* The Northwood `#` is its own span, next to the maker. A general
-       digit replace would also rewrite the sample cheque 00917. */
-    root.querySelectorAll("span").forEach((el) => {
-      const text = (el.textContent || "").trim();
-      if (!/^#\d+$/.test(text)) return;
-      const holder = el.parentElement;
-      if (!holder || !(holder.textContent || "").includes("Northwood Property Management")) return;
-      if (text !== frozen.cheque) el.textContent = frozen.cheque;
-    });
-    root.querySelectorAll("iframe").forEach((frame) => {
-      try {
-        const win = frame.contentWindow;
-        if (win) stopIntervals(win);
-        const body = frame.contentDocument && frame.contentDocument.body;
-        if (body) fix(body);
-      } catch (err) {
-        /* A cross-origin frame is not part of this window's text. */
-      }
-    });
-  }, { day: FROZEN_DAY, iso: FROZEN_ISO, time: FROZEN_TIME, uuid: FROZEN_UUID, cheque: FROZEN_CHEQUE });
-}
-
-/* The page clock stays at the instant this test started. Timers are
-   left real: Playwright's clock hands out timer ids from 1e12, and
-   clearing them never finishes. #128's server header `x-cd-now` is
-   not on this branch, and the rows in these windows were written by
-   earlier tests, so a header on this page would not rewrite them.
-   freezeWindowText turns those timestamps into the committed strings. */
-async function pinPageClock(page: Page): Promise<void> {
-  const pinned = Date.now();
-  await page.addInitScript((ms) => {
+/* Date is replaced. Playwright's fake timers hand out ids from 1e12 and
+   a later clear never finishes, so the timers stay real and only the
+   clock is pinned. localStorage is written here, before the page
+   scripts, and again on every navigation — the tests clear storage. */
+async function pinDesk(page: Page): Promise<void> {
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  await page.addInitScript(({ ms, rate }) => {
     const RealDate = Date;
     function PinnedDate(this: Date, ...args: unknown[]) {
       if (!new.target) return new RealDate(ms).toString();
@@ -187,38 +103,195 @@ async function pinPageClock(page: Page): Promise<void> {
     PinnedDate.UTC = RealDate.UTC;
     PinnedDate.prototype = RealDate.prototype;
     (window as unknown as { Date: DateConstructor }).Date = PinnedDate as unknown as DateConstructor;
-  }, pinned);
-}
-
-/* Rates are already served with RATES_SYNC=off. Replay the first
-   response so a later poll cannot change a mid while the windows
-   are being photographed. */
-async function pinRates(page: Page): Promise<void> {
-  const seen = new Map<string, { status: number; body: string; contentType: string }>();
-  await page.route("**/api/rates**", async (route) => {
+    try {
+      localStorage.setItem("yorkfx_rates_v1", JSON.stringify({
+        buyMargin: 0.015,
+        sellMargin: 0.015,
+        rows: { USD: { mid: rate, show: true } },
+        publishedAt: new RealDate(ms - 120000).toISOString(),
+        publishedBy: "J. Masri",
+      }));
+      localStorage.removeItem("yorkfx_rates_draft");
+      localStorage.setItem("cdos_theme", "light");
+    } catch (err) {
+      /* about:blank has no storage. The app document does. */
+    }
+  }, { ms: AFTERNOON, rate: RATE });
+  /* The converter would replace the seeded board with whatever the
+     server last published, and a market snapshot would paint the
+     provider's clock. Neither belongs in this picture. */
+  await page.route("**/api/rates/**", async (route) => {
     if (route.request().method() !== "GET") {
       await route.continue();
       return;
     }
-    const key = route.request().url();
-    const hit = seen.get(key);
-    if (hit) {
-      await route.fulfill({ status: hit.status, contentType: hit.contentType, body: hit.body });
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/rates/market") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ provider: null, mids: null }),
+      });
       return;
     }
-    const response = await route.fetch();
-    const body = await response.text();
-    const contentType = response.headers()["content-type"] || "application/json";
-    seen.set(key, { status: response.status(), body, contentType });
-    await route.fulfill({ status: response.status(), contentType, body });
+    await route.continue();
+  });
+  await page.route("**/api/rates", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (new URL(route.request().url()).pathname !== "/api/rates") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ board: null, serverTime: AFTERNOON }),
+    });
   });
 }
 
+/* The clients window reads /api/clients, which is not a ledger route.
+   Other seam tests create contacts on this same desk before this
+   picture runs. An empty list is the picture; a dirty database must
+   not paint those contacts into it. */
+async function pinClients(page: Page): Promise<void> {
+  await page.route("**/api/clients**", async (route) => {
+    const req = route.request();
+    if (req.method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (new URL(req.url()).pathname !== "/api/clients") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ clients: [] }),
+    });
+  });
+}
+
+/* GET stubs for the book the pictures draw. POST keeps going, and the
+   till roster is not stubbed, so signing in can still pick a drawer.
+   A dirty database cannot paint a second cheque or a live transaction
+   into these shots. */
+async function pinBook(page: Page): Promise<void> {
+  const summary = {
+    homeCurrency: "CAD",
+    tillId: "till",
+    from: null,
+    to: null,
+    posted: 1,
+    reversed: 0,
+    volumeHome: "1200.00",
+    unvaluedDeals: 0,
+    feesHome: FEE,
+    realizedPnlHome: null,
+    costOfSaleHome: null,
+    earningsHome: FEE,
+    pricedDeals: 0,
+    firstPostedAt: "2026-06-18T15:02:00.000Z",
+    lastPostedAt: "2026-06-18T15:02:00.000Z",
+    byActor: [],
+    byCurrency: [],
+  };
+  const bodies: { test: (path: string) => boolean; body: unknown }[] = [
+    { test: (path) => path === "/api/ledger/cheques", body: { cheques: [seededCheque()] } },
+    { test: (path) => path === "/api/ledger/transactions", body: { transactions: [] } },
+    { test: (path) => path === "/api/ledger/customers", body: { customers: [] } },
+    { test: (path) => path.startsWith("/api/ledger/summary"), body: summary },
+    { test: (path) => path === "/api/ledger/till-balances", body: { balances: { CAD: "1500.00", USD: "400.00" }, balanceGeneration: "1" } },
+    {
+      test: (path) => path === "/api/ledger/till-session",
+      body: {
+        session: {
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          sessionNumber: 1,
+          businessDate: "2026-06-18",
+          status: "open",
+          openedBy: "user:j.masri",
+          openedAt: "2026-06-18T13:00:00.000Z",
+          closedBy: null,
+          closedAt: null,
+          closeNote: null,
+        },
+        latestCounts: {},
+      },
+    },
+    { test: (path) => path === "/api/ledger/vault/movements", body: { movements: [] } },
+    { test: (path) => path === "/api/ledger/vault", body: { branchId: null, tracked: false, balances: {}, branches: {} } },
+    { test: (path) => path === "/api/ledger/report-filings", body: { filings: [] } },
+    { test: (path) => path === "/api/ledger/obligations", body: { obligations: [] } },
+    { test: (path) => path === "/api/ledger/position", body: { vaultTracked: false, currencies: [], positions: [] } },
+  ];
+  await page.route("**/api/ledger/**", async (route) => {
+    const req = route.request();
+    if (req.method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    const path = new URL(req.url()).pathname;
+    /* Sign-in still reads the real roster, then this picture keeps a
+       single drawer. Other seam tests open a second till on the same
+       branch, and the cash drawer then paints a banner the snapshot
+       does not have. The id stays the server's, so the session header
+       the desk sends is a real workspace. */
+    if (path === "/api/ledger/till-roster") {
+      const response = await route.fetch();
+      const json = await response.json().catch(() => null);
+      const list = json && Array.isArray(json.workspaces) ? json.workspaces : null;
+      if (!list || list.length <= 1) {
+        await route.fulfill({ response });
+        return;
+      }
+      await route.fulfill({
+        response,
+        json: { ...json, workspaces: [list[0]] },
+      });
+      return;
+    }
+    const hit = bodies.find((item) => item.test(path));
+    if (!hit) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(hit.body),
+    });
+  });
+}
+
+async function dismissTour(page: Page): Promise<void> {
+  const skip = page.locator(".cdos-tour-skip");
+  for (let i = 0; i < 15; i++) {
+    if (await skip.isVisible()) {
+      await skip.click();
+      break;
+    }
+    await page.waitForTimeout(200);
+  }
+}
+
 async function fontsReady(page: Page): Promise<void> {
+  const still = () => {
+    const style = document.getElementById("shot-still") || document.createElement("style");
+    style.id = "shot-still";
+    style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
+    (document.head || document.documentElement).appendChild(style);
+  };
+  await page.evaluate(still);
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
   for (const frame of page.frames()) {
+    await frame.evaluate(still).catch(() => {});
     await frame.evaluate(async () => {
       if (document.fonts) await document.fonts.ready;
     }).catch(() => {});
@@ -230,20 +303,32 @@ async function openDesktopApp(page: Page, id: string, title: RegExp): Promise<Lo
   await dock.scrollIntoViewIfNeeded();
   await dock.click();
   const win = page.locator(".win.show.active");
+  await expect(win).toHaveAttribute("data-app", id);
   await expect(win.locator(".win-title")).toContainText(title);
   await expect(win).toHaveCSS("transform", "none");
-  /* The title bar retracts on a timer. The settled window is the one
-     with the bar hidden. Capturing before that races the timer. */
   await expect(win).toHaveClass(/bar-hidden/);
   await dismissTour(page);
-  await freezeWindowText(page);
+  if (id === "cheques") {
+    await page.getByRole("button", { name: /Northwood Property Management/ }).click();
+    await expect(page.getByText("Face value")).toBeVisible();
+    await expect(page.getByText(CHEQUE_NUMBER).first()).toBeVisible();
+    await expect(page.getByText(HOLD_UNTIL).first()).toBeVisible();
+  }
+  if (id === "rates") {
+    const frame = page.frameLocator('iframe[title="Rate Board"]');
+    await expect(frame.locator("#edSince")).toContainText("2m 00s");
+  }
+  if (id === "audit") {
+    await expect(win).toContainText("9:05 AM");
+    await expect(win).toContainText("3:02 PM");
+  }
   await fontsReady(page);
   return win;
 }
 
 test("sign-in is unchanged at 1280", async ({ page }) => {
   await page.setViewportSize(DESKTOP);
-  await pinPageClock(page);
+  await pinDesk(page);
   await page.context().clearCookies();
   await page.goto("/app");
   await page.evaluate(() => {
@@ -261,8 +346,9 @@ test("sign-in is unchanged at 1280", async ({ page }) => {
 test("every desktop window is unchanged at 1280", async ({ page }) => {
   test.setTimeout(180_000);
   await page.setViewportSize(DESKTOP);
-  await pinPageClock(page);
-  await pinRates(page);
+  await pinDesk(page);
+  await pinBook(page);
+  await pinClients(page);
   await page.context().clearCookies();
   await page.goto("/app");
   await page.evaluate(() => {
@@ -273,14 +359,16 @@ test("every desktop window is unchanged at 1280", async ({ page }) => {
   await dismissTour(page);
   await expect(page.locator("#phonebar")).toBeHidden();
   await expect(page.locator("#appbar")).toBeVisible();
+  await expect(page.locator("#menubar")).toBeVisible();
+  await expect(page.locator(".mb-clock")).toContainText("15:02");
 
   for (const app of APPS) {
-    const win = await openDesktopApp(page, app.id, app.title);
-    const frame = page.frameLocator('iframe[title="Rate Board"]');
-    const since = frame.locator("#edSince");
-    const mask = app.id === "rates" && await since.isVisible().catch(() => false)
-      ? [since, frame.locator("#feedLastWrap"), frame.locator("#feedNextWrap"), frame.locator("#feedLabel")]
-      : undefined;
-    await expect(win).toHaveScreenshot(`${app.id}-1280.png`, { ...SHOT, mask });
+    await openDesktopApp(page, app.id, app.title);
+    await expect(page).toHaveScreenshot(`${app.id}-1280.png`, SHOT);
+    if (app.id === "cheques") {
+      const scrim = page.locator("div.fixed.inset-0.flex.justify-end");
+      await scrim.click({ position: { x: 16, y: 80 } });
+      await expect(scrim).toHaveCount(0);
+    }
   }
 });

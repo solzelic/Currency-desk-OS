@@ -18,7 +18,29 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="(max-width: 430px)" />
+<script>
+  /* Inter is the phone face. A desktop load must not request it.
+     media on a link still lets the browser download the CSS. */
+  (function () {
+    var href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+    var query = '(max-width: 430px)';
+    function sync() {
+      var on = window.matchMedia && matchMedia(query).matches;
+      var link = document.getElementById('phone-inter');
+      if (on && !link) {
+        link = document.createElement('link');
+        link.id = 'phone-inter';
+        link.rel = 'stylesheet';
+        link.href = href;
+        document.head.appendChild(link);
+      } else if (!on && link) {
+        link.remove();
+      }
+    }
+    sync();
+    if (window.matchMedia) matchMedia(query).addEventListener('change', sync);
+  })();
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="yorkfx.css" />
 <link rel="stylesheet" href="os-src/tokens.css" />

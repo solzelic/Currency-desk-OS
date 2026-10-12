@@ -1410,6 +1410,14 @@
     const [editApps, setEditApps] = useState(false);
     const [chromeCollapsed, setChromeCollapsed] = useState(false);   // click the CurrencyDesk logo to hide the tenant + app rows for more desktop room
     const [phoneMore, setPhoneMore] = useState(false);
+    const [alertsKnown, setAlertsKnown] = useState(false);
+    useEffect(() => {
+      if (!srvUser) { setAlertsKnown(true); return; }
+      setAlertsKnown(false);
+      const mark = () => setAlertsKnown(true);
+      window.addEventListener('cdos-ledger-ready', mark);
+      return () => window.removeEventListener('cdos-ledger-ready', mark);
+    }, [srvUser]);
     const [dragApp, setDragApp] = useState(null);
     const appbarRef = useRef(null);
     const orderedRef = useRef([]);
@@ -2494,7 +2502,7 @@
         shop={shopName}
         desk={[stationName, stationTill ? stationTill.replace(/\s+—.*/, '') : '', day.closed ? 'Till closed' : 'Till open'].filter(Boolean).join(' · ')}
         tillOpen={!day.closed}
-        unread={alertCount > 0}
+        unread={alertsKnown ? alertCount > 0 : null}
         onBell={() => openApp('compliance')}
         avatar={profileButton('phone')}
       />

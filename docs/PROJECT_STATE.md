@@ -571,18 +571,20 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-12**, desktop cheque number. The Cheques picture missed
-by 29 pixels on both attempts of Actions run 38193394311, and by
-34 on run 38193282295. The pixels are the Northwood cheque number.
-The book still posts a new number each day. The picture rewrites
-that one `#` to `#00898`, the digits already in the committed PNG.
-The PNG was not replaced.
-
-**2026-10-12**, desktop picture noise. The 1280 comparison allows
-20 pixels at threshold 0.2, which is the Till antialiasing on
-Actions run 38188660101. The Cheques customer id is frozen with
-no word boundary, because `cust_` plus a live UUID was the 592-pixel
-band on that run. The pictures themselves were not replaced.
+**2026-10-12**, QA on the phone shell. The 1280 pictures no longer
+rewrite text after render. The clock is 15:02 on 18 June 2026, the
+audit seed still shows 9:05 AM, and the Cheques picture is the seeded
+cheque 48120 (hold 2026-06-23, fee 5.00). The Rates picture is the
+editor, opened from the desk session, with USD mid 1.3914. Comparison
+is exact (threshold 0, maxDiffPixels 0). The clients list and the
+till roster in that picture are pinned, so other tests' contacts and
+extra drawers stay out of it. The earlier rewrite to
+`#00898` and the 20-pixel ceiling are retired.
+`formatPhoneTime` / `formatPhoneDate` / `formatPhoneMoney` reject an
+impossible date, a bad clock, a missing zone on an instant, and a
+malformed amount with an em dash. The phone shell stays on the light
+tokens when the OS preference is dark. The phone ledger's day fee is
+the server summary, or it is omitted.
 
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
 uppercase suffix (`3:02 PM`). A form date stays `Jun 18, 2026`.

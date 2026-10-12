@@ -87,13 +87,16 @@ test("the bar shows on a phone and is hidden on the desktop", async ({ page }) =
 });
 
 test("unselected tabs stay quiet and every tab carries a top marker", async ({ page }) => {
-  for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }]) {
+  for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }, { width: 430, height: 844 }]) {
     await page.setViewportSize(size);
     await atDesk(page);
     for (const id of ["rates", "ledger", "clients", "till", "more"]) {
       await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
       await dismissTour(page);
       await settled(page);
+      if (id !== "more") {
+        await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", id);
+      }
       const mark = await page.locator(`#phonebar [data-phone-app="${id}"]`).evaluate((el) => {
         const after = getComputedStyle(el, "::after");
         const label = el.querySelector(".lbl");
@@ -396,7 +399,7 @@ async function tillOpen(page: Page): Promise<void> {
 }
 
 test("an owner can bring every denomination fully above the count panel", async ({ page }) => {
-  for (const size of [{ width: 390, height: 844 }, { width: 360, height: 780 }]) {
+  for (const size of [{ width: 390, height: 844 }, { width: 360, height: 780 }, { width: 430, height: 844 }]) {
     await page.setViewportSize(size);
     await atDesk(page, "j.masri");
     await tillOpen(page);
@@ -614,6 +617,7 @@ test("the selected tab takes that app's colour", async ({ page }) => {
 for (const size of [
   { width: 360, height: 780 },
   { width: 390, height: 844 },
+  { width: 430, height: 844 },
 ]) {
   test(`the window behind stays hidden at ${size.width}x${size.height}`, async ({ page }) => {
     await page.setViewportSize(size);

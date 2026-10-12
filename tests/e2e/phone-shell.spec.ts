@@ -46,6 +46,8 @@ test("amounts show the currency code", async ({ page }) => {
       absent: format(null, "CAD"),
       blank: format("", "CAD"),
       nan: format("nope", "USD"),
+      hex: format("0x10", "CAD"),
+      badGroup: format("1,2,3", "CAD"),
       neg: format(-5, "USD"),
       zero: format(0, "JPY"),
       same: format(1765.05, "CAD") === window.CDOS.Phone.formatMoney(1765.05, "CAD"),
@@ -56,7 +58,9 @@ test("amounts show the currency code", async ({ page }) => {
   expect(money.bhd).toBe("1.234 BHD");
   expect(money.absent).toBe("");
   expect(money.blank).toBe("");
-  expect(money.nan).toBe("");
+  expect(money.nan).toBe("\u2014");
+  expect(money.hex).toBe("\u2014");
+  expect(money.badGroup).toBe("\u2014");
   expect(money.neg).toBe("\u22125.00 USD");
   expect(money.zero).toBe("0 JPY");
   expect(money.same).toBe(true);
@@ -73,6 +77,10 @@ test("a clock is 3:02 PM and today's list group starts with Today", async ({ pag
     const today = window.CDOS.businessDate();
     return {
       clock: time("15:02"),
+      badTime: time("13:02 AM"),
+      badDate: date("2026-02-31"),
+      zoned: time("2026-06-18T19:02:00Z", "America/Toronto"),
+      unzoned: time("2026-06-18T19:02:00Z"),
       midnight: time("00:00"),
       noon: time("12:00"),
       date: date("2026-06-18"),
@@ -83,6 +91,10 @@ test("a clock is 3:02 PM and today's list group starts with Today", async ({ pag
     };
   });
   expect(labels.clock).toBe("3:02 PM");
+  expect(labels.badTime).toBe("\u2014");
+  expect(labels.badDate).toBe("\u2014");
+  expect(labels.zoned).toBe("3:02 PM");
+  expect(labels.unzoned).toBe("\u2014");
   expect(labels.midnight).toBe("12:00 AM");
   expect(labels.noon).toBe("12:00 PM");
   expect(labels.date).toBe("Jun 18, 2026");
@@ -201,6 +213,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
 
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await dismissTour(page);
+  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "ledger");
   const ledger = await accentOf(page, "ledger", "New transaction");
   expect(ledger.appAttr).toBe("ledger");
   expect(ledger.brand).toBe(ACCENT.ledger);
@@ -209,6 +222,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
 
   await page.locator('#phonebar [data-phone-app="clients"]').click();
   await dismissTour(page);
+  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "clients");
   const clients = await accentOf(page, "clients", "New contact");
   expect(clients.appAttr).toBe("clients");
   expect(clients.brand).toBe(ACCENT.clients);
@@ -218,6 +232,7 @@ test("primary buttons use the open app's accent", async ({ page }) => {
   await page.locator('#phonebar [data-phone-app="more"]').click();
   await page.locator('#phone-more [data-phone-app="transfers"]').click();
   await dismissTour(page);
+  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "transfers");
   const transfers = await accentOf(page, "transfers", "New transfer");
   expect(transfers.appAttr).toBe("transfers");
   expect(transfers.brand).toBe(ACCENT.transfers);
@@ -244,7 +259,7 @@ test("the title and the first chip sit in from the edge", async ({ page }) => {
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await dismissTour(page);
   await expect(page.locator(".phone-ledger .phone-title h1")).toBeVisible();
-  for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }]) {
+  for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }, { width: 430, height: 844 }]) {
     await page.setViewportSize(size);
     const box = await page.evaluate(() => {
       const title = document.querySelector(".phone-ledger .phone-title h1");
@@ -624,4 +639,165 @@ test("a task sheet covers the tab bar", async ({ page }) => {
     };
   });
   expect(confirmPlace.cardBottom, "confirm stays above the bar").toBeLessThanOrEqual(confirmPlace.dockTop + 1);
+});
+
+test("opening a phone app focuses that window at 430", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 844 });
+  await atDesk(page, "a.singh");
+  for (const id of ["rates", "ledger", "clients", "till"]) {
+    await page.locator(`#phonebar [data-phone-app="${id}"]`).click();
+    await dismissTour(page);
+    await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", id);
+  }
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await page.locator('#phone-more [data-phone-app="reports"]').click();
+  await dismissTour(page);
+  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "reports");
+});
+
+test("empty, loading, and error states, and an unknown bell", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  const read = await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.id = "phone-state-host";
+    document.body.appendChild(host);
+    const Phone = window.CDOS.Phone;
+    const root = ReactDOM.createRoot(host);
+    const draw = () => React.createElement(React.Fragment, null,
+      React.createElement(Phone.EmptyState, { title: "No records", message: "Nothing posted in this range." }),
+      React.createElement(Phone.LoadingState, null),
+      React.createElement(Phone.ErrorState, { message: "" }),
+      React.createElement(Phone.ListRow, { title: "Held row", onClick: () => {}, disabled: true }),
+      React.createElement(Phone.TopBar, { shop: "Shop", desk: "Front Desk 01", tillOpen: false, unread: null, onBell: () => {} }),
+      React.createElement("div", { className: "phone-shell" }, React.createElement(Phone.StickyAction, { label: "New transaction", onClick: () => {} })),
+    );
+    if (ReactDOM.flushSync) ReactDOM.flushSync(() => root.render(draw()));
+    else root.render(draw());
+    const text = host.innerText;
+    const row = host.querySelector(".phone-row");
+    const bell = host.querySelector(".phone-bell");
+    const sticky = host.querySelector(".phone-sticky");
+    let safe = false;
+    const walk = (list) => {
+      for (let i = 0; i < list.length; i++) {
+        const rule = list[i];
+        const css = rule.cssText || "";
+        if (css.includes("phone-sticky") && css.includes("safe-area-inset-bottom")) safe = true;
+        if (rule.cssRules) walk(rule.cssRules);
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try { walk(sheet.cssRules); } catch (e) { /* a cross-origin sheet is not this page */ }
+    }
+    return {
+      text,
+      disabled: !!(row && row.classList.contains("is-disabled")),
+      opacity: row ? getComputedStyle(row).opacity : "",
+      cursor: row ? getComputedStyle(row).cursor : "",
+      bell: bell ? bell.getAttribute("aria-label") : "",
+      dot: host.querySelectorAll(".phone-bell-dot").length,
+      sticky: sticky ? getComputedStyle(sticky).paddingBottom : "",
+      safe,
+    };
+  });
+  expect(read.text).toContain("No records");
+  expect(read.text).toContain("Nothing posted in this range.");
+  expect(read.text).toContain("Loading");
+  expect(read.text).toContain("Something went wrong. Try again.");
+  expect(read.disabled).toBe(true);
+  expect(read.opacity).toBe("0.45");
+  expect(read.cursor).toBe("not-allowed");
+  expect(read.bell).toBe("Alerts");
+  expect(read.bell).not.toBe("No alerts");
+  expect(read.dot).toBe(0);
+  expect(read.safe).toBe(true);
+  expect(read.sticky).toBe("12px");
+});
+
+test("a dark OS preference still leaves the phone shell readable", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.addInitScript(() => {
+    localStorage.setItem("cdos_theme", "auto");
+  });
+  await page.setViewportSize(PHONE);
+  await page.context().clearCookies();
+  await page.goto("/app");
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem("cdos_theme", "auto");
+    sessionStorage.clear();
+  });
+  await signInAtDesk(page, "a.singh");
+  await page.evaluate(() => localStorage.setItem("cdos_theme", "auto"));
+  await page.reload();
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "ledger");
+  const contrast = await page.evaluate(() => {
+    const lum = (channel) => {
+      const s = channel / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    const parse = (color) => {
+      const m = color.match(/[\d.]+/g);
+      if (!m) return null;
+      return m.slice(0, 3).map(Number);
+    };
+    const paintOf = (el) => {
+      let node = el;
+      while (node) {
+        const bg = getComputedStyle(node).backgroundColor;
+        const m = bg.match(/[\d.]+/g);
+        if (m && m.length >= 4 && Number(m[3]) === 0) {
+          node = node.parentElement;
+          continue;
+        }
+        if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") return bg;
+        node = node.parentElement;
+      }
+      return "rgb(255, 255, 255)";
+    };
+    const ratio = (el) => {
+      if (!el) return 0;
+      const fg = parse(getComputedStyle(el).color);
+      const bg = parse(paintOf(el));
+      if (!fg || !bg) return 0;
+      const L = (rgb) => 0.2126 * lum(rgb[0]) + 0.7152 * lum(rgb[1]) + 0.0722 * lum(rgb[2]);
+      const a = L(fg);
+      const b = L(bg);
+      const lighter = Math.max(a, b);
+      const darker = Math.min(a, b);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const title = document.querySelector(".phone-ledger .phone-title h1");
+    const secondary = document.querySelector(".phone-ledger .phone-stat-cap")
+      || document.querySelector(".phone-ledger .phone-row-sub")
+      || document.querySelector(".phone-ledger .phone-empty p");
+    return {
+      scheme: getComputedStyle(document.documentElement).colorScheme,
+      theme: document.documentElement.getAttribute("data-cdtheme"),
+      title: ratio(title),
+      secondary: ratio(secondary),
+      titleColor: title ? getComputedStyle(title).color : "",
+      secondaryColor: secondary ? getComputedStyle(secondary).color : "",
+    };
+  });
+  expect(contrast.scheme).toBe("light");
+  expect(contrast.theme).toBe("dark");
+  expect(contrast.title).toBeGreaterThanOrEqual(4.5);
+  expect(contrast.secondary).toBeGreaterThanOrEqual(4.5);
+});
+
+test("desktop does not request Inter", async ({ page }) => {
+  const urls: string[] = [];
+  page.on("request", (req) => { urls.push(req.url()); });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/app");
+  await page.waitForTimeout(300);
+  expect(urls.some((url) => url.includes("family=Inter"))).toBe(false);
+  await expect(page.locator("#phone-inter")).toHaveCount(0);
+  await page.setViewportSize(PHONE);
+  await expect(page.locator("#phone-inter")).toHaveAttribute("href", /family=Inter/);
 });

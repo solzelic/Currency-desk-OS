@@ -131,8 +131,9 @@
 .num { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1, "lnum" 1; }
 .ccy { font: var(--text-caption); font-weight: 500; color: var(--color-text-muted); letter-spacing: 0.02em; }
 
-/* The Inter file is linked with this same media query. Wider than
-   430px the desk never names Inter, so the 1280 pictures match main.
+/* Inter's CSS is injected only while this query matches. A link with
+   a media attribute still downloads on a desktop. Wider than 430px
+   the desk never names Inter, so the 1280 pictures match main.
    Archivo stays in the stack for a phone that has not loaded Inter. */
 @media (max-width: 430px) {
   :root { --font-ui: "Inter", "Archivo", system-ui, sans-serif; }

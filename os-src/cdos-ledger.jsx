@@ -109,10 +109,10 @@
     }, []);
     return on;
   }
-  function phoneClock(value) {
+  function phoneClock(value, timeZone) {
     const fn = window.CDOS && window.CDOS.formatPhoneTime;
     if (typeof fn !== 'function') return '';
-    return fn(value) || '';
+    return fn(value, timeZone) || '';
   }
   function phoneDay(iso) {
     const fn = window.CDOS && window.CDOS.formatPhoneListGroup;
@@ -1469,13 +1469,40 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       }
     };
     useEffect(() => {
-      if (!serverBacked || !window.CDOS.Backend) return;
+      if (!serverBacked || !window.CDOS.Backend) {
+        try { window.dispatchEvent(new CustomEvent('cdos-ledger-ready')); } catch (e) {}
+        return;
+      }
       let active = true;
       window.CDOS.Backend.loadLedger()
         .then(serverRows => { if (active) setRows(current => window.CDOS.Backend.mergeRows(current, serverRows)); })
-        .catch(error => { if (active) log && log('Ledger sync failed', error.message || 'Server ledger unavailable'); });
+        .catch(error => { if (active) log && log('Ledger sync failed', error.message || 'Server ledger unavailable'); })
+        .then(() => { if (active) { try { window.dispatchEvent(new CustomEvent('cdos-ledger-ready')); } catch (e) {} } });
       return () => { active = false; };
     }, [serverBacked]);
+    /* The day's fee total is the server's summary, not a float over the
+       rows on screen. A missing figure is omitted. It is not zero. */
+    const [dayFee, setDayFee] = useState(null);
+    useEffect(() => {
+      if (!phoneLayout || !serverBacked || !window.CDOS.Backend || typeof window.CDOS.Backend.loadLedgerSummary !== 'function') {
+        setDayFee(null);
+        return;
+      }
+      let active = true;
+      const range = window.CDOS.businessDayWindow ? window.CDOS.businessDayWindow(1) : null;
+      const day = window.CDOS.businessDate ? window.CDOS.businessDate() : '';
+      window.CDOS.Backend.loadLedgerSummary(range)
+        .then((summary) => {
+          if (!active) return;
+          const fees = summary && summary.feesHome;
+          const code = summary && summary.homeCurrency;
+          if (fees == null || fees === '' || !code || !day) { setDayFee(null); return; }
+          const text = window.CDOS.formatPhoneMoney ? window.CDOS.formatPhoneMoney(fees, code) : '';
+          setDayFee(text ? { day: day, text: text } : null);
+        })
+        .catch(() => { if (active) setDayFee(null); });
+      return () => { active = false; };
+    }, [phoneLayout, serverBacked]);
     const searchWrap = useRef(null);
     useEffect(() => { if (!helpOpen) return; const h = (e) => { if (searchWrap.current && !searchWrap.current.contains(e.target)) setHelpOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [helpOpen]);
     const toggleSort = (key) => setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'date' || key === 'payin' || key === 'payout' || key === 'fee' ? 'desc' : 'asc' });
@@ -1729,16 +1756,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
                 {client ? <button type="button" className="phone-secondary" onClick={() => setClient(null)}>{'Viewing ' + client + '. Show everyone'}</button> : null}
                 {focusRefs && focusRefs.length > 0 ? <button type="button" className="phone-secondary" onClick={() => setFocusRefs(null)}>{focusRefs.length + ' matching records. Clear'}</button> : null}
                 {groups.length === 0 ? <Phone.EmptyState title="No records" message={q ? 'Nothing matches that search.' : 'Nothing posted in this range.'} /> : groups.map((g) => {
-                  const posted = g.rows.filter((r) => r.status !== 'void');
-                  const feeSum = posted.reduce((s, r) => s + (+r.fee || 0), 0);
-                  const feeBit = home && posted.length ? money(feeSum, home) : '';
+                  const feeBit = dayFee && g.key === dayFee.day ? dayFee.text : '';
                   return (
                     <Phone.ListSection key={g.key || 'day'} title={phoneDay(g.key)} meta={g.rows.length + (g.rows.length === 1 ? ' record' : ' records') + (feeBit ? ' · ' + feeBit + ' fees' : '')}>
                       {g.rows.map((row) => {
                         const paid = money(row.inAmt, row.inCcy);
                         const out = (row.outAmt === '' || row.outAmt == null) ? '' : money(row.outAmt, row.outCcy);
                         const fee = home ? money(row.fee, home) : '';
-                        const when = phoneClock(row.time);
+                        const when = phoneClock(row.time, settings && settings.timezone);
                         const tone = row.status === 'void' ? 'neg' : (/sell/i.test(row.type || '') ? 'sell' : (/buy/i.test(row.type || '') ? 'buy' : 'neutral'));
                         return (
                           <Phone.ListRow
@@ -1748,7 +1773,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
                             note={row.ref || ''}
                             amount={out}
                             meta={fee ? 'Fee ' + fee : ''}
-                            badge={row.status === 'void' ? { label: 'Void', tone: 'neg' } : (row.type ? { label: row.type, tone } : null)}
+                            badge={row.type ? { label: row.type, tone: row.status === 'void' ? 'neg' : tone } : null}
                             onClick={() => setDetailId(row.id)}
                           />
                         );

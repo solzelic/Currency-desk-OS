@@ -3,7 +3,10 @@
    Desktop pixels stay on york-os.css. */
 @media (max-width: 430px) {
   /* --font-ui is Inter at this width (tokens.css). Do not reset it
-     to a desktop face, and do not set Inter outside this query. */
+     to a desktop face, and do not set Inter outside this query.
+     The phone shell stays on the light tokens even when the OS
+     preference is dark. color-scheme is not a paint colour. */
+  html { color-scheme: light !important; }
 
   .phone-shell {
     display: flex;
@@ -18,10 +21,6 @@
     background-image: none;
     color: var(--color-text, #161513);
     font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
-  }
-  html[data-cdtheme="dark"] .phone-shell {
-    background-color: rgb(30, 29, 26);
-    background-image: none;
   }
   #phone-more > .phone-shell { flex: 1; min-height: 0; }
 
@@ -226,6 +225,11 @@
   }
   .phone-list > .phone-row:last-child { border-bottom: 0; }
   .phone-row:active { background: var(--gray-100, #EFEDE8); }
+  .phone-row.is-disabled,
+  .phone-row:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
   .phone-row-main {
     flex: 1 1 auto;
     min-width: 0;
@@ -317,7 +321,7 @@
 
   .phone-sticky {
     flex: none;
-    padding: 12px 16px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     background: var(--color-bg, #F7F6F3);
     border-top: 1px solid var(--color-border, #E2DFD8);
   }
@@ -369,6 +373,11 @@
     cursor: pointer;
   }
   .phone-loading { padding: 8px 0; }
+  .phone-loading-label {
+    margin: 0 0 8px;
+    font: var(--text-small);
+    color: var(--color-text-muted, #6B6760);
+  }
   .phone-skel {
     height: 60px;
     margin-bottom: 8px;

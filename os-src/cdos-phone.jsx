@@ -70,7 +70,7 @@
           <i className="phone-till-dot" />
           <span className="phone-till-line">{segments}</span>
         </div>
-        <button type="button" className="phone-bell" aria-label={unread ? 'Alerts' : 'No alerts'} onClick={onBell}>
+        <button type="button" className="phone-bell" aria-label={unread == null ? 'Alerts' : (unread ? 'Alerts' : 'No alerts')} onClick={onBell}>
           {svg('<path d="M6 9a6 6 0 0 1 12 0c0 7 2 7 2 9H4c0-2 2-2 2-9"/><path d="M10 20a2 2 0 0 0 4 0"/>')}
           {unread ? <span className="phone-bell-dot" /> : null}
         </button>
@@ -145,7 +145,7 @@
 
   function ListRow({ title, subtitle, note, amount, meta, leading, badge, chevron, onClick, danger, className, appId, disabled }) {
     const Tag = onClick ? 'button' : 'div';
-    const cls = ['phone-row', note ? 'has-note' : '', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', className || ''].filter(Boolean).join(' ');
+    const cls = ['phone-row', note ? 'has-note' : '', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', disabled ? 'is-disabled' : '', className || ''].filter(Boolean).join(' ');
     const tone = badge && badge.tone ? badge.tone : 'neutral';
     return (
       <Tag
@@ -153,6 +153,7 @@
         className={cls}
         data-phone-app={appId || undefined}
         disabled={onClick && disabled ? true : undefined}
+        aria-disabled={disabled ? true : undefined}
         onClick={disabled ? undefined : onClick}
       >
         {leading || null}
@@ -243,13 +244,15 @@
     const n = rows || 4;
     const items = [];
     for (let i = 0; i < n; i++) items.push(<div key={i} className="phone-skel" />);
-    return <div className="phone-loading" role="status" aria-label={label || 'Loading'}>{items}</div>;
+    const text = label || 'Loading';
+    return <div className="phone-loading" role="status" aria-label={text}><p className="phone-loading-label">{text}</p>{items}</div>;
   }
 
   function ErrorState({ message, onRetry }) {
+    const copy = message || 'Something went wrong. Try again.';
     return (
       <div className="phone-error" role="alert">
-        <p>{message}</p>
+        <p>{copy}</p>
         {onRetry ? <button type="button" className="phone-text-btn" onClick={onRetry}>Try again</button> : null}
       </div>
     );

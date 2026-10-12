@@ -1,6 +1,7 @@
 /* Shared phone formatters. Run with: node --test tests/phone-format.test.mjs
    A calendar day must stay on that day in every zone. An instant is
-   shown in the zone the caller passes, which defaults to the desk zone. */
+   shown in the zone the caller passes. There is no Toronto default.
+   A value that cannot be read is an em dash. Blank stays blank. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -32,7 +33,9 @@ test("a wall clock does not move when the branch zone changes", () => {
 test("an instant is shown in the branch time zone", () => {
   const instant = "2026-06-18T19:02:00Z";
   const date = new Date(instant);
-  assert.equal(formatPhoneTime(instant), "3:02 PM");
+  assert.equal(formatPhoneTime(instant), "\u2014");
+  assert.equal(formatPhoneDate(instant), "\u2014");
+  assert.equal(formatPhoneTime(date), "\u2014");
   assert.equal(formatPhoneTime(instant, TORONTO), "3:02 PM");
   assert.equal(formatPhoneTime(date, TORONTO), "3:02 PM");
   assert.equal(formatPhoneDate(instant, TORONTO), "Jun 18, 2026");
@@ -52,18 +55,28 @@ test("a calendar date never shifts through UTC", () => {
   assert.equal(formatPhoneDate(new Date("2026-06-18T00:00:00Z"), TORONTO), "Jun 17, 2026");
 });
 
-test("blank, bad, and zoneless values stay absent", () => {
+test("blank stays blank and a bad value is an em dash", () => {
   assert.equal(formatPhoneTime(""), "");
   assert.equal(formatPhoneTime(null), "");
   assert.equal(formatPhoneDate(""), "");
-  assert.equal(formatPhoneDate("not-a-date"), "");
-  assert.equal(formatPhoneTime("2026-06-18"), "");
-  assert.equal(formatPhoneDate("15:02"), "");
-  assert.equal(formatPhoneTime(new Date("nope")), "");
-  assert.equal(formatPhoneTime("15:02", "Not/AZone"), "");
-  assert.equal(formatPhoneDate("2026-06-18", "Not/AZone"), "");
-  assert.equal(formatPhoneDate("2026-06-18T19:02:00Z", "Not/AZone"), "");
-  assert.equal(formatPhoneTime("25:00"), "");
+  assert.equal(formatPhoneDate(null), "");
+  assert.equal(formatPhoneDate("not-a-date"), "\u2014");
+  assert.equal(formatPhoneTime("2026-06-18"), "\u2014");
+  assert.equal(formatPhoneDate("15:02"), "\u2014");
+  assert.equal(formatPhoneTime(new Date("nope")), "\u2014");
+  assert.equal(formatPhoneTime("15:02", "Not/AZone"), "\u2014");
+  assert.equal(formatPhoneDate("2026-06-18", "Not/AZone"), "\u2014");
+  assert.equal(formatPhoneDate("2026-06-18T19:02:00Z", "Not/AZone"), "\u2014");
+  assert.equal(formatPhoneTime("25:00"), "\u2014");
+  assert.equal(formatPhoneTime("13:02 AM"), "\u2014");
+  assert.equal(formatPhoneTime("13:02 PM"), "\u2014");
+  assert.equal(formatPhoneTime("13:02"), "1:02 PM");
+  assert.equal(formatPhoneDate("2026-02-31"), "\u2014");
+  assert.equal(formatPhoneDate("2026-02-29"), "\u2014");
+  assert.equal(formatPhoneDate("2024-02-29"), "Feb 29, 2024");
+  assert.equal(formatPhoneDate("2026-04-31"), "\u2014");
+  assert.equal(formatPhoneListGroup("2026-02-31", "2026-10-11"), "\u2014");
+  assert.equal(formatPhoneListGroup("2026-06-18T19:02:00Z", "2026-06-18"), "\u2014");
 });
 
 test("a list group for the business day is Today, Oct 11", () => {
@@ -81,7 +94,13 @@ test("money prints the code after grouped digits", () => {
   assert.equal(formatPhoneMoney(1.234, "BHD"), "1.234 BHD");
   assert.equal(formatPhoneMoney(null, "CAD"), "");
   assert.equal(formatPhoneMoney("", "CAD"), "");
-  assert.equal(formatPhoneMoney("nope", "USD"), "");
+  assert.equal(formatPhoneMoney("nope", "USD"), "\u2014");
+  assert.equal(formatPhoneMoney("0x10", "CAD"), "\u2014");
+  assert.equal(formatPhoneMoney("1,2,3", "CAD"), "\u2014");
+  assert.equal(formatPhoneMoney("1e2", "CAD"), "\u2014");
+  assert.equal(formatPhoneMoney("1,200.00", "CAD"), "1,200.00 CAD");
+  assert.equal(formatPhoneMoney("9007199254740993.25", "CAD"), "9,007,199,254,740,993.25 CAD");
+  assert.equal(formatPhoneMoney(Number.MAX_SAFE_INTEGER + 2, "CAD"), "\u2014");
   assert.equal(formatPhoneMoney(-5, "USD"), "\u22125.00 USD");
   assert.equal(formatPhoneMoney(0, "JPY"), "0 JPY");
   assert.equal(formatPhoneMoney(0, "CAD"), "0.00 CAD");

@@ -27084,10 +27084,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, []);
     return on;
   }
-  function phoneClock(value) {
+  function phoneClock(value, timeZone) {
     const fn = window.CDOS && window.CDOS.formatPhoneTime;
     if (typeof fn !== 'function') return '';
-    return fn(value) || '';
+    return fn(value, timeZone) || '';
   }
   function phoneDay(iso) {
     const fn = window.CDOS && window.CDOS.formatPhoneListGroup;
@@ -31100,17 +31100,59 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }
     };
     useEffect(() => {
-      if (!serverBacked || !window.CDOS.Backend) return;
+      if (!serverBacked || !window.CDOS.Backend) {
+        try {
+          window.dispatchEvent(new CustomEvent('cdos-ledger-ready'));
+        } catch (e) {}
+        return;
+      }
       let active = true;
       window.CDOS.Backend.loadLedger().then(serverRows => {
         if (active) setRows(current => window.CDOS.Backend.mergeRows(current, serverRows));
       }).catch(error => {
         if (active) log && log('Ledger sync failed', error.message || 'Server ledger unavailable');
+      }).then(() => {
+        if (active) {
+          try {
+            window.dispatchEvent(new CustomEvent('cdos-ledger-ready'));
+          } catch (e) {}
+        }
       });
       return () => {
         active = false;
       };
     }, [serverBacked]);
+    /* The day's fee total is the server's summary, not a float over the
+       rows on screen. A missing figure is omitted. It is not zero. */
+    const [dayFee, setDayFee] = useState(null);
+    useEffect(() => {
+      if (!phoneLayout || !serverBacked || !window.CDOS.Backend || typeof window.CDOS.Backend.loadLedgerSummary !== 'function') {
+        setDayFee(null);
+        return;
+      }
+      let active = true;
+      const range = window.CDOS.businessDayWindow ? window.CDOS.businessDayWindow(1) : null;
+      const day = window.CDOS.businessDate ? window.CDOS.businessDate() : '';
+      window.CDOS.Backend.loadLedgerSummary(range).then(summary => {
+        if (!active) return;
+        const fees = summary && summary.feesHome;
+        const code = summary && summary.homeCurrency;
+        if (fees == null || fees === '' || !code || !day) {
+          setDayFee(null);
+          return;
+        }
+        const text = window.CDOS.formatPhoneMoney ? window.CDOS.formatPhoneMoney(fees, code) : '';
+        setDayFee(text ? {
+          day: day,
+          text: text
+        } : null);
+      }).catch(() => {
+        if (active) setDayFee(null);
+      });
+      return () => {
+        active = false;
+      };
+    }, [phoneLayout, serverBacked]);
     const searchWrap = useRef(null);
     useEffect(() => {
       if (!helpOpen) return;
@@ -31618,9 +31660,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         title: "No records",
         message: q ? 'Nothing matches that search.' : 'Nothing posted in this range.'
       }) : groups.map(g => {
-        const posted = g.rows.filter(r => r.status !== 'void');
-        const feeSum = posted.reduce((s, r) => s + (+r.fee || 0), 0);
-        const feeBit = home && posted.length ? money(feeSum, home) : '';
+        const feeBit = dayFee && g.key === dayFee.day ? dayFee.text : '';
         return /*#__PURE__*/React.createElement(Phone.ListSection, {
           key: g.key || 'day',
           title: phoneDay(g.key),
@@ -31629,7 +31669,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           const paid = money(row.inAmt, row.inCcy);
           const out = row.outAmt === '' || row.outAmt == null ? '' : money(row.outAmt, row.outCcy);
           const fee = home ? money(row.fee, home) : '';
-          const when = phoneClock(row.time);
+          const when = phoneClock(row.time, settings && settings.timezone);
           const tone = row.status === 'void' ? 'neg' : /sell/i.test(row.type || '') ? 'sell' : /buy/i.test(row.type || '') ? 'buy' : 'neutral';
           return /*#__PURE__*/React.createElement(Phone.ListRow, {
             key: row.id,
@@ -31638,12 +31678,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             note: row.ref || '',
             amount: out,
             meta: fee ? 'Fee ' + fee : '',
-            badge: row.status === 'void' ? {
-              label: 'Void',
-              tone: 'neg'
-            } : row.type ? {
+            badge: row.type ? {
               label: row.type,
-              tone
+              tone: row.status === 'void' ? 'neg' : tone
             } : null,
             onClick: () => setDetailId(row.id)
           });
@@ -61972,11 +62009,15 @@ window.CDOS_PERSIST = (function () {
    A list group for the business day is "Today, Oct 11".
    A YYYY-MM-DD string is a calendar day. It is not parsed as a Date,
    so it cannot move to the previous day through UTC midnight.
-   A Date, or a string with Z or a numeric offset, is an instant and
-   is shown in the branch time zone (America/Toronto when omitted). */
+   A wall clock ("15:02") and a calendar day do not need a zone.
+   A Date, or a string with Z or a numeric offset, is an instant.
+   The caller passes the shop's zone. Omitting it does not assume
+   Toronto. An impossible date, a bad clock, a bad zone, or a
+   malformed amount is an em dash, never a computed value.
+   Blank stays blank. */
 (function () {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const DEFAULT_ZONE = 'America/Toronto';
+  const DASH = '\u2014';
 
   /* Minor units. Mirrors EXCEPTIONS in server/src/ledger/currencies.ts.
      The browser cannot import that module. Change both together. */
@@ -61993,25 +62034,11 @@ window.CDOS_PERSIST = (function () {
     return 2;
   }
 
-  /* Code after the number. Never Intl currency style — that prints "$".
-     Absent (null, blank, not a number, bad code) is an empty string. */
-  function formatPhoneMoney(amount, code) {
-    if (amount == null || amount === '') return '';
-    const raw = typeof amount === 'number' ? amount : Number(String(amount).replace(/,/g, '').trim());
-    if (!Number.isFinite(raw)) return '';
-    const ccy = String(code || '').trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(ccy)) return '';
-    const digits = minorUnits(ccy);
-    const body = new Intl.NumberFormat('en-CA', {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-      useGrouping: true,
-    }).format(Math.abs(raw));
-    return (raw < 0 ? '\u2212' : '') + body + ' ' + ccy;
-  }
-
+  /* '' means the caller did not pass a zone. null means they passed
+     one and it is not a real zone. */
   function zoneOf(timeZone) {
-    const named = timeZone == null || timeZone === '' ? DEFAULT_ZONE : String(timeZone);
+    if (timeZone == null || timeZone === '') return '';
+    const named = String(timeZone);
     try {
       Intl.DateTimeFormat('en-US', { timeZone: named }).format(0);
       return named;
@@ -62024,13 +62051,17 @@ window.CDOS_PERSIST = (function () {
     return /\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
   }
 
+  function daysInMonth(year, month) {
+    return new Date(Date.UTC(year, month, 0)).getUTCDate();
+  }
+
   function calendarParts(text) {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
     if (!m) return null;
     const year = Number(m[1]);
     const month = Number(m[2]);
     const day = Number(m[3]);
-    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
     return { year: year, month: month, day: day };
   }
 
@@ -62039,12 +62070,16 @@ window.CDOS_PERSIST = (function () {
     if (!m) return null;
     let hour = Number(m[1]);
     const minute = Number(m[2]);
-    if (hour > 23 || minute > 59) return null;
+    if (minute > 59) return null;
     const ap = m[3] ? m[3].toLowerCase() : '';
-    if (ap && hour <= 12) {
+    if (ap) {
+      /* "13:02 AM" is not a clock. A suffix only belongs on 1–12. */
+      if (hour < 1 || hour > 12) return null;
       const pm = ap === 'pm';
       if (pm && hour < 12) hour += 12;
       if (!pm && hour === 12) hour = 0;
+    } else if (hour > 23) {
+      return null;
     }
     return { hour: hour, minute: minute };
   }
@@ -62058,17 +62093,16 @@ window.CDOS_PERSIST = (function () {
   }
 
   function dateLabel(year, month, day) {
-    if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return '';
     return MONTHS[month - 1] + ' ' + day + ', ' + year;
   }
 
   function instantParts(date, timeZone) {
-    const zone = zoneOf(timeZone);
-    if (!zone || !(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+    if (!timeZone || !(date instanceof Date) || Number.isNaN(date.getTime())) return null;
     let fmt;
     try {
       fmt = new Intl.DateTimeFormat('en-US', {
-        timeZone: zone,
+        timeZone: timeZone,
         hourCycle: 'h23',
         year: 'numeric',
         month: '2-digit',
@@ -62086,27 +62120,25 @@ window.CDOS_PERSIST = (function () {
     }
     let hour = Number(bag.hour);
     if (hour === 24) hour = 0;
-    return {
-      year: Number(bag.year),
-      month: Number(bag.month),
-      day: Number(bag.day),
-      hour: hour,
-      minute: Number(bag.minute),
-    };
+    const year = Number(bag.year);
+    const month = Number(bag.month);
+    const day = Number(bag.day);
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+    return { year: year, month: month, day: day, hour: hour, minute: Number(bag.minute) };
   }
 
   function read(value, timeZone) {
     if (value == null || value === '') return null;
     if (value instanceof Date) {
       const parts = instantParts(value, timeZone);
-      return parts ? { kind: 'instant', parts: parts } : null;
+      return parts ? { kind: 'instant', parts: parts } : { kind: 'bad' };
     }
     const text = String(value).trim();
     if (!text) return null;
     if (isInstantText(text)) {
       const parsed = new Date(text);
       const parts = instantParts(parsed, timeZone);
-      return parts ? { kind: 'instant', parts: parts } : null;
+      return parts ? { kind: 'instant', parts: parts } : { kind: 'bad' };
     }
     return {
       kind: 'wall',
@@ -62116,21 +62148,29 @@ window.CDOS_PERSIST = (function () {
   }
 
   function formatPhoneTime(value, timeZone) {
-    if (!zoneOf(timeZone)) return '';
-    const readValue = read(value, timeZone);
-    if (!readValue) return '';
-    if (readValue.kind === 'instant') return clockLabel(readValue.parts.hour, readValue.parts.minute);
-    if (!readValue.clock) return '';
-    return clockLabel(readValue.clock.hour, readValue.clock.minute);
+    const zone = zoneOf(timeZone);
+    if (zone === null) return DASH;
+    if (value == null || value === '') return '';
+    const readValue = read(value, zone);
+    if (!readValue || readValue.kind === 'bad') return DASH;
+    if (readValue.kind === 'instant') {
+      if (!zone) return DASH;
+      return clockLabel(readValue.parts.hour, readValue.parts.minute) || DASH;
+    }
+    if (!readValue.clock) return DASH;
+    return clockLabel(readValue.clock.hour, readValue.clock.minute) || DASH;
   }
 
   /* A list heading. Today is "Today, Oct 11". Any other calendar day
      is "Oct 11, 2026". `today` is the business date, YYYY-MM-DD.
      The day is read off the string, the same way formatPhoneDate is. */
   function formatPhoneListGroup(value, today) {
-    const text = String(value || '').trim();
+    if (value == null || value === '') return '';
+    const text = String(value).trim();
+    if (!text) return '';
+    if (isInstantText(text)) return DASH;
     const cal = calendarParts(text);
-    if (!cal) return '';
+    if (!cal) return DASH;
     const monthDay = MONTHS[cal.month - 1] + ' ' + cal.day;
     const todayText = String(today || '').trim().slice(0, 10);
     if (todayText && text.slice(0, 10) === todayText) return 'Today, ' + monthDay;
@@ -62138,12 +62178,87 @@ window.CDOS_PERSIST = (function () {
   }
 
   function formatPhoneDate(value, timeZone) {
-    if (!zoneOf(timeZone)) return '';
-    const readValue = read(value, timeZone);
-    if (!readValue) return '';
-    if (readValue.kind === 'instant') return dateLabel(readValue.parts.year, readValue.parts.month, readValue.parts.day);
-    if (!readValue.calendar) return '';
-    return dateLabel(readValue.calendar.year, readValue.calendar.month, readValue.calendar.day);
+    const zone = zoneOf(timeZone);
+    if (zone === null) return DASH;
+    if (value == null || value === '') return '';
+    const readValue = read(value, zone);
+    if (!readValue || readValue.kind === 'bad') return DASH;
+    if (readValue.kind === 'instant') {
+      if (!zone) return DASH;
+      return dateLabel(readValue.parts.year, readValue.parts.month, readValue.parts.day) || DASH;
+    }
+    if (!readValue.calendar) return DASH;
+    return dateLabel(readValue.calendar.year, readValue.calendar.month, readValue.calendar.day) || DASH;
+  }
+
+  function groupDigits(ints) {
+    const digits = String(ints).replace(/^0+(?=\d)/, '') || '0';
+    let out = '';
+    for (let i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 === 0) out += ',';
+      out += digits.charAt(i);
+    }
+    return out;
+  }
+
+  /* Round the fraction half away from zero, entirely on the digit
+     string, so a 16-digit amount does not pass through a float. */
+  function roundParts(ints, frac, digits) {
+    const whole = String(ints).replace(/\D/g, '') || '0';
+    const extra = frac.slice(digits);
+    let kept = frac.slice(0, digits);
+    while (kept.length < digits) kept += '0';
+    const bump = extra.length > 0 && extra.charAt(0) >= '5';
+    if (!bump) return { ints: whole.replace(/^0+(?=\d)/, '') || '0', frac: kept };
+    const chars = (whole + kept).split('');
+    let carry = 1;
+    for (let i = chars.length - 1; i >= 0 && carry; i--) {
+      const n = (chars[i].charCodeAt(0) - 48) + carry;
+      chars[i] = String(n % 10);
+      carry = n >= 10 ? 1 : 0;
+    }
+    if (carry) chars.unshift('1');
+    const all = chars.join('');
+    if (!digits) return { ints: all.replace(/^0+(?=\d)/, '') || '0', frac: '' };
+    return {
+      ints: (all.slice(0, all.length - digits) || '0').replace(/^0+(?=\d)/, '') || '0',
+      frac: all.slice(all.length - digits),
+    };
+  }
+
+  function moneyParts(amount) {
+    if (amount == null || amount === '') return { absent: true };
+    if (typeof amount === 'number') {
+      if (!Number.isFinite(amount)) return { invalid: true };
+      if (Math.abs(amount) > Number.MAX_SAFE_INTEGER) return { invalid: true };
+    }
+    const text = String(amount).trim();
+    if (!text) return { absent: true };
+    if (/[xXeE]/.test(text)) return { invalid: true };
+    const grouped = /^-?\d{1,3}(,\d{3})+(\.\d+)?$/;
+    const plain = /^-?\d+(\.\d+)?$/;
+    if (!grouped.test(text) && !plain.test(text)) return { invalid: true };
+    const neg = text.charAt(0) === '-';
+    const body = (neg ? text.slice(1) : text).replace(/,/g, '');
+    const cut = body.indexOf('.');
+    const ints = cut < 0 ? body : body.slice(0, cut);
+    const frac = cut < 0 ? '' : body.slice(cut + 1);
+    return { neg: neg, ints: ints, frac: frac };
+  }
+
+  /* Code after the number. Never Intl currency style — that prints "$".
+     Absent (null, blank) is an empty string. A malformed amount is an
+     em dash, never a parsed guess. */
+  function formatPhoneMoney(amount, code) {
+    const parsed = moneyParts(amount);
+    if (parsed.absent) return '';
+    if (parsed.invalid) return DASH;
+    const ccy = String(code || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(ccy)) return '';
+    const rounded = roundParts(parsed.ints, parsed.frac, minorUnits(ccy));
+    const body = groupDigits(rounded.ints) + (rounded.frac ? '.' + rounded.frac : '');
+    const zero = body === '0' || /^0\.0+$/.test(body);
+    return (parsed.neg && !zero ? '\u2212' : '') + body + ' ' + ccy;
   }
 
   const api = {
@@ -62288,7 +62403,7 @@ window.CDOS_PERSIST = (function () {
     }, segments)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-bell",
-      "aria-label": unread ? 'Alerts' : 'No alerts',
+      "aria-label": unread == null ? 'Alerts' : unread ? 'Alerts' : 'No alerts',
       onClick: onBell
     }, svg('<path d="M6 9a6 6 0 0 1 12 0c0 7 2 7 2 9H4c0-2 2-2 2-9"/><path d="M10 20a2 2 0 0 0 4 0"/>'), unread ? /*#__PURE__*/React.createElement("span", {
       className: "phone-bell-dot"
@@ -62396,13 +62511,14 @@ window.CDOS_PERSIST = (function () {
     disabled
   }) {
     const Tag = onClick ? 'button' : 'div';
-    const cls = ['phone-row', note ? 'has-note' : '', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', className || ''].filter(Boolean).join(' ');
+    const cls = ['phone-row', note ? 'has-note' : '', appId ? 'phone-more-row' : '', danger ? 'is-danger' : '', disabled ? 'is-disabled' : '', className || ''].filter(Boolean).join(' ');
     const tone = badge && badge.tone ? badge.tone : 'neutral';
     return /*#__PURE__*/React.createElement(Tag, {
       type: onClick ? 'button' : undefined,
       className: cls,
       "data-phone-app": appId || undefined,
       disabled: onClick && disabled ? true : undefined,
+      "aria-disabled": disabled ? true : undefined,
       onClick: disabled ? undefined : onClick
     }, leading || null, /*#__PURE__*/React.createElement("span", {
       className: "phone-row-main"
@@ -62586,20 +62702,24 @@ window.CDOS_PERSIST = (function () {
       key: i,
       className: "phone-skel"
     }));
+    const text = label || 'Loading';
     return /*#__PURE__*/React.createElement("div", {
       className: "phone-loading",
       role: "status",
-      "aria-label": label || 'Loading'
-    }, items);
+      "aria-label": text
+    }, /*#__PURE__*/React.createElement("p", {
+      className: "phone-loading-label"
+    }, text), items);
   }
   function ErrorState({
     message,
     onRetry
   }) {
+    const copy = message || 'Something went wrong. Try again.';
     return /*#__PURE__*/React.createElement("div", {
       className: "phone-error",
       role: "alert"
-    }, /*#__PURE__*/React.createElement("p", null, message), onRetry ? /*#__PURE__*/React.createElement("button", {
+    }, /*#__PURE__*/React.createElement("p", null, copy), onRetry ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-text-btn",
       onClick: onRetry
@@ -66237,6 +66357,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [editApps, setEditApps] = useState(false);
     const [chromeCollapsed, setChromeCollapsed] = useState(false); // click the CurrencyDesk logo to hide the tenant + app rows for more desktop room
     const [phoneMore, setPhoneMore] = useState(false);
+    const [alertsKnown, setAlertsKnown] = useState(false);
+    useEffect(() => {
+      if (!srvUser) {
+        setAlertsKnown(true);
+        return;
+      }
+      setAlertsKnown(false);
+      const mark = () => setAlertsKnown(true);
+      window.addEventListener('cdos-ledger-ready', mark);
+      return () => window.removeEventListener('cdos-ledger-ready', mark);
+    }, [srvUser]);
     const [dragApp, setDragApp] = useState(null);
     const appbarRef = useRef(null);
     const orderedRef = useRef([]);
@@ -68674,7 +68805,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       shop: shopName,
       desk: [stationName, stationTill ? stationTill.replace(/\s+—.*/, '') : '', day.closed ? 'Till closed' : 'Till open'].filter(Boolean).join(' · '),
       tillOpen: !day.closed,
-      unread: alertCount > 0,
+      unread: alertsKnown ? alertCount > 0 : null,
       onBell: () => openApp('compliance'),
       avatar: profileButton('phone')
     }), /*#__PURE__*/React.createElement("div", {

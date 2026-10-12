@@ -140,7 +140,17 @@
     fetch('/api/auth/me', { credentials: 'same-origin' })
       .then(function (r) {
         BACKEND = true;
-        if (r.ok) { return r.json().then(function (d) { if (d && d.user && !isAuthed()) enterAs(d.user.id); }); }
+        if (r.ok) {
+          return r.json().then(function (d) {
+            if (!(d && d.user)) return;
+            /* The desk writes yorkfx_staff_auth before this frame loads.
+               The flag is already set, and enterAs is what opens the
+               editor. Skipping it left the sign-in form up on a desk
+               that was already signed in. */
+            if (!isAuthed()) enterAs(d.user.id);
+            else showApp();
+          });
+        }
         // Backend up, no desk session. Clear any sessionStorage flag left by an
         // earlier session first: it is not a credential, and leaving it set
         // shows an editor the server would refuse to publish for.
@@ -565,14 +575,14 @@
       var nextProvider = mk.fetchedAt + 3600000;
       var pname = mk.provider === 'openexchangerates.org' ? 'OPEN EXCHANGE RATES' : String(mk.provider || 'LIVE FEED').toUpperCase();
       feedLabel.textContent = 'FEED LIVE · ' + pname;
-      feedLastWrap.innerHTML = 'Provider rates as of <b>' + fmtClock(mk.fetchedAt) + '</b> · feed healthy · hourly';
-      feedNextWrap.innerHTML = now < nextProvider
+      paintHTML(feedLastWrap, 'Provider rates as of <b>' + fmtClock(mk.fetchedAt) + '</b> · feed healthy · hourly');
+      paintHTML(feedNextWrap, now < nextProvider
         ? 'Next refresh <b>' + fmtCountdown(nextProvider - now) + '</b>'
-        : 'Refresh due <b>any moment</b>';
+        : 'Refresh due <b>any moment</b>');
     } else {
       feedLabel.textContent = stale ? 'FEED OFFLINE — RATES HELD' : 'STANDALONE · RATES HELD';
-      feedLastWrap.innerHTML = 'Rates as of <b>' + fmtClock(feed.lastPull) + '</b> · live feed needs the backend';
-      feedNextWrap.innerHTML = 'Offline';
+      paintHTML(feedLastWrap, 'Rates as of <b>' + fmtClock(feed.lastPull) + '</b> · live feed needs the backend');
+      paintHTML(feedNextWrap, 'Offline');
     }
   }
 
@@ -613,16 +623,24 @@
     return s + 's';
   }
 
+  /* Rewriting the same markup every second repaints the glyphs and
+     the desktop picture moves by a few pixels. Write only when the
+     words changed. */
+  function paintHTML(el, html) {
+    if (!el || el.innerHTML === html) return;
+    el.innerHTML = html;
+  }
+
   function tickSince() {
     if (!published.publishedAt) {
       sinceEl.classList.remove('fresh');
-      sinceEl.innerHTML = '<span class="tdot"></span>Not yet published';
+      paintHTML(sinceEl, '<span class="tdot"></span>Not yet published');
       return;
     }
     var diff = Math.max(0, Date.now() - new Date(published.publishedAt).getTime());
     sinceEl.classList.toggle('fresh', diff < 60000);
-    sinceEl.innerHTML = '<span class="tdot"></span>Updated <b>' + fmtAgo(diff) + '</b> ago' +
-      (published.publishedBy ? ' \u00b7 ' + published.publishedBy : '');
+    paintHTML(sinceEl, '<span class="tdot"></span>Updated <b>' + fmtAgo(diff) + '</b> ago' +
+      (published.publishedBy ? ' \u00b7 ' + published.publishedBy : ''));
   }
 
   function refresh() { syncMarginInputs(); paintAll(); refreshStatus(); tickSince(); renderFeed(); renderAddMenu(); paintPreview(); paintWorked(); }
