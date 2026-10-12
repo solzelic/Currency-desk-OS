@@ -5,6 +5,11 @@
    The Postgres cases run only with TEST_DATABASE_URL, the same gate as
    the other invariant files. The log case does not need a database and
    runs either way. */
+import { spawnSync } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -257,6 +262,41 @@ postgres("shop sign-in against Postgres", () => {
     expect(last?.body.detail).toMatch(LOCK);
     expect(last?.body.error).toBe("too_many_attempts");
   });
+
+  it("says Try again at in Toronto time when the process zone is Jerusalem", async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const out = path.join(tmpdir(), `tz-lock-${process.pid}.json`);
+    try {
+      const result = spawnSync(path.join(root, "node_modules", ".bin", "tsx"), [path.join(root, "tests/lock-clock-probe.ts"), out], {
+        cwd: root,
+        env: { ...process.env, TZ: "Asia/Jerusalem", DATABASE_URL: url },
+        encoding: "utf8",
+        timeout: 60_000,
+      });
+      expect(result.status).toBe(0);
+      const body = JSON.parse(readFileSync(out, "utf8")) as {
+        tz: string;
+        status: number;
+        error: string;
+        timeZone: string;
+        until: string;
+        toronto: string;
+        jerusalem: string;
+        processClock: string;
+        sentence: string;
+      };
+      expect(body.tz).toBe("Asia/Jerusalem");
+      expect(body.status).toBe(429);
+      expect(body.error).toBe("too_many_attempts");
+      expect(body.timeZone).toBe("America/Toronto");
+      expect(body.processClock).toBe(body.jerusalem);
+      expect(body.processClock).not.toBe(body.toronto);
+      expect(body.until).toBe(body.toronto);
+      expect(body.sentence).toBe(`Too many tries. Try again at ${body.toronto}.`);
+    } finally {
+      rmSync(out, { force: true });
+    }
+  }, 60_000);
 
   it("counts the address, including the hop a proxy appended", async () => {
     await handle.db.insert(schema.signinFailures).values({

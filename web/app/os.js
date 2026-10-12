@@ -59604,7 +59604,26 @@ ${snap}`;
 
     // ---- A2 · Password -------------------------------------------------
     if (step === 'password') {
-      const first = firstOf(known ? known.name : '');
+      const displayName = known && known.name ? String(known.name) : '';
+      /* A staff id with no @ has no mailbox. The button signs them in.
+         It does not offer to send a code, before the lock or after it. */
+      const passwordOnly = idInput.indexOf('@') < 0;
+      const canSend = !busy && !(locked && lockUntil) && pw.length >= 4 && (passwordOnly || cool === 0);
+      const sentenceBtn = {
+        width: '100%',
+        height: 48,
+        marginTop: 16,
+        borderRadius: 12,
+        border: 'none',
+        cursor: canSend ? 'pointer' : 'not-allowed',
+        background: canSend ? 'var(--si-primary)' : 'rgba(23,20,15,0.07)',
+        color: canSend ? '#fff' : 'var(--si-ink)',
+        fontFamily: 'Archivo, system-ui, sans-serif',
+        fontSize: 15,
+        fontWeight: 700,
+        letterSpacing: 0,
+        textTransform: 'none'
+      };
       return shell(card(/*#__PURE__*/React.createElement("form", {
         onSubmit: submitPassword
       }, /*#__PURE__*/React.createElement("div", {
@@ -59634,7 +59653,7 @@ ${snap}`;
           letterSpacing: '-0.01em',
           margin: '0 0 4px'
         }
-      }, first ? 'Welcome back, ' + first : 'Welcome back'), /*#__PURE__*/React.createElement("div", {
+      }, displayName ? 'Welcome back, ' + displayName : 'Welcome back'), /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 12.5,
@@ -59773,23 +59792,9 @@ ${snap}`;
         }
       }, err), /*#__PURE__*/React.createElement("button", {
         type: "submit",
-        disabled: busy || locked && !!lockUntil || cool > 0 || pw.length < 4,
-        style: locked ? {
-          width: '100%',
-          height: 48,
-          marginTop: 16,
-          borderRadius: 12,
-          border: 'none',
-          cursor: lockUntil || busy || pw.length < 4 ? 'not-allowed' : 'pointer',
-          background: !lockUntil && !busy && pw.length >= 4 ? 'var(--si-primary)' : 'rgba(23,20,15,0.07)',
-          color: !lockUntil && !busy && pw.length >= 4 ? '#fff' : 'var(--si-ink)',
-          fontFamily: 'Archivo, system-ui, sans-serif',
-          fontSize: 15,
-          fontWeight: 700,
-          letterSpacing: 0,
-          textTransform: 'none'
-        } : {
-          ...primaryBtn(!busy && cool === 0 && pw.length >= 4),
+        disabled: !canSend,
+        style: locked || passwordOnly ? sentenceBtn : {
+          ...primaryBtn(canSend),
           marginTop: 16
         }
       }, busy ? 'Checking…' : locked && lockUntil ? /*#__PURE__*/React.createElement("span", {
@@ -59821,7 +59826,7 @@ ${snap}`;
         rx: "2"
       }), /*#__PURE__*/React.createElement("path", {
         d: "M7 11V7a5 5 0 0 1 10 0v4"
-      })), "Sign in") : locked ? 'Try again' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
+      })), "Sign in") : locked ? 'Try again' : !passwordOnly && cool > 0 ? 'Another code in ' + cool + 's' : passwordOnly ? 'Sign in' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 11.5,
