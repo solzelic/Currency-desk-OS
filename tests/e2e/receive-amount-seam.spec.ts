@@ -669,6 +669,12 @@ test("the sheet does not show a raw server error", async ({ page, request }) => 
   const raw = [
     { message: "Quote has expired.", code: "QUOTE_EXPIRED", desk: "Quote expired. Get a new rate." },
     { message: "Rate publication is stale.", code: "RATE_PUBLICATION_STALE", desk: "The rate board is out of date. Publish the board and try again." },
+    { message: "No published branch board.", code: "RATE_NOT_AVAILABLE", desk: "There is no rate board for this branch. Publish the board and try again." },
+    { message: "Currency is not published.", code: "RATE_NOT_AVAILABLE", desk: "That currency is not on the published board." },
+    { message: "Quote outside active scope.", code: "SCOPE_DENIED", desk: "This quote is not on this till." },
+    { message: "Customer is not in active workspace.", code: "CUSTOMER_NOT_FOUND", desk: "This customer is not on this till." },
+    { message: "Quote not found.", code: "QUOTE_NOT_FOUND", desk: "That quote is not on this desk. Get a new rate." },
+    { message: "The flux capacitor is offline.", code: "INTERNAL_ERROR", desk: "Couldn't get a price. Reload and try again." },
   ];
   try {
     await prepareDesk(page, 1280);
@@ -709,7 +715,78 @@ test("the sheet does not show a raw server error", async ({ page, request }) => 
     await expect(page.locator(".cd-tx")).not.toContainText("Missing quote:post.");
     await expect(page.locator(".cd-tx")).not.toContainText("Quote has expired.");
     await expect(page.locator(".cd-tx")).not.toContainText("Rate publication is stale.");
+    await expect(page.locator(".cd-tx")).not.toContainText("No published branch board.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Currency is not published.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Quote outside active scope.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Customer is not in active workspace.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Quote not found.");
+    await expect(page.locator(".cd-tx")).not.toContainText("The flux capacitor is offline.");
   } finally {
+    await restoreBoard(request);
+  }
+});
+
+test("a malformed amount does not show invalid money", async ({ page, request }) => {
+  try {
+    await prepareDesk(page, 1280);
+    await openNewTransaction(page);
+    await page.locator(".cd-money input").first().fill("12.345");
+    const alert = page.locator(".cd-tx").getByRole("alert");
+    await expect(alert).toHaveText("Enter a valid amount.");
+    expect("Enter a valid amount.").not.toMatch(/[-\u2013\u2014]/);
+    await expect(page.locator(".cd-tx")).not.toContainText("invalid money");
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
+test("a three decimal currency does not show unsupported currency scale", async ({ page, request }) => {
+  try {
+    await prepareDesk(page, 1280);
+    await page.evaluate(() => {
+      const cfg = JSON.parse(localStorage.getItem("yorkfx_rates_v1") || "{}");
+      cfg.rows = cfg.rows || {};
+      cfg.rows.JOD = { mid: 1.8, show: true, spread: 0.015 };
+      localStorage.setItem("yorkfx_rates_v1", JSON.stringify(cfg));
+      (window as unknown as { __cdosOutCcy?: string }).__cdosOutCcy = "JOD";
+    });
+    await openNewTransaction(page);
+    await expect(page.locator(".cd-money").nth(1).locator("button")).toContainText("JOD");
+    await page.locator(".cd-money input").first().fill("10");
+    const alert = page.locator(".cd-tx").getByRole("alert");
+    await expect(alert).toHaveText("That currency is not available on this desk.");
+    expect("That currency is not available on this desk.").not.toMatch(/[-\u2013\u2014]/);
+    await expect(page.locator(".cd-tx")).not.toContainText("unsupported currency scale");
+  } finally {
+    await page.evaluate(() => { delete (window as unknown as { __cdosOutCcy?: string }).__cdosOutCcy; });
+    await restoreBoard(request);
+  }
+});
+
+test("a post that skips the shown amount is refused", async ({ page, request }) => {
+  try {
+    await prepareDesk(page, 1280);
+    const before = await ledgerCount(page);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().fill("40");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toBeVisible();
+    const shown = (await page.getByTestId("tx-receives").innerText()).replace(/,/g, "");
+    expect(shown).toMatch(/^\d+\.\d{2}$/);
+    await page.route("**/api/quotes/**/post", async (route) => {
+      const body = route.request().postDataJSON() as { shownAmount?: string };
+      expect(body.shownAmount, "the sheet sends the amount it showed").toBe(shown);
+      delete body.shownAmount;
+      await route.continue({ postData: JSON.stringify(body) });
+    });
+    await page.getByRole("button", { name: "Post frozen quote" }).click();
+    await expect(page.getByTestId("tx-reload")).toContainText("This screen is out of date. Reload to continue.");
+    expect(await ledgerCount(page), "skipping the shown amount posts nothing").toBe(before);
+  } finally {
+    await page.unroute("**/api/quotes/**/post");
     await restoreBoard(request);
   }
 });

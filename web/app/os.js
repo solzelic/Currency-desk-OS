@@ -1999,13 +1999,12 @@
     var body = {};
     try { body = await response.json(); } catch (_) {}
     if (!response.ok) {
-      /* These three arrive as the server's own sentence. The sheet says
-         the desk version instead, and never the raw text. */
-      var rawDesk = {
-        "Quote has expired.": "Quote expired. Get a new rate.",
-        "Missing quote:post.": "You do not have permission to post this quote.",
-        "Rate publication is stale.": "The rate board is out of date. Publish the board and try again.",
-      };
+      /* Quote failures are rewritten by the one table in quote-terms.
+         Anything that table does not name becomes the generic sentence,
+         never the server's own words. Other routes keep their own map. */
+      var quoteCall = path.indexOf("/api/quotes") === 0;
+      var terms = typeof window !== "undefined" && window.CDOS && window.CDOS.quoteTerms;
+      var spoken = quoteCall && terms && terms.deskWording ? terms.deskWording(body.message) : null;
       var byCode = {
         AUTHENTICATION_REQUIRED: "Your session expired. Sign in again before posting.",
         PLAN_NOT_ENTITLED: "This workspace plan does not include server ledger posting.",
@@ -2037,7 +2036,12 @@
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
       };
       var named = body.code === "QUOTE_EXPIRED" || body.code === "RATE_PUBLICATION_STALE" ? byCode[body.code] : null;
-      var error = new Error(rawDesk[body.message] || named || body.message || byCode[body.code] || "The ledger server rejected this request. Nothing was posted.");
+      var fallback = quoteCall && terms && terms.quoteFallback
+        ? terms.quoteFallback
+        : "The ledger server rejected this request. Nothing was posted.";
+      var error = new Error(quoteCall
+        ? (spoken || byCode[body.code] || fallback)
+        : (spoken || named || body.message || byCode[body.code] || fallback));
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       throw error;
@@ -32586,6 +32590,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const api = window.CDOS && window.CDOS.quoteTerms;
     return !!(api && api.minorUnits(code) > 2);
   }
+  /* The quote table in quote-terms. An unknown sentence, including one
+     the server just invented, is the generic line and never the raw text. */
+  function sheetWords(message) {
+    const api = window.CDOS && window.CDOS.quoteTerms;
+    const spoken = api && api.deskWording && message ? api.deskWording(message) : null;
+    if (spoken) return spoken;
+    if (message === 'Quote pricing did not load.') return "Prices didn't load. Reload the page.";
+    return api && api.quoteFallback || "Couldn't get a price. Reload and try again.";
+  }
   function boardOrderedCCY() {
     const home = deskHome();
     const base = home && CCY.indexOf(home) < 0 ? [home].concat(CCY) : CCY.slice();
@@ -33803,6 +33816,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     // exchange
     const [inCcy, setInCcy] = useState(home);
     const [outCcy, setOutCcy] = useState('USD');
+    /* A seam prices a currency the picker will not offer. Read once. */
+    useEffect(() => {
+      const seeded = window.__cdosOutCcy;
+      if (!seeded || !/^[A-Z]{3}$/.test(seeded)) return;
+      window.__cdosOutCcy = '';
+      setOutCcy(seeded);
+    }, []);
     const [inAmt, setInAmt] = useState('');
     const [override, setOverride] = useState(false);
     const [manualRate, setManualRate] = useState('');
@@ -33966,7 +33986,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (!isExchange) return null;
       if (!quoteApi) return {
         state: 'bad',
-        message: 'Quote pricing did not load.'
+        message: sheetWords('Quote pricing did not load.')
       };
       let board = null;
       try {
@@ -34018,7 +34038,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       receiveWire: frozenHands.receiveWire
     } : exchangeQuote || {
       state: 'bad',
-      message: 'Quote pricing did not load.'
+      message: sheetWords('Quote pricing did not load.')
     };
     const rateN = isExchange ? 0 : pricing.rate;
     const exchangeReady = !!(fx && fx.state === 'ok');
@@ -34462,8 +34482,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       } catch (error) {
         if (error && error.code === 'RELOAD_REQUIRED') {
           setReloadRequired(true);
-          setServerError('This screen is out of date. Reload to continue.');
-        } else setServerError(error.message || 'The server quote could not be created.');
+          setServerError(sheetWords('This screen is out of date. Reload to continue.'));
+        } else setServerError(sheetWords(error && error.message));
       } finally {
         setServerBusy(false);
       }
@@ -34514,10 +34534,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       } catch (error) {
         if (error && error.code === 'RELOAD_REQUIRED') {
           setReloadRequired(true);
-          setServerError('This screen is out of date. Reload to continue.');
+          setServerError(sheetWords('This screen is out of date. Reload to continue.'));
         } else {
           if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
-          setServerError(error.message || 'The transaction was not posted.');
+          setServerError(sheetWords(error && error.message));
         }
       } finally {
         setServerBusy(false);

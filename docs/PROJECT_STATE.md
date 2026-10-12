@@ -79,6 +79,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   (`os-src/quote-terms.js`). A frozen quote is shown from the server's
   amounts. Its expiry is a countdown, `Expires in 4:12`, and at zero
   the post is refused on the sheet with `Quote expired. Get a new rate.`
+  Every quote error the sheet can be handed is read from one table in
+  `os-src/quote-terms.js`. An unknown one reads `Couldn't get a price.
+  Reload and try again.` Prices that do not load read `Prices didn't
+  load. Reload the page.`
   A fee is in the headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
   and buying shows `132.86 CAD (134.36 less 1.50 fee)`. That net is the
   cash the till moves. Yen rounds to a whole yen, and `1000.5` yen reads

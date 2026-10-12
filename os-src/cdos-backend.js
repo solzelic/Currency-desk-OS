@@ -55,13 +55,12 @@
     var body = {};
     try { body = await response.json(); } catch (_) {}
     if (!response.ok) {
-      /* These three arrive as the server's own sentence. The sheet says
-         the desk version instead, and never the raw text. */
-      var rawDesk = {
-        "Quote has expired.": "Quote expired. Get a new rate.",
-        "Missing quote:post.": "You do not have permission to post this quote.",
-        "Rate publication is stale.": "The rate board is out of date. Publish the board and try again.",
-      };
+      /* Quote failures are rewritten by the one table in quote-terms.
+         Anything that table does not name becomes the generic sentence,
+         never the server's own words. Other routes keep their own map. */
+      var quoteCall = path.indexOf("/api/quotes") === 0;
+      var terms = typeof window !== "undefined" && window.CDOS && window.CDOS.quoteTerms;
+      var spoken = quoteCall && terms && terms.deskWording ? terms.deskWording(body.message) : null;
       var byCode = {
         AUTHENTICATION_REQUIRED: "Your session expired. Sign in again before posting.",
         PLAN_NOT_ENTITLED: "This workspace plan does not include server ledger posting.",
@@ -93,7 +92,12 @@
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
       };
       var named = body.code === "QUOTE_EXPIRED" || body.code === "RATE_PUBLICATION_STALE" ? byCode[body.code] : null;
-      var error = new Error(rawDesk[body.message] || named || body.message || byCode[body.code] || "The ledger server rejected this request. Nothing was posted.");
+      var fallback = quoteCall && terms && terms.quoteFallback
+        ? terms.quoteFallback
+        : "The ledger server rejected this request. Nothing was posted.";
+      var error = new Error(quoteCall
+        ? (spoken || byCode[body.code] || fallback)
+        : (spoken || named || body.message || byCode[body.code] || fallback));
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       throw error;

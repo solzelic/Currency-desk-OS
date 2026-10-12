@@ -109,6 +109,15 @@
     const api = window.CDOS && window.CDOS.quoteTerms;
     return !!(api && api.minorUnits(code) > 2);
   }
+  /* The quote table in quote-terms. An unknown sentence, including one
+     the server just invented, is the generic line and never the raw text. */
+  function sheetWords(message) {
+    const api = window.CDOS && window.CDOS.quoteTerms;
+    const spoken = api && api.deskWording && message ? api.deskWording(message) : null;
+    if (spoken) return spoken;
+    if (message === 'Quote pricing did not load.') return "Prices didn't load. Reload the page.";
+    return (api && api.quoteFallback) || "Couldn't get a price. Reload and try again.";
+  }
   function boardOrderedCCY() {
     const home = deskHome();
     const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY.slice();
@@ -469,6 +478,13 @@
     // exchange
     const [inCcy, setInCcy] = useState(home);
     const [outCcy, setOutCcy] = useState('USD');
+    /* A seam prices a currency the picker will not offer. Read once. */
+    useEffect(() => {
+      const seeded = window.__cdosOutCcy;
+      if (!seeded || !/^[A-Z]{3}$/.test(seeded)) return;
+      window.__cdosOutCcy = '';
+      setOutCcy(seeded);
+    }, []);
     const [inAmt, setInAmt] = useState('');
     const [override, setOverride] = useState(false);
     const [manualRate, setManualRate] = useState('');
@@ -611,7 +627,7 @@
     const pricing = useMemo(() => priceArgs ? priceDeal(priceArgs) : { rate: 1, outAmt: amtN, midRate: null, marginCad: 0, side: null, midCadIn: amtN, deskRate: 1, outAmtRaw: amtN }, [JSON.stringify(priceArgs), rateVersion]);
     const exchangeQuote = useMemo(() => {
       if (!isExchange) return null;
-      if (!quoteApi) return { state: 'bad', message: 'Quote pricing did not load.' };
+      if (!quoteApi) return { state: 'bad', message: sheetWords('Quote pricing did not load.') };
       let board = null;
       try {
         const raw = localStorage.getItem('yorkfx_rates_v1');
@@ -655,7 +671,7 @@
       receiveCurrency: frozenHands.receiveCurrency,
       receiveDetail: frozenHands.receiveDetail,
       receiveWire: frozenHands.receiveWire,
-    } : (exchangeQuote || { state: 'bad', message: 'Quote pricing did not load.' }));
+    } : (exchangeQuote || { state: 'bad', message: sheetWords('Quote pricing did not load.') }));
     const rateN = isExchange ? 0 : pricing.rate;
     const exchangeReady = !!(fx && fx.state === 'ok');
     useEffect(() => {
@@ -913,8 +929,8 @@
       } catch (error) {
         if (error && error.code === 'RELOAD_REQUIRED') {
           setReloadRequired(true);
-          setServerError('This screen is out of date. Reload to continue.');
-        } else setServerError(error.message || 'The server quote could not be created.');
+          setServerError(sheetWords('This screen is out of date. Reload to continue.'));
+        } else setServerError(sheetWords(error && error.message));
       } finally {
         setServerBusy(false);
       }
@@ -955,10 +971,10 @@
       } catch (error) {
         if (error && error.code === 'RELOAD_REQUIRED') {
           setReloadRequired(true);
-          setServerError('This screen is out of date. Reload to continue.');
+          setServerError(sheetWords('This screen is out of date. Reload to continue.'));
         } else {
           if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
-          setServerError(error.message || 'The transaction was not posted.');
+          setServerError(sheetWords(error && error.message));
         }
       } finally {
         setServerBusy(false);

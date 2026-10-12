@@ -3,7 +3,8 @@ import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 import { calculateQuoteTerms, roundOutput } from "../src/quotes/terms.js";
 
-const cashHands = createRequire(import.meta.url)("../../os-src/quote-terms.js").create(Decimal).cashHands;
+const quoteTerms = createRequire(import.meta.url)("../../os-src/quote-terms.js").create(Decimal);
+const cashHands = quoteTerms.cashHands;
 
 describe("quote terms",()=>{
   it("uses We Sell when a customer buys foreign currency",()=>{const q=calculateQuoteTerms({direction:"customer_buy_foreign",from:"CAD",to:"USD",inputAmount:"1000.00",feeCad:"4.00",marketMid:"1.4",margin:"0.03"});expect(q.buyOrSellSide).toBe("we_sell");expect(q.customerRate.toFixed(12)).toBe("0.692857142857");expect(q.outputAmount.toFixed(2)).toBe("692.86");expect(q.spreadCad.toFixed(2)).toBe("30.00");});
@@ -18,5 +19,22 @@ describe("quote terms",()=>{
     expect(cashHands("100.00","134.36","1.50","USD","CAD","CAD").receiveWire).toBe("132.86");
     expect(cashHands("3500.00","4702.63","0","USD","CAD","CAD").receive).toBe("4,702.63 CAD");
     expect(cashHands("3500.00","4702.63","0","USD","CAD","CAD").receiveWire).toBe("4702.63");
+  });
+  it("says the desk sentence for every quote error the sheet can be handed",()=>{
+    const said = (raw: string) => quoteTerms.deskWording(raw);
+    expect(said("Quote pricing did not load.")).toBe("Prices didn't load. Reload the page.");
+    expect(said("No published branch board.")).toBe("There is no rate board for this branch. Publish the board and try again.");
+    expect(said("Currency is not published.")).toBe("That currency is not on the published board.");
+    expect(said("Quote outside active scope.")).toBe("This quote is not on this till.");
+    expect(said("Customer is not in active workspace.")).toBe("This customer is not on this till.");
+    expect(said("Quote not found.")).toBe("That quote is not on this desk. Get a new rate.");
+    expect(said("invalid money")).toBe("Enter a valid amount.");
+    expect(said("unsupported currency scale")).toBe("That currency is not available on this desk.");
+    expect(said("Enter a valid amount.")).toBe("Enter a valid amount.");
+    expect(said("A brand new server sentence.")).toBeNull();
+    expect(quoteTerms.quoteFallback).toBe("Couldn't get a price. Reload and try again.");
+    const board = { rows: { USD: { mid: "1.36", show: true, spread: "0.015" }, JOD: { mid: "1.8", show: true, spread: "0.015" } }, buyMargin: "0.015", sellMargin: "0.015" };
+    expect(quoteTerms.preview(board, { from: "CAD", to: "USD", inputAmount: "12.345", feeCad: "0", homeCurrency: "CAD" }).message).toBe("Enter a valid amount.");
+    expect(quoteTerms.preview(board, { from: "CAD", to: "JOD", inputAmount: "10", feeCad: "0", homeCurrency: "CAD" }).message).toBe("That currency is not available on this desk.");
   });
 });

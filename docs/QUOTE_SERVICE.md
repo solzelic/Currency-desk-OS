@@ -42,6 +42,11 @@ figure from the frozen input, rate, fee, and currencies, and answers
 is posted. The sheet shows `This screen is out of date. Reload to continue.`
 with a Reload button.
 
+The sheet does not show the server's own sentence. `os-src/quote-terms.js`
+holds one table from the raw message to the words on the sheet. A message
+the table does not name reads `Couldn't get a price. Reload and try again.`
+`Quote pricing did not load.` reads `Prices didn't load. Reload the page.`
+
 Endpoints: `POST /api/quotes`, `GET /api/quotes/:quoteId`,
 `POST /api/quotes/:quoteId/cancel`, `POST /api/quotes/:quoteId/override`, and
 `POST /api/quotes/:quoteId/post`.

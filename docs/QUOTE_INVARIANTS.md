@@ -20,6 +20,9 @@
 - A post carries the Customer receives amount the teller was shown. The
   server recomputes that amount and refuses with `409 RELOAD_REQUIRED`
   when it is missing or different. Nothing is posted.
+- The sheet reads quote errors from one table in `os-src/quote-terms.js`.
+  A message that table does not name is `Couldn't get a price. Reload and
+  try again.`, never the server's own sentence.
 - The current fee contract is separate CAD tender. It is explicit in receipt,
   till movements, and the CAD functional-currency journal.
 - A quote-originated transaction retains `quote_id`, `market_mid`, rate-board

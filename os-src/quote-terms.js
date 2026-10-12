@@ -31,6 +31,116 @@
     BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
   };
 
+  /* Every sentence the New transaction sheet can be handed, and the
+     sentence a teller should read instead. A second pass is the same
+     sentence, so the preview and the request layer can both use it.
+     A message that is not here returns null, and the sheet says
+     "Couldn't get a price. Reload and try again." */
+  var QUOTE_FALLBACK = "Couldn't get a price. Reload and try again.";
+  var DESK = {
+    "Quote has expired.": "Quote expired. Get a new rate.",
+    "Missing quote:create.": "You do not have permission to get a quote.",
+    "Missing quote:view.": "You do not have permission to view this quote.",
+    "Missing quote:cancel.": "You do not have permission to cancel this quote.",
+    "Missing quote:post.": "You do not have permission to post this quote.",
+    "Missing rates:override.": "You do not have permission to change this rate.",
+    "Missing transaction:post.": "You do not have permission to post this quote.",
+    "Rate publication is stale.": "The rate board is out of date. Publish the board and try again.",
+    "No published branch board.": "There is no rate board for this branch. Publish the board and try again.",
+    "Currency is not published.": "That currency is not on the published board.",
+    "Quote outside active scope.": "This quote is not on this till.",
+    "Quote is outside the active scope.": "This quote is not on this till.",
+    "Superseded quote is outside active scope.": "This quote is not on this till.",
+    "Customer is not in active workspace.": "This customer is not on this till.",
+    "Customer is not in the active workspace.": "This customer is not on this till.",
+    "Quote not found.": "That quote is not on this desk. Get a new rate.",
+    "Quote pricing did not load.": "Prices didn't load. Reload the page.",
+    "invalid money": "Enter a valid amount.",
+    "unsupported currency scale": "That currency is not available on this desk.",
+    "out of range": "That amount is outside what this desk can quote.",
+    "negative spread": "This rate cannot be quoted.",
+    "direction and currencies disagree": "Choose one currency to pay and a different one to receive.",
+    "Transaction direction does not match the currency pair.": "Choose one currency to pay and a different one to receive.",
+    "A deal needs two different currencies.": "Choose one currency to pay and a different one to receive.",
+    "invalid board terms": "The rate board cannot price this.",
+    "invalid rate": "The rate board cannot price this.",
+    "This deal is not priced.": "Couldn't get a price. Reload and try again.",
+    "Quote already posted.": "This quote was already posted.",
+    "Quote cannot be posted.": "This quote cannot be posted. Get a new rate.",
+    "Only active quotes can be cancelled.": "Only an open quote can be cancelled.",
+    "Only unexpired active quotes may be overridden.": "This quote cannot be changed. Get a new rate.",
+    "Override reason required.": "Say why this rate is being changed.",
+    "Override exceeds policy limit.": "That rate is too far from the board.",
+    "Override produces a negative spread.": "That rate would pay the customer more than the board allows.",
+    "Third-party name requires third-party status.": "Name the other person, or clear the third party mark.",
+    "Third-party status and name must be captured together.": "Name the other person, or clear the third party mark.",
+    "Authenticated principal is outside this workspace.": "This till is not open for your sign in. Reload and try again.",
+    "Frozen quote terms do not match authoritative record.": "This screen is out of date. Reload to continue.",
+    "A cross-currency deal must carry both frozen board mids.": "This quote is missing a rate. Reload and try again.",
+    "Request is already in progress.": "Another change to this till is being recorded. Nothing was posted. Try again in a moment.",
+    "The desk is recording another change to this till. Nothing was quoted — try again.": "The desk is recording another change to this till. Nothing was quoted. Try again.",
+    "Insufficient till liquidity.": "The till does not have enough of that currency.",
+    "Open the till before posting transactions.": "Open the till before posting.",
+    "Authoritative compliance policy blocked posting.": "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
+    "This deal was not posted. A suspicion draft is saved for APML. The desk does not send it.": "This deal was not posted. A suspicion draft is saved for APML. The desk does not send it.",
+    "Say whether this sale includes 50 or 100 US dollar notes.": "Say whether this sale includes 50 or 100 US dollar notes.",
+    "A sale of 50 or 100 US dollar notes needs the customer's name, their JMBG or passport number, and the serial number of each note.": "A sale of 50 or 100 US dollar notes needs the customer's name, their JMBG or passport number, and the serial number of each note.",
+    "This counter is airside or in a casino. Every buy and sell needs the customer's name and their JMBG or passport number.": "This counter is airside or in a casino. Every buy and sell needs the customer's name and their JMBG or passport number.",
+    "This receipt needs the customer's JMBG or passport number.": "This receipt needs the customer's JMBG or passport number.",
+    "Cash payment for a sale of foreign exchange must be below 50000 INR. This sale is at or above that line, so take a cheque or a bank transfer.": "Cash payment for a sale of foreign exchange must be below 50000 INR. This sale is at or above that line, so take a cheque or a bank transfer.",
+    "This deal needs the customer's purpose and the source of the funds before it can be posted.": "This deal needs the customer's purpose and the source of the funds before it can be posted.",
+    "This deal has no peso amount and no fresh rate, so the desk cannot test the Philippine limits. It is not posted.": "This deal has no peso amount and no fresh rate, so the desk cannot test the Philippine limits. It is not posted.",
+    "This Philippines desk is not keeping its book in PHP, so the desk cannot test the Philippine limits. It is not posted.": "This Philippines desk is not keeping its book in PHP, so the desk cannot test the Philippine limits. It is not posted.",
+    "A cash payout of more than 500000 PHP, or the foreign-currency equivalent, has to be a cheque or a credit to a deposit account. This payout is over that line.": "A cash payout of more than 500000 PHP, or the foreign-currency equivalent, has to be a cheque or a credit to a deposit account. This payout is over that line.",
+    "This cash payout is in foreign currency and there is no fresh rate, so the desk cannot test the 500000 PHP payout limit. It is not posted.": "This cash payout is in foreign currency and there is no fresh rate, so the desk cannot test the 500000 PHP payout limit. It is not posted.",
+    "A sale of foreign currency must not exceed 10000 USD, or the equivalent, in one transaction. This sale is over that line.": "A sale of foreign currency must not exceed 10000 USD, or the equivalent, in one transaction. This sale is over that line.",
+    "This sale of foreign currency has no fresh US dollar rate, so the desk cannot test the 10000 USD limit. It is not posted.": "This sale of foreign currency has no fresh US dollar rate, so the desk cannot test the 10000 USD limit. It is not posted.",
+    "This deal is over 500000 PHP, so it needs the customer's purpose and the source of the funds before it can be posted.": "This deal is over 500000 PHP, so it needs the customer's purpose and the source of the funds before it can be posted.",
+    "This desk has no rules pack installed, so a new deal cannot be posted.": "This desk has no rules pack installed, so a new deal cannot be posted.",
+    "This desk's European Union rules are incomplete, so it cannot tell whether this customer needs to be identified.": "This desk's European Union rules are incomplete, so it cannot tell whether this customer needs to be identified.",
+    "This deal needs customer due diligence, so it cannot be posted without its purpose and source of funds.": "This deal needs customer due diligence, so it cannot be posted without its purpose and source of funds.",
+    "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.": "This desk has no identification threshold, so it cannot tell whether this customer needs to be identified. Set one in Settings, or ask your jurisdiction pack to be installed.",
+    "This desk has no reporting threshold, so a deal cannot be posted without its purpose and source of funds. Set one in Settings, or ask your jurisdiction pack to be installed.": "This desk has no reporting threshold, so a deal cannot be posted without its purpose and source of funds. Set one in Settings, or ask your jurisdiction pack to be installed.",
+    "Yen has no decimals.": "Yen has no decimals.",
+    "This currency has no decimals.": "This currency has no decimals.",
+    "This quote pays out nothing.": "This quote pays out nothing.",
+    "Enter a valid amount.": "Enter a valid amount.",
+    "That amount is outside what this desk can quote.": "That amount is outside what this desk can quote.",
+    "That currency is not available on this desk.": "That currency is not available on this desk.",
+    "This rate cannot be quoted.": "This rate cannot be quoted.",
+    "Choose one currency to pay and a different one to receive.": "Choose one currency to pay and a different one to receive.",
+    "The rate board cannot price this.": "The rate board cannot price this.",
+    "The quote could not be priced.": "The quote could not be priced.",
+    "This screen is out of date. Reload to continue.": "This screen is out of date. Reload to continue.",
+    "You do not have permission to do that.": "You do not have permission to do that.",
+    "Fill in the required field and try again.": "Fill in the required field and try again.",
+    "Do this as two deals through the home currency.": "Do this as two deals through the home currency.",
+    "Open the till before posting.": "Open the till before posting.",
+    "The till does not have enough of that currency.": "The till does not have enough of that currency.",
+    "Couldn't get a price. Reload and try again.": "Couldn't get a price. Reload and try again.",
+    "Prices didn't load. Reload the page.": "Prices didn't load. Reload the page.",
+  };
+  (function sealDeskSentences() {
+    var keys = Object.keys(DESK);
+    for (var i = 0; i < keys.length; i++) {
+      var spoken = DESK[keys[i]];
+      if (!Object.prototype.hasOwnProperty.call(DESK, spoken)) DESK[spoken] = spoken;
+    }
+  })();
+  function deskWording(message) {
+    var text = message == null ? "" : String(message);
+    if (Object.prototype.hasOwnProperty.call(DESK, text)) return DESK[text];
+    if (text.indexOf("invalid ") === 0) return DESK["The rate board cannot price this."];
+    if (text.indexOf("Missing ") === 0 && text.indexOf(":") > 0) return DESK["You do not have permission to do that."];
+    if (text.indexOf("This desk does not trade ") === 0) return DESK["That currency is not available on this desk."];
+    if (text.indexOf(" is not permitted in ") !== -1) return DESK["That currency is not available on this desk."];
+    if (text.indexOf(" desks trade against ") !== -1) return DESK["Do this as two deals through the home currency."];
+    if (text.indexOf(" is written to ") !== -1) return DESK["That currency is not available on this desk."];
+    if (text.indexOf(" is required and must be at most 500 characters.") !== -1) return DESK["Fill in the required field and try again."];
+    if (text.indexOf(" is not an amount in ") !== -1 || text.indexOf(" is not a whole number of ") !== -1) return DESK["Enter a valid amount."];
+    return null;
+  }
+
   function create(Decimal) {
     Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -127,14 +237,7 @@
     }
     function plainQuoteError(error) {
       var message = error && error.message ? String(error.message) : "";
-      if (message === "Yen has no decimals." || message === "This currency has no decimals." || message === "This quote pays out nothing.") return message;
-      if (message === "invalid money") return "Enter a valid amount.";
-      if (message === "out of range") return "That amount is outside what this desk can quote.";
-      if (message === "unsupported currency scale") return "That currency is not available on this desk.";
-      if (message === "negative spread") return "This rate cannot be quoted.";
-      if (message === "direction and currencies disagree") return "Choose one currency to pay and a different one to receive.";
-      if (message.indexOf("invalid ") === 0) return "The rate board cannot price this.";
-      return "The quote could not be priced.";
+      return deskWording(message) || QUOTE_FALLBACK;
     }
     function formatRate(value) {
       return new Decimal(value).toDecimalPlaces(12).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
@@ -346,6 +449,8 @@
       sameRate: sameRate,
       lessThan: lessThan,
       profitShare: profitShare,
+      deskWording: deskWording,
+      quoteFallback: QUOTE_FALLBACK,
     };
   }
   return { create: create };
