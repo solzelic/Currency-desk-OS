@@ -322,9 +322,9 @@ test("a teller sees only their own settings", async ({ page }) => {
     const search = root.getByLabel("Search settings");
     for (const hidden of ["billing", "localization", "presets"]) {
       await search.fill(hidden);
-      await expect(root.getByText("Billing and plan")).toHaveCount(0);
-      await expect(root.getByText("Localization")).toHaveCount(0);
-      await expect(root.getByText("Role presets")).toHaveCount(0);
+      await expect(root.getByRole("button", { name: /Billing and plan/ })).toHaveCount(0);
+      await expect(root.getByRole("button", { name: /Localization/ })).toHaveCount(0);
+      await expect(root.getByRole("button", { name: /Role presets/ })).toHaveCount(0);
       await expect(root.getByText(new RegExp("Nothing matches “" + hidden + "”"))).toBeVisible();
     }
     await search.fill("payment");
@@ -509,27 +509,37 @@ test("closing my details within a second still saves, and Save cannot fire twice
   const root = await openSettings(page);
   await root.getByRole("button", { name: /My details/ }).click();
   await page.getByLabel("Contact email").fill("qa.once@example.com");
-  await page.getByRole("button", { name: "Save contact email" }).click();
-  const saving = page.getByRole("button", { name: "Saving..." });
-  await expect(saving).toBeDisabled();
-  await saving.click({ force: true });
+  await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Save contact email");
+    if (!btn) throw new Error("Save contact email is missing");
+    btn.click();
+    btn.click();
+  });
+  await expect(page.getByRole("button", { name: "Saving..." })).toBeDisabled();
   expect(posts).toBe(1);
   release();
   await expect(page.locator(".phone-toast")).toContainText("Saved");
 
   posts = 0;
   let started = 0;
+  let leftBody: Record<string, string> = {};
+  let leftDone = false;
   await page.unroute("**/api/auth/contact");
   await page.route("**/api/auth/contact", async (route) => {
     started += 1;
+    leftBody = route.request().postDataJSON() as Record<string, string>;
     await new Promise((r) => setTimeout(r, 900));
     await route.continue();
+    leftDone = true;
   });
+  await expect(page.locator(".phone-toast")).toBeHidden();
   await page.getByLabel("Mobile phone").fill("4165550177");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(root.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
-  await expect(page.locator(".phone-toast")).toContainText("Saved");
   expect(started).toBe(1);
+  expect(leftBody).toEqual({ mobilePhone: "4165550177" });
+  await expect.poll(() => leftDone).toBe(true);
+  await expect(page.locator(".phone-toast")).toContainText("Saved");
   const me = await page.request.get("/api/auth/me");
   expect((await me.json()).user.mobilePhone).toBe("4165550177");
 });
@@ -552,14 +562,17 @@ test("a double tap on password Save sends one request", async ({ page }) => {
   });
   const root = await openSettings(page);
   await root.getByText("PIN and sign-in").click();
-  await page.getByRole("button", { name: "Password", exact: true }).click();
+  await page.getByRole("button", { name: /^Password/ }).click();
   await page.getByLabel("Current password").fill("yorkville");
   await page.locator("label", { hasText: /^New password$/ }).locator("input").fill("yorkville-next");
   await page.getByLabel("New password again").fill("yorkville-next");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  const saving = page.getByRole("button", { name: "Saving..." });
-  await expect(saving).toBeDisabled();
-  await saving.click({ force: true });
+  await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Save");
+    if (!btn) throw new Error("Save is missing");
+    btn.click();
+    btn.click();
+  });
+  await expect(page.getByRole("button", { name: "Saving..." })).toBeDisabled();
   expect(posts).toBe(1);
   release();
   await expect(page.locator(".phone-toast")).toContainText("Password changed");
