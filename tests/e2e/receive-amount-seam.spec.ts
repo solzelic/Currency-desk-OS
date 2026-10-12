@@ -1,6 +1,5 @@
 /* The cashier reads Customer receives and counts cash against it.
    That figure has to be the amount the ledger posts. */
-import { createRequire } from "node:module";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
@@ -282,77 +281,87 @@ async function chooseCurrency(page: Page, which: number, code: string): Promise<
   await expect(trigger).toContainText(code);
 }
 
-async function stockYen(page: Page): Promise<void> {
-  const yen = await page.evaluate(async () => {
-    const login = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" }),
-    });
-    if (!login.ok) return { status: login.status, body: await login.text() };
-    const res = await fetch("/api/ledger/till-movements", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        idempotencyKey: "yen-float-receive-parity",
-        direction: "in",
-        currency: "JPY",
-        amount: "500000.00",
-        counterpartyType: "other",
-        counterpartyRef: "yen float",
-        reason: "Stock yen so a sale can be counted out",
-      }),
-    });
-    return { status: res.status, body: await res.text() };
-  });
-  expect(yen.status, `yen float: ${yen.body}`).toBe(201);
-}
+/* York's shared drawer is till-01. A yen balance there has no chip on
+   the count sheet, and the close waits on a currency it cannot count.
+   This case sits at its own till, opened through the product's add-till
+   route, and the shared drawer's currencies are read before and after. */
+const SHARED_WORKSPACE = "ws-yorkville-till-01";
+const YEN_TILL = "till-yen-parity";
 
-async function drainYen(request: APIRequestContext): Promise<void> {
+async function asManager(request: APIRequestContext): Promise<void> {
   const login = await request.post("/api/auth/login", {
     data: { staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" },
   });
   expect(login.ok(), await login.text()).toBeTruthy();
-  const held = await request.get("/api/ledger/till-balances");
+}
+
+async function tillCurrencies(request: APIRequestContext, workspaceId: string): Promise<string[]> {
+  await asManager(request);
+  const held = await request.get("/api/ledger/till-balances", {
+    headers: { "x-workspace-id": workspaceId },
+  });
   expect(held.ok(), await held.text()).toBeTruthy();
   const body = await held.json();
-  const amount = body.balances && body.balances.JPY;
-  if (amount && Number(amount) !== 0) {
+  return Object.keys(body.balances || {}).map((code) => code.trim()).sort();
+}
+
+async function ensureYenTill(request: APIRequestContext): Promise<string> {
+  await asManager(request);
+  const created = await request.post("/api/desk/branches/br-yorkville/tills", {
+    data: { tillId: YEN_TILL },
+  });
+  const body = await created.json();
+  const workspaceId = body.till?.workspaceId as string | undefined;
+  expect(created.ok(), JSON.stringify(body)).toBeTruthy();
+  expect(workspaceId, JSON.stringify(body)).toBeTruthy();
+  const opened = await request.post("/api/ledger/till-sessions/open", {
+    headers: { "x-workspace-id": workspaceId! },
+    data: {},
+  });
+  expect([201, 409], await opened.text()).toContain(opened.status());
+  for (const [currency, amount, key] of [
+    ["JPY", "500000.00", "yen-float-till-yen-parity"],
+    ["CAD", "1.00", "cad-row-till-yen-parity"],
+  ] as const) {
     const moved = await request.post("/api/ledger/till-movements", {
+      headers: { "x-workspace-id": workspaceId! },
       data: {
-        idempotencyKey: `yen-float-drain-${amount}`,
-        direction: "out",
-        currency: "JPY",
+        idempotencyKey: key,
+        direction: "in",
+        currency,
         amount,
         counterpartyType: "other",
-        counterpartyRef: "yen float",
-        reason: "Return the yen float the parity seam stocked",
+        counterpartyRef: "yen parity till",
+        reason: "Stock the yen-parity till so a sale can be paid out",
       },
     });
     expect(moved.status(), await moved.text()).toBe(201);
   }
-  /* A zero yen row is still a currency the drawer expects somebody to
-     count, and the count sheet has no yen chip, so the day will not
-     close. The float is back out; the empty row is not a position. */
-  if (process.env.SEAM_DATABASE_URL) {
-    const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
-    const { Pool } = requireFromServer("pg") as {
-      Pool: new (config: { connectionString: string }) => {
-        query: (sql: string, values: string[]) => Promise<unknown>;
-        end: () => Promise<void>;
-      };
-    };
-    const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL });
-    try {
-      await pool.query(
-        `DELETE FROM ledger_till_balances
-          WHERE tenant_id=$1 AND till_id=$2 AND btrim(currency)='JPY' AND available_amount=0`,
-        ["tnt-yorkfx", "till-01"],
-      );
-    } finally {
-      await pool.end();
-    }
-  }
+  return workspaceId!;
+}
+
+/* The desk remembers which drawer this teller is standing at, and the
+   quote posts to that drawer. Name it before the reload so the sheet
+   and the book are the yen till, not the shared one. */
+async function standAtYenTill(page: Page, workspaceId: string): Promise<void> {
+  await page.addInitScript((id) => {
+    localStorage.setItem("cdesk.ledger.till.m.costa", id);
+  }, workspaceId);
+  await signInAtDesk(page, "m.costa");
+  await dismissTour(page);
+  await page.waitForFunction(
+    (id) => !!(window.CDOS && window.CDOS.Backend && window.CDOS.Backend.getWorkspace() === id),
+    workspaceId,
+  );
+  /* The header names the yen till. Stamp the session too, so a read
+     that omits the header — the ledger list after the post — asks the
+     same drawer the quote was written to. */
+  const stood = await page.evaluate(async (id) => {
+    const resolved = await window.CDOS.Backend.selectWorkspace(id);
+    window.CDOS.Backend.setWorkspace(resolved.workspaceId);
+    return resolved.tillId;
+  }, workspaceId);
+  expect(stood).toBe(YEN_TILL);
 }
 
 async function postFrozen(page: Page, output: string, fee?: string): Promise<void> {
@@ -374,11 +383,12 @@ async function postFrozen(page: Page, output: string, fee?: string): Promise<voi
 }
 
 test("whole yen Customer receives is the posted amount", async ({ page, request }) => {
+  let sharedBefore: string[] = [];
   try {
     await quoteUsdToCad(page, 1280);
-    await stockYen(page);
-    await signInAtDesk(page, "m.costa");
-    await dismissTour(page);
+    sharedBefore = await tillCurrencies(request, SHARED_WORKSPACE);
+    const yenWorkspace = await ensureYenTill(request);
+    await standAtYenTill(page, yenWorkspace);
     await page.waitForFunction(() => {
       const raw = localStorage.getItem("yorkfx_rates_v1");
       if (!raw) return false;
@@ -400,9 +410,19 @@ test("whole yen Customer receives is the posted amount", async ({ page, request 
     await expect(page.getByTestId("tx-frozen")).toContainText("108,252");
     await expect(page.getByTestId("tx-receives")).toHaveText("108,252");
     await postFrozen(page, "108252.00");
+    await asManager(request);
+    const yenHeld = await request.get("/api/ledger/till-balances", {
+      headers: { "x-workspace-id": yenWorkspace },
+    });
+    expect(yenHeld.ok(), await yenHeld.text()).toBeTruthy();
+    const yenBalances = (await yenHeld.json()).balances;
+    expect(yenBalances.JPY, "yen paid out of the parity till").toBe("391748.00");
+    expect(yenBalances.CAD, "cad taken in at the parity till").toBe("1001.00");
   } finally {
     await restoreBoard(request);
-    await drainYen(request);
+    if (sharedBefore.length) {
+      expect(await tillCurrencies(request, SHARED_WORKSPACE), "shared till currencies after the yen case").toEqual(sharedBefore);
+    }
   }
 });
 
