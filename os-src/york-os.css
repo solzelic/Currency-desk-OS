@@ -3104,9 +3104,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-shell[data-app="cheques"] {
     flex: 1 1 auto;
-    /* The shared shell fills to the bar. This rule is more specific,
-       and min-height 0 let the page show under a short list. */
-    min-height: calc(100dvh - var(--phone-bar-h, 64px));
+    /* Stay 0. A viewport min-height starts under the phone header
+       and pushes Cash a cheque under the bar. The shot harness is a
+       flex column, so this shell still grows to the bar there. */
+    min-height: 0;
     background: var(--color-bg, #F7F6F3);
   }
   .phone-shell[data-app="cheques"] > .phone-title { padding: 8px 16px 0; }

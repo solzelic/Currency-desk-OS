@@ -66,7 +66,7 @@ async function mountWidgets(page: import("@playwright/test").Page): Promise<void
     /* Leave the bottom bar visible. The shell fills this band, so
        the page cream does not show under the dark surface. */
     host.style.cssText =
-      "position:fixed;left:0;right:0;top:0;bottom:var(--phone-bar-h,64px);z-index:600;overflow:hidden;background:transparent;padding:0;";
+      "position:fixed;left:0;right:0;top:0;bottom:var(--phone-bar-h,64px);z-index:600;overflow:hidden;background:transparent;padding:0;display:flex;flex-direction:column;";
     document.body.appendChild(host);
     window.ReactDOM.createRoot(host).render(React.createElement(Harness));
   });
@@ -125,7 +125,7 @@ async function mountWidgetsOnDesk(page: Page): Promise<void> {
     const host = document.createElement("div");
     host.id = "widget-host";
     host.style.cssText =
-      "position:fixed;left:0;right:0;top:0;bottom:var(--phone-bar-h,64px);z-index:600;overflow:hidden;background:transparent;padding:0;";
+      "position:fixed;left:0;right:0;top:0;bottom:var(--phone-bar-h,64px);z-index:600;overflow:hidden;background:transparent;padding:0;display:flex;flex-direction:column;";
     document.body.appendChild(host);
     window.ReactDOM.createRoot(host).render(React.createElement(Harness));
   });
