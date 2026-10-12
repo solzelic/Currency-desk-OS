@@ -905,7 +905,7 @@ test("a toast sits 16px above the sticky action, or above the tab bar", async ({
         left: Math.round(box.left),
         right: Math.round(window.innerWidth - box.right),
         gap: anchorBox ? Math.round(anchorBox.top - box.bottom) : -1,
-        role: el.getAttribute("role"),
+        role: el.querySelector(".phone-toast-live") ? el.querySelector(".phone-toast-live")!.getAttribute("role") : null,
         bg: cs.backgroundColor,
         color: cs.color,
         size: cs.fontSize,
@@ -950,6 +950,12 @@ test("a toast sits 16px above the sticky action, or above the tab bar", async ({
 
   await page.locator(".phone-toast-go").click();
   expect(await page.evaluate(() => (window as any).__toastHit)).toBe(true);
+  /* The click focuses the action. An action toast stays while that
+     focus is inside it, so leave the button before the four seconds. */
+  await page.evaluate(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (active && active.blur) active.blur();
+  });
 
   await page.clock.fastForward(4000);
   await expect(page.locator(".phone-toast")).toBeHidden();
