@@ -85,9 +85,17 @@ async function settleCashDrawerChrome(page: Page) {
 }
 
 async function clickWhenStable(locator: Locator) {
-  await locator.scrollIntoViewIfNeeded();
-  await expect(locator).toBeVisible();
+  /* Scrolling the drawer down hides `.fld-bar` (pointer-events: none).
+     A trial click then never lands. The tabs and the open button sit in
+     the header, so the scroller stays at the top for the click. */
   await expect(async () => {
+    const scroller = locator.page().locator(".win.show.active .win-body .overflow-auto").first();
+    if (await scroller.count()) {
+      await scroller.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+    }
+    await expect(locator).toBeVisible();
     await locator.click({ trial: true });
   }).toPass({ timeout: 15_000 });
   await locator.click();
