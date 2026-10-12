@@ -1,5 +1,6 @@
 /* The cashier reads Customer receives and counts cash against it.
    That figure has to be the amount the ledger posts. */
+import { createRequire } from "node:module";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
@@ -316,19 +317,42 @@ async function drainYen(request: APIRequestContext): Promise<void> {
   expect(held.ok(), await held.text()).toBeTruthy();
   const body = await held.json();
   const amount = body.balances && body.balances.JPY;
-  if (!amount || Number(amount) === 0) return;
-  const moved = await request.post("/api/ledger/till-movements", {
-    data: {
-      idempotencyKey: `yen-float-drain-${amount}`,
-      direction: "out",
-      currency: "JPY",
-      amount,
-      counterpartyType: "other",
-      counterpartyRef: "yen float",
-      reason: "Return the yen float the parity seam stocked",
-    },
-  });
-  expect(moved.status(), await moved.text()).toBe(201);
+  if (amount && Number(amount) !== 0) {
+    const moved = await request.post("/api/ledger/till-movements", {
+      data: {
+        idempotencyKey: `yen-float-drain-${amount}`,
+        direction: "out",
+        currency: "JPY",
+        amount,
+        counterpartyType: "other",
+        counterpartyRef: "yen float",
+        reason: "Return the yen float the parity seam stocked",
+      },
+    });
+    expect(moved.status(), await moved.text()).toBe(201);
+  }
+  /* A zero yen row is still a currency the drawer expects somebody to
+     count, and the count sheet has no yen chip, so the day will not
+     close. The float is back out; the empty row is not a position. */
+  if (process.env.SEAM_DATABASE_URL) {
+    const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+    const { Pool } = requireFromServer("pg") as {
+      Pool: new (config: { connectionString: string }) => {
+        query: (sql: string, values: string[]) => Promise<unknown>;
+        end: () => Promise<void>;
+      };
+    };
+    const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL });
+    try {
+      await pool.query(
+        `DELETE FROM ledger_till_balances
+          WHERE tenant_id=$1 AND till_id=$2 AND btrim(currency)='JPY' AND available_amount=0`,
+        ["tnt-yorkfx", "till-01"],
+      );
+    } finally {
+      await pool.end();
+    }
+  }
 }
 
 async function postFrozen(page: Page, output: string, fee?: string): Promise<void> {
