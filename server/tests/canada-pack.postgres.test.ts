@@ -8,6 +8,9 @@ import Decimal from "decimal.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
+import { zonedWallTime } from "../src/ledger/business-date.js";
+import { calendarDayWindow, instantInWindow, staticAggregationWindow } from "../src/ledger/compliance-windows.js";
+import { withNow } from "../src/ledger/clock.js";
 import { resolvePack } from "../src/ledger/jurisdiction.js";
 import { ObligationService } from "../src/ledger/obligations.js";
 import { requireIdentification, type LedgerActor } from "../src/ledger/service.js";
@@ -168,6 +171,7 @@ async function priorCash(
     cashInHome?: string | null;
     beneficiary?: string | null;
     reversed?: boolean;
+    postedAt?: Date;
   },
 ) {
   const scope = scopeOf(entityId);
@@ -179,7 +183,7 @@ async function priorCash(
         fee_cad, spread_cad, purpose, source_of_funds, posted_at,
         deal_kind, received_instrument, disbursed_instrument,
         cash_in_home, home_currency, third_party, third_party_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11,$12,1,0,0,'Travel','Salary',now(),
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11,$12,1,0,0,'Travel','Salary',COALESCE($18::timestamptz, now()),
              $13,'cash','cash',$14,$15,$16,$17)`,
     [
       id,
@@ -199,6 +203,7 @@ async function priorCash(
       opts.homeCurrency === undefined ? "CAD" : opts.homeCurrency,
       !!third,
       third,
+      opts.postedAt ?? null,
     ],
   );
   if (opts.beneficiary) {
@@ -520,6 +525,130 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
         );
       }),
     ).resolves.toBeTruthy();
+  });
+
+  /* 23:50 and 00:10 local are twenty minutes apart. The identity gate
+     uses the static window, so the 23:50 receipt is not in the 00:10
+     window. A receipt five minutes earlier is. 2,500 is under the
+     foreign-exchange line on its own; only the window can require
+     identity. 5,000 would already require it. */
+  it("splits 23:50 and 00:10 under the large-cash identity window", async () => {
+    for (const zone of ["America/Toronto", "Asia/Jerusalem"] as const) {
+      const late = zonedWallTime("2026-10-11", "23:50:00", zone);
+      const early = zonedWallTime("2026-10-12", "00:10:00", zone);
+      const inside = zonedWallTime("2026-10-12", "00:05:00", zone);
+      const customer = `ca2-split-${zone}`;
+      const stampZone = async (client: pg.PoolClient) => {
+        await client.query(
+          `INSERT INTO branches (id, tenant_id, legal_entity_id, name, timezone)
+           VALUES ('br-ca2', $1, $2, 'Gate', $3)
+           ON CONFLICT (id) DO UPDATE SET timezone = EXCLUDED.timezone`,
+          [TENANT, V2, zone],
+        );
+      };
+      await expect(
+        withNow(early, () => withTx(async (client) => {
+          await stampZone(client);
+          await priorCash(client, V2, `ca2-split-late-${zone}`, {
+            amount: "8000.00",
+            customerId: customer,
+            postedAt: late,
+          });
+          const pack = await resolvePack(client, V2);
+          return requireIdentification(
+            client,
+            actor(V2, "teller", "ca2-window"),
+            pack,
+            new Decimal("2500.00"),
+            "missing",
+            fx(customer),
+          );
+        })),
+      ).resolves.toMatchObject({ identificationRequired: false });
+      await expect(
+        withNow(early, () => withTx(async (client) => {
+          await stampZone(client);
+          await priorCash(client, V2, `ca2-split-in-${zone}`, {
+            amount: "8000.00",
+            customerId: customer,
+            postedAt: inside,
+          });
+          const pack = await resolvePack(client, V2);
+          return requireIdentification(
+            client,
+            actor(V2, "teller", "ca2-window"),
+            pack,
+            new Decimal("2500.00"),
+            "missing",
+            fx(customer),
+          );
+        })),
+      ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    }
+  });
+
+  /* 1 November 2026 is the Toronto fall-back. The civil day is 25 hours.
+     The static window is still midnight plus 24 hours, so 22:00 is inside
+     it and 23:30 is not. The gate follows that window. */
+  it("keeps the identity window at 24 hours on the Toronto fall-back", async () => {
+    const zone = "America/Toronto";
+    const morning = zonedWallTime("2026-11-01", "10:00:00", zone);
+    const evening = zonedWallTime("2026-11-01", "22:00:00", zone);
+    const extra = zonedWallTime("2026-11-01", "23:30:00", zone);
+    const window = staticAggregationWindow(evening, zone);
+    const calendar = calendarDayWindow("2026-11-01", zone);
+    expect(window.end.getTime() - window.start.getTime()).toBe(24 * 60 * 60 * 1000);
+    expect(calendar.end.getTime() - calendar.start.getTime()).not.toBe(24 * 60 * 60 * 1000);
+    expect(instantInWindow(window, morning, false)).toBe(true);
+    expect(instantInWindow(window, evening, false)).toBe(true);
+    expect(instantInWindow(window, extra, false)).toBe(false);
+    const customer = "ca2-dst-toronto";
+    const stampZone = async (client: pg.PoolClient) => {
+      await client.query(
+        `INSERT INTO branches (id, tenant_id, legal_entity_id, name, timezone)
+         VALUES ('br-ca2', $1, $2, 'Gate', $3)
+         ON CONFLICT (id) DO UPDATE SET timezone = EXCLUDED.timezone`,
+        [TENANT, V2, zone],
+      );
+    };
+    await expect(
+      withNow(evening, () => withTx(async (client) => {
+        await stampZone(client);
+        await priorCash(client, V2, "ca2-dst-morning", {
+          amount: "8000.00",
+          customerId: customer,
+          postedAt: morning,
+        });
+        const pack = await resolvePack(client, V2);
+        return requireIdentification(
+          client,
+          actor(V2, "teller", "ca2-window"),
+          pack,
+          new Decimal("2500.00"),
+          "missing",
+          fx(customer),
+        );
+      })),
+    ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    await expect(
+      withNow(extra, () => withTx(async (client) => {
+        await stampZone(client);
+        await priorCash(client, V2, "ca2-dst-evening", {
+          amount: "8000.00",
+          customerId: customer,
+          postedAt: evening,
+        });
+        const pack = await resolvePack(client, V2);
+        return requireIdentification(
+          client,
+          actor(V2, "teller", "ca2-window"),
+          pack,
+          new Decimal("2500.00"),
+          "missing",
+          fx(customer),
+        );
+      })),
+    ).resolves.toMatchObject({ identificationRequired: false });
   });
 
   it("adds the on-behalf-of axis and the beneficiary axis, and does not mix them", async () => {

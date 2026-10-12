@@ -847,6 +847,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     </div>);
   }
   function ClientCompliance({ name, rec, mine, flags, settings, canEdit, onOpenLedger, onFixId }) {
+    const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const needsStatic = !regime || (regime.aggregate !== false && regime.windowKind !== 'calendar_month' && regime.windowKind !== 'banking_day');
+    const engine = window.CDOS._compliance;
+    if (needsStatic && !(engine && engine.aggClusters)) {
+      return (<div className="mb-5 p-4" data-testid="compliance-engine-error" style={{ background: CD.panel, border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="shield" s={13} c={CD.flag} /> Compliance</div>
+        <div className="text-[12.5px] mt-2" style={{ color: CD.ink }}>The compliance engine did not load. This screen cannot say whether these deals are reportable.</div>
+      </div>);
+    }
     const live = mine.filter(r => r.status !== 'void');
     const rpt = live.filter(r => { const f = flags[r.id] || {}; return (f.single || f.agg24) && !r.filed; });
     const strRows = live.filter(r => { const f = flags[r.id] || {}; return f.str && !r.ackStr; });
@@ -858,6 +867,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return (<div className="mb-5 p-4" style={{ background: CD.panel, border: `1px solid ${open ? CD.flag : CD.line}`, borderRadius: 12 }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="shield" s={13} c={open ? CD.flag : CD.green} /> Compliance</div>
+        <span data-testid="client-reportable-count" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>{rpt.length}</span>
         {open ? <Pill text={`${open} open`} c={CD.flag} bg={CD.flagSoft} /> : <Pill text="All clear" c={CD.green} bg={CD.greenSoft} />}
       </div>
       {open === 0 ? (

@@ -61,10 +61,21 @@
     };
     const aggregate = regime.aggregate !== false;
     const dt = (r) => window.CDOS.branchWallTime(r.date, r.time || '00:00');
+    /* An LCTR flag is the static cluster, the same one Compliance files
+       and the same midnight the server identity gate uses. A rolling
+       lookback is a structuring signal and is not reportability. */
+    const monthCash = regime && regime.windowKind === 'calendar_month';
+    const bankingDay = regime && regime.windowKind === 'banking_day';
+    const engine = window.CDOS._compliance;
+    /* A missing engine is not an empty cluster. Empty would read as
+       "not reportable". The card has to say the engine did not load. */
+    const needsStatic = !monthCash && !bankingDay && aggregate;
+    const engineMissing = needsStatic && !(engine && engine.aggClusters);
+    const lctr = (!engineMissing && needsStatic)
+      ? (engine.aggClusters(rows, regime, settings) || [])
+      : [];
     rows.forEach(row => {
-      if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
-      const monthCash = regime && regime.windowKind === 'calendar_month';
-      const bankingDay = regime && regime.windowKind === 'banking_day';
+      if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, rolling24Structuring: false, kyc: 'ok', agg: 0 }; return; }
       const above = regime && regime.comparator === 'gt'
         ? (n) => n > TH
         : (n) => n >= TH;
@@ -73,19 +84,18 @@
       const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
         .reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && above(agg);
-      // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
-      // ending at this deal at the line ⇒ a single REPORTABLE aggregated transaction.
-      // A pack whose large-cash window is 'none', a calendar-month pack
-      // (India), and a banking-day pack (the Philippines) do not use this
-      // clock. Do not invent 24 for those.
+      /* Rolling lookback of aggHours, ending at this deal. Kept so a
+         desk can see deals twenty minutes apart across midnight. It is
+         not an LCTR. India and the Philippines do not invent 24 hours. */
       const end = dt(row);
       const hours = (monthCash || bankingDay || !aggregate) ? null : (regime.aggHours || 24);
-      const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
-      const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
-      // the aggregate is reported once — at the deal that crosses the line (the latest
-      // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
-      const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
+      const rolling = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
+      const rollingSum = rolling.reduce((s, o) => s + cashForReport(o), 0);
+      const rollingEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
+      const rolling24Structuring = hours != null && TH != null && !single && above(rollingSum) && rollingEnd;
+      const mine = lctr.filter(c => c.txs && c.txs.some(t => t.id === row.id));
+      const agg24 = engineMissing ? null : (!single && mine.some(c => c.endRow && c.endRow.id === row.id));
+      const agg24Sum = mine.reduce((m, c) => Math.max(m, Number(c.total) || 0), 0);
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
       else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';
@@ -130,7 +140,7 @@
           idNeeded = single || overId;
         }
       }
-      map[row.id] = { single, str, agg, agg24, agg24Sum, kyc, idNeeded, idFloor, void: false };
+      map[row.id] = { single, str, agg, agg24, agg24Sum, rolling24Structuring, kyc, idNeeded, idFloor, void: false };
     });
     return map;
   }
