@@ -137,6 +137,49 @@
     </div>);
   }
 
+  /* The branch time zone lives on branches.timezone. This control used
+     to call set('timezone'), which wrote the browser's saved settings
+     and left every branch on America/Toronto. The dropdown shows what
+     the server returned, including after a reload. */
+  function BranchTimeZoneRow() {
+    const [status, setStatus] = useState('loading');
+    const [zone, setZone] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const api = window.CDOS && window.CDOS.Backend;
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') { setStatus('offline'); return; }
+      let alive = true;
+      api.loadBranchTimeZone()
+        .then(j => { if (alive) { setZone(j.timezone); setStatus('ready'); } })
+        .catch(e => { if (alive) { setStatus('offline'); setErr(e && e.message ? e.message : 'Could not read the branch time zone.'); } });
+      return () => { alive = false; };
+    }, []);
+    const save = async (next) => {
+      if (busy || status !== 'ready' || next === zone) return;
+      const previous = zone;
+      setBusy(true); setErr(''); setZone(next);
+      try {
+        const saved = await api.setBranchTimeZone(next);
+        setZone(saved.timezone);
+      } catch (e) {
+        setZone(previous);
+        setErr(e && e.message
+          ? e.message
+          : 'Could not save the time zone — nothing was changed.');
+      } finally { setBusy(false); }
+    };
+    const options = zone && TIMEZONES.indexOf(zone) < 0 ? [zone].concat(TIMEZONES) : TIMEZONES;
+    return (<div data-testid="settings-timezone">
+      <Row title="Timezone" desc="Applies from the next time a till is opened.">
+        {status === 'ready'
+          ? <select data-testid="branch-timezone" aria-label="Timezone" value={zone} disabled={busy} onChange={e => save(e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 220, maxWidth: '100%' }}>{options.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          : <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{status === 'loading' ? 'reading…' : 'unavailable'}</span>}
+      </Row>
+      {err ? <div role="alert" data-testid="branch-timezone-error" className="text-[11px] -mt-1 mb-1" style={{ color: CD.flag }}>{err}</div> : null}
+    </div>);
+  }
+
   /* ---------- the desk's compliance thresholds (server-backed) ----------
 
      These four rows used to write the browser's saved settings and stop
@@ -1761,7 +1804,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <Row title="Operating country / jurisdiction" desc="Where this desk operates — pick the country, then the state or province when one applies."><select value={settings.bizCountry || ''} onChange={e => setSettings(s => ({ ...s, bizCountry: e.target.value, bizRegion: '' }))} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 200 }}><option value="">Select a country…</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Row>
           {JURIS_REGIONS[settings.bizCountry || ''] && (() => { const jr = JURIS_REGIONS[settings.bizCountry || '']; return (
             <Row title={jr.label} desc={`The ${jr.label.toLowerCase()} your licence is held in — shown on reports and used for jurisdiction rules.`}><select value={settings.bizRegion || ''} onChange={e => set('bizRegion', e.target.value, `${jr.label} ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 240 }}><option value="">Select {jr.label.toLowerCase()}…</option>{jr.opts.map(o => <option key={o}>{o}</option>)}</select></Row>); })()}
-          <Row title="Timezone"><select value={settings.timezone || 'America/Toronto'} onChange={e => set('timezone', e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 220 }}>{TIMEZONES.map(t => <option key={t}>{t}</option>)}</select></Row>
+          <BranchTimeZoneRow />
           <div className="text-[10px] uppercase tracking-widest mb-1 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Formats</div>
           <Row title="Date format"><Seg value={settings.dateFormat || 'YYYY-MM-DD'} onPick={v => set('dateFormat', v, `date ${v}`)} opts={[['YYYY-MM-DD', 'YYYY-MM-DD'], ['DD/MM/YYYY', 'DD/MM/YYYY'], ['MM/DD/YYYY', 'MM/DD/YYYY']]} /></Row>
           <Row title="Time format" desc="How times read across the desk — e.g. the Audit Trail."><Seg value={settings.timeFormat || '12h'} onPick={v => set('timeFormat', v, `time ${v}`)} opts={[['12h', '12-hour'], ['24h', '24-hour']]} /></Row>

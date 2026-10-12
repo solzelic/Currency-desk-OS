@@ -1556,6 +1556,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-bottom: 1px solid var(--line);
   }
   .settings-shell > .flex-1 { max-width: none !important; min-width: 0; }
+  [data-testid="settings-timezone"] > .flex { flex-wrap: wrap; row-gap: 8px; }
+  [data-testid="settings-timezone"] select { max-width: 100%; }
   .fld-bar {
     min-width: 0;
     max-width: 100%;

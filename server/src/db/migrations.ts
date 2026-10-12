@@ -45,6 +45,7 @@ const migrations: readonly Migration[] = [
   /* 039 is the live-cheque index, now on main. 040 is the till mark. */
   ["039_live_cheque_paper", "src/db/migrations/039_live_cheque_paper.sql"],
   ["040_till_balance_generation", "src/db/migrations/040_till_balance_generation.sql"],
+  ["041_till_session_timezone", "src/db/migrations/041_till_session_timezone.sql"],
 ] as const;
 
 export async function runMigrations(

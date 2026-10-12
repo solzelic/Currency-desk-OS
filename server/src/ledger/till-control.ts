@@ -7,7 +7,7 @@ import { assertTradeable } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { businessDate, readDateOnly, signOffWindow } from "./business-date.js";
-import { loadBranchTimeZone } from "./branch-zone.js";
+import { assertBranchTimeZone, loadBranchTimeZone } from "./branch-zone.js";
 import { now as clockNow } from "./clock.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -139,7 +139,13 @@ export class TillControlService {
     actor: LedgerActor,
     row: Record<string, unknown>,
   ) {
-    const timeZone = await loadBranchTimeZone(client, actor);
+    /* A session stores the zone it opened in. Changing the branch
+       zone later must not move this sheet. A session from before
+       that column existed still reads the branch's current zone. */
+    const openedIn = typeof row.opened_timezone === "string" ? row.opened_timezone.trim() : "";
+    const timeZone = openedIn
+      ? assertBranchTimeZone(openedIn)
+      : await loadBranchTimeZone(client, actor);
     const date = readDateOnly(row.business_date);
     const closedAt = row.closed_at == null ? null : new Date(row.closed_at as string);
     const window = signOffWindow({
@@ -330,8 +336,8 @@ export class TillControlService {
         await client.query(
           `INSERT INTO ledger_till_sessions
             (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
-             session_number,business_date,status,opened_by,opened_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10)`,
+             session_number,business_date,status,opened_by,opened_at,opened_timezone)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10,$11)`,
           [
             sessionId,
             ...scope(actor),
@@ -339,6 +345,7 @@ export class TillControlService {
             businessDate(now, timeZone),
             actor.userId,
             now,
+            timeZone,
           ],
         );
         await this.audit(
