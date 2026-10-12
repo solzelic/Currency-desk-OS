@@ -571,6 +571,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-11**, desktop pictures. The 1280 capture now replaces a
+transaction ref and a seam-run name suffix with fixed text before
+the picture. The first Actions pictures did not, so the ledger
+differed by those characters on the next run. Those pictures are
+removed. The next Actions run writes the frozen ones.
+
 **2026-10-11**, phone formatters. `formatPhoneTime`, `formatPhoneDate`,
 and `formatPhoneMoney` live in `os-src/phone/format.js`. A clock is
 12-hour with a lowercase suffix (`3:02 pm`). A calendar day is

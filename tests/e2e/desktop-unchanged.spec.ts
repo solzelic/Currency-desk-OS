@@ -46,9 +46,9 @@ async function dismissTour(page: Page): Promise<void> {
   }
 }
 
-/* Dates, clock times, and "refreshed 2m ago" would make a pixel
-   baseline fail the next minute. The same replacement runs on every
-   capture, so the committed PNG and the next run show the same text. */
+/* Dates, clock times, transaction refs, and seam-run name suffixes
+   change every run. The same replacement runs on every capture, so
+   the committed PNG and the next run show the same text. */
 async function freezeWindowText(page: Page): Promise<void> {
   await page.locator(".win.show.active").evaluate((root) => {
     const fix = (scope: Node) => {
@@ -62,6 +62,12 @@ async function freezeWindowText(page: Page): Promise<void> {
         next = next.replace(/\b\d+h \d+m(?: \d+s)?\b/g, "2h 00m");
         next = next.replace(/\b\d+m \d+s\b/g, "2m 00s");
         next = next.replace(/\b\d+s\b/g, "00s");
+        /* A posted ref is CD-, the day, and six random characters.
+           Seam names end in a six-character token that changes every
+           run. Same length, so the column stays put. */
+        next = next.replace(/\bCD-\d{6}-[0-9a-z]+\b/gi, "CD-260618-frozen");
+        next = next.replace(/\b(?=[A-Z0-9]*\d)[A-Z0-9]{6}\b/g, "000000");
+        next = next.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "00000000-0000-4000-8000-000000000000");
         if (next !== text) node.textContent = next;
         node = walker.nextNode();
       }

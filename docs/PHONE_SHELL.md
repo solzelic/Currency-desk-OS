@@ -381,6 +381,13 @@ of pixels, with no layout change. Those files are downloaded from the
 `desktop-unchanged-baselines` artifact and committed. They are not
 generated on a laptop.
 
+The capture replaces a transaction ref (`CD-` plus a random suffix),
+a six-character seam-run token, and a UUID with fixed text of the
+same length before it takes the picture. Those values change every
+suite run. The first committed pictures did not do that replacement,
+so the next Actions run of the same desk differed by the ref column.
+Those pictures were removed so the next run can write the frozen ones.
+
 A screen PR must never update these baselines. Do not run
 `--update-snapshots` on this spec. Do not replace a PNG to make the
 check pass. If the spec fails, the desktop window changed. That is a
