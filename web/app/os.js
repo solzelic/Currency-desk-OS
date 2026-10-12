@@ -40784,12 +40784,16 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
+  /* Calendar days on the YYYY-MM-DD string. toISOString of a local
+     midnight moves the hold back one day in any zone east of UTC. */
   const addDays = (date, n) => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
     if (!m) return '';
-    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-    d.setUTCDate(d.getUTCDate() + (+n || 0));
-    return d.toISOString().slice(0, 10);
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (+n || 0)));
+    const y = at.getUTCFullYear();
+    const mo = String(at.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(at.getUTCDate()).padStart(2, '0');
+    return y + '-' + mo + '-' + d;
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 
@@ -40856,9 +40860,40 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       bg: CD.flagSoft
     }
   };
+  /* Half up to the cent, in integer arithmetic. 1,000.25 at 2% is
+     20.005, which is 20.01. A float times toFixed gets that one wrong. */
+  function roundHalfUpMulDiv(amount, pct, divisor) {
+    const parts = value => {
+      const s = String(value == null ? '' : value).trim();
+      const neg = s.charAt(0) === '-';
+      const body = neg ? s.slice(1) : s;
+      const bits = body.split('.');
+      const whole = bits[0] || '0';
+      const frac = bits[1] || '';
+      const digits = (whole + frac).replace(/^0+(?=\d)/, '') || '0';
+      if (!/^\d+$/.test(digits)) return null;
+      return {
+        neg: neg,
+        digits: digits,
+        scale: frac.length
+      };
+    };
+    const a = parts(amount);
+    const p = parts(pct);
+    if (!a || !p || a.neg || p.neg) return 0;
+    const product = BigInt(a.digits) * BigInt(p.digits);
+    const den = 10n ** BigInt(a.scale + p.scale) * BigInt(divisor);
+    const num = product * 100n;
+    const q = num / den;
+    const r = num % den;
+    const cents = r * 2n >= den ? q + 1n : q;
+    return Number((Number(cents) / 100).toFixed(2));
+  }
   const feeFor = (amount, type) => {
     const t = type || {};
-    return Math.max(+t.feeMin || 0, (+amount || 0) * (+t.feePct || 0) / 100);
+    const percent = roundHalfUpMulDiv(amount, t.feePct || 0, 100);
+    const minimum = roundHalfUpMulDiv(t.feeMin || 0, 1, 1);
+    return Math.max(minimum, percent);
   };
   const STATUS = {
     held: {
@@ -41049,6 +41084,40 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      Money arrives as decimal strings and is turned into numbers only for
      rendering — the figures themselves are the server's and nothing here
      recomputes one of them. */
+  function branchZone() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cdos_settings') || 'null');
+      if (saved && saved.timezone) return saved.timezone;
+    } catch (e) {}
+    return 'America/Toronto';
+  }
+  function historyTime(at) {
+    const date = new Date(at);
+    if (!at || isNaN(date.getTime())) return '';
+    let text = '';
+    try {
+      text = new Intl.DateTimeFormat('en-US', {
+        timeZone: branchZone(),
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(date);
+    } catch (e) {
+      text = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Toronto',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(date);
+    }
+    return text.replace(' AM', ' am').replace(' PM', ' pm');
+  }
+  function deskSentence(message) {
+    const text = String(message || '');
+    if (/Missing transaction:reverse/i.test(text)) return 'You cannot reverse this cheque. Ask a supervisor.';
+    if (/^Missing [A-Za-z:]+\.$/.test(text)) return 'You cannot do that from this till. Ask a supervisor.';
+    return text;
+  }
   function fromServer(c, imgs) {
     const held = imgs || images();
     return {
@@ -41077,7 +41146,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       returnedReason: c.returnedReason || '',
       timeline: (c.timeline || []).map(e => ({
         status: e.status,
-        ts: String(e.at || '').replace('T', ' ').slice(0, 19),
+        ts: historyTime(e.at),
         by: String(e.actorId || '').split(':').pop(),
         note: e.note || ''
       })),
@@ -41298,7 +41367,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
         onDone && onDone(chq.id);
       } catch (error) {
-        setErr(error.message || 'The cheque was not cashed.');
+        setErr(deskSentence(error.message) || 'The cheque was not cashed.');
       } finally {
         setBusy(false);
       }
@@ -41686,7 +41755,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         log && log(action, `${c.ref} · ${note}`);
         onClose && onClose();
       } catch (error) {
-        setErr(error.message || 'The ledger refused this. Nothing was posted.');
+        setErr(deskSentence(error.message) || 'The ledger refused this. Nothing was posted.');
       } finally {
         setBusy('');
       }
@@ -41945,7 +42014,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "alert",
       s: 15,
       c: CD.flag
-    }), " ", busy === 'fraud' ? 'Posting…' : 'Flag fraud'), /*#__PURE__*/React.createElement("button", {
+    }), " ", busy === 'fraud' ? 'Posting…' : 'Flag fraud'), me && me.role !== 'Cashier' && me.role !== 'Trainee' && /*#__PURE__*/React.createElement("button", {
       onClick: reverse,
       disabled: !!busy,
       className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
@@ -41986,6 +42055,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       feeFor,
       addDays,
       daysBetween,
+      historyTime,
+      deskSentence,
       StatusPill,
       CaptureModal,
       ChequeDetail

@@ -603,6 +603,14 @@ a render of main `5216ef4` with that measurement, taken twice at 0
 pixels. The sign-in shot still turns the card blur off, because two
 renders of main with the blur on did not match.
 
+**2026-10-12**, cheque fee. The server computes the fee from the desk's
+rule for that type, half up to the cent (1,000.25 at 2% is 20.01),
+and refuses a client fee that does not match, including 0 unless the
+rule is 0. An unsigned cheque is refused and nothing is written. The
+hold date is calendar days on the business date. A teller who tries
+to reverse is told to ask a supervisor. The screen does not show
+`Missing transaction:reverse.`
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`

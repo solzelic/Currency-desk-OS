@@ -53,6 +53,7 @@ async function cookie(staffId = "a.singh") {
 /** A desk with 5,000 in the drawer, an open till and one verified customer. */
 async function reset(options: { openTill?: boolean; cad?: number } = {}) {
   const { openTill = true, cad = 5000 } = options;
+  await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
   await pool.query(
     "TRUNCATE ledger_cheque_events,ledger_cheques,ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
   );
@@ -125,7 +126,7 @@ const cashCheque = (
       typeLabel: "Business",
       currency: "CAD",
       faceAmount: "1000.00",
-      feeAmount: "35.00",
+      feeAmount: "30.00",
       holdDays: 3,
       endorsed: true,
       ...body,
@@ -237,24 +238,26 @@ postgres("cheque cashing on the ledger", () => {
     const cookies = await cookie();
     const cashed = await heldCheque(cookies);
 
-    /* Face 1,000, fee 35, net 965 — the worked example in
+    /* Face 1,000, business rule 3% (above the $10 minimum) so the fee
+       is 30 and the net is 970. The journal shape is the worked example
+       in
        docs/CHEQUE_CASHING.md. */
     expect(cashed.cheque.faceAmount).toBe("1000.00");
-    expect(cashed.cheque.feeAmount).toBe("35.00");
-    expect(cashed.cheque.netAmount).toBe("965.00");
+    expect(cashed.cheque.feeAmount).toBe("30.00");
+    expect(cashed.cheque.netAmount).toBe("970.00");
     expect(cashed.cheque.status).toBe("held");
 
     const journal = await journalOf(cashed.transactionId);
     expect(imbalance(journal)).toBe(0);
     expect(journal).toEqual([
       { account: "asset:cheques_held", side: "debit", amount: "1000.00" },
-      { account: "till:CAD", side: "credit", amount: "965.00" },
-      { account: "revenue:cheque_fee", side: "credit", amount: "35.00" },
+      { account: "till:CAD", side: "credit", amount: "970.00" },
+      { account: "revenue:cheque_fee", side: "credit", amount: "30.00" },
     ]);
 
     // the drawer falls by the NET. Not the face — the fee never left.
-    expect(await tillCad()).toBe("4035.00");
-    expect(cashed.balances.CAD).toBe("4035.00");
+    expect(await tillCad()).toBe("4030.00");
+    expect(cashed.balances.CAD).toBe("4030.00");
 
     /* The movement is recorded as one, in the same direction the money
        actually went. A cashing that recorded an "in" would balance the
@@ -264,7 +267,7 @@ postgres("cheque cashing on the ledger", () => {
       [cashed.transactionId],
     );
     expect(movements.rows).toEqual([
-      { currency: "CAD", direction: "out", amount: "965.00" },
+      { currency: "CAD", direction: "out", amount: "970.00" },
     ]);
   });
 
@@ -370,19 +373,19 @@ postgres("cheque cashing on the ledger", () => {
     const cookies = await cookie();
     const cashed = await heldCheque(cookies, { currency: "RSD" });
     expect(cashed.cheque.currency).toBe("RSD");
-    expect(cashed.cheque.netAmount).toBe("965.00");
+    expect(cashed.cheque.netAmount).toBe("970.00");
     const journal = await journalOf(cashed.transactionId);
     expect(imbalance(journal)).toBe(0);
     expect(journal).toEqual([
       { account: "asset:cheques_held", side: "debit", amount: "1000.00" },
-      { account: "till:RSD", side: "credit", amount: "965.00" },
-      { account: "revenue:cheque_fee", side: "credit", amount: "35.00" },
+      { account: "till:RSD", side: "credit", amount: "970.00" },
+      { account: "revenue:cheque_fee", side: "credit", amount: "30.00" },
     ]);
     const dinar = await pool.query(
       "SELECT available_amount FROM ledger_till_balances WHERE till_id=$1 AND currency='RSD'",
       [TILL],
     );
-    expect(dinar.rows[0].available_amount).toBe("4035.00");
+    expect(dinar.rows[0].available_amount).toBe("4030.00");
 
     const foreign = await cashCheque(cookies, { currency: "CAD" });
     expect(foreign.statusCode).toBe(422);
@@ -431,7 +434,7 @@ postgres("cheque cashing on the ledger", () => {
     const refused = await cashCheque(cookies, {
       customerId: "customer-walkin",
       faceAmount: "4000.00",
-      feeAmount: "100.00",
+      feeAmount: "120.00",
     });
     expect(refused.statusCode).toBe(422);
     expect(refused.json().code).toBe("COMPLIANCE_BLOCKED");
@@ -524,7 +527,7 @@ postgres("cheque cashing on the ledger", () => {
     const feeLines = await pool.query(
       "SELECT side,amount_cad FROM ledger_journal_entries WHERE account_code='revenue:cheque_fee'",
     );
-    expect(feeLines.rows).toEqual([{ side: "credit", amount_cad: "35.00" }]);
+    expect(feeLines.rows).toEqual([{ side: "credit", amount_cad: "30.00" }]);
 
     // and the drawer does not move: that cash is gone, not returning
     expect(await tillCad()).toBe(before);
@@ -559,7 +562,7 @@ postgres("cheque cashing on the ledger", () => {
   it("puts the cash back and reverses the fee when the cashing was a mistake", async () => {
     const cookies = await cookie();
     const cashed = await heldCheque(cookies);
-    expect(await tillCad()).toBe("4035.00");
+    expect(await tillCad()).toBe("4030.00");
 
     const undone = await settle(cookies, cashed.cheque.chequeId, "reversal", {
       reason: "Keyed against the wrong customer",
@@ -579,8 +582,8 @@ postgres("cheque cashing on the ledger", () => {
     expect(mirrored).toEqual(
       expect.arrayContaining([
         { account: "asset:cheques_held", side: "credit", amount: "1000.00" },
-        { account: "till:CAD", side: "debit", amount: "965.00" },
-        { account: "revenue:cheque_fee", side: "debit", amount: "35.00" },
+        { account: "till:CAD", side: "debit", amount: "970.00" },
+        { account: "revenue:cheque_fee", side: "debit", amount: "30.00" },
       ]),
     );
     expect(mirrored).toHaveLength(3);
@@ -611,8 +614,8 @@ postgres("cheque cashing on the ledger", () => {
     /* Two cheques, both 1,000 face, both "didn't work out". One left the
        desk 1,000 down and keeping 35; the other left it exactly where it
        started. The drawer proves they took different paths: 5,000 minus
-       one net of 965, and not two. */
-    expect(await tillCad()).toBe("4035.00");
+       one net of 970, and not two. */
+    expect(await tillCad()).toBe("4030.00");
 
     /* And a reversed cashing drops out of the day's totals the way any
        void does, while the bounced one stays — it really happened. */
@@ -624,7 +627,7 @@ postgres("cheque cashing on the ledger", () => {
     expect(summary.statusCode).toBe(200);
     expect(summary.json().posted).toBe(1);
     expect(summary.json().reversed).toBe(1);
-    expect(summary.json().feesHome).toBe("35.00");
+    expect(summary.json().feesHome).toBe("30.00");
   });
 
   it("will not reverse a cheque that has already cleared", async () => {
@@ -663,12 +666,13 @@ postgres("cheque cashing on the ledger", () => {
     expect(
       (await pool.query("SELECT count(*)::int AS n FROM ledger_transactions")).rows[0].n,
     ).toBe(1);
-    expect(await tillCad()).toBe("4035.00");
+    expect(await tillCad()).toBe("4030.00");
   });
 
   /* Two taps of one open form used to be two keys, because the key was
-     built from the clock. Cheque 1002841 (face 40.00, fee 1.00) was then
-     paid twice and 78.00 left the drawer — the net, twice. A second live
+     built from the clock. Cheque 1002841 (face 40.00, fee the $10
+     minimum) was then paid twice and 60.00 left the drawer — the net,
+     twice. A second live
      cheque with the same number, payer and bank is the same paper, and
      the book has to refuse it even when the keys differ. */
   it("pays cheque 1002841 once when a second tap arrives under a new key", async () => {
@@ -678,7 +682,7 @@ postgres("cheque cashing on the ledger", () => {
       maker: "Northbridge Imports Ltd.",
       draweeBank: "RBC Royal Bank",
       faceAmount: "40.00",
-      feeAmount: "1.00",
+      feeAmount: "10.00",
       holdDays: 0,
     };
     const first = await cashCheque(cookies, { ...paper, idempotencyKey: "tap-1002841-a" });
@@ -687,7 +691,7 @@ postgres("cheque cashing on the ledger", () => {
     expect(second.statusCode).toBe(409);
     expect(second.json().code).toBe("CHEQUE_ALREADY_HELD");
     expect(second.json().message).toMatch(/already cashed/i);
-    expect(await tillCad()).toBe("4961.00");
+    expect(await tillCad()).toBe("4970.00");
     expect(
       (await pool.query(
         "SELECT count(*)::int AS n FROM ledger_cheques WHERE cheque_number='1002841'",
@@ -702,7 +706,7 @@ postgres("cheque cashing on the ledger", () => {
       maker: "Northbridge Imports Ltd.",
       draweeBank: "RBC Royal Bank",
       faceAmount: "40.00",
-      feeAmount: "1.00",
+      feeAmount: "10.00",
       holdDays: 0,
     };
     const first = await cashCheque(cookies, { ...paper, idempotencyKey: "live-a" });
@@ -725,9 +729,9 @@ postgres("cheque cashing on the ledger", () => {
     expect(undone.statusCode, undone.body).toBe(201);
     const again = await cashCheque(cookies, { ...paper, idempotencyKey: "live-d" });
     expect(again.statusCode, again.body).toBe(201);
-    /* Four cashes of 39, and the first of them reversed, so three nets
-       have left: 5000 − 117 = 4883. */
-    expect(await tillCad()).toBe("4883.00");
+    /* Four cashes of the $30 net, and the first of them reversed, so
+       three nets have left: 5000 − 90 = 4910. */
+    expect(await tillCad()).toBe("4910.00");
   });
 
   it("clears once however many times the request arrives", async () => {
@@ -766,7 +770,7 @@ postgres("cheque cashing on the ledger", () => {
     expect(cheque.maker).toBe("Northbridge Imports Ltd.");
     expect(cheque.draweeBank).toBe("RBC Royal Bank");
     expect(cheque.status).toBe("cleared");
-    expect(cheque.netAmount).toBe("965.00");
+    expect(cheque.netAmount).toBe("970.00");
     /* Who moved it and when, which is the half of this the browser was
        keeping in localStorage and calling an audit trail. */
     expect(cheque.timeline.map((step: { status: string }) => step.status)).toEqual([
@@ -870,6 +874,98 @@ postgres("cheque cashing on the ledger", () => {
         hoursEarlier: 0,
       }),
     ).rejects.toThrow(/duplicate key value|unique constraint/i);
+  });
+
+  it("rounds a half cent up and refuses a fee that does not match, including 0", async () => {
+    const cookies = await cookie();
+    const refused = await cashCheque(cookies, {
+      chequeType: "payroll",
+      typeLabel: "Payroll",
+      chequeNumber: "104829",
+      faceAmount: "1000.25",
+      feeAmount: "0.00",
+      holdDays: 1,
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("CHEQUE_FEE");
+    expect(refused.json().message).toMatch(/does not match/);
+    expect(refused.json().message).not.toMatch(/Missing /);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_cheques")).rows[0].n,
+    ).toBe(0);
+
+    const wrong = await cashCheque(cookies, {
+      chequeType: "payroll",
+      typeLabel: "Payroll",
+      chequeNumber: "104830",
+      faceAmount: "1000.25",
+      feeAmount: "20.00",
+      holdDays: 1,
+    });
+    expect(wrong.statusCode).toBe(422);
+    expect(wrong.json().code).toBe("CHEQUE_FEE");
+
+    const cashed = await cashCheque(cookies, {
+      chequeType: "payroll",
+      typeLabel: "Payroll",
+      chequeNumber: "104831",
+      faceAmount: "1000.25",
+      feeAmount: "20.01",
+      holdDays: 1,
+    });
+    expect(cashed.statusCode, cashed.body).toBe(201);
+    expect(cashed.json().cheque.feeAmount).toBe("20.01");
+    expect(cashed.json().cheque.netAmount).toBe("980.24");
+    expect(cashed.json().cheque.holdUntil).toBe("2026-06-19");
+  });
+
+  it("accepts a zero fee when the payroll rule really is zero", async () => {
+    await pool.query(
+      `INSERT INTO tenant_state (tenant_id, state)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (tenant_id) DO UPDATE SET state = EXCLUDED.state`,
+      [
+        DEMO.tenantId,
+        JSON.stringify({
+          cdos_cheque_schedule_v1: [{ id: "payroll", label: "Payroll", feePct: 0, feeMin: 0, holdDays: 1 }],
+        }),
+      ],
+    );
+    const cookies = await cookie();
+    const cashed = await cashCheque(cookies, {
+      chequeType: "payroll",
+      typeLabel: "Payroll",
+      chequeNumber: "104832",
+      faceAmount: "1000.25",
+      feeAmount: "0.00",
+      holdDays: 1,
+    });
+    expect(cashed.statusCode, cashed.body).toBe(201);
+    expect(cashed.json().cheque.feeAmount).toBe("0.00");
+  });
+
+  it("refuses a cheque that is not signed on the back and writes nothing", async () => {
+    const cookies = await cookie();
+    const refused = await cashCheque(cookies, { endorsed: false, chequeNumber: "104833" });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("CHEQUE_NOT_ENDORSED");
+    expect(refused.json().message).toMatch(/signed on the back/);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_cheques")).rows[0].n,
+    ).toBe(0);
+  });
+
+  it("tells a teller they cannot reverse, in a desk sentence", async () => {
+    const manager = await cookie();
+    const cashed = await heldCheque(manager);
+    const teller = await cookie("m.costa");
+    const refused = await settle(teller, cashed.cheque.chequeId, "reversal", {
+      reason: "Wrong cheque",
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().message).toBe("You cannot reverse this cheque. Ask a supervisor.");
+    expect(refused.json().message).not.toMatch(/Missing /);
+    expect(cashed.cheque.status).toBe("held");
   });
 });
 

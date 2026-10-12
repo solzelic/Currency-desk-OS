@@ -116,6 +116,16 @@ postgres("the international baseline", () => {
     usd.cookie = await signup(usd.slug, usd.email, { country: "XX" });
     gbp.cookie = await signup(gbp.slug, gbp.email, { country: "XX", homeCurrency: "GBP" });
     rsd.cookie = await signup(rsd.slug, rsd.email, { country: "XX", homeCurrency: "RSD" });
+    for (const slug of [usd.slug, gbp.slug, rsd.slug]) {
+      await pool.query(
+        `INSERT INTO tenant_state (tenant_id, state)
+         SELECT id, $2::jsonb FROM tenants WHERE site_slug = $1
+         ON CONFLICT (tenant_id) DO UPDATE SET state = EXCLUDED.state`,
+        [slug, JSON.stringify({
+          cdos_cheque_schedule_v1: [{ id: "personal", feePct: 0, feeMin: 0 }],
+        })],
+      );
+    }
     for (const desk of [usd, gbp, rsd]) {
       const opened = await app.inject({
         method: "POST",
@@ -177,6 +187,7 @@ postgres("the international baseline", () => {
         faceAmount: amount,
         feeAmount: "0.00",
         holdDays: 0,
+        endorsed: true,
       },
     });
   }

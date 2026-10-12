@@ -44,7 +44,17 @@
   const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
-  const addDays = (date, n) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || '')); if (!m) return ''; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); d.setUTCDate(d.getUTCDate() + (+n || 0)); return d.toISOString().slice(0, 10); };
+  /* Calendar days on the YYYY-MM-DD string. toISOString of a local
+     midnight moves the hold back one day in any zone east of UTC. */
+  const addDays = (date, n) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+    if (!m) return '';
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (+n || 0)));
+    const y = at.getUTCFullYear();
+    const mo = String(at.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(at.getUTCDate()).padStart(2, '0');
+    return y + '-' + mo + '-' + d;
+  };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 
   /* ---- default fee schedule by cheque type (editable in the Fee schedule tab) ---- */
@@ -59,7 +69,37 @@
     ];
   }
   const RISK_TONE = { low: { t: 'Low', c: CD.green, bg: CD.greenSoft }, medium: { t: 'Medium', c: CD.amber, bg: CD.amberSoft }, high: { t: 'High', c: CD.flag, bg: CD.flagSoft } };
-  const feeFor = (amount, type) => { const t = type || {}; return Math.max(+t.feeMin || 0, (+amount || 0) * (+t.feePct || 0) / 100); };
+  /* Half up to the cent, in integer arithmetic. 1,000.25 at 2% is
+     20.005, which is 20.01. A float times toFixed gets that one wrong. */
+  function roundHalfUpMulDiv(amount, pct, divisor) {
+    const parts = (value) => {
+      const s = String(value == null ? '' : value).trim();
+      const neg = s.charAt(0) === '-';
+      const body = neg ? s.slice(1) : s;
+      const bits = body.split('.');
+      const whole = bits[0] || '0';
+      const frac = bits[1] || '';
+      const digits = (whole + frac).replace(/^0+(?=\d)/, '') || '0';
+      if (!/^\d+$/.test(digits)) return null;
+      return { neg: neg, digits: digits, scale: frac.length };
+    };
+    const a = parts(amount);
+    const p = parts(pct);
+    if (!a || !p || a.neg || p.neg) return 0;
+    const product = BigInt(a.digits) * BigInt(p.digits);
+    const den = (10n ** BigInt(a.scale + p.scale)) * BigInt(divisor);
+    const num = product * 100n;
+    const q = num / den;
+    const r = num % den;
+    const cents = r * 2n >= den ? q + 1n : q;
+    return Number((Number(cents) / 100).toFixed(2));
+  }
+  const feeFor = (amount, type) => {
+    const t = type || {};
+    const percent = roundHalfUpMulDiv(amount, t.feePct || 0, 100);
+    const minimum = roundHalfUpMulDiv(t.feeMin || 0, 1, 1);
+    return Math.max(minimum, percent);
+  };
 
   const STATUS = {
     held:     { label: 'On hold',  tone: CD.amber, soft: CD.amberSoft, ink: 'var(--cd-brass-text)', icon: 'clock' },
@@ -120,6 +160,35 @@
      Money arrives as decimal strings and is turned into numbers only for
      rendering — the figures themselves are the server's and nothing here
      recomputes one of them. */
+  function branchZone() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cdos_settings') || 'null');
+      if (saved && saved.timezone) return saved.timezone;
+    } catch (e) {}
+    return 'America/Toronto';
+  }
+  function historyTime(at) {
+    const date = new Date(at);
+    if (!at || isNaN(date.getTime())) return '';
+    let text = '';
+    try {
+      text = new Intl.DateTimeFormat('en-US', {
+        timeZone: branchZone(), hour: 'numeric', minute: '2-digit', hour12: true,
+      }).format(date);
+    } catch (e) {
+      text = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Toronto', hour: 'numeric', minute: '2-digit', hour12: true,
+      }).format(date);
+    }
+    return text.replace(' AM', ' am').replace(' PM', ' pm');
+  }
+  function deskSentence(message) {
+    const text = String(message || '');
+    if (/Missing transaction:reverse/i.test(text)) return 'You cannot reverse this cheque. Ask a supervisor.';
+    if (/^Missing [A-Za-z:]+\.$/.test(text)) return 'You cannot do that from this till. Ask a supervisor.';
+    return text;
+  }
+
   function fromServer(c, imgs) {
     const held = imgs || images();
     return {
@@ -133,7 +202,7 @@
       status: c.status, nsf: !!c.nsf, fraud: !!c.fraud, returnedReason: c.returnedReason || '',
       timeline: (c.timeline || []).map(e => ({
         status: e.status,
-        ts: String(e.at || '').replace('T', ' ').slice(0, 19),
+        ts: historyTime(e.at),
         by: String(e.actorId || '').split(':').pop(),
         note: e.note || '',
       })),
@@ -265,7 +334,7 @@
         log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
         onDone && onDone(chq.id);
       } catch (error) {
-        setErr(error.message || 'The cheque was not cashed.');
+        setErr(deskSentence(error.message) || 'The cheque was not cashed.');
       } finally {
         setBusy(false);
       }
@@ -377,7 +446,7 @@
         log && log(action, `${c.ref} · ${note}`);
         onClose && onClose();
       } catch (error) {
-        setErr(error.message || 'The ledger refused this. Nothing was posted.');
+        setErr(deskSentence(error.message) || 'The ledger refused this. Nothing was posted.');
       } finally {
         setBusy('');
       }
@@ -461,7 +530,7 @@
                   — wrong amount, wrong customer, keyed twice — and it is
                   the only one of the four that puts cash back in the
                   drawer and hands the fee back with it. */}
-              <button onClick={reverse} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="x" s={15} c={CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>
+              {me && me.role !== 'Cashier' && me.role !== 'Trainee' && <button onClick={reverse} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="x" s={15} c={CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>}
             </div>
           )}
           {err && <div className="text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
@@ -472,6 +541,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, IKEY, load, ledger, fromServer, STATUS, RISK_TONE, feeFor, addDays, daysBetween, StatusPill, CaptureModal, ChequeDetail }
+    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, IKEY, load, ledger, fromServer, STATUS, RISK_TONE, feeFor, addDays, daysBetween, historyTime, deskSentence, StatusPill, CaptureModal, ChequeDetail }
   });
 })();

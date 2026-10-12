@@ -62,6 +62,12 @@ import {
   philippinesPurposeRequired,
 } from "./philippines-pack.js";
 import { redactDeskEarnings } from "./earnings-redaction.js";
+import {
+  addCalendarDays,
+  chequeFeeAmount,
+  ruleFor,
+  type ChequeFeeRule,
+} from "./cheque-money.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -245,7 +251,7 @@ export class ChequeService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const role = await authorizeLedgerActor(client, actor, "ledger:view");
+      const role = await authorizeCheque(client, actor, "ledger:view");
       const rows = await client.query(
         `SELECT c.*, t.transaction_ref AS cashing_transaction_ref
            FROM ledger_cheques c
@@ -301,7 +307,7 @@ export class ChequeService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "transaction:post");
+      await authorizeCheque(client, actor, "transaction:post");
       /* A drawer that is not open cannot pay anybody. Same gate an
          exchange passes, from the same function — see the note above
          `requireOpenTill` in service.ts about why it stopped being a
@@ -348,7 +354,19 @@ export class ChequeService {
         );
 
       const face = money(input.faceAmount, "0.01");
-      const fee = money(input.feeAmount, "0");
+      const offered = money(input.feeAmount, "0");
+      const rule = await this.feeRule(client, actor.tenantId, String(input.chequeType ?? ""));
+      const fee = chequeFeeAmount(face, rule.feePct, rule.feeMin);
+      if (!offered.eq(fee))
+        throw new LedgerError(
+          "CHEQUE_FEE",
+          "The fee does not match this cheque. Nothing was cashed.",
+        );
+      if (input.endorsed !== true)
+        throw new LedgerError(
+          "CHEQUE_NOT_ENDORSED",
+          "The cheque has to be signed on the back. Nothing was cashed.",
+        );
       const net = face.minus(fee);
       if (net.lt(0))
         throw new LedgerError(
@@ -576,7 +594,7 @@ export class ChequeService {
         [transactionId, home, fixed(net), now],
       );
 
-      const holdUntil = addDays(businessDate, holdDays);
+      const holdUntil = addCalendarDays(businessDate, holdDays);
       await client.query(
         `INSERT INTO ledger_cheques
            (cheque_id,cheque_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
@@ -713,7 +731,7 @@ export class ChequeService {
          yesterday's cheques before the counter opens, which is when that
          work actually gets done. The reversal below is the opposite case
          and does demand one, because cash goes back in the drawer. */
-      await authorizeLedgerActor(client, actor, "transaction:post");
+      await authorizeCheque(client, actor, "transaction:post");
 
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation=$6 AND idempotency_key=$7 FOR UPDATE",
@@ -919,7 +937,7 @@ export class ChequeService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "transaction:reverse");
+      await authorizeCheque(client, actor, "transaction:reverse");
       /* Cash goes back INTO this drawer, so this drawer has to be open.
          The clearance path deliberately does not ask for this; see the
          note there. */
@@ -1220,6 +1238,36 @@ export class ChequeService {
     );
   }
 
+  private async feeRule(client: pg.PoolClient, tenantId: string, chequeType: string): Promise<ChequeFeeRule> {
+    const saved = await client.query(
+      "SELECT state FROM tenant_state WHERE tenant_id=$1",
+      [tenantId],
+    );
+    const blob = saved.rows[0]?.state;
+    const raw = blob && typeof blob === "object"
+      ? (blob as Record<string, unknown>).cdos_cheque_schedule_v1
+      : null;
+    const schedule = Array.isArray(raw)
+      ? raw.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const row = item as Record<string, unknown>;
+          const id = String(row.id ?? "").trim();
+          if (!id) return [];
+          const feePct = Number(row.feePct);
+          const feeMin = Number(row.feeMin);
+          if (!Number.isFinite(feePct) || !Number.isFinite(feeMin) || feePct < 0 || feeMin < 0) return [];
+          return [{ id, feePct: String(feePct), feeMin: String(feeMin) }];
+        })
+      : null;
+    const rule = ruleFor(schedule, chequeType);
+    if (!rule)
+      throw new LedgerError(
+        "CHEQUE_FEE",
+        "This cheque type has no fee rule. Nothing was cashed.",
+      );
+    return rule;
+  }
+
   private async tillBalances(client: pg.PoolClient, actor: LedgerActor) {
     const rows = await client.query(
       `SELECT currency,available_amount FROM ledger_till_balances
@@ -1237,12 +1285,28 @@ export class ChequeService {
   }
 }
 
-/** Days added to a YYYY-MM-DD business date, in UTC so no timezone
-    shifts the hold by one. */
-function addDays(date: string, days: number) {
-  const at = new Date(`${date}T00:00:00Z`);
-  at.setUTCDate(at.getUTCDate() + days);
-  return at.toISOString().slice(0, 10);
+
+async function authorizeCheque(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  permission: "ledger:view" | "transaction:post" | "transaction:reverse",
+) {
+  try {
+    return await authorizeLedgerActor(client, actor, permission);
+  } catch (error) {
+    if (error instanceof LedgerError && error.code === "AUTHORIZATION_DENIED") {
+      const sentence =
+        permission === "transaction:reverse"
+          ? "You cannot reverse this cheque. Ask a supervisor."
+          : permission === "transaction:post"
+            ? "You cannot cash this cheque. Ask a supervisor."
+            : "You cannot open the cheque register. Ask a supervisor.";
+      throw new LedgerError("AUTHORIZATION_DENIED", sentence);
+    }
+    if (error instanceof LedgerError && error.code === "SCOPE_DENIED")
+      throw new LedgerError("SCOPE_DENIED", "You are not signed in at this till.");
+    throw error;
+  }
 }
 
 /** Debits equal credits, or nothing is written.

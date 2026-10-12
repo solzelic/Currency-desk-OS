@@ -120,6 +120,16 @@ touched, `ledger_cost_events` gets nothing, and `realized_pnl_home` and
 The fee is fee revenue, not a margin against a purchase. An NSF is an
 expense, not a loss on inventory. Neither is a disposal of anything.
 
+The fee figure is the desk's rule for that cheque type, worked out on
+the server. Percent of the face, or the minimum, whichever is larger,
+rounded half up to the cent. 1,000.25 at 2% is 20.005, which is 20.01.
+A client fee that is not that figure is refused, including 0, unless
+the saved rule for that type really is 0. A cheque that is not signed
+on the back is refused and nothing is written. The hold-until date is
+the business date plus the hold, as calendar days. It is not an instant
+passed through `toISOString`, which moves the day back one in a zone
+east of UTC.
+
 ## Scope: home currency only
 
 A cheque written in another currency is an **exchange as well as a
