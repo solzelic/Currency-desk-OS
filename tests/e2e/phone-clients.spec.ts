@@ -7,7 +7,7 @@ import type { Page, Route } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop, hasLedger } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
-const SHOTS = "/opt/cursor/artifacts/screenshots";
+const SHOTS = process.env.PHONE_CLIENT_SHOTS || "test-results/phone-clients";
 const HEIGHT = 844;
 
 async function dismissTour(page: Page): Promise<void> {
@@ -104,7 +104,7 @@ test.describe("phone clients", () => {
       hold = false;
       release();
       await expect(page.locator("[data-phone-state]")).toHaveAttribute("data-phone-state", "empty");
-      await expect(page.getByRole("heading", { name: "No clients yet" })).toBeVisible();
+      await expect(page.locator(".phone-clients .phone-state-card").getByRole("heading", { name: "No clients yet" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Add client" })).toBeVisible();
       const emptyAccent = await page.locator(".phone-clients .phone-empty .phone-text-btn").evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(emptyAccent).toBe("rgb(60, 59, 120)");
@@ -156,8 +156,11 @@ test.describe("phone clients", () => {
       await expect(page.getByRole("button", { name: "Add client" })).toBeDisabled();
       await page.getByRole("button", { name: "Add client" }).click({ force: true });
       await expect(page.locator(".add-contact-sheet")).toHaveCount(0);
+      await expect(page.locator(".phone-client-row .phone-row-chev")).toHaveCount(0);
       await page.locator(".phone-client-row").click();
-      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.locator(".phone-task-sheet")).toHaveCount(0);
+      await expect(page.getByText("Record the ID for Mara Local")).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Record the ID for Mara Local" })).toHaveCount(0);
     });
 
     test(`search, chips, and ID standing at ${width}`, async ({ page }) => {
@@ -423,7 +426,46 @@ test.describe("phone clients", () => {
     await expect(page.locator(".phone-clients")).not.toContainText("Ledger Only");
   });
 
-  test("a save writes the server first and shows its error", async ({ page }) => {
+  test("a loaded list stays up when the browser goes offline", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: HEIGHT });
+    await atDesk(page);
+    const name = `Off${Date.now().toString(36)} Missing`;
+    const made = await page.evaluate(async (legalName) => {
+      const response = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName, kind: "individual" }),
+      });
+      return response.status;
+    }, name);
+    expect(made).toBe(201);
+    await openClients(page);
+    const row = page.locator(".phone-client-row", { hasText: name });
+    await expect(row).toBeVisible();
+    await expect(row.locator(".phone-row-chev")).toHaveCount(1);
+    await page.context().setOffline(true);
+    await expect(page.getByRole("status").filter({ hasText: "Offline. Showing the last loaded list." })).toBeVisible();
+    await expect(page.locator(".phone-sticky-why")).toHaveText("Offline. Showing the last loaded list.");
+    await expect(row).toBeVisible();
+    await expect(page.getByText("Couldn't load clients")).toHaveCount(0);
+    await expect(page.getByText("Showing the copy on this phone")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Add client" })).toBeDisabled();
+    await expect(page.locator(".phone-client-row .phone-row-chev")).toHaveCount(0);
+    await row.click();
+    await expect(page.locator(".phone-task-sheet")).toHaveCount(0);
+    await expect(page.getByText(`Record the ID for ${name}`)).toHaveCount(0);
+    await page.getByRole("button", { name: "Add client" }).click({ force: true });
+    await expect(page.locator(".add-contact-sheet")).toHaveCount(0);
+    await page.context().setOffline(false);
+  });
+
+  async function expectNoRawServerText(root: ReturnType<Page["locator"]>): Promise<void> {
+    for (const bit of ["String must contain", "legalName", "character(s)", "duplicate key", "desk_clients", "Your session expired", "before posting", "parser.js"]) {
+      await expect(root).not.toContainText(bit);
+    }
+  }
+
+  test("add client shows a desk sentence, not the server's text", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: HEIGHT });
     await emptyBook(page, async (route) => fulfill(route, 200, { clients: [] }));
     await atDesk(page);
@@ -431,19 +473,100 @@ test.describe("phone clients", () => {
     await expect(page.locator("[data-phone-state]")).toHaveAttribute("data-phone-state", "empty");
     await page.getByRole("button", { name: "Add client" }).click();
     await page.getByRole("button", { name: "Skip, add ID later" }).click();
-    const name = "Mid Form " + Date.now().toString(36);
-    await page.getByPlaceholder("Jane Doe").fill(name);
+    const sheet = page.locator(".add-contact-sheet");
+    const longName = "N".repeat(301);
+    await page.getByPlaceholder("Jane Doe").fill(longName);
+    let refusal: { status: number; body: unknown } | null = null;
     await page.route("**/api/clients", async (route) => {
-      if (route.request().method() === "POST") {
-        return fulfill(route, 422, { code: "INVALID_REQUEST", message: "The server refused this client." });
+      const url = new URL(route.request().url());
+      if (route.request().method() === "POST" && url.pathname === "/api/clients" && refusal) {
+        return fulfill(route, refusal.status, refusal.body);
       }
       return route.continue();
     });
     await page.getByText("Save without verifying").click();
-    await expect(page.getByRole("alert")).toContainText("The server refused this client.");
-    await expect(page.locator(".add-contact-sheet")).toBeVisible();
+    await expect(sheet.getByRole("alert")).toHaveText("Name is too long. Keep it under 300 characters.");
+    await expectNoRawServerText(sheet);
+    await expect(sheet).toBeVisible();
     const stored = await page.evaluate(() => localStorage.getItem("cdos_clients_v1") || "");
-    expect(stored).not.toContain(name);
+    expect(stored).not.toContain(longName);
+
+    refusal = {
+      status: 500,
+      body: { code: "INTERNAL_ERROR", message: "duplicate key value violates unique constraint \"desk_clients_pkey\"\n    at Parser.parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:1:1)" },
+    };
+    await page.getByText("Save without verifying").click();
+    await expect(sheet.getByRole("alert")).toHaveText("Couldn't save. Try again.");
+    await expectNoRawServerText(sheet);
+    expect(await page.evaluate(() => localStorage.getItem("cdos_clients_v1") || "")).not.toContain(longName);
+
+    refusal = {
+      status: 401,
+      body: { code: "AUTHENTICATION_REQUIRED", message: "Your session expired. Sign in again before posting." },
+    };
+    await page.getByText("Save without verifying").click();
+    await expect(sheet.getByRole("alert")).toHaveText("You've been signed out. Sign in again.");
+    await expectNoRawServerText(sheet);
+    expect(await page.evaluate(() => localStorage.getItem("cdos_clients_v1") || "")).not.toContain(longName);
+  });
+
+  test("record ID shows a desk sentence, not the server's text", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: HEIGHT });
+    await atDesk(page);
+    const name = `Id${Date.now().toString(36)} Plain`;
+    const made = await page.evaluate(async (legalName) => {
+      const response = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName, kind: "individual" }),
+      });
+      return response.status;
+    }, name);
+    expect(made).toBe(201);
+    await openClients(page);
+    const row = page.locator(".phone-client-row", { hasText: name });
+    await expect(row.locator(".phone-row-chev")).toHaveCount(1);
+    await row.click();
+    const sheet = page.locator(".phone-task-sheet");
+    await expect(sheet).toBeVisible();
+    const mark = await sheet.locator(".phone-id-mark").evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(mark).toBe("rgb(60, 59, 120)");
+    await sheet.getByLabel("ID type").selectOption("Passport");
+    await sheet.getByLabel("ID number").fill("PA-RAW-1");
+    await sheet.getByLabel("Expiry").fill("2031-06-01");
+    const saveBg = await sheet.getByRole("button", { name: "Save and return" }).evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(saveBg).toBe("rgb(60, 59, 120)");
+
+    let refusal: { status: number; body: unknown } = {
+      status: 422,
+      body: { code: "INVALID_REQUEST", message: "legalName: String must contain at most 300 character(s)" },
+    };
+    await page.route("**/api/clients/**/documents", async (route) => {
+      if (route.request().method() === "POST") return fulfill(route, refusal.status, refusal.body);
+      return route.continue();
+    });
+    await sheet.getByRole("button", { name: "Save and return" }).click();
+    await expect(sheet.getByRole("alert")).toHaveText("Name is too long. Keep it under 300 characters.");
+    await expectNoRawServerText(sheet);
+    await expect(sheet).toBeVisible();
+
+    refusal = {
+      status: 500,
+      body: { code: "INTERNAL_ERROR", message: "duplicate key value violates unique constraint \"desk_clients_pkey\"\n    at Parser.parseErrorMessage (/app/node_modules/pg-protocol/dist/parser.js:1:1)" },
+    };
+    await sheet.getByRole("button", { name: "Save and return" }).click();
+    await expect(sheet.getByRole("alert")).toHaveText("Couldn't save. Try again.");
+    await expectNoRawServerText(sheet);
+
+    refusal = {
+      status: 401,
+      body: { code: "AUTHENTICATION_REQUIRED", message: "Your session expired. Sign in again before posting." },
+    };
+    await sheet.getByRole("button", { name: "Save and return" }).click();
+    await expect(sheet.getByRole("alert")).toHaveText("You've been signed out. Sign in again.");
+    await expectNoRawServerText(sheet);
+    const stored = await page.evaluate(() => localStorage.getItem("cdos_clients_v1") || "");
+    expect(stored).not.toContain("PA-RAW-1");
   });
 
   test("ID standing, search, and the Toronto day", async ({ page }) => {

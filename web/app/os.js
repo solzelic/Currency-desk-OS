@@ -25701,7 +25701,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           });
           await reload(true);
         } catch (e) {
-          setSaveErr(e && e.message || 'CurrencyDesk could not create that contact. Nothing was saved.');
+          setSaveErr(deskSaveSentence(e));
           return;
         }
       } else {
@@ -25750,7 +25750,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           try {
             await reload(true);
           } catch (e) {
-            setSaveErr(e && e.message || 'CurrencyDesk could not refresh the client list.');
+            setSaveErr(deskSaveSentence(e));
           }
         }
       }), profile && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(Profile, {
@@ -26189,7 +26189,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           setPhase('edit');
         } catch (e) {
           if (!live) return;
-          setErr(e && e.message || 'CurrencyDesk could not open this customer.');
+          setErr(deskSaveSentence(e));
           setPhase('error');
         }
       })();
@@ -26247,7 +26247,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         log && log('ID document recorded', name + ' · ' + payload.idType);
         onDone();
       } catch (e) {
-        setErr(e && e.message || 'CurrencyDesk could not save that ID. Nothing was saved.');
+        setErr(deskSaveSentence(e));
         setLeaving(false);
       }
     };
@@ -26279,17 +26279,17 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         borderBottom: `1px solid ${CD.line}`
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center flex-none",
+      className: "phone-id-mark grid place-items-center flex-none",
       style: {
         width: 38,
         height: 38,
-        background: CD.ink,
+        background: '#3C3B78',
         borderRadius: 10
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "id",
       s: 18,
-      c: "var(--cd-on-ink)"
+      c: "#fff"
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
@@ -26370,8 +26370,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       disabled: !ready || leaving || phase !== 'edit',
       className: "phone-task-go px-4 py-2.5 text-sm font-semibold",
       style: {
-        background: ready && !leaving && phase === 'edit' ? CD.ink : CD.lineSoft,
-        color: ready && !leaving && phase === 'edit' ? 'var(--cd-on-ink)' : CD.faint,
+        background: ready && !leaving && phase === 'edit' ? '#3C3B78' : CD.lineSoft,
+        color: ready && !leaving && phase === 'edit' ? '#fff' : CD.faint,
         borderRadius: 9,
         minHeight: 44
       }
@@ -26387,12 +26387,39 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      cdos-kyc.jsx, which can run from screens that never mount this
      one. `RecordIdSheet` is that same identity editor, opened from a
      deal that needs a document on the server. */
+  /* A cashier sees a desk sentence. The server's validation text, a
+     database error, and a stack trace stay off the screen. */
+  const DESK_OWN_SENTENCE = {
+    "CurrencyDesk could not reach the server. Nothing was saved.": true,
+    "Couldn't load clients. Nothing was saved.": true,
+    "CurrencyDesk could not open a file for this customer.": true,
+    "CurrencyDesk could not create that contact. Nothing was saved.": true,
+    "CurrencyDesk could not open this customer.": true,
+    "CurrencyDesk could not save that ID. Nothing was saved.": true,
+    "CurrencyDesk could not refresh the client list.": true,
+    "CurrencyDesk could not reach the ledger server. Nothing was posted.": true,
+    "Type, number, and expiry are required.": true,
+    "More than one customer has this name. Open their file and record the ID there.": true
+  };
+  function deskSaveSentence(err) {
+    const status = err && Number(err.status) || 0;
+    const code = err && err.code ? String(err.code) : "";
+    const raw = err && err.message ? String(err.message) : "";
+    if (status === 401 || code === "AUTHENTICATION_REQUIRED") return "You've been signed out. Sign in again.";
+    if (status >= 500 || code === "INTERNAL_ERROR") return "Couldn't save. Try again.";
+    if (/legalName/i.test(raw) && /\b300\b/.test(raw)) return "Name is too long. Keep it under 300 characters.";
+    if (DESK_OWN_SENTENCE[raw]) return raw;
+    if (/duplicate key|syntax error|postgres|relation ["']|at \w+\s*\(/i.test(raw)) return "Couldn't save. Try again.";
+    if (status >= 400 || /String must contain|Expected |Invalid |Unrecognized key/i.test(raw)) return "Couldn't save. Check the form and try again.";
+    return "Couldn't save. Try again.";
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Clients,
     ClientIdViewer,
     ClientRecords,
     IdScan,
-    RecordIdSheet
+    RecordIdSheet,
+    deskSaveSentence
   });
 })();
 
@@ -48170,7 +48197,8 @@ ${(filing.map || []).map(blockHTML).join('')}
        the server to end. One round-trip at the end of the wizard, and
        the button says it is working. */
     /* The server first. The browser copy is written only after the
-       file exists there. A refusal is the server's own sentence. */
+       file exists there. A refusal is a desk sentence. The server's
+       raw text stays off this screen. */
     const saveManual = async () => {
       const nm = name.trim();
       if (!nm || saving) return;
@@ -48199,7 +48227,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         onClose();
       } catch (e) {
         setSaving(false);
-        setSaveErr(e && e.message || 'CurrencyDesk could not create that contact. Nothing was saved.');
+        setSaveErr(window.CDOS.deskSaveSentence && window.CDOS.deskSaveSentence(e) || 'Couldn\'t save. Try again.');
       }
     };
     /* The choose step's button used to start a check, wait, and then write
@@ -63525,6 +63553,8 @@ window.CDOS_PERSIST = (function () {
       count: loadFailed ? undefined : counts.identified
     }];
     const showingLocal = loadFailed && people.length > 0;
+    const wentOffline = mode === "server" && !online;
+    const blockedReason = wentOffline ? "Offline. Showing the last loaded list." : "Couldn't load clients. Try again before adding someone.";
     let state = "list";
     if (loading) state = "loading";else if (loadFailed && people.length === 0) state = "error";else if (!q && filter === "all" && people.length === 0) state = "empty";else if (shown.length === 0) state = "nomatch";
     const retry = async () => {
@@ -63545,7 +63575,7 @@ window.CDOS_PERSIST = (function () {
       label: "Add client",
       onClick: addClient,
       disabled: !canWrite,
-      disabledReason: !canWrite ? "Couldn't load clients. Try again before adding someone." : ""
+      disabledReason: !canWrite ? blockedReason : ""
     }) : null;
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "clients",
@@ -63580,12 +63610,17 @@ window.CDOS_PERSIST = (function () {
       message: "Check the connection and try again.",
       actionLabel: "Try again",
       onAction: retry
-    })), state === "empty" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+    })), state === "empty" && /*#__PURE__*/React.createElement("div", {
+      className: "phone-state-card"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No clients yet",
       message: "Add a client the first time they deal with you. Their ID stays on their file for next time.",
       actionLabel: canEdit && canWrite ? "Add client" : undefined,
       onAction: canEdit && canWrite ? addClient : undefined
-    }), showingLocal && /*#__PURE__*/React.createElement("p", {
+    })), wentOffline && /*#__PURE__*/React.createElement("p", {
+      className: "phone-stale",
+      role: "status"
+    }, "Offline. Showing the last loaded list."), showingLocal && /*#__PURE__*/React.createElement("p", {
       className: "phone-stale",
       role: "status"
     }, "Showing the copy on this phone. It may be out of date."), saveErr && state !== "loading" && /*#__PURE__*/React.createElement("p", {

@@ -676,7 +676,8 @@
        the server to end. One round-trip at the end of the wizard, and
        the button says it is working. */
     /* The server first. The browser copy is written only after the
-       file exists there. A refusal is the server's own sentence. */
+       file exists there. A refusal is a desk sentence. The server's
+       raw text stays off this screen. */
     const saveManual = async () => {
       const nm = name.trim();
       if (!nm || saving) return;
@@ -700,7 +701,7 @@
         onClose();
       } catch (e) {
         setSaving(false);
-        setSaveErr((e && e.message) || 'CurrencyDesk could not create that contact. Nothing was saved.');
+        setSaveErr((window.CDOS.deskSaveSentence && window.CDOS.deskSaveSentence(e)) || 'Couldn\'t save. Try again.');
       }
     };
     /* The choose step's button used to start a check, wait, and then write

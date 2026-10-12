@@ -1458,7 +1458,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           await api.create({ legalName: name, kind: kind === 'corporate' ? 'business' : 'individual' });
           await reload(true);
         } catch (e) {
-          setSaveErr((e && e.message) || 'CurrencyDesk could not create that contact. Nothing was saved.');
+          setSaveErr(deskSaveSentence(e));
           return;
         }
       } else {
@@ -1479,7 +1479,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       return (
         <>
           <window.CDOS.PhoneClients rows={rows} clients={clients} canEdit={canEdit} store={store} reload={reload} saveErr={saveErr} onOpen={(name) => { setQuick(null); setHighlightTx(null); setProfile(name); }} onRecordId={(name) => setRecordId(name)} onAdd={() => setAdding(true)} />
-          {recordId && <RecordIdSheet name={recordId} rec={clients[recordId] || null} setClients={setClients} log={log} onClose={() => setRecordId(null)} onDone={async () => { setRecordId(null); try { await reload(true); } catch (e) { setSaveErr((e && e.message) || 'CurrencyDesk could not refresh the client list.'); } }} />}
+          {recordId && <RecordIdSheet name={recordId} rec={clients[recordId] || null} setClients={setClients} log={log} onClose={() => setRecordId(null)} onDone={async () => { setRecordId(null); try { await reload(true); } catch (e) { setSaveErr(deskSaveSentence(e)); } }} />}
           {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} reload={reload} /></Portal>}
           {adding && (window.CDOS.KYC && window.CDOS.KYC.NewContactFlow
             ? <window.CDOS.KYC.NewContactFlow by={me && me.name} setClients={setClients} onClose={() => setAdding(false)} onDone={async (n) => { setAdding(false); try { await reload(true); } catch (e) { setSaveErr((e && e.message) || 'CurrencyDesk could not refresh the client list.'); } setProfile(n); }} />
@@ -1651,7 +1651,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           setPhase('edit');
         } catch (e) {
           if (!live) return;
-          setErr((e && e.message) || 'CurrencyDesk could not open this customer.');
+          setErr(deskSaveSentence(e));
           setPhase('error');
         }
       })();
@@ -1702,7 +1702,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         log && log('ID document recorded', name + ' · ' + payload.idType);
         onDone();
       } catch (e) {
-        setErr((e && e.message) || 'CurrencyDesk could not save that ID. Nothing was saved.');
+        setErr(deskSaveSentence(e));
         setLeaving(false);
       }
     };
@@ -1712,7 +1712,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         <div className="phone-task cd-tx-record fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }} onMouseDown={onClose}>
           <div role="dialog" aria-label={"Record the ID for " + name} onMouseDown={e => e.stopPropagation()} className="phone-task-sheet cd-tx-record-card w-full flex flex-col" style={{ maxWidth: 520, maxHeight: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
             <div className="flex items-center gap-3 px-5 py-4 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
-              <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 10 }}><Ic n="id" s={18} c="var(--cd-on-ink)" /></span>
+              <span className="phone-id-mark grid place-items-center flex-none" style={{ width: 38, height: 38, background: '#3C3B78', borderRadius: 10 }}><Ic n="id" s={18} c="#fff" /></span>
               <div className="flex-1 min-w-0">
                 <div className="text-[15px] font-semibold leading-tight truncate" style={{ color: CD.ink }}>Record the ID for {name}</div>
                 <div className="cd-tx-record-sub min-w-0" style={{ color: CD.mute }}>
@@ -1733,7 +1733,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <div className="phone-task-foot flex items-center gap-2 px-5 py-3.5 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
               <button type="button" onClick={onClose} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute, minHeight: 44 }}>Back to client</button>
               <div className="flex-1" />
-              <button type="button" onClick={save} disabled={!ready || leaving || phase !== 'edit'} className="phone-task-go px-4 py-2.5 text-sm font-semibold" style={{ background: (ready && !leaving && phase === 'edit') ? CD.ink : CD.lineSoft, color: (ready && !leaving && phase === 'edit') ? 'var(--cd-on-ink)' : CD.faint, borderRadius: 9, minHeight: 44 }}>{leaving ? 'Saving…' : 'Save and return'}</button>
+              <button type="button" onClick={save} disabled={!ready || leaving || phase !== 'edit'} className="phone-task-go px-4 py-2.5 text-sm font-semibold" style={{ background: (ready && !leaving && phase === 'edit') ? '#3C3B78' : CD.lineSoft, color: (ready && !leaving && phase === 'edit') ? '#fff' : CD.faint, borderRadius: 9, minHeight: 44 }}>{leaving ? 'Saving…' : 'Save and return'}</button>
             </div>
           </div>
         </div>
@@ -1752,5 +1752,32 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      cdos-kyc.jsx, which can run from screens that never mount this
      one. `RecordIdSheet` is that same identity editor, opened from a
      deal that needs a document on the server. */
-  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan, RecordIdSheet });
+  /* A cashier sees a desk sentence. The server's validation text, a
+     database error, and a stack trace stay off the screen. */
+  const DESK_OWN_SENTENCE = {
+    "CurrencyDesk could not reach the server. Nothing was saved.": true,
+    "Couldn't load clients. Nothing was saved.": true,
+    "CurrencyDesk could not open a file for this customer.": true,
+    "CurrencyDesk could not create that contact. Nothing was saved.": true,
+    "CurrencyDesk could not open this customer.": true,
+    "CurrencyDesk could not save that ID. Nothing was saved.": true,
+    "CurrencyDesk could not refresh the client list.": true,
+    "CurrencyDesk could not reach the ledger server. Nothing was posted.": true,
+    "Type, number, and expiry are required.": true,
+    "More than one customer has this name. Open their file and record the ID there.": true,
+  };
+  function deskSaveSentence(err) {
+    const status = (err && Number(err.status)) || 0;
+    const code = err && err.code ? String(err.code) : "";
+    const raw = err && err.message ? String(err.message) : "";
+    if (status === 401 || code === "AUTHENTICATION_REQUIRED") return "You've been signed out. Sign in again.";
+    if (status >= 500 || code === "INTERNAL_ERROR") return "Couldn't save. Try again.";
+    if (/legalName/i.test(raw) && /\b300\b/.test(raw)) return "Name is too long. Keep it under 300 characters.";
+    if (DESK_OWN_SENTENCE[raw]) return raw;
+    if (/duplicate key|syntax error|postgres|relation ["']|at \w+\s*\(/i.test(raw)) return "Couldn't save. Try again.";
+    if (status >= 400 || /String must contain|Expected |Invalid |Unrecognized key/i.test(raw)) return "Couldn't save. Check the form and try again.";
+    return "Couldn't save. Try again.";
+  }
+
+  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan, RecordIdSheet, deskSaveSentence });
 })();

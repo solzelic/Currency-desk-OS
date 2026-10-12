@@ -235,18 +235,24 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   keep their words and drop the counts. Add client and Record ID stay
   disabled unless that load succeeded and the browser is online. A
   save goes to the server first and is written locally only after
-  the server accepts it; the server's own error is shown. If this
-  phone is showing the copy it already held, the list stays and a
-  line above it says "Showing the copy on this phone. It may be out
-  of date." After 20 seconds still loading, the screen says "Waking
-  the server up, this can take a minute." Add client opens the
-  existing add flow full screen. Skip, add ID later is a 44px
-  secondary button. The empty-state button uses accent #3C3B78.
-  Wider than 430px, Clients is the desktop list it already was,
-  including New contact. Desktop still leaves New contact enabled
-  when the list did not load; the phone does not. A new contact from
-  the shared wizard still waits for the server before it writes the
-  browser copy.
+  the server accepts it. The cashier never sees the server's raw
+  text. A name over 300 characters says "Name is too long. Keep it
+  under 300 characters." A server fault says "Couldn't save. Try
+  again." A signed-out session says "You've been signed out. Sign
+  in again." If this phone is showing the copy it already held, the
+  list stays and a line above it says "Showing the copy on this
+  phone. It may be out of date." If the list loaded and the browser
+  then goes offline, the list stays and the line says "Offline.
+  Showing the last loaded list." After 20 seconds still loading,
+  the screen says "Waking the server up, this can take a minute."
+  Add client opens the existing add flow full screen. Skip, add ID
+  later is a 44px secondary button. The empty state sits in a card,
+  and its button uses accent #3C3B78. Record ID's icon and Save use
+  the same accent. Wider than 430px, Clients is the desktop list.
+  That shared editor no longer offers Health Card, and a new
+  contact or an ID still waits for the server before this browser
+  keeps a copy. Desktop still leaves New contact enabled when the
+  list did not load; the phone does not.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -619,6 +625,17 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, phone Clients save sentences. Add client and Record
+ID never show the server's raw text. A name over 300 characters
+says "Name is too long. Keep it under 300 characters." A server
+fault says "Couldn't save. Try again." A signed-out session says
+"You've been signed out. Sign in again." A list that loaded and
+then went offline stays up and says "Offline. Showing the last
+loaded list." The empty state sits in a card. Record ID's icon and
+Save use #3C3B78. The shared editor, including the desktop list,
+no longer offers Health Card, and a save still waits for the server
+before this browser keeps a copy.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the

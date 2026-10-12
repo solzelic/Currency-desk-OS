@@ -298,6 +298,10 @@
     ];
 
     const showingLocal = loadFailed && people.length > 0;
+    const wentOffline = mode === "server" && !online;
+    const blockedReason = wentOffline
+      ? "Offline. Showing the last loaded list."
+      : "Couldn't load clients. Try again before adding someone.";
 
     let state = "list";
     if (loading) state = "loading";
@@ -314,7 +318,7 @@
     const addClient = () => { if (canWrite) onAdd(); };
     const recordId = (name) => { if (canWrite && typeof onRecordId === "function") onRecordId(name); };
     const sticky = canEdit && state !== "empty"
-      ? <Phone.StickyAction label="Add client" onClick={addClient} disabled={!canWrite} disabledReason={!canWrite ? "Couldn't load clients. Try again before adding someone." : ""} />
+      ? <Phone.StickyAction label="Add client" onClick={addClient} disabled={!canWrite} disabledReason={!canWrite ? blockedReason : ""} />
       : null;
 
     return (
@@ -350,12 +354,17 @@
           </div>
         )}
         {state === "empty" && (
-          <Phone.EmptyState
-            title="No clients yet"
-            message="Add a client the first time they deal with you. Their ID stays on their file for next time."
-            actionLabel={canEdit && canWrite ? "Add client" : undefined}
-            onAction={canEdit && canWrite ? addClient : undefined}
-          />
+          <div className="phone-state-card">
+            <Phone.EmptyState
+              title="No clients yet"
+              message="Add a client the first time they deal with you. Their ID stays on their file for next time."
+              actionLabel={canEdit && canWrite ? "Add client" : undefined}
+              onAction={canEdit && canWrite ? addClient : undefined}
+            />
+          </div>
+        )}
+        {wentOffline && (
+          <p className="phone-stale" role="status">Offline. Showing the last loaded list.</p>
         )}
         {showingLocal && (
           <p className="phone-stale" role="status">Showing the copy on this phone. It may be out of date.</p>
