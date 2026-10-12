@@ -13218,17 +13218,55 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   };
   const SHIFT_KEY = 'cdos_till_operator_v1',
     HANDOFF_KEY = 'cdos_till_handoffs_v1';
-  const shiftStamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  /* A time on this drawer is 12-hour, with no leading zero and AM/PM in
+     capitals. en-CA's hour12 clock is "06:09 a.m.", which is not that.
+     A date beside a time is "Oct 12, 12:24 PM". Both are built from the
+     parts so the space and the day period do not depend on the locale's
+     own punctuation. */
+  const deskParts = (ms, options) => {
+    const date = new Date(ms);
+    if (Number.isNaN(date.getTime())) return null;
+    return new Intl.DateTimeFormat('en-US', options).formatToParts(date);
+  };
+  const deskPick = (parts, type) => (parts.find(part => part.type === type) || {}).value || '';
+  const deskTime = ms => {
+    const parts = deskParts(ms, {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    if (!parts) return '';
+    return deskPick(parts, 'hour') + ':' + deskPick(parts, 'minute') + ' ' + deskPick(parts, 'dayPeriod');
+  };
+  const deskStamp = ms => {
+    const parts = deskParts(ms, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    if (!parts) return '';
+    return deskPick(parts, 'month') + ' ' + deskPick(parts, 'day') + ', ' + deskPick(parts, 'hour') + ':' + deskPick(parts, 'minute') + ' ' + deskPick(parts, 'dayPeriod');
+  };
+  const shiftStamp = () => deskStamp(Date.now());
+  /* The close panel is headed with the session's trading day, not a
+     counter kept in the browser. Noon UTC keeps the calendar date. */
+  const closeDayLabel = iso => {
+    const day = String(iso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return 'Close the day';
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    }).formatToParts(new Date(day + 'T12:00:00Z'));
+    return 'Close the day, ' + deskPick(parts, 'weekday') + ' ' + deskPick(parts, 'month') + ' ' + deskPick(parts, 'day');
+  };
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = id => String(id || '').split(':').pop() || '—';
-  const clockOf = ms => ms ? new Date(ms).toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }) : '';
+  const clockOf = ms => ms ? deskTime(ms) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
       `seedHistory()` stood here. On first open of the Cash Drawer it wrote
@@ -14140,9 +14178,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        people over the same cash. When the ledger has no open session for this
        till there is no operator to name, and the strip says so rather than
        falling back to a roster. */
+    const roleOf = actorId => {
+      const id = personOf(actorId);
+      const match = roster.find(s => s.staffId === id || s.code === id || s.name === id);
+      if (match && match.role) return match.role;
+      if (me && me.role && (me.name === id || me.code === id)) return me.role;
+      return '';
+    };
     const serverShift = serverBacked && serverSession && serverSession.status === 'open' ? {
       operator: personOf(serverSession.openedBy),
-      role: '',
+      role: roleOf(serverSession.openedBy),
       since: new Date(serverSession.openedAt).getTime()
     } : null;
     const current = serverBacked ? serverShift : shifts[tillId];
@@ -14278,11 +14323,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const d = Math.floor(h / 24);
       return `${d} day${d > 1 ? 's' : ''} ago`;
     };
-    const atLabel = ts => ts ? new Date(ts).toLocaleTimeString('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }) : null;
+    const atLabel = ts => ts ? deskTime(ts) : null;
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
@@ -14371,9 +14412,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         byCcy,
         grand: grandLocal == null ? null : Math.round(grandLocal),
         currency: homeCcy || null,
-        at: new Date().toLocaleString('en-CA', {
-          hour12: false
-        }).replace(',', ''),
+        at: deskStamp(now),
         by: me.name,
         denoms: JSON.parse(JSON.stringify(counts))
       };
@@ -15080,7 +15119,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0 leading-tight"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px]",
+      className: "till-operator text-[12.5px]",
       style: {
         color: CD.ink
       }
@@ -15494,9 +15533,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: '#3a7a56'
       }
-    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? new Date(serverSession.closedAt).toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '') : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
+    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? deskStamp(serverSession.closedAt) : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -15653,12 +15690,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Reconcile & close \u2014 Day ", day && day.num || 1), /*#__PURE__*/React.createElement("div", {
+    }, closeDayLabel(serverSession && serverSession.businessDate || window.CDOS.businessDate())), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
       }
-    }, serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals", " \xB7 counted is your physical count \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("span", {
+    }, "Count the cash in the drawer. Expected is what the book says should be there \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("span", {
       className: "text-[11px] px-2.5 py-1",
       style: {
         background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)',
@@ -15686,7 +15723,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Currency"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, /*#__PURE__*/React.createElement("span", {
-      title: serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault — not editable here',
+      title: serverBacked ? 'What the book says should be in the drawer' : 'Issued by the vault — not editable here',
       className: "inline-flex items-center gap-1"
     }, serverBacked ? 'Source' : 'Opening · vault', " ", /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
@@ -15718,12 +15755,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, flagOf(r.c)), " ", r.c), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
-        title: serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing',
+        title: serverBacked ? 'What the book says should be in the drawer' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing',
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: serverBacked ? CD.green : CD.mute
         }
-      }, serverBacked ? 'Server ledger' : '—'), /*#__PURE__*/React.createElement("td", {
+      }, serverBacked ? 'The book' : '—'), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',

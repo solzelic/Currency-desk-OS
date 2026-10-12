@@ -21,6 +21,30 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no 
 
 const OPENING = { CAD: "25000.00", USD: "12000.00" };
 
+function deskPick(parts: Intl.DateTimeFormatPart[], type: string) {
+  return parts.find((part) => part.type === type)?.value ?? "";
+}
+
+/* Same parts the drawer uses. A locale's own punctuation is "06:09 a.m." */
+function deskTime(at: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(new Date(at));
+  return `${deskPick(parts, "hour")}:${deskPick(parts, "minute")} ${deskPick(parts, "dayPeriod")}`;
+}
+
+function closeDayHeading(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).formatToParts(new Date(`${iso.slice(0, 10)}T12:00:00Z`));
+  return `Close the day, ${deskPick(parts, "weekday")} ${deskPick(parts, "month")} ${deskPick(parts, "day")}`;
+}
+
 /** Read what the Cash Drawer is telling the teller it holds, in CAD. */
 async function drawerChip(page: Page) {
   const body = await page.locator("body").innerText();
@@ -110,6 +134,23 @@ test("the desk opens a till session, and the ledger is the one that says so", as
   const balances = await book.till();
   expect(Number(balances.CAD)).toBe(25000);
   expect(await drawerChip(page)).toBeGreaterThan(0);
+
+  /* The close panel is headed with the session's trading day, and the
+     session line prints the open time as 6:09 AM, not 06:09 a.m. */
+  await clickDrawerTab(page, /Reconcile & close/i);
+  const heading = closeDayHeading(session.businessDate);
+  await expect(page.getByText(heading, { exact: true })).toBeVisible();
+  await expect(page.getByText(/Reconcile & close — Day/)).toHaveCount(0);
+  await expect(page.getByText(/authoritative server till balance/i)).toHaveCount(0);
+  await expect(page.getByText(/Count the cash in the drawer/)).toBeVisible();
+
+  const sessionLine = await page.locator(".till-sessionline").innerText();
+  const opened = deskTime(session.openedAt);
+  expect(sessionLine).toContain(opened);
+  expect(sessionLine).not.toMatch(/a\.m\.|p\.m\./);
+  expect(opened).toMatch(/^[1-9]\d?:\d{2} (AM|PM)$/);
+
+  await expect(page.locator(".till-operator")).toContainText("Senior teller");
 });
 
 test("a float moves the vault and the till together, or not at all", async ({ page }) => {

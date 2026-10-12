@@ -603,6 +603,11 @@ posted after UTC midnight still sits inside a Toronto trading day.
 open till session's business date in the branch time zone, and the
 figures are the ledger totals for the window that session returns.
 A desk still open after midnight stays on the date it opened on.
+The close panel is headed "Close the day" and that calendar date
+(Mon Oct 12), and its subtitle says to count the cash. The drawer
+bar names the role of the person on the till. A time on that screen
+is 12-hour with no leading zero (6:09 AM). A date with a time is
+Oct 12, 6:09 AM.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

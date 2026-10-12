@@ -57,11 +57,40 @@
     try { localStorage.removeItem(COUNT_MARK); } catch (e) {}
   };
   const SHIFT_KEY = 'cdos_till_operator_v1', HANDOFF_KEY = 'cdos_till_handoffs_v1';
-  const shiftStamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  /* A time on this drawer is 12-hour, with no leading zero and AM/PM in
+     capitals. en-CA's hour12 clock is "06:09 a.m.", which is not that.
+     A date beside a time is "Oct 12, 12:24 PM". Both are built from the
+     parts so the space and the day period do not depend on the locale's
+     own punctuation. */
+  const deskParts = (ms, options) => {
+    const date = new Date(ms);
+    if (Number.isNaN(date.getTime())) return null;
+    return new Intl.DateTimeFormat('en-US', options).formatToParts(date);
+  };
+  const deskPick = (parts, type) => (parts.find(part => part.type === type) || {}).value || '';
+  const deskTime = (ms) => {
+    const parts = deskParts(ms, { hour: 'numeric', minute: '2-digit', hour12: true });
+    if (!parts) return '';
+    return deskPick(parts, 'hour') + ':' + deskPick(parts, 'minute') + ' ' + deskPick(parts, 'dayPeriod');
+  };
+  const deskStamp = (ms) => {
+    const parts = deskParts(ms, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+    if (!parts) return '';
+    return deskPick(parts, 'month') + ' ' + deskPick(parts, 'day') + ', ' + deskPick(parts, 'hour') + ':' + deskPick(parts, 'minute') + ' ' + deskPick(parts, 'dayPeriod');
+  };
+  const shiftStamp = () => deskStamp(Date.now());
+  /* The close panel is headed with the session's trading day, not a
+     counter kept in the browser. Noon UTC keeps the calendar date. */
+  const closeDayLabel = (iso) => {
+    const day = String(iso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return 'Close the day';
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).formatToParts(new Date(day + 'T12:00:00Z'));
+    return 'Close the day, ' + deskPick(parts, 'weekday') + ' ' + deskPick(parts, 'month') + ' ' + deskPick(parts, 'day');
+  };
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = (id) => String(id || '').split(':').pop() || '—';
-  const clockOf = (ms) => ms ? new Date(ms).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+  const clockOf = (ms) => ms ? deskTime(ms) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
 
@@ -540,8 +569,15 @@
        people over the same cash. When the ledger has no open session for this
        till there is no operator to name, and the strip says so rather than
        falling back to a roster. */
+    const roleOf = (actorId) => {
+      const id = personOf(actorId);
+      const match = roster.find(s => s.staffId === id || s.code === id || s.name === id);
+      if (match && match.role) return match.role;
+      if (me && me.role && (me.name === id || me.code === id)) return me.role;
+      return '';
+    };
     const serverShift = serverBacked && serverSession && serverSession.status === 'open'
-      ? { operator: personOf(serverSession.openedBy), role: '', since: new Date(serverSession.openedAt).getTime() }
+      ? { operator: personOf(serverSession.openedBy), role: roleOf(serverSession.openedBy), since: new Date(serverSession.openedAt).getTime() }
       : null;
     const current = serverBacked ? serverShift : shifts[tillId];
     // seed the operator for this till on first view — from the till's assigned
@@ -593,7 +629,7 @@
     const setCount = (c, idx, val) => { setCounts(o => ({ ...o, [c]: { ...(o[c] || {}), [idx]: val } })); stampCount(c); };
     // relative + absolute labels for "last counted"
     const sinceLabel = (ts) => { if (!ts) return null; const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); if (s < 45) return 'just now'; const m = Math.round(s / 60); if (m < 60) return `${m} min ago`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m ago`; const d = Math.floor(h / 24); return `${d} day${d > 1 ? 's' : ''} ago`; };
-    const atLabel = (ts) => ts ? new Date(ts).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
+    const atLabel = (ts) => ts ? deskTime(ts) : null;
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = (c) => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = (c) => ccyMode(c) === 'total' ? (parseFloat(quick[c]) || 0) : denTotal(c);
@@ -650,7 +686,7 @@
          session's business date, and filing it under the calendar date is
          how a drawer's history came to show two rows for one count. */
       const bookDate = (serverSession && serverSession.businessDate) || window.CDOS.businessDate();
-      const snap = { byCcy, grand: grandLocal == null ? null : Math.round(grandLocal), currency: homeCcy || null, at: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), by: me.name, denoms: JSON.parse(JSON.stringify(counts)) };
+      const snap = { byCcy, grand: grandLocal == null ? null : Math.round(grandLocal), currency: homeCcy || null, at: deskStamp(now), by: me.name, denoms: JSON.parse(JSON.stringify(counts)) };
       setHistory(h => { const n = { ...h, [bookDate]: snap }; try { localStorage.setItem(HKEY, JSON.stringify(n)); } catch (e) {} return n; });
       // remember each currency's saved count — the reconcile table shows this as
       // "last count": the amount that was on record, when, and by whom
@@ -1009,7 +1045,7 @@
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
           <div className="min-w-0 leading-tight">
-            <div className="text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: CD.mute }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[11px]" style={{ color: CD.faint }}> · {current.role}</span> : null}</div>
+            <div className="till-operator text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: CD.mute }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[11px]" style={{ color: CD.faint }}> · {current.role}</span> : null}</div>
             <div className="text-[10.5px]" style={{ color: CD.faint }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : (serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned')}{requireCount ? ' · count required at handoff' : ''}</div>
           </div>
         </div>
@@ -1115,7 +1151,7 @@
             <span className="grid place-items-center flex-none" style={{ width: 40, height: 40, background: CD.green, borderRadius: 11 }}><Ic n="checkcircle" s={21} c="var(--cd-on-ink)" /></span>
             <div className="flex-1">
               <div className="text-[15px] font-semibold" style={{ color: '#1c5c3a' }}>{serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`} closed — nicely done</div>
-              <div className="text-[12px] mt-0.5" style={{ color: '#3a7a56' }}>Closed by {(serverBacked && serverSession && serverSession.closedBy) ? personOf(serverSession.closedBy) : (day.closedBy || '—')} · {(serverBacked && serverSession && serverSession.closedAt) ? new Date(serverSession.closedAt).toLocaleString('en-CA', { hour12: false }).replace(',', '') : (day.closedAt || '')}{(serverBacked && serverSession) ? ` · trading day ${serverSession.businessDate}` : ''}. {serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.'}</div>
+              <div className="text-[12px] mt-0.5" style={{ color: '#3a7a56' }}>Closed by {(serverBacked && serverSession && serverSession.closedBy) ? personOf(serverSession.closedBy) : (day.closedBy || '—')} · {(serverBacked && serverSession && serverSession.closedAt) ? deskStamp(serverSession.closedAt) : (day.closedAt || '')}{(serverBacked && serverSession) ? ` · trading day ${serverSession.businessDate}` : ''}. {serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.'}</div>
             </div>
             {/* EARNED TODAY, FROM THE BOOK — and absent when the book has no
                 answer. This tile read "$223.00" for a till whose only deal
@@ -1158,14 +1194,14 @@
           </div>
         </div>) : (<div data-tour="till-reconcile" className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>{serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals"} · counted is your physical count · {countedN} of {recon.length} counted</div></div>
+            <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>{closeDayLabel((serverSession && serverSession.businessDate) || window.CDOS.businessDate())}</div><div className="text-[11px]" style={{ color: CD.mute }}>Count the cash in the drawer. Expected is what the book says should be there · {countedN} of {recon.length} counted</div></div>
             <span className="text-[11px] px-2.5 py-1" style={{ background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)', color: countedN === recon.length ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>
           </div>
           <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10 }}>
-            <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title={serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault — not editable here'} className="inline-flex items-center gap-1">{serverBacked ? 'Source' : 'Opening · vault'} <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
+            <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title={serverBacked ? 'What the book says should be in the drawer' : 'Issued by the vault — not editable here'} className="inline-flex items-center gap-1">{serverBacked ? 'Source' : 'Opening · vault'} <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
               <tbody>{recon.map(r => { const ls = lastSaved[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
-                <td className="px-3 py-2 text-right" title={serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing'} style={{ fontVariantNumeric: 'tabular-nums', color: serverBacked ? CD.green : CD.mute }}>{serverBacked ? 'Server ledger' : '—'}</td>
+                <td className="px-3 py-2 text-right" title={serverBacked ? 'What the book says should be in the drawer' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing'} style={{ fontVariantNumeric: 'tabular-nums', color: serverBacked ? CD.green : CD.mute }}>{serverBacked ? 'The book' : '—'}</td>
                 <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.expected == null ? CD.faint : CD.ink }}>{r.expected == null ? '—' : num(r.expected)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : '— never'}</td>
                 <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted)}</span>}</td>
