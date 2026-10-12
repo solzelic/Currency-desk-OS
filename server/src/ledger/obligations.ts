@@ -52,13 +52,16 @@
                  came back.
      reverse     the deal was mis-keyed and never should have existed.
                  Cash goes back over the counter, the obligation is
-                 struck out, and NOTHING touches the profit and loss.
+                 struck out, and the journal is mirrored. The fee
+                 credit is mirrored as a debit, so the fee is refunded
+                 and the deal's net profit is zero. Nothing new is
+                 written to a margin or expense account.
 
    A mistake that looks like a loss overstates the desk's credit losses
    and understates its margin; a loss that quietly restores drawer cash
-   is a drawer that does not exist. So `reverse` mirrors the movements
-   and touches no revenue account, and `writeOff` touches an expense
-   account and no till.
+   is a drawer that does not exist. So `reverse` mirrors every journal
+   line, fee included, and `writeOff` touches an expense account and no
+   till.
    ============================================================ */
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
@@ -87,6 +90,18 @@ import {
   type LedgerActor,
 } from "./service.js";
 
+/* Shown when a teller calls the reversal. The permission is unchanged:
+   transaction:reverse stays with supervisor, branch manager, and
+   administrator. The sentence is the one the desk says out loud. */
+export const TRANSFER_CANCEL_TELLER_MESSAGE =
+  "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
+export const TRANSFER_PAID_OUT_MESSAGE =
+  "This transfer was already paid out. It cannot be cancelled.";
+export const TRANSFER_TILL_CLOSED_MESSAGE =
+  "Open the till before cancelling a transfer.";
+export const TRANSFER_RECEIVE_MESSAGE =
+  "A received transfer can't be cancelled here. Ask a manager.";
+
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
 const scope = (actor: LedgerActor) => [
@@ -103,6 +118,47 @@ const entityScope = (actor: LedgerActor) => [
 ];
 const fixed = (value: Decimal, places = 2) =>
   value.toDecimalPlaces(places).toFixed(places);
+
+/* node-pg returns a DATE as local midnight. toISOString() is UTC and
+   can name the previous calendar day. The session stored a date, and
+   these fields are that date. */
+function sessionBusinessDate(value: unknown): string {
+  if (value instanceof Date) {
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${value.getFullYear()}-${month}-${day}`;
+  }
+  return String(value).slice(0, 10);
+}
+
+/* The shop's calendar day. en-CA prints YYYY-MM-DD. PR #128's
+   businessDate(at, timeZone) is not on main; this is the same fact
+   from branches.timezone. An unusable zone is not a day. */
+export function branchCalendarDate(at: Date, timeZone: string): string | null {
+  try {
+    const formatted = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(at);
+    return /^\d{4}-\d{2}-\d{2}$/.test(formatted) ? formatted : null;
+  } catch {
+    return null;
+  }
+}
+
+async function branchDay(client: pg.PoolClient, branchId: string, at: Date): Promise<string | null> {
+  try {
+    const found = await client.query("SELECT timezone FROM branches WHERE id=$1", [branchId]);
+    const zone = String(found.rows[0]?.timezone ?? "").trim();
+    if (!zone) return null;
+    return branchCalendarDate(at, zone);
+  } catch (error) {
+    if ((error as { code?: string }).code === "42P01") return null;
+    throw error;
+  }
+}
 
 /* Same shape as the one in service.ts and deliberately a separate copy:
    that one is closed over an exchange's own minimum of one cent on the
@@ -319,7 +375,39 @@ type DealSpec = {
   receiptLines: (context: { ref: string; customer: string; home: string }) => string[];
 };
 
+function viewObligation(row: Record<string, any>) {
+  return {
+    obligationId: row.obligation_id,
+    obligationRef: row.obligation_ref,
+    transactionId: row.transaction_id,
+    transactionRef: row.transaction_ref,
+    customerId: row.customer_id,
+    customerName: row.customer_name ?? null,
+    kind: row.kind,
+    dealKind: row.deal_kind,
+    direction: row.direction,
+    counterparty: row.counterparty,
+    reference: row.reference,
+    corridor: row.corridor,
+    faceCurrency: row.face_currency,
+    faceAmount: row.face_amount,
+    homeCurrency: row.home_currency,
+    carryingAmountHome: row.carrying_amount_home,
+    cashInHome: row.cash_in_home == null ? null : new Decimal(row.cash_in_home).toFixed(2),
+    cashOutHome: row.cash_out_home == null ? null : new Decimal(row.cash_out_home).toFixed(2),
+    paidOutAt: row.paid_out_at ? new Date(row.paid_out_at).toISOString() : null,
+    status: row.status,
+    settledAmountHome: row.settled_amount_home,
+    settledAt: row.settled_at ? new Date(row.settled_at).toISOString() : null,
+    openedAt: new Date(row.opened_at).toISOString(),
+  };
+}
+
 export class ObligationService {
+  /* The instant a reversal is posted. A test pins this to just after
+     midnight at the shop, when UTC is still the day before. */
+  postingClock: () => Date = () => new Date();
+
   constructor(private readonly pool: pg.Pool) {}
 
   /* ---- the four counter deals ---- */
@@ -1206,7 +1294,14 @@ export class ObligationService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "transaction:reverse");
+      try {
+        await authorizeLedgerActor(client, actor, "transaction:reverse");
+      } catch (error) {
+        if (error instanceof LedgerError && error.code === "AUTHORIZATION_DENIED") {
+          throw new LedgerError("AUTHORIZATION_DENIED", TRANSFER_CANCEL_TELLER_MESSAGE);
+        }
+        throw error;
+      }
       const replay = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='obligation-reverse' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), idempotencyKey],
@@ -1233,11 +1328,17 @@ export class ObligationService {
         [transactionId, ...scope(actor)],
       );
       if (!found.rowCount)
-        throw new LedgerError(
-          "TRANSACTION_NOT_FOUND",
-          "No obligation deal with that transaction is on this till's book.",
-        );
+        throw new LedgerError("TRANSACTION_NOT_FOUND", "That transfer is not on the ledger.");
       const obligation = found.rows[0];
+      /* A receive paid cash out. Taking it back is a different act, and
+         this screen does not do it. */
+      if (obligation.deal_kind === "remittance_receive")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_RECEIVE_MESSAGE);
+      /* Paid out, or settled with the partner: the beneficiary has the
+         money, or the desk has already funded it. Handing the cash back
+         would pay both sides. */
+      if (obligation.paid_out_at || obligation.status === "settled")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
       if (obligation.status !== "open")
         throw new LedgerError(
           "REVERSAL_NOT_ALLOWED",
@@ -1250,8 +1351,30 @@ export class ObligationService {
       if (already.rowCount)
         throw new LedgerError("REVERSAL_ALREADY_EXISTS", "Transaction already reversed.");
 
+      /* A closed session is not a place a reversal can land. The
+         signed-off day stays. The date on the reversal is the branch's
+         calendar day when branches.timezone is set. PR #128's
+         businessDate helper is not on main. A branch with no timezone
+         keeps the open session's stored business_date. UTC is not a
+         shop day: just after midnight in Sydney, UTC is still yesterday. */
+      const session = await client.query(
+        `SELECT session_id, business_date
+           FROM ledger_till_sessions
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5 AND status='open'
+          ORDER BY session_number DESC
+          LIMIT 1
+          FOR SHARE`,
+        scope(actor),
+      );
+      if (!session.rowCount)
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_TILL_CLOSED_MESSAGE);
+      const openSession = session.rows[0];
       const reversalId = `rv_${randomUUID()}`;
-      const now = new Date();
+      const now = this.postingClock();
+      const businessDate =
+        (await branchDay(client, actor.branchId, now)) ??
+        sessionBusinessDate(openSession.business_date);
       const movements = await client.query(
         "SELECT currency,direction,amount FROM ledger_till_movements WHERE transaction_id=$1 AND movement_kind='original' FOR UPDATE",
         [transactionId],
@@ -1267,7 +1390,7 @@ export class ObligationService {
         if (!updated.rowCount)
           throw new LedgerError(
             "REVERSAL_NOT_ALLOWED",
-            "Till cannot support this reversal.",
+            "The drawer does not have the cash to give back.",
           );
         await client.query(
           "INSERT INTO ledger_till_movements (transaction_id,reversal_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,$2,'reversal',$3,$4,$5,$6)",
@@ -1275,8 +1398,8 @@ export class ObligationService {
         );
       }
       await client.query(
-        "INSERT INTO ledger_reversals (reversal_id,transaction_id,actor_id,reason,posted_at) VALUES ($1,$2,$3,$4,$5)",
-        [reversalId, transactionId, actor.userId, reason.trim(), now],
+        "INSERT INTO ledger_reversals (reversal_id,transaction_id,actor_id,reason,posted_at,business_date,till_session_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        [reversalId, transactionId, actor.userId, reason.trim(), now, businessDate, openSession.session_id],
       );
       await client.query(
         "INSERT INTO ledger_reversal_entries (reversal_id,account_code,side,amount_cad,created_at) SELECT $1,account_code,CASE side WHEN 'debit' THEN 'credit' ELSE 'debit' END,amount_cad,$2 FROM ledger_journal_entries WHERE transaction_id=$3",
@@ -1305,9 +1428,81 @@ export class ObligationService {
         obligationId: obligation.obligation_id,
         obligationStatus: "reversed",
         postedAt: now.toISOString(),
+        businessDate,
+        tillSessionId: openSession.session_id,
       };
       await client.query(
         "UPDATE ledger_idempotency SET response=$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND operation='obligation-reverse' AND idempotency_key=$7",
+        [response, ...scope(actor), idempotencyKey],
+      );
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /* The partner paid the beneficiary. No cash moves. Cancel after this
+     is refused. A second call with the same key replays; a second call
+     with another key finds the timestamp already set and does not write
+     another one. */
+  markPaidOut(actor: LedgerActor, transactionId: string, idempotencyKey: string) {
+    return withSerializationRetry(() => this.markPaidOutOnce(actor, transactionId, idempotencyKey));
+  }
+
+  private async markPaidOutOnce(actor: LedgerActor, transactionId: string, idempotencyKey: string) {
+    if (!idempotencyKey?.trim())
+      throw new LedgerError("INVALID_REQUEST", "Idempotency key required.");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      await authorizeLedgerActor(client, actor, "transaction:post");
+      const replay = await client.query(
+        "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='obligation-paid-out' AND idempotency_key=$6 FOR UPDATE",
+        [...scope(actor), idempotencyKey],
+      );
+      if (replay.rowCount && replay.rows[0].response) {
+        await client.query("COMMIT");
+        return replay.rows[0].response;
+      }
+      if (!replay.rowCount) {
+        const claimed = await client.query(
+          "INSERT INTO ledger_idempotency (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key) VALUES ($1,$2,$3,$4,$5,'obligation-paid-out',$6) ON CONFLICT DO NOTHING",
+          [...scope(actor), idempotencyKey],
+        );
+        if (!claimed.rowCount)
+          throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Request is already in progress.");
+      }
+      const found = await client.query(
+        `SELECT obligation_id, status, paid_out_at FROM ledger_obligations
+          WHERE transaction_id=$1 AND tenant_id=$2 AND legal_entity_id=$3
+            AND branch_id=$4 AND workspace_id=$5 AND till_id=$6
+          FOR UPDATE`,
+        [transactionId, ...scope(actor)],
+      );
+      if (!found.rowCount)
+        throw new LedgerError("TRANSACTION_NOT_FOUND", "That transfer is not on the ledger.");
+      const obligation = found.rows[0];
+      if (obligation.status !== "open")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
+      const now = obligation.paid_out_at ? new Date(obligation.paid_out_at) : new Date();
+      if (!obligation.paid_out_at) {
+        await client.query(
+          "UPDATE ledger_obligations SET paid_out_at=$1, updated_at=$1 WHERE obligation_id=$2",
+          [now, obligation.obligation_id],
+        );
+        await this.audit(client, actor, "obligation.paid_out", transactionId, idempotencyKey, now, null);
+      }
+      const response = {
+        transactionId,
+        obligationId: obligation.obligation_id,
+        paidOutAt: now.toISOString(),
+      };
+      await client.query(
+        "UPDATE ledger_idempotency SET response=$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND operation='obligation-paid-out' AND idempotency_key=$7",
         [response, ...scope(actor), idempotencyKey],
       );
       await client.query("COMMIT");
@@ -1331,7 +1526,7 @@ export class ObligationService {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "ledger:view");
       const rows = await client.query(
-        `SELECT o.*, t.posted_at, t.transaction_ref, c.name AS customer_name
+        `SELECT o.*, t.posted_at, t.transaction_ref, t.deal_kind, t.cash_in_home, t.cash_out_home, c.name AS customer_name
            FROM ledger_obligations o
            JOIN ledger_transactions t ON t.transaction_id = o.transaction_id
            LEFT JOIN ledger_customers c ON c.customer_id = o.customer_id
@@ -1357,33 +1552,42 @@ export class ObligationService {
       for (const row of outstanding.rows)
         totals[row.direction as "payable" | "receivable"] = new Decimal(row.total).toFixed(2);
       return {
-        obligations: rows.rows.map((row) => ({
-          obligationId: row.obligation_id,
-          obligationRef: row.obligation_ref,
-          transactionId: row.transaction_id,
-          transactionRef: row.transaction_ref,
-          customerId: row.customer_id,
-          customerName: row.customer_name ?? null,
-          kind: row.kind,
-          direction: row.direction,
-          counterparty: row.counterparty,
-          reference: row.reference,
-          corridor: row.corridor,
-          faceCurrency: row.face_currency,
-          faceAmount: row.face_amount,
-          homeCurrency: row.home_currency,
-          carryingAmountHome: row.carrying_amount_home,
-          status: row.status,
-          settledAmountHome: row.settled_amount_home,
-          settledAt: row.settled_at ? new Date(row.settled_at).toISOString() : null,
-          openedAt: new Date(row.opened_at).toISOString(),
-        })),
+        obligations: rows.rows.map((row) => viewObligation(row)),
         /* Null, not zero, where the desk has nothing open on a side —
            the same rule every other read on this ledger follows. A desk
            that has never taken a remittance has no payable position, and
            "0.00" is a claim about a book nobody has written in. */
         outstanding: totals,
       };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /* One obligation, by the transaction that created it. The desk must
+     not pick a row out of the newest page of the list: a transfer older
+     than that page is still on the book. */
+  async read(actor: LedgerActor, transactionId: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "ledger:view");
+      const rows = await client.query(
+        `SELECT o.*, t.posted_at, t.transaction_ref, t.deal_kind, t.cash_in_home, t.cash_out_home, c.name AS customer_name
+           FROM ledger_obligations o
+           JOIN ledger_transactions t ON t.transaction_id = o.transaction_id
+           LEFT JOIN ledger_customers c ON c.customer_id = o.customer_id
+          WHERE o.transaction_id=$1 AND o.tenant_id=$2 AND o.legal_entity_id=$3
+            AND o.branch_id=$4`,
+        [transactionId, ...entityScope(actor)],
+      );
+      await client.query("COMMIT");
+      if (!rows.rowCount)
+        throw new LedgerError("TRANSACTION_NOT_FOUND", "That transfer is not on the ledger.");
+      return viewObligation(rows.rows[0]);
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

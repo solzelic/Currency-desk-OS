@@ -751,4 +751,243 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       ).statusCode,
     ).toBe(400);
   });
+
+  it("cancels a send once for a manager, refuses a teller, and refuses a paid-out transfer", async () => {
+    /* The book currency comes from the pack on the ledger's legal entity.
+       Another suite repoints York FX and leaves it, and a file that runs
+       alone has no entity row at all, so the baseline (USD) would take
+       the cash. Restate the seed contract before posting. */
+    await pool.query(
+      "INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT (id) DO NOTHING",
+      [DEMO.tenantId],
+    );
+    await pool.query(
+      `INSERT INTO legal_entities
+         (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+       VALUES ($1, $2, 'York Currency Exchange Inc.', 'FINTRAC', 'CAD', 'pack-ca-v1', 1)
+       ON CONFLICT (id) DO UPDATE
+         SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1`,
+      [DEMO.legalEntityId, DEMO.tenantId],
+    );
+    const tellerCookies = await cookie("a.singh");
+    const managerCookies = await cookie("r.haddad");
+    const send = {
+      idempotencyKey: "route-transfer-cancel",
+      customerId: "customer-demo",
+      reference: "TR-ROUTE-CANCEL",
+      principalAmount: "600.00",
+      feeAmount: "9.99",
+      payoutCurrency: "PHP",
+      payoutAmount: "20272.05",
+      corridor: "PH",
+      partner: "Cebuana Lhuillier",
+      beneficiaryName: "Maria Carter",
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    };
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookies,
+      payload: send,
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().homeCurrency).toBe("CAD");
+    const transactionId = created.json().transactionId as string;
+    const cad = async () =>
+      (
+        await pool.query(
+          "SELECT available_amount FROM ledger_till_balances WHERE till_id='till-01' AND currency='CAD'",
+        )
+      ).rows[0].available_amount as string;
+
+    expect(await cad()).toBe("25609.99");
+    const denied = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: tellerCookies,
+      payload: { idempotencyKey: `web:transfer-cancel:${transactionId}`, reason: "Cancelled at the counter" },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({
+      code: "AUTHORIZATION_DENIED",
+      message: "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.",
+    });
+    expect(await cad()).toBe("25609.99");
+
+    const key = `web:transfer-cancel:${transactionId}`;
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: key, reason: "Cancelled at the counter" },
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: key, reason: "Cancelled at the counter" },
+    });
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    expect(second.json().reversalId).toBe(first.json().reversalId);
+    expect(await cad()).toBe("25000.00");
+    expect((await pool.query("SELECT 1 FROM ledger_reversals")).rowCount).toBe(1);
+    expect(
+      (await pool.query("SELECT status FROM ledger_obligations WHERE transaction_id=$1", [transactionId]))
+        .rows[0].status,
+    ).toBe("reversed");
+    const again = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: `${key}:again`, reason: "Cancelled at the counter" },
+    });
+    expect(again.statusCode).toBe(422);
+    expect(again.json().code).toBe("REVERSAL_NOT_ALLOWED");
+    expect(String(again.json().message)).toContain("already reversed");
+    expect(await cad()).toBe("25000.00");
+
+    const paidSend = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookies,
+      payload: { ...send, idempotencyKey: "route-transfer-paid", reference: "TR-ROUTE-PAID" },
+    });
+    expect(paidSend.statusCode).toBe(201);
+    const paidId = paidSend.json().transactionId as string;
+    const payout = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${paidId}/payout`,
+      cookies: tellerCookies,
+      payload: { idempotencyKey: `web:transfer-paid:${paidId}` },
+    });
+    expect(payout.statusCode).toBe(201);
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${paidId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: `web:transfer-cancel:${paidId}`, reason: "Cancelled at the counter" },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: "This transfer was already paid out. It cannot be cancelled.",
+    });
+    const still = (
+      await pool.query("SELECT status, paid_out_at FROM ledger_obligations WHERE transaction_id=$1", [paidId])
+    ).rows[0];
+    expect(still.status).toBe("open");
+    expect(still.paid_out_at).toBeTruthy();
+    expect(await cad()).toBe("25609.99");
+  });
+
+  it("refuses a cancel on a closed till and on a receive, and reads one deal", async () => {
+    await pool.query(
+      "INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT (id) DO NOTHING",
+      [DEMO.tenantId],
+    );
+    await pool.query(
+      `INSERT INTO legal_entities
+         (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+       VALUES ($1, $2, 'York Currency Exchange Inc.', 'FINTRAC', 'CAD', 'pack-ca-v1', 1)
+       ON CONFLICT (id) DO UPDATE
+         SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1`,
+      [DEMO.legalEntityId, DEMO.tenantId],
+    );
+    const tellerCookies = await cookie("a.singh");
+    const managerCookies = await cookie("r.haddad");
+    const send = {
+      idempotencyKey: "route-closed-till",
+      customerId: "customer-demo",
+      reference: "TR-ROUTE-CLOSED",
+      principalAmount: "600.00",
+      feeAmount: "9.99",
+      payoutCurrency: "PHP",
+      payoutAmount: "20272.05",
+      corridor: "PH",
+      partner: "Cebuana Lhuillier",
+      beneficiaryName: "Maria Carter",
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    };
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookies,
+      payload: send,
+    });
+    expect(created.statusCode).toBe(201);
+    const transactionId = created.json().transactionId as string;
+    const one = await app.inject({
+      method: "GET",
+      url: `/api/ledger/obligation-deals/${transactionId}`,
+      cookies: tellerCookies,
+    });
+    expect(one.statusCode).toBe(200);
+    expect(one.json()).toMatchObject({
+      transactionId,
+      cashInHome: "609.99",
+      faceAmount: "20272.05",
+      status: "open",
+    });
+    const journal = (
+      await pool.query("SELECT coalesce(sum(amount_cad),0)::text AS total FROM ledger_journal_entries")
+    ).rows[0].total;
+    await pool.query(
+      "UPDATE ledger_till_sessions SET status='closed', closed_at=now(), closed_by=$1 WHERE session_id='session-1'",
+      [`${DEMO.tenantId}:r.haddad`],
+    );
+    const closed = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: `web:transfer-cancel:${transactionId}`, reason: "Cancelled at the counter" },
+    });
+    expect(closed.statusCode).toBe(422);
+    expect(closed.json()).toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: "Open the till before cancelling a transfer.",
+    });
+    expect(
+      (await pool.query("SELECT coalesce(sum(amount_cad),0)::text AS total FROM ledger_journal_entries")).rows[0].total,
+    ).toBe(journal);
+    expect((await pool.query("SELECT status FROM ledger_obligations WHERE transaction_id=$1", [transactionId])).rows[0].status).toBe("open");
+
+    await pool.query(
+      "UPDATE ledger_till_sessions SET status='open', closed_at=NULL, closed_by=NULL WHERE session_id='session-1'",
+    );
+    const received = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/receive",
+      cookies: tellerCookies,
+      payload: {
+        idempotencyKey: "route-receive-cancel",
+        customerId: "customer-demo",
+        reference: "TR-ROUTE-RECV",
+        sentCurrency: "PHP",
+        sentAmount: "16000.00",
+        payoutAmount: "400.00",
+        feeAmount: "5.00",
+        corridor: "PH",
+        partner: "Cebuana Lhuillier",
+        purpose: "Family support",
+        sourceOfFunds: "Family abroad",
+      },
+    });
+    expect(received.statusCode).toBe(201);
+    const receiveId = received.json().transactionId as string;
+    const receiveCancel = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${receiveId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: `web:transfer-cancel:${receiveId}`, reason: "Cancelled at the counter" },
+    });
+    expect(receiveCancel.statusCode).toBe(422);
+    expect(receiveCancel.json()).toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: "A received transfer can't be cancelled here. Ask a manager.",
+    });
+    expect((await pool.query("SELECT status FROM ledger_obligations WHERE transaction_id=$1", [receiveId])).rows[0].status).toBe("open");
+  });
 });

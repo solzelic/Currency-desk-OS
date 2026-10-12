@@ -72,6 +72,24 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Cancelling a transfer that took cash posts the ledger reversal.**
+  On the desktop, an owner, manager, or senior teller who cancels a
+  transfer that is on the book reverses it in the same action: the till
+  gives the cash back, the fee included, and the partner obligation is
+  reversed. The confirm sheet quotes the server's cash and face figures.
+  A cashier sees "Only a manager can cancel a transfer that took cash.
+  Ask a manager to cancel." and is not offered Cancel. A closed till
+  refuses the cancel. The reversal is dated to the branch's calendar
+  day when the branch has a timezone, so a cancel just after shop
+  midnight is that day and not the UTC day. A branch with no timezone
+  on file keeps the open session's stored business date. A signed-off
+  day stays. A receive is refused.
+  The sheet reads that one transaction. A transfer the partner has
+  already paid out is refused. The phone contract is
+  `docs/TRANSFER_CANCEL.md`. Before this, desktop Cancel only changed a
+  local status, so the cash stayed in the drawer and the partner stayed
+  owed.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -578,6 +596,19 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-12**, transfer cancel. Desktop Cancel of a cash transfer posts
+`POST /api/ledger/obligation-deals/:transactionId/reversal`. The confirm
+sheet quotes the stored `cashInHome` and `faceAmount`. The fee is
+refunded because that reversal mirrors `revenue:fee`. A cashier cannot
+post it and is told to ask a manager. A closed till refuses the
+cancel. A receive is refused. The sheet reads that one transaction,
+not the newest page of the list. `paid_out_at` (migration 042) makes a
+paid-out transfer refuse cancel. The reversal is dated to the branch's
+calendar day (`branches.timezone`). PR #128's `businessDate` helper is
+not on main. A branch with no timezone keeps the open session's stored
+business date. Phone files are unchanged; the contract is
+`docs/TRANSFER_CANCEL.md`.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

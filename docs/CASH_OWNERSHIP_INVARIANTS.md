@@ -150,7 +150,13 @@ coverage:
   and the browser keeps a cache, and the cheque IMAGE is deliberately
   still local while intake is dealt with separately. The other four are
   cash on one side and a promise on the other, and their promises live in
-  `ledger_obligations` — OBLIGATION_LINES.md.
+  `ledger_obligations` — OBLIGATION_LINES.md. Cancelling a transfer that
+  took cash is that obligation's reversal, posted in the same action.
+  A local "cancelled" status does not move the drawer. The confirm sheet
+  quotes `cashInHome` (or `cashOutHome`) and the face from
+  `GET /api/ledger/obligations`. The fee is refunded because the reversal
+  mirrors the fee line. A cashier cannot post it. See
+  `docs/TRANSFER_CANCEL.md`.
 - The Ledger's own New Transaction ticket had a cheque path of its own,
   which wrote a browser row and a local cheque record exactly as the
   Cheques desk used to — one act reaching the book through one door and

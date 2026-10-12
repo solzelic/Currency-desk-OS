@@ -113,6 +113,18 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Migration `040_till_balance_generation` keeps one generation per till
   and bumps it when that drawer's cash changes. A close names the
   generation it counted against. 039 is on main, so this file is 040.
+- Migration `042_transfer_paid_out` adds `ledger_obligations.paid_out_at`
+  and dates a transfer reversal (`ledger_reversals.business_date`,
+  `till_session_id`). Those tables are not in the Drizzle DDL. A
+  database that is already running gets the columns only when this
+  migration applies. Existing obligations stay unpaid (`paid_out_at`
+  null). Existing reversals keep a null date. 041 is claimed by open
+  drafts, and 040 is the last migration on main, so this file is 042.
+  The cancel date is the branch calendar day from `branches.timezone`.
+  PR #128's `businessDate(at, timeZone)` helper is not on main. A branch
+  with no timezone keeps the open session's stored `business_date`.
+  Boot applies this file. A copy of the live schema has not been used
+  to rehearse it. The cancel contract is `docs/TRANSFER_CANCEL.md`.
 
 ## Test commands
 

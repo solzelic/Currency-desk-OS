@@ -261,10 +261,10 @@ export class LedgerReportingService {
    * business date the desk itself is working under, and the desk turns
    * that into the window it asks for.
    *
-   * Reversed transactions are excluded from every total and counted
-   * separately. A void is not a deal that earned nothing; it is a deal
-   * that did not happen, and rolling it in as a zero would let a busy
-   * morning of mistakes read as a busy morning.
+   * A reversal takes its deal out of a window only when the reversal
+   * itself falls in that window. A void on the day it was posted is a
+   * deal that did not happen. A cancel posted on a later open session
+   * is that later day's event: the signed-off day's totals stay.
    */
   async summary(actor: LedgerActor, window: SummaryWindow) {
     const client = await this.pool.connect();
@@ -294,6 +294,8 @@ export class LedgerReportingService {
                        ELSE NULL END AS volume_home
              FROM ledger_transactions t
              LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+              AND ($7::timestamptz IS NULL OR r.posted_at >= $7)
+              AND ($8::timestamptz IS NULL OR r.posted_at <  $8)
             WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
               AND t.workspace_id=$4 AND t.till_id=$5
               AND r.reversal_id IS NULL
@@ -305,6 +307,8 @@ export class LedgerReportingService {
            (SELECT count(*)::int FROM live) AS posted,
            (SELECT count(*)::int FROM ledger_transactions t
               JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+               AND ($7::timestamptz IS NULL OR r.posted_at >= $7)
+               AND ($8::timestamptz IS NULL OR r.posted_at <  $8)
              WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
                AND t.workspace_id=$4 AND t.till_id=$5
                AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
@@ -358,6 +362,8 @@ export class LedgerReportingService {
                          ELSE NULL END) AS volume_home
            FROM ledger_transactions t
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+            AND ($7::timestamptz IS NULL OR r.posted_at >= $7)
+            AND ($8::timestamptz IS NULL OR r.posted_at <  $8)
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
             AND r.reversal_id IS NULL
@@ -383,6 +389,8 @@ export class LedgerReportingService {
                   WHERE t.realized_pnl_home IS NOT NULL)::int AS priced
            FROM ledger_transactions t
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+            AND ($7::timestamptz IS NULL OR r.posted_at >= $7)
+            AND ($8::timestamptz IS NULL OR r.posted_at <  $8)
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
             AND r.reversal_id IS NULL

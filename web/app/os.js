@@ -2583,8 +2583,19 @@
           body: JSON.stringify(payload),
         });
       },
+      loadObligationDeal: function (transactionId) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId));
+      },
       reverseObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/reversal", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
+      /* The partner paid the beneficiary. No cash moves. A later cancel
+         is refused. The key is stable per deal — see cdos-transfer-cancel.js. */
+      markTransferPaidOut: function (transactionId, payload) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/payout", {
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -36139,6 +36150,131 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   });
 })();
 
+/* ---- os-src/cdos-transfer-cancel.js ---- */
+/* Cancel a transfer that took cash. Phone PR #113 calls this.
+   The contract is docs/TRANSFER_CANCEL.md. */
+(function () {
+  "use strict";
+
+  var TELLER_MESSAGE = "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
+  var PAID_OUT_MESSAGE = "This transfer was already paid out. It cannot be cancelled.";
+  var RECEIVE_MESSAGE = "A received transfer can't be cancelled here. Ask a manager.";
+
+  /* OS names of the roles that already hold transaction:reverse.
+     Cashier and Trainee do not. This does not grant anything. */
+  var CAN_POST = { Owner: true, Manager: true, "Senior teller": true };
+
+  function placesOf(currency) {
+    var fn = window.CDOS && window.CDOS.currencyPlaces;
+    if (typeof fn !== "function") return 2;
+    return fn(currency) === 0 ? 0 : 2;
+  }
+
+  /* places is 0 for a currency such as JPY. Everything else on this
+     sheet is two decimals, which is what the ledger stored. */
+  function money(amount, places) {
+    var text = String(amount == null ? "" : amount).trim();
+    var match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
+    if (!match) throw new Error("The ledger did not return a cash figure.");
+    var digits = places === 0 ? 0 : 2;
+    var whole = match[2];
+    if (digits === 0) {
+      var frac = match[3] || "";
+      if (frac.charAt(0) >= "5") whole = String(Number(whole) + 1);
+      whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      return match[1] + whole;
+    }
+    var pennies = (match[3] || "00").slice(0, 2);
+    while (pennies.length < 2) pennies += "0";
+    whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return match[1] + whole + "." + pennies;
+  }
+
+  function positive(amount) {
+    var text = String(amount == null ? "" : amount).trim();
+    if (!/^\d+(\.\d+)?$/.test(text)) return false;
+    return Number(text) > 0;
+  }
+
+  /* What the confirm sheet is allowed to say. The figures are the
+     obligation row the server returned. This function does not add
+     the fee, and it does not price the corridor. */
+  function review(obligation) {
+    if (!obligation) {
+      return { kind: "missing", message: "This transfer is not on the ledger. Nothing was cancelled." };
+    }
+    if (obligation.paidOutAt || obligation.status === "settled") {
+      return { kind: "refused", message: PAID_OUT_MESSAGE };
+    }
+    if (obligation.status === "reversed") {
+      return { kind: "already", message: "This transfer is already cancelled." };
+    }
+    if (obligation.dealKind === "remittance_receive") {
+      return { kind: "refused", message: RECEIVE_MESSAGE };
+    }
+    if (obligation.status !== "open") {
+      return { kind: "refused", message: "This transfer cannot be cancelled." };
+    }
+    var inbound = positive(obligation.cashInHome);
+    var cash = inbound ? obligation.cashInHome : obligation.cashOutHome;
+    var home = money(cash, placesOf(obligation.homeCurrency)) + " " + obligation.homeCurrency;
+    var face = money(obligation.faceAmount, placesOf(obligation.faceCurrency)) + " " + obligation.faceCurrency;
+    var partner = obligation.counterparty;
+    var sentence = inbound
+      ? "This gives the customer back " + home + " from your drawer and cancels the " + face + " owed to " + partner + "."
+      : "This puts " + home + " back in your drawer and cancels the " + face + " " + partner + " owes this desk.";
+    return { kind: "confirm", sentence: sentence };
+  }
+
+  function idempotencyKey(transactionId) {
+    return "web:transfer-cancel:" + transactionId;
+  }
+
+  function paidOutKey(transactionId) {
+    return "web:transfer-paid:" + transactionId;
+  }
+
+  function postOnce(call) {
+    return call().catch(function (error) {
+      if (!error || error.code !== "IDEMPOTENCY_IN_PROGRESS") throw error;
+      return call();
+    });
+  }
+
+  function postCancel(transactionId) {
+    var backend = window.CDOS && window.CDOS.Backend;
+    if (!backend || typeof backend.reverseObligationDeal !== "function") {
+      return Promise.reject(new Error("The ledger client is not loaded. Nothing was cancelled."));
+    }
+    var payload = { idempotencyKey: idempotencyKey(transactionId), reason: "Cancelled at the counter" };
+    return postOnce(function () { return backend.reverseObligationDeal(transactionId, payload); });
+  }
+
+  function postPaidOut(transactionId) {
+    var backend = window.CDOS && window.CDOS.Backend;
+    if (!backend || typeof backend.markTransferPaidOut !== "function") {
+      return Promise.reject(new Error("The ledger client is not loaded. The payout was not recorded."));
+    }
+    var payload = { idempotencyKey: paidOutKey(transactionId) };
+    return postOnce(function () { return backend.markTransferPaidOut(transactionId, payload); });
+  }
+
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    transferCancel: {
+      TELLER_MESSAGE: TELLER_MESSAGE,
+      PAID_OUT_MESSAGE: PAID_OUT_MESSAGE,
+      RECEIVE_MESSAGE: RECEIVE_MESSAGE,
+      canPost: function (role) { return !!CAN_POST[role]; },
+      review: review,
+      idempotencyKey: idempotencyKey,
+      paidOutKey: paidOutKey,
+      postCancel: postCancel,
+      postPaidOut: postPaidOut,
+    },
+  });
+})();
+
+
 /* ---- os-src/cdos-transfers.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Transfers (remittance & wires)
@@ -36177,11 +36313,26 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     dealMargin,
     newTx,
     mkRef,
-    reportingLimit
+    reportingLimit,
+    currencyPlaces
   } = window.CDOS;
   const stamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
   }).replace(',', '');
+  function amountLine(amount, ccy) {
+    const places = typeof currencyPlaces === 'function' && currencyPlaces(ccy) === 0 ? 0 : 2;
+    const n = Number(amount);
+    if (!Number.isFinite(n)) return '—';
+    return n.toLocaleString('en-CA', {
+      minimumFractionDigits: places,
+      maximumFractionDigits: places
+    }) + ' ' + ccy;
+  }
   const flagOf = c => {
     try {
       return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || '';
@@ -37884,8 +38035,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     log,
     setTransfers,
     onClose,
-    onReceipt
+    onReceipt,
+    onTillChanged
   }) {
+    const [ask, setAsk] = useState(false);
+    const [sentence, setSentence] = useState('');
+    const [cancelError, setCancelError] = useState('');
+    const [busy, setBusy] = useState(false);
+    const Cancel = window.CDOS.transferCancel;
+    if (!Cancel) throw new Error("transferCancel is not loaded.");
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
     const dir = t.direction;
@@ -37894,7 +38052,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const idx = FLOW.indexOf(t.status);
     const nextKey = idx >= 0 && idx < FLOW.length - 1 ? FLOW[idx + 1] : null;
     const terminal = t.status === 'paid' || t.status === 'cancelled';
-    const advance = (to, note) => {
+    const canPost = Cancel.canPost(me.role);
+    const advance = async (to, note) => {
+      if (to === 'paid' && t.serverTransactionId) {
+        try {
+          await Cancel.postPaidOut(t.serverTransactionId);
+        } catch (error) {
+          setCancelError(error.message || 'The payout was not recorded. The transfer was not marked paid out.');
+          return;
+        }
+      }
       setTransfers(list => list.map(x => x.id === t.id ? {
         ...x,
         status: to,
@@ -37906,6 +38073,60 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }]
       } : x));
       log && log('Transfer ' + statusLabel(to, dir).toLowerCase(), `${t.ref} · ${cor.country || ''}`);
+    };
+    const openCancel = async () => {
+      setCancelError('');
+      setSentence('');
+      setAsk(true);
+      if (!t.serverTransactionId) {
+        setCancelError('This transfer is not on the ledger. Nothing was cancelled.');
+        return;
+      }
+      try {
+        const row = await window.CDOS.Backend.loadObligationDeal(t.serverTransactionId);
+        const review = Cancel.review(row);
+        if (review.kind === 'confirm') setSentence(review.sentence);else setCancelError(review.message);
+      } catch (error) {
+        setCancelError(error.message || 'The ledger could not be read. Nothing was cancelled.');
+      }
+    };
+    const confirmCancel = async () => {
+      if (busy || !sentence || !t.serverTransactionId) return;
+      setBusy(true);
+      setCancelError('');
+      try {
+        await Cancel.postCancel(t.serverTransactionId);
+        advance('cancelled', 'Cash returned and the obligation cancelled');
+        setAsk(false);
+        if (onTillChanged) {
+          try {
+            await onTillChanged();
+          } catch (refreshError) {
+            log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next till open');
+          }
+        }
+      } catch (error) {
+        setCancelError(error.message || 'The transfer was not cancelled.');
+        try {
+          const row = await window.CDOS.Backend.loadObligationDeal(t.serverTransactionId);
+          if (row && row.status === 'reversed') advance('cancelled', 'Already cancelled on the ledger');else if (row && (row.paidOutAt || row.status === 'settled')) {
+            setTransfers(list => list.map(x => x.id === t.id && x.status !== 'paid' ? {
+              ...x,
+              status: 'paid',
+              timeline: [...(x.timeline || []), {
+                status: 'paid',
+                ts: stamp(),
+                by: me.name,
+                note: 'Already paid out on the ledger'
+              }]
+            } : x));
+          }
+        } catch (readError) {
+          log && log('Ledger refresh failed', readError.message || 'The transfer status was not refreshed');
+        }
+      } finally {
+        setBusy(false);
+      }
     };
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex justify-end",
@@ -38009,7 +38230,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Customer pays' : 'Amount in',
-      v: `${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`,
+      v: amountLine(t.payAmt, dir === 'send' ? home : t.ccy),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Rate",
@@ -38017,11 +38238,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee",
-      v: fmt(t.fee, home),
+      v: amountLine(t.fee, home),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Beneficiary gets' : 'Customer gets',
-      v: `${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`,
+      v: amountLine(t.recvAmt, dir === 'send' ? t.ccy : home),
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
@@ -38141,8 +38362,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "alert",
       s: 15,
       c: CD.amber
-    }), " Hold"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => advance('cancelled', 'Cancelled by teller'),
+    }), " Hold"), canPost ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-transfer-cancel": "open",
+      onClick: openCancel,
       className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
       style: {
         border: `1px solid ${CD.flagSoft}`,
@@ -38154,7 +38377,102 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "ban",
       s: 15,
       c: CD.flag
-    }), " Cancel")), /*#__PURE__*/React.createElement("div", {
+    }), " Cancel") : /*#__PURE__*/React.createElement("p", {
+      "data-transfer-cancel": "teller",
+      role: "status",
+      className: "w-full text-[13px] px-3 py-2",
+      style: {
+        display: 'block',
+        boxSizing: 'border-box',
+        flex: '1 1 100%',
+        background: CD.lineSoft,
+        color: CD.ink,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9,
+        minWidth: 0,
+        maxWidth: '100%',
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word',
+        whiteSpace: 'normal'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "info",
+      s: 15,
+      c: CD.ink
+    }), " ", Cancel.TELLER_MESSAGE)), cancelError && !ask && /*#__PURE__*/React.createElement("p", {
+      role: "alert",
+      className: "text-[13px]",
+      style: {
+        color: CD.flag
+      }
+    }, cancelError), ask && /*#__PURE__*/React.createElement("div", {
+      "data-transfer-cancel": "confirm",
+      role: "alertdialog",
+      "aria-label": "Cancel this transfer?",
+      className: "fixed inset-0 flex items-center justify-center p-4",
+      style: {
+        background: 'var(--cd-scrim)',
+        zIndex: 9400
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "w-full",
+      style: {
+        maxWidth: 440,
+        background: CD.paper,
+        border: `1px solid ${CD.ink}`,
+        borderRadius: 14,
+        padding: 20,
+        boxShadow: '0 24px 60px var(--cd-scrim)'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "font-semibold text-lg",
+      style: {
+        color: CD.ink
+      }
+    }, "Cancel this transfer?"), sentence && !cancelError && /*#__PURE__*/React.createElement("p", {
+      "data-transfer-cancel": "effect",
+      className: "text-sm mt-3",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.5
+      }
+    }, sentence), !sentence && !cancelError && /*#__PURE__*/React.createElement("p", {
+      className: "text-sm mt-3",
+      style: {
+        color: CD.mute
+      }
+    }, "Reading the ledger\u2026"), cancelError && /*#__PURE__*/React.createElement("p", {
+      role: "alert",
+      className: "text-sm mt-3",
+      style: {
+        color: CD.flag
+      }
+    }, cancelError), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-col gap-2 mt-4"
+    }, sentence && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: busy,
+      onClick: confirmCancel,
+      className: "px-4 text-sm font-semibold text-white",
+      style: {
+        background: busy ? 'var(--cd-disabled)' : CD.flag,
+        borderRadius: 8,
+        cursor: busy ? 'wait' : 'pointer',
+        minHeight: 44
+      }
+    }, busy ? 'Cancelling…' : 'Cancel transfer'), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        if (!busy) setAsk(false);
+      },
+      className: "px-4 text-sm font-medium",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        minHeight: 44
+      }
+    }, "Keep it")))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 pt-1"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => onReceipt(t),
@@ -39668,6 +39986,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       me: me,
       log: log,
       setTransfers: setTransfers,
+      onTillChanged: onTillChanged,
       onClose: () => setDetailId(null),
       onReceipt: t => printReceipt(t, beneficiaries, corridors, settings, log)
     }));

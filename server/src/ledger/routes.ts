@@ -1475,6 +1475,37 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
      nothing about an obligation — a remittance reversed through it would
      leave the payout still owed on a deal whose cash had gone back over
      the counter. */
+  /* The beneficiary collected. No cash moves. Cancel after this is refused. */
+  app.post("/api/ledger/obligation-deals/:transactionId/payout", async (req, reply) => {
+    const parsed = z.object({ idempotencyKey: z.string().min(1).max(200) }).strict().safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(
+            await obligations.markPaidOut(
+              actor,
+              (req.params as { transactionId: string }).transactionId,
+              parsed.data.idempotencyKey,
+            ),
+          )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/obligation-deals/:transactionId", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await obligations.read(actor, (req.params as { transactionId: string }).transactionId))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   app.post("/api/ledger/obligation-deals/:transactionId/reversal", async (req, reply) => {
     const parsed = reverseBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
