@@ -559,9 +559,10 @@ is a live region, “N of 4 digits”. `busy` replaces the dots with
 The words are inserted into a `role="status"` live region after the
 toast mounts. It is inset 16px from the screen edges. It sits 16px
 above the sticky action, or 16px above the tab bar when the screen
-has no sticky action, when that band covers no control. When it
-would cover one, it sits 16px below the sheet header or the phone
-header. The line itself does not take taps. The action does.
+has no sticky action, when that band covers no control and does not
+cover the sheet copy. When it would, it sits 16px above the next
+control that is actually on screen. A control behind the sheet does
+not count. The question, the hint, and the dots stay readable. The line itself does not take taps. The action does.
 The face is `--gray-900`, white 14/20 (`--text-small` on `--gray-0`),
 and `--radius-md`. `actionLabel` and `onAction` are optional. The
 action is a white weight-600 text button. It leaves after 4 seconds

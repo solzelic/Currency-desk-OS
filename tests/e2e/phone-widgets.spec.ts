@@ -394,6 +394,7 @@ test("the toast does not cover the PIN control or keys 7 8 and 9", async ({ page
           step: 1,
           steps: 2,
           question: "Choose a PIN",
+          hint: "Four digits you can change later",
           digits: "",
           onDigit: () => {},
           onDelete: () => {},
@@ -408,13 +409,19 @@ test("the toast does not cover the PIN control or keys 7 8 and 9", async ({ page
     return a.x < b.x + b.width - 0.5 && a.x + a.width > b.x + 0.5 && a.y < b.y + b.height - 0.5 && a.y + a.height > b.y + 0.5;
   }
 
-  for (const width of [360, 390]) {
+  for (const width of [360, 390, 430]) {
     await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
     const toast = page.locator(".phone-toast");
     await expect(toast).toBeVisible();
     const toastBox = await toast.boundingBox();
     const pinBox = await page.locator("#set-pin").boundingBox();
     expect(overlaps(toastBox, pinBox), width + " PIN").toBe(false);
+    const questionBox = await page.locator(".pin-q").boundingBox();
+    const hintBox = await page.locator(".pin-s").boundingBox();
+    const dotsBox = await page.locator(".pin-dots").boundingBox();
+    expect(overlaps(toastBox, questionBox), width + " question").toBe(false);
+    expect(overlaps(toastBox, hintBox), width + " hint").toBe(false);
+    expect(overlaps(toastBox, dotsBox), width + " dots").toBe(false);
     for (const key of ["7", "8", "9"]) {
       const keyBox = await page.locator(".keypad").getByRole("button", { name: key, exact: true }).boundingBox();
       expect(overlaps(toastBox, keyBox), width + " key " + key).toBe(false);
@@ -534,6 +541,44 @@ test("the toast announces after mount and stays while its action is focused", as
     if (active && active.blur) active.blur();
   });
   await page.clock.fastForward(4500);
+  expect(await page.evaluate(() => (window as any).__toastDone)).toBe(true);
+  await expect(page.locator(".phone-toast")).toBeHidden();
+});
+
+test("the toast stays up for 4 seconds", async ({ page }) => {
+  /* Paused, so a jump of 3999ms cannot run past the 4000ms timer
+     while the assertion is in flight. */
+  await page.clock.pauseAt(new Date("2026-06-18T15:02:00Z"));
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__toastDone = false;
+    w.__toastDelay = 0;
+    const fake = window.setTimeout.bind(window);
+    window.setTimeout = (fn: TimerHandler, ms?: number, ...args: unknown[]) => {
+      const delay = typeof ms === "number" ? ms : 0;
+      if (delay >= 100) w.__toastDelay = delay;
+      return fake(fn, ms as number, ...args);
+    };
+    const { React, ReactDOM, CDOS } = w;
+    const host = document.createElement("div");
+    host.id = "widget-probe";
+    document.body.appendChild(host);
+    const root = ReactDOM.createRoot(host);
+    w.__widgetRoot = root;
+    root.render(React.createElement(CDOS.Toast, {
+      text: "PIN saved",
+      onDone: () => {
+        w.__toastDone = true;
+        root.render(React.createElement(CDOS.Toast, { text: "" }));
+      },
+    }));
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).__toastDelay), { timeout: 3_000 }).toBeGreaterThanOrEqual(4000);
+  await expect(page.locator(".phone-toast")).toBeVisible();
+  await page.clock.runFor(3999);
+  await expect(page.locator(".phone-toast")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__toastDone)).toBe(false);
+  await page.clock.runFor(1);
   expect(await page.evaluate(() => (window as any).__toastDone)).toBe(true);
   await expect(page.locator(".phone-toast")).toBeHidden();
 });

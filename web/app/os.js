@@ -5107,17 +5107,19 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 })();
 
 /* ---- os-src/phone/toast.jsx ---- */
-/* Toast — one line after a save. It sits 16px above the sticky
-   action, or 16px above the tab bar, when that band covers no
-   control. When it would, it sits 16px below the phone header or
-   the sheet header. Taps pass through the line. The action still
-   takes them. The words go into a live region after the toast
-   mounts, so a screen reader hears them. An action toast stays
-   up while that action has focus. */
+/* Toast — one line after a save. It stays for 4 seconds. It sits
+   16px above the sticky action, or 16px above the tab bar, when
+   that band covers no control and does not cover the sheet copy.
+   When it would, it sits 16px above the next control, in the open
+   band, so the question and the hint stay readable. Taps pass
+   through the line. The action still takes them. The words go into
+   a live region after the toast mounts, so a screen reader hears
+   them. An action toast stays up while that action has focus. */
 (function () {
   const {
     Ic
   } = window.CDOS;
+  const TOAST_MS = 4000;
   function anchorTop() {
     const stickies = document.querySelectorAll(".phone-sticky");
     for (let i = 0; i < stickies.length; i++) {
@@ -5127,18 +5129,52 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const dock = document.getElementById("phone-dock");
     return dock ? dock.getBoundingClientRect().top : window.innerHeight;
   }
-  function headerBottom() {
-    let bottom = 0;
-    const nodes = document.querySelectorAll(".sheet-h, .phone-head");
+  function visibleBoxes(selector) {
+    const nodes = document.querySelectorAll(selector);
+    const boxes = [];
     for (let i = 0; i < nodes.length; i++) {
       const el = nodes[i];
       const st = getComputedStyle(el);
       if (st.display === "none" || st.visibility === "hidden") continue;
       const box = el.getBoundingClientRect();
       if (box.width < 1 || box.height < 1) continue;
-      if (box.bottom > bottom) bottom = box.bottom;
+      boxes.push(box);
     }
-    return bottom;
+    return boxes;
+  }
+  function stackingZ(el) {
+    let z = 0;
+    let node = el;
+    while (node && node.nodeType === 1) {
+      const st = getComputedStyle(node);
+      if (st.position !== "static" && st.zIndex !== "auto") {
+        const n = parseInt(st.zIndex, 10);
+        if (n > z) z = n;
+      }
+      if (node === document.body) break;
+      node = node.parentElement;
+    }
+    return z;
+  }
+
+  /* A control on the desk behind an open sheet is not on screen.
+     One painted above the sheet still counts. */
+  function hiddenBySheet(el) {
+    const sheets = document.querySelectorAll(".sheet");
+    for (let i = 0; i < sheets.length; i++) {
+      const sheet = sheets[i];
+      if (sheet.contains(el)) return false;
+      const st = getComputedStyle(sheet);
+      if (st.display === "none" || st.visibility === "hidden") continue;
+      const sheetBox = sheet.getBoundingClientRect();
+      if (sheetBox.width < 1 || sheetBox.height < 1) continue;
+      const box = el.getBoundingClientRect();
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      if (cx <= sheetBox.left || cx >= sheetBox.right || cy <= sheetBox.top || cy >= sheetBox.bottom) continue;
+      if (stackingZ(el) <= stackingZ(sheet)) return true;
+    }
+    return false;
   }
   function controlBoxes(except) {
     const nodes = document.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [role="switch"]');
@@ -5146,6 +5182,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     for (let i = 0; i < nodes.length; i++) {
       const el = nodes[i];
       if (except && except.contains(el)) continue;
+      if (hiddenBySheet(el)) continue;
       const st = getComputedStyle(el);
       if (st.display === "none" || st.visibility === "hidden") continue;
       const box = el.getBoundingClientRect();
@@ -5173,7 +5210,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const action = React.useRef(actionLabel);
     action.current = actionLabel;
     const timer = React.useRef(null);
-    const remaining = React.useRef(4000);
+    const remaining = React.useRef(TOAST_MS);
     const started = React.useRef(0);
     const held = React.useRef(false);
     /* Empty on the first paint. The effect fills it after mount. */
@@ -5202,7 +5239,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (!text) return undefined;
       const el = node.current;
       held.current = !!(action.current && el && document.activeElement && el.contains(document.activeElement));
-      arm(4000);
+      arm(TOAST_MS);
       return () => clearTimer();
     }, [text]);
     React.useEffect(() => {
@@ -5214,23 +5251,59 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const place = () => {
         const height = el.offsetHeight;
         if (height < 1) return;
-        const boxes = controlBoxes(el);
+        const boxes = controlBoxes(el).concat(visibleBoxes(".sheet-h, .pin-q, .pin-s, .steps, .pin-dots, .pin-err, .pin-saving"));
         const width = window.innerWidth;
+        const left = 16;
+        const right = width - 16;
+        const clear = top => top >= 0 && top + height <= window.innerHeight && !hits({
+          left: left,
+          right: right,
+          top: top,
+          bottom: top + height
+        }, boxes);
         const bottomInset = Math.round(window.innerHeight - anchorTop() + 16);
         const bottomTop = window.innerHeight - bottomInset - height;
-        const bottomRect = {
-          left: 16,
-          right: width - 16,
-          top: bottomTop,
-          bottom: bottomTop + height
-        };
-        if (!hits(bottomRect, boxes)) {
+        if (clear(bottomTop)) {
           el.style.top = "auto";
           el.style.bottom = bottomInset + "px";
           return;
         }
+        /* Lowest open band, 16px above the next control, and not on
+           the question or the hint. */
+        const spans = [];
+        for (let i = 0; i < boxes.length; i++) {
+          const box = boxes[i];
+          if (box.right <= left + 0.5 || box.left >= right - 0.5) continue;
+          spans.push([box.top, box.bottom]);
+        }
+        spans.sort((a, b) => a[0] - b[0]);
+        const merged = [];
+        for (let i = 0; i < spans.length; i++) {
+          const span = spans[i];
+          const last = merged[merged.length - 1];
+          if (!last || span[0] > last[1] + 0.5) merged.push([span[0], span[1]]);else if (span[1] > last[1]) last[1] = span[1];
+        }
+        let best = null;
+        let cursor = 0;
+        const consider = gapEnd => {
+          const top = gapEnd - 16 - height;
+          const floor = cursor > 0 ? cursor + 16 : 0;
+          if (top < floor || !clear(top)) return;
+          if (best === null || top > best) best = top;
+        };
+        for (let i = 0; i < merged.length; i++) {
+          consider(merged[i][0]);
+          if (merged[i][1] > cursor) cursor = merged[i][1];
+        }
+        consider(window.innerHeight);
+        if (best === null) {
+          const copy = visibleBoxes(".pin-q, .pin-s, .steps, .pin-dots, .pin-err, .pin-saving");
+          let under = 0;
+          for (let i = 0; i < copy.length; i++) if (copy[i].bottom > under) under = copy[i].bottom;
+          best = under + 16;
+        }
         el.style.bottom = "auto";
-        el.style.top = headerBottom() + 16 + "px";
+        el.style.top = Math.round(best) + "px";
       };
       place();
       window.addEventListener("resize", place);

@@ -99,8 +99,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   (`docs/PHONE_SHELL.md`). Shared rows, a profile row, a toggle, a
   full-screen sheet, a PIN keypad, and a toast live in `os-src/phone/`.
   Text on those six is at least 4.5:1 on its background in light and
-  in dark. The toast sits where it does not cover a control, and taps
-  pass through the line. Its words are announced from a live region
+  in dark. The toast sits where it does not cover a control or the
+  PIN question, hint, and dots, and taps pass through the line. It stays
+  for 4 seconds. Its words are announced from a live region
   after it mounts, and an action toast stays while that action has
   focus. The keypad takes a hardware key and a paste, and it says
   “N of 4 digits”. The sheet keeps focus inside. Escape closes it and
@@ -599,6 +600,13 @@ a render of main `5216ef4` with that measurement, taken twice at 0
 pixels. The sign-in shot still turns the card blur off, because two
 renders of main with the blur on did not match.
 
+**2026-10-12**, phone toast on the PIN sheet. The toast stays off the
+question, the hint, and the dots. It still sits 16px above the
+sticky action or the tab bar when that band is clear. When that
+band would cover a control, it sits 16px above the next control
+that is on screen. A control behind the sheet does not count. It stays up for 4
+seconds. A shorter wait fails the phone widget check.
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
@@ -645,18 +653,21 @@ menu bar, which both machines resolved the same way, matched.
 **2026-10-12**, shared phone pieces, both themes. Text on NavRow,
 ProfileRow, Toggle, FullScreenSheet, PinPad, and Toast is at least
 4.5:1 on its background in light and in dark. The toast moves off a
-control, and the line does not take the tap. The words land in a
+control and off the PIN question, hint, and dots, and the line does not
+take the tap. It stays up for 4 seconds. The words land in a
 live region after the toast mounts. An action toast stays while that
 action has focus. The keypad takes a hardware digit, Backspace,
 Delete, and a paste, and it says “N of 4 digits”. The sheet traps
 focus. Escape closes it and returns focus to the control that opened
 it.
 
-**2026-10-12**, phone toast. The shared toast sits at the bottom, 16px
-above the sticky action, or 16px above the tab bar when there is no
-sticky action. It is inset 16px, `--radius-md`, `--gray-900`, with
-white 14/20 text. An optional action is a white weight-600 text
-button. It leaves after 4 seconds. `role="status"`.
+**2026-10-12**, phone toast. The shared toast sits 16px above the
+sticky action, or 16px above the tab bar when there is no sticky
+action and that band covers nothing. When it would cover a control,
+it sits 16px above the next control that is on screen, clear of
+the question, the hint, and the dots. It is inset 16px, `--radius-md`, `--gray-900`, with white
+14/20 text. An optional action is a white weight-600 text button.
+It leaves after 4 seconds. `role="status"`.
 
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the
