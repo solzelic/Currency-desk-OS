@@ -133,7 +133,10 @@ renders the 1280 desktop pictures there (`scripts/capture-main-desktop-baselines
 The text is Archivo and Space Mono from `tests/e2e/fonts/`, not the runner's
 fallback face. The committed PNGs have to be that render. The branch is compared to them.
 `browser-validate` runs `npm run check:sanctions` after the OS build, so the
-committed `web/app/os.js` cannot name a sanctions list.
+committed `web/app/os.js` cannot name a sanctions list. The same job runs
+`npm run test:phone-format`, which includes the dark phone token contrast
+check (`tests/phone-dark-tokens.test.mjs`). The painted check is
+`tests/e2e/phone-shell.spec.ts` in `browser-seam`.
 `tests/e2e/a-day-at-the-desk.spec.ts` is the deployment gate. It trades on
 its own till (opened through the product's add-till route) so file order
 is not load-bearing.

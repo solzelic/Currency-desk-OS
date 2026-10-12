@@ -598,8 +598,11 @@ extra drawers stay out of it. The earlier rewrite to
 `#00898` and the 20-pixel ceiling are retired.
 `formatPhoneTime` / `formatPhoneDate` / `formatPhoneMoney` reject an
 impossible date, a bad clock, a missing zone on an instant, and a
-malformed amount with an em dash. The phone shell stays on the light
-tokens when the OS preference is dark. The phone ledger's day fee is
+malformed amount with an em dash. On a phone, a dark OS preference
+paints the shell from the dark tokens in `tokens.css` (inside
+`max-width: 430px`). Text is `#F6F3EC` and secondary text is
+`#C9C2B6`, each at least 4.5:1 on the dark surface. The 1280
+pictures are outside that query. The phone ledger's day fee is
 the server summary, or it is omitted.
 
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an

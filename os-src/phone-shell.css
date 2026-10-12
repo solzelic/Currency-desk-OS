@@ -4,9 +4,10 @@
 @media (max-width: 430px) {
   /* --font-ui is Inter at this width (tokens.css). Do not reset it
      to a desktop face, and do not set Inter outside this query.
-     The phone shell stays on the light tokens even when the OS
-     preference is dark. color-scheme is not a paint colour. */
-  html { color-scheme: light !important; }
+     Dark paint is the tokens.css block on html[data-cdtheme="dark"].
+     color-scheme follows that attribute so a control matches the shell. */
+  html[data-cdtheme="dark"] { color-scheme: dark; }
+  html[data-cdtheme="light"] { color-scheme: light; }
 
   .phone-shell {
     display: flex;
@@ -47,7 +48,7 @@
     margin: 0;
     font: var(--text-title-1);
     letter-spacing: -0.02em;
-    color: var(--gray-900, #161513);
+    color: var(--color-text, #161513);
   }
   .phone-title p {
     margin: 4px 0 0;
@@ -76,14 +77,14 @@
     padding: 0 4px 0 12px;
     border: 1px solid var(--color-border, #E2DFD8);
     border-radius: var(--radius-md, 10px);
-    background: #fff;
+    background: var(--color-surface, #fff);
     box-sizing: border-box;
   }
   .phone-search:focus-within {
     outline: 2px solid var(--color-focus, #1E5AA8);
     outline-offset: 1px;
   }
-  .phone-search-ico { flex: none; color: var(--gray-500, #6B6760); }
+  .phone-search-ico { flex: none; color: var(--color-text-muted, #6B6760); }
   .phone-search input {
     flex: 1 1 auto;
     min-width: 0;
@@ -92,8 +93,9 @@
     padding: 0;
     background: transparent;
     font: var(--text-body);
-    color: var(--gray-900, #161513);
+    color: var(--color-text, #161513);
   }
+  .phone-search input::placeholder { color: var(--color-text-muted, #6B6760); }
   .phone-search input:focus { outline: none; }
   .phone-search-clear {
     flex: none;
@@ -104,7 +106,7 @@
     border: 0;
     border-radius: 8px;
     background: transparent;
-    color: var(--gray-700, #3D3A35);
+    color: var(--color-text, #3D3A35);
     cursor: pointer;
   }
 
@@ -152,8 +154,8 @@
     padding: 0 12px;
     border-radius: var(--radius-pill, 999px);
     border: 1px solid var(--color-border, #E2DFD8);
-    background: #fff;
-    color: var(--gray-900, #161513);
+    background: var(--color-surface, #fff);
+    color: var(--color-text, #161513);
     font: var(--text-label);
     font-size: 14px;
     line-height: 20px;
@@ -177,13 +179,13 @@
     padding: 12px;
     border: 1px solid var(--color-border, #E2DFD8);
     border-radius: var(--radius-lg, 14px);
-    background: #fff;
+    background: var(--color-surface, #fff);
     text-align: left;
     color: inherit;
   }
   button.phone-stat { cursor: pointer; }
   .phone-stat-label { font: var(--text-caption); color: var(--color-text-muted, #6B6760); }
-  .phone-stat-value { font: var(--text-amount); color: var(--gray-900, #161513); }
+  .phone-stat-value { font: var(--text-amount); color: var(--color-text, #161513); }
   .phone-stat-cap { font: var(--text-caption); color: var(--color-text-muted, #6B6760); }
 
   .phone-sec {
@@ -200,7 +202,7 @@
   .phone-sec-meta { font-weight: 500; }
 
   .phone-list {
-    background: #fff;
+    background: var(--color-surface, #fff);
     border: 1px solid var(--color-border, #E2DFD8);
     border-radius: var(--radius-lg, 14px);
     overflow: hidden;
@@ -217,8 +219,8 @@
     border: 0;
     border-bottom: 1px solid var(--color-border, #E2DFD8);
     border-radius: 0;
-    background: #fff;
-    color: var(--gray-900, #161513);
+    background: var(--color-surface, #fff);
+    color: var(--color-text, #161513);
     text-align: left;
     cursor: pointer;
     box-sizing: border-box;
@@ -247,7 +249,7 @@
     font-size: 16px;
     font-weight: 600;
     line-height: 20px;
-    color: var(--gray-900, #161513);
+    color: var(--color-text, #161513);
   }
   .phone-row.has-note { min-height: 76px; align-items: flex-start; }
   .phone-row-note {
@@ -284,9 +286,13 @@
     line-height: 20px;
     font-variant-numeric: tabular-nums;
   }
-  .phone-row-chev { flex: none; color: var(--gray-500, #6B6760); }
+  .phone-row-chev { flex: none; color: var(--color-text-muted, #6B6760); }
   .phone-row.is-danger .phone-row-title,
   .phone-row.is-danger .phone-more-name { color: var(--color-negative, #B42318); }
+  html[data-cdtheme="dark"] .phone-row.is-danger .phone-row-title,
+  html[data-cdtheme="dark"] .phone-row.is-danger .phone-more-name {
+    color: var(--color-on-surface-negative, #FFB4A8);
+  }
 
   .phone-appic {
     width: 40px;
@@ -354,7 +360,7 @@
   .phone-error p {
     margin: 0;
     font: var(--text-body-strong);
-    color: var(--gray-900, #161513);
+    color: var(--color-text, #161513);
   }
   .phone-empty p {
     margin: 6px 0 0;
@@ -409,6 +415,33 @@
   .win[data-app] button.font-semibold.text-white[style*="background-color:var(--cd-ink);"]:not([data-filter-chip]) {
     background-color: var(--brand-primary) !important;
     border-color: var(--brand-primary) !important;
+    /* Dark mode flips .text-white to --cd-on-ink. That ink is near
+       black, and the accent behind it is dark too. The label stays
+       white on the accent. */
+    color: var(--brand-on-primary, #fff) !important;
+  }
+  html[data-cdtheme="dark"] .win[data-app] button.font-semibold.text-white[style*="--cd-ink"]:not([data-filter-chip]) svg {
+    stroke: var(--brand-on-primary, #fff);
+  }
+  /* A chip count at 0.7 on the muted ink is about 3.4:1 on the dark
+     window. Full opacity keeps the muted token, which clears 4.5:1. */
+  html[data-cdtheme="dark"] [data-filter-chip] span { opacity: 1 !important; }
+  html[data-cdtheme="dark"] .win input,
+  html[data-cdtheme="dark"] .win textarea,
+  html[data-cdtheme="dark"] .win select {
+    color: var(--color-text, #F6F3EC);
+  }
+  html[data-cdtheme="dark"] .win input::placeholder,
+  html[data-cdtheme="dark"] .win textarea::placeholder {
+    color: var(--color-text-muted, #C9C2B6);
+    opacity: 1;
+  }
+  /* Flag text on the translucent flag wash is about 4.0:1. The wash
+     and the solid flag fill stay as they are. #FFB4A8 on that wash
+     is about 8:1. A solid flag button is not this selector. */
+  html[data-cdtheme="dark"] [style*="color: var(--cd-flag)"][style*="--cd-flag-soft"],
+  html[data-cdtheme="dark"] [style*="color:var(--cd-flag)"][style*="--cd-flag-soft"] {
+    color: var(--color-on-surface-negative, #FFB4A8) !important;
   }
   .win[data-app] [data-filter-chip].is-on {
     background-color: var(--gray-900, #161513) !important;
@@ -422,9 +455,9 @@
     padding: 0 12px;
     border: 1px solid var(--color-border, #E2DFD8);
     border-radius: var(--radius-md, 10px);
-    background: #fff;
+    background: var(--color-surface, #fff);
     box-shadow: var(--shadow-sm);
-    color: var(--gray-900, #161513);
+    color: var(--color-text, #161513);
     font: var(--text-label);
     font-size: 14px;
     cursor: pointer;
@@ -467,8 +500,8 @@
     padding: 0 12px;
     border: 1px solid var(--color-border, #E2DFD8);
     border-radius: var(--radius-pill, 999px);
-    background: #fff;
-    color: var(--gray-900, #161513);
+    background: var(--color-surface, #fff);
+    color: var(--color-text, #161513);
     font-size: 14px;
   }
   .phone-ledger { height: 100%; min-height: 0; display: flex; flex-direction: column; }

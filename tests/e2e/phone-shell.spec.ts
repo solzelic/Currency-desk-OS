@@ -1,7 +1,7 @@
 /* Phone shell. More, the shared money formatter, and the five-tab bar. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
-import { phoneSweep } from "./helpers/phone-sweep";
+import { assertDarkShellContrast, phoneSweep } from "./helpers/phone-sweep";
 
 const PHONE = { width: 390, height: 844 };
 
@@ -715,12 +715,12 @@ test("empty, loading, and error states, and an unknown bell", async ({ page }) =
   expect(read.sticky).toBe("12px");
 });
 
-test("a dark OS preference still leaves the phone shell readable", async ({ page }) => {
+test("dark theme text on Clients and Ledger is at least 4.5:1", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.addInitScript(() => {
     localStorage.setItem("cdos_theme", "auto");
   });
-  await page.setViewportSize(PHONE);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.context().clearCookies();
   await page.goto("/app");
   await page.evaluate(() => {
@@ -733,61 +733,17 @@ test("a dark OS preference still leaves the phone shell readable", async ({ page
   await page.reload();
   await landOnDesktop(page);
   await dismissTour(page);
-  await page.locator('#phonebar [data-phone-app="ledger"]').click();
-  await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", "ledger");
-  const contrast = await page.evaluate(() => {
-    const lum = (channel) => {
-      const s = channel / 255;
-      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    };
-    const parse = (color) => {
-      const m = color.match(/[\d.]+/g);
-      if (!m) return null;
-      return m.slice(0, 3).map(Number);
-    };
-    const paintOf = (el) => {
-      let node = el;
-      while (node) {
-        const bg = getComputedStyle(node).backgroundColor;
-        const m = bg.match(/[\d.]+/g);
-        if (m && m.length >= 4 && Number(m[3]) === 0) {
-          node = node.parentElement;
-          continue;
-        }
-        if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") return bg;
-        node = node.parentElement;
-      }
-      return "rgb(255, 255, 255)";
-    };
-    const ratio = (el) => {
-      if (!el) return 0;
-      const fg = parse(getComputedStyle(el).color);
-      const bg = parse(paintOf(el));
-      if (!fg || !bg) return 0;
-      const L = (rgb) => 0.2126 * lum(rgb[0]) + 0.7152 * lum(rgb[1]) + 0.0722 * lum(rgb[2]);
-      const a = L(fg);
-      const b = L(bg);
-      const lighter = Math.max(a, b);
-      const darker = Math.min(a, b);
-      return (lighter + 0.05) / (darker + 0.05);
-    };
-    const title = document.querySelector(".phone-ledger .phone-title h1");
-    const secondary = document.querySelector(".phone-ledger .phone-stat-cap")
-      || document.querySelector(".phone-ledger .phone-row-sub")
-      || document.querySelector(".phone-ledger .phone-empty p");
-    return {
-      scheme: getComputedStyle(document.documentElement).colorScheme,
-      theme: document.documentElement.getAttribute("data-cdtheme"),
-      title: ratio(title),
-      secondary: ratio(secondary),
-      titleColor: title ? getComputedStyle(title).color : "",
-      secondaryColor: secondary ? getComputedStyle(secondary).color : "",
-    };
-  });
-  expect(contrast.scheme).toBe("light");
-  expect(contrast.theme).toBe("dark");
-  expect(contrast.title).toBeGreaterThanOrEqual(4.5);
-  expect(contrast.secondary).toBeGreaterThanOrEqual(4.5);
+  const failures: string[] = [];
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const app of ["ledger", "clients"]) {
+      await page.locator(`#phonebar [data-phone-app="${app}"]`).click();
+      await expect(page.locator(".win.show.active").first()).toHaveAttribute("data-app", app);
+      const lines = await assertDarkShellContrast(page, app);
+      lines.forEach((line) => failures.push(width + "px " + app + ": " + line));
+    }
+  }
+  expect(failures, "dark shell contrast").toEqual([]);
 });
 
 test("desktop does not request Inter", async ({ page }) => {

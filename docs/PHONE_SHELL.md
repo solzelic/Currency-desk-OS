@@ -343,10 +343,18 @@ root:
   or option.
 - Visible text is at least 12px.
 - Text contrast is at least 4.5:1. Text that is 24px or larger, or at
-  least 18.66px and bold (weight 700), may be 3:1.
+  least 18.66px and bold (weight 700), may be 3:1. The dark shell
+  does not use that exception: Clients and Ledger at 360, 390, and
+  430 require 4.5:1 for every text pair, including the 24px title.
 - Visible text has no 24-hour time. The pattern is
   `\b([01]?\d|2[0-3]):[0-5]\d\b`. A time with AM or PM beside it is allowed.
 - Visible text has no ISO date (`\d{4}-\d{2}-\d{2}`).
+
+The dark colours are the `html[data-cdtheme="dark"]` block in
+`os-src/tokens.css`, inside `max-width: 430px`. Wider than that the
+block does not apply, so a 1280 picture is not those tokens.
+`tests/e2e/phone-shell.spec.ts` measures Clients and Ledger at 360,
+390, and 430 and fails when a pair is under 4.5:1.
 
 ```ts
 import { phoneSweep } from "./helpers/phone-sweep";

@@ -40,7 +40,7 @@ jobs:
       - name: Every browser script parses
         run: npm run check:parse
 
-      - name: Phone time, date, and money formatters
+      - name: Phone formatters and dark shell contrast
         run: npm run test:phone-format
 
       # The served pages are generated from the designs and committed. If a

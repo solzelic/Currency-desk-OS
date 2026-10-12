@@ -137,6 +137,23 @@
    Archivo stays in the stack for a phone that has not loaded Inter. */
 @media (max-width: 430px) {
   :root { --font-ui: "Inter", "Archivo", system-ui, sans-serif; }
+
+  /* Dark phone shell. The desk's own dark theme stays in charge
+     above 430px, so a 1280 picture is not this block.
+     #F6F3EC on #1E1D1A is 15:1. #C9C2B6 on #1E1D1A is 9.5:1.
+     --gray-900 stays the dark chip fill. A selected chip's white
+     label is on that fill, not on the surface. */
+  html[data-cdtheme="dark"] {
+    --color-bg: #14130F;
+    --color-surface: #1E1D1A;
+    --color-border: rgba(255, 255, 255, 0.16);
+    --color-text: #F6F3EC;
+    --color-text-muted: #C9C2B6;
+    --color-on-surface-negative: #FFB4A8;
+    /* Column labels on a client card use this. The injected theme
+       is 0.4 white, about 3.35:1 on the dark window. */
+    --cd-faint: #C9C2B6 !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) { :root { --dur-fast: 0ms; --dur: 0ms; } }

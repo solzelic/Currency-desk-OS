@@ -1781,8 +1781,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     overflow: hidden;
     box-sizing: border-box;
     padding: calc(4px + env(safe-area-inset-top, 0px)) 8px 4px 16px;
-    background: #fff;
-    border-bottom: 1px solid #E2DFD8;
+    background: var(--color-surface, #fff);
+    border-bottom: 1px solid var(--color-border, #E2DFD8);
   }
   /* Alerts. The dot element is rendered only when a real count exists. */
   .phone-bell {
@@ -1797,7 +1797,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border: 0;
     border-radius: 10px;
     background: transparent;
-    color: #3D3A35;
+    color: var(--color-text, #3D3A35);
     cursor: pointer;
   }
   .phone-bell-dot {
@@ -1808,7 +1808,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 8px;
     border-radius: 50%;
     background: #B42318;
-    box-shadow: 0 0 0 2px #fff;
+    box-shadow: 0 0 0 2px var(--color-surface, #fff);
   }
   .phone-tab-ico { display: contents; }
   .phone-shop {
@@ -1822,7 +1822,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-size: 17px;
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: var(--ink, #111);
+    color: var(--color-text, var(--ink, #111));
     line-height: 1.2;
     overflow: hidden;
     white-space: nowrap;
@@ -1908,11 +1908,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 50%;
     flex: none;
     background: var(--color-positive, #157A3E);
-    box-shadow: 0 0 0 2px #fff;
+    box-shadow: 0 0 0 2px var(--color-surface, #fff);
   }
   .phone-till.is-closed .phone-till-dot {
     background: var(--ink, #111);
-    box-shadow: 0 0 0 2px #fff;
+    box-shadow: 0 0 0 2px var(--color-surface, #fff);
   }
   .phone-head .mb-acct-wrap { grid-column: 3; grid-row: 1 / span 2; }
   .phone-head .mb-acct-id,
@@ -1934,6 +1934,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-size: 13px;
     font-weight: 600;
   }
+  /* The desk dark rule paints the initials with --on-ink (#131210).
+     On this circle that is dark on dark, about 1:1. The phone text
+     token is the light one. Specificity beats the desk rule, and
+     this query is not the 1280 picture. */
+  html[data-cdtheme="dark"] .phone-head .mb-acct-av {
+    background: #161513;
+    color: var(--color-text, #F6F3EC);
+  }
 
   /* The bar is fixed over the desk. The window runs under it.
      Scroll padding, not a shorter window, keeps the last row clear. */
@@ -1950,13 +1958,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   #desktop .win.active,
   #desktop .win.active .win-body {
-    background: #fff;
+    background: var(--color-surface, #fff);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-  }
-  html[data-cdtheme="dark"] #desktop .win.active,
-  html[data-cdtheme="dark"] #desktop .win.active .win-body {
-    background: rgb(30, 29, 26);
   }
 
   #phone-more {
@@ -3066,22 +3070,22 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     text-align: left;
     cursor: pointer;
   }
-  /* --tab-inactive is #6B6760, the phone bar's ink. It clears 4.5:1
-     on the white panel and on the green wash behind Ready. */
+  /* Secondary ink. In the light phone it is #6B6760, which clears
+     4.5:1 on white. The dark phone token is #C9C2B6. --tab-inactive
+     stays #6B6760 so the white bottom bar does not change. */
   .cd-tx-quiet {
-    color: var(--tab-inactive, #6B6760) !important;
+    color: var(--color-text-muted, #6B6760) !important;
   }
-  /* The label was rgba(10,10,10,0.4) on white, about 2.71:1.
-     #6B6760 is the phone secondary ink and clears 4.5:1. */
+  /* The label was rgba(10,10,10,0.4) on white, about 2.71:1. */
   .cd-tx-stat-label {
     font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
     letter-spacing: 0 !important;
     text-transform: none !important;
-    color: var(--tab-inactive, #6B6760) !important;
+    color: var(--color-text-muted, #6B6760) !important;
   }
   /* The Record the ID subtitle was rgba(10,10,10,0.55) on the white
      header. That sits under 4.5:1. Same ink as the stat labels. */
   .cd-tx-record-sub {
-    color: var(--tab-inactive, #6B6760) !important;
+    color: var(--color-text-muted, #6B6760) !important;
   }
 }

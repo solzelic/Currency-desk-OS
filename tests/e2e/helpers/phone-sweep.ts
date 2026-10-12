@@ -238,3 +238,168 @@ export async function phoneSweep(page: Page, options: PhoneSweepOptions): Promis
   });
   expect(failures, "phone sweep").toEqual([]);
 }
+
+type DarkContrastReport = { failures: string[] };
+
+/* Dark phone shell. Every text pair is 4.5:1, including a 24px title.
+   The light sweep still allows 3:1 for large text. This one does not. */
+function darkContrastInPage(app: string): DarkContrastReport {
+  const failures: string[] = [];
+  const theme = document.documentElement.getAttribute("data-cdtheme");
+  const scheme = getComputedStyle(document.documentElement).colorScheme;
+  if (theme !== "dark") failures.push("theme is " + theme + ", expected dark");
+  if (scheme !== "dark") failures.push("color-scheme is " + scheme + ", expected dark");
+
+  function shown(el: Element): boolean {
+    let node: Element | null = el;
+    while (node) {
+      const st = getComputedStyle(node);
+      if (st.display === "none" || st.visibility === "hidden" || Number(st.opacity) === 0) return false;
+      node = node.parentElement;
+    }
+    const box = el.getBoundingClientRect();
+    return box.width >= 1 && box.height >= 1;
+  }
+
+  function labelOf(el: Element): string {
+    const raw = el instanceof HTMLElement
+      ? (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "")
+      : "";
+    const text = raw.replace(/\s+/g, " ").trim().slice(0, 70);
+    const cls = typeof (el as HTMLElement).className === "string"
+      ? (el as HTMLElement).className.trim().split(/\s+/).filter(Boolean).slice(0, 2).join(".")
+      : "";
+    return el.tagName.toLowerCase() + (cls ? "." + cls : "") + (text ? " \"" + text + "\"" : "");
+  }
+
+  function parseColor(value: string): { r: number; g: number; b: number; a: number } | null {
+    const m = String(value || "").match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)/);
+    if (!m) return null;
+    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: m[4] == null ? 1 : Number(m[4]) };
+  }
+
+  function blend(
+    fg: { r: number; g: number; b: number; a: number },
+    bg: { r: number; g: number; b: number; a: number },
+  ) {
+    const a = fg.a;
+    return {
+      r: fg.r * a + bg.r * (1 - a),
+      g: fg.g * a + bg.g * (1 - a),
+      b: fg.b * a + bg.b * (1 - a),
+      a: 1,
+    };
+  }
+
+  function backdrop(el: Element) {
+    const layers: Array<{ r: number; g: number; b: number; a: number }> = [];
+    let node: Element | null = el;
+    while (node) {
+      const bg = parseColor(getComputedStyle(node).backgroundColor);
+      if (bg && bg.a > 0) layers.push(bg);
+      if (bg && bg.a >= 0.99) break;
+      node = node.parentElement;
+    }
+    let out = { r: 255, g: 255, b: 255, a: 1 };
+    for (let i = layers.length - 1; i >= 0; i--) out = blend(layers[i], out);
+    return out;
+  }
+
+  function lum(c: { r: number; g: number; b: number }) {
+    const f = (v: number) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+  }
+
+  function contrast(a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }) {
+    const l1 = lum(a);
+    const l2 = lum(b);
+    const hi = Math.max(l1, l2);
+    const lo = Math.min(l1, l2);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  function opacityOf(el: Element): number {
+    let o = 1;
+    let node: Element | null = el;
+    while (node) {
+      const v = parseFloat(getComputedStyle(node).opacity);
+      if (!Number.isNaN(v)) o *= v;
+      node = node.parentElement;
+    }
+    return o;
+  }
+
+  function directText(el: Element): string {
+    let s = "";
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) s += node.textContent || "";
+    }
+    return s.replace(/\s+/g, " ").trim();
+  }
+
+  function ratioOf(el: Element, style: CSSStyleDeclaration): number | null {
+    const fg = parseColor(style.color);
+    if (!fg || fg.a <= 0.05) return null;
+    fg.a *= opacityOf(el);
+    const bg = backdrop(el);
+    return contrast(blend(fg, bg), bg);
+  }
+
+  function check(el: Element, text: string, style: CSSStyleDeclaration) {
+    const ratio = ratioOf(el, style);
+    if (ratio == null) return;
+    if (ratio < 4.5) {
+      failures.push("contrast " + ratio.toFixed(2) + ":1 on " + labelOf(el) + " \"" + text.slice(0, 60) + "\"");
+    }
+  }
+
+  const roots = [".phone-head", "#phone-dock", ".win.show.active"];
+  const scope: Element[] = [];
+  for (const sel of roots) {
+    const nodes = document.querySelectorAll(sel);
+    if (!nodes.length) {
+      failures.push("missing root " + sel);
+      continue;
+    }
+    nodes.forEach((node) => { if (shown(node)) scope.push(node); });
+  }
+
+  for (const root of scope) {
+    const textEls: Element[] = [root];
+    root.querySelectorAll("*").forEach((el) => textEls.push(el));
+    for (const el of textEls) {
+      if (!shown(el)) continue;
+      const text = directText(el);
+      if (text) check(el, text, getComputedStyle(el));
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        const hint = el.getAttribute("placeholder") || "";
+        if (hint && !el.value) check(el, hint, getComputedStyle(el, "::placeholder"));
+      }
+    }
+  }
+
+  const shop = document.querySelector(".phone-shop-name");
+  const avatar = document.querySelector(".phone-head .mb-acct-av");
+  if (!shop || !shown(shop) || !directText(shop)) failures.push("missing shop name");
+  if (!avatar || !shown(avatar) || !directText(avatar)) failures.push("missing avatar");
+  if (app === "ledger") {
+    const title = document.querySelector(".phone-ledger .phone-title h1");
+    if (!title || !shown(title) || directText(title) !== "Ledger") failures.push("missing Ledger page title");
+    if (!document.querySelector(".phone-ledger .phone-stat-label")) failures.push("missing Ledger column header");
+  }
+  if (app === "clients") {
+    const count = Array.from(document.querySelectorAll(".win.show.active *")).find((el) => /contacts/.test(directText(el)));
+    if (!count) failures.push("missing Clients count line");
+  }
+
+  return { failures };
+}
+
+/** Fails when any painted text pair on the open phone screen is under 4.5:1. */
+export async function assertDarkShellContrast(page: Page, app: string): Promise<string[]> {
+  const report = await page.evaluate(darkContrastInPage, app);
+  return report.failures;
+}
