@@ -187,7 +187,12 @@ credential change revokes every other session.
 **Nothing enumerable.** Whether an account exists is not public. The reset
 route answers identically for a stranger and a customer, in the same words —
 and the rate limit answers identically too, because a throttle that only
-fires for real accounts is a slower way of asking the same question.
+fires for real accounts is a slower way of asking the same question. The
+emailed-code step does the same: an unknown staff id and a wrong code are
+one answer, and the code is not compared unless this browser already proved
+the password. Shop sign-in counts five wrong passwords per account and
+twenty per address, in Postgres (`server/src/auth/signin-guard.ts`), and
+locks both the real id and the unknown one with the same sentence.
 
 **The record of who did what is append-only.** `audit_events` gets a row for
 every credential action and every privileged act. Issuing somebody's sign-in
@@ -350,11 +355,14 @@ still pulls the CDN.)
 
 **Now**
 
-1. **In-process state assumes exactly one server.** Cooldown and sign-in
-   maps (e.g. `server/src/cooldown.ts`) live in process memory — no
-   horizontal scale, and every deploy drops in-flight sign-ins. Platform
-   MFA challenges are the exception: they are rows, so a sleep during
-   enrollment does not eat the setup.
+1. **In-process state assumes exactly one server.** The two-minute gap
+   between one-time codes (`server/src/cooldown.ts`) lives in process
+   memory. A restart forgets that somebody asked ninety seconds ago;
+   that gap is not the lockout. Shop sign-in failure counts and the
+   emailed-code marker are Postgres rows (migration 041), so a restart
+   does not hand back five more guesses and does not let a code be
+   checked without the password step. Platform MFA challenges are rows
+   too.
 
 Issue **#33** (platform MFA) is closed: `/admin` requires TOTP after
 enrollment, with one-time backup codes. Desk `/login` is unchanged.
