@@ -16,7 +16,11 @@ import Decimal from "decimal.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerError, LedgerService, type LedgerActor } from "../src/ledger/service.js";
-import { ObligationService } from "../src/ledger/obligations.js";
+import {
+  ObligationService,
+  TRANSFER_CANCEL_TELLER_MESSAGE,
+  TRANSFER_PAID_OUT_MESSAGE,
+} from "../src/ledger/obligations.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -643,5 +647,106 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
        payable position, and "0.00" is a claim about a book nobody has
        written in — docs/ABSENT_FIGURES.md. */
     expect(empty.outstanding).toEqual({ payable: null, receivable: null });
+  });
+
+  /* ---------------- cancelling a transfer that took cash ---------------- */
+
+  it("puts the send back once, refunds the fee, and tells a teller to ask the owner", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-cancel",
+      reference: "TR-CANCEL-1",
+      payoutAmount: "20272.05",
+    })) as Record<string, string>;
+    const key = `web:transfer-cancel:${posted.transactionId}`;
+    expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).add("609.99").toFixed(2));
+
+    await expect(
+      service.reverse(teller, posted.transactionId!, key, "Cancelled at the counter"),
+    ).rejects.toMatchObject({
+      code: "AUTHORIZATION_DENIED",
+      message: TRANSFER_CANCEL_TELLER_MESSAGE,
+    });
+    expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).add("609.99").toFixed(2));
+
+    const first = (await service.reverse(
+      supervisor,
+      posted.transactionId!,
+      key,
+      "Cancelled at the counter",
+    )) as Record<string, string>;
+    const second = (await service.reverse(
+      supervisor,
+      posted.transactionId!,
+      key,
+      "Cancelled at the counter",
+    )) as Record<string, string>;
+    expect(second.reversalId).toBe(first.reversalId);
+    expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(1);
+    expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).toFixed(2));
+    expect(
+      (await pool.query("SELECT status FROM ledger_obligations")).rows[0].status,
+    ).toBe("reversed");
+    const fee = await pool.query(
+      "SELECT side, amount_cad FROM ledger_reversal_entries WHERE reversal_id=$1 AND account_code='revenue:fee'",
+      [first.reversalId],
+    );
+    expect(fee.rows).toEqual([{ side: "debit", amount_cad: "9.99" }]);
+
+    await expect(
+      service.reverse(supervisor, posted.transactionId!, `${key}:again`, "Cancelled at the counter"),
+    ).rejects.toMatchObject({ code: "REVERSAL_ALREADY_EXISTS" });
+    expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).toFixed(2));
+    expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(1);
+  });
+
+  it("refuses to cancel a transfer the partner has already paid out", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-paid",
+      reference: "TR-PAID-1",
+      payoutAmount: "20272.05",
+    })) as Record<string, string>;
+    const marked = (await service.markPaidOut(
+      teller,
+      posted.transactionId!,
+      `web:transfer-paid:${posted.transactionId}`,
+    )) as Record<string, string>;
+    const replay = (await service.markPaidOut(
+      teller,
+      posted.transactionId!,
+      "web:transfer-paid:other",
+    )) as Record<string, string>;
+    expect(replay.paidOutAt).toBe(marked.paidOutAt);
+
+    await expect(
+      service.reverse(
+        supervisor,
+        posted.transactionId!,
+        `web:transfer-cancel:${posted.transactionId}`,
+        "Cancelled at the counter",
+      ),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_PAID_OUT_MESSAGE,
+    });
+    const obligation = (
+      await pool.query("SELECT status, paid_out_at FROM ledger_obligations")
+    ).rows[0];
+    expect(obligation.status).toBe("open");
+    expect(obligation.paid_out_at).toBeTruthy();
+    expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).add("609.99").toFixed(2));
+
+    const listed = (await service.list(supervisor, { limit: 10 })) as {
+      obligations: Array<Record<string, string | null>>;
+    };
+    expect(listed.obligations[0]).toMatchObject({
+      cashInHome: "609.99",
+      faceAmount: "20272.05",
+      faceCurrency: "PHP",
+      counterparty: "Cebuana Lhuillier",
+      status: "open",
+    });
+    expect(listed.obligations[0]!.paidOutAt).toBeTruthy();
   });
 });

@@ -233,11 +233,32 @@ obligation's status becomes `reversed`, and **no revenue, margin or expense
 account is touched by anything other than that mirror**. A typing mistake must
 not appear anywhere in the desk's corridor losses.
 
+The mirror includes `revenue:fee`. On a send of 600.00 plus a 9.99 fee the
+reversal credits `till:CAD` 609.99, debits the payable 600.00, and debits
+`revenue:fee` 9.99. The fee is refunded because cancel means the deal never
+stood. A cheque NSF is a different act and still keeps its fee.
+
+Desktop Cancel posts this reversal in the same action. The confirm sheet reads
+`cashInHome`, `faceAmount`, `faceCurrency`, and `counterparty` from
+`GET /api/ledger/obligations` and says what will happen, for example: "This
+gives the customer back 609.99 CAD from your drawer and cancels the 20,272.05
+PHP owed to Cebuana Lhuillier." The browser does not add the fee. The
+idempotency key is `web:transfer-cancel:<transactionId>`, so a second tap
+replays and does not reverse twice. The contract is `docs/TRANSFER_CANCEL.md`.
+
+`transaction:reverse` stays with supervisor, branch manager, and administrator.
+A teller receives 403 `AUTHORIZATION_DENIED` with "Only the owner can cancel a
+transfer that took cash. Ask the owner to cancel." The desktop does not offer
+that person a Cancel button.
+
 The reversal is refused if the drawer can no longer fund the cash going back
-out (`REVERSAL_NOT_ALLOWED`) and refused once the obligation has been
-discharged — a partner that has already been paid cannot be un-paid by saying
-the deal never happened, and the honest move at that point is a new deal in the
-other direction.
+out (`REVERSAL_NOT_ALLOWED`, "Till cannot support this reversal.") and refused
+once the partner has paid the beneficiary or the obligation is settled. That
+refusal is "This transfer was already paid out. It cannot be cancelled."
+`paid_out_at` (migration 041) is set by
+`POST /api/ledger/obligation-deals/:transactionId/payout`, which moves no cash.
+A written-off or otherwise discharged obligation keeps the older message: a
+discharged promise is undone by a new deal.
 
 ### Write off — the counterparty did not perform
 
@@ -363,7 +384,10 @@ Left in the browser, because it is a workflow record rather than a balance:
 - the corridor and partner catalogue, including which payout methods a partner
   supports and its ETA;
 - the transfer's status lifecycle beyond the money (`created → sent → transit →
-  paid`), its timeline notes and its collection PIN;
+  paid`), its timeline notes and its collection PIN. Advancing to paid also
+  stamps `paid_out_at` when the deal is on the ledger, so a later cancel is
+  refused. Cancel of a deal that took cash is not one of these local notes:
+  it posts the reversal;
 - the cheque image, for the same reason `017_cheque_cashing.sql` gives.
 
 The transfer's ledger identity travels back into the browser record
@@ -384,12 +408,14 @@ GET  /api/ledger/obligations?status=open&limit=200
 POST /api/ledger/obligations/:obligationId/settlement
 POST /api/ledger/obligations/:obligationId/write-off
 POST /api/ledger/obligation-deals/:transactionId/reversal
+POST /api/ledger/obligation-deals/:transactionId/payout
 ```
 
 Every write takes an idempotency key, runs at SERIALIZABLE through
 `withSerializationRetry`, and refuses when the till is shut. The four posting
-routes take `transaction:post`; settlement, write-off and reversal take
-`transaction:reverse`.
+routes and the payout route take `transaction:post`; settlement, write-off and
+reversal take `transaction:reverse`. Payout only stamps `paid_out_at`. The
+obligation list also returns `cashInHome`, `cashOutHome`, and `paidOutAt`.
 
 `GET /api/ledger/obligations` answers the question the browser store could
 never answer: what does this desk owe, and what is it owed, right now, as one

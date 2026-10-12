@@ -52,13 +52,16 @@
                  came back.
      reverse     the deal was mis-keyed and never should have existed.
                  Cash goes back over the counter, the obligation is
-                 struck out, and NOTHING touches the profit and loss.
+                 struck out, and the journal is mirrored. The fee
+                 credit is mirrored as a debit, so the fee is refunded
+                 and the deal's net profit is zero. Nothing new is
+                 written to a margin or expense account.
 
    A mistake that looks like a loss overstates the desk's credit losses
    and understates its margin; a loss that quietly restores drawer cash
-   is a drawer that does not exist. So `reverse` mirrors the movements
-   and touches no revenue account, and `writeOff` touches an expense
-   account and no till.
+   is a drawer that does not exist. So `reverse` mirrors every journal
+   line, fee included, and `writeOff` touches an expense account and no
+   till.
    ============================================================ */
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
@@ -86,6 +89,14 @@ import {
   requirePurposeAndSource,
   type LedgerActor,
 } from "./service.js";
+
+/* Shown when a teller calls the reversal. The permission is unchanged:
+   transaction:reverse stays with supervisor, branch manager, and
+   administrator. The sentence is the one the desk says out loud. */
+export const TRANSFER_CANCEL_TELLER_MESSAGE =
+  "Only the owner can cancel a transfer that took cash. Ask the owner to cancel.";
+export const TRANSFER_PAID_OUT_MESSAGE =
+  "This transfer was already paid out. It cannot be cancelled.";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -1206,7 +1217,14 @@ export class ObligationService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "transaction:reverse");
+      try {
+        await authorizeLedgerActor(client, actor, "transaction:reverse");
+      } catch (error) {
+        if (error instanceof LedgerError && error.code === "AUTHORIZATION_DENIED") {
+          throw new LedgerError("AUTHORIZATION_DENIED", TRANSFER_CANCEL_TELLER_MESSAGE);
+        }
+        throw error;
+      }
       const replay = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='obligation-reverse' AND idempotency_key=$6 FOR UPDATE",
         [...scope(actor), idempotencyKey],
@@ -1238,6 +1256,11 @@ export class ObligationService {
           "No obligation deal with that transaction is on this till's book.",
         );
       const obligation = found.rows[0];
+      /* Paid out, or settled with the partner: the beneficiary has the
+         money, or the desk has already funded it. Handing the cash back
+         would pay both sides. */
+      if (obligation.paid_out_at || obligation.status === "settled")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
       if (obligation.status !== "open")
         throw new LedgerError(
           "REVERSAL_NOT_ALLOWED",
@@ -1320,6 +1343,79 @@ export class ObligationService {
     }
   }
 
+  /* The partner paid the beneficiary. No cash moves. Cancel after this
+     is refused. A second call with the same key replays; a second call
+     with another key finds the timestamp already set and does not write
+     another one. */
+  markPaidOut(actor: LedgerActor, transactionId: string, idempotencyKey: string) {
+    return withSerializationRetry(() => this.markPaidOutOnce(actor, transactionId, idempotencyKey));
+  }
+
+  private async markPaidOutOnce(actor: LedgerActor, transactionId: string, idempotencyKey: string) {
+    if (!idempotencyKey?.trim())
+      throw new LedgerError("INVALID_REQUEST", "Idempotency key required.");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      await authorizeLedgerActor(client, actor, "transaction:post");
+      const replay = await client.query(
+        "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='obligation-paid-out' AND idempotency_key=$6 FOR UPDATE",
+        [...scope(actor), idempotencyKey],
+      );
+      if (replay.rowCount && replay.rows[0].response) {
+        await client.query("COMMIT");
+        return replay.rows[0].response;
+      }
+      if (!replay.rowCount) {
+        const claimed = await client.query(
+          "INSERT INTO ledger_idempotency (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key) VALUES ($1,$2,$3,$4,$5,'obligation-paid-out',$6) ON CONFLICT DO NOTHING",
+          [...scope(actor), idempotencyKey],
+        );
+        if (!claimed.rowCount)
+          throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Request is already in progress.");
+      }
+      const found = await client.query(
+        `SELECT obligation_id, status, paid_out_at FROM ledger_obligations
+          WHERE transaction_id=$1 AND tenant_id=$2 AND legal_entity_id=$3
+            AND branch_id=$4 AND workspace_id=$5 AND till_id=$6
+          FOR UPDATE`,
+        [transactionId, ...scope(actor)],
+      );
+      if (!found.rowCount)
+        throw new LedgerError(
+          "TRANSACTION_NOT_FOUND",
+          "No obligation deal with that transaction is on this till's book.",
+        );
+      const obligation = found.rows[0];
+      if (obligation.status !== "open")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
+      const now = obligation.paid_out_at ? new Date(obligation.paid_out_at) : new Date();
+      if (!obligation.paid_out_at) {
+        await client.query(
+          "UPDATE ledger_obligations SET paid_out_at=$1, updated_at=$1 WHERE obligation_id=$2",
+          [now, obligation.obligation_id],
+        );
+        await this.audit(client, actor, "obligation.paid_out", transactionId, idempotencyKey, now, null);
+      }
+      const response = {
+        transactionId,
+        obligationId: obligation.obligation_id,
+        paidOutAt: now.toISOString(),
+      };
+      await client.query(
+        "UPDATE ledger_idempotency SET response=$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND operation='obligation-paid-out' AND idempotency_key=$7",
+        [response, ...scope(actor), idempotencyKey],
+      );
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   /* ---- what the desk owes and is owed, right now ----
 
      Scoped to the legal entity rather than the till, because an
@@ -1331,7 +1427,7 @@ export class ObligationService {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "ledger:view");
       const rows = await client.query(
-        `SELECT o.*, t.posted_at, t.transaction_ref, c.name AS customer_name
+        `SELECT o.*, t.posted_at, t.transaction_ref, t.cash_in_home, t.cash_out_home, c.name AS customer_name
            FROM ledger_obligations o
            JOIN ledger_transactions t ON t.transaction_id = o.transaction_id
            LEFT JOIN ledger_customers c ON c.customer_id = o.customer_id
@@ -1373,6 +1469,9 @@ export class ObligationService {
           faceAmount: row.face_amount,
           homeCurrency: row.home_currency,
           carryingAmountHome: row.carrying_amount_home,
+          cashInHome: row.cash_in_home == null ? null : new Decimal(row.cash_in_home).toFixed(2),
+          cashOutHome: row.cash_out_home == null ? null : new Decimal(row.cash_out_home).toFixed(2),
+          paidOutAt: row.paid_out_at ? new Date(row.paid_out_at).toISOString() : null,
           status: row.status,
           settledAmountHome: row.settled_amount_home,
           settledAt: row.settled_at ? new Date(row.settled_at).toISOString() : null,

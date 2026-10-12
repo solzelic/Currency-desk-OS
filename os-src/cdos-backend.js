@@ -645,6 +645,14 @@
           body: JSON.stringify(payload),
         });
       },
+      /* The partner paid the beneficiary. No cash moves. A later cancel
+         is refused. The key is stable per deal — see cdos-transfer-cancel.js. */
+      markTransferPaidOut: function (transactionId, payload) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/payout", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
     },
   });
 

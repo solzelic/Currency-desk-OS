@@ -670,7 +670,13 @@
   }
 
   /* ===================== TRANSFER DETAIL DRAWER ===================== */
-  function TransferDetail({ t, beneficiaries, corridors, me, log, setTransfers, onClose, onReceipt }) {
+  function TransferDetail({ t, beneficiaries, corridors, me, log, setTransfers, onClose, onReceipt, onTillChanged }) {
+    const [ask, setAsk] = useState(false);
+    const [sentence, setSentence] = useState('');
+    const [cancelError, setCancelError] = useState('');
+    const [busy, setBusy] = useState(false);
+    const Cancel = window.CDOS.transferCancel;
+    if (!Cancel) throw new Error("transferCancel is not loaded.");
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
     const dir = t.direction;
@@ -679,9 +685,53 @@
     const idx = FLOW.indexOf(t.status);
     const nextKey = idx >= 0 && idx < FLOW.length - 1 ? FLOW[idx + 1] : null;
     const terminal = t.status === 'paid' || t.status === 'cancelled';
-    const advance = (to, note) => {
+    const canPost = Cancel.canPost(me.role);
+    const advance = async (to, note) => {
+      if (to === 'paid' && t.serverTransactionId) {
+        try { await Cancel.postPaidOut(t.serverTransactionId); }
+        catch (error) {
+          setCancelError(error.message || 'The payout was not recorded. The transfer was not marked paid out.');
+          return;
+        }
+      }
       setTransfers(list => list.map(x => x.id === t.id ? { ...x, status: to, timeline: [...(x.timeline || []), { status: to, ts: stamp(), by: me.name, note }] } : x));
       log && log('Transfer ' + statusLabel(to, dir).toLowerCase(), `${t.ref} · ${cor.country || ''}`);
+    };
+    const openCancel = async () => {
+      setCancelError('');
+      setSentence('');
+      setAsk(true);
+      if (!t.serverTransactionId) {
+        setCancelError('This transfer is not on the ledger. Nothing was cancelled.');
+        return;
+      }
+      try {
+        const book = await window.CDOS.Backend.loadObligations({ limit: 200 });
+        const row = (book.obligations || []).find(o => o.transactionId === t.serverTransactionId);
+        const review = Cancel.review(row);
+        if (review.kind === 'confirm') setSentence(review.sentence);
+        else setCancelError(review.message);
+      } catch (error) {
+        setCancelError(error.message || 'The ledger could not be read. Nothing was cancelled.');
+      }
+    };
+    const confirmCancel = async () => {
+      if (busy || !sentence || !t.serverTransactionId) return;
+      setBusy(true);
+      setCancelError('');
+      try {
+        await Cancel.postCancel(t.serverTransactionId);
+        advance('cancelled', 'Cash returned and the obligation cancelled');
+        setAsk(false);
+        if (onTillChanged) {
+          try { await onTillChanged(); }
+          catch (refreshError) { log && log('Ledger refresh failed', refreshError.message || 'The drawer will refresh on the next till open'); }
+        }
+      } catch (error) {
+        setCancelError(error.message || 'The transfer was not cancelled.');
+      } finally {
+        setBusy(false);
+      }
     };
     return (<Portal><div className="fixed inset-0 flex justify-end" style={{ background: 'var(--cd-scrim)', zIndex: 9100 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="h-full overflow-auto" style={{ width: 440, maxWidth: '92vw', background: CD.paper, borderLeft: `1px solid ${CD.ink}`, boxShadow: '-12px 0 40px var(--cd-shade)' }}>
@@ -742,7 +792,24 @@
               {t.status === 'hold'
                 ? <button onClick={() => advance('sent', 'Released after review')} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.green, borderRadius: 8 }}><Ic n="checkcircle" s={15} c="var(--cd-on-ink)" /> Release</button>
                 : <button onClick={() => advance('hold', 'Placed on hold')} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, color: CD.amber, borderRadius: 8 }}><Ic n="alert" s={15} c={CD.amber} /> Hold</button>}
-              <button onClick={() => advance('cancelled', 'Cancelled by teller')} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> Cancel</button>
+              {canPost
+                ? <button type="button" data-transfer-cancel="open" onClick={openCancel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> Cancel</button>
+                : <p data-transfer-cancel="teller" role="status" className="w-full text-[13px] px-3 py-2" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}>{Cancel.TELLER_MESSAGE}</p>}
+            </div>
+          )}
+          {cancelError && !ask && <p role="alert" className="text-[13px]" style={{ color: CD.flag }}>{cancelError}</p>}
+          {ask && (
+            <div data-transfer-cancel="confirm" role="alertdialog" aria-label="Cancel this transfer?" className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }}>
+              <div className="w-full" style={{ maxWidth: 440, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, padding: 20, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
+                <div className="font-semibold text-lg" style={{ color: CD.ink }}>Cancel this transfer?</div>
+                {sentence && !cancelError && <p data-transfer-cancel="effect" className="text-sm mt-3" style={{ color: CD.ink, lineHeight: 1.5 }}>{sentence}</p>}
+                {!sentence && !cancelError && <p className="text-sm mt-3" style={{ color: CD.mute }}>Reading the ledger…</p>}
+                {cancelError && <p role="alert" className="text-sm mt-3" style={{ color: CD.flag }}>{cancelError}</p>}
+                <div className="flex flex-col gap-2 mt-4">
+                  {sentence && !cancelError && <button type="button" disabled={busy} onClick={confirmCancel} className="px-4 py-2.5 text-sm font-semibold text-white" style={{ background: busy ? 'var(--cd-disabled)' : CD.flag, borderRadius: 8, cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Cancelling…' : 'Cancel transfer'}</button>}
+                  <button type="button" onClick={() => { if (!busy) setAsk(false); }} className="px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}>Keep it</button>
+                </div>
+              </div>
             </div>
           )}
           <div className="flex items-center gap-2 pt-1">

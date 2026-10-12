@@ -751,4 +751,116 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       ).statusCode,
     ).toBe(400);
   });
+
+  it("cancels a send once for a manager, refuses a teller, and refuses a paid-out transfer", async () => {
+    const tellerCookies = await cookie("a.singh");
+    const managerCookies = await cookie("r.haddad");
+    const send = {
+      idempotencyKey: "route-transfer-cancel",
+      customerId: "customer-demo",
+      reference: "TR-ROUTE-CANCEL",
+      principalAmount: "600.00",
+      feeAmount: "9.99",
+      payoutCurrency: "PHP",
+      payoutAmount: "20272.05",
+      corridor: "PH",
+      partner: "Cebuana Lhuillier",
+      beneficiaryName: "Maria Carter",
+      purpose: "Family support",
+      sourceOfFunds: "Salary",
+    };
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookies,
+      payload: send,
+    });
+    expect(created.statusCode).toBe(201);
+    const transactionId = created.json().transactionId as string;
+    const cad = async () =>
+      (
+        await pool.query(
+          "SELECT available_amount FROM ledger_till_balances WHERE till_id='till-01' AND currency='CAD'",
+        )
+      ).rows[0].available_amount as string;
+
+    expect(await cad()).toBe("25609.99");
+    const denied = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: tellerCookies,
+      payload: { idempotencyKey: `web:transfer-cancel:${transactionId}`, reason: "Cancelled at the counter" },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({
+      code: "AUTHORIZATION_DENIED",
+      message: "Only the owner can cancel a transfer that took cash. Ask the owner to cancel.",
+    });
+    expect(await cad()).toBe("25609.99");
+
+    const key = `web:transfer-cancel:${transactionId}`;
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: key, reason: "Cancelled at the counter" },
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: key, reason: "Cancelled at the counter" },
+    });
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    expect(second.json().reversalId).toBe(first.json().reversalId);
+    expect(await cad()).toBe("25000.00");
+    expect((await pool.query("SELECT 1 FROM ledger_reversals")).rowCount).toBe(1);
+    expect(
+      (await pool.query("SELECT status FROM ledger_obligations WHERE transaction_id=$1", [transactionId]))
+        .rows[0].status,
+    ).toBe("reversed");
+    const again = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: `${key}:again`, reason: "Cancelled at the counter" },
+    });
+    expect(again.statusCode).toBe(422);
+    expect(again.json().code).toBe("REVERSAL_ALREADY_EXISTS");
+    expect(await cad()).toBe("25000.00");
+
+    const paidSend = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookies,
+      payload: { ...send, idempotencyKey: "route-transfer-paid", reference: "TR-ROUTE-PAID" },
+    });
+    expect(paidSend.statusCode).toBe(201);
+    const paidId = paidSend.json().transactionId as string;
+    const payout = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${paidId}/payout`,
+      cookies: tellerCookies,
+      payload: { idempotencyKey: `web:transfer-paid:${paidId}` },
+    });
+    expect(payout.statusCode).toBe(201);
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${paidId}/reversal`,
+      cookies: managerCookies,
+      payload: { idempotencyKey: `web:transfer-cancel:${paidId}`, reason: "Cancelled at the counter" },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: "This transfer was already paid out. It cannot be cancelled.",
+    });
+    const still = (
+      await pool.query("SELECT status, paid_out_at FROM ledger_obligations WHERE transaction_id=$1", [paidId])
+    ).rows[0];
+    expect(still.status).toBe("open");
+    expect(still.paid_out_at).toBeTruthy();
+    expect(await cad()).toBe("25609.99");
+  });
 });

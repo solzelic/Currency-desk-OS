@@ -113,6 +113,10 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Migration `040_till_balance_generation` keeps one generation per till
   and bumps it when that drawer's cash changes. A close names the
   generation it counted against. 039 is on main, so this file is 040.
+- Migration `041_transfer_paid_out` adds `ledger_obligations.paid_out_at`.
+  Null means the partner has not paid the beneficiary, so a cancel can
+  still reverse the deal. 040 is on main, so this file is 041. The
+  cancel contract is `docs/TRANSFER_CANCEL.md`.
 
 ## Test commands
 
