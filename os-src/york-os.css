@@ -3089,3 +3089,271 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text-muted, #6B6760) !important;
   }
 }
+
+/* Shop sign-in on a phone. Only .si-phone, only under 430px, so the
+   desktop sign-in is not in this cascade. Green is --brand-green:
+   --brand-primary follows data-app. The face is --font-ui. At this
+   width tokens.css sets that to Inter. Wider than 430px it stays
+   Archivo, and this block does not apply. */
+@media (max-width: 430px) {
+  #lock.si-phone {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    place-items: stretch;
+    padding: var(--space-8) var(--page-gutter) var(--space-5);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    overflow: auto;
+  }
+  #lock.si-phone::before { content: none; }
+  #lock.si-phone * { box-sizing: border-box; }
+  #lock.si-phone .si-col {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 100%;
+    width: 100%;
+    margin: 0;
+  }
+  #lock.si-phone h1 {
+    margin: 0 0 var(--space-1);
+    font: var(--text-title-1);
+    letter-spacing: 0;
+  }
+  #lock.si-phone .si-lead {
+    margin: 0 0 var(--space-6);
+    font: var(--text-body);
+    color: var(--color-text-muted);
+  }
+  #lock.si-phone .si-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: 0 0 var(--space-8);
+  }
+  #lock.si-phone .si-brand b { font: var(--text-title-3); }
+  #lock.si-phone .si-field { margin: 0 0 var(--space-3); }
+  #lock.si-phone .si-labrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+  #lock.si-phone label {
+    display: block;
+    margin: 0 0 6px;
+    font: var(--text-label);
+    font-weight: 600;
+  }
+  #lock.si-phone .si-labrow label { margin: 0; }
+  #lock.si-phone .si-input {
+    height: var(--control-h);
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+  }
+  #lock.si-phone .si-input:focus-within:not(.is-err) {
+    border: 2px solid var(--color-focus);
+    padding: 0 11px;
+  }
+  #lock.si-phone .si-input.is-err {
+    border: 2px solid var(--color-negative);
+    padding: 0 11px;
+  }
+  #lock.si-phone .si-input input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: var(--tap-min);
+    border: 0;
+    outline: 0;
+    background: transparent;
+    padding: 0;
+    font: var(--text-body);
+  }
+  #lock.si-phone .si-eye {
+    flex: none;
+    width: var(--tap-min);
+    height: var(--tap-min);
+    margin: 0 -10px 0 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--gray-700);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  #lock.si-phone .si-go {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 52px;
+    width: 100%;
+    margin-top: var(--space-2);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--brand-green);
+    color: var(--brand-on-primary);
+    font: var(--text-title-3);
+    cursor: pointer;
+  }
+  #lock.si-phone .si-go:disabled {
+    background: var(--gray-300);
+    color: var(--gray-700);
+    opacity: 1;
+    cursor: default;
+  }
+  #lock.si-phone .si-link {
+    border: 0;
+    background: transparent;
+    color: var(--brand-green);
+    font: var(--text-body-strong);
+    height: var(--tap-min);
+    padding: 0 var(--space-2);
+    cursor: pointer;
+  }
+  #lock.si-phone .si-links { display: flex; justify-content: center; margin-top: var(--space-2); }
+  #lock.si-phone .si-foot {
+    margin: auto 0 0;
+    padding-top: var(--space-6);
+    text-align: center;
+    font: var(--text-small);
+    color: var(--color-text-muted);
+  }
+  #lock.si-phone .si-foot button {
+    border: 0;
+    background: none;
+    color: var(--brand-green);
+    font: var(--text-small);
+    font-weight: 600;
+    height: var(--tap-min);
+    padding: 0 var(--space-1);
+    cursor: pointer;
+  }
+  #lock.si-phone .si-err {
+    margin: var(--space-1) 0 0;
+    font: var(--text-caption);
+    color: var(--color-negative);
+  }
+  #lock.si-phone .si-hint {
+    margin: var(--space-1) 0 var(--space-4);
+    font: var(--text-caption);
+    color: var(--color-text-muted);
+  }
+  #lock.si-phone .si-banner {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-positive-bg);
+    color: var(--color-positive);
+    font: var(--text-small);
+    font-weight: 600;
+  }
+  #lock.si-phone .si-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    align-self: flex-start;
+    height: var(--tap-min);
+    margin: calc(-1 * var(--space-3)) 0 var(--space-4) calc(-1 * var(--space-2));
+    padding: 0 var(--space-2);
+    border: 0;
+    background: transparent;
+    color: var(--brand-green);
+    font: var(--text-body-strong);
+    cursor: pointer;
+  }
+  #lock.si-phone .si-wait {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    margin: var(--space-1) 0 var(--space-4);
+    padding: var(--space-3);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    font: var(--text-small);
+  }
+  #lock.si-phone .si-wait b { font-weight: 600; }
+  #lock.si-phone .si-spin {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    border: 3px solid var(--gray-200);
+    border-top-color: var(--brand-green);
+    border-radius: 50%;
+    flex: none;
+    animation: si-spin 0.8s linear infinite;
+  }
+  /* Six 44px boxes and five 8px gaps: 304px, centered, so a 360px
+     phone still has the 16px gutter on each side. The row has no
+     outline and no overflow. A focus ring on this field used to
+     draw a black box around all six and clip the ends. */
+  #lock.si-phone .si-code {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(6, 44px);
+    gap: 8px;
+    width: 304px;
+    margin: 0 auto var(--space-3);
+    overflow: visible;
+    outline: none;
+    border: 0;
+    box-shadow: none;
+  }
+  #lock.si-phone .si-code i {
+    width: 44px;
+    height: 56px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    display: grid;
+    place-items: center;
+    font-family: var(--font-ui);
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+    box-shadow: none;
+  }
+  #lock.si-phone .si-code i.cur { box-shadow: 0 0 0 2px var(--color-focus); }
+  #lock.si-phone .si-code.is-err i { border: 2px solid var(--color-negative); box-shadow: none; }
+  #lock.si-phone .si-code-input,
+  #lock.si-phone .si-code-input:focus,
+  #lock.si-phone .si-code-input:focus-visible {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    outline: none;
+    box-shadow: none;
+    overflow: visible;
+    background: transparent;
+    color: transparent;
+    caret-color: transparent;
+    font: var(--text-body);
+  }
+  #lock.si-phone .si-resend {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font: var(--text-small);
+    color: var(--color-text-muted);
+  }
+}
+@keyframes si-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #lock.si-phone .si-spin { animation: none; }
+}

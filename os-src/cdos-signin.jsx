@@ -5,8 +5,13 @@
    then the existing station picker / desktop. The shared on-screen
    keypad also powers desk-lock unlock (B) and operator handover (C).
    Backend auth is unchanged: the ID resolves a staff record, the
-   password calls /api/auth/login, the code step is the (simulated) 2FA.
+   password calls /api/auth/login/start, the code step is the emailed
+   factor checked by /api/auth/login/verify.
    Tokens mirror the design exactly (ink #17140F, primary #1D6B45, …).
+
+   A phone (max-width 430px) renders a different tree: ID and password
+   together, then six code boxes. The returns further down are the wide
+   layout and are not used at that width, so a desktop pixel stays put.
    ============================================================ */
 (function () {
   const { useState, useEffect, useRef, useMemo } = React;
@@ -20,6 +25,21 @@
     fontFamily: "'Archivo', system-ui, sans-serif", color: 'var(--si-ink)',
   };
   const MONO = "'Space Mono', monospace";
+  /* Viewport, not a second app. A wide window never takes this branch. */
+  const PHONE_Q = '(max-width: 430px)';
+  const phoneNow = () => typeof window.matchMedia === 'function' && window.matchMedia(PHONE_Q).matches;
+  /* The staff ID is the only thing this device stores. The password is
+     never written — Apple Passwords (autocomplete) is the only memory.
+     The name is not cdos_* or yorkfx_*. Those prefixes are the desk's
+     saved state: signing in copies that document over every matching
+     key, which would forget this phone's ID or share it with the shop. */
+  const STAFF_KEY = 'phone_staff_id';
+  const readStaffId = () => {
+    try { return localStorage.getItem(STAFF_KEY) || ''; }
+    catch (e) { return ''; } // storage blocked: the field starts empty, sign-in still works
+  };
+  const WAKE_MS = 3000;
+  const GIVE_UP_MS = 90000;
   const PAPER_BG = {
     backgroundColor: '#e7e4dd',
     backgroundImage: 'radial-gradient(130% 100% at 50% -10%, #f4f2ed 0%, #e4e1d9 55%, #d3cfc5 100%), radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px)',
@@ -89,8 +109,13 @@
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
   function SignIn({ employees, onSignup, onComplete, onMustChange }) {
     const [step, setStep] = useState('id');            // id | password | code
-    const [idInput, setIdInput] = useState('');
+    const [phone, setPhone] = useState(phoneNow);
+    const [idInput, setIdInput] = useState(() => (phoneNow() ? readStaffId() : ''));
+    const [held, setHeld] = useState(() => phoneNow() && !!readStaffId());
     const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
+    const [waking, setWaking] = useState(false); const [gaveUp, setGaveUp] = useState(false);
+    const [badPw, setBadPw] = useState(false);
+    const codeOnce = useRef(false);
     const [code, setCode] = useState('');
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
     const [verifying, setVerifying] = useState(false); const [note, setNote] = useState('');
@@ -113,6 +138,13 @@
       const t = setTimeout(() => setCool(c => c - 1), 1000);
       return () => clearTimeout(t);
     }, [cool]);
+    useEffect(() => {
+      const mq = window.matchMedia(PHONE_Q);
+      const apply = () => setPhone(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
     const startCooldown = (secs) => setCool(Math.max(1, Math.round(secs || 120)));
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
@@ -194,6 +226,94 @@
       }
     }
 
+    /* Phone door. Same /api/auth/login/start contract as submitPassword.
+       The waking card is not a spinner we show immediately: it appears
+       only after WAKE_MS with the request still unanswered, and it leaves
+       the moment the server answers. At GIVE_UP_MS the request is aborted. */
+    const rememberStaff = (id) => {
+      try { localStorage.setItem(STAFF_KEY, id); setHeld(true); }
+      catch (e) { setHeld(false); } // sign-in continues; the ID just will not be here next time
+    };
+    const forgetStaff = () => {
+      setIdInput(''); setHeld(false); setPw(''); setErr(''); setBadPw(false);
+      try { localStorage.removeItem(STAFF_KEY); }
+      catch (e) { setErr('This phone could not forget the saved staff ID.'); }
+    };
+    const mmss = (n) => { const s = Math.max(0, n | 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    const leaveCode = () => {
+      codeOnce.current = false; setVerifying(false); setCode(''); setErr(''); setNote(''); setPw(''); setStep('id');
+    };
+    async function phoneSubmit(e) {
+      e && e.preventDefault();
+      if (sending.current) return;
+      if (!idInput.trim() || !pw) return;
+      sending.current = true;
+      setBusy(true); setErr(''); setBadPw(false); setGaveUp(false); setWaking(false);
+      const ac = new AbortController();
+      const wakeTimer = setTimeout(() => setWaking(true), WAKE_MS);
+      const abortTimer = setTimeout(() => ac.abort(), GIVE_UP_MS);
+      let rec = known;
+      const staffId = rec ? (rec.code || rec.name) : idInput.trim().toLowerCase();
+      const stopWait = () => { clearTimeout(wakeTimer); clearTimeout(abortTimer); setWaking(false); };
+      try {
+        const res = await fetch('/api/auth/login/start', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ staffId, password: pw }), signal: ac.signal,
+        });
+        stopWait();
+        if (res.status === 401) {
+          sending.current = false; setBusy(false); setBadPw(true); setPw('');
+          setErr('That password does not match this staff ID. Check caps lock and try again.');
+          setTimeout(() => { const el = document.getElementById('si-pw'); if (el) el.focus(); }, 0);
+          return;
+        }
+        if (res.status === 429) {
+          let d = null;
+          try { d = await res.json(); } catch (parseErr) { d = null; }
+          sending.current = false; setBusy(false);
+          startCooldown(d && d.retryAfter);
+          setErr((d && d.detail) || 'A code went out moments ago. Check your email.');
+          return;
+        }
+        if (!res.ok) {
+          sending.current = false; setBusy(false);
+          setErr('Sign-in service error (' + res.status + '). Try again in a moment.');
+          return;
+        }
+        let data = null;
+        try { data = await res.json(); }
+        catch (parseErr) {
+          sending.current = false; setBusy(false); setGaveUp(true);
+          setErr('The sign-in service answered in a form this screen could not read. Try again.');
+          return;
+        }
+        const u = (data && data.user) || null;
+        const srvPlan = (u && u.plan) || null;
+        if (!rec && u) rec = adopt(u, null);
+        rememberStaff(staffId);
+        sending.current = false; setBusy(false); setErr('');
+        if (data && data.needsCode === false) {
+          if (u && u.mustChangePassword) { onMustChange(rec, { current: pw }, srvPlan, u); return; }
+          onComplete(rec, srvPlan, u); return;
+        }
+        /* needsCode stays in front of the must-change screen. The code is
+           the second factor; the password change needs the session it grants. */
+        authRef.current = { rec, srvPlan, srvUser: u, staffId, tenantId: (u && u.tenantId) || undefined, maskedEmail: data && data.maskedEmail, mustChange: !!(u && u.mustChangePassword) };
+        codeOnce.current = false; setCode(''); setStep('code'); startCooldown(120);
+      } catch (err) {
+        stopWait();
+        sending.current = false; setBusy(false);
+        const aborted = err && err.name === 'AbortError';
+        if (!aborted && offlineDemoAllowed()) {
+          if (!rec) { setErr('No staff record for that ID.'); return; }
+          authRef.current = { rec, srvPlan: null, srvUser: null, staffId, demo: true };
+          codeOnce.current = false; setCode(''); setStep('code'); return;
+        }
+        setGaveUp(true);
+        setErr('The sign-in service is not answering. Check the internet and try again.');
+      }
+    }
+
     /* ---- forgot password ------------------------------------------
        Nobody could get back in on their own. This screen said "the owner
        can reset it" to the owner, so the only path was a phone call to
@@ -245,14 +365,17 @@
            so proving the new password is both the next step and the proof
            it took. */
         setIdInput(resetEmail); setPw(''); setCode(''); setNewPw('');
+        if (phoneNow()) rememberStaff(resetEmail);
         setStep('password');
         setNote('Password changed. Sign in with the new one.');
         setErr('');
       } catch (_) { sending.current = false; setBusy(false); setErr('Network error — try again.'); }
     }
 
-    // Step 2: the emailed code grants the session.
+    // Step 2: the emailed code grants the session. One in-flight verify.
     async function verifyCode(codeVal) {
+      if (codeOnce.current) return;
+      codeOnce.current = true;
       const a = authRef.current;
       setVerifying(true); setErr('');
       if (a.demo || !a.staffId) { setTimeout(() => onComplete(a.rec, a.srvPlan, a.srvUser), 900); return; } // offline demo
@@ -261,11 +384,19 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId: a.staffId, tenantId: a.tenantId, code: codeVal }),
         });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) { setVerifying(false); setCode(''); setErr((data && data.detail) || 'That code isn’t right — check your email.'); return; }
+        const data = await res.json().catch(() => null); // a non-JSON body has no detail; the status still decides
+        if (!res.ok) {
+          codeOnce.current = false; setVerifying(false); setCode('');
+          setErr(phoneNow() ? 'That code is not right. Check the newest email.' : ((data && data.detail) || 'That code isn’t right — check your email.'));
+          return;
+        }
         const u = (data && data.user) || a.srvUser;
+        if (a.mustChange) { onMustChange(a.rec, { current: pw }, (u && u.plan) || a.srvPlan, u); return; }
         onComplete(a.rec, (u && u.plan) || a.srvPlan, u);
-      } catch (_) { setVerifying(false); setErr('Network error — try again.'); }
+      } catch (err) {
+        codeOnce.current = false; setVerifying(false);
+        setErr(phoneNow() ? 'The sign-in service is not answering. Check the internet and try again.' : 'Network error — try again.');
+      }
     }
     async function resendCode() {
       const a = authRef.current;
@@ -296,6 +427,126 @@
       if (em.indexOf('@') < 0) return 'your email on file';
       const [u, d] = em.split('@'); return (u[0] || '') + '••••@' + d;
     })();
+
+    /* Phone tree. Returned before any desktop shell so the wide layout's
+       elements are not created at this width. The existing logo is the
+       mark — the design's "placeholder" caption is a note, not copy. */
+    if (phone) {
+      const backBtn = (fn) => (
+        <button type="button" className="si-back" onClick={fn}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+          Back
+        </button>
+      );
+      const eye = (on) => (
+        <button type="button" className="si-eye" aria-label={on ? 'Hide password' : 'Show password'} onClick={() => setShowPw(s => !s)}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />
+            {on ? <path d="M4 4l16 16" /> : null}
+          </svg>
+        </button>
+      );
+      const takeCode = (raw) => {
+        const next = String(raw || '').replace(/\D/g, '').slice(0, 6);
+        setCode(next);
+        if (err) setErr('');
+        if (next.length === 6) verifyCode(next);
+      };
+      const onCode = (e) => takeCode(e.target.value);
+      /* A paste replaces every box. The browser would otherwise insert
+         at the caret and leave the earlier digits in place. verifyCode
+         latches, so a paste and the input event that follows send once. */
+      const onCodePaste = (e) => {
+        const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
+        if (!text) return;
+        e.preventDefault();
+        takeCode(text);
+      };
+      const root = (children) => <div id="lock" className="si-phone" data-phone-signin="1">{children}</div>;
+      if (step === 'code') return root(
+        <div className="si-col">
+          {backBtn(leaveCode)}
+          <h1>Check your email</h1>
+          <p className="si-lead">We sent a 6-digit code to {maskedEmail}. Type it here.</p>
+          <div className={'si-code' + (err ? ' is-err' : '')}>
+            <input id="si-code" className="si-code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]*" autoFocus aria-label="6-digit code" value={code} onChange={onCode} onPaste={onCodePaste} />
+            {[0, 1, 2, 3, 4, 5].map(i => <i key={i} className={!err && i === code.length && !verifying ? 'cur' : ''}>{code[i] || ''}</i>)}
+          </div>
+          {err ? <p className="si-err" role="alert">{err}</p> : <p className="si-hint">You are signed in as soon as all 6 numbers are in.</p>}
+          <div className="si-resend">
+            {cool > 0 ? <span>New code in {mmss(cool)}</span> : <button type="button" className="si-link" onClick={resendCode}>Send a new code</button>}
+            <button type="button" className="si-link" onClick={leaveCode}>Use another account</button>
+          </div>
+          {note ? <p className="si-hint">{note}</p> : null}
+        </div>
+      );
+      if (step === 'forgot') return root(
+        <form className="si-col" onSubmit={askForReset}>
+          {backBtn(leaveCode)}
+          <h1>Forgot password?</h1>
+          <p className="si-lead">Type the email address you sign in with. We’ll send a code, and you set a new password with it.</p>
+          <div className="si-field">
+            <label htmlFor="si-email">Email</label>
+            <div className="si-input"><input id="si-email" type="email" autoComplete="email" autoFocus value={resetEmail} onChange={e => { setResetEmail(e.target.value); setErr(''); }} /></div>
+          </div>
+          <p className="si-hint">If that address signs in here, the code is on its way. This screen says the same thing either way.</p>
+          {err && <p className="si-err" role="alert">{err}</p>}
+          <button className="si-go" type="submit" disabled={busy || cool > 0}>{busy ? 'Sending…' : cool > 0 ? ('New code in ' + mmss(cool)) : 'Send a code'}</button>
+        </form>
+      );
+      if (step === 'reset') return root(
+        <form className="si-col" onSubmit={submitReset}>
+          {backBtn(() => { setStep('forgot'); setErr(''); setCode(''); })}
+          <h1>Check your email</h1>
+          <p className="si-lead">If {resetEmail} has an account, a 6-digit code is on its way. Choose a new password of at least 8 characters.</p>
+          <div className="si-field">
+            <label htmlFor="si-reset-code">Code</label>
+            <div className="si-input"><input id="si-reset-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus value={code} onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setErr(''); }} /></div>
+          </div>
+          <div className="si-field">
+            <label htmlFor="si-newpw">New password</label>
+            <div className="si-input">
+              <input id="si-newpw" type={showPw ? 'text' : 'password'} autoComplete="new-password" value={newPw} onChange={e => { setNewPw(e.target.value); setErr(''); }} />
+              {eye(showPw)}
+            </div>
+          </div>
+          <p className="si-hint">Setting a new password signs out every device on this account. You’ll sign in again with the new one.</p>
+          {err && <p className="si-err" role="alert">{err}</p>}
+          <button className="si-go" type="submit" disabled={busy || code.length < 6 || newPw.length < 8}>{busy ? 'Setting it…' : 'Set new password'}</button>
+        </form>
+      );
+      const ready = idInput.trim().length > 0 && pw.length > 0 && !busy;
+      return root(
+        <form className="si-col" onSubmit={phoneSubmit}>
+          <div className="si-brand"><Mark w={46} h={32} cut="var(--gray-50)" /><b>Currency Desk</b></div>
+          <h1>Sign in</h1>
+          <p className="si-lead">Use the staff ID and password your manager gave you.</p>
+          {note ? <p className="si-banner" role="status">{note}</p> : null}
+          <div className="si-field">
+            <div className="si-labrow">
+              <label htmlFor="si-id">Staff ID</label>
+              {held ? <button type="button" className="si-link" onClick={forgetStaff}>Not you?</button> : null}
+            </div>
+            <div className="si-input">
+              <input id="si-id" name="username" autoComplete="username" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoFocus={!held} value={idInput} onChange={e => { setIdInput(e.target.value); setErr(''); setBadPw(false); }} />
+            </div>
+          </div>
+          <div className="si-field">
+            <label htmlFor="si-pw">Password</label>
+            <div className={'si-input' + (badPw ? ' is-err' : '')}>
+              <input id="si-pw" name="password" type={showPw ? 'text' : 'password'} autoComplete="current-password" autoFocus={!!held} value={pw} onChange={e => { setPw(e.target.value); setErr(''); setBadPw(false); setGaveUp(false); }} />
+              {eye(showPw)}
+            </div>
+            {badPw && <p className="si-err" role="alert">{err}</p>}
+          </div>
+          {waking && <div className="si-wait" role="status"><span className="si-spin" aria-hidden="true" /><span><b>Signing you in.</b> The first sign-in of the day can take up to a minute while the system wakes up. Please keep this screen open.</span></div>}
+          {!badPw && err && <p className="si-err" role="alert">{err}</p>}
+          <button className="si-go" type="submit" disabled={!ready}>{busy ? 'Signing in…' : gaveUp ? 'Try again' : 'Sign in'}</button>
+          <div className="si-links"><button type="button" className="si-link" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); }}>Forgot password?</button></div>
+          {onSignup ? <p className="si-foot">New shop? <button type="button" onClick={onSignup}>Set up your desk</button></p> : null}
+        </form>
+      );
+    }
 
     // ---- shells --------------------------------------------------------
     const card = (children, width = 404) => (

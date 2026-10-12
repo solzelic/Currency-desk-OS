@@ -74,6 +74,10 @@ async function tillSessionOpen(page: Page): Promise<boolean> {
 }
 
 async function openNewTransaction(page: Page): Promise<void> {
+  /* A phone opens Rates after sign-in, or the last tab. New transaction
+     lives on the ledger, so open that tab before looking for the button. */
+  const ledger = page.locator('#phonebar [data-phone-app="ledger"]');
+  if (await ledger.isVisible().catch(() => false)) await ledger.click();
   const button = () => page.getByRole("button", { name: /^New transaction$/i }).first();
   await expect(button()).toBeVisible({ timeout: 30_000 });
   if (!(await tillSessionOpen(page))) {
@@ -97,6 +101,7 @@ async function openNewTransaction(page: Page): Promise<void> {
     await seen;
     await landOnDesktop(page);
     await dismissTour(page);
+    if (await ledger.isVisible().catch(() => false)) await ledger.click();
     expect(await tillSessionOpen(page), "till session after open").toBe(true);
   }
   await expect(button()).toBeEnabled({ timeout: 30_000 });

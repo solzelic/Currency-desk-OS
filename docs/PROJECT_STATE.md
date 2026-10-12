@@ -118,7 +118,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   stay off the phone. A card that holds a table scrolls sideways,
   and the right edge fades. Rounded clips,
   photos, and bars stay clipped. Settings stacks its list above the
-  form. Sign-in and the station picker stay on the screen. The window
+  form. Sign-in and the station picker stay on the screen. On a phone
+  the shop sign-in is staff ID and password together, then the emailed
+  6-digit code. The device remembers the staff ID (Not you? clears it)
+  and does not store the password. That ID, and the last phone tab,
+  stay on the device. They are not part of the desk's saved state.
+  If the server has not answered after
+  a few seconds, the screen says the first sign-in can take up to a
+  minute. After sign-in a phone opens the last tab used on that phone,
+  or Rates. Wider than 430px, sign-in is the screen the desk already had.
+  The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
   above the bottom bar. A task sheet fills the phone and covers the
@@ -641,6 +650,10 @@ server summary, or it is omitted.
 **2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
 uppercase suffix (`3:02 PM`). A form date stays `Jun 18, 2026`.
 A list group for the business day is `Today, Oct 11`.
+
+**2026-10-12**, Cheques picture. The 1280 Cheques PNG is the Actions
+render from run 38189339979, after `cust_` ids are frozen. The
+other desktop pictures stay the render from run 38187138637.
 
 **2026-10-12**, phone top bar. A closed till and an open teller till
 join the station, the till, and the status with ` · `. A flex item

@@ -1725,6 +1725,14 @@
     function openApp(id) {
       setPhoneMore(false);
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) { openSettingsTab('billing'); return; }
+      /* Last tab on this phone. A wide window does not write it, and the
+         next sign-in there still opens the ledger. */
+      if (window.innerWidth <= 430 && APP_ORDER.includes(baseApp(id))) {
+        /* phone_tab, not cdos_*. The desk snapshot would otherwise
+           replace this phone's last tab with another desk's. */
+        try { localStorage.setItem('phone_tab', baseApp(id)); }
+        catch (e) { /* the tab still opens if this phone cannot store it */ }
+      }
       setWins(ws => {
         const ex = ws.find(w => w.id === id);
         if (ex) return ws.map(w => w.id === id ? { ...w, z: ++zTop.current, min: false } : w);
@@ -2145,8 +2153,17 @@
       setStage('desktop');
       /* With the desktop, not a moment later. A deferred open used to land
          on top of whatever had just been clicked: the Ledger arrived about
-         60ms after sign-in and covered it. */
-      openApp(planAllows('ledger') ? 'ledger' : 'rates');
+         60ms after sign-in and covered it.
+         A phone opens the last tab used on this device, or Rates. A wide
+         window still opens the ledger (Rates on a basic plan). */
+      let home = planAllows('ledger') ? 'ledger' : 'rates';
+      if (window.innerWidth <= 430) {
+        let last = '';
+        try { last = localStorage.getItem('phone_tab') || ''; }
+        catch (e) { last = ''; }
+        home = (last && APP_ORDER.includes(last) && planAllows(last)) ? last : (planAllows('rates') ? 'rates' : home);
+      }
+      openApp(home);
     }
     function logout() {
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
