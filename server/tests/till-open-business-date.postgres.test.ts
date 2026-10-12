@@ -10,7 +10,6 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
-import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { readDateOnly } from "../src/ledger/business-date.js";
@@ -61,15 +60,12 @@ function zonedClock(iso: string, timeZone: string) {
 postgres("a till opened after midnight takes the branch calendar date", () => {
   beforeAll(async () => {
     process.env.CD_TEST_CLOCK = "1";
+    /* One database for the desk and the ledger. The branch row the till
+       reads has to be the row this test dates. */
     process.env.DATABASE_URL = url;
-    const real = await createDb();
-    await real.close();
-    delete process.env.DATABASE_URL;
-    process.env.PGLITE_MEMORY = "1";
-    process.env.LEDGER_DATABASE_URL = url;
-    pool = new pg.Pool({ connectionString: url });
-    await runMigrations(pool);
+    delete process.env.LEDGER_DATABASE_URL;
     handle = await createDb();
+    pool = new pg.Pool({ connectionString: url });
     await seed(handle.db);
     app = await buildApp(handle.db);
   });
@@ -81,8 +77,7 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
     await app.close();
     await handle.close();
     await pool.end();
-    delete process.env.LEDGER_DATABASE_URL;
-    delete process.env.PGLITE_MEMORY;
+    delete process.env.DATABASE_URL;
     if (clockBefore === undefined) delete process.env.CD_TEST_CLOCK;
     else process.env.CD_TEST_CLOCK = clockBefore;
   });
@@ -105,10 +100,11 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
 
   for (const item of CASES) {
     it(`opens on ${item.businessDate} in ${item.zone} at ${item.at}`, async () => {
-      await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [
+      const dated = await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [
         DEMO.branchId,
         item.zone,
       ]);
+      expect(dated.rowCount).toBe(1);
       const login = await app.inject({
         method: "POST",
         url: "/api/auth/login",
