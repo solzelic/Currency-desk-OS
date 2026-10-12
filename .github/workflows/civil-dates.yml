@@ -5,7 +5,10 @@
 # Reverting the civil-date helper to toISOString() fails the Jerusalem job.
 name: Civil dates
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   zones:

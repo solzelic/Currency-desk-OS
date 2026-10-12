@@ -8,7 +8,10 @@
 # scripts/check-repository-governance.mjs so it can also run locally.
 name: Governance
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   governance-docs-freshness:

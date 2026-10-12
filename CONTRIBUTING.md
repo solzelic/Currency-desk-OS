@@ -67,6 +67,8 @@ not the tool that performed it.
 
 ## Pull requests
 
+New agent PRs are frozen until Sol's push, except the finalize list.
+
 Use the PR template. Every PR states:
 
 - **Problem** — what is wrong or missing, in product terms.
