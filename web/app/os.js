@@ -62414,6 +62414,26 @@ window.CDOS_PERSIST = (function () {
     };
   }
 
+  function shownCodes(rows, order) {
+    return order.filter((code) => rows[code] && rows[code].show !== false);
+  }
+
+  function homeSix(rows, order) {
+    return shownCodes(rows, order).slice(0, 6);
+  }
+
+  function previewNote(rows, order) {
+    const on = shownCodes(rows, order);
+    const rest = on.slice(6);
+    const hidden = order.filter((code) => rows[code] && rows[code].show === false);
+    const parts = [];
+    if (rest.length === 1) parts.push("1 more on the rate board page (" + rest[0] + ").");
+    else if (rest.length > 1) parts.push(rest.length + " more on the rate board page (" + rest.join(", ") + ").");
+    if (hidden.length === 1) parts.push(hidden[0] + " is hidden.");
+    else if (hidden.length > 1) parts.push(hidden.join(", ") + " are hidden.");
+    return parts.join(" ");
+  }
+
   function clockLabel(value, zone) {
     const format = window.CDOS && window.CDOS.formatPhoneTime;
     if (typeof format !== "function" || value == null || value === "") return "";
@@ -62436,6 +62456,8 @@ window.CDOS_PERSIST = (function () {
     clampSpot: clampSpot,
     stepMargin: stepMargin,
     copyBoard: copyBoard,
+    homeSix: homeSix,
+    previewNote: previewNote,
     clockLabel: clockLabel,
   };
 })();
@@ -63200,9 +63222,9 @@ window.CDOS_PERSIST = (function () {
 
 /* ---- os-src/cdos-rates-phone.jsx ---- */
 /* Phone Rates editor. Margins, spot, per-row spread, order, and
-   whether a currency is on the board. Tellers get the read-only
-   list. Public preview and Publish are later slices. Desktop Rates
-   stays the Rate Board iframe. */
+   whether a currency is on the board, plus a public preview of the
+   homepage six. Tellers get the read-only list. Publish is a later
+   slice. Desktop Rates stays the Rate Board iframe. */
 (function () {
   const {
     useEffect,
@@ -63252,6 +63274,7 @@ window.CDOS_PERSIST = (function () {
     const [published, setPublished] = useState(null);
     const [draft, setDraft] = useState(null);
     const [feed, setFeed] = useState({});
+    const [mode, setMode] = useState("edit");
     const [openCode, setOpenCode] = useState(null);
     const [spotText, setSpotText] = useState("");
     const [spreadText, setSpreadText] = useState(null);
@@ -63504,41 +63527,82 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement("span", null, title), meta ? /*#__PURE__*/React.createElement("span", null, meta) : null), /*#__PURE__*/React.createElement("div", {
       className: "phone-rate-list"
     }, codes.map(rowView)));
-    const body = /*#__PURE__*/React.createElement(React.Fragment, null, can ? /*#__PURE__*/React.createElement("div", {
-      className: "phone-rate-mg"
-    }, [["buyMargin", "Buy margin, under spot"], ["sellMargin", "Sell margin, over spot"]].map(([key, label]) => /*#__PURE__*/React.createElement("div", {
-      key: key,
-      className: "phone-rate-box"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "phone-rate-k"
-    }, label), /*#__PURE__*/React.createElement("div", {
-      className: "phone-rate-step"
-    }, /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      "aria-label": "Lower " + label,
-      onClick: () => setDraft(current => ({
-        ...current,
-        [key]: rates.stepMargin(current[key], -1)
-      }))
-    }, "\u2212"), /*#__PURE__*/React.createElement("b", null, rates.formatPercent(draft[key])), /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      "aria-label": "Raise " + label,
-      onClick: () => setDraft(current => ({
-        ...current,
-        [key]: rates.stepMargin(current[key], 1)
-      }))
-    }, "+"))))) : null, /*#__PURE__*/React.createElement("div", {
-      className: "phone-rate-lock"
-    }, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("i", null), status), can ? /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      className: "phone-rate-lockbtn",
-      "aria-pressed": !!locked,
-      "aria-label": locked ? "Rates locked in this browser" : "Lock rates in this browser",
-      onClick: onToggleLock
-    }, locked ? "Locked" : "Lock") : null), feedNote ? /*#__PURE__*/React.createElement("p", {
-      className: "phone-rate-banner",
-      role: "alert"
-    }, feedNote) : null, list(home, "On your homepage, top 6", can ? "Drag to reorder" : ""), rest.length ? list(rest, "Rate board page only", "") : null);
+    let body;
+    if (!can || mode === "edit") {
+      body = /*#__PURE__*/React.createElement(React.Fragment, null, can ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+        className: "phone-seg",
+        role: "tablist"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: mode === "edit" ? "phone-seg-btn on" : "phone-seg-btn",
+        onClick: () => setMode("edit")
+      }, "Edit"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: mode === "preview" ? "phone-seg-btn on" : "phone-seg-btn",
+        onClick: () => setMode("preview")
+      }, "Public preview")), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-mg"
+      }, [["buyMargin", "Buy margin, under spot"], ["sellMargin", "Sell margin, over spot"]].map(([key, label]) => /*#__PURE__*/React.createElement("div", {
+        key: key,
+        className: "phone-rate-box"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-k"
+      }, label), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-step"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-label": "Lower " + label,
+        onClick: () => setDraft(current => ({
+          ...current,
+          [key]: rates.stepMargin(current[key], -1)
+        }))
+      }, "\u2212"), /*#__PURE__*/React.createElement("b", null, rates.formatPercent(draft[key])), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-label": "Raise " + label,
+        onClick: () => setDraft(current => ({
+          ...current,
+          [key]: rates.stepMargin(current[key], 1)
+        }))
+      }, "+")))))) : null, /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-lock"
+      }, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("i", null), status), can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-lockbtn",
+        "aria-pressed": !!locked,
+        "aria-label": locked ? "Rates locked in this browser" : "Lock rates in this browser",
+        onClick: onToggleLock
+      }, locked ? "Locked" : "Lock") : null), feedNote ? /*#__PURE__*/React.createElement("p", {
+        className: "phone-rate-banner",
+        role: "alert"
+      }, feedNote) : null, list(home, "On your homepage, top 6", can ? "Drag to reorder" : ""), rest.length ? list(rest, "Rate board page only", "") : null);
+    } else {
+      const six = rates.homeSix(draft.rows, draft.order);
+      const note = rates.previewNote(draft.rows, draft.order);
+      body = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+        className: "phone-seg",
+        role: "tablist"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-seg-btn",
+        onClick: () => setMode("edit")
+      }, "Edit"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-seg-btn on",
+        onClick: () => setMode("preview")
+      }, "Public preview")), /*#__PURE__*/React.createElement("p", {
+        className: "phone-rate-hint"
+      }, "What your homepage will show after you publish. Not live yet."), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-board"
+      }, /*#__PURE__*/React.createElement("h3", null, /*#__PURE__*/React.createElement("span", null, "TODAY'S RATES"), /*#__PURE__*/React.createElement("span", null, "CAD")), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-board-r is-hd"
+      }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("span", null, "We buy"), /*#__PURE__*/React.createElement("span", null, "We sell")), six.map(code => {
+        const quote = prices(code);
+        return /*#__PURE__*/React.createElement("div", {
+          key: code,
+          className: "phone-rate-board-r"
+        }, /*#__PURE__*/React.createElement("b", null, quote.label), /*#__PURE__*/React.createElement("span", null, quote.buy), /*#__PURE__*/React.createElement("span", null, quote.sell));
+      }), note ? /*#__PURE__*/React.createElement("p", null, note) : null));
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "phone-rates",
       "data-phone-rates": "",

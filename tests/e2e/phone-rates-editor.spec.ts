@@ -1,4 +1,4 @@
-/* Phone Rates editor. Preview and Publish are later slices. */
+/* Phone Rates editor. Publish is a later slice. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
@@ -83,7 +83,7 @@ test("a manager edits the board the server published", async ({ page }) => {
   await expect(screen.getByRole("button", { name: "Lock rates in this browser" })).toBeVisible();
   await expect(screen.getByText("On your homepage, top 6")).toBeVisible();
   await expect(screen.locator('[data-code="USD"]')).toContainText("US Dollar");
-  await expect(screen.getByRole("button", { name: "Public preview" })).toHaveCount(0);
+  await expect(screen.getByRole("button", { name: "Public preview" })).toBeVisible();
   await expect(screen.getByRole("button", { name: /Publish/ })).toHaveCount(0);
   const before = await screen.locator('[data-code="USD"] .is-buy').innerText();
   await screen.getByRole("button", { name: "Raise Buy margin, under spot" }).click();

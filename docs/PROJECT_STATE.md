@@ -571,11 +571,16 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone Rates public preview. A manager or an admin
+can switch the phone Rates editor to the homepage six. Figures stay
+CAD per 1 through `boardQuote`. Hidden currencies and the rest of
+the board are named under the preview. Nothing is published from
+this slice. The desktop Rate Board iframe is unchanged.
+
 **2026-10-12**, phone Rates editor. Under 430px the Rates tab is the
 board editor: margins, spot, spread, order, and on the board. A
 teller sees the list. Figures are CAD per 1 through `boardQuote`.
-Public preview and Publish are not on this slice. The desktop Rate
-Board iframe is unchanged.
+The desktop Rate Board iframe is unchanged.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the

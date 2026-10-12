@@ -697,4 +697,10 @@
   .phone-rate-hint { margin: 8px 0 0; font-size: 12px; line-height: 16px; color: var(--color-text-muted, #6B6760); }
   .phone-rate-feed { display: inline-flex; align-items: center; min-height: 44px; margin-left: 6px; padding: 0 4px; border: 0; background: transparent; color: var(--brand-primary, #274B8E); font-size: 13px; font-weight: 600; text-decoration: underline; }
   .phone-rate-banner { margin: 0 0 8px; padding: 8px 12px; border-radius: 10px; background: var(--color-negative-bg, #FDECEA); color: var(--color-negative, #B42318); font-size: 13px; line-height: 18px; }
+  .phone-rate-board { background: #17140F; color: #F7F4ED; border-radius: 12px; padding: 16px; }
+  .phone-rate-board h3 { display: flex; justify-content: space-between; margin: 0 0 8px; font-size: 13px; letter-spacing: 0.06em; color: #C9C5BC; font-weight: 600; }
+  .phone-rate-board-r { display: grid; grid-template-columns: 1fr 72px 72px; padding: 10px 0; border-bottom: 1px solid #45403A; font-variant-numeric: tabular-nums; font-size: 16px; }
+  .phone-rate-board-r span { text-align: right; }
+  .phone-rate-board-r.is-hd { color: #C9C5BC; font-size: 12px; border-bottom: 0; padding-bottom: 0; }
+  .phone-rate-board p { margin: 8px 0 0; color: #C9C5BC; font-size: 12px; line-height: 16px; }
 }

@@ -332,7 +332,12 @@ board, and the order. The first six places are the homepage group.
 A teller sees the list and the buy and sell prices, stacked, with
 no steppers, no drag, and no board switch. Buy and sell are CAD per
 1, from `boardQuote`, the same places as the public rates page.
-This slice has no public preview and no Publish button.
+
+A manager or an admin can switch to Public preview. That board is
+the first six currencies still on the board, with the same
+`boardQuote` figures. The line under it names anything hidden and
+anything past those six. It is not live. This slice has no Publish
+button.
 
 Currency names are `BY[code].name` in `yorkfx-converter.js`. Lock is
 the desktop flag `yorkfx_rates_locked` in this browser.

@@ -1,7 +1,7 @@
 /* Phone Rates editor. Margins, spot, per-row spread, order, and
-   whether a currency is on the board. Tellers get the read-only
-   list. Public preview and Publish are later slices. Desktop Rates
-   stays the Rate Board iframe. */
+   whether a currency is on the board, plus a public preview of the
+   homepage six. Tellers get the read-only list. Publish is a later
+   slice. Desktop Rates stays the Rate Board iframe. */
 (function () {
   const { useEffect, useState } = React;
   const R = () => window.CDOS.phoneRates;
@@ -36,6 +36,7 @@
     const [published, setPublished] = useState(null);
     const [draft, setDraft] = useState(null);
     const [feed, setFeed] = useState({});
+    const [mode, setMode] = useState("edit");
     const [openCode, setOpenCode] = useState(null);
     const [spotText, setSpotText] = useState("");
     const [spreadText, setSpreadText] = useState(null);
@@ -226,31 +227,61 @@
       </section>
     );
 
-    const body = (
-      <>
-        {can ? (
-          <div className="phone-rate-mg">
-            {[["buyMargin", "Buy margin, under spot"], ["sellMargin", "Sell margin, over spot"]].map(([key, label]) => (
-              <div key={key} className="phone-rate-box">
-                <div className="phone-rate-k">{label}</div>
-                <div className="phone-rate-step">
-                  <button type="button" aria-label={"Lower " + label} onClick={() => setDraft((current) => ({ ...current, [key]: rates.stepMargin(current[key], -1) }))}>−</button>
-                  <b>{rates.formatPercent(draft[key])}</b>
-                  <button type="button" aria-label={"Raise " + label} onClick={() => setDraft((current) => ({ ...current, [key]: rates.stepMargin(current[key], 1) }))}>+</button>
-                </div>
+    let body;
+    if (!can || mode === "edit") {
+      body = (
+        <>
+          {can ? (
+            <>
+              <div className="phone-seg" role="tablist">
+                <button type="button" className={mode === "edit" ? "phone-seg-btn on" : "phone-seg-btn"} onClick={() => setMode("edit")}>Edit</button>
+                <button type="button" className={mode === "preview" ? "phone-seg-btn on" : "phone-seg-btn"} onClick={() => setMode("preview")}>Public preview</button>
               </div>
-            ))}
+              <div className="phone-rate-mg">
+                {[["buyMargin", "Buy margin, under spot"], ["sellMargin", "Sell margin, over spot"]].map(([key, label]) => (
+                  <div key={key} className="phone-rate-box">
+                    <div className="phone-rate-k">{label}</div>
+                    <div className="phone-rate-step">
+                      <button type="button" aria-label={"Lower " + label} onClick={() => setDraft((current) => ({ ...current, [key]: rates.stepMargin(current[key], -1) }))}>−</button>
+                      <b>{rates.formatPercent(draft[key])}</b>
+                      <button type="button" aria-label={"Raise " + label} onClick={() => setDraft((current) => ({ ...current, [key]: rates.stepMargin(current[key], 1) }))}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+          <div className="phone-rate-lock">
+            <p><i />{status}</p>
+            {can ? <button type="button" className="phone-rate-lockbtn" aria-pressed={!!locked} aria-label={locked ? "Rates locked in this browser" : "Lock rates in this browser"} onClick={onToggleLock}>{locked ? "Locked" : "Lock"}</button> : null}
           </div>
-        ) : null}
-        <div className="phone-rate-lock">
-          <p><i />{status}</p>
-          {can ? <button type="button" className="phone-rate-lockbtn" aria-pressed={!!locked} aria-label={locked ? "Rates locked in this browser" : "Lock rates in this browser"} onClick={onToggleLock}>{locked ? "Locked" : "Lock"}</button> : null}
-        </div>
-        {feedNote ? <p className="phone-rate-banner" role="alert">{feedNote}</p> : null}
-        {list(home, "On your homepage, top 6", can ? "Drag to reorder" : "")}
-        {rest.length ? list(rest, "Rate board page only", "") : null}
-      </>
-    );
+          {feedNote ? <p className="phone-rate-banner" role="alert">{feedNote}</p> : null}
+          {list(home, "On your homepage, top 6", can ? "Drag to reorder" : "")}
+          {rest.length ? list(rest, "Rate board page only", "") : null}
+        </>
+      );
+    } else {
+      const six = rates.homeSix(draft.rows, draft.order);
+      const note = rates.previewNote(draft.rows, draft.order);
+      body = (
+        <>
+          <div className="phone-seg" role="tablist">
+            <button type="button" className="phone-seg-btn" onClick={() => setMode("edit")}>Edit</button>
+            <button type="button" className="phone-seg-btn on" onClick={() => setMode("preview")}>Public preview</button>
+          </div>
+          <p className="phone-rate-hint">What your homepage will show after you publish. Not live yet.</p>
+          <div className="phone-rate-board">
+            <h3><span>TODAY'S RATES</span><span>CAD</span></h3>
+            <div className="phone-rate-board-r is-hd"><span /><span>We buy</span><span>We sell</span></div>
+            {six.map((code) => {
+              const quote = prices(code);
+              return <div key={code} className="phone-rate-board-r"><b>{quote.label}</b><span>{quote.buy}</span><span>{quote.sell}</span></div>;
+            })}
+            {note ? <p>{note}</p> : null}
+          </div>
+        </>
+      );
+    }
 
     return (
       <div className="phone-rates" data-phone-rates="" data-can-publish={can ? "yes" : "no"}>

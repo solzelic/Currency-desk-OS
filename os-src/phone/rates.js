@@ -109,6 +109,26 @@
     };
   }
 
+  function shownCodes(rows, order) {
+    return order.filter((code) => rows[code] && rows[code].show !== false);
+  }
+
+  function homeSix(rows, order) {
+    return shownCodes(rows, order).slice(0, 6);
+  }
+
+  function previewNote(rows, order) {
+    const on = shownCodes(rows, order);
+    const rest = on.slice(6);
+    const hidden = order.filter((code) => rows[code] && rows[code].show === false);
+    const parts = [];
+    if (rest.length === 1) parts.push("1 more on the rate board page (" + rest[0] + ").");
+    else if (rest.length > 1) parts.push(rest.length + " more on the rate board page (" + rest.join(", ") + ").");
+    if (hidden.length === 1) parts.push(hidden[0] + " is hidden.");
+    else if (hidden.length > 1) parts.push(hidden.join(", ") + " are hidden.");
+    return parts.join(" ");
+  }
+
   function clockLabel(value, zone) {
     const format = window.CDOS && window.CDOS.formatPhoneTime;
     if (typeof format !== "function" || value == null || value === "") return "";
@@ -131,6 +151,8 @@
     clampSpot: clampSpot,
     stepMargin: stepMargin,
     copyBoard: copyBoard,
+    homeSix: homeSix,
+    previewNote: previewNote,
     clockLabel: clockLabel,
   };
 })();
