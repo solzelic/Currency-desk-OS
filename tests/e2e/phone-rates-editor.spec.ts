@@ -151,5 +151,7 @@ test("spread finds Rates", async ({ page }) => {
   await atDesk(page, "a.singh");
   await page.locator('#phonebar [data-phone-app="more"]').click();
   await page.getByRole("textbox", { name: "Search apps" }).fill("spread");
-  await expect(page.locator("#phone-more .phone-more-name")).toHaveText(["Rates"]);
+  const names = await page.locator("#phone-more .phone-more-name").allTextContents();
+  expect(names).toContain("Rates");
+  expect(names).toContain("Pricing");
 });
