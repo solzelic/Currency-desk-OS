@@ -626,6 +626,110 @@ test("the status stays whole and a long place ends in one ellipsis", async ({ pa
   expect(weight).toBe("600");
 });
 
+/* The back control lives on a record. A local row is what the desk
+   already keeps for a deal the ledger has not posted. The tenant
+   restore can replace that store once, so the write is checked. */
+async function seedLocalRecord(page: Page): Promise<void> {
+  const write = () => page.evaluate(() => {
+    const day = new Date().toISOString().slice(0, 10);
+    const rows = JSON.parse(localStorage.getItem("cdos_rows_v1") || "[]");
+    const next = rows.filter((row: { id?: string }) => row && row.id !== "phone-back-row");
+    next.unshift({
+      id: "phone-back-row",
+      ref: "CD-BACK",
+      date: day,
+      time: "15:02",
+      customer: "Ada North",
+      type: "Buy",
+      inCcy: "CAD",
+      inAmt: 100,
+      outCcy: "USD",
+      outAmt: 70,
+      fee: 2,
+      teller: "A. Singh",
+      status: "posted",
+      thread: [],
+      filed: false,
+    });
+    localStorage.setItem("cdos_rows_v1", JSON.stringify(next));
+  });
+  const present = () => page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_rows_v1") || "[]");
+    return rows.some((row: { id?: string }) => row && row.id === "phone-back-row");
+  });
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await write();
+    await page.waitForTimeout(400);
+    if (await present()) break;
+  }
+  expect(await present(), "the local record stayed in the book").toBe(true);
+}
+
+test("a record goes back with a chevron and the parent name", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  await seedLocalRecord(page);
+  await page.reload();
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await expect.poll(async () => page.evaluate(() => {
+    const rows = JSON.parse(localStorage.getItem("cdos_rows_v1") || "[]");
+    return rows.some((row: { id?: string }) => row && row.id === "phone-back-row");
+  })).toBe(true);
+  await page.locator('#phonebar [data-phone-app="ledger"]').click();
+  await page.locator(".phone-ledger .phone-row", { hasText: "Ada North" }).click();
+  const back = page.getByRole("button", { name: "Back to Records" });
+  await expect(back).toBeVisible();
+  await expect(back).toHaveClass(/phone-back/);
+  const box = await back.boundingBox();
+  expect(box, "hit area").toBeTruthy();
+  expect(Math.round(box!.height)).toBe(44);
+  const seen = await back.evaluate((el) => {
+    const hit = el.getBoundingClientRect();
+    const icon = el.querySelector("svg");
+    const label = el.querySelector(".phone-back-label");
+    const path = icon ? icon.querySelector("path") : null;
+    const iconBox = icon ? icon.getBoundingClientRect() : null;
+    const labelBox = label ? label.getBoundingClientRect() : null;
+    const labelStyle = label ? getComputedStyle(label) : null;
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-text)";
+    document.body.appendChild(probe);
+    const token = getComputedStyle(probe).color;
+    probe.remove();
+    const covers = !!(iconBox && labelBox
+      && iconBox.top >= hit.top - 0.5 && iconBox.bottom <= hit.bottom + 0.5
+      && labelBox.top >= hit.top - 0.5 && labelBox.bottom <= hit.bottom + 0.5
+      && iconBox.left >= hit.left - 0.5 && labelBox.right <= hit.right + 0.5);
+    return {
+      text: el.textContent || "",
+      label: label ? label.textContent : "",
+      paths: icon ? icon.querySelectorAll("path").length : 0,
+      d: path ? path.getAttribute("d") || "" : "",
+      iconW: iconBox ? Math.round(iconBox.width) : 0,
+      iconH: iconBox ? Math.round(iconBox.height) : 0,
+      covers,
+      fontSize: labelStyle ? labelStyle.fontSize : "",
+      lineHeight: labelStyle ? labelStyle.lineHeight : "",
+      fontWeight: labelStyle ? labelStyle.fontWeight : "",
+      color: labelStyle ? labelStyle.color : "",
+      token,
+    };
+  });
+  expect(seen.text).not.toContain("←");
+  expect(seen.label).toBe("Records");
+  expect(seen.paths).toBe(1);
+  expect(seen.d).toBe("m15 18-6-6 6-6");
+  expect(seen.d).not.toMatch(/H5|M19/);
+  expect(seen.iconW).toBe(24);
+  expect(seen.iconH).toBe(24);
+  expect(seen.covers).toBe(true);
+  expect(seen.fontSize).toBe("16px");
+  expect(seen.lineHeight).toBe("24px");
+  expect(String(seen.fontWeight)).toBe("600");
+  expect(seen.color).toBe(seen.token);
+});
+
 test("Ledger passes the phone sweep", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page, "a.singh");

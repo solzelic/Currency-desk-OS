@@ -572,6 +572,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone back. `Phone.Back` is a 24px chevron and the
+parent name, in `var(--color-text)` at 16px / 24px line height,
+weight 600. The hit is 44px tall and covers the icon and the name.
+There is no arrow character. The ledger record uses it, labelled
+Records. The control is hidden above 430px.
+
 **2026-10-12**, phone top bar. The till line is the status, then
 one place (`Till closed · Wholesale desk`). A long place ends in
 one ellipsis. The avatar initials use the sans stack at 15px,

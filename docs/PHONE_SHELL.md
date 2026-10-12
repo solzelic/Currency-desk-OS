@@ -188,6 +188,22 @@ is `.phone-till-sep` (` · `). The avatar initials use the
 `tokens.css` sans stack (`--font-ui`) at 15px, weight 600. The
 header stays 56px tall at 360 and at 390.
 
+### Back
+
+`label` string, the parent the screen returns to (`More`,
+`Compliance`, `Records`). `onClick` leaves the screen.
+
+`Phone.Back` is a chevron-left, 24px, and that name. The name is
+`var(--color-text)`, 16px, line-height 24px, weight 600. The button
+is 44px tall and the hit covers the icon and the name. The icon is
+a chevron only. There is no arrow character and no shaft.
+
+The control is `display: none` above 430px. A wide window keeps
+Back in the window title bar.
+
+The ledger record is the foundation screen that leaves a list. It
+uses `Phone.Back` with the label `Records`.
+
 ### Title
 
 `title` string. `subtitle` optional string. `action` optional node.
@@ -484,6 +500,8 @@ pixels alone.
 10. A task dialog uses `Phone.TaskSheet` (or the `.phone-task` classes).
     It covers the tab bar. A confirm uses `Phone.ConfirmSheet` and
     stays above the bar.
+11. A screen that returns to a parent uses `Phone.Back` with that
+    parent's name. Do not draw an arrow character.
 
 ## Not in this foundation
 
@@ -498,7 +516,9 @@ is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 More is one proof screen. The ledger is the other. Under 430px the
 ledger window is a `Phone.Screen`: title, Records and Compliance,
 summary cards, search, type select, `FilterChips`, `ListRow`s grouped
-by day, and a sticky **New transaction**. Amounts use
+by day, and a sticky **New transaction**. A record opens over
+that list and goes back with `Phone.Back`, labelled Records.
+Amounts use
 `formatPhoneMoney`. Times are 12-hour. The figures are the ledger's
 own rows; an empty book says so. The desktop ledger is the same tree
 it was: the in-page New transaction, the table, and the folder tabs.
