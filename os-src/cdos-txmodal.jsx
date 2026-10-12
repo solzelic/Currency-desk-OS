@@ -267,9 +267,11 @@
       const h = live.filter(r => r.customer === name);
       const home = deskHome();
       const winDays = (settings && settings.structuringDays) || 30;
-      const cutoff = window.CDOS.structuringWatchStart(winDays);
+      const watchEnd = new Date();
+      const cutoff = window.CDOS.structuringWatchStart(winDays, watchEnd);
+      const inWatch = (r) => { const t = window.CDOS.branchWallTime(r.date, r.time || '00:00'); return t >= cutoff && t <= watchEnd; };
       let total = 0, windowCad = 0, unknown = false; const cc = {};
-      h.forEach(r => { const cad = cashInHome(r.inAmt, r.inCcy, home); if (cad == null) { unknown = true; } else { total += cad; if (r.date >= cutoff) windowCad += cad; } const c = (r.outCcy && r.outCcy !== home) ? r.outCcy : (r.inCcy !== home ? r.inCcy : null); if (c) cc[c] = (cc[c] || 0) + 1; });
+      h.forEach(r => { const cad = cashInHome(r.inAmt, r.inCcy, home); if (cad == null) { unknown = true; } else { total += cad; if (inWatch(r)) windowCad += cad; } const c = (r.outCcy && r.outCcy !== home) ? r.outCcy : (r.inCcy !== home ? r.inCcy : null); if (c) cc[c] = (cc[c] || 0) + 1; });
       if (unknown) { total = null; windowCad = null; }
       const last = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const days = last ? Math.round((Date.parse(TODAY) - Date.parse(last)) / 86400000) : null;

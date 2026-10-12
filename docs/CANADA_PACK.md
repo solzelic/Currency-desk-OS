@@ -126,7 +126,9 @@ These are not implemented. The pack does not pretend they are.
   is that instant plus 24 hours, not the next local midnight.
   The compliance clusters and the time on a posted deal use the
   zone the till session names. The ledger row's separate rolling
-  lookback is not this window.
+  lookback is not this window. The structuring watch is also not
+  this window: it is N times 24 hours ending at the deal, and the
+  screen still calls it an N-day rolling watch.
 - Other fields s.36 asks for on a ticket (telephone, the rate, an
   account number) are not stored. The four fields the survey named
   are the ones this pack requires.

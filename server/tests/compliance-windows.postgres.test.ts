@@ -10,7 +10,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
-import { zonedWallTime } from "../src/ledger/business-date.js";
+import { businessDate, zonedWallTime } from "../src/ledger/business-date.js";
 import { branchStaticWindow } from "../src/ledger/canada-rules.js";
 import {
   calendarDayWindow,
@@ -191,16 +191,32 @@ postgres("compliance windows on PostgreSQL", () => {
     });
   }
 
-  it("names the structuring watch and search yesterday from the branch date", () => {
+  it("counts the structuring watch as N times 24 hours ending now", () => {
+    /* 00:10 on 12 October in Jerusalem is still 11 October in UTC.
+       One day is the 24 hours before that instant. A deal 23 hours
+       earlier is 01:10 on 11 October, the previous calendar date,
+       and it counts. A deal at 00:05 that same morning is more than
+       24 hours earlier, still the previous date, and it does not. */
+    const jerusalem = new Date("2026-10-12T00:10:00+03:00");
+    expect(jerusalem.toISOString()).toBe("2026-10-11T21:10:00.000Z");
+    const start = structuringWatchStart(jerusalem, 1);
+    expect(start.toISOString()).toBe("2026-10-10T21:10:00.000Z");
+    const ago23 = new Date(jerusalem.getTime() - 23 * 60 * 60 * 1000);
+    expect(businessDate(ago23, "Asia/Jerusalem")).toBe("2026-10-11");
+    expect(instantInWindow({ start, end: jerusalem }, ago23, true)).toBe(true);
+    const tooEarly = new Date("2026-10-11T00:05:00+03:00");
+    expect(businessDate(tooEarly, "Asia/Jerusalem")).toBe("2026-10-11");
+    expect(instantInWindow({ start, end: jerusalem }, tooEarly, true)).toBe(false);
+  });
+
+  it("names search yesterday from the branch date", () => {
     const jerusalem = new Date("2026-10-12T00:10:00+03:00");
     expect(jerusalem.toISOString().slice(0, 10)).toBe("2026-10-11");
-    expect(structuringWatchStart(jerusalem, "Asia/Jerusalem", 1)).toBe("2026-10-11");
     expect(searchDay(jerusalem, "Asia/Jerusalem", "today")).toBe("2026-10-12");
     expect(searchDay(jerusalem, "Asia/Jerusalem", "yesterday")).toBe("2026-10-11");
 
     const toronto = new Date("2026-10-11T23:50:00-04:00");
     expect(toronto.toISOString().slice(0, 10)).toBe("2026-10-12");
-    expect(structuringWatchStart(toronto, "America/Toronto", 1)).toBe("2026-10-10");
     expect(searchDay(toronto, "America/Toronto", "today")).toBe("2026-10-11");
     expect(searchDay(toronto, "America/Toronto", "yesterday")).toBe("2026-10-10");
   });

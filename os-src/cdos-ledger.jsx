@@ -121,7 +121,9 @@
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const winDays = (settings && settings.structuringDays) || 30;
-      const cutoff = window.CDOS.structuringWatchStart(winDays);
+      const watchEnd = new Date();
+      const cutoff = window.CDOS.structuringWatchStart(winDays, watchEnd);
+      const inWatch = (r) => { const t = window.CDOS.branchWallTime(r.date, r.time || '00:00'); return t >= cutoff && t <= watchEnd; };
       const ccyCount = {};
       const home = homeCcy();
       h.forEach(r => {
@@ -135,7 +137,7 @@
       /* The deal's home leg, which is what the book counts — never the
          in-leg re-priced at today's mid. See dealHome in cdos-base.jsx. */
       const total = sumDealHome(h, home).total;
-      const windowCad = sumDealHome(h.filter(r => r.date >= cutoff), home).total;
+      const windowCad = sumDealHome(h.filter(inWatch), home).total;
       const lastVisit = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const topCcy = Object.keys(ccyCount).sort((a, b) => ccyCount[b] - ccyCount[a])[0] || null;
       const daysSince = lastVisit ? Math.round((Date.parse(businessDate()) - Date.parse(lastVisit)) / 86400000) : null;

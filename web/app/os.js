@@ -648,13 +648,15 @@
     if (!_branchTimeZone) return new Date(String(isoDate) + 'T' + (time || '00:00'));
     return zonedWallTime(isoDate, time || '00:00', _branchTimeZone);
   };
-  /* The structuring watch counts calendar dates in the branch zone.
-     The screen's "rolling" label is a separate question; this is the
-     cutoff the date comparison already used, read on the right clock. */
-  const structuringWatchStart = days => {
+  /* Rolling N × 24 hours ending at `at` (now, when `at` is omitted).
+     N of 1 includes a deal 23 hours ago, even on the previous
+     calendar date. The screen still says "N-day rolling". */
+  const structuringWatchStart = (days, at) => {
     const n = Number(days);
-    if (!Number.isInteger(n) || n < 0) throw new Error('The structuring watch needs a whole number of days.');
-    return addCalendarDays(branchCalendarDate(), -n);
+    if (!Number.isInteger(n) || n <= 0) throw new Error('The structuring watch needs a whole number of days.');
+    const end = at instanceof Date ? at : new Date();
+    if (Number.isNaN(end.getTime())) throw new Error('The structuring watch needs a real instant.');
+    return new Date(end.getTime() - n * 24 * 60 * 60 * 1000);
   };
   const readCalendarDate = value => {
     if (value instanceof Date) {
@@ -3272,7 +3274,6 @@
     perCadLive,
     fmt,
     num,
-    dDiff,
     counterCashIn,
     counterCashOut
   } = window.CDOS;
@@ -3360,15 +3361,21 @@
       const bankingDay = regime && regime.windowKind === 'banking_day';
       const above = regime && regime.comparator === 'gt' ? n => n > TH : n => n >= TH;
       const single = TH != null && above(cashForReport(row));
-      // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashForReport(o), 0);
+      /* Structuring watch: N × 24 hours ending at this deal. N of 1
+         includes a deal 23 hours earlier on the previous date. */
+      const end = dt(row);
+      const watchDays = Number(settings && settings.structuringDays);
+      const watchHours = Number.isInteger(watchDays) && watchDays > 0 ? watchDays * 24 : null;
+      const agg = watchHours == null ? 0 : live.filter(o => o.customer && o.customer === row.customer && (() => {
+        const h = (end - dt(o)) / 3600000;
+        return h >= 0 && h <= watchHours;
+      })()).reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
       // ending at this deal at the line ⇒ a single REPORTABLE aggregated transaction.
       // A pack whose large-cash window is 'none', a calendar-month pack
       // (India), and a banking-day pack (the Philippines) do not use this
       // clock. Do not invent 24 for those.
-      const end = dt(row);
       const hours = monthCash || bankingDay || !aggregate ? null : regime.aggHours || 24;
       const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => {
         const h = (end - dt(o)) / 3600000;
@@ -27520,7 +27527,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const winDays = settings && settings.structuringDays || 30;
-      const cutoff = window.CDOS.structuringWatchStart(winDays);
+      const watchEnd = new Date();
+      const cutoff = window.CDOS.structuringWatchStart(winDays, watchEnd);
+      const inWatch = r => {
+        const t = window.CDOS.branchWallTime(r.date, r.time || '00:00');
+        return t >= cutoff && t <= watchEnd;
+      };
       const ccyCount = {};
       const home = homeCcy();
       h.forEach(r => {
@@ -27534,7 +27546,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       /* The deal's home leg, which is what the book counts — never the
          in-leg re-priced at today's mid. See dealHome in cdos-base.jsx. */
       const total = sumDealHome(h, home).total;
-      const windowCad = sumDealHome(h.filter(r => r.date >= cutoff), home).total;
+      const windowCad = sumDealHome(h.filter(inWatch), home).total;
       const lastVisit = h.reduce((m, r) => r.date > m ? r.date : m, '');
       const topCcy = Object.keys(ccyCount).sort((a, b) => ccyCount[b] - ccyCount[a])[0] || null;
       const daysSince = lastVisit ? Math.round((Date.parse(businessDate()) - Date.parse(lastVisit)) / 86400000) : null;
@@ -33618,7 +33630,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const h = live.filter(r => r.customer === name);
       const home = deskHome();
       const winDays = settings && settings.structuringDays || 30;
-      const cutoff = window.CDOS.structuringWatchStart(winDays);
+      const watchEnd = new Date();
+      const cutoff = window.CDOS.structuringWatchStart(winDays, watchEnd);
+      const inWatch = r => {
+        const t = window.CDOS.branchWallTime(r.date, r.time || '00:00');
+        return t >= cutoff && t <= watchEnd;
+      };
       let total = 0,
         windowCad = 0,
         unknown = false;
@@ -33629,7 +33646,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           unknown = true;
         } else {
           total += cad;
-          if (r.date >= cutoff) windowCad += cad;
+          if (inWatch(r)) windowCad += cad;
         }
         const c = r.outCcy && r.outCcy !== home ? r.outCcy : r.inCcy !== home ? r.inCcy : null;
         if (c) cc[c] = (cc[c] || 0) + 1;
