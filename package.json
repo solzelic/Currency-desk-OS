@@ -9,7 +9,7 @@
     "build:os": "node scripts/build-os.mjs",
     "unbundle": "node scripts/unbundle-design.mjs",
     "check:parse": "node scripts/check-browser-parses.mjs && node scripts/check-public-claims.mjs",
-    "check:sanctions": "node --test tests/sanctions-phrases.test.mjs tests/audit-synthetic-kyc.test.mjs && node scripts/check-sanctions-bundle.mjs",
+    "check:sanctions": "node --test tests/sanctions-phrases.test.mjs tests/audit-synthetic-kyc.test.mjs tests/display-id-standing.test.mjs && node scripts/check-sanctions-bundle.mjs",
     "test:e2e": "playwright test",
     "build": "npm run build:onboarding && npm run build:site && npm run build:os",
     "check": "npm run build && npm run check:parse && npm run test:e2e"

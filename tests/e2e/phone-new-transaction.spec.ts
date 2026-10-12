@@ -265,7 +265,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     if (idText.includes("ID needed for this amount")) {
       await expect(idNeed.getByRole("button", { name: "Record the ID" })).toBeVisible();
     }
-    const idLine = page.locator(".cd-tx").getByText(/Customer identified|ID required/i).first();
+    const idLine = page.locator(".cd-tx").getByText(/Customer identified|Missing ID|Expired|ID needed for this amount|ID required/i).first();
     await idLine.scrollIntoViewIfNeeded();
     await expect(idLine).toBeVisible();
     if (hasLedger) {
@@ -350,7 +350,10 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
       }
     }
     await expect(page.locator(".cd-tx-ticket")).toContainText(/\d[\d,]*\.\d{2} [A-Z]{3}/);
-    await expect(page.locator(".cd-tx").getByText("ID not recorded yet")).toBeVisible();
+    const noId = page.locator(".cd-tx").getByText("No ID on file", { exact: true });
+    await expect(noId).toHaveCount(2);
+    for (const line of await noId.all()) await expect(line).toBeVisible();
+    await expect(page.locator(".cd-tx").getByText("ID not recorded yet")).toHaveCount(0);
     await expect(page.locator(".cd-tx").getByText(/Their ID is/)).toHaveCount(0);
     await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Add a note");
     await expectWideFields(page);
@@ -463,6 +466,7 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await expect(sheet).toBeHidden();
   await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
   await expect(page.locator(".cd-tx-id-need")).toContainText("Apr 1, 2030");
+  await expect(page.locator(".cd-tx-id-need")).not.toContainText("2030-04-01");
   await expect(page.locator(".cd-tx-stats")).toContainText("ID on file");
   await expect(page.locator(".cd-tx-stats")).toContainText(/Last \d+ days/);
   expect(await page.locator(".cd-tx-stat-label").first().evaluate((el) => getComputedStyle(el).textTransform), "stat label case").toBe("none");

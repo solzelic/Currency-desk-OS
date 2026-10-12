@@ -814,17 +814,6 @@
     const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
     useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clients)); } catch (e) {} }, [clients]);
-    // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
-    useEffect(() => {
-      if (window.CDOS.KYC && window.CDOS.KYC.setProvider && settings.kycProvider) window.CDOS.KYC.setProvider(settings.kycProvider);
-      if (!(window.CDOS.KYC && window.CDOS.KYC.setContactSink)) return;
-      window.CDOS.KYC.setContactSink((name, ex, at) => setClients(c => {
-        const cur = c[name] || {}; const next = { ...cur };
-        ['email', 'dob', 'address', 'city', 'province', 'postal', 'country', 'idType', 'idNum', 'idIssued', 'idExpiry'].forEach(k => { if (ex[k] && !String(next[k] || '').trim()) next[k] = ex[k]; });
-        next.idVerifiedAt = at || next.idVerifiedAt;
-        return { ...c, [name]: next };
-      }));
-    }, []);
     const [settings, setSettings] = useState(() => {
       const def = {
         // compliance
@@ -856,6 +845,14 @@
       merged.employees = merged.employees.map(({ pin, ...e }) => ({ ...e, requirePin: e.requirePin !== false }));
       return merged; } catch (e) { return def; }
     });
+    /* The provider name is a setting. A finished check used to be copied
+       onto the contact here — date of birth, address, ID number — from
+       a generator. That copy is gone. Identity is typed on the form.
+       The effect sits below `settings`: reading it in the dependency
+       list any earlier throws before the state exists. */
+    useEffect(() => {
+      if (window.CDOS.KYC && window.CDOS.KYC.setProvider && settings.kycProvider) window.CDOS.KYC.setProvider(settings.kycProvider);
+    }, [settings.kycProvider]);
     const [perms, setPerms] = useState(() => {
       const def = { Teller: { canDelete: true, canExport: true, canViewReports: true, canEditKYC: true, canSettings: false, canCloseDay: false } };
       try { const raw = localStorage.getItem('cdos_perms'); const p = raw ? JSON.parse(raw) : null; return p && p.Teller ? { Teller: { ...def.Teller, ...p.Teller } } : def; } catch (e) { return def; }
@@ -2532,7 +2529,7 @@
         <div className="rail-cell rail-app">
           <div className="rail-trio">
             <button className={'mb-op rail-store' + ((editApps || wins.some(w => w.id === 'store')) ? ' on' : '')} title={(editApps || wins.some(w => w.id === 'store')) ? 'Done — close store & finish editing' : 'App Store — add, remove & upgrade apps'} onClick={toggleStore}><Ic n={(editApps || wins.some(w => w.id === 'store')) ? 'check' : 'storefront'} s={17} /></button>
-            <button className="mb-op" title="Add a verified contact" onClick={() => setAddContactOpen(true)}><Ic n="id" s={17} /></button>
+            <button className="mb-op" title="Add a client. ID scanning isn't connected yet." onClick={() => setAddContactOpen(true)}><Ic n="id" s={17} /></button>
           </div>
         </div>
       </div>

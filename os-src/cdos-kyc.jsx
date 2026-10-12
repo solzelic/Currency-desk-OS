@@ -1,17 +1,18 @@
 /* ============================================================
    CurrencyDesk OS — KYC / identity verification
-   Persona is not connected. This module does not send a subject
-   to a provider, does not bill a check, and does not read a list.
-   Anything already stored under the KYC key is wiped on load.
-   resolve() leaves the decision at not_run unless screen() returns
-   hit, review, or clear, and screen() returns unavailable, so a
-   check is not approved and is not written to report History.
+   A paid, partner-powered verification rail. The desk sends a
+   subject (client, business or beneficiary) off to the verification
+   provider (Persona) for ID + biometric + database checks. Each
+   verification is billed to the exchange house's account — this is
+   a revenue line for CurrencyDesk.
 
    One self-contained module, used in two places:
      • Clients ▸ contact profile  → SubjectPanel at the bottom
      • Compliance ▸ Screening      → PickerModal + per-row Verify
 
-   The chooser still lists three tiers. None of them runs.
+   Persona is not connected. A control may say "ID checks not
+   connected yet". It must not start a check, finish one on a timer,
+   file a Persona result, or mark the file verified.
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
@@ -49,17 +50,13 @@
   const houseRisk = () => storedSettings().defaultClientRisk || 'Normal';
   const refHash = (id) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h.toString(36).toUpperCase().padStart(5, '0').slice(-5); };
 
-  // The chooser still lists three tiers. Persona is not connected, so
-  // none of them is sent, none of them is billed, and none of them
-  // earns a badge. resolve() does not approve a check while screen()
-  // returns unavailable.
-  //   • quick  — name and date of birth only. No list is read.
-  //   • verify — does not authenticate an ID.
-  //   • plus   — does not run a biometric or a database inquiry.
+  // Tier ids a later provider can reuse. None of them run, and none of
+  // them are priced here: ID checks are not connected, so the desk does
+  // not quote a fee or send a customer off to photograph an ID.
   const TEMPLATES = [
-    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This does not screen the name against a sanctions list.', price: 3.99, channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
-    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This does not authenticate an ID or screen a sanctions list.', price: 6.99, channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
-    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This does not run a biometric or a database inquiry.', price: 14.99, channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
+    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This does not screen the name against a sanctions list.', price: 0, channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
+    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This does not authenticate an ID or screen a sanctions list.', price: 0, channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
+    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This does not run a biometric or a database inquiry.', price: 0, channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
   ];
   const tmpl = (id) => TEMPLATES.find(t => t.id === id) || TEMPLATES[0];
   const DURATION = { instant: 5200, link: 9000, records: 600 };
@@ -81,63 +78,24 @@
 
   const screenOf = (name) => { try { return window.CDOS._compliance.screen(name); } catch (e) { return { status: 'clear', hits: [] }; } };
 
-  // What the provider reads off the ID document and hands back to us (deterministic per name so it's stable).
-  function extractIdentity(name) {
-    let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    const pick = (arr) => arr[h % arr.length];
-    const streets = ['Bathurst St', 'Dundas St W', 'Bloor St E', 'Eglinton Ave', 'Lakeshore Blvd', 'Yonge St', 'King St W', 'Queen St E'];
-    const cities = [['Toronto', 'ON', 'M5V 2T6'], ['Mississauga', 'ON', 'L5B 4M1'], ['Markham', 'ON', 'L3R 0B8'], ['Vaughan', 'ON', 'L4K 3N1'], ['Brampton', 'ON', 'L6Y 1M5']];
-    const idTypes = ["Driver's Licence", 'Passport', 'Provincial ID'];
-    const [city, province, postal] = pick(cities);
-    const num = 100 + (h % 8900);
-    const idType = pick(idTypes);
-    const idNum = idType === 'Passport' ? 'P' + String(1000000 + (h % 8999999)) : 'DL ' + String(1000 + (h % 8999)) + '-' + String(100 + (h % 899));
-    const yr = 1972 + (h % 32), mo = 1 + (h % 12), da = 1 + (h % 27);
-    const pad = (n) => String(n).padStart(2, '0');
-    return {
-      address: `${num} ${pick(streets)}`, city, province, postal, country: 'Canada',
-      dob: `${yr}-${pad(mo)}-${pad(da)}`,
-      idType, idNum, idIssued: `20${20 + (h % 4)}-${pad(mo)}-${pad(da)}`, idExpiry: `20${30 + (h % 5)}-${pad(mo)}-${pad(da)}`,
-      email: (s.toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').trim().split(/\s+/).slice(0, 2).join('.') || 'contact') + '@email.com'
-    };
-  }
+  /* extractIdentity used to live here. It hashed the customer's name
+     into a street, a city, a date of birth and an ID number, and the
+     new-contact flow wrote that onto the file as if a provider had
+     read a document. A check does not know those facts. Identity is
+     what staff type. See NewContactFlow below. */
 
-  // A sent check used to copy a hit off the sample watchlist. That list
-  // is gone, so a check does not report a sanctions result.
-  function resolve(check) {
-    const t = tmpl(check.template);
-    const sc = screenOf(check.subject);
-    let decision = 'not_run', database = t.db ? 'not checked' : 'n/a', pep = 'Not checked';
-    /* "clear" would say a list was checked. unavailable means it was not.
-       An address, a date of birth, or a document number is not invented
-       from the name. Persona is not connected, so nothing is read off an ID. */
-    if (t.db) {
-      if (sc.status === 'hit') { decision = 'review'; database = 'hit'; pep = 'Sanctions match'; }
-      else if (sc.status === 'review') { decision = 'review'; database = 'possible'; pep = 'Possible PEP / adverse media'; }
-      else if (sc.status === 'clear') { decision = 'approved'; database = 'clear'; pep = 'None found'; }
-    }
-    return {
-      decision,
-      sanctionsChecked: sc.status === 'clear' || sc.status === 'hit' || sc.status === 'review',
-      extracted: null,
-      idCheck: 'not checked',
-      matchedOnFile: !!check.matchedOnFile,
-      biometric: 'not checked',
-      database,
-      pep,
-      watchlist: (sc.hits || []).slice(0, 3).map(h => ({ name: h.w.name, list: h.w.list, program: h.w.program, score: Math.round(h.score * 100) })),
-      reportRef: decision === 'not_run' ? '' : ('PSA-' + refHash(check.id + check.requestedAt)),
-      completedAt: stampNow()
-    };
+  /* A sent check used to resolve here into an approved Persona result:
+     document pass, biometric pass, a PSA- reference, and a history
+     certificate. Nothing calls this. It does not return that result. */
+  function resolve() {
+    return null;
   }
 
   const decisionMeta = (d) => d === 'approved'
     ? { label: 'Verified', c: CD.green, bg: CD.greenSoft, icon: 'checkcircle' }
-    : d === 'not_run'
-      ? { label: 'Not connected', c: CD.mute, bg: CD.lineSoft, icon: 'shield' }
-      : d === 'declined'
-        ? { label: 'Declined', c: CD.flag, bg: CD.flagSoft, icon: 'ban' }
-        : { label: 'Needs review', c: CD.amber, bg: CD.amberSoft, icon: 'alert' };
+    : d === 'declined'
+      ? { label: 'Declined', c: CD.flag, bg: CD.flagSoft, icon: 'ban' }
+      : { label: 'Needs review', c: CD.amber, bg: CD.amberSoft, icon: 'alert' };
 
   // phase shown while a check is live or done
   function phaseMeta(check) {
@@ -146,44 +104,29 @@
   }
 
   /* ---------------- history bridge ---------------- */
-  function logToHistory(check) {
-    try {
-      const r = check.result;
-      /* A check that did not run is not a KYC record. */
-      if (!r || r.decision === 'not_run') return;
-      const dm = decisionMeta(r.decision);
-      let hist = []; try { hist = JSON.parse(localStorage.getItem(HKEY) || '[]') || []; } catch (e) {}
-      const key = 'K' + check.id;
-      if (hist.some(e => e.key === key)) return;
-      const entry = {
-        key, ms: Date.now(), type: 'KYC', title: `KYC verification · ${check.subject}`,
-        icon: 'id', tone: dm.c, at: r.completedAt, ref: r.reportRef, ack: dm.label.toUpperCase(),
-        subject: check.subject, filing: true, badge: dm.label.toUpperCase(), badgeColor: dm.c, badgeBg: dm.bg,
-        fullHTML: certHTML(check)
-      };
-      localStorage.setItem(HKEY, JSON.stringify([entry, ...hist].slice(0, 500)));
-    } catch (e) {}
+  function logToHistory() {
+    /* A finished check used to be appended to report history as a
+       sealed certificate ("verified via Persona", PSA- reference).
+       Persona is not connected, so this writes nothing. */
+    return;
   }
 
-  /* ---------------- reconcile loop ---------------- */
-  // a global "contact sink": when any check completes with ID data extracted, fold it into
-  // the contact — even if no profile / wizard is open. The app registers setClients here.
+  /* ---------------- no invented result ---------------- */
+  /* The contact sink used to replay every finished check's generated
+     identity onto the client list. It is kept so an older caller does
+     not throw, and it does not write a date of birth, an address, or
+     an ID number. */
   let contactSink = null;
   function setContactSink(fn) {
     contactSink = fn;
-    if (fn) Object.values(STORE).forEach(c => { if (c.status === 'completed' && c.result && c.result.extracted) fn(c.subject, c.result.extracted, c.result.completedAt); });
   }
-  function reconcile() {
-    let changed = false;
-    Object.values(STORE).forEach(c => {
-      /* An in-flight check was never sent. Completing it would invent a
-         result and write it onto the client. Drop it. */
-      if (c.status === 'processing') { delete STORE[c.id]; changed = true; }
-    });
-    if (changed) persist();
-  }
-  reconcile();
-  setInterval(reconcile, 1200);
+  /* A timer used to sit here. Every 1200ms it took a check still
+     marked processing, called resolve(), and filed the answer as a
+     finished Persona result — a PSA- reference, document pass,
+     biometric pass — then the profile read that as verified. Persona
+     is not connected. This does not complete a check, and it does not
+     write history. */
+  function reconcile() {}
 
   /* ============================================================
      THE DEMO KYC HISTORY IS GONE, AND THIS IS ITS HEADSTONE
@@ -218,14 +161,18 @@
      the paid verify while this is false. */
   const personaConnected = () => false;
 
-  function createCheck({ subject, kind, template, channel, contact, by }) {
-    const t = tmpl(template);
-    /* Persona is not connected. Storing a check would let a later paint
-       read it as a verification that happened. Nothing is written. */
-    return { id: null, subject, kind: kind || 'individual', template, templateLabel: t.label, price: 0, channel: channel || 'none', contact: contact || {}, by: by || 'Desk', requestedAt: stampNow(), ms: Date.now(), status: 'not_connected', result: null, notConnected: true };
+  /* Persona is not connected. A check is not started, not completed,
+     and not stored. Callers that still reach this get null and write
+     nothing — including the old instant "matched on file" pass. */
+  function checksConnected() { return false; }
+  function createCheck() {
+    return null;
   }
   const checksFor = (name) => Object.values(STORE).filter(c => c.subject === name).sort((a, b) => b.ms - a.ms);
   function summary() {
+    /* Spend and counts come from checks this browser invented. Until
+       a provider is connected they are not a bill and not a tally. */
+    if (!checksConnected()) return { total: 0, monthCount: 0, monthSpend: 0 };
     const all = Object.values(STORE);
     const now = new Date(); const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     const month = all.filter(c => (c.requestedAt || '').slice(0, 7) === ym);
@@ -250,7 +197,7 @@
     const rowChk = (l, v) => `<tr><td style="color:${P.mute};font-size:12.5px;padding:6px 0;width:48%;">${esc(l)}</td><td style="font-size:12.5px;padding:6px 0;font-family:'Space Mono',monospace;color:${P.ink};text-transform:capitalize;">${esc(v)}</td></tr>`;
     const wl = (r.watchlist || []).length
       ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">${r.watchlist.map(h => `<tr><td style="font-size:12px;padding:5px 0;border-bottom:1px solid ${P.soft};">${esc(h.name)} <span style="color:${P.mute};">· ${esc(h.list)} · ${esc(h.program || '')}</span></td><td style="font-size:12px;text-align:right;font-family:'Space Mono',monospace;color:${P.mute};">${h.score}%</td></tr>`).join('')}</table>`
-      : `<div style="font-size:12px;color:${P.mute};margin-top:4px;">${r.sanctionsChecked === false ? "Sanctions screening is not connected yet. Check clients against your government's official lists yourself." : 'No database matches returned.'}</div>`;
+      : `<div style="font-size:12px;color:${P.mute};margin-top:4px;">No database matches returned.</div>`;
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>KYC ${esc(r.reportRef || '')}</title>
       <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
       <style>*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:40px 46px;color:${P.ink};}@page{margin:14mm;}</style></head>
@@ -273,170 +220,89 @@
   }
   function openWindow(html) { const w = window.open('', '_blank', 'width=900,height=1100'); if (!w) return; w.document.write(html); w.document.close(); setTimeout(() => w.focus(), 200); }
 
-  /* ---- shared: the "choose a verification + delivery" body (used by SendModal and the new-contact wizard) ---- */
-  // Work out how a verification should be delivered, given whether we already hold the ID.
-  function deliveryFor({ tplId, mode, via, email, phone, hasId, subject }) {
-    const t = tmpl(tplId);
-    const m = mode || (hasId ? 'inperson' : 'link');
-    if (m === 'inperson') { const needScan = t.idv && !hasId; return { kind: 'inperson', channel: 'instant', contact: { via: 'in_person' }, missing: needScan, label: 'Not connected', needScan }; }
-    const ct = via === 'email' ? { via: 'email', email: (email || '').trim() } : { via: 'sms', phone: (phone || '').trim() };
-    return { kind: 'link', channel: 'link', contact: ct, missing: via === 'email' ? !ct.email : !ct.phone, label: 'Not connected' };
-  }
-
-  /* ---- reusable ID capture: upload or live-camera, self-contained (portalled overlay) ---- */
-  function IdScanControls({ onCapture }) {
-    const [cam, setCam] = useState(false);
-    const [camErr, setCamErr] = useState('');
-    const videoRef = useRef(null);
-    const streamRef = useRef(null);
-    const closeCamera = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } setCam(false); };
-    const openCamera = async () => {
-      setCamErr(''); setCam(true);
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
-        streamRef.current = s;
-        const attach = () => { if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); } else setTimeout(attach, 30); };
-        attach();
-      } catch (e) { setCamErr(e && e.name === 'NotAllowedError' ? 'Camera access was blocked. Allow it in your browser, or upload a photo instead.' : 'No camera available on this device. Upload a photo instead.'); }
-    };
-    const capturePhoto = () => { const v = videoRef.current; if (!v || !v.videoWidth) return; const cv = document.createElement('canvas'); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext('2d').drawImage(v, 0, 0); onCapture(cv.toDataURL('image/jpeg', 0.85)); closeCamera(); };
-    const onFile = async (file) => {
-      if (!file) return;
-      const taken = await window.CDOS.intakeIdImage(file);   // see cdos-base.jsx
-      if (taken.ok) onCapture(taken.dataUrl);
-    };
-    useEffect(() => () => closeCamera(), []);
-    return (<>
-      <div className="flex items-center gap-2 mt-2.5">
-        <label className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold cursor-pointer" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)' }}><Ic n="upload" s={13} c="var(--cd-on-ink)" /> Upload ID<input type="file" accept="image/*" className="hidden" onChange={e => onFile(e.target.files[0])} /></label>
-        <button onClick={openCamera} type="button" className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: CD.paper, color: CD.ink }}><Ic n="camera" s={13} c={CD.ink} /> Take a photo</button>
-      </div>
-      {cam && <Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 10000 }}>
-        <div className="w-full flex flex-col" style={{ maxWidth: 520, background: 'var(--cd-ink)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 30px 70px -20px rgba(0,0,0,0.7)' }}>
-          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
-            <div className="flex items-center gap-2 text-[13px] font-semibold" style={{ color: 'var(--cd-on-ink)' }}><Ic n="camera" s={15} c="var(--cd-on-ink)" /> Photograph the ID</div>
-            <button onClick={closeCamera} className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, color: 'var(--cd-on-ink-soft)' }}><Ic n="x" s={16} c="var(--cd-on-ink-soft)" /></button>
-          </div>
-          <div style={{ position: 'relative', background: 'var(--cd-ink-strong)', aspectRatio: '4 / 3', display: 'grid', placeItems: 'center' }}>
-            {camErr
-              ? <div className="text-center px-6" style={{ color: 'var(--cd-on-ink-soft)' }}><Ic n="alert" s={22} c="#e7b34a" /><div className="text-[13px] mt-2">{camErr}</div></div>
-              : <video ref={videoRef} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-            {!camErr && <div style={{ position: 'absolute', inset: '12% 8%', border: '2px dashed var(--cd-on-ink-soft)', borderRadius: 12, pointerEvents: 'none' }} />}
-          </div>
-          <div className="flex items-center justify-center gap-3 px-4 py-4">
-            {camErr
-              ? <button onClick={closeCamera} className="px-5 py-2.5 text-sm font-semibold" style={{ background: 'var(--cd-panel)', color: 'var(--cd-ink)', borderRadius: 9 }}>Close</button>
-              : <><button onClick={closeCamera} className="px-4 py-2.5 text-sm font-medium" style={{ color: 'var(--cd-on-ink-soft)', border: '1px solid var(--cd-on-ink-faint)', borderRadius: 9 }}>Cancel</button>
-                <button onClick={capturePhoto} className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold" style={{ background: 'var(--cd-panel)', color: 'var(--cd-ink)', borderRadius: 9 }}><span style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--cd-ink)', display: 'inline-block' }} /> Capture</button></>}
-          </div>
-        </div>
-      </div></Portal>}
-    </>);
-  }
-
-  function VerifyChooserBody({ subject, hasId, verified, tplId, setTplId, mode, setMode, via, setVia, email, setEmail, phone, setPhone, onScanMore, onCapture, recommended }) {
-    const t = tmpl(tplId);
-    const m = mode || (hasId ? 'inperson' : 'link');
-    const list = verified ? TEMPLATES : TEMPLATES.filter(t => t.id !== 'quick');
-    return (<div>
-      <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Choose a verification</div>
-      <div className="grid gap-2">
-        {list.map(tt => { const on = tplId === tt.id; const rec = recommended === tt.id; const meta = TIER_META[tt.id] || {}; return (
-          <button key={tt.id} onClick={() => setTplId(tt.id)} className="relative flex items-center gap-3 p-3 text-left" style={{ background: on ? 'rgba(43,80,226,.06)' : CD.panel, border: `1.5px solid ${on ? KYC_BLUE : CD.line}`, borderRadius: 12, boxShadow: on ? '0 6px 18px rgba(43,80,226,.14)' : 'none', transition: 'border-color .18s ease, background .18s ease, box-shadow .18s ease' }}>
-            {rec && <span className="absolute" style={{ top: -8, right: 12, fontSize: 8.5, fontWeight: 700, letterSpacing: '.1em', fontFamily: 'Space Mono, monospace', background: KYC_BLUE, color: '#fff', padding: '2px 7px', borderRadius: 999 }}>RECOMMENDED</span>}
-            <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, borderRadius: 10, background: on ? KYC_BLUE : CD.lineSoft, transition: 'background .18s ease' }}><Ic n={tt.icon} s={18} c={on ? '#fff' : CD.mute} /></span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[13.5px] font-semibold" style={{ color: CD.ink }}>{tt.label}</span>
-                {meta.tag && <span className="text-[9.5px] font-semibold px-1.5 py-0.5" style={{ color: on ? KYC_BLUE : CD.mute, background: on ? 'rgba(43,80,226,.10)' : CD.lineSoft, borderRadius: 5 }}>{meta.tag}</span>}
-              </div>
-              <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>{tt.tagline}</div>
-            </div>
-            <div className="text-right flex-none"><div className="text-[14px] font-bold" style={{ color: on ? KYC_BLUE : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{money(net(tt.price))}</div><div className="text-[9.5px]" style={{ color: CD.faint }}>per check</div></div>
-          </button>); })}
-      </div>
-      {!verified && <div className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="lock" s={12} c={CD.faint} /> <span>First contact needs a full identity check. The $3.99 Quick check unlocks once {String(subject).split(/\s+/)[0]} is verified</span></div>}
-      <div className="text-[10px] uppercase tracking-widest mt-4 mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Delivery</div>
-      {(<div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-        <div className="inline-flex mb-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
-          {[['inperson', 'In person', 'id'], ['link', 'Send a link', 'send']].map(([id, lb, ic]) => <button key={id} onClick={() => setMode(id)} className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium" style={{ background: m === id ? CD.ink : 'transparent', color: m === id ? 'var(--cd-on-ink)' : CD.mute }}><Ic n={ic} s={12} c={m === id ? 'var(--cd-on-ink)' : CD.mute} /> {lb}</button>)}
-        </div>
-        {m === 'inperson' ? ((t.idv && !hasId) ? (
-          <div>
-            <div className="flex items-start gap-2"><Ic n="alert" s={14} c={CD.flag} /><div className="text-[12px]"><span style={{ color: CD.flag, fontWeight: 600 }}>No ID scanned yet.</span> <span style={{ color: CD.mute }}>Scan or upload the customer's ID to verify in person — or send a secure link instead.</span></div></div>
-            {onCapture && <IdScanControls onCapture={onCapture} />}
-          </div>
-        ) : (
-          <div className="flex items-start gap-2"><Ic n="checkcircle" s={14} c={CD.green} /><div className="text-[12px]" style={{ color: CD.mute }}>The ID you scanned is checked instantly{t.bio ? ', and you take a quick selfie of the customer at the counter' : ''}. Result in seconds — no link needed.</div></div>
-        )) : (<div>
-          <div className="text-[12px] mb-2" style={{ color: CD.mute }}>{subject} gets a secure link to photograph their ID{t.bio ? ' and take a selfie' : ''} on their own phone. Nothing is billed until they complete it.</div>
-          <div className="inline-flex mb-2" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
-            {[['email', 'Email', 'mail'], ['sms', 'Text / SMS', 'phone']].map(([id, lb, ic]) => <button key={id} onClick={() => setVia(id)} className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium" style={{ background: via === id ? CD.ink : 'transparent', color: via === id ? 'var(--cd-on-ink)' : CD.mute }}><Ic n={ic} s={12} c={via === id ? 'var(--cd-on-ink)' : CD.mute} /> {lb}</button>)}
-          </div>
-          {via === 'email'
-            ? <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@email.com" className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }} />
-            : <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="(416) 555-0100" className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }} />}
-        </div>)}
-      </div>)}
-    </div>);
-  }
-
   /* ====================================================================
-     SEND MODAL — choose a verification, delivery, confirm the bill, send
-     ==================================================================== */
-  function SendModal({ subject, kind, rec, by, onClose, initialTpl }) {
-    rec = rec || {};
-    const verified = (() => { try { return checksFor(subject).some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved'); } catch (e) { return false; } })();
-    const [tplId, setTplId] = useState((initialTpl && (verified || initialTpl !== 'quick')) ? initialTpl : 'verify');
-    const [photo, setPhoto] = useState(rec.photo || null);
-    // we already hold this client's ID on file → run the check in person; only
-    // fall back to "send a link" when there's no ID on record to work from.
-    const hasIdOnFile = !!(rec.photo || (rec.idType && rec.idNum));
-    const [mode, setMode] = useState(hasIdOnFile ? 'inperson' : 'link');
-    const [via, setVia] = useState(rec.email ? 'email' : 'sms');
-    const [email, setEmail] = useState(rec.email || '');
-    const [phone, setPhone] = useState(rec.phone || '');
-    const [step, setStep] = useState('configure');   // configure | sent
-    const [sent, setSent] = useState(null);
-    const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject });
+     RECORD AN ID — the panel New Transaction opens
 
-    const send = () => {
-      const c = createCheck({ subject, kind, template: tplId, channel: del.channel, contact: del.contact, by });
-      setSent(c); setStep('sent');
+     This used to price three checks and offer to text the customer a
+     link, and the in-person path said the scanned ID was checked on
+     the spot. None of that can run. Staff type the ID.
+     ==================================================================== */
+  function SendModal({ subject, kind, rec, by, onClose, initialTpl, setClients }) {
+    /* Callers still pass the teller and the tier they would have run.
+       Neither starts a check. */
+    void by;
+    void initialTpl;
+    rec = rec || {};
+    const types = kind === 'corporate' ? BUSINESS_ID_TYPES : PERSON_ID_TYPES;
+    const openedType = window.CDOS.displayIdType(rec.idType || '');
+    const offered = types.indexOf(openedType) >= 0 && !(window.CDOS.idTypeRefused && window.CDOS.idTypeRefused(openedType));
+    const [idType, setIdType] = useState(offered ? openedType : '');
+    const openedAside = !!(window.CDOS.idTypeNotAccepted && window.CDOS.idTypeNotAccepted(rec.idType));
+    const [idNum, setIdNum] = useState(openedAside ? '' : (rec.idNum || ''));
+    const [saving, setSaving] = useState(false);
+    const [saveErr, setSaveErr] = useState('');
+    const fieldStyle = { border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)', width: '100%', minWidth: 0, boxSizing: 'border-box' };
+    const canSave = !!idType.trim() && !!idNum.trim() && !saving;
+
+    const saveId = async () => {
+      const type = idType.trim();
+      const num = idNum.trim();
+      if (!type || !num || saving) return;
+      if (window.CDOS.idTypeRefused && window.CDOS.idTypeRefused(type)) {
+        setSaveErr("Health cards can't be used as ID");
+        return;
+      }
+      setSaving(true);
+      setSaveErr('');
+      const shared = window.CDOS.ClientRecords;
+      const clientId = rec.clientId;
+      const onServer = !!(shared && shared.serverBacked() && clientId);
+      try {
+        if (onServer) await shared.record(clientId, { idType: type, idNum: num, source: 'staff' });
+        if (setClients && subject) {
+          setClients(c => ({ ...c, [subject]: { ...(c[subject] || {}), idType: type, idNum: num, source: 'staff' } }));
+        } else if (!onServer) {
+          setSaveErr('Could not save this ID. Nothing was saved.');
+          return;
+        }
+      } catch (err) {
+        setSaveErr((err && err.message) || 'Could not save this ID. Nothing was saved.');
+        return;
+      } finally {
+        setSaving(false);
+      }
+      onClose();
     };
 
-    return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
+    return (<Portal><div className="fixed inset-0 flex items-center justify-center p-3" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 520, maxHeight: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
-        {/* header */}
-        <div className="flex items-start gap-3 px-5 py-4 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
+        <div className="flex items-start gap-3 px-4 py-4 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 10 }}><Ic n="id" s={19} c="var(--cd-on-ink)" /></span>
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Verify {subject}</div>
-            <div className="text-[11.5px] flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n="lock" s={11} c={CD.mute} /> Persona is not connected yet. No check is sent.</div>
+            <div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Record {subject}'s ID</div>
+            <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>ID checks aren't connected. Type the ID type and number from the document.</div>
           </div>
-          <button onClick={onClose} className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, color: CD.mute }}><Ic n="x" s={16} /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, color: CD.mute }}><Ic n="x" s={16} /></button>
         </div>
-
-        {step === 'configure' ? (<>
-          <div className="flex-1 overflow-auto px-5 py-4">
-            <VerifyChooserBody subject={subject} hasId={!!photo} verified={verified} recommended={initialTpl} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onCapture={setPhoto} />
-          </div>
-
-          {/* footer — the bill + send */}
-          <div className="flex items-center gap-3 px-5 py-3.5 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
-            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>Persona is not connected yet</div><div className="text-[13px] font-semibold leading-none" style={{ color: CD.mute }}>Nothing is charged</div></div>
-            <button onClick={onClose} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Cancel</button>
-            <button onClick={send} disabled={del.missing} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: del.missing ? 'var(--cd-disabled)' : KYC_BLUE, borderRadius: 9, cursor: del.missing ? 'not-allowed' : 'pointer', boxShadow: del.missing ? 'none' : '0 6px 18px rgba(43,80,226,.32)' }}><Ic n="send" s={15} c="var(--cd-on-ink)" /> {del.label}</button>
-          </div>
-        </>) : (
-          /* Nothing was sent. The button used to claim a check was running. */
-          <div className="px-6 py-8 text-center">
-            <span className="grid place-items-center mx-auto mb-3" style={{ width: 54, height: 54, borderRadius: '50%', background: CD.lineSoft }}><Ic n="shield" s={26} c={CD.mute} /></span>
-            <div className="text-[16px] font-semibold" style={{ color: CD.ink }}>Persona is not connected yet</div>
-            <div className="text-[12.5px] mt-1 mx-auto" style={{ color: CD.mute, maxWidth: 360 }}>No check was sent for <b style={{ color: CD.ink }}>{subject}</b>. Nothing was read off an ID, nothing was screened, and nothing was charged.</div>
-            <div><button onClick={onClose} className="mt-5 px-5 py-2.5 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}>Done</button></div>
-          </div>
-        )}
+        <div className="flex-1 overflow-auto px-4 py-4">
+          <label className="block mb-3">
+            <div className="text-[11px] mb-1" style={{ color: CD.mute }}>{kind === 'corporate' ? 'Document type' : 'ID type'}</div>
+            <select autoFocus value={idType} onChange={e => setIdType(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle}>
+              <option value="">Choose…</option>
+              {types.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <div className="text-[11px] mb-1" style={{ color: CD.mute }}>{kind === 'corporate' ? 'Document number' : 'ID number'}</div>
+            <input value={idNum} onChange={e => setIdNum(e.target.value)} placeholder="Number on the document" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...fieldStyle, fontFamily: 'Space Mono, monospace' }} />
+          </label>
+          {saveErr && <div role="alert" className="mt-3 text-[12.5px]" style={{ color: CD.flag }}>{saveErr}</div>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
+          <button type="button" onClick={onClose} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Cancel</button>
+          <div className="flex-1" style={{ minWidth: 8 }} />
+          <button type="button" onClick={saveId} disabled={!canSave} className="px-4 py-2.5 text-sm font-semibold text-white flex-none" style={{ background: canSave ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: canSave ? 'pointer' : 'not-allowed' }}>{saving ? 'Saving…' : 'Save this ID'}</button>
+        </div>
       </div>
     </div></Portal>);
   }
@@ -460,20 +326,19 @@
   }
 
   /* ====================================================================
-     VERIFICATION NUDGE — shown on the contact profile and inside the
-     New Transaction modal.
-     Two levels. Both look at the ID on the file and at approved checks.
-     The KYC store is wiped on load and resolve() does not approve a
-     check, so a file this desk just opened has no last check.
-       • reco  (dismissible) — the house recheck window has passed, or
-         there is no approved full check on the file.
-       • force (not dismissible) — the ID on file has expired, or house
-         policy stops a large deal.
-     Returns null when the file is inside the window.
+     VERIFICATION NUDGE — the occasional “run a quick check” recommendation.
+     Two levels:
+       • reco  (dismissible) — it has been ≥ recheckDays (default 180) since the
+         last provider check, or the subject has never been screened. A gentle
+         prompt to run a quick check so the file stays current.
+       • force (not dismissible) — the ID on file has EXPIRED. Pushes a full
+         re-verify. This is the forcing function.
+     Shown on the contact profile and inside the New-Transaction modal. Returns
+     null on a healthy, recently-checked file, so it never nags without cause.
      ==================================================================== */
   function daysAgo(ms) { return Math.floor((Date.now() - ms) / 86400000); }
-  const NUDGE_CTA = { quick: { label: 'Run quick check · $3.99', ic: 'search' }, verify: { label: 'Run verify check · $6.99', ic: 'id' }, plus: { label: 'Run Verify Plus · $14.99', ic: 'shield' } };
-  function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired }) {
+  const NUDGE_CTA = { quick: { label: 'Run quick check', ic: 'search' }, verify: { label: 'Run verify check', ic: 'id' }, plus: { label: 'Run Verify Plus', ic: 'shield' } };
+  function VerificationNudge({ name, rec, settings, onRun, onRecordId, demoChecks, amountCad, idRequired }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
     if (!name) return null;
@@ -481,10 +346,10 @@
     const REVERIFY_DAYS = (settings && +settings.reverifyDays) || 365;  // full re-verification cadence
     /* Live, not a snapshot taken at page load — an ID that expires at
        midnight has expired at 00:01, including on a desk left open. */
-    const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
-    const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
+    const standing = window.CDOS.displayIdStanding(rec, window.CDOS.businessDate());
+    const idOk = standing.tone !== 'warning';
+    const idExpired = standing.label === 'Expired';
     const riskLvl = (window.CDOS && window.CDOS.normalizeRisk) ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : (/high|enhanced/i.test(String((rec && (rec.risk || rec.riskRating)) || '')) ? 'High' : 'Normal');
     const highRisk = riskLvl === 'High';
     const done = (demoChecks || checksFor(name)).filter(c => c.status === 'completed' && c.result && c.result.decision === 'approved');
@@ -506,11 +371,11 @@
     const policy = (settings && settings.largeTxCheck) || 'off';   // off | quick | verify | plus — mandatory check on large deals
     const TIER_NAME = { quick: 'Quick', verify: 'Verified', plus: 'Verified Plus' };
     let level = null, tier = 'quick', title = '', reason = '';
-    if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
+    if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = standing.reason || standing.detail; }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
     else if (bigDeal && policy !== 'off') { level = 'force'; tier = (!lastFull && policy === 'quick') ? 'verify' : policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + ((!lastFull && policy === 'quick') ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : ''); }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
-    else if (!lastFull) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no verified ID on file — run a verify check to establish identity.` : `${first} has an ID on file but has never been fully verified.`; }
+    else if (!lastFull) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = !idOk ? (standing.reason || standing.label) : `${first} has an ID on file but has never been fully verified.`; }
     else if (ageAny != null && ageAny >= RECO_DAYS) { level = 'reco'; tier = 'quick'; title = 'Quick check recommended'; reason = ageAny >= REVERIFY_DAYS ? `${first} was last screened ${ageAny} days ago — over a year. A quick check keeps the file current.` : `Last screened ${ageAny} days ago — a quick check keeps ${first}'s file current.`; }
     else { return null; }
     // house rule: a high-risk subject escalates any identity check to the deepest tier
@@ -519,19 +384,41 @@
     const escalateRisk = highRisk || (riskLvl === 'Medium' && !!(settings && settings.escalateMediumRisk));
     if (ESCALATE_HIGH_RISK && escalateRisk && tier === 'verify') { tier = 'plus'; title = 'Enhanced ' + title.charAt(0).toLowerCase() + title.slice(1); reason += ` ${first} is flagged ${riskLvl.toLowerCase()}-risk — enhanced (Verified Plus) recommended.`; }
     // this deal legally needs a verified ID and the file isn't verified yet → hard stop, not a suggestion
-    if (idRequired && !lastFull && level !== 'force') { level = 'force'; title = idMissing ? 'Identity verification required' : 'Verification required for this deal'; reason = `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
+    if (idRequired && !lastFull && level !== 'force') { level = 'force'; title = !idOk ? standing.label : 'Verification required for this deal'; reason = !idOk ? (standing.reason || standing.label) : `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
     if (dismissed && level !== 'force') return null;
     const force = level === 'force';
     const BLUE = '#2B50E2';
     const c = force ? CD.flag : BLUE;
     const cta = NUDGE_CTA[tier];
+    /* No provider is connected, so this card must not ask for a check.
+       A missing or expired ID is recorded by hand. Anything else would
+       only repeat the one line on the identity panel. The paid card
+       keeps cd-tx-nudge so a phone can hide it while Persona is off. */
+    if (!checksConnected()) {
+      if (idOk) return null;
+      const handTitle = standing.label;
+      const handReason = `${standing.reason || standing.detail || standing.label}. Check the client's ID in person and record it on their file.`;
+      const canRecord = typeof onRecordId === 'function';
+      const hardStop = idExpired || idRequired;
+      return (<div className="flex items-start gap-2.5 p-3 mb-2" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}>
+        <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--cd-paper)' }}><Ic n="id" s={15} c={CD.flag} /></span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{handTitle}</div>
+          <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>{handReason}</div>
+          {(canRecord || !hardStop) && <div className="flex flex-wrap items-center gap-2 mt-2">
+            {canRecord && <button type="button" onClick={onRecordId} className="px-2.5 py-1.5 text-[12px] font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Record the ID</button>}
+            {!hardStop && <button type="button" onClick={() => setDismissed(true)} className="px-2 py-1.5 text-[12px] font-medium" style={{ color: CD.mute }}>Not now</button>}
+          </div>}
+        </div>
+      </div>);
+    }
     return (<div className="cd-tx-nudge flex items-start gap-2.5 p-3 mb-2" style={{ background: force ? CD.flagSoft : 'rgba(43,80,226,.07)', border: `1px solid ${force ? CD.flag : 'rgba(43,80,226,.32)'}`, borderRadius: 11 }}>
       <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--cd-paper)' }}><Ic n={force ? 'alert' : cta.ic} s={15} c={c} /></span>
       <div className="flex-1 min-w-0">
         <div className="text-[12.5px] font-semibold" style={{ color: force ? CD.flag : BLUE }}>{title}</div>
         <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>{reason}</div>
         <div className="flex items-center gap-2 mt-2">
-          <button onClick={() => onRun && onRun(tier)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n={cta.ic} s={13} c="var(--cd-on-ink)" /> {cta.label}</button>
+          <button type="button" onClick={() => onRun && onRun(tier)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold" style={{ background: c, color: 'var(--cd-on-ink)', borderRadius: 8 }}><Ic n={cta.ic} s={13} c="var(--cd-on-ink)" /> {cta.label}</button>
           {!force && <button onClick={() => setDismissed(true)} className="px-2 py-1.5 text-[12px] font-medium" style={{ color: CD.mute }}>Not now</button>}
         </div>
       </div>
@@ -541,32 +428,32 @@
   /* ====================================================================
      SUBJECT PANEL — embedded at the bottom of a contact profile
      ==================================================================== */
-  function SubjectPanel({ name, kind, rec, by, setClients, settings }) {
+  function SubjectPanel({ name, kind, rec, by, setClients, settings, onRecordId }) {
     useStore();
-    const applied = useRef({});
-    const checks = checksFor(name);
+    const [send, setSend] = useState(false);
+    const [sendTpl, setSendTpl] = useState('verify');
+    const checks = checksConnected() ? checksFor(name) : [];
     const latest = checks[0];
-
-    // when a verification comes back, fold what the provider read off the ID into the contact
-    useEffect(() => {
-      const done = checks.find(c => c.status === 'completed' && c.result && c.result.extracted);
-      if (!done || !setClients || applied.current[done.id]) return;
-      applied.current[done.id] = true;
-      const ex = done.result.extracted;
-      setClients(c => { const cur = c[name] || {}; const next = { ...cur };
-        ['email', 'dob', 'address', 'city', 'province', 'postal', 'country', 'idType', 'idNum', 'idIssued', 'idExpiry'].forEach(k => { if (ex[k] && !String(next[k] || '').trim()) next[k] = ex[k]; });
-        next.idVerifiedAt = done.result.completedAt;
-        return { ...c, [name]: next };
-      });
-    }, [checks.map(c => c.id + c.status).join(',')]);
+    /* A completed check in this browser is not a provider result, so
+       it does not earn verified, verified+, or screened. */
+    const isVerPlus = false;
+    const isVer = false;
+    const isScreened = false;
 
     return (<div className="p-4" data-testid="client-identity" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-      <div className="flex items-center gap-2.5 mb-3">
-        <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
-        <div>
-          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself." /></div>
-          <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
+      <VerificationNudge name={name} rec={rec} settings={settings} onRecordId={onRecordId} onRun={() => { /* A run would open the sender. Persona is not connected, so it does not. */ }} />
+      <div className="flex flex-col gap-1 mb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="grid place-items-center flex-none" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself." /> {isVer ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 5 }}><Ic n="checkcircle" s={11} c={CD.green} /> {isVerPlus ? PROVIDER + ' verified+' : PROVIDER + ' verified'}</span> : isScreened ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 5 }}><Ic n="search" s={11} c={CD.amber} /> Screened only</span> : null}</div>
+            <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
+          </div>
         </div>
+        {!checksConnected() && (() => {
+          const standing = window.CDOS.displayIdStanding(rec);
+          return (<div className="text-[12px] leading-snug" data-testid="kyc-stored-standing" style={{ color: CD.faint }}>{`ID checks not connected yet. ${standing.label}. ${standing.detail}`}</div>);
+        })()}
       </div>
 
       {/* completed-result detail for the latest finished check */}
@@ -574,13 +461,14 @@
         <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[12.5px] font-medium capitalize" style={{ color: v === 'pass' ? CD.green : (v === 'hit' || v === 'possible') ? CD.flag : CD.ink }}>{v}</div></div>); return (
         <div className="mb-3 p-3" style={{ background: CD.paper, border: `1px solid ${dm.c}33`, borderRadius: 11 }}>
           <div className="flex items-center gap-2 mb-2.5"><Ic n={dm.icon} s={16} c={dm.c} /><span className="text-[13px] font-semibold" style={{ color: dm.c }}>{dm.label}</span><span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{r.reportRef}</span></div>
-          <div className="grid grid-cols-4 gap-2">{cell('Document', r.idCheck)}{cell('Biometric', r.biometric)}{cell('Database', r.database)}{cell('PEP', r.pep === 'None found' ? 'clear' : (r.pep === 'Not checked' || r.database === 'not checked') ? 'not checked' : 'flag')}</div>
+          <div className="grid grid-cols-4 gap-2">{cell('Document', r.idCheck)}{cell('Biometric', r.biometric)}{cell('Database', r.database)}{cell('PEP', r.pep === 'None found' ? 'clear' : 'flag')}</div>
           {r.watchlist.length > 0 && <div className="mt-2 pt-2 text-[11.5px]" style={{ borderTop: `1px solid ${CD.lineSoft}`, color: CD.flag }}>{r.watchlist.length} database match{r.watchlist.length === 1 ? '' : 'es'} — {r.watchlist.map(h => h.name).join(', ')}</div>}
-          {r.extracted && <div className="mt-2 pt-2 flex items-center gap-1.5 text-[11px]" style={{ borderTop: `1px solid ${CD.lineSoft}`, color: CD.mute }}><Ic n="checkcircle" s={12} c={CD.green} /> ID details, address &amp; date of birth auto-filled onto this contact.</div>}
         </div>); })()}
 
       {checks.length ? <div className="space-y-1.5">{checks.map(c => <CheckRow key={c.id} check={c} />)}</div>
-        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>No verifications on file. Persona is not connected yet.</div>}
+        : checksConnected() ? <div className="text-center py-6 text-[12px]" style={{ color: CD.mute }}>No checks on this file yet.</div> : null}
+
+      {send && <SendModal subject={name} kind={kind} rec={rec} by={by} initialTpl={sendTpl} setClients={setClients} onClose={() => setSend(false)} />}
     </div>);
   }
 
@@ -588,231 +476,177 @@
      PICKER MODAL — Compliance: pick a subject, then send (whole flow)
      ==================================================================== */
   /* ====================================================================
-     NEW CONTACT FLOW — scan ID → name & phone → verify → auto-fill
-     A guided onboarding: capture the ID, capture name + phone (creates
-     the contact), run Persona, then write the extracted address / DOB /
-     ID details back onto the contact.
+     NEW CONTACT — staff type the ID
+
+     This used to photograph a document, wait on a timer, and write a
+     generated address, date of birth and ID number onto the file.
+     That generator is gone. ID scanning isn't connected yet, and the
+     form says so. A name can be saved on its own. An ID is saved only
+     when staff typed both the type and the number.
      ==================================================================== */
+  const PERSON_ID_TYPES = ["Passport", "Driver's Licence", "Driver's License", "Provincial ID", "Permanent Resident Card", "Citizenship certificate (2012 or later, no photo)", "Canadian citizenship card (pre-2012)", "Secure Certificate of Indian Status", "Birth certificate"];
+  const BUSINESS_ID_TYPES = ["Business Number", "Incorporation Certificate", "Master Business Licence", "Articles of Incorporation"];
+
   function NewContactFlow({ initialName, by, setClients, onClose, onDone, requireId }) {
-    const store = useStore();
-    const [step, setStep] = useState('id');     // id | details | verifying | done
-    const [photo, setPhoto] = useState(null);
+    /* `by` is the teller the callers already pass. This form does not
+       attribute a provider check to them — there is no check. */
+    void by;
     const [name, setName] = useState(initialName || '');
     const [kind, setKind] = useState('individual');
     const [phone, setPhone] = useState('');
     const [email, setEmail] = useState('');
-    const [tplId, setTplId] = useState('verify');
-    const [mode, setMode] = useState(null);
-    const [via, setVia] = useState('sms');
-    const [checkId, setCheckId] = useState(null);
-    const applied = useRef(false);
-    const onFile = async (file) => {
-      if (!file) return;
-      const taken = await window.CDOS.intakeIdImage(file);   // see cdos-base.jsx
-      if (taken.ok) setPhoto(taken.dataUrl);
-    };
-    const [cam, setCam] = useState(false);          // live camera capture overlay
-    const [camErr, setCamErr] = useState('');
-    const videoRef = useRef(null);
-    const streamRef = useRef(null);
-    const closeCamera = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } setCam(false); };
-    const openCamera = async () => {
-      setCamErr(''); setCam(true);
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
-        streamRef.current = s;
-        const attach = () => { if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); } else setTimeout(attach, 30); };
-        attach();
-      } catch (e) { setCamErr(e && e.name === 'NotAllowedError' ? 'Camera access was blocked. Allow it in your browser, or upload a photo instead.' : 'No camera available on this device. Upload a photo instead.'); }
-    };
-    const capturePhoto = () => { const v = videoRef.current; if (!v || !v.videoWidth) return; const cv = document.createElement('canvas'); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext('2d').drawImage(v, 0, 0); setPhoto(cv.toDataURL('image/jpeg', 0.85)); closeCamera(); };
-    useEffect(() => () => closeCamera(), []);
-    const full = tmpl('full');
-
-    const writeContact = (nm) => { if (setClients) setClients(c => ({ ...c, [nm]: { ...(c[nm] || {}), kind, phone: phone.trim(), photo: photo || (c[nm] && c[nm].photo) || null, risk: (c[nm] && c[nm].risk) || houseRisk(), createdAt: (c[nm] && c[nm].createdAt) || new Date().toISOString().slice(0, 10) } })); };
-
-    /* And on the SERVER, which is where a customer file actually lives
-       now. This flow runs from the till and from the transaction modal,
-       not only from the Clients screen, so a contact created here used
-       to exist in one browser and nowhere else — invisible at the next
-       counter, and gone with the browser profile. See
-       server/src/clients/records.ts and docs/CLIENT_RECORDS.md.
-
-       Deliberately not awaited into the wizard's own flow: a teller
-       mid-transaction should not be held up by it, and the local write
-       above has already happened, so the worst case is a record that
-       reaches the server on the next load rather than one that is lost.
-       A genuine failure is reported rather than swallowed. */
+    const [dob, setDob] = useState('');
+    const [address, setAddress] = useState('');
+    const [city, setCity] = useState('');
+    const [province, setProvince] = useState('');
+    const [postal, setPostal] = useState('');
+    const [idType, setIdType] = useState('');
+    const [idNum, setIdNum] = useState('');
+    const [idIssued, setIdIssued] = useState('');
+    const [idExpiry, setIdExpiry] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [saveErr, setSaveErr] = useState('');
     const publishedId = useRef(null);
+    const types = kind === 'corporate' ? BUSINESS_ID_TYPES : PERSON_ID_TYPES;
+    const fieldStyle = { border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)', width: '100%', minWidth: 0, boxSizing: 'border-box' };
+    const idBits = () => {
+      const type = idType.trim();
+      const num = idNum.trim();
+      return { type, num, started: !!(type || num || idIssued || idExpiry) };
+    };
+
+    const writeContact = (nm, extra) => {
+      if (!setClients) return;
+      setClients(c => ({ ...c, [nm]: {
+        ...(c[nm] || {}),
+        kind,
+        phone: phone.trim(),
+        email: email.trim(),
+        risk: (c[nm] && c[nm].risk) || houseRisk(),
+        createdAt: (c[nm] && c[nm].createdAt) || new Date().toISOString().slice(0, 10),
+        ...extra,
+      } }));
+    };
+
+    /* Returned, not swallowed. The save button is the one caller, and
+       it leaves the form open with the server's sentence when this
+       rejects. A desk with no server still resolves, so the local
+       write below is the file. */
     const publishContact = (nm, extra) => {
       const shared = window.CDOS.ClientRecords;
-      /* A promise either way, so `await publishContact(...)` behaves the
-         same on a desk with no server behind it. */
       if (!shared || !shared.serverBacked()) return Promise.resolve(null);
-      const details = Object.assign({ kind, phone: phone.trim(), email: email.trim(), photo }, extra || {});
-      /* The first call opens the file; every later one — the identity a
-         verification read off the document — lands on THAT file rather
-         than opening a second one under the same name. */
-      const done = publishedId.current
-        ? shared.record(publishedId.current, details)
-        : shared.open(nm, details).then(created => { if (created) publishedId.current = created.clientId; return created; });
-      /* Returned as well as guarded, so the ONE caller that needs to know
-         it landed can wait for it. Everything else still fires and
-         forgets — see above. */
-      return done.catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', (err && err.message) || err));
+      const details = Object.assign({
+        kind,
+        phone: phone.trim(),
+        email: email.trim(),
+        dob: dob.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        province: province.trim(),
+        postal: postal.trim(),
+      }, extra || {});
+      if (publishedId.current) return shared.record(publishedId.current, details);
+      return shared.open(nm, details).then(created => {
+        if (created) publishedId.current = created.clientId;
+        return created;
+      });
     };
-    const [saving, setSaving] = useState(false);
-    /* Escape hatch: create the contact without running (or paying for) a
-       verification.
 
-       This ONE path waits for the server, unlike the mid-transaction
-       paths above. What happens immediately afterwards is that the new
-       file is opened on screen, and the single most important thing a
-       brand-new file can say — that somebody else on this desk already
-       has that name — is a fact only the server holds. Handing the
-       teller the browser's copy meant handing them a file with that
-       warning missing, which is the exact defect these records moved to
-       the server to end. One round-trip at the end of the wizard, and
-       the button says it is working. */
-    const saveManual = async () => {
+    const saveClient = async () => {
       const nm = name.trim();
       if (!nm || saving) return;
-      writeContact(nm);
+      const id = idBits();
+      const refused = "Type the ID type and number yourself. ID scanning is not connected, so a record with no staff entry is refused.";
+      if (requireId && (!id.type || !id.num)) { setSaveErr(refused); return; }
+      if (id.started && (!id.type || !id.num)) {
+        setSaveErr("Type both the ID type and the number, or leave both blank. A half-entered ID is not saved.");
+        return;
+      }
+      const extra = {
+        dob: dob.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        province: province.trim(),
+        postal: postal.trim(),
+      };
+      if (id.type && window.CDOS.idTypeRefused && window.CDOS.idTypeRefused(id.type)) {
+        setSaveErr("Health cards can't be used as ID");
+        return;
+      }
+      if (id.type && id.num) {
+        extra.idType = id.type;
+        extra.idNum = id.num;
+        extra.idIssued = idIssued.trim();
+        extra.idExpiry = idExpiry.trim();
+        /* applyDocument files a document only when this is "staff". */
+        extra.source = 'staff';
+      }
       setSaving(true);
-      try { await publishContact(nm); } finally { setSaving(false); }
+      setSaveErr('');
+      const shared = window.CDOS.ClientRecords;
+      const onServer = !!(shared && shared.serverBacked());
+      try {
+        if (onServer) {
+          const saved = await publishContact(nm, extra);
+          if (!saved && !publishedId.current) {
+            setSaveErr('Could not save this client. Nothing was saved.');
+            return;
+          }
+        }
+      } catch (err) {
+        if (err && err.clientId) publishedId.current = err.clientId;
+        setSaveErr((err && err.message) || 'Could not save this client. Nothing was saved.');
+        return;
+      } finally {
+        setSaving(false);
+      }
+      writeContact(nm, extra);
       if (onDone) onDone(nm);
       onClose();
     };
-    /* The choose step's button used to start a check, wait, and then write
-       an invented address and ID number onto the contact as "Pulled from
-       the ID". Persona is not connected, so the contact is saved and that
-       is all. */
-    const startCheck = () => { saveManual(); };
 
-    // when the verification finishes, fold the extracted identity into the contact
-    const check = checkId ? store[checkId] : null;
-    useEffect(() => {
-      if (step === 'verifying' && check && check.status === 'completed' && !applied.current) {
-        applied.current = true;
-        const ex = check.result.extracted;
-        if (ex && setClients) setClients(c => ({ ...c, [name.trim()]: { ...(c[name.trim()] || {}), ...ex, kind, idVerifiedAt: check.result.completedAt } }));
-        /* What the provider read off the document belongs on the
-           server record too, or the desk's proof of who it identified
-           lives in one browser. */
-        if (ex) publishContact(name.trim(), ex);
-        setStep('done');
-      }
-    }, [check && check.status]);
+    const Label = ({ children }) => <div className="text-[11px] mb-1" style={{ color: CD.mute }}>{children}</div>;
+    const canSave = !!name.trim() && !saving && (!requireId || (idType.trim() && idNum.trim()));
 
-    const si = step === 'id' ? 0 : step === 'details' ? 1 : 2;   // which of the 3 stepper dots is current
-    const Step = ({ n, label }) => { const active = si >= n - 1; const cur = si === n - 1; return (
-      <div className="flex items-center gap-1.5"><span className="grid place-items-center" style={{ width: 18, height: 18, borderRadius: '50%', background: active ? CD.ink : CD.lineSoft, color: active ? 'var(--cd-on-ink)' : CD.mute, fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{si > n - 1 ? '✓' : n}</span><span className="text-[11px] font-medium" style={{ color: cur ? CD.ink : CD.faint }}>{label}</span></div>
-    ); };
-
-    const ex = check && check.result ? check.result.extracted : null;
-    const dm = check && check.result ? decisionMeta(check.result.decision) : null;
-
-    return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
+    return (<Portal><div className="fixed inset-0 flex items-center justify-center p-3" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 520, maxHeight: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
-        <div className="flex items-start gap-3 px-5 py-4 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
+        <div className="flex items-start gap-3 px-4 py-4 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 10 }}><Ic n="userplus" s={18} c="var(--cd-on-ink)" /></span>
-          <div className="flex-1 min-w-0"><div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Add a contact</div><div className="text-[11.5px]" style={{ color: CD.mute }}>Persona is not connected yet.</div></div>
-          <button onClick={onClose} className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, color: CD.mute }}><Ic n="x" s={16} /></button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Add a client</div>
+            <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>ID scanning isn't connected yet. Type the name and the ID from the document.</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, color: CD.mute }}><Ic n="x" s={16} /></button>
         </div>
-        <div className="flex items-center gap-3 px-5 py-2.5 flex-none" style={{ borderBottom: `1px solid ${CD.line}` }}><Step n={1} label="Scan ID" /><span style={{ flex: 1, height: 1, background: CD.line }} /><Step n={2} label="Details" /><span style={{ flex: 1, height: 1, background: CD.line }} /><Step n={3} label="Verify" /></div>
-
-        <div className="flex-1 overflow-auto px-5 py-4">
-          {step === 'id' && (<div>
-            <div className="text-[12.5px] mb-3" style={{ color: CD.mute }}>Capture the customer's government ID. Persona is not connected yet, so nothing is read off the document.</div>
-            {photo ? (
-              <div className="relative" style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${CD.line}` }}>
-                <img src={photo} alt="ID" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }} />
-                <label className="absolute" style={{ right: 10, bottom: 10, cursor: 'pointer' }}><span className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-medium" style={{ background: 'var(--cd-scrim)', color: 'var(--cd-on-ink)', borderRadius: 8 }}><Ic n="camera" s={13} c="var(--cd-on-ink)" /> Replace</span><input type="file" accept="image/*" className="hidden" onChange={e => onFile(e.target.files[0])} /></label>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2.5">
-                <label className="flex flex-col items-center justify-center gap-2 py-7 cursor-pointer" style={{ border: `1.5px dashed ${CD.line}`, borderRadius: 12, background: CD.panel }}><span className="grid place-items-center" style={{ width: 40, height: 40, borderRadius: 10, background: CD.lineSoft }}><Ic n="upload" s={18} c={CD.mute} /></span><span className="text-[12.5px] font-medium" style={{ color: CD.ink }}>Upload ID</span><input type="file" accept="image/*" className="hidden" onChange={e => onFile(e.target.files[0])} /></label>
-                <button onClick={openCamera} type="button" className="flex flex-col items-center justify-center gap-2 py-7" style={{ border: `1.5px dashed ${CD.line}`, borderRadius: 12, background: CD.panel, cursor: 'pointer' }}><span className="grid place-items-center" style={{ width: 40, height: 40, borderRadius: 10, background: CD.lineSoft }}><Ic n="camera" s={18} c={CD.mute} /></span><span className="text-[12.5px] font-medium" style={{ color: CD.ink }}>Take a photo</span></button>
-              </div>
-            )}
-          </div>)}
-
-          {step === 'details' && (<div>
-            <div className="text-[12.5px] mb-3" style={{ color: CD.mute }}>Just the basics to create the contact. Persona is not connected yet, so it does not fill the file in.</div>
-            <div className="inline-flex mb-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{['individual', 'corporate'].map(k => <button key={k} onClick={() => setKind(k)} className="px-3.5 py-2 text-[12.5px]" style={{ background: kind === k ? CD.ink : 'transparent', color: kind === k ? 'var(--cd-on-ink)' : CD.mute }}>{k === 'corporate' ? 'Business' : 'Person'}</button>)}</div>
-            <label className="block mb-3"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>{kind === 'corporate' ? 'Business name' : 'Full name'}</div><input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder={kind === 'corporate' ? 'Acme Imports Ltd.' : 'Jane Doe'} className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }} /></label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Phone number</div><input value={phone} onChange={e => setPhone(e.target.value)} placeholder="(416) 555-0100" className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)', fontFamily: 'Space Mono, monospace' }} /></label>
-              <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Email</div><input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@email.com" className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }} /></label>
-            </div>
-            <div className="text-[11px] mt-3 flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="send" s={11} c={CD.faint} /> Persona is not connected yet. Saving the contact does not send a check.</div>
-          </div>)}
-
-          {step === 'choose' && <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />}
-
-          {step === 'verifying' && (<div className="text-center py-8">
-            <span className="grid place-items-center mx-auto mb-4" style={{ width: 56, height: 56, borderRadius: '50%', background: CD.brassSoft }}><span className="kyc-spin" style={{ width: 24, height: 24, border: `3px solid ${CD.brass}`, borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} /></span>
-            <div className="text-[15px] font-semibold" style={{ color: CD.ink }}>Persona is not connected yet.</div>
-            <div className="text-[12.5px] mt-1 mx-auto" style={{ color: CD.mute, maxWidth: 360 }}>This desk does not send the ID out, and it does not screen a sanctions list.</div>
-            <div className="inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute }}><Ic n="id" s={13} c={CD.mute} /> Not connected</div>
-          </div>)}
-
-          {step === 'done' && (<div>
-            <div className="flex items-center gap-2.5 mb-3">
-              <span className="grid place-items-center flex-none" style={{ width: 40, height: 40, borderRadius: '50%', background: dm ? dm.bg : CD.greenSoft }}><Ic n={dm ? dm.icon : 'checkcircle'} s={20} c={dm ? dm.c : CD.green} /></span>
-              <div><div className="text-[15px] font-semibold" style={{ color: CD.ink }}>{name.trim()} added{dm && dm.label === 'Verified' ? ' & verified' : ''}</div><div className="text-[12px]" style={{ color: dm ? dm.c : CD.mute }}>{dm ? dm.label : 'Verified'} · saved to your contacts</div></div>
-            </div>
-            {ex && (<div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}>
-              <div className="text-[10px] uppercase tracking-widest mb-2 flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="id" s={12} c={CD.faint} /> On the contact</div>
-              {[['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => (
-                <div key={l} className="flex items-center justify-between py-1.5 text-[12.5px]" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span style={{ color: CD.mute }}>{l}</span><span style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{v}</span></div>
-              ))}
-              <div className="text-[10.5px] mt-2" style={{ color: CD.faint }}>Saved to the contact — review and edit anytime in Clients.</div>
-            </div>)}
-          </div>)}
+        <div className="flex-1 overflow-auto px-4 py-4">
+          <div className="inline-flex mb-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>{['individual', 'corporate'].map(k => <button key={k} type="button" onClick={() => { setKind(k); setIdType(''); }} className="px-3.5 py-2 text-[12.5px]" style={{ background: kind === k ? CD.ink : 'transparent', color: kind === k ? 'var(--cd-on-ink)' : CD.mute }}>{k === 'corporate' ? 'Business' : 'Person'}</button>)}</div>
+          <label className="block mb-3"><Label>{kind === 'corporate' ? 'Business name' : 'Full name'}</Label><input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder={kind === 'corporate' ? 'Acme Imports Ltd.' : 'Jane Doe'} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+          <div className="flex flex-col gap-3">
+            <label className="block"><Label>Phone number</Label><input value={phone} onChange={e => setPhone(e.target.value)} placeholder="(416) 555-0100" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...fieldStyle, fontFamily: 'Space Mono, monospace' }} /></label>
+            <label className="block"><Label>Email</Label><input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@email.com" className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+            {kind !== 'corporate' && <label className="block"><Label>Date of birth</Label><input type="date" value={dob} onChange={e => setDob(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>}
+            <label className="block"><Label>Street address</Label><input value={address} onChange={e => setAddress(e.target.value)} placeholder="123 Main St" className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+            <label className="block"><Label>City</Label><input value={city} onChange={e => setCity(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+            <label className="block"><Label>Province / region</Label><input value={province} onChange={e => setProvince(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+            <label className="block"><Label>Postal code</Label><input value={postal} onChange={e => setPostal(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+            <label className="block"><Label>{kind === 'corporate' ? 'Document type' : 'ID type'}</Label>
+              <select value={idType} onChange={e => setIdType(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle}>
+                <option value="">Choose…</option>
+                {types.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+            <label className="block"><Label>{kind === 'corporate' ? 'Document number' : 'ID number'}</Label><input value={idNum} onChange={e => setIdNum(e.target.value)} placeholder="Number on the document" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...fieldStyle, fontFamily: 'Space Mono, monospace' }} /></label>
+            <label className="block"><Label>Issued</Label><input type="date" value={idIssued} onChange={e => setIdIssued(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+            <label className="block"><Label>Expiry</Label><input type="date" value={idExpiry} onChange={e => setIdExpiry(e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={fieldStyle} /></label>
+          </div>
+          {saveErr && <div role="alert" className="mt-3 text-[12.5px]" style={{ color: CD.flag }}>{saveErr}</div>}
         </div>
-
-        {/* footer */}
-        <div className="flex items-center gap-2 px-5 py-3.5 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
-          {step === 'id' && (<>
-            <button onClick={() => setStep('details')} className="text-[12px] font-medium" style={{ color: CD.mute }}>Skip — add ID later</button>
-            <div className="flex-1" />
-            <button onClick={() => setStep('details')} disabled={!photo} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: photo ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: photo ? 'pointer' : 'not-allowed' }}>Continue <Ic n="chev" s={14} c="var(--cd-on-ink)" /></button>
-          </>)}
-          {step === 'details' && (<>
-            <button onClick={() => setStep('id')} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Back</button>
-            {!requireId && <button onClick={saveManual} disabled={!name.trim() || saving} title="Skip verification — not recommended" className="px-2.5 py-2.5 text-[12px] font-medium" style={{ color: CD.faint, textDecoration: 'underline', textUnderlineOffset: 2, cursor: (name.trim() && !saving) ? 'pointer' : 'not-allowed' }}>{saving ? 'Saving…' : 'Save without verifying'}</button>}
-            <div className="flex-1" />
-            <button onClick={() => setStep('choose')} disabled={!name.trim()} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: name.trim() ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: name.trim() ? 'pointer' : 'not-allowed' }}>Continue <Ic n="chev" s={14} c="var(--cd-on-ink)" /></button>
-          </>)}
-          {step === 'choose' && (() => { const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject: name.trim() }); return (<>
-            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>Persona is not connected yet</div><div className="text-[13px] font-semibold leading-none" style={{ color: CD.mute }}>Nothing is charged</div></div>
-            <button onClick={() => setStep('details')} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Back</button>
-            <button onClick={startCheck} disabled={del.missing} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: del.missing ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: del.missing ? 'not-allowed' : 'pointer' }}><Ic n="send" s={14} c="var(--cd-on-ink)" /> {del.label}</button>
-          </>); })()}
-          {step === 'done' && (<><div className="flex-1" /><button onClick={() => { if (onDone) onDone(name.trim()); onClose(); }} className="px-5 py-2.5 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}>Done</button></>)}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
+          <button type="button" onClick={onClose} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Cancel</button>
+          <div className="flex-1" style={{ minWidth: 8 }} />
+          <button type="button" onClick={saveClient} disabled={!canSave} className="px-4 py-2.5 text-sm font-semibold text-white flex-none" style={{ background: canSave ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: canSave ? 'pointer' : 'not-allowed' }}>{saving ? 'Saving…' : 'Save client'}</button>
         </div>
       </div>
-      {cam && <div onClick={e => e.stopPropagation()} className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 10000 }}>
-        <div className="w-full flex flex-col" style={{ maxWidth: 520, background: 'var(--cd-ink)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 30px 70px -20px rgba(0,0,0,0.7)' }}>
-          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
-            <div className="flex items-center gap-2 text-[13px] font-semibold" style={{ color: 'var(--cd-on-ink)' }}><Ic n="camera" s={15} c="var(--cd-on-ink)" /> Photograph the ID</div>
-            <button onClick={closeCamera} className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, color: 'var(--cd-on-ink-soft)' }}><Ic n="x" s={16} c="var(--cd-on-ink-soft)" /></button>
-          </div>
-          <div style={{ position: 'relative', background: 'var(--cd-ink-strong)', aspectRatio: '4 / 3', display: 'grid', placeItems: 'center' }}>
-            {camErr
-              ? <div className="text-center px-6" style={{ color: 'var(--cd-on-ink-soft)' }}><Ic n="alert" s={22} c="#e7b34a" /><div className="text-[13px] mt-2">{camErr}</div></div>
-              : <video ref={videoRef} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-            {!camErr && <div style={{ position: 'absolute', inset: '12% 8%', border: '2px dashed var(--cd-on-ink-soft)', borderRadius: 12, pointerEvents: 'none' }} />}
-          </div>
-          <div className="flex items-center justify-center gap-3 px-4 py-4">
-            {camErr
-              ? <button onClick={closeCamera} className="px-5 py-2.5 text-sm font-semibold" style={{ background: 'var(--cd-panel)', color: 'var(--cd-ink)', borderRadius: 9 }}>Close</button>
-              : <><button onClick={closeCamera} className="px-4 py-2.5 text-sm font-medium" style={{ color: 'var(--cd-on-ink-soft)', border: '1px solid var(--cd-on-ink-faint)', borderRadius: 9 }}>Cancel</button>
-                <button onClick={capturePhoto} className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold" style={{ background: 'var(--cd-panel)', color: 'var(--cd-ink)', borderRadius: 9 }}><span style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--cd-ink)', display: 'inline-block' }} /> Capture</button></>}
-          </div>
-        </div>
-      </div>}
     </div></Portal>);
   }
 
@@ -829,7 +663,7 @@
     const shown = subjects.filter(s => !q || s.name.toLowerCase().includes(q.toLowerCase()));
 
     if (adding) return <NewContactFlow initialName={q.trim()} by={by} setClients={setClients} onClose={onClose} requireId={true} />;
-    if (picked) return <SendModal subject={picked.name} kind={picked.kind} rec={picked.rec} by={by} onClose={onClose} />;
+    if (picked) return <SendModal subject={picked.name} kind={picked.kind} rec={picked.rec} by={by} setClients={setClients} onClose={onClose} />;
 
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 460, maxHeight: '82%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
@@ -843,7 +677,7 @@
         <div className="px-3 pt-3 flex-none">
           <button onClick={() => setAdding(true)} className="w-full flex items-center gap-3 px-2.5 py-2.5 text-left" style={{ borderRadius: 11, border: `1.5px solid ${CD.ink}`, background: 'var(--cd-chip)' }}>
             <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: CD.ink }}><Ic n="userplus" s={16} c="var(--cd-on-ink)" /></span>
-            <div className="flex-1 min-w-0"><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>Add a new contact</div><div className="text-[11px]" style={{ color: CD.mute }}>Scan their ID — we'll create & verify in one go</div></div>
+            <div className="flex-1 min-w-0"><div className="text-[13px] font-semibold" style={{ color: CD.ink }}>Add a new contact</div><div className="text-[11px]" style={{ color: CD.mute }}>Type their name and ID. ID scanning isn't connected yet.</div></div>
             <Ic n="chev" s={15} c={CD.mute} />
           </button>
         </div>
@@ -872,5 +706,5 @@
   // tiny spinner keyframes (once)
   if (!document.getElementById('kyc-spin-kf')) { const st = document.createElement('style'); st.id = 'kyc-spin-kf'; st.textContent = '@keyframes kycspin{to{transform:rotate(360deg)}}.kyc-spin{animation:kycspin .8s linear infinite}'; document.head.appendChild(st); }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { KYC: { TEMPLATES, summary, checksFor, setContactSink, setProvider, getProvider, personaConnected, applyPartnerCode, getPartnerRate, SendModal, SubjectPanel, PickerModal, NewContactFlow, VerificationNudge, decisionMeta, phaseMeta } });
+  window.CDOS = Object.assign(window.CDOS || {}, { KYC: { TEMPLATES, summary, checksFor, checksConnected, setContactSink, setProvider, getProvider, personaConnected, applyPartnerCode, getPartnerRate, SendModal, SubjectPanel, PickerModal, NewContactFlow, VerificationNudge, decisionMeta, phaseMeta } });
 })();

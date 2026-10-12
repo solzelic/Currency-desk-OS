@@ -101,9 +101,15 @@
     var risk = riskText.indexOf("high") >= 0 ? "high"
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
-    var idStatus = !record.idType || !record.idNum ? "missing"
-      : record.idExpiry && record.idExpiry < new Date().toISOString().slice(0, 10) ? "expired"
-      : "verified";
+    /* The ledger customer route still requires this field and stores it.
+       It is the same answer as the screen. A browser date, and the
+       primary document alone, are not a second rule. Client standing
+       fields are not on this payload: the client API has ignored them
+       since they were taken off the request. */
+    var standing = displayIdStanding(record);
+    var idStatus = standing.label === "Expired" ? "expired"
+      : standing.tone === "ok" ? "verified"
+      : "missing";
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
     return { externalRef: externalRef, name: String(name).trim(), risk: risk, idStatus: idStatus };
   }
@@ -218,7 +224,371 @@
     }));
   }
 
+  /* One lookup for standing and for the edit screen. A stored alias
+     is said as the catalogue name a teller would pick. The row on
+     the file is not rewritten. */
+  function displayIdType(type) {
+    if (type === "PR Card") return "Permanent Resident Card";
+    if (type === "Citizenship Card") return "Citizenship certificate (2012 or later, no photo)";
+    if (type === "Driver licence") return "Driver's Licence";
+    return canonicalIdTypeName(type);
+  }
+
+  function canonicalIdTypeName(type) {
+    var raw = String(type == null ? "" : type).replace(/\s+/g, " ").trim();
+    var key = raw.toLowerCase();
+    if (key === "pr card") return "Permanent Resident Card";
+    if (key === "citizenship card") return "Citizenship certificate (2012 or later, no photo)";
+    if (key === "driver licence") return "Driver's Licence";
+    if (isHealthCardAlias(raw)) return "Health Card";
+    var rule = catalogueExact(raw);
+    return rule ? rule.name : raw;
+  }
+
+  function sharedHealthCards() {
+    var root = typeof globalThis !== "undefined" ? globalThis : {};
+    var cdos = root.CDOS;
+    if (!cdos || typeof cdos.isHealthCardType !== "function" || typeof cdos.maskNotAcceptedNumber !== "function") {
+      throw new Error("The shared health-card list is not loaded.");
+    }
+    return cdos;
+  }
+
+  /* The shared list in os-src/health-card-aliases.js. A catalogue
+     name that is not the health card is left alone. */
+  function isHealthCardAlias(type) {
+    var exact = catalogueExact(type);
+    if (exact) return exact.name === "Health Card";
+    return sharedHealthCards().isHealthCardType(type);
+  }
+
+  /* A calendar day, read off the ISO string. The desk and the phone
+     both say "Jan 1, 2020". Parsing the string as a Date would shift
+     the day across a timezone. The phone flag stays so callers do
+     not change; both widths use the spoken day. */
+  function displayIdDate(iso, phone) {
+    void phone;
+    var day = String(iso == null ? "" : iso).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
+    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var month = months[Number(day.slice(5, 7)) - 1];
+    if (!month) return "";
+    return month + " " + Number(day.slice(8, 10)) + ", " + day.slice(0, 4);
+  }
+
+  /* A number that is only spaces, NBSP, or zero-width marks is empty.
+     Format and control characters come out with the whitespace. */
+  function visibleDocumentNumber(value) {
+    return String(value == null ? "" : value).replace(/[\s\p{Cf}\p{Cc}]/gu, "");
+  }
+
+  /* Every identity document. Only the primary can identify the client,
+     and only when that primary is a current government photo ID.
+     A desk record lists them on `documents`. A caller that only has
+     the flattened primary, or the extra `ids`, is read the same way. */
+  function standingPapers(record) {
+    if (Array.isArray(record.documents)) return record.documents;
+    var papers = [];
+    if (record.idType || record.idNum || record.idExpiry) {
+      papers.push({
+        docType: record.idType,
+        docNumber: record.idNum,
+        expiresOn: record.idExpiry,
+        issuedOn: record.idIssued,
+        isPrimary: true,
+      });
+    }
+    if (Array.isArray(record.ids)) {
+      record.ids.forEach(function (doc) { papers.push(doc || {}); });
+    }
+    return papers;
+  }
+
+  function paperType(doc) {
+    doc = doc || {};
+    var type = doc.docType != null ? doc.docType : (doc.type != null ? doc.type : doc.idType);
+    return String(type == null ? "" : type).trim();
+  }
+
+  function paperNumber(doc) {
+    doc = doc || {};
+    var number = doc.docNumber != null ? doc.docNumber
+      : (doc.num != null ? doc.num : (doc.number != null ? doc.number : doc.idNum));
+    return visibleDocumentNumber(number);
+  }
+
+  function paperExpiry(doc) {
+    doc = doc || {};
+    var expiry = doc.expiresOn != null ? doc.expiresOn
+      : (doc.expiry != null ? doc.expiry : (doc.expires_on != null ? doc.expires_on : doc.idExpiry));
+    if (expiry == null || expiry === "") return "";
+    var day = String(expiry).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
+  }
+
+  /* The trading day the till session carries. That is the branch's
+     business date. The browser's local date is not a substitute, and
+     a passed date is only the fallback when the helper is not on the
+     page yet. */
+  function standingBusinessDate(today) {
+    var day = "";
+    try {
+      if (typeof window !== "undefined" && window.CDOS && typeof window.CDOS.businessDate === "function") {
+        day = String(window.CDOS.businessDate() || "").slice(0, 10);
+      }
+    } catch (e) {}
+    if (!day && today) day = String(today).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
+  }
+
+  /* A Persona inquiry the server reported. The integration is off, so
+     the client response does not carry one. inquiryId and eventId are
+     the ids that integration stores. A stored verification word is not
+     this record, and neither is a flag set in the browser. */
+  function providerVerification(record) {
+    var reported = record && record.personaInquiry;
+    if (!reported || typeof reported !== "object" || Array.isArray(reported)) return null;
+    var inquiryId = typeof reported.inquiryId === "string" ? reported.inquiryId : "";
+    var eventId = typeof reported.eventId === "string" ? reported.eventId : "";
+    if (!/^inq_[A-Za-z0-9_-]{1,80}$/.test(inquiryId)) return null;
+    if (!/^evt_[A-Za-z0-9_-]{1,80}$/.test(eventId)) return null;
+    if (reported.eventName !== "inquiry.approved") return null;
+    if (reported.status !== "approved") return null;
+    return reported;
+  }
+
+  /* The same rows as server/src/ledger/id-document-types.mjs.
+     A blank expiry is current only on the row whose flag says so.
+     Health cards are refused on purpose. A name that is not here
+     is not a photo ID. */
+  var ID_DOCUMENT_TYPES = [
+    { name: "Passport", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "Driver's Licence", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "Driver licence", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "Driver's License", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "Provincial ID", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "PR Card", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "Permanent Resident Card", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "Citizenship Card", photo: false, noExpiryAllowed: false, accepted: true },
+    { name: "Citizenship certificate (2012 or later, no photo)", photo: false, noExpiryAllowed: false, accepted: true },
+    { name: "Canadian citizenship card (pre-2012)", photo: true, noExpiryAllowed: true, accepted: true },
+    { name: "Secure Certificate of Indian Status", photo: true, noExpiryAllowed: false, accepted: true },
+    { name: "Health Card", photo: false, noExpiryAllowed: false, accepted: false },
+    { name: "Birth certificate", photo: false, noExpiryAllowed: false, accepted: true },
+  ];
+
+  function catalogueExact(type) {
+    var key = String(type || "").trim().toLowerCase().replace(/\s+/g, " ");
+    for (var i = 0; i < ID_DOCUMENT_TYPES.length; i++) {
+      if (ID_DOCUMENT_TYPES[i].name.toLowerCase() === key) return ID_DOCUMENT_TYPES[i];
+    }
+    return null;
+  }
+
+  /* The row after alias and health-card resolution. Standing and the
+     edit screen both call this. A name that is not in the catalogue
+     has no row. */
+  function idTypeRule(type) {
+    return catalogueExact(displayIdType(type));
+  }
+
+  /* Refused catalogue rows, health-card aliases, and any free-text
+     type the catalogue does not list. An empty name is not a paper. */
+  function idTypeNotAccepted(type) {
+    var shown = displayIdType(type);
+    if (!String(shown || "").trim()) return false;
+    var rule = catalogueExact(shown);
+    if (!rule) return true;
+    return rule.accepted === false;
+  }
+
+  /* A catalogue row the desk will not accept. A stored health card
+     stays on the file and is shown, and it is not offered again. */
+  function idTypeRefused(type) {
+    var rule = idTypeRule(type);
+    return !!(rule && rule.accepted === false);
+  }
+
+  /* A number the catalogue does not accept. Last four only, eight
+     characters wide, from the shared mask. An accepted number stays
+     whole. A missing or blank number is an empty string. It is not
+     the word undefined, and it is not a mask of that word. */
+  function maskStoredIdNumber(type, value) {
+    if (value == null) return "";
+    var raw = String(value);
+    if (!raw.trim()) return "";
+    if (!idTypeNotAccepted(type)) return raw;
+    return sharedHealthCards().maskNotAcceptedNumber(raw);
+  }
+
+  /* The paper a screen may name. docType is the display name, so
+     every surface says the same words for the same row. */
+  function describedPaper(doc, expiry) {
+    var issued = doc.issuedOn != null ? doc.issuedOn : (doc.issued != null ? doc.issued : doc.idIssued);
+    var issuedDay = issued == null || issued === "" ? "" : String(issued).slice(0, 10);
+    return {
+      docType: displayIdType(paperType(doc)),
+      docNumber: paperNumber(doc),
+      expiresOn: expiry,
+      issuedOn: /^\d{4}-\d{2}-\d{2}$/.test(issuedDay) ? issuedDay : "",
+      isPrimary: !!(doc && doc.isPrimary),
+    };
+  }
+
+  /* A current primary wins over an earlier current secondary.
+     The first paper keeps the place until then. */
+  function preferPaper(held, next) {
+    if (!held) return next;
+    if (next.isPrimary && !held.isPrimary) return next;
+    return held;
+  }
+
+  function missingStanding(reason) {
+    return {
+      status: "missing",
+      label: "Missing ID",
+      detail: reason,
+      reason: reason,
+      tone: "warning",
+      document: null,
+      expiredDocument: null,
+    };
+  }
+
+  /* The only label for an ID on a desk screen.
+     While no provider is connected, the stored verification word is
+     ignored. Migration 019 copied "ID on file" into "verified", and a
+     caller could set it before the request was refused. The row stays.
+     Verified is only the Persona inquiry above.
+     Identified is one current government-issued photo ID, and that
+     paper has to be the primary. Current means the expiry is on or
+     after the business date, or the type's own no-expiry flag is set
+     and the expiry is blank. A non-primary document never identifies
+     the client. A health card never does. Dual process and a credit
+     file are not a method this desk can record. When the response
+     carries idStanding, that is the label, and this function does not
+     invent a document for it. `document` is the photo ID that
+     qualified. An expired paper is never that document. */
+  function displayIdStanding(record, today) {
+    record = record || {};
+    if (record.idStanding && record.idStanding.label) return record.idStanding;
+    if (providerVerification(record)) {
+      return {
+        status: "verified",
+        label: "Verified",
+        detail: "The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.",
+        tone: "ok",
+      };
+    }
+    var day = standingBusinessDate(today);
+    var currentPrimary = null;
+    var expiredPhoto = null;
+    var sawCurrentOther = false;
+    var sawBlankExpiry = false;
+    var sawNonPhoto = false;
+    var healthDocs = 0;
+    var counted = 0;
+    var sawNoNumber = false;
+    var sawTypeNotStated = false;
+    standingPapers(record).forEach(function (doc) {
+      var type = paperType(doc);
+      var number = paperNumber(doc);
+      if (type === "Not stated" || (!type && number)) {
+        sawTypeNotStated = true;
+        return;
+      }
+      if (!type) return;
+      if (!number) {
+        /* A health-card read can leave the number off the response.
+           The paper is still a health card. A blank number on any
+           other type is "No ID number". */
+        if (idTypeRefused(type)) {
+          healthDocs += 1;
+          counted += 1;
+          return;
+        }
+        sawNoNumber = true;
+        return;
+      }
+      counted += 1;
+      var rule = idTypeRule(type);
+      var expiry = paperExpiry(doc);
+      var primary = !!(doc && doc.isPrimary);
+      var described = describedPaper(doc, expiry);
+      if (rule && rule.accepted === false) {
+        healthDocs += 1;
+        return;
+      }
+      var photo = !!(rule && rule.photo && rule.accepted);
+      var blankAllowed = !!(rule && rule.noExpiryAllowed);
+      if (!expiry) {
+        if (photo && blankAllowed && primary && day) currentPrimary = preferPaper(currentPrimary, described);
+        else if (photo && blankAllowed && !primary) sawCurrentOther = true;
+        else sawBlankExpiry = true;
+        return;
+      }
+      /* A dated paper cannot be current or expired until the trading
+         day is known. It is not "no expiry". */
+      if (!day) return;
+      if (photo && expiry >= day) {
+        if (primary) currentPrimary = preferPaper(currentPrimary, described);
+        else sawCurrentOther = true;
+        return;
+      }
+      if (photo && expiry < day) {
+        expiredPhoto = preferPaper(expiredPhoto, describedPaper(doc, expiry));
+        return;
+      }
+      if (expiry >= day) sawCurrentOther = true;
+      else sawNonPhoto = true;
+    });
+    if (currentPrimary) {
+      return {
+        status: "identified",
+        label: "Identified",
+        detail: "An identity document with a number is on file, and it has not expired.",
+        reason: "An identity document with a number is on file, and it has not expired.",
+        tone: "ok",
+        document: currentPrimary,
+        expiredDocument: expiredPhoto,
+      };
+    }
+    if (expiredPhoto && sawCurrentOther) {
+      var when = displayIdDate(expiredPhoto.expiresOn, true);
+      return missingStanding("Photo ID expired on " + when);
+    }
+    if (expiredPhoto) {
+      var expiredDetail = "An identity document on this file is past its expiry. The till will not treat this customer as identified.";
+      return {
+        status: "expired",
+        label: "Expired",
+        detail: expiredDetail,
+        reason: expiredDetail,
+        tone: "warning",
+        document: null,
+        expiredDocument: expiredPhoto,
+      };
+    }
+    if (healthDocs > 0 && healthDocs === counted) {
+      return missingStanding("Health cards can't be used as ID");
+    }
+    if (sawBlankExpiry) return missingStanding("ID has no expiry date");
+    if (sawNoNumber) return missingStanding("No ID number");
+    if (sawTypeNotStated) return missingStanding("ID type not stated");
+    if (sawCurrentOther || sawNonPhoto || healthDocs > 0) {
+      return missingStanding("A current photo ID is needed");
+    }
+    return missingStanding("No ID on file");
+  }
+
   window.CDOS = Object.assign(window.CDOS || {}, {
+    displayIdType: displayIdType,
+    idTypeRule: idTypeRule,
+    idTypeNotAccepted: idTypeNotAccepted,
+    idTypeRefused: idTypeRefused,
+    maskStoredIdNumber: maskStoredIdNumber,
+    displayIdDate: displayIdDate,
+    displayIdStanding: displayIdStanding,
     Backend: {
       request: request,
       setWorkspace: setWorkspace,
@@ -706,6 +1076,12 @@
       notes: record.notes || "",
       risk: RISK_OUT[record.riskRating] || "Normal",
       verificationStatus: record.verificationStatus,
+      /* Present only once the server sends it. The label helper prefers
+         this over a label derived in the browser. */
+      idStanding: record.idStanding || null,
+      /* A Persona inquiry on the server response. Not taken from the
+         copy this browser already had. The integration does not send it. */
+      personaInquiry: record.personaInquiry || null,
       screeningOutcome: record.screeningOutcome || null,
       screeningMatched: record.screeningMatched || null,
       incorpDate: record.incorporationDate || "",
@@ -718,8 +1094,8 @@
       possibleDuplicate: !!record.possibleDuplicate,
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
-      idType: primary ? primary.docType : "",
-      idNum: primary ? (primary.docNumber || "") : "",
+      idType: primary ? displayIdType(primary.docType) : "",
+      idNum: primary && primary.docNumber != null ? (maskStoredIdNumber(primary.docType, primary.docNumber) || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
       primaryDocumentId: primary ? primary.documentId : null,
@@ -732,15 +1108,20 @@
       ids: extra.map(function (d) {
         return {
           documentId: d.documentId,
-          type: d.docType,
-          num: d.docNumber || "",
+          type: displayIdType(d.docType),
+          num: d.docNumber == null ? "" : (maskStoredIdNumber(d.docType, d.docNumber) || ""),
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
           hasScan: !!d.hasScan,
           photo: d.hasScan ? null : null,
         };
       }),
-      documents: documents,
+      documents: documents.map(function (d) {
+        return Object.assign({}, d, {
+          docType: displayIdType(d.docType),
+          docNumber: d.docNumber == null ? null : maskStoredIdNumber(d.docType, d.docNumber),
+        });
+      }),
       /* Supporting files now live on the server, as labels only. The
          bytes are fetched when somebody opens one. A local copy is kept
          only when the server does not already hold that label and file

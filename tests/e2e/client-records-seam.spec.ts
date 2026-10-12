@@ -189,17 +189,16 @@ async function openClientCard(page: Page, name: string) {
   await card.click();
 }
 
-/* Create a client the way a teller does: the New-contact wizard, skipping
-   the paid verification, which is the escape hatch the product offers and
-   the path most contacts are actually made through. */
+/* Create a client the way a teller does: the new-contact form, name
+   only. ID scanning is not connected, so this does not invent an ID.
+   A type and a number, when the teller has them, are typed on the
+   same form. */
 async function addContact(page: Page, name: string) {
   await page.getByRole("button", { name: /^New contact$/ }).click();
-  const skipId = page.getByText(/^Skip — add ID later$/);
-  if (await skipId.isVisible({ timeout: 5_000 }).catch(() => false)) await skipId.click();
   const field = page.getByPlaceholder("Jane Doe");
   await field.waitFor({ state: "visible", timeout: 15_000 });
   await field.fill(name);
-  await page.getByText(/^Save without verifying$/).click();
+  await page.getByRole("button", { name: /^Save client$/ }).click();
   /* The PROFILE opens on the new contact, and it is the profile this
      waits for — not merely the name, which is also on the grid card
      sitting behind it. Waiting for the name let this return while the
@@ -382,7 +381,7 @@ test("opening an identity document writes a server audit row", async ({ page }) 
 
   const withDocument = await server.call(`/api/clients/${record.clientId}/documents`, {
     method: "POST",
-    body: JSON.stringify({ docType: "Passport", docNumber: `PA-${RUN}`, expiresOn: "2031-01-01", scanDataUrl: SCAN }),
+    body: JSON.stringify({ docType: "Passport", docNumber: `PA-${RUN}`, expiresOn: "2031-01-01", scanDataUrl: SCAN, source: "staff" }),
   });
   expect(withDocument.status, JSON.stringify(withDocument.body)).toBe(201);
   const documentId = withDocument.body.documents[0].documentId as string;
@@ -555,5 +554,5 @@ test("the operator files a paper on the customer and can search the folder", asy
   }).toBeGreaterThanOrEqual(1);
 
   await expect(page.getByText("Where they are")).toBeVisible();
-  await expect(page.getByText("Not identified")).toBeVisible();
+  await expect(page.getByText("Missing ID").first()).toBeVisible();
 });

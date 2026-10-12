@@ -247,12 +247,12 @@
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
-              {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const st = (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = st === 'verified'; const onfile = st === 'ID on file'; return (
+              {shown.map(n => { const c = clients[n] || {}; const standing = window.CDOS.displayIdStanding(c, window.CDOS.businessDate()); const st = standing.label; const ok = standing.tone !== 'warning'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
-                  <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
+                  <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : CD.flagSoft, color: ok ? CD.green : CD.flag }}>{st}</span>
                 </button>); })}
               {shown.length === 0 && <div className="px-3 py-2 text-[11px]" style={{ color: CD.faint }}>No match.</div>}
-              <button onMouseDown={e => e.preventDefault()} onClick={() => { onAddNew(); setOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> {idRequired ? 'Scan ID & add new client' : 'Add new client'}{query ? ` “${query.trim()}”` : ''}</button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => { onAddNew(); setOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> {idRequired ? 'Add a client and record their ID' : 'Add new client'}{query ? ` “${query.trim()}”` : ''}</button>
             </div>
           )}
         </div>
@@ -275,16 +275,15 @@
       const days = last ? Math.round((Date.parse(TODAY) - Date.parse(last)) / 86400000) : null;
       return { count: h.length, total, windowCad, winDays, days, top: Object.keys(cc).sort((a, b) => cc[b] - cc[a])[0] || null };
     }, [name, live, settings]);
-    const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < TODAY;
-    const idOk = !idMissing && !idExpired;
-    // green ONLY after a real provider verification (Verified / Verified Plus).
-    // A typed / scanned ID with no KYC is amber “ID on file” — present, not verified.
-    const verified = (() => { try { const ch = (window.CDOS.KYC && window.CDOS.KYC.checksFor(name)) || []; return ch.some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved'); } catch (e) { return false; } })();
-    const badge = idMissing ? { t: 'No ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
-      : idExpired ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
-      : verified ? { t: 'ID verified', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
-      : { t: 'ID on file', c: CD.amber, bg: CD.amberSoft, ic: 'id' };
+    const bookDay = window.CDOS.businessDate();
+    const standing = window.CDOS.displayIdStanding(rec, bookDay);
+    const idOk = standing.tone !== 'warning';
+    const onFile = idOk && standing.document && standing.document.docType ? standing.document : null;
+    const onFileType = onFile ? (window.CDOS.displayIdType(onFile.docType) || 'ID') : '';
+    const onFileExp = onFile && onFile.expiresOn ? window.CDOS.displayIdDate(onFile.expiresOn, !!phone) : '';
+    const badge = standing.tone === 'warning'
+      ? { t: standing.label, c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+      : { t: standing.label, c: CD.green, bg: CD.greenSoft, ic: 'id' };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
     const over = line != null && s.windowCad != null && s.windowCad >= line;
@@ -301,7 +300,7 @@
           <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
         </div>
         <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" sentence={phone} value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
+          <CCstat label="ID on file" sentence={phone} value={idOk ? (onFileType || 'ID') : '—'} sub={idOk ? (onFileExp ? `exp ${onFileExp}` : 'on file') : (standing.reason || standing.label)} tone={idOk ? CD.ink : CD.flag} />
           <CCstat label={phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`} sentence={phone} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
           <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
         </div>
@@ -623,7 +622,7 @@
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : (regime.idAt == null ? null : regime.idAt);
     const rec = clients[customer];
-    const kyc = (!rec || !rec.idType || !rec.idNum) ? 'missing' : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
+    const standing = window.CDOS.displayIdStanding(rec || {}, window.CDOS.businessDate());
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
@@ -675,7 +674,7 @@
       : ph
       ? (unpriced || !idRow || idRow.threshold == null || overId)
       : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));
-    const idOk = kyc === 'ok';
+    const idOk = standing.tone !== 'warning';
     const recent = useMemo(() => {
       if (!customer) return { sum: 0, unknown: false };
       let sum = 0, unknown = false;
@@ -706,7 +705,7 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? (phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file`) : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: idOk ? `${custLabel} identified` : standing.label, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? (standing.reason || standing.label) : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -1107,7 +1106,7 @@
                   )}
                 </div>
               )}
-              {customer && clients[customer] && <CustomerCard name={customer} rec={clients[customer]} live={live} settings={settings} />}
+              {customer && clients[customer] && <CustomerCard name={customer} rec={clients[customer]} live={live} settings={settings} phone={phoneSheet} />}
               {/* The customer's ID, where the teller actually is when the
                   question comes up. Covered until it is clicked, and the
                   click writes a server audit row — same component, same
@@ -1116,21 +1115,33 @@
               {customer && window.CDOS.ClientIdViewer &&
                 React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log, compact: true })}
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && (!phoneSheet || personaOn) &&
-                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
+                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && !idOk, onRecordId: () => setRecordId(true), onRun: (tpl) => setQuickChk(tpl) })}
               {/* Phone only, and display:none at a desk width so the 1280
-                  dialog does not move. This is not an ID form. It opens
-                  the client file's identity editor, which writes the
-                  document — type, number, and expiry — on the server. */}
+                  dialog does not move. Whether this row appears is
+                  displayIdStanding. The reason under the label is that
+                  helper's. The green line names standing.document, the
+                  paper that qualified, never the expired primary.
+                  Recording opens the client file's identity editor,
+                  which writes the document on the server. */}
               {idRequired && String(customer || '').trim() && !idOk && (
                 <div data-req-field="id" className={'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')}>
-                  <span className="cd-tx-id-need-label">ID needed for this amount</span>
+                  <div className="cd-tx-id-need-copy">
+                    <span className="cd-tx-id-need-label">ID needed for this amount</span>
+                    <span className="cd-tx-id-need-reason">{standing.reason || standing.detail || standing.label}</span>
+                  </div>
                   <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go">Record the ID</button>
                 </div>
               )}
               {idRequired && idOk && (
-                <div className="cd-tx-id-need">
+                <div className="cd-tx-id-need cd-tx-id-ok">
                   <Ic n="checkcircle" s={14} c={CD.green} />
-                  <span className="cd-tx-id-need-label">{(rec && rec.idType) || 'ID'} on file{rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}</span>
+                  <span className="cd-tx-id-need-label">{(standing.document && window.CDOS.displayIdType(standing.document.docType)) || 'ID'} on file{standing.document && standing.document.expiresOn ? ` · exp ${window.CDOS.displayIdDate(standing.document.expiresOn, true)}` : ''}</span>
+                </div>
+              )}
+              {idRequired && idOk && standing.expiredDocument && standing.expiredDocument.docType && standing.expiredDocument.expiresOn && (
+                <div className="cd-tx-id-expired" style={{ background: CD.flagSoft, borderColor: CD.flag }}>
+                  <Ic n="alert" s={14} c={CD.flag} />
+                  <span className="cd-tx-id-expired-label" style={{ color: CD.flag }}>{window.CDOS.displayIdType(standing.expiredDocument.docType)} expired {window.CDOS.displayIdDate(standing.expiredDocument.expiresOn, true)}</span>
                 </div>
               )}
 

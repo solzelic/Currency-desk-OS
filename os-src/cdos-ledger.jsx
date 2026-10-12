@@ -57,7 +57,7 @@
   // overlays portal to the document root so the window's stacking context
   // (and the rate ticker at z-360) can't occlude them
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
-  const ID_TYPES = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Business Number'];
+  const ID_TYPES = ['Passport', "Driver's Licence", "Driver's License", 'Provincial ID', 'Permanent Resident Card', 'Citizenship certificate (2012 or later, no photo)', 'Canadian citizenship card (pre-2012)', 'Secure Certificate of Indian Status', 'Birth certificate', 'Business Number'];
 
   /* ---------- small shared UI ---------- */
   function StatCard({ label, value, sub, flag, active, onClick }) {
@@ -142,12 +142,13 @@
       return { count: h.length, total, windowCad, winDays, lastVisit, daysSince, topCcy };
     }, [name, live, settings]);
 
-    const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < businessDate();
-    const idOk = !idMissing && !idExpired;
-    const idTone = idOk ? CD.green : CD.flag;
-    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID verified';
-    const maskedId = rec && rec.idNum ? '••••' + String(rec.idNum).slice(-3) : '';
+    const standing = window.CDOS.displayIdStanding(rec, businessDate());
+    const idOk = standing.tone !== 'warning';
+    const idLabel = standing.label;
+    const idTone = standing.tone === 'warning' ? CD.flag : CD.green;
+    const onFile = idOk && standing.document && standing.document.docType ? standing.document : null;
+    const onFileType = onFile ? (window.CDOS.displayIdType(onFile.docType) || 'ID') : '';
+    const maskedId = onFile && onFile.docNumber ? '••••' + String(onFile.docNumber).slice(-3) : '';
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -172,12 +173,12 @@
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? <>{s.count} deal{s.count !== 1 ? 's' : ''} · {lastLabel}</> : 'No prior deals at this desk'}</div>
           </div>
-          <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : CD.flagSoft, color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
+          <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: standing.tone === 'warning' ? CD.flagSoft : CD.greenSoft, color: idTone, borderRadius: 999 }}><Ic n={standing.tone === 'warning' ? 'alert' : 'checkcircle'} s={12} c={idTone} /> {idLabel}</span>
         </div>
 
         {/* facts */}
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''))} tone={idMissing ? CD.flag : idExpired ? CD.flag : CD.ink} />
+          <CCstat label="ID on file" value={idOk ? (onFileType || 'ID') : '—'} sub={idOk ? ([maskedId, onFile && onFile.expiresOn ? `exp ${onFile.expiresOn}` : ''].filter(Boolean).join(' · ') || 'on file') : (standing.reason || standing.label)} tone={idOk ? CD.ink : CD.flag} />
           <CCstat label={`Last ${s.winDays}d`} value={fmtHome(s.windowCad)} sub={s.windowCad == null ? 'not valued in ' + (homeCcy() || 'the desk’s currency') : overThreshold ? 'over reporting line' : nearThreshold ? 'nearing the line' : 'within range'} tone={s.windowCad == null ? CD.mute : overThreshold ? CD.flag : nearThreshold ? CD.amber : CD.ink} divider />
           <CCstat label="Usually buys" value={s.topCcy || '—'} sub={s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer'} tone={CD.ink} divider />
         </div>
@@ -350,9 +351,8 @@
     }, [customer, live, inCadEquiv]);
     const structuring = !single && customer && limit.amount != null && recentTotal != null && (reportCmp === 'gt' ? recentTotal > limit.amount : recentTotal >= limit.amount);
     const rec = clients[customer];
-    const kyc = newClient
-      ? (nc.idType && nc.idNum ? 'ok' : 'missing ID')
-      : (!rec || !rec.idType || !rec.idNum ? 'missing ID' : (rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok'));
+    const standing = window.CDOS.displayIdStanding(newClient ? { idType: nc.idType, idNum: nc.idNum, idExpiry: nc.idExpiry } : (rec || {}), businessDate());
+    const idOk = standing.tone !== 'warning';
     const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const governed = !!((packNow && packNow.packId) || (settings && settings.baselineRules));
     const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
@@ -366,7 +366,7 @@
     const idRequired = ph
       ? (!idRow || idRow.threshold == null || overId)
       : (single || (governed ? (idAt == null || (inCadEquiv != null && inCadEquiv >= idAt)) : inCadEquiv >= 3000));
-    const idBlocked = idRequired && kyc !== 'ok';
+    const idBlocked = idRequired && !idOk;
 
     const canSave = amtN > 0 && (isCheque ? (maker.trim() && chequeNumber.trim()) : rateN > 0) && (customer || !idRequired) && !idBlocked && (!needOverride || (marginAck && marginReason.trim())) && (!single || (cap.purpose.trim() && cap.source.trim() && (!cap.thirdParty || cap.thirdPartyName.trim())));
 
@@ -478,7 +478,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 </div>
                 {custOpen && (
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
-                    {shownNames.map(n => { const st = (!clients[n] || !clients[n].idType) ? 'missing ID' : (clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'verified'); const ok = st === 'verified'; return (
+                    {shownNames.map(n => { const standing = window.CDOS.displayIdStanding(clients[n] || {}, businessDate()); const st = standing.label; const ok = standing.tone !== 'warning'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
                         <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : CD.flagSoft, color: ok ? CD.green : CD.flag }}>{st}</span>
                       </button>); })}
@@ -619,7 +619,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: single ? CD.flag : structuring ? CD.amber : CD.ink }}><Ic n="shield" s={13} /> Compliance check</div>
                 {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable, pay-in approx {fmtHome(inCadEquiv)} (at or above {limit.label}). {((window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode) || '') ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'}</div>}
                 {structuring && <div className="text-[12px]" style={{ color: CD.ink }}>Structuring watch — this client's {settings.structuringDays}-day total reaches {fmtHome(recentTotal)} with this deal.</div>}
-                {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`}</div>}
+                {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: idOk ? CD.green : CD.flag }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={13} /> {idOk ? 'Customer ID on file — OK to proceed.' : `ID required — ${standing.reason || standing.label}.`}</div>}
               </div>
             )}
             {/* reportable — capture the FINTRAC info at the counter, pre-fills the filing */}
