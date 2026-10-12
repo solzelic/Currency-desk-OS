@@ -1,9 +1,9 @@
 The files desk-symbols-sans-400.woff2 and desk-symbols-sans-700.woff2
-are a subset (U+2192, U+2265) of DejaVu Sans 2.37. The files
-desk-symbols-mono-400.woff2 and desk-symbols-mono-700.woff2 are the
-same subset of DejaVu Sans Mono 2.37. They are the arrow and the
-greater-or-equal sign on the 1280 capture. Archivo and Space Mono do
-not carry those two characters.
+are a subset (U+2192, U+2265, U+25B2, U+25BC) of DejaVu Sans 2.37. The
+files desk-symbols-mono-400.woff2 and desk-symbols-mono-700.woff2 are
+the same subset of DejaVu Sans Mono 2.37. They are the arrow, the
+greater-or-equal sign, and the sort triangles (▲ ▼) on the 1280
+capture. Archivo and Space Mono do not carry those characters.
 
 Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved.
 Bitstream Vera is a trademark of Bitstream, Inc.

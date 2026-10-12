@@ -58,12 +58,12 @@ function payloadHasArrows(file) {
       }
       return false;
     };
-    if (has(0x2192) && has(0x2265)) return true;
+    if (has(0x2192) && has(0x2265) && has(0x25b2) && has(0x25bc)) return true;
   }
   return false;
 }
 
-test("symbol faces carry the arrow and the greater-or-equal sign", () => {
+test("symbol faces carry the arrow, the greater-or-equal sign, and the sort triangles", () => {
   for (const name of [
     "desk-symbols-sans-400.woff2",
     "desk-symbols-sans-700.woff2",

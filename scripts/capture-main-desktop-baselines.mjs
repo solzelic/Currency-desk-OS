@@ -13,9 +13,9 @@
    every pixel. A laptop render is not a substitute.
 
    The spec serves Archivo and Space Mono from tests/e2e/fonts, and
-   DejaVu Sans plus DejaVu Sans Mono for → and ≥. The picture does not
-   use the runner's fontconfig fallback. The browser zone is UTC, so
-   the pinned 15:02Z clock paints 15:02.
+   DejaVu Sans plus DejaVu Sans Mono for →, ≥, ▲, and ▼. The picture
+   does not use the runner's fontconfig fallback. The browser zone is
+   UTC, so the pinned 15:02Z clock paints 15:02.
 
    The output directory must not sit inside Playwright's outputDir
    (test-results). Each capture starts a new Playwright run, and that

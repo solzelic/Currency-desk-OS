@@ -581,12 +581,14 @@ are now the local year, month, and day, through `server/src/civil-date.ts`
 (the helper main landed in #169, including `civilToday`). A phone clock or date that is
 not the whole string is the word Unknown. The 1280 capture pins the
 browser zone to UTC, so 15:02Z stays 15:02, and it serves DejaVu Sans
-and DejaVu Sans Mono for → and ≥. The shot loads those two characters
-before it checks the face. A Noto Sans subset with an empty character
+and DejaVu Sans Mono for →, ≥, ▲, and ▼. The shot loads those
+characters before it checks the face. A Noto Sans subset with an empty character
 map made Chromium reject every Archivo weight; the sans files are
-DejaVu Sans, which carries the glyphs. The committed 1280 pictures are
-a render of main `5216ef4` with that measurement, taken twice at 0
-pixels. The sign-in shot still turns the card blur off, because two
+DejaVu Sans, which carries the glyphs. The menu-bar rate ticker and
+the ledger sort mark are ▲ or ▼. Left to the machine, those marks are
+a different glyph off CI, and every open-desk picture moves. The
+committed 1280 pictures are a render of main `5216ef4` with that
+measurement, taken twice at 0 pixels. The sign-in shot still turns the card blur off, because two
 renders of main with the blur on did not match.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot

@@ -17,21 +17,23 @@ waited on. The shot also pauses animations, hides the caret, waits for
 compared to that render with the same rule.
 
 The text in that picture is Archivo and Space Mono from
-`tests/e2e/fonts/` (SIL Open Font License, `OFL.txt`). U+2192 and
-U+2265 are not in those latin files. The capture serves them from
-DejaVu Sans on Archivo and DejaVu Sans Mono on Space Mono
-(`DEJAVU.txt`). The spec serves those files in place of
+`tests/e2e/fonts/` (SIL Open Font License, `OFL.txt`). U+2192, U+2265,
+U+25B2, and U+25BC are not in those latin files. The capture serves
+them from DejaVu Sans on Archivo and DejaVu Sans Mono on Space Mono
+(`DEJAVU.txt`). The menu-bar rate ticker and the ledger sort mark are ▲ or ▼.
+Left to the machine, those marks are a different glyph off CI, and
+every open-desk picture moves. The spec serves those files in place of
 `fonts.googleapis.com`, for the main capture and for the branch
 compare. The runner's fontconfig is not a face in the picture. The
 browser zone is UTC, so the pinned 15:02Z clock paints 15:02. A shot
-is refused if those faces did not load, including the arrow and the
-greater-or-equal sign.
+is refused if those faces did not load, including the arrow, the
+greater-or-equal sign, and the sort triangles.
 
 main-sha: 5216ef4780b750c2dcce5847296288920d63b443
 
-The committed clients and ledger pictures are that commit's render from
-browser-seam run 38248054959. On that run the other eleven pictures
-already matched, and those two were 3,720 and 1,548 pixels off.
+The committed pictures are a two-pass render of that commit, taken
+with these faces. The seam job renders the same commit again and
+refuses the pictures when they differ.
 
 Do not replace a PNG with a picture of a feature branch. A difference
 means the desktop changed. The pixel rule is in

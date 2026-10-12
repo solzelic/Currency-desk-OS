@@ -15,11 +15,12 @@
    fails. The break proof parses the sentence this file throws.
 
    Text is Archivo and Space Mono from tests/e2e/fonts, served in place
-   of fonts.googleapis.com. U+2192 and U+2265 are not in those latin
-   files, so the capture also serves DejaVu Sans for them on Archivo and
-   DejaVu Sans Mono for them on Space Mono. The runner's fontconfig is
-   not a face in this picture. A shot is refused when those faces have
-   not loaded, including the arrow and the greater-or-equal sign.
+   of fonts.googleapis.com. U+2192, U+2265, U+25B2, and U+25BC are not
+   in those latin files, so the capture also serves DejaVu Sans for
+   them on Archivo and DejaVu Sans Mono for them on Space Mono. The
+   runner's fontconfig is not a face in this picture. A shot is refused
+   when those faces have not loaded, including the arrow, the
+   greater-or-equal sign, and the sort triangles.
 
    The browser zone is UTC. The page clock is 2026-06-18T15:02:00.000Z.
    The menu bar is 24-hour, so it reads 15:02. A machine set to
@@ -360,13 +361,13 @@ async function fontsReady(page: Page): Promise<void> {
           /* The arrow and ≥ live in a unicode-range file. load(spec)
              does not fetch it. The check is false until that file is
              requested, which is what load(spec, text) does. */
-          await fonts.load(spec, "→≥");
+          await fonts.load(spec, "→≥▲▼");
         } catch {
           missing.push(spec);
           continue;
         }
         if (!fonts.check(spec)) missing.push(spec);
-        if (!fonts.check(spec, "→≥")) missing.push(spec + " →≥");
+        if (!fonts.check(spec, "→≥▲▼")) missing.push(spec + " →≥▲▼");
       }
       return missing;
     });
