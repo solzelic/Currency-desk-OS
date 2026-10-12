@@ -357,6 +357,10 @@ async function fontsReady(page: Page): Promise<void> {
       for (const spec of specs) {
         try {
           await fonts.load(spec);
+          /* The arrow and ≥ live in a unicode-range file. load(spec)
+             does not fetch it. The check is false until that file is
+             requested, which is what load(spec, text) does. */
+          await fonts.load(spec, "→≥");
         } catch {
           missing.push(spec);
           continue;
