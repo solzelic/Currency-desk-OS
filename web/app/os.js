@@ -8410,20 +8410,40 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         return !(capsMatch && appsMatch);
       };
 
-      // ---- roster row: click to open the account ----
+      /* The account counter is cleared through the existing unlock
+         route. A teller does not see the button. The confirm is a
+         plain question, and the audit row is the route's. */
+      const unlockStaff = e => {
+        const sid = (e.code || '').trim();
+        if (!sid) return;
+        const name = e.name || sid;
+        if (!window.confirm('Unlock ' + name + '? They can try their password again.')) return;
+        srvCall('POST', '/api/auth/login/unlock', {
+          staffId: sid
+        }).then(() => log('Sign-in unlocked', name + '. ' + sid)).catch(err => window.alert(String(err.message || err)));
+      };
       const empRow = e => {
         const asg = assignmentOf(e.name);
         const blocked = e.active === false;
-        return /*#__PURE__*/React.createElement("button", {
+        const sid = (e.code || '').trim();
+        const canUnlock = (me.role === 'Owner' || me.role === 'Manager') && srvState === 'ok' && !!(srvStaff && sid && srvStaff[sid]);
+        return /*#__PURE__*/React.createElement("div", {
           key: e.id,
-          onClick: () => setEmpSel(e.id),
-          className: "w-full flex items-center gap-3 px-3 py-2.5 text-left",
+          className: "w-full flex items-center gap-3 px-3 py-2.5",
           style: {
             border: `1px solid ${CD.line}`,
             borderRadius: 11,
             background: CD.panel,
             marginBottom: 8,
             opacity: blocked ? 0.62 : 1
+          }
+        }, /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          onClick: () => setEmpSel(e.id),
+          className: "flex-1 min-w-0 flex items-center gap-3 text-left",
+          style: {
+            background: 'transparent',
+            minHeight: 44
           }
         }, /*#__PURE__*/React.createElement("span", {
           className: "grid place-items-center flex-none",
@@ -8473,7 +8493,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           n: "chev",
           s: 15,
           c: CD.faint
-        }));
+        })), canUnlock && /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          onClick: () => unlockStaff(e),
+          className: "flex-none text-[13px] font-semibold",
+          style: {
+            minHeight: 44,
+            padding: '0 16px',
+            borderRadius: 8,
+            background: CD.ink,
+            color: 'var(--cd-on-ink)'
+          }
+        }, "Unlock"));
       };
 
       // ---- full account / profile editor ----

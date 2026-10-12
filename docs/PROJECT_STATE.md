@@ -568,7 +568,8 @@ missing or invalid header counts the socket peer and logs a warning
 that does not include the header value. Otherwise the address is the
 Render hop, or the socket when nothing is in front. An owner or a
 manager can clear the account
-counter, and `RESET_STAFF_PASSWORD` clears it too. The emailed-code
+counter from Unlock on the staff row. A teller does not see that
+button. `RESET_STAFF_PASSWORD` clears the counter too. The emailed-code
 step gives one answer, in the same time, for an unknown id and a
 wrong code, and it checks a code only after the password step has
 left a server-side marker. A wrong code says "That code isn't right.
