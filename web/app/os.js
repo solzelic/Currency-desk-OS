@@ -63211,14 +63211,15 @@ window.CDOS_PERSIST = (function () {
     return /*#__PURE__*/React.createElement("div", {
       className: 'phone-stats cols-' + cols
     }, (cards || []).map((card, i) => {
-      const button = !!(card.onClick || card.disabled);
-      const Tag = button ? 'button' : 'div';
+      const press = typeof card.onClick === 'function' && !card.disabled;
+      const asButton = press || !!card.disabled;
+      const Tag = asButton ? 'button' : 'div';
       return /*#__PURE__*/React.createElement(Tag, {
         key: card.id || i,
-        type: button ? 'button' : undefined,
+        type: asButton ? 'button' : undefined,
         className: "phone-stat",
-        disabled: card.disabled ? true : undefined,
-        onClick: card.disabled ? undefined : card.onClick
+        disabled: card.disabled || undefined,
+        onClick: press ? card.onClick : undefined
       }, /*#__PURE__*/React.createElement("span", {
         className: "phone-stat-label"
       }, card.label), /*#__PURE__*/React.createElement("span", {

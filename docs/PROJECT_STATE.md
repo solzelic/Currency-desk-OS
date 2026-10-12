@@ -619,7 +619,9 @@ its fee and its spread. Once that quote is posted, cancelled, or
 expired, the read and the post and cancel acknowledgements leave off
 the spread and the mid. The ledger does not offer a teller the
 earnings sheet, the view-earnings link, or empty spread, revenue, and
-margin cards. Closing the day (`till:close`) is what opens those
+margin cards. On the phone the Fees collected card is a disabled
+button and does not say View earnings, and the volume sheet does not
+open the fees tab. Closing the day (`till:close`) is what opens those
 reads. A teller cannot close the day. An owner, a supervisor, and a branch manager close
 the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold

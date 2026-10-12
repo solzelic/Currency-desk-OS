@@ -487,8 +487,8 @@ test("a teller's ledger hides earnings and reports render with no undefined or N
     await expect(page.getByRole("button", { name: /Fees collected/ })).toBeDisabled();
     await shot(page, `teller-${width}-ledger`);
 
-    const tableRow = page.locator(".win.show.active tbody tr").first();
-    if (await tableRow.count()) await tableRow.click();
+    const tableRow = page.locator(".win.show.active tbody tr");
+    if (await tableRow.count()) await tableRow.first().click();
     else await page.locator(".win.show.active .phone-row").first().click();
     const detail = page.locator(".win.show.active");
     await expect(detail.getByText("Fee on this deal")).toBeVisible();

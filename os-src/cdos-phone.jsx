@@ -96,10 +96,11 @@
     return (
       <div className={'phone-stats cols-' + cols}>
         {(cards || []).map((card, i) => {
-          const button = !!(card.onClick || card.disabled);
-          const Tag = button ? 'button' : 'div';
+          const press = typeof card.onClick === 'function' && !card.disabled;
+          const asButton = press || !!card.disabled;
+          const Tag = asButton ? 'button' : 'div';
           return (
-            <Tag key={card.id || i} type={button ? 'button' : undefined} className="phone-stat" disabled={card.disabled ? true : undefined} onClick={card.disabled ? undefined : card.onClick}>
+            <Tag key={card.id || i} type={asButton ? 'button' : undefined} className="phone-stat" disabled={card.disabled || undefined} onClick={press ? card.onClick : undefined}>
               <span className="phone-stat-label">{card.label}</span>
               <span className="phone-stat-value num">{card.value}</span>
               {card.caption ? <span className="phone-stat-cap">{card.caption}</span> : null}
