@@ -417,9 +417,10 @@
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
-       • STATIC declared window — a fixed 24h period the owner anchors
-         (settings.aggWindowStart, e.g. 00:00 or a 09:00 business-day cut).
-         Every report declares the exact window it was aggregated over.
+       • STATIC declared window — branch midnight, then 24 hours.
+         A stored aggWindowStart is not applied, so the browser
+         cannot move off the server's cut. Every report declares
+         the exact window it was aggregated over.
        • DUAL BASIS — sub-threshold cash-in is aggregated BOTH by conductor
          (who handed over the cash) AND by beneficiary (who it's destined for).
          Three different people sending $4k each to one beneficiary is a
@@ -428,7 +429,6 @@
          transactions, BOTH reports are emitted — we never pick one.
        • Singles (≥ threshold on their own) are filed individually elsewhere,
          so the aggregate rule sums only the sub-threshold cash-in. */
-  function parseHHMM(s) { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : 0; }
   /* The static 24h window a timestamp falls into, anchored at startMins
      past midnight in the zone the till session names. The end is that
      instant plus H hours, not the next midnight. The day key is that
@@ -527,7 +527,8 @@
     const axes = includeAll
       ? (policy.axes || ['conductor', 'on_behalf_of', 'beneficiary'])
       : ['conductor', 'beneficiary'];
-    const startMins = parseHHMM((settings && settings.aggWindowStart) || '00:00');
+    /* Branch midnight. settings.aggWindowStart is not read and not written. */
+    const startMins = 0;
     const buckets = {};
     (events || []).forEach(e => { if (!(e.amt > 0)) return; const w = windowOf(e.t, startMins, H); (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e); });
     const fmtT = (d) => d.toLocaleString('en-CA', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
