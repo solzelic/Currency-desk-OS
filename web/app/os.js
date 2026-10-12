@@ -62425,11 +62425,11 @@ window.CDOS_PERSIST = (function () {
   function previewNote(rows, order) {
     const on = shownCodes(rows, order);
     const rest = on.slice(6);
-    const hidden = order.filter((code) => rows[code] && rows[code].show === false);
+    const hidden = order.filter((code) => rows[code] && rows[code].show === false).length;
     const parts = [];
     if (rest.length > 0) parts.push(rest.length + " more on the rate board page");
-    if (hidden.length === 1) parts.push(hidden[0] + " is hidden.");
-    else if (hidden.length > 1) parts.push(hidden.join(", ") + " are hidden.");
+    if (hidden === 1) parts.push("1 hidden from the board");
+    else if (hidden > 1) parts.push(hidden + " hidden from the board");
     return parts.join(". ");
   }
 
@@ -62506,10 +62506,18 @@ window.CDOS_PERSIST = (function () {
 
   function priceMoves(published, draft) {
     const moves = [];
+    let hidden = 0;
+    let restored = 0;
     draft.order.forEach((code) => {
       const now = draft.rows[code];
       if (!now) return;
       const was = published && published.rows[code];
+      const nowHidden = now.show === false;
+      if (was && (was.show === false) !== nowHidden) {
+        if (nowHidden) hidden += 1;
+        else restored += 1;
+      } else if (!was && nowHidden) hidden += 1;
+      if (nowHidden) return;
       if (!was) {
         const fresh = boardQuote(code, now.mid, now.spread, draft.buyMargin, draft.sellMargin);
         if (fresh.buy) moves.push(code + " buy " + fresh.buy);
@@ -62522,10 +62530,11 @@ window.CDOS_PERSIST = (function () {
       const sell = sideMove(code, "sell", before.sell, after.sell);
       if (buy) moves.push(buy);
       if (sell) moves.push(sell);
-      if (!buy && !sell && (was.show !== false) !== (now.show !== false)) {
-        moves.push(code + (now.show === false ? " hidden from the board" : " on the board"));
-      }
     });
+    if (hidden === 1) moves.push("1 hidden from the board");
+    else if (hidden > 1) moves.push(hidden + " hidden from the board");
+    if (restored === 1) moves.push("1 back on the board");
+    else if (restored > 1) moves.push(restored + " back on the board");
     if (published && published.order.join(",") !== draft.order.join(",")) {
       const pricesMoved = moves.some((line) => line.indexOf(" to ") >= 0);
       if (!pricesMoved) moves.push("Homepage order changed");

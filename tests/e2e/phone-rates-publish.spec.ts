@@ -80,6 +80,38 @@ test("the publish sheet lists up to three price changes", async ({ page }) => {
   expect(sheet).not.toMatch(/\d\s-\s\d/);
 });
 
+test("a hidden currency is not named on the publish sheet", async ({ page }) => {
+  await atDesk(page, "r.haddad");
+  await openRates(page);
+  const name = await page.evaluate(() => window.CDOS.phoneRates.currencyName("MXN"));
+  const withPrices = await page.evaluate(() => {
+    const rates = window.CDOS.phoneRates;
+    return fetch("/api/rates", { credentials: "same-origin" })
+      .then((response) => response.json())
+      .then((data) => {
+        const published = rates.copyBoard(data.board);
+        const draft = rates.copyBoard(data.board);
+        draft.rows.MXN.show = false;
+        draft.sellMargin = rates.stepMargin(published.sellMargin, 1);
+        return rates.changes(published, draft).moves.join("\n");
+      });
+  });
+  expect(withPrices).toContain("1 hidden from the board");
+  expect(withPrices).not.toContain("MXN");
+  expect(withPrices).not.toContain(name);
+  const mxn = page.locator('.phone-rates [data-code="MXN"]');
+  await mxn.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await mxn.locator("[role='switch']").click();
+  await page.getByRole("button", { name: "Publish 1 change" }).click();
+  const sheet = page.getByRole("dialog", { name: "Publish rates?" });
+  const shown = await sheet.innerText();
+  expect(shown).toContain("1 hidden from the board");
+  expect(shown).not.toContain("MXN");
+  expect(shown).not.toContain(name);
+  expect(shown).not.toContain("\u2014");
+  expect(shown).not.toContain("\u2013");
+});
+
 test("publish posts the board and a refused post says 403", async ({ page }) => {
   await atDesk(page, "r.haddad");
   await openRates(page);
