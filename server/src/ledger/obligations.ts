@@ -98,6 +98,12 @@ export const TRANSFER_CANCEL_TELLER_MESSAGE =
 export const TRANSFER_ALREADY_CANCELLED_MESSAGE = "Already cancelled.";
 export const TRANSFER_PAID_OUT_MESSAGE = "Already paid out to the customer.";
 export const TRANSFER_HELD_MESSAGE = "On hold. Release it first, then cancel.";
+export const TRANSFER_PAYOUT_CANCELLED_MESSAGE =
+  "This transfer was cancelled. It cannot be paid out.";
+export const TRANSFER_PAYOUT_HELD_MESSAGE = "On hold. Release it before paying out.";
+export const TRANSFER_WRITTEN_OFF_MESSAGE =
+  "This transfer was written off. It cannot be cancelled.";
+export const TRANSFER_RELEASE_TELLER_MESSAGE = "Only a manager can release a hold.";
 export const TRANSFER_PARTNER_MESSAGE =
   "Confirm you checked with the partner and it has not been paid out.";
 export const TRANSFER_TILL_CLOSED_MESSAGE =
@@ -1351,11 +1357,10 @@ export class ObligationService {
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
       if (obligation.status === "held")
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_HELD_MESSAGE);
+      if (obligation.status === "written_off")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_WRITTEN_OFF_MESSAGE);
       if (obligation.status !== "open")
-        throw new LedgerError(
-          "REVERSAL_NOT_ALLOWED",
-          `This deal's obligation is already ${obligation.status}. A discharged promise is undone by a new deal, not by saying the first one never happened.`,
-        );
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", "This transfer cannot be cancelled.");
       const already = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",
         [transactionId],
@@ -1513,8 +1518,15 @@ export class ObligationService {
       if (!found.rowCount)
         throw new LedgerError("TRANSACTION_NOT_FOUND", "That transfer is not on the ledger.");
       const obligation = found.rows[0];
+      if (obligation.status === "reversed")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAYOUT_CANCELLED_MESSAGE);
       if (obligation.status === "held")
-        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_HELD_MESSAGE);
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAYOUT_HELD_MESSAGE);
+      if (obligation.status === "written_off")
+        throw new LedgerError(
+          "REVERSAL_NOT_ALLOWED",
+          "This transfer was written off. It cannot be paid out.",
+        );
       if (obligation.status !== "open")
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
       const now = obligation.paid_out_at ? new Date(obligation.paid_out_at) : new Date();
@@ -1545,20 +1557,50 @@ export class ObligationService {
   }
 
   /* Hold is a status on the row. Release puts it back to open. Neither
-     moves cash. A teller can do both; only a manager can cancel. */
-  hold(actor: LedgerActor, transactionId: string) {
-    return withSerializationRetry(() => this.setHold(actor, transactionId, true));
+     moves cash. A teller may hold. Release is a manager's act, the same
+     permission as cancel, and a refused release is still on the audit. */
+  hold(actor: LedgerActor, transactionId: string, reason: string) {
+    return withSerializationRetry(() => this.setHold(actor, transactionId, true, reason));
   }
 
-  release(actor: LedgerActor, transactionId: string) {
-    return withSerializationRetry(() => this.setHold(actor, transactionId, false));
+  release(actor: LedgerActor, transactionId: string, reason: string) {
+    return withSerializationRetry(() => this.setHold(actor, transactionId, false, reason));
   }
 
-  private async setHold(actor: LedgerActor, transactionId: string, held: boolean) {
+  private async setHold(actor: LedgerActor, transactionId: string, held: boolean, reason: string) {
+    const why = reason.trim();
+    if (why.length < 3)
+      throw new LedgerError(
+        "INVALID_REQUEST",
+        held ? "Say why this transfer is being held." : "Say why this hold is being released.",
+      );
     const client = await this.pool.connect();
+    let committed = false;
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "transaction:post");
+      if (!held) {
+        try {
+          await authorizeLedgerActor(client, actor, "transaction:reverse");
+        } catch (error) {
+          if (error instanceof LedgerError && error.code === "AUTHORIZATION_DENIED") {
+            await this.audit(
+              client,
+              actor,
+              "obligation.release_refused",
+              transactionId,
+              transactionId,
+              new Date(),
+              why,
+            );
+            await client.query("COMMIT");
+            committed = true;
+            throw new LedgerError("AUTHORIZATION_DENIED", TRANSFER_RELEASE_TELLER_MESSAGE);
+          }
+          throw error;
+        }
+      } else {
+        await authorizeLedgerActor(client, actor, "transaction:post");
+      }
       const found = await client.query(
         `SELECT obligation_id, status, paid_out_at
            FROM ledger_obligations
@@ -1585,10 +1627,21 @@ export class ObligationService {
           [next, new Date(), obligation.obligation_id],
         );
       }
+      const now = new Date();
+      await this.audit(
+        client,
+        actor,
+        held ? "obligation.hold" : "obligation.release",
+        transactionId,
+        transactionId,
+        now,
+        why,
+      );
       await client.query("COMMIT");
+      committed = true;
       return { transactionId, obligationId: obligation.obligation_id, status: next };
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!committed) await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();

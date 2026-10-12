@@ -2586,14 +2586,16 @@
       loadObligationDeal: function (transactionId) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId));
       },
-      holdObligationDeal: function (transactionId) {
+      holdObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/hold", {
           method: "POST",
+          body: JSON.stringify(payload),
         });
       },
-      releaseObligationDeal: function (transactionId) {
+      releaseObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/release", {
           method: "POST",
+          body: JSON.stringify(payload),
         });
       },
       reverseObligationDeal: function (transactionId, payload) {
@@ -36274,20 +36276,28 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     return postOnce(function () { return backend.reverseObligationDeal(transactionId, payload); });
   }
 
-  function postHold(transactionId) {
+  function postHold(transactionId, reason) {
     var backend = window.CDOS && window.CDOS.Backend;
     if (!backend || typeof backend.holdObligationDeal !== "function") {
       return Promise.reject(new Error("The ledger client is not loaded. The transfer was not put on hold."));
     }
-    return backend.holdObligationDeal(transactionId);
+    var text = String(reason == null ? "" : reason).trim();
+    if (text.length < 3) {
+      return Promise.reject(new Error("Say why this transfer is being held."));
+    }
+    return backend.holdObligationDeal(transactionId, { reason: text });
   }
 
-  function postRelease(transactionId) {
+  function postRelease(transactionId, reason) {
     var backend = window.CDOS && window.CDOS.Backend;
     if (!backend || typeof backend.releaseObligationDeal !== "function") {
       return Promise.reject(new Error("The ledger client is not loaded. The transfer was not released."));
     }
-    return backend.releaseObligationDeal(transactionId);
+    var text = String(reason == null ? "" : reason).trim();
+    if (text.length < 3) {
+      return Promise.reject(new Error("Say why this hold is being released."));
+    }
+    return backend.releaseObligationDeal(transactionId, { reason: text });
   }
 
   function postPaidOut(transactionId) {
@@ -38111,7 +38121,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
       if (to === 'hold' && t.serverTransactionId) {
         try {
-          await Cancel.postHold(t.serverTransactionId);
+          await Cancel.postHold(t.serverTransactionId, note || 'Placed on hold');
         } catch (error) {
           setCancelError(error.message || 'The transfer was not put on hold.');
           return;
@@ -38119,7 +38129,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
       if (t.status === 'hold' && to === 'sent' && t.serverTransactionId) {
         try {
-          await Cancel.postRelease(t.serverTransactionId);
+          await Cancel.postRelease(t.serverTransactionId, note || 'Released after review');
         } catch (error) {
           setCancelError(error.message || 'The transfer was not released.');
           return;
@@ -38429,23 +38439,29 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 15,
       c: "var(--cd-on-ink)"
     }), " Advance to ", statusLabel(nextKey, dir)), t.status === 'hold' ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-transfer-action": "release",
       onClick: () => advance('sent', 'Released after review'),
-      className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
+      className: "flex items-center gap-1.5 px-3.5 text-sm font-semibold text-white",
       style: {
         background: CD.green,
-        borderRadius: 8
+        borderRadius: 8,
+        minHeight: 44
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "checkcircle",
       s: 15,
       c: "var(--cd-on-ink)"
     }), " Release") : /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-transfer-action": "hold",
       onClick: () => advance('hold', 'Placed on hold'),
-      className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
+      className: "flex items-center gap-1.5 px-3 text-sm font-medium",
       style: {
         border: `1px solid ${CD.line}`,
         color: CD.amber,
-        borderRadius: 8
+        borderRadius: 8,
+        minHeight: 44
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "alert",
@@ -38455,12 +38471,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       type: "button",
       "data-transfer-cancel": "open",
       onClick: openCancel,
-      className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
+      className: "flex items-center gap-1.5 px-3 text-sm font-medium",
       style: {
         border: `1px solid ${CD.flagSoft}`,
         background: CD.flagSoft,
         color: CD.flag,
-        borderRadius: 8
+        borderRadius: 8,
+        minHeight: 44
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "ban",
@@ -38533,16 +38550,29 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "Reading the ledger\u2026"), sentence && /*#__PURE__*/React.createElement("div", {
       className: "mt-3"
     }, /*#__PURE__*/React.createElement("label", {
+      "data-transfer-cancel": "partner",
       className: "flex items-start gap-2 text-sm",
       style: {
         color: CD.ink,
-        minHeight: 44
+        minHeight: 44,
+        minWidth: 0,
+        maxWidth: '100%'
       }
     }, /*#__PURE__*/React.createElement("input", {
       type: "checkbox",
       checked: partnerChecked,
-      onChange: e => setPartnerChecked(e.target.checked)
-    }), /*#__PURE__*/React.createElement("span", null, Cancel.PARTNER_LABEL)), /*#__PURE__*/React.createElement("label", {
+      onChange: e => setPartnerChecked(e.target.checked),
+      style: {
+        flex: 'none',
+        marginTop: 3
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        whiteSpace: 'normal',
+        minWidth: 0,
+        overflowWrap: 'anywhere'
+      }
+    }, Cancel.PARTNER_LABEL)), /*#__PURE__*/React.createElement("label", {
       className: "block text-sm mt-2",
       style: {
         color: CD.ink

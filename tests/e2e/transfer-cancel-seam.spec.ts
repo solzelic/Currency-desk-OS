@@ -131,6 +131,18 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
   });
   /* D5: the local row is a different amount and a different fee.
      The sheet has to keep the server's 609.99 CAD and 24,326.46 PHP. */
+  const drawerButtons = page.locator("div.fixed.inset-0.flex.justify-end");
+  for (const width of [360, 390]) {
+    await page.setViewportSize({ width, height: width === 360 ? 800 : 844 });
+    for (const label of ["Hold", "Cancel"]) {
+      const button = drawerButtons.getByRole("button", { name: label, exact: true });
+      await expect(button).toBeVisible();
+      const box = await button.boundingBox();
+      expect(box && box.height >= 44, `${label} is ${box?.height ?? "missing"}px at ${width}`).toBe(true);
+    }
+    await page.screenshot({ path: `${SHOTS}/transfer-cancel-actions-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator("[data-transfer-cancel='open']").evaluate((button) => {
     const stored = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
     for (const row of stored) {
@@ -189,6 +201,10 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
   await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-1280.png` });
   await page.setViewportSize({ width: 360, height: 800 });
   await expect(effect).toBeVisible();
+  const partner = page.locator("[data-transfer-cancel='partner']");
+  await expect(partner).toBeVisible();
+  const partnerFits = await partner.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+  expect(partnerFits, "partner tick overflows at 360").toBe(true);
   await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-360.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(effect).toBeVisible();

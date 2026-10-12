@@ -848,6 +848,61 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(again.json().message).toBe("Already cancelled.");
     expect(await cad()).toBe("25000.00");
 
+    const latePayout = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/payout`,
+      cookies: tellerCookies,
+      payload: { idempotencyKey: `web:transfer-paid:${transactionId}` },
+    });
+    expect(latePayout.statusCode).toBe(422);
+    expect(latePayout.json().message).toBe("This transfer was cancelled. It cannot be paid out.");
+    const incomplete = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${transactionId}/hold`,
+      cookies: tellerCookies,
+      payload: {},
+    });
+    expect(incomplete.statusCode).toBe(400);
+    expect(incomplete.json().message).toBe("Say why this transfer is being held.");
+
+    const heldSend = await app.inject({
+      method: "POST",
+      url: "/api/ledger/remittances/send",
+      cookies: tellerCookies,
+      payload: { ...send, idempotencyKey: "route-transfer-held", reference: "TR-ROUTE-HELD" },
+    });
+    expect(heldSend.statusCode).toBe(201);
+    const heldId = heldSend.json().transactionId as string;
+    const held = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${heldId}/hold`,
+      cookies: tellerCookies,
+      payload: { reason: "Waiting on the partner" },
+    });
+    expect(held.statusCode).toBe(200);
+    const heldPayout = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${heldId}/payout`,
+      cookies: tellerCookies,
+      payload: { idempotencyKey: `web:transfer-paid:${heldId}` },
+    });
+    expect(heldPayout.statusCode).toBe(422);
+    expect(heldPayout.json().message).toBe("On hold. Release it before paying out.");
+    const tellerRelease = await app.inject({
+      method: "POST",
+      url: `/api/ledger/obligation-deals/${heldId}/release`,
+      cookies: tellerCookies,
+      payload: { reason: "Let it go" },
+    });
+    expect(tellerRelease.statusCode).toBe(403);
+    expect(tellerRelease.json().message).toBe("Only a manager can release a hold.");
+    const refusedAudit = await pool.query(
+      "SELECT reason, created_at FROM ledger_audit_events WHERE action='obligation.release_refused' AND target_id=$1",
+      [heldId],
+    );
+    expect(refusedAudit.rows[0].reason).toBe("Let it go");
+    expect(refusedAudit.rows[0].created_at).toBeTruthy();
+
     const paidSend = await app.inject({
       method: "POST",
       url: "/api/ledger/remittances/send",
@@ -879,7 +934,8 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     ).rows[0];
     expect(still.status).toBe("open");
     expect(still.paid_out_at).toBeTruthy();
-    expect(await cad()).toBe("25609.99");
+    /* The held send and this paid send both stay in the drawer. */
+    expect(await cad()).toBe("26219.98");
   });
 
   it("refuses a cancel on a closed till and on a receive, and reads one deal", async () => {

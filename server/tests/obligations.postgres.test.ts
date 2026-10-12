@@ -24,7 +24,11 @@ import {
   TRANSFER_PAID_OUT_MESSAGE,
   TRANSFER_PARTNER_MESSAGE,
   TRANSFER_RECEIVE_MESSAGE,
+  TRANSFER_PAYOUT_CANCELLED_MESSAGE,
+  TRANSFER_PAYOUT_HELD_MESSAGE,
+  TRANSFER_RELEASE_TELLER_MESSAGE,
   TRANSFER_TILL_CLOSED_MESSAGE,
+  TRANSFER_WRITTEN_OFF_MESSAGE,
 } from "../src/ledger/obligations.js";
 import { LedgerReportingService } from "../src/ledger/reporting.js";
 
@@ -1047,7 +1051,7 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       idempotencyKey: "send-hold",
       reference: "TR-HOLD-1",
     })) as Record<string, string>;
-    const held = (await service.hold(teller, posted.transactionId!)) as Record<string, string>;
+    const held = (await service.hold(teller, posted.transactionId!, "Waiting on the partner")) as Record<string, string>;
     expect(held.status).toBe("held");
     const drawer = (await cad()).toFixed(2);
     await expect(
@@ -1064,8 +1068,30 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
     });
     expect((await cad()).toFixed(2)).toBe(drawer);
     expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("held");
-    const released = (await service.release(teller, posted.transactionId!)) as Record<string, string>;
+    const heldAudit = await pool.query(
+      "SELECT actor_id, reason, created_at FROM ledger_audit_events WHERE action='obligation.hold'",
+    );
+    expect(heldAudit.rows[0]).toMatchObject({ actor_id: "teller-1", reason: "Waiting on the partner" });
+    expect(heldAudit.rows[0].created_at).toBeTruthy();
+    await expect(
+      service.release(teller, posted.transactionId!, "I want it moving"),
+    ).rejects.toMatchObject({
+      code: "AUTHORIZATION_DENIED",
+      message: TRANSFER_RELEASE_TELLER_MESSAGE,
+    });
+    const refusedAudit = await pool.query(
+      "SELECT actor_id, reason, created_at FROM ledger_audit_events WHERE action='obligation.release_refused'",
+    );
+    expect(refusedAudit.rows[0]).toMatchObject({ actor_id: "teller-1", reason: "I want it moving" });
+    expect(refusedAudit.rows[0].created_at).toBeTruthy();
+    expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("held");
+    const released = (await service.release(supervisor, posted.transactionId!, "Partner confirmed it is open")) as Record<string, string>;
     expect(released.status).toBe("open");
+    const releaseAudit = await pool.query(
+      "SELECT actor_id, reason, created_at FROM ledger_audit_events WHERE action='obligation.release'",
+    );
+    expect(releaseAudit.rows[0]).toMatchObject({ actor_id: "supervisor-1", reason: "Partner confirmed it is open" });
+    expect(releaseAudit.rows[0].created_at).toBeTruthy();
     await service.reverse(
       supervisor,
       posted.transactionId!,
@@ -1075,5 +1101,57 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
     );
     expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("reversed");
     expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).toFixed(2));
+  });
+
+  it("refuses a payout after cancel and while the transfer is on hold", async () => {
+    const cancelled = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-payout-cancel",
+      reference: "TR-PAYOUT-CANCEL",
+    })) as Record<string, string>;
+    await service.reverse(
+      supervisor,
+      cancelled.transactionId!,
+      "web:transfer-cancel:payout-cancel",
+      "Customer changed their mind",
+      true,
+    );
+    await expect(
+      service.markPaidOut(teller, cancelled.transactionId!, "web:transfer-paid:payout-cancel"),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_PAYOUT_CANCELLED_MESSAGE,
+    });
+
+    const waiting = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-payout-hold",
+      reference: "TR-PAYOUT-HOLD",
+    })) as Record<string, string>;
+    await service.hold(teller, waiting.transactionId!, "Waiting on the partner");
+    await expect(
+      service.markPaidOut(teller, waiting.transactionId!, "web:transfer-paid:payout-hold"),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_PAYOUT_HELD_MESSAGE,
+    });
+    expect((await pool.query("SELECT paid_out_at FROM ledger_obligations WHERE transaction_id=$1", [waiting.transactionId])).rows[0].paid_out_at).toBeNull();
+  });
+
+  it("refuses to cancel a written-off transfer in plain words", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-written",
+      reference: "TR-WRITTEN-1",
+    })) as Record<string, string>;
+    await pool.query("UPDATE ledger_obligations SET status='written_off' WHERE transaction_id=$1", [
+      posted.transactionId,
+    ]);
+    await expect(
+      service.reverse(supervisor, posted.transactionId!, "web:transfer-cancel:written", "Too late now", true),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_WRITTEN_OFF_MESSAGE,
+    });
   });
 });

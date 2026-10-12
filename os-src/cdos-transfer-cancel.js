@@ -111,20 +111,28 @@
     return postOnce(function () { return backend.reverseObligationDeal(transactionId, payload); });
   }
 
-  function postHold(transactionId) {
+  function postHold(transactionId, reason) {
     var backend = window.CDOS && window.CDOS.Backend;
     if (!backend || typeof backend.holdObligationDeal !== "function") {
       return Promise.reject(new Error("The ledger client is not loaded. The transfer was not put on hold."));
     }
-    return backend.holdObligationDeal(transactionId);
+    var text = String(reason == null ? "" : reason).trim();
+    if (text.length < 3) {
+      return Promise.reject(new Error("Say why this transfer is being held."));
+    }
+    return backend.holdObligationDeal(transactionId, { reason: text });
   }
 
-  function postRelease(transactionId) {
+  function postRelease(transactionId, reason) {
     var backend = window.CDOS && window.CDOS.Backend;
     if (!backend || typeof backend.releaseObligationDeal !== "function") {
       return Promise.reject(new Error("The ledger client is not loaded. The transfer was not released."));
     }
-    return backend.releaseObligationDeal(transactionId);
+    var text = String(reason == null ? "" : reason).trim();
+    if (text.length < 3) {
+      return Promise.reject(new Error("Say why this hold is being released."));
+    }
+    return backend.releaseObligationDeal(transactionId, { reason: text });
   }
 
   function postPaidOut(transactionId) {

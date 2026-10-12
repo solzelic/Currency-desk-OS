@@ -11,6 +11,8 @@
 -- paid only in the browser before paid_out_at existed. Those rows stay
 -- open, with paid_out_at null. Cancelling one still requires the
 -- recorded partner confirmation. This file does not update any row.
+-- Boot applies this file. A copy of the live schema has not been used
+-- to rehearse it.
 ALTER TABLE ledger_reversals
   ADD COLUMN IF NOT EXISTS partner_confirmed_not_paid boolean NOT NULL DEFAULT false;
 

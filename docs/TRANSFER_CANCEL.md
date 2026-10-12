@@ -78,9 +78,18 @@ Payout requires `transaction:post`. It writes `ledger_obligations.paid_out_at`
 and moves no cash. A later reversal is **422** `REVERSAL_NOT_ALLOWED` with
 "Already paid out to the customer." A settled obligation gets the same
 refusal. A reversed obligation is "Already cancelled." A held obligation
-is "On hold. Release it first, then cancel." Hold and release are
-`POST /api/ledger/obligation-deals/:transactionId/hold` and `.../release`.
-They change the server status and move no cash.
+is "On hold. Release it first, then cancel." Paying out a cancelled
+transfer is **422** "This transfer was cancelled. It cannot be paid out."
+Paying out a held transfer is **422** "On hold. Release it before paying out."
+A written-off transfer is "This transfer was written off. It cannot be cancelled."
+
+Hold and release are `POST .../hold` and `POST .../release` with
+`{ "reason": "..." }` of at least 3 characters. They change the server
+status and move no cash. Each writes an audit row: who, when, and the
+reason. A teller may hold. Release requires `transaction:reverse`. A
+teller receives **403** "Only a manager can release a hold." and that
+refusal is audited. A body these routes cannot read is **400**
+`INVALID_REQUEST` with a plain sentence.
 
 A send that is still open needs `partnerConfirmedNotPaid: true`. The
 reversal stores that on `ledger_reversals.partner_confirmed_not_paid`,

@@ -642,14 +642,16 @@
       loadObligationDeal: function (transactionId) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId));
       },
-      holdObligationDeal: function (transactionId) {
+      holdObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/hold", {
           method: "POST",
+          body: JSON.stringify(payload),
         });
       },
-      releaseObligationDeal: function (transactionId) {
+      releaseObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/release", {
           method: "POST",
+          body: JSON.stringify(payload),
         });
       },
       reverseObligationDeal: function (transactionId, payload) {
