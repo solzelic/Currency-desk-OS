@@ -3,7 +3,7 @@
    is proved by tests/e2e/desktop-unchanged.spec.ts. This file
    does not keep a second desktop picture. */
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
+import { test, expect, signInAtDesk, landOnDesktop, ledger } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const SHOTS = "/opt/cursor/artifacts/pr119";
@@ -74,6 +74,17 @@ async function ensureTillOpen(page: Page): Promise<void> {
   const line = page.locator(".phone-till");
   await expect(line).toBeVisible();
   if ((await line.innerText()).includes("Till open")) return;
+  /* A customer selling dollars is paid in CAD. The seam desk does
+     not state a drawer unless the book is populated, and an empty
+     drawer cannot post that payout. These are the York opening
+     figures, through the same route the desk uses. */
+  const stated = await ledger(page).ensureOpeningBalances({
+    CAD: "25000.00",
+    USD: "12000.00",
+    EUR: "7000.00",
+    GBP: "3500.00",
+  });
+  expect([201, 409], JSON.stringify(stated)).toContain(stated.status);
   await page.locator('#phonebar [data-phone-app="till"]').click();
   await page.getByRole("button", { name: "Open the till" }).click();
   await expect(line).toContainText("Till open");
