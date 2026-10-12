@@ -41146,7 +41146,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       returnedReason: c.returnedReason || '',
       timeline: (c.timeline || []).map(e => ({
         status: e.status,
-        ts: historyTime(e.at),
+        at: e.at,
+        /* The desktop line stays the server's own timestamp. The phone
+           formats `at` in the branch zone. Changing this string moves
+           the 1280 cheque picture. */
+        ts: String(e.at || '').replace('T', ' ').slice(0, 19),
         by: String(e.actorId || '').split(':').pop(),
         note: e.note || ''
       })),
@@ -41265,7 +41269,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
     const holdUntil = addDays(TODAY, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
-    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0 && endorsed;
     useEffect(() => {
       const h = e => {
         if (e.key === 'Escape') onClose();

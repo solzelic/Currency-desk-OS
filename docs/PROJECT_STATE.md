@@ -607,8 +607,10 @@ renders of main with the blur on did not match.
 rule for that type, half up to the cent (1,000.25 at 2% is 20.01),
 and refuses a client fee that does not match, including 0 unless the
 rule is 0. An unsigned cheque is refused and nothing is written. The
-hold date is calendar days on the business date. A teller who tries
-to reverse is told to ask a supervisor. The screen does not show
+hold date is calendar days on the business date. Cash & hold stays
+disabled until the cheque is signed. The desktop clearance line keeps
+the server's timestamp, so the 1280 cheque picture stays. A teller who
+tries to reverse is told to ask a supervisor. The screen does not show
 `Missing transaction:reverse.`
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
