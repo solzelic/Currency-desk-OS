@@ -213,7 +213,7 @@
   }
 
   function plainPublishError(status, body) {
-    if (status === 403) return "The server refused (403). Only a manager or an admin can publish rates.";
+    if (status === 403) return "Only a manager or an admin can publish rates.";
     if (status === 401) return "Your session ended. Sign in again, then publish.";
     if (status === 400) {
       const detail = body && body.detail ? String(body.detail) : "";

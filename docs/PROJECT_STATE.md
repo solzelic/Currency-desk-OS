@@ -576,7 +576,8 @@ authenticated narrative dashboard.
 to publish" and has no helper line under it. A teller or a
 supervisor is refused before the board is checked, with the plain
 sentence "Only a manager or an admin can publish rates." and an
-audit row `rates.publish_denied`. Phone Pricing is folded into
+audit row `rates.publish_denied`. The phone shows that sentence
+alone, with no status code. Phone Pricing is folded into
 Rates. Fee, floor, rounding, and the simulator stay on the computer.
 Figures stay CAD per 1 through `boardQuote`. The desktop Rate Board
 iframe is unchanged.

@@ -345,7 +345,8 @@ page: Back at the top left, the change list in a card, and Publish
 now full width. The post is `POST /api/rates/publish`. A teller or a
 supervisor is refused with "Only a manager or an admin can publish
 rates." and an audit row `rates.publish_denied`. The phone shows
-that sentence and does not add "rates:change required".
+that sentence alone. It does not show a status code, and it does
+not add "rates:change required".
 
 Phone Pricing is gone. Spread, margin, and publish find Rates.
 Fee, floor, rounding, and the simulator stay on the computer.

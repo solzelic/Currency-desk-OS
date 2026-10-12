@@ -5,7 +5,7 @@ import { test, expect, signInAtDesk } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const PHONE = { width: 390, height: 844 };
-const REFUSED = "The server refused (403). Only a manager or an admin can publish rates.";
+const REFUSED = "Only a manager or an admin can publish rates.";
 
 async function dismissTour(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
@@ -118,7 +118,7 @@ test("publish posts the board and a refused post says 403", async ({ page }) => 
   }
 });
 
-test("a refused publish shows the server 403 in the sheet", async ({ page }) => {
+test("a refused publish shows the plain sentence", async ({ page }) => {
   await page.route(/\/api\/rates\/publish$/, async (route) => {
     await route.fulfill({
       status: 403,
@@ -131,9 +131,13 @@ test("a refused publish shows the server 403 in the sheet", async ({ page }) => 
   await page.locator(".phone-rates").getByRole("button", { name: "Raise Sell margin, over spot" }).click();
   await page.getByRole("button", { name: "Publish 1 change" }).click();
   await page.getByRole("button", { name: "Publish now" }).click();
-  await expect(page.getByRole("alert")).toContainText(REFUSED);
-  await expect(page.getByRole("alert")).not.toContainText("rates:change required");
-  await expect(page.getByRole("dialog", { name: "Publish rates?" })).toBeVisible();
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveText(REFUSED);
+  await expect(alert).not.toContainText("rates:change required");
+  const sheet = page.getByRole("dialog", { name: "Publish rates?" });
+  await expect(sheet).toBeVisible();
+  const shown = await sheet.innerText();
+  expect(shown).not.toMatch(/\b(400|401|403|404|500)\b/);
   await phoneSweep(page, { roots: [".phone-rate-sheet", ".phone-head", "#phone-dock"] });
 });
 
