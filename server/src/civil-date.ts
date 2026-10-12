@@ -32,3 +32,10 @@ export function civilToday(now: Date = new Date()): string {
   if (!day) throw new Error("Invalid date");
   return day;
 }
+
+/** Trading day stored when a till opens. The process civil day.
+    At 00:30 local, a zone east of UTC is already on this day.
+    `toISOString().slice(0, 10)` is still yesterday. */
+export function tillBusinessDate(now: Date): string {
+  return civilToday(now);
+}

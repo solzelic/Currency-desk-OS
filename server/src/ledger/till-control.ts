@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { civilDate, civilToday } from "../civil-date.js";
+import { civilDate, tillBusinessDate } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { currentBasis } from "./cost-basis.js";
@@ -315,7 +315,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            civilToday(now),
+            tillBusinessDate(now),
             actor.userId,
             now,
           ],
