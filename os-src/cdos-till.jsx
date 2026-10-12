@@ -952,6 +952,7 @@
           roster={roster}
           drawerTotal={drawerTotal}
           homeCcy={homeCcy}
+          timeZone={settings && settings.timezone}
           role={me && me.role}
           closeNote={closeNote}
           tillName={stationTill || (activeOption && activeOption.name) || (ledgerTill && ledgerTill.tillId) || ''}

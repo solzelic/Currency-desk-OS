@@ -51,12 +51,14 @@
     return { skel, slow };
   }
 
-  function clock12(ms) {
+  function clock12(ms, timeZone) {
     if (!ms) return '';
     const d = new Date(ms);
     if (Number.isNaN(d.getTime())) return '';
     const fn = window.CDOS && window.CDOS.formatPhoneTime;
-    return fn ? (fn(d) || '') : '';
+    /* A Date is an instant. The shared formatter leaves it as an em
+       dash unless the shop zone comes with it. */
+    return fn ? (fn(d, timeZone) || '') : '';
   }
 
   /* The book stores a staff id (a.singh). The phone card says that
@@ -337,7 +339,7 @@
                 ) : null}
               </div>
               <div className="till-phone-meta">
-                <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since) : '')) : 'Nobody on this till'}</div>
+                <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '')) : 'Nobody on this till'}</div>
                 <div>
                   {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open') : 'No open session'}
                   {', ' + p.countedN + ' of ' + p.reconCount + ' counted'}

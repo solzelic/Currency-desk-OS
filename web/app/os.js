@@ -14564,6 +14564,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         roster: roster,
         drawerTotal: drawerTotal,
         homeCcy: homeCcy,
+        timeZone: settings && settings.timezone,
         role: me && me.role,
         closeNote: closeNote,
         tillName: stationTill || activeOption && activeOption.name || ledgerTill && ledgerTill.tillId || '',
@@ -63268,12 +63269,14 @@ window.CDOS_PERSIST = (function () {
       slow
     };
   }
-  function clock12(ms) {
+  function clock12(ms, timeZone) {
     if (!ms) return '';
     const d = new Date(ms);
     if (Number.isNaN(d.getTime())) return '';
     const fn = window.CDOS && window.CDOS.formatPhoneTime;
-    return fn ? fn(d) || '' : '';
+    /* A Date is an instant. The shared formatter leaves it as an em
+       dash unless the shop zone comes with it. */
+    return fn ? fn(d, timeZone) || '' : '';
   }
 
   /* The book stores a staff id (a.singh). The phone card says that
@@ -63613,7 +63616,7 @@ window.CDOS_PERSIST = (function () {
       className: "till-phone-amount"
     }, amount(p.drawerTotal, p.homeCcy))) : null), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-meta"
-    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ', ' + p.countedN + ' of ' + p.reconCount + ' counted')), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ', ' + p.countedN + ' of ' + p.reconCount + ' counted')), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-actions"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
