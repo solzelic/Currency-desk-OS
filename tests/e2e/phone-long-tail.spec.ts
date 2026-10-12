@@ -3,7 +3,7 @@
    a wide window already had. */
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop, hasLedger, ledger } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
@@ -43,6 +43,12 @@ async function openMore(page: Page, id: string): Promise<void> {
   await page.locator(`#phone-more [data-phone-app="${id}"]`).click();
   await dismissTour(page);
   await settled(page);
+}
+
+async function backAboveTitle(screen: Locator): Promise<void> {
+  const back = await screen.getByRole("button", { name: "More" }).boundingBox();
+  const title = await screen.locator(".phone-title h1").boundingBox();
+  expect(back && title && back.y < title.y).toBe(true);
 }
 
 async function shot(page: Page, name: string): Promise<void> {
@@ -164,6 +170,7 @@ test("audit trail lists and searches at 360 and 390", async ({ page }) => {
     const backBox = await back.boundingBox();
     expect(backBox && backBox.height).toBeGreaterThanOrEqual(44);
     expect(backBox && backBox.width).toBeGreaterThanOrEqual(44);
+    await backAboveTitle(trail);
     await expect(trail).not.toContainText(" pm");
     await expect(trail).not.toContainText(" p.m.");
     await shot(page, `longtail_audit_${width}`);
@@ -282,6 +289,8 @@ test.describe("vault on a phone", () => {
         return { size: style.fontSize, line: style.lineHeight, weight: style.fontWeight, w: box && box.width, h: box && box.height };
       });
       expect(backType).toEqual({ size: "16px", line: "24px", weight: "600", w: 24, h: 24 });
+      await backAboveTitle(screen);
+      await expect(screen.getByText(/mid-market rate/)).toBeVisible();
       await expect(screen.getByText("Running low")).toHaveCount(0);
       await expect(screen.getByText("Canadian dollar")).toBeVisible();
       await expect(screen.getByText("No rate yet")).toHaveCount(0);
@@ -351,6 +360,7 @@ test.describe("vault on a phone", () => {
         await expect(screen.getByText("This vault has no opening position on the ledger, so there is nothing it can say the safe holds.")).toBeVisible();
         await expect(screen.getByRole("button", { name: "Put the vault on the ledger" })).toBeVisible();
         await expect(screen.getByRole("button", { name: "Give out a float" })).toHaveCount(0);
+        await backAboveTitle(screen);
         await shot(page, `longtail_empty_${width}`);
         expect(await book.till()).toEqual(before);
         await expect(page.getByRole("status").filter({ hasText: "Float given to" })).toHaveCount(0);

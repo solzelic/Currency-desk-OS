@@ -268,8 +268,11 @@
     const when = clockLabel(readAt);
     const known = knownHomeWorth(held);
     const pricedOnBoard = held.some(r => r.fromBoard);
+    /* homePerUnit is the board mid: CAD per 1 unit, the same figure
+       cadValue uses. Buy and sell are that mid plus or minus the
+       margin, and this total does not use them. */
     const countLine = (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies')
-      + (pricedOnBoard ? ' · the rate board' : ' · from the ledger')
+      + (pricedOnBoard ? ' · mid-market rate' : ' · from the ledger')
       + (when ? ', ' + when : '');
     /* The ledger total is the headline only when it priced every row.
        A gap is filled from the rate board. A currency neither source

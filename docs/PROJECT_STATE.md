@@ -212,8 +212,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   primary button uses `var(--brand-primary)` from `data-app`. Vault
   and Audit trail's locked accent is ink (`#17140F`). Body text uses
   the `tokens.css` font stack. The foundation loads Inter only at
-  430px. Each of these screens has a More back link (24px chevron,
-  16/24, weight 600, 44px). Currency names are sentence case from
+  430px. Each of these screens has a More back link above the title
+  (24px chevron, 16/24, weight 600, 44px). Currency names are sentence case from
   `Intl.DisplayNames`. Audit chips scroll inside the foundation
   FilterChips inset and fade. Vault's
   "Give out a float" posts through the existing till-movement
@@ -223,7 +223,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   The position prices stock from `ledger_rates` only. The hourly
   board the Rates app shows is a different table, and the seed writes
   the board without writing `ledger_rates`. A missing ledger figure
-  is valued with `homePerUnit`, the same rate the Rates app uses. A
+  is valued with `homePerUnit`, the board's mid-market rate (CAD per
+  unit). Buy and sell are that mid plus or minus the margin, and the
+  vault does not use them. The headline says "mid-market rate". The
+  desktop vault still prices from `ledger_rates` and shows no rate
+  until that table has a row. A
   currency that still has no rate says the rate board has not
   published one, and it is not counted as zero. "Running low" appears
   only below a configured level: `vaultReserveCad` for the home

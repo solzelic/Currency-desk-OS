@@ -517,10 +517,12 @@ second near-black. Body text uses `--font-ui` from `tokens.css`. At
 430px that token is Inter. Wider than that it is Archivo. The
 foundation loads the Inter file only at 430px.
 
-The title action is a back link: a 24px chevron-left, the word More,
-16px on a 24px line, weight 600, and a 44px hit area. It presses the
-More tab. The shared control is a foundation follow-up. This link is
-the stand-in, on every long-tail screen.
+The title action is a back link above the title: a 24px chevron-left,
+the word More, 16px on a 24px line, weight 600, and a 44px hit area.
+The shell paints that action after the heading, so this screen pulls
+it above with `order`. It presses the More tab. The shared control is
+a foundation follow-up. This link is the stand-in, on every long-tail
+screen.
 
 Currency names come from `Intl.DisplayNames` (`en`), then sentence
 case, so a row reads "Canadian dollar" and "US dollar". A short
@@ -573,9 +575,14 @@ The position prices a currency only from `ledger_rates`, and this
 desk's seed writes the hourly board (`rate_boards`) without writing
 that table. The Rates app reads the board through `homePerUnit`.
 When the ledger figure is absent, the phone values the row at that
-same rate. A currency neither source can price is not counted as
-zero. The row and the headline say "The rate board has not published
-a rate for …".
+same rate. `homePerUnit` is the board mid (CAD per unit), which is
+what `cadValue` uses. Buy and sell are that mid plus or minus the
+published margin, and the vault total does not use them. The headline
+says "N currencies · mid-market rate, 3:02 PM". The desktop position
+still reads `ledger_rates` only, so on this seed it shows no rate.
+That desktop gap is a follow-up. A currency neither source can price
+is not counted as zero. The row and the headline say "The rate board
+has not published a rate for …".
 
 "Running low" is shown only when a level is configured. Home currency
 uses `settings.vaultReserveCad` when it is a number above zero. Any
