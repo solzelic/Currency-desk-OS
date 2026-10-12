@@ -275,4 +275,31 @@ describe("signup", () => {
       expect(r.statusCode).toBe(400);
     }
   });
+
+  it("says so when production cannot send the confirmation code", async () => {
+    const prev = process.env.NODE_ENV;
+    const key = process.env.RESEND_API_KEY;
+    const from = process.env.EMAIL_FROM;
+    process.env.NODE_ENV = "production";
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_FROM;
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/signup",
+        payload: { businessName: "Quiet FX", ownerName: "Ada Quiet", email: "ada@quietfx.ca", password: "a-strong-pass", slug: "quietfx" },
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toEqual({ error: "email_unavailable", detail: "We couldn't send the code. Try again in a moment." });
+      expect(res.body).not.toMatch(/\d{6}/);
+      expect((await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-quietfx"))).length).toBe(0);
+    } finally {
+      if (prev === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev;
+      if (key === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = key;
+      if (from === undefined) delete process.env.EMAIL_FROM;
+      else process.env.EMAIL_FROM = from;
+    }
+  });
 });
