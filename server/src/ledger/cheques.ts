@@ -62,9 +62,10 @@ import {
 } from "./philippines-pack.js";
 import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
-import { readDateOnly } from "./business-date.js";
+import { readDateOnly, refDay } from "./business-date.js";
 import { withSerializationRetry } from "./retry.js";
 import {
+  branchCalendarDate,
   LedgerError,
   requireIdentification,
   requireInstalledPack,
@@ -486,7 +487,7 @@ export class ChequeService {
 
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${refDay(businessDate)}-${transactionId.slice(-6)}`;
       const chequeId = `chq_${randomUUID()}`;
 
       /* The desk's own reference, minted HERE. The browser used to mint
@@ -735,8 +736,9 @@ export class ChequeService {
       const home = String(cheque.currency).trim();
       const face = new Decimal(cheque.face_amount);
       const now = new Date();
+      const tradingDay = await branchCalendarDate(client, actor);
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${refDay(tradingDay)}-${transactionId.slice(-6)}`;
 
       /* ---- the two settlement journals ----
 

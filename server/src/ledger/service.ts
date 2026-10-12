@@ -5,6 +5,7 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
+import { businessDate, readDateOnly, refDay } from "./business-date.js";
 import { now as clockNow } from "./clock.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -178,9 +179,9 @@ const fixed = (value: Decimal, places = 2) =>
 export async function requireOpenTill(
   client: pg.PoolClient,
   actor: LedgerActor,
-) {
+): Promise<string> {
   const session = await client.query(
-    `SELECT status
+    `SELECT status, business_date
        FROM ledger_till_sessions
       WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
         AND workspace_id=$4 AND till_id=$5
@@ -195,6 +196,30 @@ export async function requireOpenTill(
       "Open the till before posting transactions.",
     );
   }
+  /* The trading day this drawer opened on. A reference minted while
+     the till is open carries this date, not the UTC date of the post. */
+  return readDateOnly(session.rows[0].business_date);
+}
+
+/** Today's calendar date in the branch's zone. Used where a deal does
+    not require an open till, so there is no session date to borrow. */
+export async function branchCalendarDate(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+): Promise<string> {
+  const result = await client.query(
+    `SELECT timezone FROM branches
+      WHERE tenant_id=$1 AND legal_entity_id=$2 AND id=$3`,
+    [actor.tenantId, actor.legalEntityId, actor.branchId],
+  );
+  const zone = result.rows[0]?.timezone;
+  if (typeof zone !== "string" || zone.trim() === "") {
+    throw new LedgerError(
+      "BRANCH_TIMEZONE_UNSET",
+      "This branch has no time zone, so its business date cannot be named.",
+    );
+  }
+  return businessDate(clockNow(), zone);
 }
 
 /* ---- the identification gate ----
@@ -672,7 +697,7 @@ export class LedgerService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
-      await this.requireOpenTill(client, actor);
+      const tradingDay = await this.requireOpenTill(client, actor);
       const authoritativeQuote = await client.query(
         "SELECT * FROM quotes WHERE quote_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 FOR UPDATE",
         [quote.quoteId, ...scope(actor)],
@@ -979,7 +1004,7 @@ export class LedgerService {
 
       const now = clockNow(),
         transactionId = `tx_${randomUUID()}`,
-        transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+        transactionRef = `CD-${refDay(tradingDay)}-${transactionId.slice(-6)}`;
 
       /* The stock leaves here, BEFORE the journal is written, because the
          journal has to carry the figure the disposal actually produced.
@@ -1260,7 +1285,7 @@ export class LedgerService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
-      await this.requireOpenTill(client, actor);
+      const tradingDay = await this.requireOpenTill(client, actor);
       /* Whether this pair may be traded is the jurisdiction's answer, not a
          constant. This used to demand CAD on one side, which is the pilot's
          limitation and not a rule anywhere. It has to be asked inside the
@@ -1473,7 +1498,7 @@ export class LedgerService {
         );
       const now = clockNow();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${refDay(tradingDay)}-${transactionId.slice(-6)}`;
       const response = {
         transactionId,
         transactionRef,

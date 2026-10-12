@@ -2147,7 +2147,10 @@
       serverTransactionId: transaction.transactionId,
       serverQuoteId: transaction.quoteId || null,
       ref: transaction.transactionRef,
-      date: posted.toISOString().slice(0, 10),
+      /* The calendar date in the branch zone. toISOString is the UTC
+         date, which is still yesterday just after midnight in a zone
+         ahead of UTC. */
+      date: window.CDOS.branchCalendarDate(posted),
       time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
       customer: customerName || transaction.customerId,
       beneficiary: "",
@@ -13728,6 +13731,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setServerSession(session);
       setServerDay(result && result.day || null);
       if (result && result.day && result.day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(result.day.timeZone);
+      /* The trading day is the one the server named for this session.
+         Opening the till after midnight has to move the desk onto that
+         date. The wall clock is only the stand-in before a session exists. */
+      if (session && session.businessDate && window.CDOS.setBusinessDate) window.CDOS.setBusinessDate(session.businessDate);
       setSessionLoaded(true);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
@@ -39830,10 +39837,15 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
+  /* Calendar arithmetic on the year, month and day. Local midnight plus
+     toISOString moves a hold date back a day where the machine is ahead
+     of UTC. */
   const addDays = (date, n) => {
-    const d = new Date(date + 'T00:00:00');
-    d.setDate(d.getDate() + (+n || 0));
-    return d.toISOString().slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''));
+    if (!match) return '';
+    const at = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    at.setUTCDate(at.getUTCDate() + (+n || 0));
+    return at.toISOString().slice(0, 10);
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 

@@ -44,6 +44,12 @@ export function readDateOnly(value: unknown): string {
   return match[0];
 }
 
+/** YYMMDD from a calendar date, for a reference. The date is already
+    the business date. It is not read back out of an instant. */
+export function refDay(isoDate: string): string {
+  return readDateOnly(isoDate).slice(2).replace(/-/g, "");
+}
+
 /** True when calendar date `left` is before `right`. The same day is not
     before. Both sides are YYYY-MM-DD. A Date contributes its calendar
     fields, and a string contributes its date prefix. Nothing here is
