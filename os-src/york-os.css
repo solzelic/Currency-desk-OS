@@ -3069,9 +3069,17 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-tx-quiet {
     color: var(--tab-inactive, #6B6760) !important;
   }
+  /* The label was rgba(10,10,10,0.4) on white, about 2.71:1.
+     #6B6760 is the phone secondary ink and clears 4.5:1. */
   .cd-tx-stat-label {
     font-family: var(--f-display, "Archivo", system-ui, sans-serif) !important;
     letter-spacing: 0 !important;
     text-transform: none !important;
+    color: var(--tab-inactive, #6B6760) !important;
+  }
+  /* The Record the ID subtitle was rgba(10,10,10,0.55) on the white
+     header. That sits under 4.5:1. Same ink as the stat labels. */
+  .cd-tx-record-sub {
+    color: var(--tab-inactive, #6B6760) !important;
   }
 }

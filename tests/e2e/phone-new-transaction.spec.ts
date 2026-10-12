@@ -8,6 +8,51 @@ import { test, expect, signInAtDesk, landOnDesktop, hasLedger } from "./fixtures
 
 const WIDTHS = [390, 360] as const;
 
+function channel(v: number): number {
+  const s = v / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function parseColor(value: string): { r: number; g: number; b: number; a: number } {
+  const m = value.match(/rgba?\(([^)]+)\)/);
+  if (!m) throw new Error(`not a colour: ${value}`);
+  const parts = m[1].split(/[\s,/]+/).map(Number);
+  return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+}
+
+/* WCAG contrast of the painted ink against the surface behind it. */
+function contrastRatio(fg: string, bg: string): number {
+  const f = parseColor(fg);
+  const b = parseColor(bg);
+  const ink = {
+    r: f.r * f.a + b.r * (1 - f.a),
+    g: f.g * f.a + b.g * (1 - f.a),
+    b: f.b * f.a + b.b * (1 - f.a),
+  };
+  const L = (c: { r: number; g: number; b: number }) =>
+    0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+  const lighter = Math.max(L(ink), L(b));
+  const darker = Math.min(L(ink), L(b));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+async function inkOnSurface(locator: ReturnType<Page["locator"]>): Promise<{ color: string; background: string }> {
+  return locator.evaluate((el) => {
+    const color = getComputedStyle(el).color;
+    let node: Element | null = el;
+    let background = "rgb(255, 255, 255)";
+    while (node) {
+      const bg = getComputedStyle(node).backgroundColor;
+      if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") {
+        background = bg;
+        break;
+      }
+      node = node.parentElement;
+    }
+    return { color, background };
+  });
+}
+
 async function dismissTour(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible().catch(() => false)) await skip.click();
@@ -442,6 +487,11 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await expect(sheet.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
   const subtitle = sheet.locator(".cd-tx-record-sub-short");
   await expect(subtitle).toHaveText("Type, number and expiry");
+  const subtitlePaint = await inkOnSurface(subtitle);
+  expect(
+    contrastRatio(subtitlePaint.color, subtitlePaint.background),
+    `Record the ID subtitle contrast ${JSON.stringify(subtitlePaint)}`,
+  ).toBeGreaterThanOrEqual(4.5);
   const clipped = await subtitle.evaluate((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
   expect(clipped, "ID subtitle clipped").toBe(false);
   await expect(sheet.locator(".cd-tx-record-sub-long")).toBeHidden();
@@ -465,7 +515,27 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await expect(page.locator(".cd-tx-id-need")).toContainText("Apr 1, 2030");
   await expect(page.locator(".cd-tx-stats")).toContainText("ID on file");
   await expect(page.locator(".cd-tx-stats")).toContainText(/Last \d+ days/);
-  expect(await page.locator(".cd-tx-stat-label").first().evaluate((el) => getComputedStyle(el).textTransform), "stat label case").toBe("none");
+  const statLabels = page.locator(".cd-tx-stat-label");
+  await expect(statLabels).toHaveText(["ID on file", /Last \d+ days/, "Usually"]);
+  const statCase = await statLabels.evaluateAll((els) => els.map((el) => getComputedStyle(el).textTransform));
+  expect(statCase, "stat labels are sentence case").toEqual(["none", "none", "none"]);
+  const statPaint = await statLabels.evaluateAll((els) => els.map((el) => {
+    const color = getComputedStyle(el).color;
+    let node: Element | null = el;
+    let background = "rgb(255, 255, 255)";
+    while (node) {
+      const bg = getComputedStyle(node).backgroundColor;
+      if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") {
+        background = bg;
+        break;
+      }
+      node = node.parentElement;
+    }
+    return { text: el.textContent, color, background };
+  }));
+  for (const paint of statPaint) {
+    expect(contrastRatio(paint.color, paint.background), `stat label contrast ${JSON.stringify(paint)}`).toBeGreaterThanOrEqual(4.5);
+  }
   await expect(page.locator(".cd-tx-stats")).toContainText("Apr 1, 2030");
   const document = await page.evaluate(async (who) => {
     const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));

@@ -571,6 +571,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone new-transaction sweep. On the phone sheet the
+stat labels are sentence case, including Usually, and they use
+`#6B6760` so the contrast is at least 4.5:1. The Record the ID
+subtitle uses the same ink.
+
 **2026-10-11**, desktop pictures. The 1280 capture now replaces a
 transaction ref and a seam-run name suffix with fixed text before
 the picture. The first Actions pictures did not, so the ledger

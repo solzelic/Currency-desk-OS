@@ -33683,6 +33683,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually",
+      sentence: phone,
       value: s.top || '—',
       sub: s.count > 0 ? s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime` : 'new',
       tone: CD.ink,
