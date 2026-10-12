@@ -14,8 +14,10 @@
      so it still has to find Decimal on its own. */
   var bundled = typeof module === "object" && module.exports;
   if (bundled) module.exports = api;
-  if (typeof document !== "undefined" && !bundled) {
-    if (!root.Decimal) throw new Error("Quote pricing needs decimal.js, and it did not load.");
+  /* A classic script on the uncompiled shell runs before the deferred
+     quote file has put Decimal on the page. Throwing here would stop
+     every script after this one. The built file creates quoteTerms. */
+  if (typeof document !== "undefined" && !bundled && root.Decimal) {
     var cdos = root.CDOS || (root.CDOS = {});
     cdos.quoteTerms = api.create(root.Decimal);
   }

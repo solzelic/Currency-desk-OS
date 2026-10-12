@@ -33,8 +33,8 @@ jobs:
           cache: npm
 
       - run: npm ci
-      # build:os bundles decimal.js out of the server install into os.js.
-      # Without this, the desk script cannot be rebuilt.
+      # build:os bundles the server's decimal.js into web/app/quote-terms.min.js.
+      # Without this install, that file cannot be rebuilt.
       - name: Install the server
         run: npm ci
         working-directory: server

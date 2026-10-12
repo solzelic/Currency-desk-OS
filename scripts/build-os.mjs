@@ -6,6 +6,7 @@
                                          web/app/admin.html
                                          web/app/os.js
                                          web/app/admin.js
+                                         web/app/quote-terms.min.js
 
    WHY
 
@@ -90,48 +91,20 @@ function localVendor(html) {
     .replace("<!-- React + Babel (pinned) -->", "<!-- React, from our own domain. Babel is not here: the JSX was compiled by scripts/build-os.mjs. -->");
 }
 
-/* /*! so esbuild's legal-comment pass keeps the warning. A plain
-   block comment is stripped by minify, and then the file no longer
-   says where it came from. */
 const banner = (name) =>
-  `/*! Built from source by scripts/build-os.mjs — do not edit.\n` +
+  `/* Built from source by scripts/build-os.mjs — do not edit.\n` +
   `   Edit ${name} instead, then run: npm run build:os */\n`;
 
-/* Minify one concatenated app. sourcefile is a stable relative name
-   so the map does not contain this machine's path. sourcesContent
-   embeds the pre-minify source, because the committed file is the
-   minified one. */
-function writeMinified(filename, source) {
-  const result = esbuild.transformSync(source, {
-    minify: true,
-    keepNames: true,
-    sourcemap: "external",
-    sourcefile: filename,
-    sourcesContent: true,
-    legalComments: "inline",
-    charset: "utf8",
-  });
-  const mapName = `${filename}.map`;
-  let code = result.code;
-  if (!code.includes("sourceMappingURL")) {
-    if (!code.endsWith("\n")) code += "\n";
-    code += `//# sourceMappingURL=${mapName}\n`;
-  }
-  const map = JSON.parse(result.map);
-  for (const source of map.sources || []) {
-    if (path.isAbsolute(source) || /^[A-Za-z]:[\\/]/.test(source)) {
-      throw new Error(`${mapName} source ${source} is absolute — the freshness diff would flap between machines`);
-    }
-  }
-  writeFileSync(path.join(OUT, filename), code);
-  writeFileSync(path.join(OUT, mapName), result.map);
-  return code.length;
-}
 
-/* decimal.js and the shared quote arithmetic, one script inside os.js.
-   No second request, and nothing under web/vendor is a copy of the
-   library. The server install is the copy both sides already run. */
-function quoteTermsBundle() {
+/* Quote arithmetic for the browser, one small file.
+
+   os.js and admin.js stay the concatenation this script has always
+   written. Minifying those two is a separate job. decimal.js is not
+   copied into the repo and not pasted into the desk script. This
+   bundles the server's decimal.js with os-src/quote-terms.js and
+   minifies only that result. The page loads it with defer, ahead of
+   os.js. */
+function writeQuoteTerms() {
   const decimalSrc = path.join(ROOT, "server", "node_modules", "decimal.js", "decimal.js");
   if (!existsSync(decimalSrc)) {
     throw new Error("server/node_modules/decimal.js/decimal.js is missing — run npm ci in server/");
@@ -143,9 +116,10 @@ function quoteTermsBundle() {
         'import quoteTerms from "./os-src/quote-terms.js";',
         "const root = globalThis;",
         "root.Decimal = Decimal;",
+        "const api = typeof quoteTerms.create === \"function\" ? quoteTerms : quoteTerms.default;",
+        "if (!api || typeof api.create !== \"function\") throw new Error(\"quote terms did not export create\");",
         "const cdos = root.CDOS || (root.CDOS = {});",
-        "if (typeof quoteTerms.create !== \"function\") throw new Error(\"quote terms did not export create\");",
-        "cdos.quoteTerms = quoteTerms.create(Decimal);",
+        "cdos.quoteTerms = api.create(Decimal);",
       ].join("\n"),
       resolveDir: ROOT,
       sourcefile: "quote-terms-entry.js",
@@ -153,6 +127,7 @@ function quoteTermsBundle() {
     bundle: true,
     format: "iife",
     platform: "browser",
+    minify: true,
     write: false,
     nodePaths: [path.join(ROOT, "server", "node_modules")],
     legalComments: "none",
@@ -160,12 +135,10 @@ function quoteTermsBundle() {
     logLevel: "silent",
   });
   const code = result.outputFiles[0].text;
-  if (!code.includes("quoteTerms")) {
-    throw new Error("the quote bundle did not keep quoteTerms");
-  }
-  return code;
+  if (!code.includes("quoteTerms")) throw new Error("quote-terms.min.js did not keep quoteTerms");
+  writeFileSync(path.join(OUT, "quote-terms.min.js"), code);
+  return Buffer.byteLength(code);
 }
-
 
 let built = 0;
 
@@ -213,11 +186,14 @@ const localTailwind = (html) =>
   const ours = all.filter((s) => (s.src && s.src.startsWith("os-src/")) || (!s.src && s.jsx));
   if (ours.length === 0) throw new Error("CurrencyDesk OS.html: found no app scripts to compile");
 
-  /* quote-terms.js is not concatenated raw. decimal.js and that module
-     are bundled above, and the page's script tag is still removed with
-     the rest so the desk does not run the arithmetic twice. */
-  const parts = [banner("os-src/*.jsx"), "\n/* ---- decimal.js + os-src/quote-terms.js ---- */\n" + quoteTermsBundle()];
+  const quoteBytes = writeQuoteTerms();
+  console.log(`  web/app/quote-terms.min.js  ${quoteBytes} bytes`);
+
+  const parts = [banner("os-src/*.jsx")];
   for (const s of ours) {
+    /* The arithmetic ships as quote-terms.min.js, loaded ahead of this
+       file. Concatenating it here would run it before that file and
+       stop the desk. */
     if (s.src === "os-src/quote-terms.js") continue;
     if (s.src) {
       const p = path.join(ROOT, s.src);
@@ -227,7 +203,7 @@ const localTailwind = (html) =>
       parts.push(`\n/* ---- inline ---- */\n` + compile(s.body, "CurrencyDesk OS.html"));
     }
   }
-  const osBytes = writeMinified("os.js", parts.join("\n"));
+  writeFileSync(path.join(OUT, "os.js"), parts.join("\n"));
 
   /* Replace the whole run of them with one tag, in the place the first one
      stood — so anything the page does before or after still happens in the
@@ -240,7 +216,7 @@ const localTailwind = (html) =>
   // tidy the blank lines the removals left behind
   html = html.replace(/\n{3,}/g, "\n\n");
   writeFileSync(path.join(OUT, "index.html"), html);
-  console.log(`  web/app/os.js         ${ours.length} scripts, ${osBytes} bytes`);
+  console.log(`  web/app/os.js         ${ours.length} scripts, ${Math.round(readFileSync(path.join(OUT, "os.js")).length / 1024)} KB`);
   built++;
 }
 
@@ -253,7 +229,7 @@ const localTailwind = (html) =>
 
   const parts = [banner("admin.html")];
   for (const s of ours) parts.push(compile(s.body, "admin.html"));
-  const adminBytes = writeMinified("admin.js", parts.join("\n"));
+  writeFileSync(path.join(OUT, "admin.js"), parts.join("\n"));
 
   const first = ours[0].whole;
   html = localVendor(html);
@@ -261,7 +237,7 @@ const localTailwind = (html) =>
   html = html.replace(" BUNDLE ", '<script src="/web/app/admin.js"></script>');
   html = html.replace(/\n{3,}/g, "\n\n");
   writeFileSync(path.join(OUT, "admin.html"), html);
-  console.log(`  web/app/admin.js      ${ours.length} script, ${adminBytes} bytes`);
+  console.log(`  web/app/admin.js      ${ours.length} script, ${Math.round(readFileSync(path.join(OUT, "admin.js")).length / 1024)} KB`);
   built++;
 }
 
