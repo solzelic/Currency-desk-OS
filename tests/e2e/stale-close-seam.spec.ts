@@ -14,8 +14,8 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no 
 const MESSAGE = "Money moved since you counted. Count again.";
 
 async function settleCashDrawerChrome(page: Page) {
-  await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/server balances live/i)).toBeVisible();
+  await expect(page.locator(".till-which")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/figures are in/i)).toBeVisible();
   const scroller = page.locator(".win.show.active .win-body .overflow-auto").first();
   if (await scroller.count()) {
     await scroller.evaluate((el) => {

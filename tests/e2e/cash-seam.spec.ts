@@ -45,22 +45,34 @@ function closeDayHeading(iso: string): string {
   return `Close the day, ${deskPick(parts, "weekday")} ${deskPick(parts, "month")} ${deskPick(parts, "day")}`;
 }
 
+/* "Oct 12". The stored business date stays YYYY-MM-DD. */
+function deskDay(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  }).formatToParts(new Date(`${iso.slice(0, 10)}T12:00:00Z`));
+  return `${deskPick(parts, "month")} ${deskPick(parts, "day")}`;
+}
+
+const ISO_DATE = /\d{4}-\d{2}-\d{2}/;
+
 /** Read what the Cash Drawer is telling the teller it holds, in CAD. */
 async function drawerChip(page: Page) {
   const body = await page.locator("body").innerText();
-  const match = body.match(/In drawer · ledger\s*\$([\d,]+(?:\.\d+)?)/);
+  const match = body.match(/In drawer\s*\$([\d,]+(?:\.\d+)?)/);
   return match ? Number(match[1]!.replace(/,/g, "")) : null;
 }
 
-/* The Cash Drawer header reflows as the session, live balances and the
-   ledger till name arrive, and the OS shell hides `.fld-bar` on downward
+/* The Cash Drawer header reflows as the session, the drawer figures and
+   the drawer name arrive, and the OS shell hides `.fld-bar` on downward
    scroll (0.3s max-height / transform). Playwright then reports a tab
    click as "not stable" or intercepted by the header that names till-01
    (`div.px-4.pt-3.flex-none`). That is issue #36: the close assertion
    never ran. Wait for the chrome to finish moving; do not force:true. */
 async function settleCashDrawerChrome(page: Page) {
-  await expect(page.getByText(/ledger till/i)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/server balances live/i)).toBeVisible();
+  await expect(page.locator(".till-which")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/figures are in/i)).toBeVisible();
   const scroller = page.locator(".win-body .overflow-auto").first();
   if (await scroller.count()) {
     await scroller.evaluate((el) => {
@@ -142,15 +154,23 @@ test("the desk opens a till session, and the ledger is the one that says so", as
   await expect(page.getByText(heading, { exact: true })).toBeVisible();
   await expect(page.getByText(/Reconcile & close — Day/)).toHaveCount(0);
   await expect(page.getByText(/authoritative server till balance/i)).toHaveCount(0);
-  await expect(page.getByText(/Count the cash in the drawer/)).toBeVisible();
+  await expect(
+    page.getByText("Expected is what the system says should be in the drawer. Counted is what you count.", {
+      exact: true,
+    }),
+  ).toBeVisible();
 
   const sessionLine = await page.locator(".till-sessionline").innerText();
   const opened = deskTime(session.openedAt);
+  const day = deskDay(session.businessDate);
   expect(sessionLine).toContain(opened);
+  expect(sessionLine).toContain(day);
   expect(sessionLine).not.toMatch(/a\.m\.|p\.m\./);
+  /* A stored business date is YYYY-MM-DD. The session line must not show it. */
+  expect(sessionLine).not.toMatch(ISO_DATE);
   expect(opened).toMatch(/^[1-9]\d?:\d{2} (AM|PM)$/);
 
-  await expect(page.locator(".till-operator")).toContainText("Senior teller");
+  await expect(page.locator(".till-operator")).toHaveText("On the drawer: A. Singh, Senior teller");
 });
 
 test("a float moves the vault and the till together, or not at all", async ({ page }) => {
@@ -214,6 +234,13 @@ test("closing writes the counted figure back, and refuses to guess one", async (
   await expect
     .poll(async () => (await book.session())?.status, { timeout: 20_000 })
     .toBe("closed");
+
+  const closed = await book.session();
+  expect(closed?.businessDate).toBeTruthy();
+  const banner = await page.locator(".till-closedbanner").innerText();
+  expect(banner).toContain(`trading day ${deskDay(closed.businessDate)}`);
+  /* The closed banner names the trading day as Oct 12, never 2026-10-12. */
+  expect(banner).not.toMatch(ISO_DATE);
 
   /* THE ASSERTION THIS FILE EXISTS FOR. Every currency holds what was
      counted — the short one is short by exactly five, and the others are

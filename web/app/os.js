@@ -13263,9 +13263,36 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }).formatToParts(new Date(day + 'T12:00:00Z'));
     return 'Close the day, ' + deskPick(parts, 'weekday') + ' ' + deskPick(parts, 'month') + ' ' + deskPick(parts, 'day');
   };
+  /* A calendar date on this screen is "Oct 12". The stored value stays
+     YYYY-MM-DD; that string is not what a teller reads. */
+  const deskDay = iso => {
+    const day = String(iso || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      month: 'short',
+      day: 'numeric'
+    }).formatToParts(new Date(day + 'T12:00:00Z'));
+    return deskPick(parts, 'month') + ' ' + deskPick(parts, 'day');
+  };
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
-  const personOf = id => String(id || '').split(':').pop() || '—';
+  const personOf = id => String(id || '').split(':').pop() || '';
+  /* "A. Singh" from a roster name, or from a staff id "a.singh". */
+  const initialSurname = name => {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+    const words = raw.split(/\s+/).filter(Boolean);
+    const shape = (first, last) => first.charAt(0).toUpperCase() + '. ' + last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
+    if (words.length >= 2) {
+      const first = words[0].replace(/\./g, '');
+      const last = words[words.length - 1].replace(/\./g, '');
+      if (first && last) return shape(first, last);
+    }
+    const bits = raw.split('.').filter(Boolean);
+    if (bits.length >= 2) return shape(bits[0], bits[bits.length - 1]);
+    return raw;
+  };
   const clockOf = ms => ms ? deskTime(ms) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
@@ -13583,7 +13610,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, requireCount ? 'Your shop requires a count at handoff.' : 'Optional — skip it if it’s a quick swap and the same drawer.'), /*#__PURE__*/React.createElement("div", {
+    }, requireCount ? 'Your shop requires a count at handoff.' : 'Optional. Skip it if it’s a quick swap and the same drawer.'), /*#__PURE__*/React.createElement("div", {
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 11,
@@ -13652,7 +13679,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: variance != null && Math.abs(variance) > 0.005 ? CD.flag : variance == null && anyEntered ? CD.mute : CD.green
       }
-    }, !anyEntered ? 'Not counted yet' : variance == null ? 'Counted — no single currency to state the variance in' : Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), homeCcy)), /*#__PURE__*/React.createElement("span", {
+    }, !anyEntered ? 'Not counted yet' : variance == null ? 'Counted. No single currency to state the variance in' : Math.abs(variance) < 0.005 ? '✓ Balances to expected' : (variance > 0 ? 'Over by ' : 'Short by ') + fmt(Math.abs(variance), homeCcy)), /*#__PURE__*/React.createElement("span", {
       className: "text-[12px]",
       style: {
         color: CD.mute,
@@ -13681,7 +13708,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         background: 'var(--cd-on-ink)'
       }
-    }, "Skip \u2014 hand off as-is"), /*#__PURE__*/React.createElement("button", {
+    }, "Skip, hand off as-is"), /*#__PURE__*/React.createElement("button", {
       onClick: () => finish(true),
       className: "flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white",
       style: {
@@ -14064,7 +14091,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         applyBook(resolved);
         applySession(resolved);
         setSessionErr('');
-        setSwitchNote(`Now counting ${resolved.tillId}.` + (dropped.length ? ` The ${dropped.join(', ')} figure${dropped.length === 1 ? '' : 's'} on screen stayed with the drawer you counted ${dropped.length === 1 ? 'it' : 'them'} at — count this one afresh.` : ''));
+        setSwitchNote(`Now counting ${resolved.tillId}.` + (dropped.length ? ` The ${dropped.join(', ')} figure${dropped.length === 1 ? '' : 's'} on screen stayed with the drawer you counted ${dropped.length === 1 ? 'it' : 'them'} at. Count this one afresh.` : ''));
       } catch (error) {
         // the OS logs the refusal; the drawer says it out loud, because the
         // screen deliberately did not move and that needs explaining
@@ -14178,15 +14205,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        people over the same cash. When the ledger has no open session for this
        till there is no operator to name, and the strip says so rather than
        falling back to a roster. */
+    const staffMatch = actorId => {
+      const id = personOf(actorId);
+      return roster.find(s => s.staffId === id || s.code === id || s.name === id) || null;
+    };
     const roleOf = actorId => {
       const id = personOf(actorId);
-      const match = roster.find(s => s.staffId === id || s.code === id || s.name === id);
+      const match = staffMatch(actorId);
       if (match && match.role) return match.role;
       if (me && me.role && (me.name === id || me.code === id)) return me.role;
       return '';
     };
+    const named = actorId => {
+      const id = personOf(actorId);
+      const match = staffMatch(actorId);
+      const source = match && match.name || (me && (me.name === id || me.code === id) ? me.name : '') || id;
+      return initialSurname(source) || id;
+    };
     const serverShift = serverBacked && serverSession && serverSession.status === 'open' ? {
-      operator: personOf(serverSession.openedBy),
+      operator: named(serverSession.openedBy),
       role: roleOf(serverSession.openedBy),
       since: new Date(serverSession.openedAt).getTime()
     } : null;
@@ -14408,6 +14445,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
          session's business date, and filing it under the calendar date is
          how a drawer's history came to show two rows for one count. */
       const bookDate = serverSession && serverSession.businessDate || window.CDOS.businessDate();
+      /* `at` is "Oct 12, 6:09 AM" for a count saved from this build.
+         A snapshot already in this browser keeps the string it was
+         saved with. This does not rewrite those. */
       const snap = {
         byCcy,
         grand: grandLocal == null ? null : Math.round(grandLocal),
@@ -14459,7 +14499,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const serverCounts = Object.fromEntries(countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, ccyTotal(c).toFixed(2)]));
         if (Object.keys(serverCounts).length) {
           if (!serverSession || serverSession.status !== 'open') {
-            setSessionErr('Open the till before saving a count — there is no session to record it against.');
+            setSessionErr('Open the till before saving a count. There is no session to record it against.');
             saveLock.current = 0;
             return;
           }
@@ -14563,7 +14603,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         // would silently overwrite real money with a guess, so refuse instead.
         const missing = recon.filter(r => r.counted == null).map(r => r.c);
         if (missing.length) {
-          throw new Error(`Count ${missing.join(', ')} before closing — the close writes your count back as the till balance.`);
+          throw new Error(`Count ${missing.join(', ')} before closing. The close writes your count back as the till balance.`);
         }
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
@@ -14843,12 +14883,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
       }
-    }, "\xB7 ", serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'), serverBacked && ledgerTill && /*#__PURE__*/React.createElement("span", {
-      title: "The till the server ledger is answering for",
+    }, "\xB7 ", serverBalanceError ? 'figures unavailable' : serverBalancesReady ? 'figures are in' : 'loading figures'), serverBacked && ledgerTill && /*#__PURE__*/React.createElement("span", {
+      className: "till-which",
+      title: "The drawer these figures belong to",
       style: {
         color: ledgerAmbiguous ? CD.brass : CD.faint
       }
-    }, "\xB7 ledger till ", /*#__PURE__*/React.createElement("b", {
+    }, "\xB7 drawer ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono, monospace',
         color: ledgerAmbiguous ? CD.brass : CD.mute
@@ -14871,8 +14912,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           background: 'var(--cd-chip)',
           color: CD.mute
         },
-        title: serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'
-      }, serverBacked ? 'In drawer · ledger' : 'Float in drawer', " ", /*#__PURE__*/React.createElement("b", {
+        title: serverBacked ? 'What the system says this drawer holds, across every currency' : 'What this drawer holds. Floats are issued and returned at the vault'
+      }, serverBacked ? 'In drawer' : 'Float in drawer', " ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink,
           fontFamily: 'Space Mono, monospace',
@@ -14884,7 +14925,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           bId: _ab && _ab.id,
           tId: station && station.tillId
         }),
-        title: "Issue a float from the vault, or return cash to it \u2014 recorded on the ledger",
+        title: "Issue a float from the vault, or return cash to it. The system records it.",
         className: "till-move flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium",
         style: {
           border: `1px solid ${CD.line}`,
@@ -14940,7 +14981,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       c: CD.brass
     }), /*#__PURE__*/React.createElement("span", {
       className: "flex-1 min-w-0"
-    }, "This branch has ", ledgerScope.workspaces.length, " tills on the ledger. Everything on this screen \u2014 the expected figures, the counts, the close \u2014 belongs to ", /*#__PURE__*/React.createElement("b", {
+    }, "This branch has ", ledgerScope.workspaces.length, " drawers. Everything on this screen (the expected figures, the counts, the close) belongs to ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono, monospace'
       }
@@ -15006,7 +15047,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Open it to start a session \u2014 counts, cash movements and posted deals all record against it.")), /*#__PURE__*/React.createElement("button", {
+    }, "Open it to start a session. Counts, cash movements and posted deals all record against it.")), /*#__PURE__*/React.createElement("button", {
       onClick: openTill,
       disabled: !!tillBusy,
       className: "flex items-center gap-1.5 px-3.5 py-2 text-[12.5px] font-semibold text-white flex-none",
@@ -15039,12 +15080,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
+    }, "#", serverSession.sessionNumber), " open \xB7 ", deskDay(serverSession.businessDate), " \xB7 opened by ", named(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
       className: "ml-auto flex-none",
       style: {
         color: CD.faint
       }
-    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+    }, serverCcys.length, " currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -15059,7 +15100,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), " at ", clockOf(new Date(serverSession.closedAt).getTime()), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
+    }, "#", serverSession.sessionNumber), " closed by ", named(serverSession.closedBy), " at ", clockOf(new Date(serverSession.closedAt).getTime()), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]",
       style: {
         background: CD.flagSoft,
@@ -15075,7 +15116,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, sessionErr || serverBalanceError), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         setSessionErr('');
-        refreshTill().catch(error => setServerBalanceError(error.message || 'Server balances unavailable'));
+        refreshTill().catch(error => setServerBalanceError(error.message || 'Drawer figures unavailable'));
       },
       className: "flex-none text-[11px] font-semibold px-2.5 py-1",
       style: {
@@ -15127,21 +15168,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.operator : '—'), current && current.role ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
-      style: {
-        color: CD.faint
-      }
-    }, " \xB7 ", current.role) : null), /*#__PURE__*/React.createElement("div", {
+    }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.role ? `${current.operator}, ${current.role}` : current.operator : 'nobody')), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.faint
       }
-    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
+    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till. No open session.' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
-      title: serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session — close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
+      title: serverBacked ? 'Records a handover note and a count for this desk. Who the system holds responsible stays the person who opened this session. Close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
       className: "flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5",
       style: {
         border: `1px solid ${CD.line}`,
@@ -15269,7 +15305,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Skip the breakdown \u2014 just enter the total ", ccy, " you counted in the drawer."), /*#__PURE__*/React.createElement("div", {
+    }, "Skip the breakdown. Just enter the total ", ccy, " you counted in the drawer."), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center",
       style: {
         border: `1px solid ${CD.ink}`,
@@ -15410,7 +15446,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
+      title: revealExp[ccy] ? 'Hide expected. Keep the count blind' : 'Reveal and read out the expected float',
       className: "inline-flex items-center gap-1.5",
       style: {
         border: 0,
@@ -15528,12 +15564,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: '#1c5c3a'
       }
-    }, serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`, " closed \u2014 nicely done"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-0.5",
+    }, serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`, " closed. Nicely done"), /*#__PURE__*/React.createElement("div", {
+      className: "till-closedbanner text-[12px] mt-0.5",
       style: {
         color: '#3a7a56'
       }
-    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? deskStamp(serverSession.closedAt) : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
+    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? named(serverSession.closedBy) : day.closedBy || 'nobody', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? deskStamp(serverSession.closedAt) : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${deskDay(serverSession.businessDate)}` : '', ". ", serverBacked ? 'Your counts are now what the drawer holds. The system is locked until the next session is opened.' : 'The drawer is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -15569,7 +15605,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Transactions",
       value: closedTxns == null ? '—' : `${closedTxns}`,
-      sub: closedTxns == null ? dayBook.error || 'the ledger has no answer' : dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null
+      sub: closedTxns == null ? dayBook.error || 'the system has no answer' : dayBook.summary && dayBook.summary.reversed ? `${dayBook.summary.reversed} voided` : null
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Drawers off",
       value: day.summary && day.summary.offCount || 0,
@@ -15617,7 +15653,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: 'var(--cd-on-ink-soft)'
       }
-    }, "The signed close-out: drawer counts, day totals & compliance \u2014 ready to print, sign and file.")), /*#__PURE__*/React.createElement("span", {
+    }, "The signed close-out: drawer counts, day totals and compliance. Ready to print, sign and file.")), /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-1.5 flex-none px-3 py-2 text-[12.5px] font-semibold",
       style: {
         background: 'var(--cd-on-ink-faint)',
@@ -15644,7 +15680,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint,
         maxWidth: 360
       }
-    }, "Ready for a new session? Opening the next ", serverBacked ? 'session' : 'day', " unlocks the book and starts ", serverBacked ? `session #${(day.num || 1) + 1}` : `Day ${(day.num || 1) + 1}`, serverBacked ? ' with a fresh, uncounted drawer' : '', "."), canCloseDay ? /*#__PURE__*/React.createElement("button", {
+    }, "Ready for a new session? Opening the next ", serverBacked ? 'session' : 'day', " unlocks the drawer and starts ", serverBacked ? `session #${(day.num || 1) + 1}` : `Day ${(day.num || 1) + 1}`, serverBacked ? ' with a fresh, uncounted drawer' : '', "."), canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: startNextSession,
       disabled: opening,
       className: "till-save flex items-center gap-2 px-4 py-2.5 text-sm font-semibold flex-none",
@@ -15695,7 +15731,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Count the cash in the drawer. Expected is what the book says should be there \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("span", {
+    }, "Expected is what the system says should be in the drawer. Counted is what you count.")), /*#__PURE__*/React.createElement("span", {
       className: "text-[11px] px-2.5 py-1",
       style: {
         background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)',
@@ -15723,7 +15759,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Currency"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, /*#__PURE__*/React.createElement("span", {
-      title: serverBacked ? 'What the book says should be in the drawer' : 'Issued by the vault — not editable here',
+      title: serverBacked ? 'What the system says should be in the drawer' : 'Issued by the vault. Not editable here',
       className: "inline-flex items-center gap-1"
     }, serverBacked ? 'Source' : 'Opening · vault', " ", /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
@@ -15755,12 +15791,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, flagOf(r.c)), " ", r.c), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
-        title: serverBacked ? 'What the book says should be in the drawer' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing',
+        title: serverBacked ? 'What the system says should be in the drawer' : 'What the vault issued to this drawer. Change it with Issue float or Return at the vault, never by typing',
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: serverBacked ? CD.green : CD.mute
         }
-      }, serverBacked ? 'The book' : '—'), /*#__PURE__*/React.createElement("td", {
+      }, serverBacked ? 'The system' : '—'), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
@@ -15778,7 +15814,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           borderBottom: `1px dotted ${CD.line}`,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, sinceLabel(ls.ts)) : '— never'), /*#__PURE__*/React.createElement("td", {
+      }, sinceLabel(ls.ts)) : 'Never'), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
@@ -15839,7 +15875,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
       disabled: closing || closeBlocked,
-      title: closeBlocked ? !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer' : '',
+      title: closeBlocked ? !serverBalancesReady ? serverBalanceError || 'Waiting for the drawer figures' : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every currency before closing' : 'Count every drawer first. Required in Settings, Cash drawer' : '',
       className: "till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white",
       style: {
         background: closing ? CD.green : CD.ink,
@@ -15867,12 +15903,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "lock",
       s: 14,
       c: CD.faint
-    }), " Closing the day isn\u2019t in your role \u2014 the owner enables it in Settings \u203A Permissions."), canCloseDay && closeBlocked && /*#__PURE__*/React.createElement("span", {
+    }), " Closing the day isn\u2019t in your role. The owner enables it in Settings, Permissions."), canCloseDay && closeBlocked && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: serverBalanceError ? CD.flag : CD.mute
       }
-    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing — the close writes your count back as the balance`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
+    }, !serverBalancesReady ? serverBalanceError || 'Waiting for the drawer figures' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This drawer has no figures yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.flag
@@ -15889,16 +15925,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 8,
         color: CD.mute
       }
-    }, "Counted but not on the server ledger: ", /*#__PURE__*/React.createElement("b", {
+    }, "Counted, but not in the system: ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, offLedgerCcys.join(', ')), ". These are recorded in your local history only and are left out of the close, so they can\u2019t disturb a real balance."), /*#__PURE__*/React.createElement("p", {
+    }, offLedgerCcys.join(', ')), ". These stay in your own history and are left out of the close, so they cannot change a real balance."), /*#__PURE__*/React.createElement("p", {
       className: "mt-2 text-[11px]",
       style: {
         color: CD.faint
       }
-    }, serverBacked ? /*#__PURE__*/React.createElement(React.Fragment, null, "The server ledger is the source of ", /*#__PURE__*/React.createElement("b", null, "expected"), " cash, including posted exchanges, reversals and vault movements. Closing writes each ", /*#__PURE__*/React.createElement("b", null, "counted"), " figure back as the till\u2019s balance.") : /*#__PURE__*/React.createElement(React.Fragment, null, "The vault issues your ", /*#__PURE__*/React.createElement("b", null, "opening"), " and the day's deals produce ", /*#__PURE__*/React.createElement("b", null, "expected"), "."), " Your physical count is ", /*#__PURE__*/React.createElement("b", null, "counted"), ", and ", /*#__PURE__*/React.createElement("b", null, "variance"), " = counted \u2212 expected \u2014 it lands on the operator. Closing locks the ledger until the next day is opened."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
+    }, serverBacked ? /*#__PURE__*/React.createElement(React.Fragment, null, "The system is the source of ", /*#__PURE__*/React.createElement("b", null, "expected"), " cash, including posted exchanges, reversals and vault movements. Closing writes each ", /*#__PURE__*/React.createElement("b", null, "counted"), " figure back as the drawer balance.") : /*#__PURE__*/React.createElement(React.Fragment, null, "The vault issues your ", /*#__PURE__*/React.createElement("b", null, "opening"), " and the day's deals produce ", /*#__PURE__*/React.createElement("b", null, "expected"), "."), " Your physical count is ", /*#__PURE__*/React.createElement("b", null, "counted"), ", and ", /*#__PURE__*/React.createElement("b", null, "variance"), " = counted \u2212 expected. It lands on the operator. Closing locks the drawer until the next day is opened."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, (() => {
       const _tRec = (_ab && _ab.tills || []).find(t => t.id === (station && station.tillId));
@@ -15931,7 +15967,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           border: `1px solid ${CD.line}`,
           borderRadius: 10
         }
-      }, "No floats yet \u2014 cash issued to or returned from this drawer is recorded here.") : /*#__PURE__*/React.createElement("div", {
+      }, "No floats yet. Cash issued to or returned from this drawer is recorded here.") : /*#__PURE__*/React.createElement("div", {
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 11,
@@ -16011,7 +16047,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         border: `1px solid ${CD.line}`,
         borderRadius: 10
       }
-    }, "No handoffs yet \u2014 the drawer has stayed with ", current ? current.operator : 'one operator', ".") : /*#__PURE__*/React.createElement("div", {
+    }, "No handoffs yet. The drawer has stayed with ", current ? current.operator : 'one operator', ".") : /*#__PURE__*/React.createElement("div", {
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 11,
@@ -16077,7 +16113,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, viewDay, history[viewDay].grand == null ? '' : ' · ' + fmt(history[viewDay].grand, history[viewDay].currency || homeCcy)), /*#__PURE__*/React.createElement("div", {
+    }, deskDay(viewDay) || viewDay, history[viewDay].grand == null ? '' : ' · ' + fmt(history[viewDay].grand, history[viewDay].currency || homeCcy)), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] mb-3",
       style: {
         color: CD.faint
@@ -16179,7 +16215,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, k, k === (serverSession && serverSession.businessDate || window.CDOS.businessDate()) && /*#__PURE__*/React.createElement("span", {
+      }, deskDay(k) || k, k === (serverSession && serverSession.businessDate || window.CDOS.businessDate()) && /*#__PURE__*/React.createElement("span", {
         className: "ml-2 text-[9px] px-1.5 py-0.5",
         style: {
           background: CD.greenSoft,
@@ -16256,12 +16292,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Close out the day \u2014 Day ", day && day.num || 1), /*#__PURE__*/React.createElement("div", {
+    }, closeDayLabel(serverSession && serverSession.businessDate || window.CDOS.businessDate())), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-0.5",
       style: {
         color: CD.mute
       }
-    }, "Review each drawer against expected, then lock the book. You won't be able to post again until you open the next day."))), /*#__PURE__*/React.createElement("div", {
+    }, "Review each drawer against expected, then lock the system. You won't be able to post again until you open the next day."))), /*#__PURE__*/React.createElement("div", {
       className: "overflow-auto px-5 py-3",
       style: {
         flex: 1
@@ -16314,7 +16350,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: r.counted == null ? CD.faint : CD.ink,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.counted == null ? '— not counted' : num(r.counted)), /*#__PURE__*/React.createElement("td", {
+      }, r.counted == null ? 'Not counted' : num(r.counted)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right text-[11px]",
         style: {
           color: ts ? CD.mute : CD.faint
@@ -16364,7 +16400,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 8,
         color: CD.mute
       }
-    }, recon.length - countedN, " drawer(s) not counted yet \u2014 they'll lock at expected with no variance. Go back and count them first if you want a true close.")), /*#__PURE__*/React.createElement("div", {
+    }, recon.length - countedN, " drawer(s) not counted yet. They will lock at expected with no variance. Go back and count them first if you want a true close.")), /*#__PURE__*/React.createElement("div", {
       className: "px-5 py-3 flex items-center justify-between gap-3 flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`
