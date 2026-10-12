@@ -133,8 +133,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   search, the person’s own row, PIN and sign-in, notifications,
   and sign out. An owner also sees the shop and the other apps,
   and the section caption says to change them on a computer. Shop
-  details shows the name, address, and hours already on the desk,
-  then says to change them on a computer. The desktop form is not
+  details shows the name, address, and hours already on the desk.
+  Those clocks go through `formatPhoneTime` (`3:02 PM`). Then it
+  says to change them on a computer. The desktop form is not
   opened. PIN
   before a void is a sentence, not a switch: the void gate reads
   the shop flag and that person's require PIN, and this screen
@@ -675,7 +676,8 @@ button. It leaves after 4 seconds. `role="status"`.
 person’s row, PIN and sign-in, notifications, and sign out are on
 it. An owner also sees the shop and the other apps. The section
 caption says to change them on a computer. Shop details shows the
-name, address, and hours already on the desk, read-only, then an
+name, address, and hours already on the desk, read-only. Those
+clocks go through `formatPhoneTime` (`3:02 PM`). Then an
 empty state with a monitor icon. The desktop form fails a phone
 sweep (targets under 44px, type under 12px, contrast under 4.5:1),
 so it is not opened.

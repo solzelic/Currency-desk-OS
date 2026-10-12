@@ -219,12 +219,19 @@
     );
   }
 
+  function phoneClocks(text, timeZone) {
+    const fmt = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof fmt !== 'function') return String(text);
+    return String(text).replace(/\d{1,2}:\d{2}\s*(?:am|pm)?/gi, (bit) => fmt(bit, timeZone) || bit);
+  }
+
   function shopFacts(settings, hours) {
+    const zone = settings.timezone;
     const name = settings.operatingName || settings.bizName || '';
     const address = [settings.bizAddress, [settings.bizCity, settings.bizRegion, settings.bizPostal].filter(Boolean).join(' '), settings.bizCountry].filter(Boolean).join(', ');
     const hourText = (Array.isArray(hours) ? hours : [])
       .filter((row) => row && String(row.days || '').trim() && String(row.hours || '').trim())
-      .map((row) => String(row.days).trim() + ' ' + String(row.hours).trim())
+      .map((row) => String(row.days).trim() + ' ' + phoneClocks(String(row.hours).trim(), zone))
       .join(', ');
     const rows = [];
     if (name) rows.push({ label: 'Name', value: name });
