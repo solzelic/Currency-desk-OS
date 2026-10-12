@@ -133,6 +133,10 @@ committed `web/app/os.js` cannot name a sanctions list.
 `tests/e2e/a-day-at-the-desk.spec.ts` is the deployment gate. It trades on
 its own till (opened through the product's add-till route) so file order
 is not load-bearing.
+`.github/workflows/civil-dates.yml` runs the sign-off day, the ID expiry,
+the cheque dates, and the client record dates under `Asia/Jerusalem` and
+`America/Toronto`. Formatting those days with `toISOString()` fails the
+Jerusalem run. The desktop clock spec pins its browser zone itself.
 
 ## Where new work normally lives
 

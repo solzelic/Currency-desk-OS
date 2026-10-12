@@ -49,6 +49,7 @@
    see `CHEQUE_CURRENCY_NOT_HOME` below — rather than mis-posted quietly.
    ============================================================ */
 import { randomUUID } from "node:crypto";
+import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
@@ -157,10 +158,11 @@ const money = (value: string, minimum: Decimal.Value) => {
 const fixed = (value: Decimal.Value, places = 2) =>
   new Decimal(value).toDecimalPlaces(places).toFixed(places);
 
-const dateOnly = (value: unknown) =>
-  value instanceof Date
-    ? value.toISOString().slice(0, 10)
-    : String(value).slice(0, 10);
+const dateOnly = (value: unknown) => {
+  const day = civilDate(value);
+  if (!day) throw new Error("A cheque date is missing");
+  return day;
+};
 
 /** One cheque, in the shape the desk's screens already speak. */
 const chequeJson = (row: Record<string, any>) => ({
