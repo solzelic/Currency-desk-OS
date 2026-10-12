@@ -512,10 +512,9 @@ of this same component. Do not build a second template.
 A primary button on these screens is `.phone-sticky-btn`. Its fill is
 `var(--brand-primary)`, which `data-app` on the phone shell sets from
 `tokens.css`. Vault, Audit trail, and Calculator's locked accent is
-ink (`#17140F`). The body text uses the `tokens.css` `--font-ui` stack
-(`Inter`, then the system list). The shell's 430px rule sets
-`--font-ui` to Archivo on `:root`; these screens set it back. Inter
-loads only at 430px, so a wide window keeps the font it already had.
+ink (`#17140F`). Body text uses `--font-ui` from `tokens.css`. At
+430px that token is Inter. Wider than that it is Archivo. The
+foundation loads the Inter file only at 430px.
 
 The float sheet's cashier, till, and "Add a currency" controls are
 native selects. The shared full-screen picker is a separate change

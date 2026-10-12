@@ -211,7 +211,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   "Example data" tag. A
   primary button uses `var(--brand-primary)` from `data-app`. Vault,
   Audit trail, and Calculator's locked accent is ink. Body text uses
-  the `tokens.css` font stack. Inter loads only at 430px. Vault's
+  the `tokens.css` font stack. The foundation loads Inter only at
+  430px. Vault's
   "Give out a float" posts through the existing till-movement
   endpoint, with one key per currency, and only after the vault has
   a starting count. The opening count is the existing
