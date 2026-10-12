@@ -60,7 +60,9 @@ async function openNewTransaction(page: Page): Promise<void> {
   await dismissTour(page);
 }
 
-async function expectPhoneDate(page: Page): Promise<void> {
+/* The sheet header date is spoken on the desk and on the phone:
+   Oct 12, 2026, never the ISO day. */
+async function expectSheetDate(page: Page): Promise<void> {
   const head = page.locator(".cd-tx-head");
   await expect(head).not.toContainText(/\d{4}-\d{2}-\d{2}/);
   await expect(head).toContainText(/[A-Z][a-z]{2} \d{1,2}, \d{4}/);
@@ -162,7 +164,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await signInAtDesk(page, "m.costa");
     await dismissTour(page);
     await openNewTransaction(page);
-    await expectPhoneDate(page);
+    await expectSheetDate(page);
 
     const typeButtons = page.locator(".cd-tx-types button");
     expect(await typeButtons.count()).toBe(6);
@@ -534,7 +536,7 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   expect(rail.width).toBeLessThan(340);
   expect(rail.x).toBeGreaterThanOrEqual(form.x + form.width - 2);
   expect(form.y).toBeLessThanOrEqual(rail.y + 2);
-  await expect(page.locator(".cd-tx-head")).toContainText(/\d{4}-\d{2}-\d{2}/);
+  await expectSheetDate(page);
   await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Anything worth keeping on the record…");
   await expect(page.locator(".cd-tx-cancel")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Text quote$/ })).toBeVisible();
