@@ -639,11 +639,23 @@ async function emptyMoney(page: Page) {
 
 test("an empty ledger shows 0.00 for pay in and fees", async ({ page }) => {
   const dash = /[\u2012\u2013\u2014\u2015\u2212]/;
+  await page.route("**/api/ledger/transactions**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ transactions: [] }),
+    });
+  });
   for (const size of [{ width: 360, height: 780 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(size);
     await atDesk(page, "a.singh");
     await page.locator('#phonebar [data-phone-app="ledger"]').click();
     await expect(page.locator('.win.show.active[data-app="ledger"]')).toBeVisible();
+    await expect.poll(async () => (await emptyMoney(page)).volume?.value || "").toMatch(/^0\.00 [A-Z]{3}$/);
     const cards = await emptyMoney(page);
     expect(cards.volume, `${size.width} pay in`).not.toBeNull();
     expect(cards.fees, `${size.width} fees`).not.toBeNull();
