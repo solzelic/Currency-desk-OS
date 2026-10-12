@@ -2,7 +2,7 @@
    rail, and the phone list must not paint there. */
 import type { Locator, Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const SHOTS = "/opt/cursor/artifacts/screenshots";
@@ -225,7 +225,7 @@ async function routePinSave(page: Page, status: number, body: object): Promise<v
   });
 }
 
-test("a dead session and a PIN lockout are named on the keypad", async ({ page }) => {
+test("a dead session and a PIN lockout are named on the keypad", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   for (const width of [360, 390]) {
     await page.unroute("**/api/staff/pin").catch(() => undefined);
@@ -261,12 +261,7 @@ test("a dead session and a PIN lockout are named on the keypad", async ({ page }
     await expect(page.getByText(/Try again in \d+:\d{2}/)).toHaveCount(0);
     const close = page.getByRole("button", { name: "Close", exact: true });
     await expect(close).toBeVisible();
-    const lockDir = "/cursor/stores/self/pr110";
-    mkdirSync(lockDir, { recursive: true });
-    const lockName = `settings_pin-lockout_${width}.png`;
-    await page.screenshot({ path: `${lockDir}/${lockName}` });
-    mkdirSync("/opt/cursor/artifacts/pr110", { recursive: true });
-    copyFileSync(`${lockDir}/${lockName}`, `/opt/cursor/artifacts/pr110/${lockName}`);
+    await page.screenshot({ path: testInfo.outputPath(`settings_pin-lockout_${width}.png`) });
     await page.unroute("**/api/staff/pin");
     await close.click();
     await expect(page.locator(".sheet")).toHaveCount(0);
