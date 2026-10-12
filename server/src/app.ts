@@ -106,6 +106,7 @@ const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean
     file === "/yorkfx-converter.js" ||
     file.startsWith("/assets/") ||
     file.startsWith("/os-src/") ||
+    file === "/shared/health-card-names.js" ||
     /* The Rate Board, which the OS embeds in an iframe, and the storefront
        pages beside it. Public design content — no server source, no config.
        Without this the iframe asks for a file the static handler refuses and

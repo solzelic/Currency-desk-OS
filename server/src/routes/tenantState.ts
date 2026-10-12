@@ -16,6 +16,7 @@ import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
+import { scrubHealthNumbers } from "../clients/health-card.js";
 
 /* What we last said about each desk's document, so a save every four
    seconds does not become a log line every four seconds. Only a CHANGE in
@@ -89,7 +90,10 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     const rows = await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1);
     const row = rows[0];
     if (!row) return { state: null, updatedAt: null, version: 0 };
-    return { state: row.state, updatedAt: row.updatedAt, version: row.version };
+    /* An old snapshot can still hold a health number. The teller who
+       opens the desk gets the scrubbed copy, so the next save does
+       not write it back. */
+    return { state: scrubHealthNumbers(row.state), updatedAt: row.updatedAt, version: row.version };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
@@ -101,7 +105,9 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    const state = parsed.data.state;
+    /* Scrub before the byte check and before the save. An old tab
+       that still has the number must not be able to put it back. */
+    const state = scrubHealthNumbers(parsed.data.state);
 
     const bytes = Buffer.byteLength(JSON.stringify(state));
     if (bytes > MAX_STATE_BYTES) {
@@ -136,7 +142,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       return reply.code(409).send({
         error: "state_conflict",
         detail: "Somebody else saved this desk while you were working. Merging.",
-        state: current.state,
+        state: scrubHealthNumbers(current.state),
         version: current.version,
       });
     }

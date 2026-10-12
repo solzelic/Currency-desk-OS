@@ -67,6 +67,7 @@ window.CDOS_PERSIST = (function () {
     return out;
   }
   function snapshot() {
+    if (window.CDOS && window.CDOS.scrubLocalHealthNumbers) window.CDOS.scrubLocalHealthNumbers();
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
@@ -77,6 +78,7 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+    if (window.CDOS && window.CDOS.scrubLocalHealthNumbers) window.CDOS.scrubLocalHealthNumbers();
   }
 
   /* ---- telling somebody ------------------------------------------------

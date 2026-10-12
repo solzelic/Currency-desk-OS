@@ -379,7 +379,8 @@
       if (!canSave) return;
       // create client inline if needed
       if (newClient && customer) {
-        setClients(c => ({ ...c, [customer]: { idType: nc.idType, idNum: nc.idNum, idExpiry: nc.idExpiry, photo: null } }));
+        const healthCard = window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(nc.idType);
+        setClients(c => ({ ...c, [customer]: { idType: nc.idType, idNum: healthCard ? '' : nc.idNum, idExpiry: nc.idExpiry, photo: null } }));
         log('Client created', `${customer} · ${nc.idType || 'no ID'}`);
       }
       const seq = live.filter(r => r.date === businessDate()).length + 1;

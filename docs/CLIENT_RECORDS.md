@@ -192,14 +192,75 @@ one that drives the desk's KYC standing.
 
 `verification_status` is derived from the documents, not typed:
 
-- no document with a number → `unverified`
-- the primary document is past its expiry → `expired`
+- no non-health document with a number → `unverified`
+- the primary document, when it is not a health card, is past its expiry → `expired`
 - otherwise → `identified`
+
+A health card does not count as that number. A file whose only numbered
+document is a health card stays `unverified`. `verified` is still never
+set by this derivation.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of
 adding or removing rows in this table can grant that, and nothing here
 may quietly take it away.
+
+## Health card numbers
+
+A health card is not valid ID. Ontario's Health Cards and Numbers
+Control Act, 1991 bars a business outside health care from collecting
+or using a health number, and FINTRAC says not to use a health card
+where provincial law prohibits it.
+
+The row can still be in `desk_client_identity_documents` — type,
+issuing province, expiry, who recorded it, and when. **No read returns
+the number.** `clientJson` omits `docNumber` (the key is absent, not
+null) for a health card. The names are one list,
+`shared/health-card-names.js`, loaded by the server and by the
+browser. A name matches the whole type after case, spacing, and
+apostrophes fold away. The list includes the provincial names, OHIP,
+RAMQ, MSP, Care Card, Carte d'assurance maladie, BC Services Card,
+Ontario Health Insurance Plan, and Medicare card. PR #108's catalogue
+(`server/src/ledger/id-document-types.mjs`) is not on this branch.
+When it merges, its health-card row should import this list.
+
+A new health-card document is refused. `addDocument` and
+`updateDocument` throw `HEALTH_CARD_NOT_ID` (HTTP 422), the same code
+and sentence PR #108 uses on its catalogue path. The picker, the
+Record-ID sheet, and the edit field do not offer Health Card.
+
+`/api/tenant/state` scrubs a health number on the way in and on the
+way out, including the conflict body, so an old tab cannot write one
+back. A localStorage write that fails is logged and the rest of the
+desk is left in place. An IndexedDB clear that does not finish is
+logged and given up after a few seconds.
+
+Sealed LCTR filings, and the teller scan reveal, are unchanged.
+Compliance is ruling on those.
+
+The same rule is applied in the browser. The client file shows the
+type, and the province, expiry, and recorded date when they are
+stored. It does not show a number. Search, the printable client
+report, and the KYC CSV do not include one. On load, and again when
+the tenant snapshot is saved or restored, any cached copy in
+`localStorage` or IndexedDB is removed. LCTR and STR prefill
+(`os-src/cdos-lctr.jsx`) takes the document the deal recorded, when
+the row carries one and that document is a current accepted photo ID.
+A Canadian deal does not snapshot that document today, so the field
+is empty on a live row and the prefill uses the client's current
+accepted photo ID instead: passport, driver's licence, provincial
+ID, permanent resident card, pre-2012 citizenship card, or Secure
+Certificate of Indian Status. The list is the photo rows of the
+catalogue on PR #108. A health card, an expired document, a document
+with no expiry except the pre-2012 citizenship card, and a type that
+catalogue does not accept as photo ID are not used. With no accepted
+ID, the identifier type, number, and jurisdiction stay blank and the
+worksheet shows: "No accepted ID on file. Record a valid ID before
+filing if you can, otherwise file with what you have and note why."
+That blank does not block the filing.
+
+This does not delete or rewrite the stored number. Redaction is a
+separate, owner-run command and does not run on deploy.
 
 ## Scans, and the photograph
 
@@ -404,6 +465,20 @@ every time.
   second till and a second branch and *not* from another tenant,
   documents as separate rows, the audit row a reveal writes, the
   identifying/signal boundary, and migration 019 run over a real blob.
+- `server/tests/health-number-read.postgres.test.ts` — a client whose
+  stored ID is a health card (OHIP, and "Health Card" with irregular
+  spacing). The API body for that client, the list entry, and the
+  lookup entry are deep-scanned: the number is neither a field nor a
+  value. The database column still holds it.
+- `server/tests/health-card.test.ts` — the alias detector, including
+  the names that must not match.
+- `tests/e2e/health-number-read.spec.ts` — after load, the number is
+  not in localStorage, IndexedDB, or on the client file; LCTR and STR
+  prefill uses a document the deal recorded when it is a current
+  accepted photo ID, falls back to a current accepted photo ID on
+  the file, and leaves the identifier blank — with the notice, and
+  without blocking the filing — when the file has only a health card
+  or only an expired document.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted
   deal, with the deal still resolving and the old name still finding
