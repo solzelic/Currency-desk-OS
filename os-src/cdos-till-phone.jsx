@@ -123,9 +123,9 @@
 
   function QtyRow({ d, ccy, counts, setCount }) {
     const raw = (counts[ccy] || {})[d.i];
-    const shown = raw == null || raw === '' ? '' : String(raw);
-    const n = parseInt(shown, 10);
-    const have = Number.isFinite(n) ? n : 0;
+    const digits = raw == null || raw === '' ? '' : String(raw).replace(/\D/g, '');
+    const have = digits === '' ? 0 : (parseInt(digits, 10) || 0);
+    const shown = String(have);
     const sub = d.v * have;
     const face = faceOf(d.v, ccy);
     /* An empty row is a count of zero, which the book can answer.
@@ -134,11 +134,9 @@
     return (
       <div className="till-den-row" data-till-coin={d.t === 'coin' ? '' : undefined}>
         <span className="till-den-face">{face}</span>
-        <div className="till-stepper">
-          <button type="button" className="till-step" aria-label={'Remove one ' + face} onClick={() => { if (shown === '') return; setCount(ccy, d.i, String(Math.max(0, have - 1))); }}>−</button>
-          <input className="till-den-qty" type="text" inputMode="decimal" autoComplete="off" enterKeyHint="done" aria-label={face + ' count'} value={shown} onChange={e => setCount(ccy, d.i, e.target.value.replace(/[^0-9]/g, ''))} />
-          <button type="button" className="till-step" aria-label={'Add one ' + face} onClick={() => setCount(ccy, d.i, String(have + 1))}>+</button>
-        </div>
+        <button type="button" className="till-step" aria-label={'Remove one ' + face} onClick={() => { if (have <= 0) return; setCount(ccy, d.i, String(have - 1)); }}>−</button>
+        <input className="till-den-qty" type="text" inputMode="numeric" autoComplete="off" enterKeyHint="done" aria-label={face + ' count'} value={shown} onChange={e => setCount(ccy, d.i, e.target.value.replace(/\D/g, ''))} />
+        <button type="button" className="till-step" aria-label={'Add one ' + face} onClick={() => setCount(ccy, d.i, String(have + 1))}>+</button>
         <span className="till-den-sub">{line}</span>
       </div>
     );
@@ -147,23 +145,30 @@
   function PhoneTill(p) {
     const [sheet, setSheet] = useState(false);
     const [aside, setAside] = useState(null);
-    /* Notes first, even when the book stored a total. The total stays
-       in the footer. The big field replaces the notes only when the
-       cashier asks for it, so the first screen keeps the rows. */
-    const [notes, setNotes] = useState(true);
     const loading = !!(p.serverBacked && p.balances == null && !p.error);
     const failed = !!(p.error && p.balances == null);
     const wait = useWait(loading);
     const who = operatorOf(p.current, p.roster);
+    const denoms = p.denoms || [];
+    /* The notes grid and the entered total are the same mode the book
+       saves. A stored total opens the total field, labelled, so the
+       footer never shows that figure beside rows of zero. While the
+       rows are on screen the footer is their sum, including 0.00. */
+    const enteringTotal = p.ccyMode(p.ccy) === 'total';
+    const rowSum = denoms.reduce((sum, d) => {
+      const n = parseInt((p.counts[p.ccy] || {})[d.i], 10);
+      return sum + d.v * (Number.isFinite(n) ? n : 0);
+    }, 0);
+    const enteredRaw = parseFloat(p.quick[p.ccy]);
+    const entered = Number.isFinite(enteredRaw) ? enteredRaw : null;
     const counted = p.isCounted(p.ccy);
-    const total = counted ? p.ccyTotal(p.ccy) : null;
+    const total = enteringTotal ? (counted ? entered : null) : rowSum;
     const expected = p.expectedOf(p.ccy);
     const showExpected = !p.blind || !!p.revealExp[p.ccy];
     const words = showExpected && counted ? diffWords(p.ccy, total, expected) : '';
     const open = !!p.sessionOpen;
     const noSession = !!(p.serverBacked && p.balances != null && !p.error && !p.serverSession);
     const closed = !!(p.sessionClosed);
-    const denoms = p.denoms || [];
     const firstCoin = denoms.findIndex(d => d.t === 'coin');
     const amount = (n, ccy) => (n == null || !ccy) ? null : money(n, ccy);
     const Phone = window.CDOS.Phone;
@@ -226,7 +231,10 @@
         <div className="till-count-foot">
           <div className="till-foot-sum">
             <div className="till-phone-top">
-              <div className="till-phone-counted">{total == null ? (p.ccy + ' not counted yet') : money(total, p.ccy)}</div>
+              <div className="till-phone-drawer">
+                {enteringTotal ? <div className="till-phone-k">Entered total</div> : null}
+                <div className="till-phone-counted">{total == null ? (p.ccy + ' not counted yet') : money(total, p.ccy)}</div>
+              </div>
               {p.blind && (
                 <button type="button" className="till-phone-link" aria-label={showExpected ? 'Hide expected amount' : 'Show expected amount'} onClick={() => p.toggleReveal(p.ccy)}>{showExpected ? 'Hide' : 'Show'}</button>
               )}
@@ -316,9 +324,23 @@
               />
               <div className="till-phone-sec" data-tour="till-count">
                 <h2>Count {p.ccy}</h2>
-                <button type="button" className="till-phone-link" onClick={() => setNotes(v => !v)}>{notes ? 'Enter total instead' : 'Count notes'}</button>
+                <button type="button" className="till-phone-link" onClick={() => {
+                  if (enteringTotal) {
+                    p.setMode(m => ({ ...m, [p.ccy]: 'denom' }));
+                    return;
+                  }
+                  const any = denoms.some(d => parseInt((p.counts[p.ccy] || {})[d.i], 10) > 0);
+                  if (any) p.setQuick(o => ({ ...o, [p.ccy]: rowSum.toFixed(2) }));
+                  p.setMode(m => ({ ...m, [p.ccy]: 'total' }));
+                  p.stamp(p.ccy);
+                }}>{enteringTotal ? 'Count notes' : 'Enter total instead'}</button>
               </div>
-              {notes ? (
+              {enteringTotal ? (
+                <label className="till-phone-total">
+                  <span>{p.ccy}</span>
+                  <input type="text" inputMode="decimal" autoComplete="off" placeholder="0.00" aria-label={p.ccy + ' total'} value={p.quick[p.ccy] ?? ''} onChange={e => { p.setMode(m => ({ ...m, [p.ccy]: 'total' })); p.setQuick(o => ({ ...o, [p.ccy]: e.target.value.replace(/[^0-9.]/g, '') })); p.stamp(p.ccy); }} />
+                </label>
+              ) : (
                 <div className="till-phone-list">
                   {denoms.map((d, i) => (
                     <React.Fragment key={d.i}>
@@ -327,11 +349,6 @@
                     </React.Fragment>
                   ))}
                 </div>
-              ) : (
-                <label className="till-phone-total">
-                  <span>{p.ccy}</span>
-                  <input type="text" inputMode="decimal" autoComplete="off" placeholder="0.00" aria-label={p.ccy + ' total'} value={p.quick[p.ccy] ?? ''} onChange={e => { p.setMode(m => ({ ...m, [p.ccy]: 'total' })); p.setQuick(o => ({ ...o, [p.ccy]: e.target.value.replace(/[^0-9.]/g, '') })); p.stamp(p.ccy); }} />
-                </label>
               )}
             </>
           )}

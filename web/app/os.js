@@ -63317,9 +63317,9 @@ window.CDOS_PERSIST = (function () {
     setCount
   }) {
     const raw = (counts[ccy] || {})[d.i];
-    const shown = raw == null || raw === '' ? '' : String(raw);
-    const n = parseInt(shown, 10);
-    const have = Number.isFinite(n) ? n : 0;
+    const digits = raw == null || raw === '' ? '' : String(raw).replace(/\D/g, '');
+    const have = digits === '' ? 0 : parseInt(digits, 10) || 0;
+    const shown = String(have);
     const sub = d.v * have;
     const face = faceOf(d.v, ccy);
     /* An empty row is a count of zero, which the book can answer.
@@ -63330,54 +63330,59 @@ window.CDOS_PERSIST = (function () {
       "data-till-coin": d.t === 'coin' ? '' : undefined
     }, /*#__PURE__*/React.createElement("span", {
       className: "till-den-face"
-    }, face), /*#__PURE__*/React.createElement("div", {
-      className: "till-stepper"
-    }, /*#__PURE__*/React.createElement("button", {
+    }, face), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-step",
       "aria-label": 'Remove one ' + face,
       onClick: () => {
-        if (shown === '') return;
-        setCount(ccy, d.i, String(Math.max(0, have - 1)));
+        if (have <= 0) return;
+        setCount(ccy, d.i, String(have - 1));
       }
     }, "\u2212"), /*#__PURE__*/React.createElement("input", {
       className: "till-den-qty",
       type: "text",
-      inputMode: "decimal",
+      inputMode: "numeric",
       autoComplete: "off",
       enterKeyHint: "done",
       "aria-label": face + ' count',
       value: shown,
-      onChange: e => setCount(ccy, d.i, e.target.value.replace(/[^0-9]/g, ''))
+      onChange: e => setCount(ccy, d.i, e.target.value.replace(/\D/g, ''))
     }), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-step",
       "aria-label": 'Add one ' + face,
       onClick: () => setCount(ccy, d.i, String(have + 1))
-    }, "+")), /*#__PURE__*/React.createElement("span", {
+    }, "+"), /*#__PURE__*/React.createElement("span", {
       className: "till-den-sub"
     }, line));
   }
   function PhoneTill(p) {
     const [sheet, setSheet] = useState(false);
     const [aside, setAside] = useState(null);
-    /* Notes first, even when the book stored a total. The total stays
-       in the footer. The big field replaces the notes only when the
-       cashier asks for it, so the first screen keeps the rows. */
-    const [notes, setNotes] = useState(true);
     const loading = !!(p.serverBacked && p.balances == null && !p.error);
     const failed = !!(p.error && p.balances == null);
     const wait = useWait(loading);
     const who = operatorOf(p.current, p.roster);
+    const denoms = p.denoms || [];
+    /* The notes grid and the entered total are the same mode the book
+       saves. A stored total opens the total field, labelled, so the
+       footer never shows that figure beside rows of zero. While the
+       rows are on screen the footer is their sum, including 0.00. */
+    const enteringTotal = p.ccyMode(p.ccy) === 'total';
+    const rowSum = denoms.reduce((sum, d) => {
+      const n = parseInt((p.counts[p.ccy] || {})[d.i], 10);
+      return sum + d.v * (Number.isFinite(n) ? n : 0);
+    }, 0);
+    const enteredRaw = parseFloat(p.quick[p.ccy]);
+    const entered = Number.isFinite(enteredRaw) ? enteredRaw : null;
     const counted = p.isCounted(p.ccy);
-    const total = counted ? p.ccyTotal(p.ccy) : null;
+    const total = enteringTotal ? counted ? entered : null : rowSum;
     const expected = p.expectedOf(p.ccy);
     const showExpected = !p.blind || !!p.revealExp[p.ccy];
     const words = showExpected && counted ? diffWords(p.ccy, total, expected) : '';
     const open = !!p.sessionOpen;
     const noSession = !!(p.serverBacked && p.balances != null && !p.error && !p.serverSession);
     const closed = !!p.sessionClosed;
-    const denoms = p.denoms || [];
     const firstCoin = denoms.findIndex(d => d.t === 'coin');
     const amount = (n, ccy) => n == null || !ccy ? null : money(n, ccy);
     const Phone = window.CDOS.Phone;
@@ -63437,8 +63442,12 @@ window.CDOS_PERSIST = (function () {
       }, /*#__PURE__*/React.createElement("div", {
         className: "till-phone-top"
       }, /*#__PURE__*/React.createElement("div", {
+        className: "till-phone-drawer"
+      }, enteringTotal ? /*#__PURE__*/React.createElement("div", {
+        className: "till-phone-k"
+      }, "Entered total") : null, /*#__PURE__*/React.createElement("div", {
         className: "till-phone-counted"
-      }, total == null ? p.ccy + ' not counted yet' : money(total, p.ccy)), p.blind && /*#__PURE__*/React.createElement("button", {
+      }, total == null ? p.ccy + ' not counted yet' : money(total, p.ccy))), p.blind && /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "till-phone-link",
         "aria-label": showExpected ? 'Hide expected amount' : 'Show expected amount',
@@ -63556,25 +63565,26 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement("h2", null, "Count ", p.ccy), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-phone-link",
-      onClick: () => setNotes(v => !v)
-    }, notes ? 'Enter total instead' : 'Count notes')), notes ? /*#__PURE__*/React.createElement("div", {
-      className: "till-phone-list"
-    }, denoms.map((d, i) => /*#__PURE__*/React.createElement(React.Fragment, {
-      key: d.i
-    }, i === firstCoin ? /*#__PURE__*/React.createElement("h3", {
-      className: "till-phone-group"
-    }, "Coins") : null, /*#__PURE__*/React.createElement(QtyRow, {
-      d: d,
-      ccy: p.ccy,
-      counts: p.counts,
-      setCount: (ccy, i, value) => {
+      onClick: () => {
+        if (enteringTotal) {
+          p.setMode(m => ({
+            ...m,
+            [p.ccy]: 'denom'
+          }));
+          return;
+        }
+        const any = denoms.some(d => parseInt((p.counts[p.ccy] || {})[d.i], 10) > 0);
+        if (any) p.setQuick(o => ({
+          ...o,
+          [p.ccy]: rowSum.toFixed(2)
+        }));
         p.setMode(m => ({
           ...m,
-          [ccy]: 'denom'
+          [p.ccy]: 'total'
         }));
-        p.setCount(ccy, i, value);
+        p.stamp(p.ccy);
       }
-    })))) : /*#__PURE__*/React.createElement("label", {
+    }, enteringTotal ? 'Count notes' : 'Enter total instead')), enteringTotal ? /*#__PURE__*/React.createElement("label", {
       className: "till-phone-total"
     }, /*#__PURE__*/React.createElement("span", null, p.ccy), /*#__PURE__*/React.createElement("input", {
       type: "text",
@@ -63594,7 +63604,24 @@ window.CDOS_PERSIST = (function () {
         }));
         p.stamp(p.ccy);
       }
-    }))), showWork && p.tab === 'reconcile' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.ListSection, {
+    })) : /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-list"
+    }, denoms.map((d, i) => /*#__PURE__*/React.createElement(React.Fragment, {
+      key: d.i
+    }, i === firstCoin ? /*#__PURE__*/React.createElement("h3", {
+      className: "till-phone-group"
+    }, "Coins") : null, /*#__PURE__*/React.createElement(QtyRow, {
+      d: d,
+      ccy: p.ccy,
+      counts: p.counts,
+      setCount: (ccy, i, value) => {
+        p.setMode(m => ({
+          ...m,
+          [ccy]: 'denom'
+        }));
+        p.setCount(ccy, i, value);
+      }
+    }))))), showWork && p.tab === 'reconcile' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.ListSection, {
       title: "Currencies"
     }, p.recon.map(r => {
       const copy = reconCopy(r);

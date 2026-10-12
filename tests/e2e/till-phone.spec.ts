@@ -89,6 +89,8 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
     await openPhoneTill(page);
     await expect(page.locator("#phone-fab")).toHaveCount(0);
     await expect(page.locator(".till-phone")).not.toContainText("New transaction");
+    const countNotes = page.getByRole("button", { name: "Count notes" });
+    if (await countNotes.isVisible()) await countNotes.click();
     await expect(page.locator(".till-den-qty").first()).toBeVisible();
     /* A row in the DOM above the window, or clipped by the scrollport,
        is not on screen. Measure the scroll viewport and the footer. */
@@ -111,18 +113,25 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
     expect(rows, size.width + " rows inside the count viewport").toBeGreaterThanOrEqual(3);
     const fields = await page.locator(".till-den-qty").evaluateAll((els) => els.map((el) => {
       const style = getComputedStyle(el);
+      const input = el as HTMLInputElement;
       return {
         type: el.getAttribute("type"),
         mode: el.getAttribute("inputmode"),
         align: style.textAlign,
         appearance: style.appearance,
+        value: input.value,
+        border: style.borderTopWidth + " " + style.borderTopStyle,
+        radius: style.borderTopLeftRadius,
       };
     }));
     expect(fields.length).toBeGreaterThan(0);
     expect(fields.every((f) => f.type === "text")).toBe(true);
-    expect(fields.every((f) => f.mode === "decimal")).toBe(true);
-    expect(fields.every((f) => f.align === "right")).toBe(true);
+    expect(fields.every((f) => f.mode === "numeric")).toBe(true);
+    expect(fields.every((f) => f.align === "center")).toBe(true);
     expect(fields.every((f) => f.appearance === "textfield" || f.appearance === "none")).toBe(true);
+    expect(fields.every((f) => f.value === "0")).toBe(true);
+    expect(fields.every((f) => f.border === "1px solid")).toBe(true);
+    expect(fields.every((f) => parseFloat(f.radius) >= 8)).toBe(true);
     await expect(page.locator(".till-phone").getByRole("spinbutton")).toHaveCount(0);
     const overlap = await page.locator(".till-phone .till-den-row").evaluateAll((rows) => {
       const box = (el: Element) => {
@@ -149,17 +158,73 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
         if (Math.abs(boxes[1].width - 44) > 1 || Math.abs(boxes[1].height - 44) > 1) problems.push("minus " + i);
         if (Math.abs(boxes[3].width - 44) > 1 || Math.abs(boxes[3].height - 44) > 1) problems.push("plus " + i);
         const sub = parts[4] as Element;
-        const qty = parts[2] as HTMLElement;
+        const qty = parts[2] as HTMLInputElement;
         if (!/0\.00 [A-Z]{3}/.test(sub.textContent || "")) problems.push("subtotal " + (sub.textContent || ""));
         if ((sub.textContent || "").includes("—")) problems.push("dash");
         if (getComputedStyle(qty).boxShadow !== "none") problems.push("shadow");
+        if (qty.value !== "0") problems.push("blank " + qty.value);
+        const step = getComputedStyle(minus as Element);
+        if (step.borderTopWidth !== "1px" || step.borderRightWidth !== "1px") problems.push("step border");
+        if (parseFloat(step.borderTopLeftRadius) < 8) problems.push("step radius");
       });
+      if (rows.length > 1) {
+        const lefts = rows.map((row) => {
+          const face = row.querySelector(".till-den-face");
+          const minus = row.querySelectorAll(".till-step")[0];
+          const qty = row.querySelector(".till-den-qty");
+          const plus = row.querySelectorAll(".till-step")[1];
+          const sub = row.querySelector(".till-den-sub");
+          return [face, minus, qty, plus, sub].map((el) => Math.round((el as Element).getBoundingClientRect().left));
+        });
+        for (let c = 0; c < 5; c++) {
+          const xs = lefts.map((row) => row[c]);
+          if (Math.max(...xs) - Math.min(...xs) > 1) problems.push("column " + c);
+        }
+      }
       for (let i = 0; i < rows.length - 1; i++) {
         if (hit(box(rows[i]), box(rows[i + 1]))) problems.push("rows " + i);
       }
       return problems;
     });
     expect(overlap, size.width + " denomination rows").toEqual([]);
+    const summed = await page.evaluate(() => {
+      const read = (text: string | null) => {
+        const match = String(text || "").replace(/,/g, "").replace("\u2212", "-").match(/(-?\d+(?:\.\d+)?)\s+[A-Z]{3}/);
+        return match ? Number(match[1]) : null;
+      };
+      const subs = Array.from(document.querySelectorAll(".till-phone .till-den-sub")).map((el) => read(el.textContent));
+      const total = read((document.querySelector(".till-phone-counted") || {}).textContent || "");
+      if (subs.some((n) => n == null) || total == null) return { ok: false, total, subs };
+      const sum = Math.round(subs.reduce((s, n) => s + (n || 0), 0) * 100) / 100;
+      return { ok: Math.abs(sum - total) < 0.001, total, sum };
+    });
+    expect(summed.ok, size.width + " total " + summed.total + " sum " + summed.sum).toBe(true);
+    const chips = await page.locator(".till-phone .phone-chips").evaluate((el) => {
+      const style = getComputedStyle(el);
+      const row = el.getBoundingClientRect();
+      const first = el.querySelector(".phone-chip");
+      const firstBox = first ? first.getBoundingClientRect() : null;
+      const painted = style.maskImage && style.maskImage !== "none"
+        ? style.maskImage
+        : (style as CSSStyleDeclaration & { webkitMaskImage?: string }).webkitMaskImage || "";
+      return {
+        mask: painted,
+        left: row.left,
+        right: row.right,
+        width: window.innerWidth,
+        first: firstBox ? firstBox.left : null,
+      };
+    });
+    expect(chips.mask).toContain("gradient");
+    expect(chips.left).toBeLessThanOrEqual(1);
+    expect(Math.abs(chips.right - chips.width)).toBeLessThanOrEqual(1);
+    expect(chips.first).toBeGreaterThanOrEqual(15);
+    expect(chips.first).toBeLessThanOrEqual(18);
+    await page.getByRole("button", { name: "Enter total instead" }).click();
+    await expect(page.locator(".till-foot-sum")).toContainText("Entered total");
+    await expect(page.locator(".till-den-row")).toHaveCount(0);
+    await page.getByRole("button", { name: "Count notes" }).click();
+    await expect(page.locator(".till-den-qty").first()).toBeVisible();
     /* A teller on a blind count does not see the whole-drawer total. */
     await expect(page.locator(".till-phone-amount")).toHaveCount(0);
     await expect(page.locator(".till-phone")).not.toContainText("Drawer value");
@@ -341,6 +406,9 @@ test("count, coins, the till sheet, reconcile, and hand off pass the phone sweep
   await atDesk(page);
   await tillOpen(page);
   await openPhoneTill(page);
+  const countNotes = page.getByRole("button", { name: "Count notes" });
+  if (await countNotes.isVisible()) await countNotes.click();
+  await expect(page.locator(".till-den-qty").first()).toBeVisible();
 
   await shotBoth(page, "count");
   await phoneSweep(page, { roots: SWEEP });

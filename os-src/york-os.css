@@ -3107,7 +3107,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-phone.phone-shell { flex: 1 1 auto; min-height: 0; background: transparent; }
   .till-phone .phone-scroll { padding-bottom: 8px; }
   .till-phone .phone-seg { margin-bottom: 8px; }
-  .till-phone .phone-chips { margin-bottom: 4px; }
+  /* Currency chips stay the foundation FilterChips row: the 16px
+     spacers, the bleed to the screen edge, and the right-edge fade.
+     Do not give this row its own padding or a hard clip. */
   .till-phone-sec { margin: 0; }
   .till-phone-scroll { padding: 4px 16px 0; }
   .till-phone-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -3142,45 +3144,39 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     margin: 0; min-height: 44px; min-width: 44px; border: 0; background: transparent; flex: none;
     font-weight: 700; padding: 0 8px; color: var(--gray-900, #161513);
   }
-  .till-phone-chips {
-    display: flex; gap: 8px; overflow-x: auto; max-width: 100%;
-    margin: 0 -16px 4px; padding: 0 16px 2px;
-  }
-  .till-phone .till-chip {
-    flex: none; height: 44px; min-width: 64px; padding: 0 12px; border-radius: 10px;
-    border: 1px solid var(--cd-line, rgba(10,10,10,.14)); background: var(--cd-panel, #fff);
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    font-weight: 700; font-size: 14px;
-  }
-  .till-phone .till-chip i {
-    width: 8px; height: 8px; border-radius: 50%; box-sizing: border-box;
-    border: 1.5px solid var(--cd-mute, #888);
-  }
-  .till-phone .till-chip.is-on { background: var(--cd-ink, #111); color: var(--cd-on-ink, #fff); border-color: var(--cd-ink, #111); }
-  .till-phone .till-chip.is-on i { border-color: #fff; }
-  .till-phone .till-chip.is-done i { background: currentColor; }
-  .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+  .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--tap-min); }
   .till-phone-sec h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 650; }
-  .till-phone-group { margin: 12px 0 4px; font-size: 13px; line-height: 16px; font-weight: 700; color: var(--gray-900, #161513); }
-  /* One line. The minus, the field, and the plus are the row.
-     A second bordered box sat on the row rule and on the next row. */
+  .till-phone-group {
+    grid-column: 1 / -1;
+    margin: var(--space-3) 0 var(--space-1);
+    font-size: 13px;
+    line-height: 16px;
+    font-weight: 700;
+    color: var(--gray-900, #161513);
+  }
+  /* One grid for every denomination. The label column is fixed so
+     "5 CAD" and "100 CAD" share the minus. 4.75rem fits the longest
+     face (2000 INR) beside the two tap targets at 360. */
+  .till-phone-list {
+    display: grid;
+    grid-template-columns: 4.75rem var(--tap-min) minmax(0, 1fr) var(--tap-min) max-content;
+    column-gap: var(--space-2);
+    align-items: center;
+  }
   .till-phone .till-den-row {
     display: grid;
-    grid-template-columns: auto 44px minmax(0, 1fr) 44px auto;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
     align-items: center;
-    column-gap: 8px;
-    min-height: 44px;
-    box-sizing: content-box;
+    min-height: var(--tap-min);
     border-bottom: 1px solid var(--color-border);
   }
-  .till-phone .till-stepper { display: contents; }
   .till-phone .till-den-face,
   .till-phone .till-den-sub {
-    font-family: var(--font-ui), "Inter", "Archivo", system-ui, sans-serif;
-    font-variant-numeric: tabular-nums;
+    font: var(--text-small);
     font-weight: 600;
-    font-size: 14px;
-    line-height: 20px;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
     white-space: nowrap;
     color: var(--gray-900, #161513);
   }
@@ -3188,50 +3184,48 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-phone .till-den-row .till-step,
   .till-phone .till-den-row .till-den-qty {
     box-sizing: border-box;
-    height: 44px;
+    width: 100%;
+    height: var(--tap-min);
     margin: 0;
     padding: 0;
-    border-radius: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
     box-shadow: none;
     transform: none;
+    color: var(--gray-900, #161513);
+    font-family: var(--font-ui), "Inter", system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
   }
   .till-phone .till-den-row .till-step {
-    width: 44px;
-    min-width: 44px;
-    border: 0;
-    border-left: 1px solid var(--color-border);
-    border-right: 1px solid var(--color-border);
-    background: var(--gray-100, #EFEDE8);
-    font-size: 22px;
+    display: grid;
+    place-items: center;
+    min-width: var(--tap-min);
+    padding: 0;
+    font: var(--text-title-2);
     line-height: 1;
-    color: var(--gray-900, #161513);
+    cursor: pointer;
   }
   .till-phone .till-den-row .till-step:hover,
   .till-phone .till-den-row .till-step:active {
     transform: none;
-    background: var(--gray-100, #EFEDE8);
+    background: var(--color-surface);
   }
   .till-phone .till-den-qty {
-    width: 100%;
     min-width: 0;
-    border: 0;
-    padding: 0 8px;
-    text-align: right;
-    font-family: var(--font-ui), "Inter", "Archivo", system-ui, sans-serif;
-    font-size: 20px;
-    font-weight: 650;
-    background: #fff;
+    text-align: center;
+    font: var(--text-title-2);
     font-variant-numeric: tabular-nums;
-    color: var(--gray-900, #161513);
+    font-feature-settings: "tnum" 1;
     -moz-appearance: textfield;
     appearance: textfield;
-    box-shadow: none;
   }
   .till-phone .till-den-qty:focus {
-    outline: 2px solid var(--color-focus, #1E5AA8);
+    outline: 2px solid var(--color-focus);
     outline-offset: -2px;
     box-shadow: none;
-    background: var(--color-info-bg, #E8F0FB);
+    background: var(--color-surface);
   }
   .till-phone .till-den-qty::-webkit-inner-spin-button,
   .till-phone .till-den-qty::-webkit-outer-spin-button {

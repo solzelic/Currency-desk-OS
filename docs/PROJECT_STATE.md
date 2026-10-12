@@ -133,23 +133,26 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. The desktop
   resize grip is hidden. The rate board leads with its currency rows,
-  already drawn. The cash drawer on a phone is one column. One currency is counted
-  at a time. The chips scroll sideways. A count is typed in a large
-  right-aligned field, with no spinner arrows. Amounts read
-  "1,765.05 CAD" through `formatPhoneMoney` — the currency code follows
-  the number, and a figure the ledger did not return is left out
-  rather than shown as zero. The footer sits on the bottom bar:
-  what was counted, the expected amount (hidden until Show, while
-  a blind count is on), the difference in words, and one button,
-  Save count or Close till. There is no round + on this screen.
-  Move cash, Vault, and Hand off are one row of equal buttons.
-  Switching till opens a sheet from the bottom of the screen.
-  A slow first load shows a skeleton, then "Waking the server" if
-  it is still going after a few seconds. A till with no open
-  session says so and offers Open the till. An empty denomination
-  line is a dash, not zero. The footer says "Not counted yet"
-  until a count is entered. Wider than 430px, the desktop drawer
-  is unchanged.
+  already drawn.   The cash drawer on a phone is one column. One currency is counted
+  at a time. The chips are the shared filter row: 16px inset and a
+  fade where the next currency continues. Each denomination is one
+  grid row: a fixed-width label, a 44px minus, a centred numeric
+  field that shows 0 when empty, a 44px plus, and the row subtotal.
+  There are no spinner arrows. Amounts read "1,765.05 CAD" through
+  `formatPhoneMoney` — the currency code follows the number, and a
+  figure the ledger did not return is left out rather than shown as
+  zero. An empty row subtotal is 0.00 with the code, and the footer
+  total is the sum of those rows. Enter total instead replaces the
+  rows and the footer labels that figure as the entered total. The
+  footer sits on the bottom bar: what was counted, the expected
+  amount (hidden until Show, while a blind count is on), the
+  difference in words, and one button, Save count or Close the till.
+  There is no round + on this screen. Move cash, Vault, and Hand off
+  are one row of equal buttons. Switching till opens a sheet from
+  the bottom of the screen. A slow first load shows a skeleton, then
+  "Waking the server" if it is still going after a few seconds. A
+  till with no open session says so and offers Open the till. Wider
+  than 430px, the desktop drawer is unchanged.
   The ledger search is one line, with its help mark in that line.
   The compliance header stacks Screening, Reportable, and Structuring.
   Screening reads Not connected. Wider than 430px, the desk is
@@ -602,12 +605,15 @@ officer do not close the day, and they do not hold
 exists and nobody holds it. Granting it is a later decision.
 
 **2026-10-12**, phone till. At 430px and under, the cash drawer is the
-phone count inside `Phone.Screen`: one currency, sideways chips,
-one denomination line (label, 44px minus, numeric field, 44px plus,
-row subtotal), and one `StickyAction` on the bar. An empty row
-subtotal is `0.00 CAD`. The count opens on the notes; coins are
-further down that list. A saved total stays in the footer until
-the cashier asks to enter a total. The till button shows the
+phone count inside `Phone.Screen`: one currency, the shared
+filter chips (16px inset, fade at the right edge), one denomination
+grid, and one `StickyAction` on the bar. Every row is the same
+columns: a fixed-width label, a 44px minus, a centred numeric field
+(1px border, radius-md, `0` when empty), a 44px plus, and the row
+subtotal. An empty row subtotal is `0.00 CAD`, and the footer total
+is the sum of those subtotals. Enter total instead replaces the
+rows, and the footer labels that figure as the entered total. Coins
+are further down the notes list. The till button shows the
 desk's name (`Till 1`), not the ledger id. The session line is
 who is on the drawer, then the session number and how many
 currencies are counted. Reconcile and close is a list of
