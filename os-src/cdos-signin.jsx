@@ -262,7 +262,7 @@
           body: JSON.stringify({ staffId: a.staffId, tenantId: a.tenantId, code: codeVal }),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok) { setVerifying(false); setCode(''); setErr((data && data.detail) || 'That code isn’t right — check your email.'); return; }
+        if (!res.ok) { setVerifying(false); setCode(''); setErr((data && data.detail) || 'That code isn\'t right. Check your email.'); return; }
         const u = (data && data.user) || a.srvUser;
         onComplete(a.rec, (u && u.plan) || a.srvPlan, u);
       } catch (_) { setVerifying(false); setErr('Network error — try again.'); }

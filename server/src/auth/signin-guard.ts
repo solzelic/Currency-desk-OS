@@ -37,7 +37,7 @@ export const LOGIN_PROOF_COOKIE = "cdos_login_proof";
 /** Same words for an unknown id and a wrong code. The screen prints `detail`. */
 export const CODE_REFUSAL = {
   error: "wrong_code" as const,
-  detail: "That code isn't right — check your email.",
+  detail: "That code isn't right. Check your email.",
 };
 
 export type SignInDecision =

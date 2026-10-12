@@ -59218,7 +59218,7 @@ ${snap}`;
         if (!res.ok) {
           setVerifying(false);
           setCode('');
-          setErr(data && data.detail || 'That code isn’t right — check your email.');
+          setErr(data && data.detail || 'That code isn\'t right. Check your email.');
           return;
         }
         const u = data && data.user || a.srvUser;
