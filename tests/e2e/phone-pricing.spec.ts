@@ -3,7 +3,7 @@
    This file does not add or replace a 1280 baseline. */
 import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk } from "./fixtures";
+import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const SHOTS = "/opt/cursor/artifacts/pr117";
@@ -30,6 +30,36 @@ async function atDesk(page: Page, staffId: string): Promise<void> {
   await signInAtDesk(page, staffId);
   await dismissTour(page);
   await expect(page.locator(".win.show.active").first()).toHaveCSS("transform", "none");
+}
+
+/* An earlier test may have published. The phone compares saved
+   settings with that board, so copy the board's spreads into settings
+   before a test that expects "nothing new". */
+async function matchBoard(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const res = await fetch("/api/rates", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const body = await res.json();
+    const board = body && body.board;
+    if (!board) return;
+    const raw = localStorage.getItem("cdos_settings");
+    const settings = raw ? JSON.parse(raw) : {};
+    const margin = Number(board.buyMargin);
+    if (Number.isFinite(margin)) settings.defaultSpread = Math.round(margin * 1000) / 10;
+    const spreads: Record<string, number> = {};
+    const rows = board.rows || {};
+    Object.keys(rows).forEach((code) => {
+      const row = rows[code] || {};
+      if (row.spread == null || row.spread === "" || !Number.isFinite(+row.spread)) return;
+      const pct = Math.round(+row.spread * 1000) / 10;
+      if (Math.abs(pct - Number(settings.defaultSpread)) > 0.05) spreads[code] = pct;
+    });
+    settings.spreads = spreads;
+    localStorage.setItem("cdos_settings", JSON.stringify(settings));
+  });
+  await page.reload();
+  await landOnDesktop(page);
+  await dismissTour(page);
 }
 
 async function openPricing(page: Page): Promise<void> {
@@ -87,6 +117,7 @@ for (const width of [360, 390]) {
   test(`pricing list at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await atDesk(page, "j.masri");
+    await matchBoard(page);
     await openPricing(page);
     await expect(page.locator("[data-pr='loading']")).toHaveCount(0);
     const phone = page.locator(".pr-phone");
@@ -206,6 +237,7 @@ for (const width of [360, 390]) {
       if (req.method() === "POST" && new URL(req.url()).pathname === "/api/rates/publish") posts.push(req.url());
     });
     await atDesk(page, "j.masri");
+    await matchBoard(page);
     await openPricing(page);
     await expect(page.locator("[data-pr='list']")).toBeVisible();
     const button = page.locator(".pr-phone .phone-sticky-btn");
@@ -290,6 +322,7 @@ test("pricing passes the phone sweep", async ({ page }) => {
   await page.clock.install({ time: new Date() });
   await page.setViewportSize({ width: 390, height: 844 });
   await atDesk(page, "j.masri");
+  await matchBoard(page);
   await openPricing(page);
   await expect(page.locator("[data-pr='list']")).toBeVisible();
   await frames(page, "pricing_list");
