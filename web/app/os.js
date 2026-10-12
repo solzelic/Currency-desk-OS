@@ -54306,16 +54306,58 @@ ${snap}`;
     }, []);
     return on;
   }
-  const PHONE_CCY = {
-    USD: 'US dollar',
-    EUR: 'Euro',
-    GBP: 'British pound',
-    INR: 'Indian rupee',
-    PHP: 'Philippine peso',
-    CNY: 'Chinese yuan',
-    MXN: 'Mexican peso',
-    AED: 'UAE dirham'
-  };
+
+  /* One name for every code this desk trades. Intl is the source.
+     A name that is missing, or that is just the code, is blank —
+     the row already shows the code as its title. */
+  let currencyNames = null;
+  function currencyName(code) {
+    const c = String(code || '').toUpperCase();
+    if (!/^[A-Z]{3}$/.test(c)) return '';
+    try {
+      if (!currencyNames) currencyNames = new Intl.DisplayNames(['en'], {
+        type: 'currency'
+      });
+      const name = currencyNames.of(c);
+      if (!name || name.toUpperCase() === c) return '';
+      return name;
+    } catch (err) {
+      return '';
+    }
+  }
+  /* Health calls a market pull stale after 180 minutes
+     (RATES_STALE_MINUTES in server/src/platform/health.ts).
+     The pull itself is scheduled hourly. */
+  const SOURCE_STALE_MS = 180 * 60 * 1000;
+  function sourceKind(market) {
+    if (!market || market.provider == null || market.fetchedAt == null || !isFinite(+market.fetchedAt)) return 'absent';
+    if (Date.now() - Number(market.fetchedAt) > SOURCE_STALE_MS) return 'stale';
+    return 'connected';
+  }
+  function sourceLabel(kind) {
+    if (kind === 'connected') return 'Connected';
+    if (kind === 'stale') return 'Stale';
+    return 'Not connected';
+  }
+  /* A row with no spread of its own is the board's buy margin.
+     The starting board is stored that way. */
+  function boardSpread(board, code) {
+    const row = board && board.rows && board.rows[code];
+    if (!row) return null;
+    if (row.spread != null && row.spread !== '' && isFinite(+row.spread)) return +row.spread;
+    if (board.buyMargin != null && isFinite(+board.buyMargin)) return +board.buyMargin;
+    return null;
+  }
+  function unpublishedSpreads(board, codes, settings) {
+    if (!board) return codes.length;
+    let n = 0;
+    codes.forEach(code => {
+      const have = boardSpread(board, code);
+      const want = spreadOf(code, settings);
+      if (have == null || Math.abs(have - want) > 1e-6) n += 1;
+    });
+    return n;
+  }
   function homeOf() {
     return window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
   }
@@ -54341,8 +54383,8 @@ ${snap}`;
     const x = +n;
     return isFinite(x) ? (Math.round(x * 10) / 10).toFixed(1) + '%' : '—';
   }
-  /* The mid a desktop Publish would write. The live preview does not
-     use a pin: priceDeal prices the next deal off the live mid. */
+  /* The mid a desktop Publish would write. The preview does not
+     use a pin: priceDeal prices the next deal off the market mid. */
   function spotFor(code, settings, home) {
     const ov = settings && settings.spotOverride || {};
     if (code === home) return 1;
@@ -54506,6 +54548,8 @@ ${snap}`;
        calls those Owner and Manager. A cashier cannot publish. */
     const canPublish = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
     const [feed, setFeed] = useState('loading');
+    const [board, setBoard] = useState(null);
+    const [source, setSource] = useState('absent');
     const [attempt, setAttempt] = useState(0);
     const [sheet, setSheet] = useState(null);
     const [draft, setDraft] = useState('');
@@ -54521,16 +54565,28 @@ ${snap}`;
     useEffect(() => {
       let gone = false;
       setFeed('loading');
-      fetch('/api/rates', {
-        credentials: 'same-origin'
-      }).then(async res => {
+      const read = res => {
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        await res.json();
-        if (!gone) setFeed('ready');
-      }).catch(err => {
+        return res.json();
+      };
+      Promise.allSettled([fetch('/api/rates', {
+        credentials: 'same-origin'
+      }).then(read), fetch('/api/rates/market', {
+        credentials: 'same-origin'
+      }).then(read)]).then(settled => {
         if (gone) return;
-        setFeed('error');
-        if (log) log('Pricing', 'rate board did not load: ' + (err && err.message ? err.message : 'network'));
+        const boardRes = settled[0];
+        const marketRes = settled[1];
+        if (boardRes.status === 'fulfilled') {
+          const body = boardRes.value || {};
+          setBoard(body.board || null);
+          setFeed('ready');
+        } else {
+          setFeed('error');
+          const err = boardRes.reason;
+          if (log) log('Pricing', 'rate board did not load: ' + (err && err.message ? err.message : 'network'));
+        }
+        setSource(marketRes.status === 'fulfilled' ? sourceKind(marketRes.value) : 'absent');
       });
       return () => {
         gone = true;
@@ -54584,8 +54640,9 @@ ${snap}`;
       setDraft(String(defSpread));
       if (log) log('Pricing updated', code + ' spread cleared');
     }
+    const pending = feed === 'ready' ? unpublishedSpreads(board, foreign, safe) : 0;
     async function publish() {
-      if (busy.current || !canPublish || phase !== 'idle') return;
+      if (busy.current || !canPublish || phase !== 'idle' || feed !== 'ready' || pending === 0) return;
       busy.current = true;
       setPhase('publishing');
       setBanner('');
@@ -54620,7 +54677,7 @@ ${snap}`;
         busy.current = false;
         setPhase('idle');
         setBanner('Not published. Try again.');
-        if (log) log('Rates not published', 'no live rate to send');
+        if (log) log('Rates not published', 'no market rate to send');
         return;
       }
       let order;
@@ -54634,6 +54691,7 @@ ${snap}`;
       }
       cfg.publishedAt = Date.now();
       cfg.publishedBy = me && me.name ? me.name : 'owner';
+      let text = '';
       try {
         const res = await fetch('/api/rates/publish', {
           method: 'POST',
@@ -54648,7 +54706,7 @@ ${snap}`;
             order
           })
         });
-        const text = await res.text();
+        text = await res.text();
         if (!res.ok) {
           let detail = 'HTTP ' + res.status;
           try {
@@ -54678,6 +54736,18 @@ ${snap}`;
       } catch (err) {
         if (log) log('Pricing', err && err.message ? err.message : 'this phone did not keep a copy of the board');
       }
+      let nextBoard = {
+        buyMargin: cfg.buyMargin,
+        sellMargin: cfg.sellMargin,
+        rows: rows
+      };
+      try {
+        const body = text ? JSON.parse(text) : null;
+        if (body && body.board) nextBoard = body.board;
+      } catch (err) {
+        if (log) log('Pricing', 'the published board was not readable');
+      }
+      setBoard(nextBoard);
       let when = '';
       try {
         when = pricingClock(new Date(), safe.timezone);
@@ -54707,7 +54777,7 @@ ${snap}`;
       const pinned = (safe.spotOverride || {})[code] != null && (safe.spotOverride || {})[code] !== '';
       const low = draftOk && +draft < mFloor;
       sheetEl = /*#__PURE__*/React.createElement(PricingSheet, {
-        title: (PHONE_CCY[code] || code) + ' spread',
+        title: (currencyName(code) || code) + ' spread',
         onCancel: () => setSheet(null),
         footer: /*#__PURE__*/React.createElement("button", {
           type: "button",
@@ -54722,7 +54792,7 @@ ${snap}`;
         suffix: "%"
       }), /*#__PURE__*/React.createElement("p", {
         className: "pr-hint"
-      }, "Default is ", pctText(defSpread), ". Live rate now: ", rate4(view.mid, view.known), " ", view.home, "."), pinned ? /*#__PURE__*/React.createElement("p", {
+      }, "Default is ", pctText(defSpread), ". Market rate now: ", rate4(view.mid, view.known), " ", view.home, "."), pinned ? /*#__PURE__*/React.createElement("p", {
         className: "pr-warn"
       }, "Manual rate, feed paused for ", code, ".") : null, low ? /*#__PURE__*/React.createElement("p", {
         className: "pr-warn"
@@ -54731,7 +54801,7 @@ ${snap}`;
       }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "We buy"), /*#__PURE__*/React.createElement("b", {
         className: "pr-buy",
         "data-pr": "buy"
-      }, rate4(view.buy, view.known))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Live"), /*#__PURE__*/React.createElement("b", {
+      }, rate4(view.buy, view.known))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Market"), /*#__PURE__*/React.createElement("b", {
         "data-pr": "mid"
       }, rate4(view.mid, view.known))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "We sell"), /*#__PURE__*/React.createElement("b", {
         className: "pr-sell",
@@ -54770,7 +54840,7 @@ ${snap}`;
         suffix: "%"
       }), /*#__PURE__*/React.createElement("p", {
         className: "pr-hint"
-      }, "Added on each side of the live rate. A currency with its own spread keeps that."), draftOk && +draft < mFloor ? /*#__PURE__*/React.createElement("p", {
+      }, "Added on each side of the market rate. A currency with its own spread keeps that."), draftOk && +draft < mFloor ? /*#__PURE__*/React.createElement("p", {
         className: "pr-warn"
       }, "Below your ", pctText(mFloor), " warning") : null);
     } else if (sheet && sheet.kind === 'fee') {
@@ -54863,16 +54933,19 @@ ${snap}`;
         onCancel: () => setSheet(null)
       }, /*#__PURE__*/React.createElement("div", {
         className: "pr-src is-on"
-      }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Open Exchange Rates"), /*#__PURE__*/React.createElement("small", null, "Hourly")), feed === 'error' ? /*#__PURE__*/React.createElement("span", null, "Not loaded") : /*#__PURE__*/React.createElement("span", {
-        className: "pr-live"
-      }, "Live")), ['OANDA', 'Bank of Canada', 'XE'].map(name => /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Open Exchange Rates"), /*#__PURE__*/React.createElement("small", null, "Hourly")), /*#__PURE__*/React.createElement("span", {
+        className: source === 'connected' ? 'pr-on' : ''
+      }, sourceLabel(source))), ['OANDA', 'Bank of Canada', 'XE'].map(name => /*#__PURE__*/React.createElement("div", {
         className: "pr-src",
         key: name
       }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, name)), /*#__PURE__*/React.createElement("span", null, "Not connected"))), /*#__PURE__*/React.createElement("p", {
         className: "pr-hint"
-      }, "Only Open Exchange Rates is connected."));
+      }, "This desk uses Open Exchange Rates. It refreshes hourly."));
     }
-    const live = feed !== 'error';
+    const sourceBadge = {
+      label: sourceLabel(source),
+      tone: source === 'connected' ? 'pos' : source === 'stale' ? 'warn' : 'neutral'
+    };
     const body = feed === 'loading' ? /*#__PURE__*/React.createElement("div", {
       "data-pr": "loading"
     }, /*#__PURE__*/React.createElement(Phone.LoadingState, {
@@ -54890,16 +54963,12 @@ ${snap}`;
     }, /*#__PURE__*/React.createElement(Row, {
       title: "Rate source",
       subtitle: "Open Exchange Rates, hourly",
-      badge: live ? {
-        label: 'Live',
-        tone: 'pos'
-      } : null,
-      amount: live ? '' : 'Not loaded',
+      badge: sourceBadge,
       chevron: true,
       onClick: () => openSheet('source')
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Spread",
-      subtitle: "Added on each side of the live rate",
+      subtitle: "Added on each side of the market rate",
       amount: pctText(defSpread),
       chevron: true,
       onClick: () => openSheet('spread')
@@ -54911,7 +54980,7 @@ ${snap}`;
       onClick: () => openSheet('fee')
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Low margin warning",
-      subtitle: "Warn when a deal earns less than",
+      subtitle: "Warn when a deal earns under this",
       amount: pctText(mFloor),
       chevron: true,
       onClick: () => openSheet('floor')
@@ -54926,10 +54995,12 @@ ${snap}`;
     }, foreign.map(code => {
       const sp = (safe.spreads || {})[code];
       const custom = sp != null && sp !== '';
+      const name = currencyName(code);
       return /*#__PURE__*/React.createElement(Row, {
         key: code,
+        className: "pr-ccy",
         title: code,
-        subtitle: PHONE_CCY[code] || code,
+        subtitle: name,
         amount: pctText(custom ? sp : defSpread),
         meta: custom ? 'custom' : 'default',
         chevron: true,
@@ -54938,13 +55009,30 @@ ${snap}`;
     })));
     const showPublish = feed === 'loading' || foreign.length > 0;
     let why = '';
-    if (!canPublish) why = 'Only an owner or a manager can publish.';else if (feed === 'loading') why = 'The Rate Board is still loading.';
+    if (!canPublish) why = 'Only an owner or a manager can publish.';else if (feed === 'loading') why = 'The Rate Board is still loading.';else if (feed === 'error') why = "The Rate Board didn't load.";else if (phase === 'idle' && pending === 0) why = 'Nothing new to put on the rate board.';
     const sticky = showPublish ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
       label: phase === 'publishing' ? 'Publishing…' : 'Publish to Rate Board',
-      disabled: feed === 'loading' || !canPublish || phase !== 'idle',
+      disabled: feed !== 'ready' || !canPublish || phase !== 'idle' || pending === 0,
       disabledReason: why,
       onClick: publish
     }) : null;
+    const pendingLine = pending === 1 ? '1 change not on the rate board yet. ' : pending > 1 ? pending + ' changes not on the rate board yet. ' : '';
+    /* A shared back control is coming on the foundation. This is the
+       local stand-in: chevron and the word More. */
+    const back = /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "pr-back",
+      onClick: () => {
+        const tab = document.querySelector('#phonebar [data-phone-app="more"]');
+        if (tab) tab.click();
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "pr-back-ico",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 24
+    })), "More");
     const alerts = feed === 'error' || banner ? /*#__PURE__*/React.createElement(React.Fragment, null, feed === 'error' ? /*#__PURE__*/React.createElement(Phone.ErrorState, {
       message: "The Rate Board didn't load.",
       onRetry: () => setAttempt(n => n + 1)
@@ -54954,9 +55042,10 @@ ${snap}`;
     }, banner) : null) : null;
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "pricing",
-      className: "pr-phone",
+      className: 'pr-phone' + (phase === 'publishing' ? ' is-publishing' : ''),
       title: "Pricing",
-      subtitle: "Changes save by themselves",
+      subtitle: pendingLine + 'Changes save as you go. Publish to show them on the rate board.',
+      top: back,
       banner: alerts,
       sticky: sticky
     }, body), sheetEl, /*#__PURE__*/React.createElement(PricingNote, {

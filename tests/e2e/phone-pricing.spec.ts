@@ -91,22 +91,56 @@ for (const width of [360, 390]) {
     await expect(page.locator("[data-pr='loading']")).toHaveCount(0);
     const phone = page.locator(".pr-phone");
     await expect(phone.getByRole("heading", { name: "Pricing", exact: true })).toBeVisible();
-    await expect(phone).toContainText("Changes save by themselves");
+    await expect(phone).toContainText("Changes save as you go. Publish to show them on the rate board.");
     await expect(phone).toContainText("For every currency");
     await expect(phone).toContainText("Spread by currency");
+    await expect(phone).toContainText("Added on each side of the market rate");
+    await expect(phone).toContainText("Warn when a deal earns under this");
     await expect(phone).toContainText("USD");
-    await expect(phone).toContainText("US dollar");
     await expect(phone).toContainText("0.00 CAD");
     await expect(phone).not.toContainText("Example data");
     await expect(phone).not.toContainText("$");
+    await expect(phone.locator(".phone-badge").first()).toHaveText(/^(Connected|Not connected|Stale)$/);
+    const names = await page.locator(".pr-ccy").evaluateAll((els) => {
+      const display = new Intl.DisplayNames(["en"], { type: "currency" });
+      return els.map((el) => {
+        const code = (el.querySelector(".phone-row-title")?.textContent || "").trim();
+        const name = (el.querySelector(".phone-row-sub")?.textContent || "").trim();
+        let expected = "";
+        try {
+          expected = display.of(code) || "";
+        } catch (err) {
+          expected = "";
+        }
+        return { code, name, expected };
+      });
+    });
+    expect(names.length).toBeGreaterThan(0);
+    for (const row of names) {
+      expect(row.name, row.code).not.toBe("");
+      expect(row.name.toUpperCase(), row.code).not.toBe(row.code);
+      expect(row.name, row.code).toBe(row.expected);
+    }
+    const shown = await phone.innerText();
+    expect(shown).not.toMatch(/\blive\b/i);
     await expect(page.locator("#phone-fab")).toHaveCount(0);
     const row = await phone.locator(".phone-row").first().boundingBox();
     expect(row && row.height).toBeGreaterThanOrEqual(44);
     const publish = page.locator(".pr-phone .phone-sticky-btn");
     await expect(publish).toHaveText("Publish to Rate Board");
+    await expect(publish).toBeDisabled();
+    await expect(phone).toContainText("Nothing new to put on the rate board.");
     const box = await publish.boundingBox();
     expect(box && box.height).toBeGreaterThanOrEqual(48);
+    const back = phone.locator(".pr-back");
+    const backBox = await back.boundingBox();
+    expect(backBox && backBox.height).toBeGreaterThanOrEqual(44);
+    expect(backBox && backBox.width).toBeGreaterThanOrEqual(44);
     await shot(page, `pricing_list_${width}`);
+    if (width === 360) {
+      await back.click();
+      await expect(page.locator("#phone-more")).toBeVisible();
+    }
   });
 
   test(`stepper preview matches priceDeal at ${width}`, async ({ page }) => {
@@ -114,8 +148,13 @@ for (const width of [360, 390]) {
     await atDesk(page, "j.masri");
     await openPricing(page);
     await expect(page.locator("[data-pr='list']")).toBeVisible();
+    const usdName = await page.locator(".pr-ccy").evaluateAll((els) => {
+      const row = els.find((el) => (el.querySelector(".phone-row-title")?.textContent || "").trim() === "USD");
+      return row ? (row.querySelector(".phone-row-sub")?.textContent || "").trim() : "";
+    });
+    expect(usdName.toUpperCase()).not.toBe("USD");
     await page.getByRole("button", { name: /USD/ }).click();
-    const sheet = page.getByRole("dialog", { name: "US dollar spread" });
+    const sheet = page.getByRole("dialog", { name: usdName + " spread" });
     await expect(sheet).toBeVisible();
     const before = await sheet.locator("[data-pr='buy']").innerText();
     await sheet.getByRole("button", { name: "Less, 0.1" }).click();
@@ -154,6 +193,9 @@ for (const width of [360, 390]) {
     expect(buy).toBe("rgb(30, 90, 168)");
     expect(sell).toBe("rgb(122, 62, 150)");
     await expect(sheet).toContainText("Nothing changes on the Rate Board until you tap Publish.");
+    await expect(sheet).toContainText("Market rate now");
+    const sheetText = await sheet.innerText();
+    expect(sheetText).not.toMatch(/\blive\b/i);
     await shot(page, `pricing_stepper_${width}`);
   });
 
@@ -167,6 +209,11 @@ for (const width of [360, 390]) {
     await openPricing(page);
     await expect(page.locator("[data-pr='list']")).toBeVisible();
     const button = page.locator(".pr-phone .phone-sticky-btn");
+    await expect(button).toBeDisabled();
+    await page.getByRole("button", { name: /USD/ }).click();
+    await page.getByRole("button", { name: "Less, 0.1" }).click();
+    await page.getByRole("button", { name: /Save / }).click();
+    await expect(page.locator(".pr-phone")).toContainText("1 change not on the rate board yet.");
     await expect(button).toBeEnabled();
     const done = page.waitForResponse(
       (res) => new URL(res.url()).pathname === "/api/rates/publish" && res.request().method() === "POST",
@@ -219,7 +266,7 @@ test("a failed board load keeps the saved spreads", async ({ page }) => {
   await openPricing(page);
   await expect(page.getByRole("alert")).toContainText("The Rate Board didn't load.");
   await expect(page.locator("[data-pr='list']")).toContainText("USD");
-  await expect(page.locator("[data-pr='list']")).toContainText("Not loaded");
+  await expect(page.locator("[data-pr='list']")).toContainText("Not connected");
   await frames(page, "pricing_error");
   await phoneSweep(page, { roots: PHONE_ROOTS });
 });
@@ -252,8 +299,10 @@ test("pricing passes the phone sweep", async ({ page }) => {
   await expect(page.locator("[data-pr='sheet']")).toBeVisible();
   await frames(page, "pricing_stepper");
   await phoneSweep(page, { roots: [".pr-sheet"] });
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Less, 0.1" }).click();
+  await page.getByRole("button", { name: /Save / }).click();
   await expect(page.locator("[data-pr='sheet']")).toHaveCount(0);
+  await expect(page.locator(".pr-phone")).toContainText("1 change not on the rate board yet.");
 
   let releasePublish: () => void = () => {};
   const publishGate = new Promise<void>((resolve) => {
@@ -264,7 +313,11 @@ test("pricing passes the phone sweep", async ({ page }) => {
     await route.continue();
   });
   await page.locator(".pr-phone .phone-sticky-btn").click();
-  await expect(page.locator(".pr-phone .phone-sticky-btn")).toHaveText("Publishing…");
+  const publishing = page.locator(".pr-phone.is-publishing .phone-sticky-btn");
+  await expect(publishing).toHaveText("Publishing…");
+  await expect(publishing).toBeDisabled();
+  const ink = await publishing.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(ink).toBe("rgb(39, 75, 142)");
   await frames(page, "pricing_publish");
   await phoneSweep(page, { roots: PHONE_ROOTS });
   releasePublish();

@@ -703,9 +703,15 @@ global settings and one spread per currency. A sheet steps the
 spread and previews the next 500-unit deal with `priceDeal`. Publish
 uses the existing rate-board endpoint, once, and a toast names how
 many currencies went up and the time from `formatPhoneTime`
-(`3:02 PM`). A cashier can open the screen and cannot
-publish. Desktop Pricing is the shared 1280 baseline. This screen
-does not replace that picture.
+(`3:02 PM`). A currency row's name comes from
+`Intl.DisplayNames`, and the code is not repeated. The source
+badge is Connected, Not connected, or Stale from the market pull.
+Publish stays off until a saved spread differs from the board.
+A back control returns to More. While a publish is in flight the
+button keeps the pricing accent and shows a spinner. A cashier can
+open the screen and cannot publish. Desktop Pricing
+is the shared 1280 baseline. This screen does not replace that
+picture.
 
 **2026-10-11**, phone top bar. The shop name is one line and ends in
 an ellipsis. The till line is one line. The desk name is cut first.
