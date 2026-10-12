@@ -49,16 +49,14 @@ function pgCode(error: unknown): string | undefined {
   return undefined;
 }
 
-function dateOnly(value: unknown): string | null {
-  return civilDate(value);
-}
-
 /** The disclaimer while today is before the date the regulation applies.
-    On that date, and after it, there is nothing extra to say. */
+    On that date, and after it, there is nothing extra to say.
+    `appliesFrom` is a calendar day. `today` is an instant, and the day
+    it is compared on is its UTC day, which is what the notice test locks. */
 export function euAmlrNotice(appliesFrom: unknown, today = new Date()): string | null {
-  const from = dateOnly(appliesFrom);
-  const now = civilDate(today);
-  if (!from || !now) return null;
+  const from = civilDate(appliesFrom);
+  if (!from || Number.isNaN(today.getTime())) return null;
+  const now = today.toISOString().slice(0, 10);
   return now < from ? EU_AMLR_NOTICE : null;
 }
 

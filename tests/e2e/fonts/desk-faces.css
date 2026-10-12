@@ -10,8 +10,8 @@
 
    Archivo's latin file and Space Mono's latin file include U+2191 and
    U+2193 and do not include U+2192 (→) or U+2265 (≥). Those two are
-   served here: DejaVu Sans on Archivo, DejaVu Sans Mono on Space Mono.
-   The runner's fontconfig is not a face in the picture.
+   served here from DejaVu Sans on Archivo and DejaVu Sans Mono on
+   Space Mono. The runner's fontconfig is not a face in the picture.
 */
 /* vietnamese */
 @font-face {
@@ -247,54 +247,81 @@
   src: url(/e2e-fonts/i7dMIFZifjKcF5UAWdDRaPpZUFWaHg.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
-/* → and ≥. Archivo does not carry them. DejaVu Sans does. */
+/* → and ≥. Archivo does not carry them. DejaVu Sans does.
+   Stretch matches the variable Archivo faces above. The ascent,
+   descent, and line gap are Archivo's, so these two glyphs do not
+   change the line box the way a raw DejaVu face would. */
 @font-face {
   font-family: 'Archivo';
   font-style: normal;
   font-weight: 400;
+  font-stretch: 100%;
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-sans-400.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: 'Archivo';
   font-style: normal;
   font-weight: 500;
+  font-stretch: 100%;
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-sans-400.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: 'Archivo';
   font-style: normal;
   font-weight: 600;
+  font-stretch: 100%;
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-sans-400.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: 'Archivo';
   font-style: normal;
   font-weight: 700;
+  font-stretch: 100%;
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-sans-700.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: 'Archivo';
   font-style: normal;
   font-weight: 800;
+  font-stretch: 100%;
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-sans-700.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: 'Archivo';
   font-style: normal;
   font-weight: 900;
+  font-stretch: 100%;
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-sans-700.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
 }
 /* The sign-in button is Space Mono. Its arrow is DejaVu Sans Mono. */
 @font-face {
@@ -304,6 +331,9 @@
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-mono-400.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 112%;
+  descent-override: 36.1%;
+  line-gap-override: 0%;
 }
 @font-face {
   font-family: 'Space Mono';
@@ -312,4 +342,7 @@
   font-display: block;
   src: url(/e2e-fonts/desk-symbols-mono-700.woff2) format('woff2');
   unicode-range: U+2192, U+2265;
+  ascent-override: 112%;
+  descent-override: 36.1%;
+  line-gap-override: 0%;
 }

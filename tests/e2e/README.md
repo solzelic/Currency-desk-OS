@@ -17,10 +17,15 @@ waited on. The shot also pauses animations, hides the caret, waits for
 compared to that render with the same rule.
 
 The text in that picture is Archivo and Space Mono from
-`tests/e2e/fonts/` (SIL Open Font License, `OFL.txt`). The spec serves
-those files in place of `fonts.googleapis.com`. The same files are used
-for the main capture and for the branch compare. A runner font change
-does not move the pixels. A shot is refused if those faces did not load.
+`tests/e2e/fonts/` (SIL Open Font License, `OFL.txt`). U+2192 and
+U+2265 are not in those latin files. The capture serves them from
+DejaVu Sans on Archivo and DejaVu Sans Mono on Space Mono
+(`DEJAVU.txt`). The spec serves those files in place of
+`fonts.googleapis.com`, for the main capture and for the branch
+compare. The runner's fontconfig is not a face in the picture. The
+browser zone is UTC, so the pinned 15:02Z clock paints 15:02. A shot
+is refused if those faces did not load, including the arrow and the
+greater-or-equal sign.
 
 main-sha: 5216ef4780b750c2dcce5847296288920d63b443
 

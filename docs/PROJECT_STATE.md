@@ -582,9 +582,10 @@ browser zone to UTC, so 15:02Z stays 15:02, and it serves DejaVu Sans
 and DejaVu Sans Mono for → and ≥. The shot loads those two characters
 before it checks the face. A Noto Sans subset with an empty character
 map made Chromium reject every Archivo weight; the sans files are
-DejaVu Sans, which carries the glyphs. The sign-in shot still turns the
-card blur off, because two renders of main with the blur on did not
-match.
+DejaVu Sans, which carries the glyphs. The committed 1280 pictures are
+a render of main `5216ef4` with that measurement, taken twice at 0
+pixels. The sign-in shot still turns the card blur off, because two
+renders of main with the blur on did not match.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
