@@ -196,8 +196,10 @@ one that drives the desk's KYC standing.
 - the primary document, when it is not a health card, is past its expiry → `expired`
 - otherwise → `identified`
 
-A health card does not count as that number. A file whose only numbered
-document is a health card stays `unverified`. `verified` is still never
+A health card does not count as that number. Neither does `[redacted]`:
+the marker is not a number, so that document no longer identifies the
+client. A file whose only numbered document is a health card, or whose
+only number is the marker, stays `unverified`. `verified` is still never
 set by this derivation.
 
 `verified` is never set or cleared by that derivation. It means a
@@ -349,17 +351,21 @@ book does not record which document a deal used. The number is not in
 the response. The route is the owner (`administrator`) and the
 compliance officer only. A branch manager is not given it.
 
-Replacing the stored number is not a migration and does not run on
-deploy. `server/src/index.ts` does not import it. The owner runs it:
+The review is live. `server/src/clients/routes.ts` imports
+`health-numbers.js` and registers `GET /api/clients/health-card-review`.
+Replacing the stored number is a separate command. It is not a
+migration, `server/src/index.ts` does not import it, and it does not
+run on deploy. The owner runs it:
 
 ```
 DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --actor j.masri
 DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --apply --actor j.masri
 ```
 
-The first command is a dry-run. It prints counts for that actor's shop
-and changes nothing. `--apply` requires `--actor`. The actor must be
-the owner or the compliance officer. The command rewrites
+The first command is a dry-run. It prints counts for that actor's shop,
+the document ids that still hold a health number, and changes nothing.
+It does not print the number. `--apply` requires `--actor`. The actor
+must be the owner or the compliance officer. The command rewrites
 `doc_number` to `[redacted]` and leaves the type, issuing province,
 expiry, the date recorded, and who recorded it. It sets `updated_by`
 to the actor. It writes one `ledger_audit_events` row per redacted record,
@@ -367,12 +373,25 @@ action `client.health_number.redact` (the number was redacted), with
 the date, the actor who ran it, and the reason "health number not
 lawful to keep, not valid ID". The original number is not in the
 audit row. A dry-run writes no audit row. A second `--apply` matches
-the marker and writes nothing. The review route has to be available
-to the shop before anyone runs `--apply`.
+the marker and writes nothing.
 
-Until the read-side change lands, a client export returns `docNumber`,
-so after redaction the export shows `[redacted]`. The review route
-says `numberStatus: "redacted"` and still does not return the old number.
+`--apply` also scrubs that shop's `tenant_state` copy, the same way a
+save and a read already do, and refreshes `verification_status` for
+the affected clients. A health card, and a document whose number is
+`[redacted]`, no longer leave the file `identified`. A provider
+`verified` result is left as stored. The client read omits `docNumber`
+for a health card (the key is absent). The review route says
+`numberStatus: "redacted"` and does not return the old number. The
+command prints the affected document ids and never the numbers.
+
+Sealed filings and the teller scan reveal are not changed. Compliance
+is ruling on those.
+
+The review route has to be available to the shop before anyone runs
+`--apply`. `--apply` stays inert until two decisions are on the
+record: Compliance signs off on retention under the Proceeds of Crime
+(Money Laundering) and Terrorist Financing Act, s.108 (five years),
+and Sol decides the command may run. It is not started by deploy.
 
 The production database is Neon (`render.yaml`, `DATABASE_URL`,
 `sync: false`). **The backup window is unknown.** This repository
@@ -541,8 +560,11 @@ every time.
   nothing and writes no audit row. `--apply` replaces the number,
   keeps the row, writes one audit entry per redacted record (the date,
   who ran it, and the reason "health number not lawful to keep, not
-  valid ID"), shows `[redacted]` on the client read, and a second run
-  writes nothing. The server entrypoint does not import the command.
+  valid ID"), scrubs the tenant-state copy, prints the document ids
+  and not the numbers, and leaves the health-card-only file
+  unverified. The client read omits `docNumber`. A second run writes
+  nothing. `src/index.ts` does not import the command.
+  `routes.ts` does import the review, and that route is live.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted
   deal, with the deal still resolving and the old name still finding

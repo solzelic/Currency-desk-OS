@@ -55,7 +55,12 @@ import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
-import { healthCardExcludedSql, HEALTH_CARD_REFUSAL, isHealthCardType } from "./health-card.js";
+import {
+  HEALTH_CARD_REFUSAL,
+  REDACTED_HEALTH_NUMBER,
+  isHealthCardType,
+  verificationCaseSql,
+} from "./health-card.js";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -1164,24 +1169,9 @@ export class ClientRecordService {
    * follow mechanically from what the desk is holding.
    */
   private async refreshVerification(client: pg.PoolClient, clientId: string) {
-    const counts = healthCardExcludedSql("d.doc_type");
     await client.query(
       `UPDATE desk_clients c
-          SET verification_status = CASE
-            WHEN NOT EXISTS (
-              SELECT 1 FROM desk_client_identity_documents d
-               WHERE d.client_id=c.client_id
-                 AND coalesce(btrim(d.doc_number),'') <> ''
-                 AND ${counts}
-            ) THEN 'unverified'
-            WHEN EXISTS (
-              SELECT 1 FROM desk_client_identity_documents d
-               WHERE d.client_id=c.client_id AND d.is_primary
-                 AND ${counts}
-                 AND d.expires_on IS NOT NULL AND d.expires_on < current_date
-            ) THEN 'expired'
-            ELSE 'identified'
-          END
+          SET verification_status = ${verificationCaseSql()}
         WHERE c.client_id=$1 AND c.verification_status <> 'verified'`,
       [clientId],
     );
@@ -1264,15 +1254,21 @@ export class ClientRecordService {
 
 const healthCardNotId = () => new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
 
-/* A health card never makes the file identified. `verified` is left
-   as stored: this derivation does not grant it, and it does not take
-   a provider result away. The same exclusion is in refreshVerification,
-   which is what the next write persists. */
+/* A health card never makes the file identified, and neither does the
+   redaction marker. `verified` is left as stored: this derivation does
+   not grant it, and it does not take a provider result away. The same
+   exclusion is in refreshVerification, which is what the next write
+   persists. */
+function countsAsIdNumber(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text !== "" && text !== REDACTED_HEALTH_NUMBER;
+}
+
 function verificationForRead(status: unknown, documents: Record<string, unknown>[]): string {
   if (status === "verified") return "verified";
   const numbered = documents.some((document) => {
     if (isHealthCardType(document.doc_type)) return false;
-    return String(document.doc_number ?? "").trim() !== "";
+    return countsAsIdNumber(document.doc_number);
   });
   if (!numbered) return "unverified";
   const primary = documents.find((document) => document.is_primary === true && !isHealthCardType(document.doc_type));

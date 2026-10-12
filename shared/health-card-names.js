@@ -76,6 +76,10 @@
   });
   var HEALTH_CARD_TYPE_KEYS = Object.keys(KEYS);
 
+  /* The marker the owner-run redaction writes. It is not a number, so
+     it does not identify a client. */
+  var REDACTED_HEALTH_NUMBER = "[redacted]";
+
   function isHealthCardType(value) {
     var key = typeKey(value);
     return key !== "" && KEYS[key] === true;
@@ -131,12 +135,44 @@
     return folded + " <> ALL (ARRAY[" + list + "]::text[])";
   }
 
+  /* A stored id number that still counts. Blank does not. The redaction
+     marker does not: it records that a number was removed. */
+  function idNumberCountsSql(expr) {
+    var trimmed = "coalesce(btrim(" + expr + "),'')";
+    return trimmed + " <> '' AND " + trimmed + " <> '" + REDACTED_HEALTH_NUMBER.replace(/'/g, "''") + "'";
+  }
+
+  /* The CASE refreshVerification writes. `c` is desk_clients and `d` is
+     the document alias. `verified` is not in the CASE: the caller leaves
+     a provider result alone. */
+  function verificationCaseSql() {
+    var typeOk = healthCardExcludedSql("d.doc_type");
+    var numbered = idNumberCountsSql("d.doc_number");
+    return (
+      "CASE WHEN NOT EXISTS (" +
+      "SELECT 1 FROM desk_client_identity_documents d " +
+      "WHERE d.client_id=c.client_id AND " +
+      numbered +
+      " AND " +
+      typeOk +
+      ") THEN 'unverified' WHEN EXISTS (" +
+      "SELECT 1 FROM desk_client_identity_documents d " +
+      "WHERE d.client_id=c.client_id AND d.is_primary AND " +
+      typeOk +
+      " AND d.expires_on IS NOT NULL AND d.expires_on < current_date" +
+      ") THEN 'expired' ELSE 'identified' END"
+    );
+  }
+
   return {
     HEALTH_CARD_NAMES: HEALTH_CARD_NAMES,
     HEALTH_CARD_TYPE_KEYS: HEALTH_CARD_TYPE_KEYS,
+    REDACTED_HEALTH_NUMBER: REDACTED_HEALTH_NUMBER,
     typeKey: typeKey,
     isHealthCardType: isHealthCardType,
     scrubHealthNumbers: scrubHealthNumbers,
     healthCardExcludedSql: healthCardExcludedSql,
+    idNumberCountsSql: idNumberCountsSql,
+    verificationCaseSql: verificationCaseSql,
   };
 });

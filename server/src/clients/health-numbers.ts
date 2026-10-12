@@ -1,19 +1,27 @@
 /* A stored health number is not lawful to keep, and it was never valid ID.
 
-   Two operations, neither of which runs on deploy:
+   healthCardReview is the live read: GET /api/clients/health-card-review
+   in routes.ts. It lists, per shop, clients who have a health card
+   number stored and posted deals that relied on one. The number itself
+   is not in the list.
 
-   - healthCardReview: a read-only list, per shop, of clients who have a
-     health card number stored and of posted deals that relied on one.
-     The number itself is not in the list.
-   - redactHealthNumbers: replaces that number with a marker, keeps the
-     row, and writes an append-only audit entry. Dry-run is the default
-     for the command that calls this. Passing apply: false changes nothing.
+   redactHealthNumbers replaces that number with a marker, keeps the
+   row, scrubs the tenant-state copy, and writes an append-only audit
+   entry. The command that calls it is not imported by src/index.ts and
+   does not run on deploy. Passing apply: false changes nothing,
+   including the tenant-state copy. Sealed filings and scans are not
+   touched; Compliance is ruling on those.
 */
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import { isHealthCardType } from "./health-card.js";
+import {
+  REDACTED_HEALTH_NUMBER,
+  isHealthCardType,
+  scrubHealthNumbers,
+  verificationCaseSql,
+} from "./health-card.js";
 
-export const REDACTED_HEALTH_NUMBER = "[redacted]";
+export { REDACTED_HEALTH_NUMBER };
 export const REDACTION_ACTION = "client.health_number.redact";
 /* The action records that a number was redacted. The reason is the
    legal ground, and nothing else: the original number is not written
@@ -155,11 +163,56 @@ export type RedactionCounts = {
   alreadyRedacted: number;
   deals: number;
   redacted: number;
+  /* Document ids that still hold a health number, or that this apply
+     just replaced. Never the number. */
+  documentIds: string[];
 };
 
+/* Clients whose standing has to be recomputed: a health card is on the
+   file, or a document number is already the marker. `verified` is left
+   alone by the CASE's caller. */
+function standingClientIds(rows: DocumentRow[]) {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (isHealthCardType(row.doc_type) && stored(row.doc_number)) ids.add(row.client_id);
+    if (redacted(row.doc_number)) ids.add(row.client_id);
+  }
+  return [...ids];
+}
+
+async function scrubTenantCopy(client: pg.PoolClient, tenantId: string, userId: string) {
+  const found = await client.query<{ state: unknown }>(
+    "SELECT state FROM tenant_state WHERE tenant_id = $1 FOR UPDATE",
+    [tenantId],
+  );
+  if (!found.rowCount) return;
+  const current = found.rows[0]!.state;
+  const cleaned = scrubHealthNumbers(current);
+  if (JSON.stringify(cleaned) === JSON.stringify(current)) return;
+  await client.query(
+    `UPDATE tenant_state
+        SET state = $2::jsonb, updated_by = $3, updated_at = now()
+      WHERE tenant_id = $1`,
+    [tenantId, JSON.stringify(cleaned), userId],
+  );
+}
+
+async function refreshStanding(client: pg.PoolClient, clientIds: string[]) {
+  if (!clientIds.length) return;
+  await client.query(
+    `UPDATE desk_clients c
+        SET verification_status = ${verificationCaseSql()}
+      WHERE c.client_id = ANY($1::text[])
+        AND c.verification_status <> 'verified'`,
+    [clientIds],
+  );
+}
+
 /* apply false rolls the transaction back. The counts are still returned.
-   apply true writes the marker and one audit row per number. A row that
-   is already the marker is skipped, so a second run writes nothing. */
+   apply true writes the marker, one audit row per number, scrubs the
+   tenant-state copy, and refreshes standing. A row that is already the
+   marker is skipped, so a second run writes nothing. Filings and scans
+   are not in this transaction. */
 export async function redactHealthNumbers(
   pool: pg.Pool,
   actor: RedactionActor,
@@ -172,6 +225,7 @@ export async function redactHealthNumbers(
     const grouped = byClient(rows);
     const health = rows.filter((row) => isHealthCardType(row.doc_type) && stored(row.doc_number));
     const pending = health.filter((row) => !redacted(row.doc_number));
+    const documentIds = pending.map((row) => row.document_id).sort();
     const reliedIds = [...grouped.entries()]
       .filter(([, documents]) => reliedOnHealthCard(documents))
       .map(([clientId]) => clientId);
@@ -210,6 +264,8 @@ export async function redactHealthNumbers(
         );
         redactedCount += 1;
       }
+      await scrubTenantCopy(client, actor.tenantId, actor.userId);
+      await refreshStanding(client, standingClientIds(rows));
       await client.query("COMMIT");
     } else {
       await client.query("ROLLBACK");
@@ -221,6 +277,7 @@ export async function redactHealthNumbers(
       alreadyRedacted: health.length - pending.length + redactedCount,
       deals: deals.length,
       redacted: redactedCount,
+      documentIds,
     };
   } catch (error) {
     try {

@@ -1,7 +1,10 @@
 /* Replace stored health numbers with a marker.
 
-   This does not run on deploy. src/index.ts does not import it, and it
-   is not a migration. Dry-run is the default and prints counts only.
+   This command does not run on deploy. src/index.ts does not import it,
+   and it is not a migration. The review route does import the report
+   (routes.ts loads health-numbers.js); this file does not. Dry-run is
+   the default. It prints counts and document ids, and changes nothing.
+   Filings and scans are left for Compliance.
 
      DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --actor j.masri
      DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --apply --actor j.masri
@@ -51,6 +54,13 @@ try {
   console.log(`health numbers still stored: ${counts.stored}`);
   console.log(`already redacted: ${counts.alreadyRedacted}`);
   console.log(`posted deals that relied on a health card: ${counts.deals}`);
+  if (counts.documentIds.length) {
+    console.log("document ids:");
+    for (const documentId of counts.documentIds) console.log(documentId);
+  } else {
+    console.log("document ids: none");
+  }
+  console.log("filings and scans were not changed. Compliance is ruling on them.");
   if (apply) console.log(`redacted: ${counts.redacted}`);
   else console.log("dry-run: nothing was changed");
 } catch (error) {

@@ -114,18 +114,25 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   that relied on a health card (primary document, or the only numbered
   document). Reversed deals are not listed. The number is not in the
   response. The owner and the compliance officer can open it. A branch
-  manager cannot. Replacing the number is
-  `npx tsx src/clients/redact-health-numbers-cli.ts`. Dry-run prints
-  counts and changes nothing, including no audit row. `--apply --actor`
-  writes `[redacted]`, keeps the row, and appends one audit entry per
-  redacted record: the number was redacted, the date, who ran it, and
-  the reason "health number not lawful to keep, not valid ID". The
-  review has to be available to that shop before `--apply` runs. It
-  is not a migration and the server does not run it on deploy.
-  `--apply` stays inert until Sol approves it through the Chief of
-  Staff. The backup window is unknown: this repository does not
-  record how long Neon keeps a backup. A redacted number remains in
-  backups until that window ages it out, and a pre-redaction backup
+  manager cannot. The review is live: `routes.ts` imports
+  `health-numbers.js`. Replacing the number is
+  `npx tsx src/clients/redact-health-numbers-cli.ts`. That command is
+  not imported by `src/index.ts`, is not a migration, and does not run
+  on deploy. Dry-run prints counts and the document ids, and changes
+  nothing, including no audit row and no change to the tenant-state
+  copy. `--apply --actor` writes `[redacted]`, keeps the row, scrubs
+  that shop's tenant-state copy, refreshes standing so the marker is
+  not an identifying number, and appends one audit entry per redacted
+  record: the number was redacted, the date, who ran it, and the
+  reason "health number not lawful to keep, not valid ID". The output
+  lists document ids and never the numbers. Sealed filings and scans
+  are not changed; Compliance is ruling on them. The review has to be
+  available to that shop before `--apply` runs. `--apply` stays inert
+  until Compliance signs off on retention under the Proceeds of Crime
+  (Money Laundering) and Terrorist Financing Act, s.108 (five years),
+  and Sol decides. The backup window is unknown: this repository does
+  not record how long Neon keeps a backup. A redacted number remains
+  in backups until that window ages it out, and a pre-redaction backup
   must not be restored over the live book. See
   `docs/CLIENT_RECORDS.md`.
 - **The desk fits a phone.** At 430px wide and under, a window fills
