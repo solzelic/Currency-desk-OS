@@ -178,8 +178,9 @@ database leak cannot be replayed as a login. One-time codes are hashed and
 compared in constant time. Till PINs were once in the state blob the browser
 downloads whole; they live hashed on the staff record now, and the write path
 strips them on every save so an older client cannot put one back. A guess is
-reserved before that hash is checked, and released when the PIN is right, so
-a burst of guesses cannot all pass the lock. The lock still lives in memory
+reserved before that hash is checked. It is given back once the current PIN
+or password checks out, so a later refusal does not count and a burst of
+guesses cannot all pass the lock. The lock still lives in memory
 on this process.
 
 **Sessions die on command.** Opaque tokens in an httpOnly cookie, not JWTs. A

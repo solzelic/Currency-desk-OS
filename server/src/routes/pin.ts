@@ -78,6 +78,28 @@ export function reservePinAttempt(userId: string): boolean {
   return true;
 }
 
+/* Give back the guess just taken, the moment the current PIN or password
+   checks out. A later refusal (a new PIN that is too easy, for one) must
+   not count. Only a wrong current secret counts. The guess that fills the
+   quota is also the one that locks and zeroes the count, so giving that
+   one back reopens the keypad and leaves the earlier wrong guesses. */
+export function releasePinAttempt(userId: string): void {
+  const t = tries.get(userId);
+  if (!t) return;
+  if (t.until > Date.now() && t.count === 0) {
+    t.until = 0;
+    t.count = MAX_TRIES - 1;
+    tries.set(userId, t);
+    return;
+  }
+  if (t.count <= 1) {
+    tries.delete(userId);
+    return;
+  }
+  t.count -= 1;
+  tries.set(userId, t);
+}
+
 export const clearPinAttempts = (userId: string): void => { tries.delete(userId); };
 
 /* What support sees when somebody rings up unable to get in: whether the
@@ -88,18 +110,31 @@ export function pinLockedUntil(userId: string): string | null {
 }
 
 /* A PIN nobody would pick: not a repeat, not a run, not a date. Those are
-   the first things guessed, and a code the desk issues should never be one. */
+   the first things guessed. Issuing one, and accepting one somebody chose,
+   use the same list. */
+export function isWeakPin(pin: string): boolean {
+  if (!/^\d{4}$/.test(pin)) return true;
+  const d = pin.split("").map(Number);
+  const allSame = d.every((x) => x === d[0]);
+  const ascending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 1) % 10);
+  const descending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 9) % 10);
+  const looksLikeYear = pin.startsWith("19") || pin.startsWith("20");
+  return allSame || ascending || descending || looksLikeYear;
+}
+
+export function weakPinDetail(pin: string): string | null {
+  if (!isWeakPin(pin)) return null;
+  return pin === "0000"
+    ? "0000 is too easy to guess. Pick a different PIN."
+    : "That PIN is too easy to guess. Pick a different PIN.";
+}
+
 export function generatePin(): string {
   for (;;) {
     const bytes = new Uint32Array(1);
     globalThis.crypto.getRandomValues(bytes);
     const pin = String(bytes[0]! % 10000).padStart(4, "0");
-    const d = pin.split("").map(Number) as number[];
-    const allSame = d.every((x) => x === d[0]);
-    const ascending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 1) % 10);
-    const descending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 9) % 10);
-    const looksLikeYear = pin.startsWith("19") || pin.startsWith("20");
-    if (!allSame && !ascending && !descending && !looksLikeYear) return pin;
+    if (!isWeakPin(pin)) return pin;
   }
 }
 
@@ -165,7 +200,10 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       if (!(await verifyPassword(parsed.data.currentPin, me.pinHash))) {
         return reply.code(401).send({ error: "wrong_pin" });
       }
+      releasePinAttempt(me.id);
     }
+    const weak = weakPinDetail(parsed.data.pin);
+    if (weak) return reply.code(422).send({ error: "weak_pin", detail: weak });
     await db.update(schema.staffUsers)
       .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: false })
       .where(eq(schema.staffUsers.id, me.id));
@@ -200,6 +238,9 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       });
       return reply.code(401).send({ error: "wrong_password", detail: "That is not your sign-in password." });
     }
+    releasePinAttempt(me.id);
+    const weak = weakPinDetail(parsed.data.pin);
+    if (weak) return reply.code(422).send({ error: "weak_pin", detail: weak });
 
     await db.update(schema.staffUsers)
       .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: false })
