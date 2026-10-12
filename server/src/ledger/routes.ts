@@ -629,7 +629,16 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   app.get("/api/ledger/till-session", async (req, reply) => {
     try {
       const actor = await actorOrReply(req, reply);
-      return actor ? reply.send(await tillControl.current(actor)) : undefined;
+      if (!actor) return;
+      const current = await tillControl.current(actor);
+      /* A count that is not saved yet must not show the expected figure
+         to the person who does not hold the till. */
+      if (current.session && current.session.openedBy !== actor.userId) {
+        for (const figure of Object.values(current.latestCounts)) {
+          delete (figure as { expected?: unknown }).expected;
+        }
+      }
+      return reply.send(current);
     } catch (error) {
       return failure(reply, error);
     }

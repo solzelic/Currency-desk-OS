@@ -199,9 +199,13 @@ PINs are refused when a person sets their own. Too many wrong tries locks
 the keypad for 5 minutes, then it clears on its own. The till belongs to
 whoever counted it. Switching in does not take it. A manager, an auditor,
 or compliance may keep the workspace to look or to approve. A teller or a
-supervisor keeps it only when they are the one who counted it. Trading on
-someone else's count is refused until a handover count closes that session,
-with the variance on the opener, and opens one the new person counted. The
+supervisor keeps it only when they are the one who counted it. A deal
+and a cash movement on someone else's count are refused until a handover
+count. A manager may approve, not move cash. A mid-day count is only for
+the holder, and the reply to anyone else carries no expected amount. The
+handover closes that session, writes the variance on it, records the
+person who counted as the closer and the counter, and opens one they
+counted. The
 audit row is `auth.switch` with `{from, to}`. The first-run tour stays
 closed on a switch and on a handover.
 

@@ -6,7 +6,7 @@ import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
-import { LedgerError, type LedgerActor } from "./service.js";
+import { LedgerError, refuseTillHeld, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   applyVaultLeg,
@@ -355,6 +355,9 @@ export class TillControlService {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "till:count");
       const session = await this.openSession(client, actor);
+      if (String(session.opened_by) !== actor.userId) {
+        await refuseTillHeld(client, String(session.opened_by));
+      }
       const existing = await client.query(
         `SELECT batch_id
            FROM ledger_till_count_batches
@@ -582,8 +585,8 @@ export class TillControlService {
   }
 
   /* A blind count. The person taking the till does not see the expected
-     figures. The variance is written on the opener, that session closes,
-     and a new one opens in the name of the person who counted. */
+     figures. The variance stays on the old session. The closer and the
+     counter are the person who counted. A new session opens in their name. */
   handover(actor: LedgerActor, idempotencyKey: string, counts: Counts) {
     return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts));
   }
@@ -616,7 +619,7 @@ export class TillControlService {
           (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
            till_id,count_kind,actor_id,idempotency_key,counted_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,'close',$8,$9,$10)`,
-        [batchId, session.session_id, ...scope(actor), opener, idempotencyKey, now],
+        [batchId, session.session_id, ...scope(actor), actor.userId, idempotencyKey, now],
       );
       for (const row of balances) {
         const currency = row.currency.trim() as Currency;
@@ -639,7 +642,7 @@ export class TillControlService {
         `UPDATE ledger_till_sessions
             SET status='closed', closed_by=$1, closed_at=$2, close_note='Handover count'
           WHERE session_id=$3`,
-        [opener, now, session.session_id],
+        [actor.userId, now, session.session_id],
       );
       const next = await client.query(
         `SELECT COALESCE(max(session_number),0)+1 AS session_number
@@ -707,6 +710,9 @@ export class TillControlService {
         return response;
       }
       const session = await this.openSession(client, actor);
+      if (String(session.opened_by) !== actor.userId) {
+        await refuseTillHeld(client, String(session.opened_by));
+      }
       const balance = await client.query(
         `SELECT available_amount
            FROM ledger_till_balances

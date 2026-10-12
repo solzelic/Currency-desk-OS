@@ -20,7 +20,7 @@ import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
 import { pinDeskName } from "../auth/desk-name.js";
-import { clearPinAttempts, lockState, recordFailure } from "./pin.js";
+import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
 import { audit } from "../audit.js";
 import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
@@ -443,22 +443,24 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         detail: `${deskName} needs to choose their own PIN before switching in.`,
       });
     }
-    const locked = lockState(target.id);
-    if (locked.locked) {
-      return reply.code(429).send({ error: "locked", detail: lockedDetail });
-    }
     /* 0000 is the old browser fallback. It is refused before the hash is
        read, and it is not a wrong try, so it does not walk the keypad
-       toward the lock. */
+       toward the lock. A locked keypad still says locked. */
     if (pin === "0000") {
+      if (lockState(target.id).locked) {
+        return reply.code(429).send({ error: "locked", detail: lockedDetail });
+      }
       return reply.code(422).send({
         error: "weak_pin",
         detail: "0000 is too easy to guess. Pick a different PIN.",
       });
     }
+    if (!reservePinAttempt(target.id)) {
+      return reply.code(429).send({ error: "locked", detail: lockedDetail });
+    }
     const pinOk = await verifyPassword(pin, target.pinHash);
     if (!pinOk) {
-      const after = recordFailure(target.id);
+      const after = lockState(target.id);
       await audit(db, {
         tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
         actorId: who.id, action: "pin.failed", detail: { of: target.staffId, via: "auth.switch" },

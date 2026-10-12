@@ -200,6 +200,12 @@ export async function requireOpenTill(
   /* A reversal puts money back. It is not a new deal, and a manager may
      approve it without counting the till. */
   if (opts?.held === false || opener === actor.userId) return;
+  await refuseTillHeld(client, opener);
+}
+
+/* Cash in, cash out, and a mid-day count use the same sentence as a deal.
+   A manager may approve. They may not move the cash. */
+export async function refuseTillHeld(client: pg.PoolClient, opener: string): Promise<never> {
   const named = await client.query(`SELECT name FROM staff_users WHERE id=$1`, [opener]);
   const who = pinDeskName(String(named.rows[0]?.name ?? ""));
   throw new LedgerError(

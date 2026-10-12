@@ -571,10 +571,14 @@ session belongs to whoever counted it. A switch does not hand it over.
 A teller or a supervisor keeps that workspace only when they counted
 it, or when nobody has. A manager, an auditor, or compliance can stay
 on it to look or to approve, and they do not become the person who
-counted it. Anyone else is asked to pick a till. A deal on a till
-somebody else counted is refused until the new person does a handover
-count: a blind count closes the old session with the variance on the
-opener and opens a session they counted. The screen applies the role
+counted it. Anyone else is asked to pick a till. A deal, and cash in
+or out, on a till somebody else counted is refused until the new
+person does a handover count. A manager may approve. They may not
+move the cash. A mid-day count is only for the person who holds the
+till, and a count reply to anyone else carries no expected amount.
+The handover is a blind count. It closes the old session, writes the
+variance on that session, and records the person who counted as the
+closer and the counter. It opens a session they counted. The screen applies the role
 `/api/auth/me` returns after the switch. The Settings toggle that used
 to skip the PIN does not skip the server. A deal, a till open, and an
 audit row carry the new session. The first-run tour is once per person,

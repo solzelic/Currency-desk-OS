@@ -7,6 +7,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import {
   demoDealsForHome,
+  demoStaffRowId,
   populateDemoDesk,
   quoteDirectionForPair,
   resolveDemoPack,
@@ -291,7 +292,7 @@ postgres("York FX demo desk seeder", () => {
     expect(vaultBefore).toBe("40000.00");
 
     const floater: LedgerActor = {
-      userId: `${DEMO.tenantId}:a.singh`,
+      userId: demoStaffRowId(),
       tenantId: DEMO.tenantId,
       legalEntityId: DEMO.legalEntityId,
       branchId: DEMO.branchId,

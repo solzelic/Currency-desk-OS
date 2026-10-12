@@ -99,14 +99,6 @@ export function releasePinAttempt(userId: string): void {
   tries.set(userId, t);
 }
 
-export function recordFailure(userId: string): { locked: boolean; remaining: number } {
-  const t = tries.get(userId) ?? { count: 0, until: 0 };
-  t.count += 1;
-  if (t.count >= MAX_TRIES) { t.until = Date.now() + LOCK_MS; t.count = 0; }
-  tries.set(userId, t);
-  return lockState(userId);
-}
-
 export const clearPinAttempts = (userId: string): void => { tries.delete(userId); };
 
 /* What support sees when somebody rings up unable to get in: whether the

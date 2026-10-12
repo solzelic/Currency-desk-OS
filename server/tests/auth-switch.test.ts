@@ -318,6 +318,12 @@ postgres("a switched session is the person on the deal", () => {
     const opened = await app.inject({ method: "POST", url: "/api/ledger/till-sessions/open", cookies: singh });
     expect(opened.statusCode, opened.body).toBe(201);
     expect(opened.json().session.openedBy).toBe(idOf(B));
+    const midday = await app.inject({
+      method: "POST", url: "/api/ledger/till-counts", cookies: singh,
+      payload: { idempotencyKey: "singh-midday", counts: { CAD: "50000.00" } },
+    });
+    expect(midday.statusCode, midday.body).toBe(201);
+    expect(midday.json().latestCounts.CAD.expected).toBe("50000.00");
 
     const first = await postDeal(singh, "switch-b", idOf(A));
     const deal = await pool!.query(
@@ -361,7 +367,35 @@ postgres("a switched session is the person on the deal", () => {
     expect(lookPost.json().message).toBe("Count the till to take it over from A.\u00A0Singh.");
     expect((await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'")).rows.map((row) => row.opened_by)).toEqual([idOf(B)]);
 
-    const toCosta = await switchTo(manager, A, "1357");
+    const cad = () => pool!.query(
+      "SELECT available_amount FROM ledger_till_balances WHERE workspace_id=$1 AND currency='CAD'",
+      [DEMO.workspaceId],
+    ).then((result) => result.rows[0].available_amount as string);
+    const beforeCash = await cad();
+    const move = (cookies: Record<string, string>, key: string, direction: "in" | "out") => app.inject({
+      method: "POST", url: "/api/ledger/till-movements", cookies,
+      payload: {
+        idempotencyKey: key, direction, currency: "CAD", amount: "100.00",
+        counterpartyType: "bank", counterpartyRef: "qa", reason: "Not this person's till",
+      },
+    });
+    const managerOut = await move(manager, "mgr-out", "out");
+    const managerIn = await move(manager, "mgr-in", "in");
+    expect(managerOut.statusCode, managerOut.body).toBe(409);
+    expect(managerIn.statusCode, managerIn.body).toBe(409);
+    expect(managerOut.json()).toEqual({
+      code: "TILL_HELD", message: "Count the till to take it over from A.\u00A0Singh.",
+    });
+    expect(managerIn.json().message).toBe("Count the till to take it over from A.\u00A0Singh.");
+    await setPin("j.masri", "9753");
+    const toAdmin = await switchTo(manager, "j.masri", "9753");
+    expect(toAdmin.statusCode, toAdmin.body).toBe(200);
+    const adminOut = await move(cookieOf(toAdmin), "admin-out", "out");
+    expect(adminOut.statusCode, adminOut.body).toBe(409);
+    expect(adminOut.json().message).toBe("Count the till to take it over from A.\u00A0Singh.");
+    expect(await cad()).toBe(beforeCash);
+
+    const toCosta = await switchTo(cookieOf(toAdmin), A, "1357");
     expect(toCosta.statusCode, toCosta.body).toBe(200);
     expect(toCosta.json()).toMatchObject({ pickTill: true, workspaceId: null, user: { id: A } });
     const back = cookieOf(toCosta);
@@ -387,28 +421,58 @@ postgres("a switched session is the person on the deal", () => {
     const openBefore = await pool!.query("SELECT session_id, opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(openBefore.rows.map((row) => row.opened_by)).toEqual([idOf(B)]);
 
+    await setPin("s.iqbal", "8642");
+    const toIqbal = await switchTo(back, "s.iqbal", "8642");
+    expect(toIqbal.statusCode, toIqbal.body).toBe(200);
+    const iqbal = cookieOf(toIqbal);
+    const headers = { "x-workspace-id": DEMO.workspaceId };
+    const preview = await app.inject({
+      method: "GET", url: "/api/ledger/till-session", cookies: iqbal, headers,
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(JSON.stringify(preview.json())).not.toContain('"expected"');
+    const refusedCount = await app.inject({
+      method: "POST", url: "/api/ledger/till-counts", cookies: iqbal, headers,
+      payload: { idempotencyKey: "iqbal-midday", counts: { CAD: "1.00" } },
+    });
+    expect(refusedCount.statusCode, refusedCount.body).toBe(409);
+    expect(refusedCount.json()).toEqual({
+      code: "TILL_HELD", message: "Count the till to take it over from A.\u00A0Singh.",
+    });
+    expect(JSON.stringify(refusedCount.json())).not.toContain("expected");
+
     const handover = await app.inject({
-      method: "POST", url: "/api/ledger/till-sessions/handover", cookies: back,
-      headers: { "x-workspace-id": DEMO.workspaceId },
-      payload: { idempotencyKey: "handover-costa", counts: { CAD: "50000.00", USD: "4000.00" } },
+      method: "POST", url: "/api/ledger/till-sessions/handover", cookies: iqbal, headers,
+      payload: { idempotencyKey: "handover-iqbal", counts: { CAD: "50000.00", USD: "4000.00" } },
     });
     expect(handover.statusCode, handover.body).toBe(201);
-    expect(handover.json().session.openedBy).toBe(idOf(A));
+    expect(handover.json().session.openedBy).toBe(idOf("s.iqbal"));
+    expect(JSON.stringify(handover.json())).not.toContain('"expected"');
     const closed = await pool!.query(
       "SELECT status, opened_by, closed_by FROM ledger_till_sessions WHERE session_id=$1",
       [openBefore.rows[0].session_id],
     );
-    expect(closed.rows[0]).toMatchObject({ status: "closed", opened_by: idOf(B), closed_by: idOf(B) });
+    expect(closed.rows[0]).toMatchObject({
+      status: "closed", opened_by: idOf(B), closed_by: idOf("s.iqbal"),
+    });
     const variance = await pool!.query(
       "SELECT actor_id FROM ledger_till_count_batches WHERE session_id=$1 AND count_kind='close'",
       [openBefore.rows[0].session_id],
     );
-    expect(variance.rows.map((row) => row.actor_id)).toEqual([idOf(B)]);
+    expect(variance.rows.map((row) => row.actor_id)).toEqual([idOf("s.iqbal")]);
+    const lines = await pool!.query(
+      `SELECT c.variance_amount
+         FROM ledger_till_counts c
+         JOIN ledger_till_count_batches b ON b.batch_id = c.batch_id
+        WHERE b.session_id=$1 AND b.count_kind='close'`,
+      [openBefore.rows[0].session_id],
+    );
+    expect(lines.rows.length).toBeGreaterThan(0);
 
-    const second = await postDeal(back, "switch-a", idOf(B));
+    const second = await postDeal(iqbal, "switch-iqbal", idOf(B));
     const reverse = await pool!.query("SELECT actor_id FROM ledger_transactions WHERE transaction_id=$1", [second]);
-    expect(reverse.rows[0].actor_id).toBe(idOf(A));
+    expect(reverse.rows[0].actor_id).toBe(idOf("s.iqbal"));
     const openNow = await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(openNow.rows.map((row) => row.opened_by)).toEqual([idOf(A)]);
+    expect(openNow.rows.map((row) => row.opened_by)).toEqual([idOf("s.iqbal")]);
   });
 });
