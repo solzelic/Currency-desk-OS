@@ -55,6 +55,13 @@ postgres("a new till can take a customer", () => {
     await pool.query("DELETE FROM branches WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.branchId]);
 
     await seed(handle.db);
+    /* seed() does not overwrite an entity a previous file moved onto
+       another pack. This desk is the Canadian one, and the fee is home
+       currency, so a leftover GBP home asks the new till for pounds. */
+    await pool.query(
+      `UPDATE legal_entities SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1 WHERE id=$1`,
+      [DEMO.legalEntityId],
+    );
     // the seed leaves an existing account alone, and an earlier file may have
     // moved this one — the owner has to be the owner for any of this to run
     await handle.db
@@ -129,7 +136,7 @@ postgres("a new till can take a customer", () => {
         purpose: "Travel", sourceOfFunds: "Employment income", thirdParty: false,
       },
     });
-    expect(deal.statusCode).toBe(201);
+    expect(deal.statusCode, deal.body).toBe(201);
 
     const booked = await pool.query("SELECT till_id FROM ledger_transactions WHERE workspace_id=$1", [workspaceId]);
     expect(booked.rows.map((r) => r.till_id)).toEqual(["till-11"]);
@@ -181,7 +188,7 @@ postgres("a new till can take a customer", () => {
         purpose: "Travel", sourceOfFunds: "Employment income", thirdParty: false,
       },
     });
-    expect(deal.statusCode).toBe(201);
+    expect(deal.statusCode, deal.body).toBe(201);
 
     const booked = await pool.query("SELECT branch_id FROM ledger_transactions WHERE workspace_id=$1", [workspaceId]);
     expect(booked.rows.map((r) => r.branch_id)).toEqual([branchId]);

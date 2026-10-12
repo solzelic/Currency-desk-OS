@@ -176,6 +176,9 @@ postgres("the reads a signed document is built from", () => {
   });
 
   afterAll(async () => {
+    /* The London case leaves this entity on GBP. Put the Canadian desk
+       back before the next file posts, or its fee asks for pounds. */
+    await reset();
     await app.close();
     await handle.close();
     await pool.end();
