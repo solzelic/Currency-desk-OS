@@ -1680,7 +1680,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       {dayClosed && (
         <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: CD.inkSoft, color: 'var(--cd-on-ink)' }}>
           <Ic n="lock" s={14} c="var(--cd-on-ink)" />
-          <span className="text-[12.5px]">The trading day is closed — the book is read-only. Reopen from Till & Cash Drawer to post new transactions.</span>
+          <span className="text-[12.5px]">The trading day is closed. The book is read-only. Reopen from Till & Cash Drawer to post new transactions.</span>
           {onOpenDayClose && <button onClick={onOpenDayClose} className="ml-auto text-[11px] font-semibold px-2.5 py-1" style={{ background: 'var(--cd-on-ink-faint)', borderRadius: 6 }}>Open Till →</button>}
         </div>
       )}

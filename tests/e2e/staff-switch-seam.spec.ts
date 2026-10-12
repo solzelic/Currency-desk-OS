@@ -37,6 +37,25 @@ async function shot(page: Page, name: string) {
   }
 }
 
+const NITS = "/opt/cursor/artifacts/design-nits";
+
+async function nitShot(page: Page, name: string) {
+  mkdirSync(NITS, { recursive: true });
+  const path = `${NITS}/${name}`;
+  await page.screenshot({ path });
+  if (existsSync("/cursor/stores/self")) {
+    mkdirSync("/cursor/stores/self/design-nits", { recursive: true });
+    copyFileSync(path, `/cursor/stores/self/design-nits/${name}`);
+  }
+}
+
+async function expectNoPinOk(page: Page) {
+  await expect(page.getByText(NO_PIN)).toBeVisible();
+  await expect(page.getByRole("button", { name: "OK", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "1", exact: true })).toHaveCount(0);
+}
+
 async function typePin(page: Page, digits: string) {
   for (const digit of digits) {
     await page.getByRole("button", { name: digit, exact: true }).click();
@@ -93,10 +112,19 @@ test("switching from the avatar menu posts the deal as the next person", async (
   await page.setViewportSize({ width: 390, height: 780 });
   await openSinghPin(page);
   await typePin(page, "1357");
-  await expect(page.getByText(NO_PIN)).toBeVisible();
+  await expectNoPinOk(page);
   await shot(page, "refusal-no-pin-390.png");
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await nitShot(page, "no-pin-390.png");
+  await page.getByRole("button", { name: "OK", exact: true }).click();
 
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openSinghPin(page);
+  await typePin(page, "1357");
+  await expectNoPinOk(page);
+  await nitShot(page, "no-pin-1280.png");
+  await page.getByRole("button", { name: "OK", exact: true }).click();
+
+  await page.setViewportSize({ width: 390, height: 780 });
   await issuePin(request);
   await openSinghPin(page);
   await typePin(page, "0000");
