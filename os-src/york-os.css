@@ -1862,9 +1862,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text-muted, #6B6760);
     line-height: 16px;
   }
-  /* One line. The desk name (first segment) is cut first. The till
-     name is cut only after the desk name is gone. The dot and the
-     status stay whole: "Till open" or "Till closed". */
+  /* Status first, then one place. The status stays whole. The
+     place is the only piece that can end in an ellipsis, and that
+     ellipsis is the end of the line. */
   .phone-till-line {
     display: flex;
     align-items: center;
@@ -1873,20 +1873,6 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: 1 1 auto;
     overflow: hidden;
     white-space: nowrap;
-  }
-  .phone-till-part {
-    display: flex;
-    align-items: center;
-    flex-wrap: nowrap;
-    min-width: 0;
-    flex: 0 1 auto;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-  /* A large shrink factor spends the spare width on the desk name
-     before the till name gives any up. */
-  .phone-till-part.is-desk {
-    flex-shrink: 1000;
   }
   /* A flex item trims a space at either end, so " · " was painting
      as "·". pre keeps the spaces in every state. */
@@ -1897,6 +1883,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-till-where {
     min-width: 0;
+    flex: 1 1 auto;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1931,7 +1918,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-radius: 50%;
     background: #161513;
     color: #fff;
-    font-size: 13px;
+    font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
+    font-size: 15px;
     font-weight: 600;
   }
   /* The desk dark rule paints the initials with --on-ink (#131210).

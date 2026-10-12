@@ -62383,22 +62383,19 @@ window.CDOS_PERSIST = (function () {
     });
   }
 
-  /* The desk name is cut first. The till name is next. The status
-     is the last segment and stays whole, so "Till closed" never wraps.
+  /* Status first, so "Till closed" is never the piece that gets cut.
+     Then one place: the till name when the desk string has one,
+     otherwise the station. A long place ends in one ellipsis.
      Every gap is the same " · ", including a caller that omitted the spaces. */
   const TILL_GAP = ' · ';
   function deskLine(desk) {
     const parts = String(desk || '').trim().split(/\s*·\s*/).map(part => part.trim()).filter(Boolean);
     const last = parts[parts.length - 1];
-    if (last === 'Till open' || last === 'Till closed') {
-      return {
-        parts: parts.slice(0, -1),
-        status: last
-      };
-    }
+    const known = last === 'Till open' || last === 'Till closed';
+    const names = known ? parts.slice(0, -1) : parts;
     return {
-      parts,
-      status: ''
+      name: names.length ? names[names.length - 1] : '',
+      status: known ? last : ''
     };
   }
   function PhoneTopBar({
@@ -62410,29 +62407,6 @@ window.CDOS_PERSIST = (function () {
     avatar
   }) {
     const line = deskLine(desk);
-    const segments = [];
-    line.parts.forEach((part, i) => {
-      if (i > 0) segments.push(/*#__PURE__*/React.createElement("span", {
-        key: 'gap-' + i,
-        className: "phone-till-sep"
-      }, TILL_GAP));
-      segments.push(/*#__PURE__*/React.createElement("span", {
-        key: 'part-' + i,
-        className: 'phone-till-part' + (i === 0 ? ' is-desk' : '')
-      }, /*#__PURE__*/React.createElement("span", {
-        className: "phone-till-where"
-      }, part)));
-    });
-    if (line.status) {
-      if (segments.length) segments.push(/*#__PURE__*/React.createElement("span", {
-        key: "gap-status",
-        className: "phone-till-sep"
-      }, TILL_GAP));
-      segments.push(/*#__PURE__*/React.createElement("span", {
-        key: "status",
-        className: "phone-till-state"
-      }, line.status));
-    }
     return /*#__PURE__*/React.createElement("header", {
       className: "phone-head"
     }, /*#__PURE__*/React.createElement("div", {
@@ -62448,7 +62422,13 @@ window.CDOS_PERSIST = (function () {
       className: "phone-till-dot"
     }), /*#__PURE__*/React.createElement("span", {
       className: "phone-till-line"
-    }, segments)), /*#__PURE__*/React.createElement("button", {
+    }, line.status ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-till-state"
+    }, line.status) : null, line.status && line.name ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-till-sep"
+    }, TILL_GAP) : null, line.name ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-till-where"
+    }, line.name) : null)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-bell",
       "aria-label": unread == null ? 'Alerts' : unread ? 'Alerts' : 'No alerts',

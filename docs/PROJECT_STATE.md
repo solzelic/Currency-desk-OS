@@ -572,6 +572,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone top bar. The till line is the status, then
+one place (`Till closed · Wholesale desk`). A long place ends in
+one ellipsis. The avatar initials use the sans stack at 15px,
+weight 600. The rule is inside `max-width: 430px`.
+
 **2026-10-12**, civil dates and the phone capture. A PostgreSQL `date`
 is a calendar day. Reading it with `toISOString()` named the previous
 day in Asia/Jerusalem, so an identity document stored as 1 April 2030

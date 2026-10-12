@@ -178,13 +178,14 @@ a node; the desk passes the existing account button.
 The shop name is `.phone-shop-name`, one line. A long name ends in
 an ellipsis.
 
-The till line is a sibling, `.phone-till`, and it is one line. The
-desk name (the first segment, `.phone-till-part.is-desk`) is what
-the ellipsis cuts first. The till name is cut only after the desk
-name is gone. Every segment is joined with ` · `, including a closed
-till and a teller's till (`Front Desk 01 · Till 1 · Till closed`).
-The gap is `.phone-till-sep`. The words `Till open` or `Till closed`
-stay whole, in `.phone-till-state`, at the end of the line. The
+The till line is a sibling, `.phone-till`, and it is one line. It
+shows the status first, then one place: the till name when the desk
+string has one, otherwise the station. `Till closed · Wholesale desk`
+and `Till open · Front Desk 01` are that line. The status is
+`.phone-till-state` and stays whole. The place is `.phone-till-where`.
+A long place ends in one ellipsis, at the end of the line. The gap
+is `.phone-till-sep` (` · `). The avatar initials use the
+`tokens.css` sans stack (`--font-ui`) at 15px, weight 600. The
 header stays 56px tall at 360 and at 390.
 
 ### Title

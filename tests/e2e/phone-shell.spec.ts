@@ -393,8 +393,8 @@ test("the title sits 16px under the top bar at 360", async ({ page }) => {
 });
 
 /* A long station and till name used to wrap "open" or "closed"
-   onto a second line at 360, so the header grew. The desk name is
-   what gets cut. The status stays whole. */
+   onto a second line at 360, so the header grew. The line is now
+   the status, then one place. The status stays whole. */
 async function seedLongDesk(page: Page, closed = false, tillName = "Wholesale desk"): Promise<void> {
   await page.context().clearCookies();
   await page.goto("/app");
@@ -442,10 +442,8 @@ async function topBarMeasure(page: Page) {
     const state = head.querySelector(".phone-till-state");
     const dot = head.querySelector(".phone-till-dot");
     const bell = head.querySelector(".phone-bell");
-    const desk = head.querySelector(".phone-till-part.is-desk .phone-till-where");
-    const tillName = head.querySelector(".phone-till-part:not(.is-desk) .phone-till-where");
-    const wheres = [...head.querySelectorAll(".phone-till-where")];
-    if (!(shop instanceof HTMLElement) || !(till instanceof HTMLElement) || !(line instanceof HTMLElement) || !(state instanceof HTMLElement) || !(dot instanceof HTMLElement) || !(bell instanceof HTMLElement) || !(desk instanceof HTMLElement)) {
+    const place = head.querySelector(".phone-till-where");
+    if (!(shop instanceof HTMLElement) || !(till instanceof HTMLElement) || !(line instanceof HTMLElement) || !(state instanceof HTMLElement) || !(dot instanceof HTMLElement) || !(bell instanceof HTMLElement) || !(place instanceof HTMLElement)) {
       return null;
     }
     const headBox = head.getBoundingClientRect();
@@ -455,6 +453,7 @@ async function topBarMeasure(page: Page) {
     const dotBox = dot.getBoundingClientRect();
     const clipped = (el: Element) => el instanceof HTMLElement && el.scrollWidth > el.clientWidth + 1;
     const oneLine = (el: Element) => el.getClientRects().length === 1;
+    const clippedBits = [...line.querySelectorAll(".phone-till-state, .phone-till-sep, .phone-till-where")].filter((el) => clipped(el));
     return {
       height: Math.round(headBox.height),
       shopLines: shop.getClientRects().length,
@@ -462,12 +461,13 @@ async function topBarMeasure(page: Page) {
       lineLines: line.getClientRects().length,
       lineClipped: line.scrollWidth > line.clientWidth + 1,
       tillHeight: Math.round(till.getBoundingClientRect().height),
-      middle: wheres.map((el) => el.textContent || "").join(" · "),
-      middleClipped: wheres.some((el) => clipped(el)),
-      deskClipped: clipped(desk),
-      deskOneLine: oneLine(desk),
-      tillName: tillName ? (tillName.textContent || "") : "",
-      tillNameWhole: tillName instanceof HTMLElement ? !clipped(tillName) && oneLine(tillName) : true,
+      middle: place.textContent || "",
+      middleClipped: clipped(place),
+      deskClipped: clipped(place),
+      deskOneLine: oneLine(place),
+      tillName: place.textContent || "",
+      tillNameWhole: !clipped(place) && oneLine(place),
+      ellipsisCount: clippedBits.length,
       status: (state.textContent || "").replace(/^\s*·\s*/, ""),
       statusLines: state.getClientRects().length,
       statusWhole: state.scrollWidth <= state.clientWidth + 1 && stateBox.right <= bellBox.left + 1 && stateBox.right <= lineBox.right + 1 && stateBox.top >= lineBox.top - 1 && stateBox.bottom <= lineBox.bottom + 1,
@@ -494,15 +494,15 @@ test("the top bar is the same height at 360 and 390 with a long desk name", asyn
   expect(at390!.lineLines).toBe(1);
   expect(at360!.tillHeight).toBeLessThanOrEqual(16);
   expect(at390!.tillHeight).toBeLessThanOrEqual(16);
-  expect(at360!.middle).toContain("Front Desk 01");
-  expect(at360!.middle).toContain("Wholesale desk");
+  expect(at360!.middle).toBe("Wholesale desk");
+  expect(at360!.middle).not.toContain("Front Desk");
   expect(at360!.status).toBe("Till open");
   expect(at390!.status).toBe("Till open");
   expect(at360!.statusLines).toBe(1);
   expect(at360!.statusWhole).toBe(true);
   expect(at390!.statusWhole).toBe(true);
-  expect(at360!.deskClipped).toBe(true);
   expect(at360!.deskOneLine).toBe(true);
+  expect(at360!.ellipsisCount).toBe(0);
   expect(at360!.dotVisible).toBe(true);
 });
 
@@ -535,8 +535,8 @@ test("the top bar is one line at 360 when the till is closed", async ({ page }) 
   expect(bar!.status).toBe("Till closed");
   expect(bar!.statusLines).toBe(1);
   expect(bar!.statusWhole).toBe(true);
-  expect(bar!.deskClipped).toBe(true);
   expect(bar!.deskOneLine).toBe(true);
+  expect(bar!.ellipsisCount).toBe(0);
   expect(bar!.tillName).toBe("Wholesale desk");
   expect(bar!.tillNameWhole).toBe(true);
   expect(bar!.dotVisible).toBe(true);
@@ -574,13 +574,56 @@ test("the till line joins with a spaced dot at 360 when the till is closed and w
   await page.locator('#phone-more [data-phone-app="reports"]').click();
   await expectPhoneApp(page, "reports");
   await expect(page.locator(".phone-till-state")).toHaveText("Till closed");
-  expect(await renderedTillLine(page)).toBe("Front Desk 01 · Till 1 · Till closed");
+  expect(await renderedTillLine(page)).toBe("Till closed · Till 1");
 
   await page.unroute("**/api/ledger/till-session");
   await seedLongDesk(page, false, "Till 1");
   await expect(page.locator(".phone-head")).toBeVisible();
   await expect(page.locator(".phone-till-state")).toHaveText("Till open");
-  expect(await renderedTillLine(page)).toBe("Front Desk 01 · Till 1 · Till open");
+  expect(await renderedTillLine(page)).toBe("Till open · Till 1");
+});
+
+/* A long place used to be cut in the middle of two names, and the
+   status came last. The status stays whole. One ellipsis, on the place. */
+test("the status stays whole and a long place ends in one ellipsis", async ({ page }) => {
+  await page.route("**/api/ledger/till-session", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ session: null }) });
+  });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await seedLongDesk(page, true, "Wholesale desk on the north side of the room");
+  await expect(page.locator(".phone-till-state")).toHaveText("Till closed");
+  const seen = await page.locator(".phone-till-line").evaluate((line) => {
+    const state = line.querySelector(".phone-till-state");
+    const place = line.querySelector(".phone-till-where");
+    const clipped = (el: Element | null) => !!(el instanceof HTMLElement && el.scrollWidth > el.clientWidth + 1);
+    const bits = [...line.querySelectorAll(".phone-till-state, .phone-till-sep, .phone-till-where")];
+    const stateBox = state instanceof HTMLElement ? state.getBoundingClientRect() : null;
+    const lineBox = line.getBoundingClientRect();
+    return {
+      text: bits.map((el) => (el instanceof HTMLElement ? el.innerText : "")).join("").replace(/\n/g, ""),
+      statusWhole: !!(stateBox && state instanceof HTMLElement && !clipped(state) && stateBox.right <= lineBox.right + 1),
+      placeClipped: clipped(place),
+      clipped: bits.filter((el) => clipped(el)).length,
+      overflow: place instanceof HTMLElement ? getComputedStyle(place).textOverflow : "",
+    };
+  });
+  expect(seen.text.startsWith("Till closed · ")).toBe(true);
+  expect(seen.text).not.toContain("Front Desk");
+  expect(seen.statusWhole).toBe(true);
+  expect(seen.placeClipped).toBe(true);
+  expect(seen.clipped).toBe(1);
+  expect(seen.overflow).toBe("ellipsis");
+  const avatar = page.locator(".phone-head .mb-acct-av");
+  const family = await avatar.evaluate((el) => getComputedStyle(el).fontFamily);
+  const size = await avatar.evaluate((el) => getComputedStyle(el).fontSize);
+  const weight = await avatar.evaluate((el) => getComputedStyle(el).fontWeight);
+  expect(family.toLowerCase()).not.toMatch(/mono/);
+  expect(size).toBe("15px");
+  expect(weight).toBe("600");
 });
 
 test("Ledger passes the phone sweep", async ({ page }) => {
