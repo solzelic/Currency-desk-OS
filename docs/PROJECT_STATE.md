@@ -707,11 +707,14 @@ many currencies went up and the time from `formatPhoneTime`
 `Intl.DisplayNames`, and the code is not repeated. The source
 badge is Connected, Not connected, or Stale from the market pull.
 Publish stays off until a saved spread differs from the board.
-A back control returns to More. While a publish is in flight the
-button keeps the pricing accent and shows a spinner. A cashier can
-open the screen and cannot publish. Desktop Pricing
-is the shared 1280 baseline. This screen does not replace that
-picture.
+The list puts a custom spread first, then the six mobile-homepage
+currencies (USD, EUR, GBP, INR, AED, JPY), then the rest A to Z.
+Search matches the code and the name. Sentences say "rate board".
+The button says "Publish to rate board". A back control returns to
+More. While a publish is in flight the button keeps the pricing
+accent and shows a spinner. A cashier can open the screen and cannot
+publish. Desktop Pricing is the shared 1280 baseline. This screen
+does not replace that picture.
 
 **2026-10-11**, phone top bar. The shop name is one line and ends in
 an ellipsis. The till line is one line. The desk name is cut first.

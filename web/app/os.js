@@ -54339,6 +54339,14 @@ ${snap}`;
     if (kind === 'stale') return 'Stale';
     return 'Not connected';
   }
+  /* The six on the public mobile homepage rate list. */
+  const HOME_BOARD = ['USD', 'EUR', 'GBP', 'INR', 'AED', 'JPY'];
+  function currencyRank(code, custom) {
+    const home = HOME_BOARD.indexOf(code);
+    if (custom) return home >= 0 ? home : 1000;
+    if (home >= 0) return 2000 + home;
+    return 3000;
+  }
   /* A row with no spread of its own is the board's buy margin.
      The starting board is stored that way. */
   function boardSpread(board, code) {
@@ -54509,7 +54517,7 @@ ${snap}`;
     text
   }) {
     if (!text) return null;
-    const tail = text.replace(/^Sent to the Rate Board\.\s*/, '');
+    const tail = text.replace(/^Sent to the rate board\.\s*/, '');
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "pr-note",
       role: "status",
@@ -54518,7 +54526,7 @@ ${snap}`;
     }, /*#__PURE__*/React.createElement("span", {
       className: "pr-note-ok",
       "aria-hidden": "true"
-    }, "\u2713"), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Sent to the Rate Board."), " ", tail)), document.body);
+    }, "\u2713"), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Sent to the rate board."), " ", tail)), document.body);
   }
   function PhonePricing({
     settings,
@@ -54527,7 +54535,7 @@ ${snap}`;
     log
   }) {
     const Phone = window.CDOS.Phone;
-    if (!Phone || !Phone.Screen || !Phone.ListRow || !Phone.StickyAction) {
+    if (!Phone || !Phone.Screen || !Phone.ListRow || !Phone.StickyAction || !Phone.Search) {
       throw new Error('Pricing: the phone shell did not load.');
     }
     const safe = settings || {};
@@ -54554,6 +54562,7 @@ ${snap}`;
     const [sheet, setSheet] = useState(null);
     const [draft, setDraft] = useState('');
     const [extra, setExtra] = useState(null);
+    const [query, setQuery] = useState('');
     const [phase, setPhase] = useState('idle');
     const [toast, setToast] = useState('');
     const [banner, setBanner] = useState('');
@@ -54756,7 +54765,7 @@ ${snap}`;
         if (log) log('Pricing', err && err.message ? err.message : 'formatPhoneTime did not load');
       }
       const sent = Object.keys(rows).length;
-      setToast('Sent to the Rate Board. ' + sent + ' currencies' + (when ? ', ' + when : '') + '.');
+      setToast('Sent to the rate board. ' + sent + ' currencies' + (when ? ', ' + when : '') + '.');
       if (log) log('Rates published to board', sent + ' currencies · default ' + defSpread + '% · by ' + (me && me.name ? me.name : 'owner'));
       setPhase('locked');
       const hold = (fn, ms) => {
@@ -54946,6 +54955,21 @@ ${snap}`;
       label: sourceLabel(source),
       tone: source === 'connected' ? 'pos' : source === 'stale' ? 'warn' : 'neutral'
     };
+    const needle = query.trim().toLowerCase();
+    const isCustom = code => {
+      const sp = (safe.spreads || {})[code];
+      return sp != null && sp !== '';
+    };
+    const shown = foreign.filter(code => {
+      if (!needle) return true;
+      const name = currencyName(code).toLowerCase();
+      return code.toLowerCase().indexOf(needle) >= 0 || name.indexOf(needle) >= 0;
+    }).sort((a, b) => {
+      const ra = currencyRank(a, isCustom(a));
+      const rb = currencyRank(b, isCustom(b));
+      if (ra !== rb) return ra - rb;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
     const body = feed === 'loading' ? /*#__PURE__*/React.createElement("div", {
       "data-pr": "loading"
     }, /*#__PURE__*/React.createElement(Phone.LoadingState, {
@@ -54962,13 +54986,13 @@ ${snap}`;
       title: "For every currency"
     }, /*#__PURE__*/React.createElement(Row, {
       title: "Rate source",
-      subtitle: "Open Exchange Rates, hourly",
+      subtitle: "Open Exchange Rates",
       badge: sourceBadge,
       chevron: true,
       onClick: () => openSheet('source')
     }), /*#__PURE__*/React.createElement(Row, {
       title: "Spread",
-      subtitle: "Added on each side of the market rate",
+      subtitle: "Each side of the market rate",
       amount: pctText(defSpread),
       chevron: true,
       onClick: () => openSheet('spread')
@@ -54990,9 +55014,14 @@ ${snap}`;
       amount: roundLabel,
       chevron: true,
       onClick: () => openSheet('round')
-    })), /*#__PURE__*/React.createElement(Phone.ListSection, {
+    })), /*#__PURE__*/React.createElement(Phone.Search, {
+      value: query,
+      onChange: setQuery,
+      placeholder: "Find a currency",
+      label: "Find a currency"
+    }), /*#__PURE__*/React.createElement(Phone.ListSection, {
       title: "Spread by currency"
-    }, foreign.map(code => {
+    }, shown.length ? shown.map(code => {
       const sp = (safe.spreads || {})[code];
       const custom = sp != null && sp !== '';
       const name = currencyName(code);
@@ -55006,12 +55035,14 @@ ${snap}`;
         chevron: true,
         onClick: () => openSheet('ccy', code)
       });
-    })));
+    }) : /*#__PURE__*/React.createElement("p", {
+      className: "pr-hint"
+    }, "No currency matches.")));
     const showPublish = feed === 'loading' || foreign.length > 0;
     let why = '';
-    if (!canPublish) why = 'Only an owner or a manager can publish.';else if (feed === 'loading') why = 'The Rate Board is still loading.';else if (feed === 'error') why = "The Rate Board didn't load.";else if (phase === 'idle' && pending === 0) why = 'Nothing new to put on the rate board.';
+    if (!canPublish) why = 'Only an owner or a manager can publish.';else if (feed === 'loading') why = 'The rate board is still loading.';else if (feed === 'error') why = "The rate board didn't load.";else if (phase === 'idle' && pending === 0) why = 'Nothing new to put on the rate board.';
     const sticky = showPublish ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
-      label: phase === 'publishing' ? 'Publishing…' : 'Publish to Rate Board',
+      label: phase === 'publishing' ? 'Publishing…' : 'Publish to rate board',
       disabled: feed !== 'ready' || !canPublish || phase !== 'idle' || pending === 0,
       disabledReason: why,
       onClick: publish
@@ -55034,7 +55065,7 @@ ${snap}`;
       s: 24
     })), "More");
     const alerts = feed === 'error' || banner ? /*#__PURE__*/React.createElement(React.Fragment, null, feed === 'error' ? /*#__PURE__*/React.createElement(Phone.ErrorState, {
-      message: "The Rate Board didn't load.",
+      message: "The rate board didn't load.",
       onRetry: () => setAttempt(n => n + 1)
     }) : null, banner ? /*#__PURE__*/React.createElement("p", {
       className: "pr-fail",

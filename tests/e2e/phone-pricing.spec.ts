@@ -7,6 +7,16 @@ import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const SHOTS = "/opt/cursor/artifacts/pr117";
+const HOME_BOARD = ["USD", "EUR", "GBP", "INR", "AED", "JPY"];
+
+function boardOrder(codes: string[], customs: string[]): string[] {
+  const custom = new Set(customs);
+  const customHome = HOME_BOARD.filter((code) => custom.has(code));
+  const customRest = customs.filter((code) => !HOME_BOARD.includes(code)).slice().sort();
+  const plainHome = HOME_BOARD.filter((code) => codes.includes(code) && !custom.has(code));
+  const rest = codes.filter((code) => !custom.has(code) && !HOME_BOARD.includes(code)).slice().sort();
+  return [...customHome, ...customRest, ...plainHome, ...rest];
+}
 const PHONE_ROOTS = [".pr-phone", ".phone-head", "#phone-dock"];
 
 async function dismissTour(page: Page): Promise<void> {
@@ -125,7 +135,8 @@ for (const width of [360, 390]) {
     await expect(phone).toContainText("Changes save as you go. Publish to show them on the rate board.");
     await expect(phone).toContainText("For every currency");
     await expect(phone).toContainText("Spread by currency");
-    await expect(phone).toContainText("Added on each side of the market rate");
+    await expect(phone.getByRole("button", { name: /Rate source/ })).toContainText("Open Exchange Rates");
+    await expect(phone.getByRole("button", { name: /^Spread / })).toContainText("Each side of the market rate");
     await expect(phone).toContainText("Warn when a deal earns under this");
     await expect(phone).toContainText("USD");
     await expect(phone).toContainText("0.00 CAD");
@@ -143,7 +154,7 @@ for (const width of [360, 390]) {
         } catch (err) {
           expected = "";
         }
-        return { code, name, expected };
+        return { code, name, expected, custom: (el.querySelector(".phone-row-meta")?.textContent || "").trim() === "custom" };
       });
     });
     expect(names.length).toBeGreaterThan(0);
@@ -158,7 +169,7 @@ for (const width of [360, 390]) {
     const row = await phone.locator(".phone-row").first().boundingBox();
     expect(row && row.height).toBeGreaterThanOrEqual(44);
     const publish = page.locator(".pr-phone .phone-sticky-btn");
-    await expect(publish).toHaveText("Publish to Rate Board");
+    await expect(publish).toHaveText("Publish to rate board");
     await expect(publish).toBeDisabled();
     await expect(phone).toContainText("Nothing new to put on the rate board.");
     const box = await publish.boundingBox();
@@ -168,6 +179,36 @@ for (const width of [360, 390]) {
     expect(backBox && backBox.height).toBeGreaterThanOrEqual(44);
     expect(backBox && backBox.width).toBeGreaterThanOrEqual(44);
     await shot(page, `pricing_list_${width}`);
+    const codes = names.map((row) => row.code);
+    const prior = names.filter((row) => row.custom).map((row) => row.code);
+    expect(codes).toEqual(boardOrder(codes, prior));
+    const find = phone.getByRole("textbox", { name: "Find a currency" });
+    const pln = names.find((row) => row.code === "PLN");
+    expect(pln && pln.name).toBeTruthy();
+    await find.fill((pln ? pln.name : "").split(/\s+/).pop() || "PLN");
+    await expect(page.locator(".pr-ccy .phone-row-title")).toHaveText(["PLN"]);
+    await shot(page, `pricing_search_${width}`);
+    await find.fill("jpy");
+    await expect(page.locator(".pr-ccy .phone-row-title")).toHaveText(["JPY"]);
+    await find.fill("aud");
+    const audHits = await page.locator(".pr-ccy").evaluateAll((els) => els.map((el) => ({
+      code: (el.querySelector(".phone-row-title")?.textContent || "").trim(),
+      name: (el.querySelector(".phone-row-sub")?.textContent || "").trim().toLowerCase(),
+    })));
+    expect(audHits.map((hit) => hit.code)).toContain("AUD");
+    for (const hit of audHits) {
+      expect(hit.code.toLowerCase().includes("aud") || hit.name.includes("aud"), hit.code).toBe(true);
+    }
+    await find.fill("");
+    await expect(page.locator(".pr-ccy")).toHaveCount(codes.length);
+    await page.getByRole("button", { name: /^PLN\b/ }).click();
+    await page.getByRole("button", { name: "Less, 0.1" }).click();
+    await page.getByRole("button", { name: /Save / }).click();
+    await expect(page.locator("[data-pr='sheet']")).toHaveCount(0);
+    const after = await page.locator(".pr-ccy .phone-row-title").allTextContents();
+    const ordered = after.map((text) => text.trim());
+    const customs = prior.includes("PLN") ? prior : [...prior, "PLN"];
+    expect(ordered).toEqual(boardOrder(ordered, customs));
     if (width === 360) {
       await back.click();
       await expect(page.locator("#phone-more")).toBeVisible();
@@ -253,7 +294,7 @@ for (const width of [360, 390]) {
     await button.click();
     const res = await done;
     expect(res.status()).toBe(200);
-    await expect(page.locator("[data-pr='toast']")).toContainText(/Sent to the Rate Board\./);
+    await expect(page.locator("[data-pr='toast']")).toContainText(/Sent to the rate board\./);
     await expect(page.locator("[data-pr='toast']")).toContainText(/\d+ currencies, \d{1,2}:\d{2} (AM|PM)\./);
     await expect(button).toBeDisabled();
     await button.click({ force: true });
@@ -296,7 +337,7 @@ test("a failed board load keeps the saved spreads", async ({ page }) => {
   });
   await atDesk(page, "j.masri");
   await openPricing(page);
-  await expect(page.getByRole("alert")).toContainText("The Rate Board didn't load.");
+  await expect(page.getByRole("alert")).toContainText("The rate board didn't load.");
   await expect(page.locator("[data-pr='list']")).toContainText("USD");
   await expect(page.locator("[data-pr='list']")).toContainText("Not connected");
   await frames(page, "pricing_error");

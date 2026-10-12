@@ -361,6 +361,14 @@
     if (kind === 'stale') return 'Stale';
     return 'Not connected';
   }
+  /* The six on the public mobile homepage rate list. */
+  const HOME_BOARD = ['USD', 'EUR', 'GBP', 'INR', 'AED', 'JPY'];
+  function currencyRank(code, custom) {
+    const home = HOME_BOARD.indexOf(code);
+    if (custom) return home >= 0 ? home : 1000;
+    if (home >= 0) return 2000 + home;
+    return 3000;
+  }
   /* A row with no spread of its own is the board's buy margin.
      The starting board is stored that way. */
   function boardSpread(board, code) {
@@ -472,11 +480,11 @@
      pricing spec. The settings toast is three seconds at the top. */
   function PricingNote({ text }) {
     if (!text) return null;
-    const tail = text.replace(/^Sent to the Rate Board\.\s*/, '');
+    const tail = text.replace(/^Sent to the rate board\.\s*/, '');
     return ReactDOM.createPortal(
       <div className="pr-note" role="status" data-pr="toast" aria-live="polite">
         <span className="pr-note-ok" aria-hidden="true">✓</span>
-        <span><b>Sent to the Rate Board.</b> {tail}</span>
+        <span><b>Sent to the rate board.</b> {tail}</span>
       </div>,
       document.body
     );
@@ -484,7 +492,7 @@
 
   function PhonePricing({ settings, setSettings, me, log }) {
     const Phone = window.CDOS.Phone;
-    if (!Phone || !Phone.Screen || !Phone.ListRow || !Phone.StickyAction) {
+    if (!Phone || !Phone.Screen || !Phone.ListRow || !Phone.StickyAction || !Phone.Search) {
       throw new Error('Pricing: the phone shell did not load.');
     }
     const safe = settings || {};
@@ -511,6 +519,7 @@
     const [sheet, setSheet] = useState(null);
     const [draft, setDraft] = useState('');
     const [extra, setExtra] = useState(null);
+    const [query, setQuery] = useState('');
     const [phase, setPhase] = useState('idle');
     const [toast, setToast] = useState('');
     const [banner, setBanner] = useState('');
@@ -661,7 +670,7 @@
         if (log) log('Pricing', err && err.message ? err.message : 'formatPhoneTime did not load');
       }
       const sent = Object.keys(rows).length;
-      setToast('Sent to the Rate Board. ' + sent + ' currencies' + (when ? ', ' + when : '') + '.');
+      setToast('Sent to the rate board. ' + sent + ' currencies' + (when ? ', ' + when : '') + '.');
       if (log) log('Rates published to board', sent + ' currencies · default ' + defSpread + '% · by ' + (me && me.name ? me.name : 'owner'));
       setPhase('locked');
       const hold = (fn, ms) => { const id = setTimeout(fn, ms); timers.current.push(id); };
@@ -749,6 +758,21 @@
     }
 
     const sourceBadge = { label: sourceLabel(source), tone: source === 'connected' ? 'pos' : source === 'stale' ? 'warn' : 'neutral' };
+    const needle = query.trim().toLowerCase();
+    const isCustom = (code) => {
+      const sp = (safe.spreads || {})[code];
+      return sp != null && sp !== '';
+    };
+    const shown = foreign.filter((code) => {
+      if (!needle) return true;
+      const name = currencyName(code).toLowerCase();
+      return code.toLowerCase().indexOf(needle) >= 0 || name.indexOf(needle) >= 0;
+    }).sort((a, b) => {
+      const ra = currencyRank(a, isCustom(a));
+      const rb = currencyRank(b, isCustom(b));
+      if (ra !== rb) return ra - rb;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
     const body = feed === 'loading'
       ? <div data-pr="loading"><Phone.LoadingState rows={6} label="Loading pricing" /></div>
       : foreign.length === 0
@@ -756,30 +780,31 @@
         : (
           <div data-pr="list">
             <Phone.ListSection title="For every currency">
-              <Row title="Rate source" subtitle="Open Exchange Rates, hourly" badge={sourceBadge} chevron onClick={() => openSheet('source')} />
-              <Row title="Spread" subtitle="Added on each side of the market rate" amount={pctText(defSpread)} chevron onClick={() => openSheet('spread')} />
+              <Row title="Rate source" subtitle="Open Exchange Rates" badge={sourceBadge} chevron onClick={() => openSheet('source')} />
+              <Row title="Spread" subtitle="Each side of the market rate" amount={pctText(defSpread)} chevron onClick={() => openSheet('spread')} />
               <Row title="Fee per deal" subtitle="Added to every new deal" amount={pricingMoney(feeN, home)} chevron onClick={() => openSheet('fee')} />
               <Row title="Low margin warning" subtitle="Warn when a deal earns under this" amount={pctText(mFloor)} chevron onClick={() => openSheet('floor')} />
               <Row title="Round payouts" subtitle="Cash you hand over" amount={roundLabel} chevron onClick={() => openSheet('round')} />
             </Phone.ListSection>
+            <Phone.Search value={query} onChange={setQuery} placeholder="Find a currency" label="Find a currency" />
             <Phone.ListSection title="Spread by currency">
-              {foreign.map((code) => {
+              {shown.length ? shown.map((code) => {
                 const sp = (safe.spreads || {})[code];
                 const custom = sp != null && sp !== '';
                 const name = currencyName(code);
                 return <Row key={code} className="pr-ccy" title={code} subtitle={name} amount={pctText(custom ? sp : defSpread)} meta={custom ? 'custom' : 'default'} chevron onClick={() => openSheet('ccy', code)} />;
-              })}
+              }) : <p className="pr-hint">No currency matches.</p>}
             </Phone.ListSection>
           </div>
         );
     const showPublish = feed === 'loading' || foreign.length > 0;
     let why = '';
     if (!canPublish) why = 'Only an owner or a manager can publish.';
-    else if (feed === 'loading') why = 'The Rate Board is still loading.';
-    else if (feed === 'error') why = "The Rate Board didn't load.";
+    else if (feed === 'loading') why = 'The rate board is still loading.';
+    else if (feed === 'error') why = "The rate board didn't load.";
     else if (phase === 'idle' && pending === 0) why = 'Nothing new to put on the rate board.';
     const sticky = showPublish
-      ? <Phone.StickyAction label={phase === 'publishing' ? 'Publishing…' : 'Publish to Rate Board'} disabled={feed !== 'ready' || !canPublish || phase !== 'idle' || pending === 0} disabledReason={why} onClick={publish} />
+      ? <Phone.StickyAction label={phase === 'publishing' ? 'Publishing…' : 'Publish to rate board'} disabled={feed !== 'ready' || !canPublish || phase !== 'idle' || pending === 0} disabledReason={why} onClick={publish} />
       : null;
     const pendingLine = pending === 1
       ? '1 change not on the rate board yet. '
@@ -799,7 +824,7 @@
     );
     const alerts = (feed === 'error' || banner) ? (
       <>
-        {feed === 'error' ? <Phone.ErrorState message="The Rate Board didn't load." onRetry={() => setAttempt((n) => n + 1)} /> : null}
+        {feed === 'error' ? <Phone.ErrorState message="The rate board didn't load." onRetry={() => setAttempt((n) => n + 1)} /> : null}
         {banner ? <p className="pr-fail" role="alert">{banner}</p> : null}
       </>
     ) : null;
