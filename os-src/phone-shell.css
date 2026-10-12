@@ -13,7 +13,6 @@
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
-    min-height: 0;
     min-width: 0;
     /* The desktop window is glass, so its radial shows through a
        transparent shell, including behind the title. A phone screen
@@ -22,6 +21,10 @@
     background-image: none;
     color: var(--color-text, #161513);
     font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
+    /* The fixed bar covers the bottom. The surface has to reach it,
+       or the page behind (cream in the light tokens) shows through. */
+    min-height: calc(100dvh - var(--phone-bar-h, 64px));
+    box-sizing: border-box;
   }
   #phone-more > .phone-shell { flex: 1; min-height: 0; }
 
@@ -694,6 +697,14 @@
   .phq-tile b { font-size: 15px; line-height: 20px; letter-spacing: normal; }
   .phq-tile small { display: block; font-size: 12px; line-height: 16px; color: var(--color-text-muted); }
   .phq-tile.is-on { border: 2px solid var(--brand-primary, var(--brand-green)); background: var(--brand-primary-soft); padding: 7px 11px; }
+  /* Dark selected tile. The soft brand fill is mixed with white, so
+     it stays cream, and the shell ink is #F6F3EC. Light on cream
+     fails. Cream fill, near-black text. */
+  html[data-cdtheme="dark"] .phq-tile.is-on {
+    background: #F6F3EC;
+    color: #14130F;
+  }
+  html[data-cdtheme="dark"] .phq-tile.is-on small { color: #14130F; }
   .phq-amt {
     display: block;
     margin-bottom: 12px;

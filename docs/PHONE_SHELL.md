@@ -584,8 +584,11 @@ is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 
 `os-src/phone/ChoiceTiles.jsx`. `options` array of `{ id, label, detail }`.
 `value` is the selected id. `onChange(id)`. `label` is the listbox name.
-Two columns. Each tile is at least 56px. The selected tile uses
-`--brand-primary`.
+Two columns. Each tile is at least 56px. In the light theme the
+selected tile uses `--brand-primary` on the soft tint. In the dark
+theme the selected tile is `#F6F3EC` with `#14130F` text, including
+the detail line, so the pair clears 4.5:1. A phone screen fills the
+height down to the bottom bar.
 
 ### AmountField
 
