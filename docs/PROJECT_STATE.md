@@ -249,7 +249,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   later is a 44px secondary button. The empty state sits in a card
   on the phone surface, says 0 contacts, and its button uses accent
   #3C3B78. In a dark phone theme that surface is the dark token, so
-  the heading stays readable. Record ID's icon and Save use
+  the heading stays readable, and the initials use the text token. Record ID's icon and Save use
   the same accent. Wider than 430px, Clients is the desktop list.
   That shared editor no longer offers Health Card, and a new
   contact or an ID still waits for the server before this browser

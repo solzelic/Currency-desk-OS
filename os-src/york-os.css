@@ -3113,12 +3113,6 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  html[data-cdtheme="dark"] #desktop .win:has(.phone-clients),
-  html[data-cdtheme="dark"] #desktop .win:has(.phone-clients) > .win-body,
-  html[data-cdtheme="dark"] .phone-clients.phone-shell {
-    background: rgb(30, 29, 26);
-    background-image: none;
-  }
   .phone-clients.phone-shell {
     flex: 1 1 auto;
     min-height: 0;
@@ -3228,6 +3222,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--brand-primary, #3C3B78);
     font-size: 13px;
     font-weight: 700;
+  }
+  html[data-cdtheme="dark"] .phone-ini {
+    background: color-mix(in srgb, var(--brand-primary, #3C3B78) 24%, var(--color-surface));
+    color: var(--color-text);
   }
   /* The file and the add flow stay the existing screens. On a phone
      they fill the sheet above the bar instead of sitting in a card. */
