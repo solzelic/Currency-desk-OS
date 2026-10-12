@@ -190,7 +190,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       return reply.code(refused.status).send(refused.body);
     }
     if (!user) throw new Error("Sign-in passed without a staff user.");
-    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
+    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
 
     /* Anyone whose staff id is an email gets a code sent to it, and that code
        is the second factor. This endpoint predates it and grants a session on
@@ -291,7 +291,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       return reply.code(refused.status).send(refused.body);
     }
     if (!user) throw new Error("Sign-in passed without a staff user.");
-    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
+    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
     const recipient = isEmail(user.staffId) ? user.staffId : null;
     if (!recipient) {
       // no address to verify — password is the only factor
@@ -334,16 +334,16 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const proof = await loadLoginProof(db, req.cookies[LOGIN_PROOF_COOKIE]);
     if (proof.state === "expired") {
       reply.clearCookie(LOGIN_PROOF_COOKIE, cookieOpts);
-      return reply.code(410).send({ error: "expired", detail: "That code expired — sign in again." });
+      return reply.code(410).send({ error: "expired", detail: "That code expired. Sign in again." });
     }
     if (proof.state === "exhausted") {
       reply.clearCookie(LOGIN_PROOF_COOKIE, cookieOpts);
-      return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries — sign in again." });
+      return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries. Sign in again." });
     }
     if (proof.state !== "ready") return reply.code(401).send(CODE_REFUSAL);
     const user = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, proof.userId)).limit(1))[0];
     if (!user || !user.active || !staffMatches(user, staffId)) return reply.code(401).send(CODE_REFUSAL);
-    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
+    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
     if (!codeMatches(code, proof.codeHash)) {
       await noteWrongCode(db, proof.tokenHash, proof.attempts);
       return reply.code(401).send(CODE_REFUSAL);
@@ -636,7 +636,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
        a browser that forgot them, and they ring up about the wrong thing. */
     const resolved = await resolveSessionState(db, req.cookies[SESSION_COOKIE]);
     if (resolved.state === "suspended") {
-      return reply.code(403).send({ error: "suspended", detail: "This desk is suspended — contact CurrencyDesk." });
+      return reply.code(403).send({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
     }
     const who = resolved.state === "active" ? resolved.user : null;
     if (!who) return reply.code(401).send({ error: "unauthenticated" });

@@ -58925,14 +58925,55 @@ ${snap}`;
        BEFORE the await. React state does not update synchronously, so
        `disabled` alone loses the race against a double-click — the second
        press lands while the first render is still pending. A ref cannot. */
-    const [cool, setCool] = useState(0);
+    const [coolUntil, setCoolUntil] = useState(0);
+    const [now, setNow] = useState(0);
+    const cool = coolUntil > now ? Math.ceil((coolUntil - now) / 1000) : 0;
+    /* A lock is not a resend cooldown. retryAfter on a lock is how
+       long the counter lasts (fifteen minutes). Feeding that into the
+       countdown turned the button into "Another code in 900s" and hid
+       the time the desk can actually try again. */
+    const [locked, setLocked] = useState(false);
+    const [lockUntil, setLockUntil] = useState('');
+    const [lockAt, setLockAt] = useState(0);
     const sending = useRef(false);
     useEffect(() => {
-      if (cool <= 0) return;
-      const t = setTimeout(() => setCool(c => c - 1), 1000);
-      return () => clearTimeout(t);
-    }, [cool]);
-    const startCooldown = secs => setCool(Math.max(1, Math.round(secs || 120)));
+      if (coolUntil <= Date.now()) return undefined;
+      setNow(Date.now());
+      const t = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(t);
+    }, [coolUntil]);
+    /* The lock ends when the server's time passes. The page clock is
+       what the button watches, so a wait on this screen is enough.
+       There is no reload. */
+    useEffect(() => {
+      if (!locked || !lockAt) return undefined;
+      const tick = () => {
+        if (Date.now() < lockAt) return;
+        setLocked(false);
+        setLockUntil('');
+        setLockAt(0);
+      };
+      tick();
+      const t = setInterval(tick, 1000);
+      return () => clearInterval(t);
+    }, [locked, lockAt]);
+    const startCooldown = secs => setCoolUntil(Date.now() + Math.max(1, Math.round(secs || 120)) * 1000);
+    const applyLock = d => {
+      if (!d || d.error !== 'too_many_attempts') return false;
+      const at = typeof d.retryAt === 'string' ? Date.parse(d.retryAt) : NaN;
+      setLocked(true);
+      setLockUntil(typeof d.until === 'string' ? d.until : '');
+      setLockAt(Number.isFinite(at) ? at : 0);
+      setErr('');
+      return true;
+    };
+    const clearLock = () => {
+      setLocked(false);
+      setLockUntil('');
+      setLockAt(0);
+    };
+    /* The hour is the shop's own clock. Naming the zone repeats it. */
+    const lockSentence = !locked ? '' : !lockUntil ? 'Too many tries. Try again in a few minutes.' : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = raw => {
@@ -59022,21 +59063,29 @@ ${snap}`;
         if (res && res.status === 401) {
           sending.current = false;
           setBusy(false);
-          setErr('That password doesn’t match this ID. Try again — or reset it below.');
+          clearLock();
+          setErr('That password doesn\'t match this ID. Try again, or reset it below.');
           return;
         }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
           sending.current = false;
           setBusy(false);
+          if (applyLock(d)) return;
           startCooldown(d && d.retryAfter);
-          setErr(d && d.detail || 'A code went out moments ago — check your email.');
+          setErr(d && d.detail || 'A code went out moments ago. Check your email.');
+          return;
+        }
+        if (res && res.status === 503) {
+          sending.current = false;
+          setBusy(false);
+          setErr('Sign-in is having trouble. Try again in a minute.');
           return;
         }
         if (res && !res.ok) {
           sending.current = false;
           setBusy(false);
-          setErr('Sign-in service error (' + res.status + ') — try again in a moment.');
+          setErr('Sign-in service error (' + res.status + '). Try again in a moment.');
           return;
         }
         const data = await res.json().catch(() => null);
@@ -59251,6 +59300,10 @@ ${snap}`;
         });
         const d = await res.json().catch(() => null);
         if (res.status === 429) {
+          if (d && d.error === 'too_many_attempts') {
+            setNote(d && d.until ? 'Too many tries. Try again at ' + d.until + '.' : 'Too many tries. Try again in a few minutes.');
+            return;
+          }
           startCooldown(d && d.retryAfter);
           setNote(d && d.detail || 'A code went out moments ago.');
           return;
@@ -59600,11 +59653,15 @@ ${snap}`;
           setStep('id');
           setPw('');
           setErr('');
+          clearLock();
         },
         style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          minHeight: 44,
+          padding: '0 8px',
           background: 'none',
           border: 'none',
-          padding: 0,
           color: 'var(--si-primary)',
           cursor: 'pointer',
           fontWeight: 700
@@ -59634,7 +59691,8 @@ ${snap}`;
         style: {
           width: '100%',
           boxSizing: 'border-box',
-          padding: '13px 62px 13px 14px',
+          minHeight: 56,
+          padding: '6px 88px 6px 14px',
           fontSize: 15,
           border: '1px solid var(--si-line)',
           borderRadius: 11,
@@ -59654,18 +59712,20 @@ ${snap}`;
         onClick: () => setShowPw(s => !s),
         style: {
           position: 'absolute',
-          right: 8,
+          right: 6,
           top: '50%',
           transform: 'translateY(-50%)',
+          height: 44,
+          minWidth: 44,
+          padding: '0 12px',
           fontFamily: MONO,
           fontSize: 10.5,
           fontWeight: 700,
           letterSpacing: '0.06em',
-          color: 'var(--si-mute)',
+          color: 'var(--si-ink)',
           background: 'var(--si-soft)',
           border: 'none',
           borderRadius: 7,
-          padding: '5px 9px',
           cursor: 'pointer'
         }
       }, showPw ? 'HIDE' : 'SHOW')), /*#__PURE__*/React.createElement("div", {
@@ -59683,16 +59743,29 @@ ${snap}`;
           setStep('forgot');
         },
         style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          minHeight: 44,
+          padding: '0 4px',
           background: 'none',
           border: 'none',
-          padding: 0,
           color: 'var(--si-primary)',
           fontWeight: 700,
           cursor: 'pointer',
           textDecoration: 'underline',
-          fontSize: 11.5
+          fontSize: 13
         }
-      }, "Send yourself a reset code"), "."), err && /*#__PURE__*/React.createElement("div", {
+      }, "Send yourself a reset code"), "."), locked && /*#__PURE__*/React.createElement("div", {
+        style: {
+          textAlign: 'center',
+          fontSize: 22,
+          fontWeight: 800,
+          letterSpacing: '-0.01em',
+          color: 'var(--si-ink)',
+          marginTop: 16,
+          lineHeight: 1.35
+        }
+      }, lockSentence), err && !locked && /*#__PURE__*/React.createElement("div", {
         style: {
           color: 'var(--si-flag)',
           fontSize: 12,
@@ -59700,12 +59773,55 @@ ${snap}`;
         }
       }, err), /*#__PURE__*/React.createElement("button", {
         type: "submit",
-        disabled: busy || cool > 0 || pw.length < 4,
-        style: {
+        disabled: busy || locked && !!lockUntil || cool > 0 || pw.length < 4,
+        style: locked ? {
+          width: '100%',
+          height: 48,
+          marginTop: 16,
+          borderRadius: 12,
+          border: 'none',
+          cursor: lockUntil || busy || pw.length < 4 ? 'not-allowed' : 'pointer',
+          background: !lockUntil && !busy && pw.length >= 4 ? 'var(--si-primary)' : 'rgba(23,20,15,0.07)',
+          color: !lockUntil && !busy && pw.length >= 4 ? '#fff' : 'var(--si-ink)',
+          fontFamily: 'Archivo, system-ui, sans-serif',
+          fontSize: 15,
+          fontWeight: 700,
+          letterSpacing: 0,
+          textTransform: 'none'
+        } : {
           ...primaryBtn(!busy && cool === 0 && pw.length >= 4),
           marginTop: 16
         }
-      }, busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), /*#__PURE__*/React.createElement("div", {
+      }, busy ? 'Checking…' : locked && lockUntil ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          textTransform: 'none',
+          letterSpacing: 0,
+          fontFamily: 'Archivo, system-ui, sans-serif',
+          fontSize: 15
+        }
+      }, " ", /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "16",
+        height: "16",
+        "aria-hidden": "true",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }, /*#__PURE__*/React.createElement("rect", {
+        width: "18",
+        height: "11",
+        x: "3",
+        y: "11",
+        rx: "2"
+      }), /*#__PURE__*/React.createElement("path", {
+        d: "M7 11V7a5 5 0 0 1 10 0v4"
+      })), "Sign in") : locked ? 'Try again' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 11.5,
@@ -60024,9 +60140,11 @@ ${snap}`;
       verifying: verifying
     }), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 11,
-        color: 'var(--si-faint)',
-        marginTop: 16
+        fontSize: note && note.indexOf('Too many tries.') === 0 ? 22 : 11,
+        fontWeight: note && note.indexOf('Too many tries.') === 0 ? 800 : 400,
+        color: note && note.indexOf('Too many tries.') === 0 ? 'var(--si-ink)' : 'var(--si-faint)',
+        marginTop: 16,
+        lineHeight: 1.35
       }
     }, note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'), /*#__PURE__*/React.createElement("button", {
       type: "button",

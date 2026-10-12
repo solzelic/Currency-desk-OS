@@ -398,6 +398,40 @@ postgres("shop sign-in against Postgres", () => {
     }
   });
 
+  it("says an expired code and too many code tries as two sentences", async () => {
+    forgetCooldown();
+    const start = await guess("rate-limit@example.com", PASS, "203.0.113.91");
+    expect(start.statusCode, start.body).toBe(200);
+    const proof = start.cookies.find((cookie) => cookie.name === LOGIN_PROOF_COOKIE)?.value;
+    expect(proof).toBeTruthy();
+    await pool.query("UPDATE login_challenges SET expires_at = now() - interval '1 minute' WHERE user_id = $1", [emailId]);
+    const expired = await app.inject({
+      method: "POST",
+      url: "/api/auth/login/verify",
+      remoteAddress: "203.0.113.91",
+      cookies: { [LOGIN_PROOF_COOKIE]: proof! },
+      payload: { staffId: "rate-limit@example.com", code: "000000", tenantId: TENANT },
+    });
+    expect(expired.statusCode).toBe(410);
+    expect(expired.json().detail).toBe("That code expired. Sign in again.");
+
+    forgetCooldown();
+    const again = await guess("rate-limit@example.com", PASS, "203.0.113.92");
+    expect(again.statusCode, again.body).toBe(200);
+    const proofAgain = again.cookies.find((cookie) => cookie.name === LOGIN_PROOF_COOKIE)?.value;
+    expect(proofAgain).toBeTruthy();
+    await pool.query("UPDATE login_challenges SET attempts = 5 WHERE user_id = $1", [emailId]);
+    const many = await app.inject({
+      method: "POST",
+      url: "/api/auth/login/verify",
+      remoteAddress: "203.0.113.92",
+      cookies: { [LOGIN_PROOF_COOKIE]: proofAgain! },
+      payload: { staffId: "rate-limit@example.com", code: "000000", tenantId: TENANT },
+    });
+    expect(many.statusCode).toBe(429);
+    expect(many.json().detail).toBe("Too many tries. Sign in again.");
+  });
+
   it("does not send or log a code in production when mail is not configured", async () => {
     forgetCooldown();
     const prev = process.env.NODE_ENV;

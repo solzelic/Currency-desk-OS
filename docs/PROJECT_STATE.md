@@ -563,9 +563,7 @@ authenticated narrative dashboard.
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
 Postgres, five per account and twenty per address, for fifteen
 minutes. The count is written before the answer, so a burst cannot
-slip a correct password through after the limit. The lock says "Too
-many tries. Try again in N minutes." and an unknown staff id gets
-that same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
+slip a correct password through after the limit. The lock says "Too many tries. Try again in N minutes." The screen says "Too many tries. Try again at 10:42 AM." The hour is the shop's own clock, so the zone is not repeated. While that holds, the button reads Sign in, with a lock, and it is disabled. It comes back when that time passes. With no time from the server it says "Too many tries. Try again in a few minutes." and Try again sends the password once more. Asking for another code while locked says "Too many tries. Try again at 10:42 AM." A staff id with no @ does not see the email-code line. not you?, SHOW, and the reset link are 44px. An unknown staff id gets that same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
 socket is a published Cloudflare address, or when the socket is a
 private address and the rightmost `X-Forwarded-For` hop is Cloudflare.
 IPv6 /64 rotation is accepted for now and is a follow-up. A missing

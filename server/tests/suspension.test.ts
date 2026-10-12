@@ -104,7 +104,9 @@ describe("a suspended desk goes offline", () => {
     expect((await app.inject({ method: "GET", url: "/api/auth/me", cookies: desk })).statusCode).not.toBe(200);
 
     // a fresh sign-in was already refused, and still is
-    expect((await login("r.haddad", DEMO.password)).statusCode).toBe(403);
+    const blocked = await login("r.haddad", DEMO.password);
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json()).toEqual({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
 
     // unblocking puts the desk back without asking anybody to sign in again
     expect((await suspend(operator, false)).statusCode).toBe(200);
