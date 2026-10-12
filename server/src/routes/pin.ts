@@ -69,6 +69,34 @@ export function pinLockedUntil(userId: string): string | null {
   return t && t.until > Date.now() ? new Date(t.until).toISOString() : null;
 }
 
+const TILL_LOCK = "Too many wrong tries. The till PIN is locked too.";
+
+/* The keypad already knows this instant — pinLockedUntil is what support
+   reads. Send it. A client must not invent a wait the server did not name. */
+function lockedBody(userId: string) {
+  const lockedUntil = pinLockedUntil(userId);
+  return {
+    error: "locked" as const,
+    detail: TILL_LOCK,
+    ...(lockedUntil ? { lockedUntil } : {}),
+  };
+}
+function failureBody(
+  userId: string,
+  after: { locked: boolean; remaining: number },
+  error: "wrong_pin" | "wrong_password",
+  detail?: string,
+) {
+  const lockedUntil = after.locked ? pinLockedUntil(userId) : null;
+  return {
+    error,
+    ...(detail ? { detail } : {}),
+    remaining: after.remaining,
+    locked: after.locked,
+    ...(lockedUntil ? { lockedUntil } : {}),
+  };
+}
+
 /* A PIN nobody would pick: not a repeat, not a run, not a date. Those are
    the first things guessed, and a code the desk issues should never be one. */
 export function generatePin(): string {
@@ -107,7 +135,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
 
     const state = lockState(target.id);
     if (state.locked) {
-      return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
+      return reply.code(429).send(lockedBody(target.id));
     }
     if (await verifyPassword(parsed.data.pin, target.pinHash)) {
       clearPinAttempts(target.id);
@@ -120,7 +148,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
       actorId: who.id, action: "pin.failed", detail: { of: target.staffId },
     });
-    return reply.code(401).send({ error: "wrong_pin", remaining: after.remaining, locked: after.locked });
+    return reply.code(401).send(failureBody(target.id, after, "wrong_pin"));
   });
 
   // whether you have one, so the desk can offer "Set" or "Change" honestly.
@@ -144,10 +172,10 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     if (!me) return reply.code(404).send({ error: "not_found" });
     if (me.pinHash) {
       if (!parsed.data.currentPin) return reply.code(400).send({ error: "current_required", detail: "Enter your current PIN." });
-      if (lockState(me.id).locked) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
+      if (lockState(me.id).locked) return reply.code(429).send(lockedBody(me.id));
       if (!(await verifyPassword(parsed.data.currentPin, me.pinHash))) {
-        recordFailure(me.id);
-        return reply.code(401).send({ error: "wrong_pin" });
+        const after = recordFailure(me.id);
+        return reply.code(401).send(failureBody(me.id, after, "wrong_pin"));
       }
     }
     await db.update(schema.staffUsers)
@@ -176,14 +204,14 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
 
     const me = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     if (!me) return reply.code(404).send({ error: "not_found" });
-    if (lockState(me.id).locked) return reply.code(429).send({ error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
+    if (lockState(me.id).locked) return reply.code(429).send(lockedBody(me.id));
     if (!(await verifyPassword(parsed.data.password, me.passwordHash))) {
-      recordFailure(me.id);
+      const after = recordFailure(me.id);
       await audit(db, {
         tenantId: me.tenantId, legalEntityId: me.legalEntityId, branchId: me.branchId,
         actorId: me.id, action: "pin.reset_failed",
       });
-      return reply.code(401).send({ error: "wrong_password", detail: "That is not your sign-in password." });
+      return reply.code(401).send(failureBody(me.id, after, "wrong_password", "That is not your sign-in password."));
     }
 
     await db.update(schema.staffUsers)

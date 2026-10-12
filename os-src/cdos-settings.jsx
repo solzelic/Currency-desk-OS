@@ -812,8 +812,8 @@
         })
         .catch(() => {});
     }, []);
-    // business hours: a template until the shop edits them; the editor and the
-    // publisher both read this fallback so a fresh shop still ships sane hours
+    // Desktop editor template only. The phone reads settings.hours. A shop
+    // that has not saved hours sees "Not set", not this seed.
     const HOURS_SEED = [{ days: 'Mon–Fri', hours: '9:30am–6:00pm' }, { days: 'Sat–Sun & holidays', hours: '10:00am–5:00pm' }];
     const hoursList = Array.isArray(settings.hours) && settings.hours.length ? settings.hours : HOURS_SEED;
     const setHours = (next) => setSettings(s => ({ ...s, hours: next }));
@@ -1022,7 +1022,7 @@
         canSys={canSys} me={me} settings={settings} setSettings={setSettings}
         shopName={settings.operatingName || settings.bizName || 'this shop'}
         tillOpen={!!tillOpen} onLeave={onLeave} onSignOut={onSignOut} log={log}
-        hours={hoursList}
+        hours={Array.isArray(settings.hours) ? settings.hours : []}
       />}
     </div>
     <div className="flex settings-shell" style={{ height: '100%' }}>

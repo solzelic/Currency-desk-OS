@@ -159,6 +159,46 @@
     return { kind: 'bad' };
   }
 
+  /* A wait the keypad can say out loud. Under an hour is m:ss.
+     An hour or more is h:mm:ss, so a day is 24:00:00 and not 1440:00.
+     Zero and negative are not a wait. */
+  function formatPhoneWait(seconds) {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '';
+    const total = Math.floor(seconds);
+    const pad = (n) => String(n).padStart(2, '0');
+    if (total >= 3600) {
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return h + ':' + pad(m) + ':' + pad(s);
+    }
+    return Math.floor(total / 60) + ':' + pad(total % 60);
+  }
+
+  /* The lock sentence. A wait that is already over (0, negative, or an
+     end in the past) says the keypad is back. A live wait names the
+     till PIN, the remaining time, and the 12-hour clock when it ends. */
+  function formatPhoneLock(secondsLeft, endsAt, timeZone) {
+    const hasSeconds = typeof secondsLeft === 'number' && Number.isFinite(secondsLeft);
+    let endMs = null;
+    if (endsAt instanceof Date) endMs = endsAt.getTime();
+    else if (typeof endsAt === 'number' && Number.isFinite(endsAt)) endMs = endsAt;
+    else if (typeof endsAt === 'string' && endsAt) {
+      const parsed = Date.parse(endsAt);
+      if (Number.isFinite(parsed)) endMs = parsed;
+    }
+    const stillWaiting = hasSeconds && secondsLeft > 0;
+    const over = (hasSeconds && secondsLeft <= 0) || (endMs != null && endMs <= Date.now() && !stillWaiting);
+    if (over && (hasSeconds || endMs != null)) return 'The keypad is back.';
+    const wait = stillWaiting ? formatPhoneWait(secondsLeft) : '';
+    const endLabel = endMs != null ? formatPhoneTime(new Date(endMs), timeZone) : '';
+    const head = 'Too many wrong tries. The till PIN is locked too.';
+    const back = endLabel ? ' The keypad comes back at ' + endLabel + '.' : '';
+    if (wait) return head + ' Try again in ' + wait + '.' + back;
+    if (endLabel) return head + back;
+    return '';
+  }
+
   function formatPhoneTime(value, timeZone) {
     const zone = zoneOf(timeZone);
     if (zone === null) return UNKNOWN;
@@ -279,6 +319,8 @@
     formatPhoneDate: formatPhoneDate,
     formatPhoneListGroup: formatPhoneListGroup,
     formatPhoneMoney: formatPhoneMoney,
+    formatPhoneWait: formatPhoneWait,
+    formatPhoneLock: formatPhoneLock,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

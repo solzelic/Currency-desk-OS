@@ -130,20 +130,25 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   stay off the phone. A card that holds a table scrolls sideways,
   and the right edge fades. Rounded clips,
   photos, and bars stay clipped. Settings on a phone is a list:
-  search, the person’s own row, PIN and sign-in, notifications,
-  and sign out. An owner also sees the shop and the other apps,
-  and the section caption says to change them on a computer. Shop
-  details shows the name, address, and hours already on the desk.
-  Those clocks go through `formatPhoneTime` (`3:02 PM`). Then it
-  says to change them on a computer. The desktop form is not
-  opened. PIN
-  before a void is a sentence, not a switch: the void gate reads
-  the shop flag and that person's require PIN, and this screen
-  does not write either.
-  A cashier sees only their own rows and sign out. Texts, receipts,
-  billing, the ticker, and the role matrix stay off the phone.
-  Changing a PIN is a keypad: each step moves on after the fourth
-  digit, and the last digit saves. Wider than 430px, Settings is
+  search, the person’s own row, PIN and sign-in, and sign out.
+  An owner also sees the shop and the other apps, and the section
+  caption says to change them on a computer. Shop details shows
+  the name, address, and the hours someone has entered. Hours
+  nobody has entered read “Not set”. The subtitle is “Name,
+  address, and hours”. Those clocks go through `formatPhoneTime`
+  (`3:02 PM`). Then it says to change them on a computer. The
+  desktop form is not opened. My details saves one contact field
+  at a time, and “Saved” waits for the server. The contact email
+  is not the sign-in name. A sign-in code row appears only when
+  this person signs in with an email. PIN before a void is a
+  sentence, not a switch: the void gate reads the shop flag and
+  that person's require PIN, and this screen does not write
+  either. A cashier sees only their own rows and sign out.
+  Localization, billing, and role presets stay out of a teller's
+  search. Texts, receipts, billing, the ticker, and the role
+  matrix stay off the phone. Changing a PIN checks the current
+  one first. A lockout names the till PIN and the 12-hour time
+  the keypad comes back. Wider than 430px, Settings is
   the rail and the form it already was. Sign-in and the station picker stay on the screen. The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
@@ -673,30 +678,44 @@ white 14/20 text. An optional action is a white weight-600 text
 button. It leaves after 4 seconds. `role="status"`.
 
 **2026-10-12**, phone Settings. Under 430px, Settings is a list. Search, the
-person’s row, PIN and sign-in, notifications, and sign out are on
-it. An owner also sees the shop and the other apps. The section
-caption says to change them on a computer. Shop details is a
-`Phone.Title` under the back link, on one screen background. It
-shows the name and address already on the desk, then one line per
-day group (`Mon to Fri`, `9:30 AM to 6:00 PM`). Those clocks go
-through `formatPhoneTime` (`3:02 PM`), and a range is the word
-“to”. Then an empty state: “Change this on a computer”, and why
-shop details stay on a computer. The desktop form fails a phone
-sweep (targets under 44px, type under 12px, contrast under 4.5:1),
-so it is not opened.
-A cashier sees their own rows and sign out. Texts, receipts,
-billing, the ticker, and the role matrix are not phone screens.
-A PIN is four digits on a keypad, and the fourth digit of the last
-step saves it. The Your PIN row is the whole target, with a chevron
-after the badge, and it opens that keypad. A dead session is named
-on it. A lockout counts down `m:ss` only when the 429 body includes
-seconds left (`retryAfter`) or an end time (`lockedUntil` or
-`until`). The staff PIN routes send neither, so the keypad says
-“Try again in a few minutes.” and offers Close. PIN before a void
-is a sentence. The void gate reads the
-shop flag and that person's require PIN, and the phone does not
-write either. Wider than 430px, Settings is still the rail beside
-the form.
+person’s row, PIN and sign-in, and sign out are on it. There is no
+notifications row. An owner also sees the shop and the other apps.
+The section caption says to change them on a computer. Shop details
+is a `Phone.Title` under the back link, on one screen background.
+It shows the name and address already on the desk. Hours someone
+entered are one line per day group (`Mon to Fri`, `9:30 AM to 6:00 PM`).
+Hours nobody has entered are “Not set”. The row subtitle is “Name,
+address, and hours”. Those clocks go through `formatPhoneTime`
+(`3:02 PM`), and a range is the word “to”. Then an empty state:
+“Change this on a computer”, and why shop details stay on a
+computer. The desktop form fails a phone sweep (targets under 44px,
+type under 12px, contrast under 4.5:1), so it is not opened.
+My details shows the sign-in name, a contact email that is not that
+name, and a mobile. Each Save sends that one field to
+`PATCH /api/auth/contact`. “Saved” appears after the server accepts
+it. Leaving the screen does not drop a save that is still in flight.
+The sign-in code row is shown only when `GET /api/auth/me` says
+`signInCode`, which is true only when the sign-in name is an email.
+A cashier sees their own rows and sign out. Search does not offer
+them Localization, Billing and plan, or Role presets. Texts and
+receipts are not phone screens. A PIN is four digits on a keypad.
+The current PIN is checked before a new one is asked, and a wrong
+one says how many tries are left. The fourth digit of the last step
+saves it. The Your PIN row is the whole target, with a chevron after
+the badge, and it opens that keypad. A dead session is named on it.
+A lockout sits above the question. It names the till PIN. When the
+body includes seconds left (`retryAfter`) or an end (`lockedUntil`),
+the wait is `m:ss` under an hour and `h:mm:ss` from an hour up, plus
+the 12-hour time the keypad comes back. Zero, a negative, or a past
+end says the keypad is back. A body with no clock says “Try again in
+a few minutes. The till PIN is locked too.” and offers Close. The
+staff PIN routes send `lockedUntil`. Password Save and each contact
+Save ignore a second tap while the first request is in flight. PIN
+before a void is a sentence. The void gate reads the shop flag and
+that person's require PIN, and the phone does not write either.
+Wider than 430px, Settings is still the rail beside the form.
+Contact email and mobile are migration `041_staff_contact`. `040` is
+the till mark; this file follows it.
 
 **2026-10-12**, shared phone pieces. NavRow, ProfileRow, Toggle,
 FullScreenSheet, PinPad, and Toast live in `os-src/phone/` and are

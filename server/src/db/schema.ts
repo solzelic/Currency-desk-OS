@@ -330,6 +330,11 @@ export const staffUsers = pgTable(
        read out is known by the owner, so it is a way in, not an identity —
        the person picks their own and this clears. */
     pinMustChange: boolean("pin_must_change").notNull().default(false),
+    /* A contact address the person typed for the desk. It is not the
+       sign-in name. Tellers sign in as "m.costa"; an emailed sign-in
+       code is sent only when the sign-in name itself is an email. */
+    contactEmail: text("contact_email"),
+    mobilePhone: text("mobile_phone"),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

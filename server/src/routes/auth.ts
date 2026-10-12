@@ -259,6 +259,41 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     return { ok: true };
   });
 
+  /* One field of this person's own contact details. The body is exactly
+     one of contactEmail or mobilePhone. A second field, or the rest of
+     the desk settings, is refused — My details must not write the shop
+     snapshot to save a phone number. The contact email is not the
+     sign-in name and it does not turn on an emailed sign-in code. */
+  const contactBody = z.object({
+    contactEmail: z.string().trim().max(160).optional(),
+    mobilePhone: z.string().trim().max(40).optional(),
+  }).strict();
+  app.patch("/api/auth/contact", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const raw = req.body;
+    const keys = raw && typeof raw === "object" && !Array.isArray(raw) ? Object.keys(raw as object) : [];
+    if (keys.length !== 1 || (keys[0] !== "contactEmail" && keys[0] !== "mobilePhone")) {
+      return reply.code(400).send({ error: "invalid_request", detail: "Save one field at a time." });
+    }
+    const parsed = contactBody.safeParse(raw);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "That didn’t save." });
+    const field = keys[0] as "contactEmail" | "mobilePhone";
+    const value = parsed.data[field] ?? "";
+    if (field === "contactEmail" && value !== "" && !isEmail(value)) {
+      return reply.code(400).send({ error: "invalid_request", detail: "Enter an email address." });
+    }
+    const stored = value === "" ? null : value;
+    await db.update(schema.staffUsers)
+      .set(field === "contactEmail" ? { contactEmail: stored } : { mobilePhone: stored })
+      .where(eq(schema.staffUsers.id, who.id));
+    await audit(db, {
+      tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId,
+      actorId: who.id, action: "auth.contact_saved", detail: { field },
+    });
+    return { ok: true, [field]: value };
+  });
+
   /* ---- forgot password -------------------------------------------------
 
      There was no way back from a forgotten password. The sign-in screen
@@ -394,6 +429,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     }
     const who = resolved.state === "active" ? resolved.user : null;
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const row = (await db.select({
+      contactEmail: schema.staffUsers.contactEmail,
+      mobilePhone: schema.staffUsers.mobilePhone,
+    }).from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     return {
       user: {
         id: who.staffId,
@@ -406,6 +445,12 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         mustChangePassword: who.mustChangePassword,
         plan: await tenantPlan(db, who.tenantId),
         smsConfigured: smsConfigured(),
+        contactEmail: row?.contactEmail ?? "",
+        mobilePhone: row?.mobilePhone ?? "",
+        /* True only when this person signs in with an email address, which
+           is the only case /api/auth/login/start emails a code. A teller
+           and a demo staff id are password-only. */
+        signInCode: isEmail(who.staffId),
       },
     };
   });

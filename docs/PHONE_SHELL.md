@@ -576,17 +576,27 @@ is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
 sections open inside `Phone.Screen`. The section name is a
 `Phone.Title` under the back link, and that screen’s background
 fills the window. Shop details shows the name and address the
-screen already has, then one line per day group (`Mon to Fri`,
-`9:30 AM to 6:00 PM`). Each clock goes through `formatPhoneTime`
-(`3:02 PM`), and a range is the word “to”, not a dash. When
-`SummaryList` is loaded and every row is a plain pair, it draws
-those rows. A day group is its own line, so it is drawn as a
-`.phq-kv` row. Then `EmptyState`: a monitor icon, “Change this on
-a computer”, and a sentence that says why. Other sections are
-that title and empty state only. The desktop form is not opened.
-PIN before a void is a sentence, not a switch.
-The void gate reads `settings.pinOnVoid` and `employee.requirePin`,
-and this screen does not write either.
+screen already has. The list subtitle is “Name, address, and
+hours”. Hours someone entered are one line per day group (`Mon to
+Fri`, `9:30 AM to 6:00 PM`). Hours nobody has entered are “Not
+set”. The phone reads `settings.hours` only. The desktop editor’s
+built-in rows are not shown here as if someone typed them. Each
+clock goes through `formatPhoneTime` (`3:02 PM`), and a range is
+the word “to”, not a dash. When `SummaryList` is loaded and every
+row is a plain pair, it draws those rows. A day group is its own
+line, so it is drawn as a `.phq-kv` row. Then `EmptyState`: a
+monitor icon, “Change this on a computer”, and a sentence that
+says why. Other sections are that title and empty state only. The
+desktop form is not opened. My details saves one of contact email
+or mobile per request. “Saved” waits for that response. The
+sign-in code row is drawn only when this person is emailed a code.
+Localization, Billing and plan, and Role presets are omitted from
+a teller’s list and from their search. A PIN lock is a `.pin-lock`
+above the question. The sentence names the till PIN. A wait of an
+hour or more is `h:mm:ss` (`24:00:00` for a day). The keypad’s
+return is a 12-hour time. PIN before a void is a sentence, not a
+switch. The void gate reads `settings.pinOnVoid` and
+`employee.requirePin`, and this screen does not write either.
 
 More is one proof screen. The ledger is the other. Under 430px the
 ledger window is a `Phone.Screen`: title, Records and Compliance,

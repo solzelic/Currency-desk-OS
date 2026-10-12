@@ -4948,6 +4948,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     error,
     shake,
     busy,
+    busyLabel,
     locked,
     passwordMode,
     password,
@@ -5017,7 +5018,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "pinpad",
       "data-pin-step": step,
       ref: root
-    }, /*#__PURE__*/React.createElement("div", {
+    }, locked && error ? /*#__PURE__*/React.createElement("p", {
+      className: "pin-lock",
+      role: "alert"
+    }, error) : null, /*#__PURE__*/React.createElement("div", {
       className: "steps",
       "aria-label": 'Step ' + step + ' of ' + steps
     }, Array.from({
@@ -5051,7 +5055,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, "Next")) : busy ? /*#__PURE__*/React.createElement("div", {
       className: "pin-saving",
       role: "status"
-    }, "Saving...") : /*#__PURE__*/React.createElement("div", {
+    }, busyLabel || 'Saving...') : /*#__PURE__*/React.createElement("div", {
       className: 'pin-dots' + (shake ? ' shake' : ''),
       "aria-hidden": "true"
     }, [0, 1, 2, 3].map(i => /*#__PURE__*/React.createElement("i", {
@@ -5062,7 +5066,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       role: "status",
       "aria-live": "polite",
       "aria-atomic": "true"
-    }, filled, " of 4 digits"), error ? /*#__PURE__*/React.createElement("p", {
+    }, filled, " of 4 digits"), !locked && error ? /*#__PURE__*/React.createElement("p", {
       className: "pin-err",
       role: "alert"
     }, error) : null, onClose ? /*#__PURE__*/React.createElement("div", {
@@ -5315,7 +5319,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     FullScreenSheet,
     Toast
   } = window.CDOS;
-  const SHOP = [['business', 'Shop details', 'Name, address, phone', 'building', 'logo msb name address phone business profile'], ['locations', 'Staff and tills', 'Who works which till', 'users', 'branch till teller station locations'], ['rates', 'Rates and fees', 'Your margin and fees', 'percent', 'spread margin fee rate'], ['till', 'Cash drawer', 'How the drawer is counted', 'wallet', 'count denomination variance blind drawer'], ['clients', 'Clients and ID', 'When to ask for ID', 'id', 'kyc risk id expiry client'], ['compliance', 'Compliance rules', 'Country rules and limits', 'shield', 'threshold jurisdiction reporting country'], ['ledger', 'Ledger', 'Deal defaults', 'scroll', 'import csv excel duplicate']];
+  const SHOP = [['business', 'Shop details', 'Name, address, and hours', 'building', 'logo msb name address hours business profile'], ['locations', 'Staff and tills', 'Who works which till', 'users', 'branch till teller station locations'], ['rates', 'Rates and fees', 'Your margin and fees', 'percent', 'spread margin fee rate'], ['till', 'Cash drawer', 'How the drawer is counted', 'wallet', 'count denomination variance blind drawer'], ['clients', 'Clients and ID', 'When to ask for ID', 'id', 'kyc risk id expiry client'], ['compliance', 'Compliance rules', 'Country rules and limits', 'shield', 'threshold jurisdiction reporting country'], ['ledger', 'Ledger', 'Deal defaults', 'scroll', 'import csv excel duplicate']];
   const APPS = [['vault', 'Vault', 'Stock floors and reserves', 'building', 'cash floor reserve stock'], ['transfers', 'Transfers', 'Reporting line and defaults', 'globe', 'remittance corridor beneficiary'], ['cheques', 'Cheques', 'How long a cheque is held', 'receipt', 'cheque check clearing hold']];
   /* Not drawn as rows. Search still finds them, and says to use a computer.
      Texts and receipts are absent until they are live, so they are not here. */
@@ -5323,30 +5327,38 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const initials = name => (name || '?').split(/[ .]+/).filter(Boolean).map(p => p[0]).join('').slice(0, 2).toUpperCase();
   /* Milliseconds when the keypad may open again, or null when the
      body has no clock. A sentence in `detail` is not a time. */
+  /* Milliseconds when the keypad may open again.
+     0 means the server named a wait that is already over (0, negative,
+     or an end in the past). null means the body has no clock. */
   function lockEndMs(payload) {
     if (!payload || typeof payload !== 'object') return null;
     const secs = payload.retryAfter != null ? payload.retryAfter : payload.secondsLeft;
-    if (typeof secs === 'number' && Number.isFinite(secs)) return Date.now() + Math.max(0, secs) * 1000;
+    if (typeof secs === 'number' && Number.isFinite(secs)) {
+      if (secs <= 0) return 0;
+      return Date.now() + secs * 1000;
+    }
     const iso = typeof payload.lockedUntil === 'string' ? payload.lockedUntil : typeof payload.until === 'string' ? payload.until : '';
     if (!iso) return null;
     const t = Date.parse(iso);
-    return Number.isFinite(t) ? t : null;
+    if (!Number.isFinite(t)) return null;
+    if (t <= Date.now()) return 0;
+    return t;
   }
-  const bell = /*#__PURE__*/React.createElement("svg", {
-    width: "20",
-    height: "20",
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "1.8",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-    "aria-hidden": "true"
-  }, /*#__PURE__*/React.createElement("path", {
-    d: "M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"
-  }), /*#__PURE__*/React.createElement("path", {
-    d: "M13.7 21a2 2 0 0 1-3.4 0"
-  }));
+  function triesLeft(n) {
+    if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return '';
+    if (n === 1) return ' 1 try left.';
+    return ' ' + n + ' tries left.';
+  }
+  function lockSentence(left, until, timeZone) {
+    const fmt = window.CDOS && window.CDOS.formatPhoneLock;
+    if (typeof fmt !== 'function') return '';
+    return fmt(left, until, timeZone);
+  }
+  const OWNER_ONLY = {
+    localization: true,
+    billing: true,
+    permissions: true
+  };
   const keyIcon = /*#__PURE__*/React.createElement("svg", {
     width: "20",
     height: "20",
@@ -5379,6 +5391,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
   function PinChanger({
     hasPin,
+    timeZone,
     onClose,
     onSaved
   }) {
@@ -5400,30 +5413,29 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     useEffect(() => () => {
       live.current = false;
     }, []);
-    /* A lockout counts down only from a time the server actually sent.
-       The staff PIN routes answer 429 with `error: "locked"` and a
-       sentence, and no end. `retryAfter` is seconds left (the same
-       field a code cooldown uses). `lockedUntil` / `until` is an ISO
-       end, the shape support already stores. Anything else is not a
-       clock, so the keys stay shut and Close is the way out. */
+    /* A lockout counts down only from a time the server sent.
+       `retryAfter` is seconds left. `lockedUntil` is the end the
+       staff PIN routes already know. 0, a negative, or a past end
+       means the keypad is back. No clock at all keeps the keys shut
+       and offers Close. */
     useEffect(() => {
       if (!lockUntil) return undefined;
       const paint = () => {
         const left = Math.ceil((lockUntil - Date.now()) / 1000);
+        const sentence = lockSentence(left, lockUntil, timeZone);
         if (left <= 0) {
           setLockUntil(0);
           setLocked(false);
-          setErr('');
+          setLockPlain(false);
+          setErr(sentence || 'The keypad is back.');
           return;
         }
-        const m = Math.floor(left / 60);
-        const s = left % 60;
-        setErr('Too many wrong tries. Try again in ' + m + ':' + String(s).padStart(2, '0'));
+        setErr(sentence);
       };
       paint();
       const id = setInterval(paint, 1000);
       return () => clearInterval(id);
-    }, [lockUntil]);
+    }, [lockUntil, timeZone]);
     const steps = hasPin ? 3 : 2;
     const stepNo = step === 'current' || step === 'password' ? 1 : step === 'new' ? hasPin ? 2 : 1 : hasPin ? 3 : 2;
     const save = async (pin, body) => {
@@ -5467,12 +5479,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return;
       }
       if (res.status === 401) {
-        let payload = {};
-        try {
-          payload = await res.json();
-        } catch (err) {
-          payload = {};
-        }
+        const payload = await readPayload(res);
         setDigits('');
         /* A dead session and a wrong PIN are both 401. Saying the PIN
            is wrong when the session has gone would send them to type
@@ -5484,34 +5491,23 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           setErr('Your session expired. Sign in again. Your PIN was not changed.');
           return;
         }
+        if (payload.locked) {
+          applyLock(payload);
+          return;
+        }
         if (body.password != null) {
           setStep('password');
-          setErr('That’s not your sign-in password.');
+          setErr('That’s not your sign-in password.' + triesLeft(payload.remaining));
         } else {
           setStep(hasPin ? 'current' : 'new');
           setCur('');
-          setErr('That PIN isn’t right.');
+          setErr('That PIN isn’t right.' + triesLeft(payload.remaining));
         }
         return;
       }
       if (res.status === 429) {
-        let payload = {};
-        try {
-          payload = await res.json();
-        } catch (err) {
-          payload = {};
-        }
-        const until = lockEndMs(payload);
-        setDigits('');
-        setLocked(true);
-        if (until == null) {
-          setLockUntil(0);
-          setLockPlain(true);
-          setErr('Try again in a few minutes.');
-          return;
-        }
-        setLockPlain(false);
-        setLockUntil(until);
+        const payload = await readPayload(res);
+        applyLock(payload);
         return;
       }
       setErr('That didn’t save. Try again.');
@@ -5525,6 +5521,92 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     } : hasPin ? {
       currentPin: cur
     } : {};
+    const applyLock = payload => {
+      const until = lockEndMs(payload);
+      setDigits('');
+      if (until === 0) {
+        setLockUntil(0);
+        setLocked(false);
+        setLockPlain(false);
+        setErr('The keypad is back.');
+        return;
+      }
+      setLocked(true);
+      if (until == null) {
+        setLockUntil(0);
+        setLockPlain(true);
+        setErr('Try again in a few minutes. The till PIN is locked too.');
+        return;
+      }
+      setLockPlain(false);
+      setLockUntil(until);
+    };
+    const readPayload = async res => {
+      try {
+        return await res.json();
+      } catch (err) {
+        return {};
+      }
+    };
+
+    /* The current PIN is checked before a new one is asked. A wrong
+       one stays on this step and says how many tries are left. The
+       same counter locks the till. */
+    const checkCurrent = async pin => {
+      if (busyRef.current || locked) return;
+      busyRef.current = true;
+      setBusy(true);
+      setErr('');
+      let res;
+      try {
+        res = await fetch('/api/staff/pin/verify', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            pin
+          })
+        });
+      } catch (err) {
+        busyRef.current = false;
+        setBusy(false);
+        setDigits('');
+        setErr('No connection. Your PIN was not checked.');
+        return;
+      }
+      busyRef.current = false;
+      setBusy(false);
+      const payload = await readPayload(res);
+      setDigits('');
+      if (res.ok) {
+        setCur(pin);
+        setStep('new');
+        return;
+      }
+      if (payload.error === 'unauthenticated') {
+        setLocked(true);
+        setCur('');
+        setErr('Your session expired. Sign in again. Your PIN was not changed.');
+        return;
+      }
+      if (res.status === 409 && payload.error === 'no_pin') {
+        setStep('new');
+        return;
+      }
+      if (res.status === 429 || payload.locked) {
+        setCur('');
+        applyLock(payload);
+        return;
+      }
+      if (res.status === 401) {
+        setCur('');
+        setErr('That PIN isn’t right.' + triesLeft(payload.remaining));
+        return;
+      }
+      setErr('That didn’t save. Try again.');
+    };
     const onDigit = d => {
       if (busyRef.current || locked || step === 'password') return;
       const next = (digits + d).replace(/\D/g, '').slice(0, 4);
@@ -5532,9 +5614,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setErr('');
       if (next.length < 4) return;
       if (step === 'current') {
-        setCur(next);
         setDigits('');
-        setStep('new');
+        checkCurrent(next);
         return;
       }
       if (step === 'new') {
@@ -5568,6 +5649,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       error: err,
       shake: shake,
       busy: busy,
+      busyLabel: step === 'current' ? 'Checking...' : 'Saving...',
       locked: locked,
       passwordMode: step === 'password',
       password: pw,
@@ -5611,7 +5693,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [b, setB] = useState('');
     const [msg, setMsg] = useState('');
     const [busy, setBusy] = useState(false);
+    const busyRef = useRef(false);
     const save = async () => {
+      if (busyRef.current) return;
       if (a.length < 8) {
         setMsg('New password needs at least 8 characters.');
         return;
@@ -5620,11 +5704,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         setMsg('The two new entries don’t match.');
         return;
       }
+      busyRef.current = true;
       setBusy(true);
       setMsg('');
-      let res;
       try {
-        res = await fetch('/api/auth/change-password', {
+        const res = await fetch('/api/auth/change-password', {
           method: 'POST',
           headers: {
             'content-type': 'application/json'
@@ -5635,21 +5719,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             newPassword: a
           })
         });
+        if (res.status === 401) {
+          setMsg('That’s not your sign-in password.');
+          return;
+        }
+        if (!res.ok) {
+          setMsg('That didn’t save. Try again.');
+          return;
+        }
+        onSaved();
       } catch (err) {
-        setBusy(false);
         setMsg('No connection. Your password was not changed.');
-        return;
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
       }
-      setBusy(false);
-      if (res.status === 401) {
-        setMsg('That’s not your sign-in password.');
-        return;
-      }
-      if (!res.ok) {
-        setMsg('That didn’t save. Try again.');
-        return;
-      }
-      onSaved();
     };
     return /*#__PURE__*/React.createElement(FullScreenSheet, {
       title: "Password",
@@ -5714,14 +5798,23 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       label: 'Address',
       value: address
     });
+    let anyHours = false;
     (Array.isArray(hours) ? hours : []).forEach(row => {
       const days = phoneDays(row && row.days);
       const span = phoneHours(row && row.hours, zone);
-      if (days && span) rows.push({
-        label: days,
-        value: span,
-        line: true
-      });
+      if (days && span) {
+        anyHours = true;
+        rows.push({
+          label: days,
+          value: span,
+          line: true
+        });
+      }
+    });
+    if (!anyHours) rows.push({
+      label: 'Hours',
+      value: 'Not set',
+      line: true
     });
     return rows;
   }
@@ -5803,6 +5896,31 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [computer, setComputer] = useState(null);
     const [toast, setToast] = useState('');
     const [reload, setReload] = useState(0);
+    const [signInCode, setSignInCode] = useState(false);
+    const [signInId, setSignInId] = useState('');
+    const [contactEmail, setContactEmail] = useState('');
+    const [mobilePhone, setMobilePhone] = useState('');
+    const screenRef = useRef(screen);
+    screenRef.current = screen;
+    const drafts = useRef({
+      contactEmail: null,
+      mobilePhone: null
+    });
+    useEffect(() => {
+      let live = true;
+      fetch('/api/auth/me', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(body => {
+        if (!live || !body || !body.user) return;
+        setSignInId(body.user.id || '');
+        setSignInCode(!!body.user.signInCode);
+        setContactEmail(body.user.contactEmail || '');
+        setMobilePhone(body.user.mobilePhone || '');
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, []);
     useEffect(() => {
       let live = true;
       setPinState('loading');
@@ -5828,31 +5946,49 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         clearTimeout(slowTimer);
       };
     }, [reload]);
-    const staff = settings.staff && settings.staff[me.name] || {};
+
     /* Same test the void gate uses. This screen does not write either
        flag: the shop switch and this person's require PIN are the
        owner's, on a computer. */
     const emp = (settings.employees || []).find(x => x.name === me.name);
     const voidAsks = settings.pinOnVoid !== false && (!emp || emp.requirePin !== false);
-    const writeStaff = (key, value) => setSettings(s => ({
-      ...s,
-      staff: {
-        ...(s.staff || {}),
-        [me.name]: {
-          ...((s.staff || {})[me.name] || {}),
-          [key]: value
-        }
-      }
-    }));
-    const flip = (key, next) => {
-      const prev = staff[key];
+    /* One field. The request lives on this screen, so leaving My details
+       within a second does not cancel it. "Saved" waits for the server. */
+    const saveField = async (field, value) => {
+      const body = {};
+      body[field] = value;
+      let res;
       try {
-        writeStaff(key, next);
-        setToast('Saved');
+        res = await fetch('/api/auth/contact', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(body)
+        });
       } catch (err) {
-        writeStaff(key, prev);
-        setToast('Not saved. Check the connection.');
+        drafts.current[field] = value;
+        const detail = 'No connection. That was not saved.';
+        if (screenRef.current !== 'profile') setToast(detail);
+        throw new Error(detail);
       }
+      if (!res.ok) {
+        drafts.current[field] = value;
+        let detail = 'That didn’t save.';
+        try {
+          const payload = await res.json();
+          if (payload && typeof payload.detail === 'string' && payload.detail) detail = payload.detail;
+        } catch (err) {
+          detail = 'That didn’t save.';
+        }
+        if (screenRef.current !== 'profile') setToast(detail);
+        throw new Error(detail);
+      }
+      drafts.current[field] = null;
+      if (field === 'contactEmail') setContactEmail(value);else setMobilePhone(value);
+      setToast('Saved');
+      log && log('My details', field);
     };
     const query = q.trim().toLowerCase();
     const hit = (label, keys) => !query || (label + ' ' + (keys || '')).toLowerCase().includes(query);
@@ -5864,11 +6000,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       value: pinState === 'ready' ? pinValue : '',
       valueTone: mustChange ? 'warn' : '',
       onClick: () => setScreen('pin')
-    }, hit('Notifications', 'alerts compliance summary') && {
-      id: 'notes',
-      icon: bell,
-      title: 'Notifications',
-      onClick: () => setScreen('notes')
     }].filter(Boolean);
     const openComputer = (id, title) => setComputer({
       id,
@@ -5888,7 +6019,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       detail: r[2],
       onClick: () => openComputer(r[0], r[1])
     })) : [];
-    const computerRows = query ? COMPUTER.filter(r => hit(r[1], r[2])).map(r => ({
+    const computerRows = query ? COMPUTER.filter(r => {
+      if (OWNER_ONLY[r[0]] && me.role !== 'Owner') return false;
+      return hit(r[1], r[2]);
+    }).map(r => ({
       id: r[0],
       icon: 'info',
       title: r[1],
@@ -5973,51 +6107,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onClick: () => setSignOut(true)
     }))) : null)), screen === 'profile' && /*#__PURE__*/React.createElement(ProfileScreen, {
       me: me,
-      staff: staff,
+      signInId: signInId,
+      contactEmail: drafts.current.contactEmail != null ? drafts.current.contactEmail : contactEmail,
+      mobilePhone: drafts.current.mobilePhone != null ? drafts.current.mobilePhone : mobilePhone,
       onBack: () => setScreen('list'),
-      onSave: (email, phone) => {
-        try {
-          setSettings(s => ({
-            ...s,
-            staff: {
-              ...(s.staff || {}),
-              [me.name]: {
-                ...((s.staff || {})[me.name] || {}),
-                email,
-                phone
-              }
-            }
-          }));
-          setToast('Saved');
-          log && log('My details', 'email and phone');
-        } catch (err) {
-          setToast('Not saved. Check the connection.');
-        }
-      }
-    }), screen === 'notes' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Back, {
-      label: "Settings",
-      onClick: () => setScreen('list')
-    }), /*#__PURE__*/React.createElement("h1", {
-      className: "phone-h1"
-    }, "Notifications"), /*#__PURE__*/React.createElement("p", {
-      className: "phone-sub"
-    }, "On this phone, for you."), /*#__PURE__*/React.createElement("section", {
-      className: "phone-list"
-    }, /*#__PURE__*/React.createElement(NavRow, {
-      icon: bell,
-      title: "Compliance alerts",
-      detail: "Large cash and possible split deals",
-      switchOn: staff.notifyCompliance !== false,
-      switchLabel: "Compliance alerts",
-      onClick: () => flip('notifyCompliance', !(staff.notifyCompliance !== false))
-    }), /*#__PURE__*/React.createElement(NavRow, {
-      icon: "mail",
-      title: "Daily summary",
-      detail: "End of day, volume and earnings",
-      switchOn: !!staff.notifyDaily,
-      switchLabel: "Daily summary",
-      onClick: () => flip('notifyDaily', !staff.notifyDaily)
-    }))), screen === 'pin' && /*#__PURE__*/React.createElement("div", {
+      onSaveField: saveField
+    }), screen === 'pin' && /*#__PURE__*/React.createElement("div", {
       className: "phone-pin"
     }, /*#__PURE__*/React.createElement(Back, {
       label: "Settings",
@@ -6044,13 +6139,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       title: "Password",
       detail: "Signs out other devices",
       onClick: () => setPwOpen(true)
-    }), /*#__PURE__*/React.createElement(NavRow, {
+    }), signInCode ? /*#__PURE__*/React.createElement(NavRow, {
       icon: "mail",
       title: "Sign-in code",
       detail: "Emailed to you at every sign-in.",
       badge: "Always on",
       badgeTone: "neutral"
-    })), /*#__PURE__*/React.createElement("div", {
+    }) : null), /*#__PURE__*/React.createElement("div", {
       className: "phone-sec"
     }, "Voids"), /*#__PURE__*/React.createElement("section", {
       className: "phone-list"
@@ -6072,6 +6167,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       c: "#fff"
     }), hasPin ? 'Change my PIN' : 'Set my PIN'))), pinOpen && /*#__PURE__*/React.createElement(PinChanger, {
       hasPin: hasPin,
+      timeZone: settings.timezone,
       onClose: () => setPinOpen(false),
       onSaved: () => {
         setHasPin(true);
@@ -6114,20 +6210,65 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }
   function ProfileScreen({
     me,
-    staff,
+    signInId,
+    contactEmail,
+    mobilePhone,
     onBack,
-    onSave
+    onSaveField
   }) {
-    const [email, setEmail] = useState(staff.email || '');
-    const [phone, setPhone] = useState(staff.phone || '');
+    const [email, setEmail] = useState(contactEmail || '');
+    const [phone, setPhone] = useState(mobilePhone || '');
+    const [emailErr, setEmailErr] = useState('');
+    const [phoneErr, setPhoneErr] = useState('');
+    const [emailBusy, setEmailBusy] = useState(false);
+    const [phoneBusy, setPhoneBusy] = useState(false);
+    const emailBusyRef = useRef(false);
+    const phoneBusyRef = useRef(false);
+    const emailRef = useRef(email);
+    const phoneRef = useRef(phone);
+    const emailDirty = useRef(false);
+    const phoneDirty = useRef(false);
+    emailRef.current = email;
+    phoneRef.current = phone;
+    useEffect(() => {
+      if (!emailDirty.current) setEmail(contactEmail || '');
+    }, [contactEmail]);
+    useEffect(() => {
+      if (!phoneDirty.current) setPhone(mobilePhone || '');
+    }, [mobilePhone]);
+    const saveOne = async field => {
+      const isEmail = field === 'contactEmail';
+      const ref = isEmail ? emailBusyRef : phoneBusyRef;
+      if (ref.current) return;
+      const value = isEmail ? emailRef.current : phoneRef.current;
+      const saved = isEmail ? contactEmail || '' : mobilePhone || '';
+      if (value === saved) return;
+      ref.current = true;
+      (isEmail ? setEmailBusy : setPhoneBusy)(true);
+      (isEmail ? setEmailErr : setPhoneErr)('');
+      try {
+        await onSaveField(field, value);
+        (isEmail ? emailDirty : phoneDirty).current = false;
+      } catch (err) {
+        (isEmail ? setEmailErr : setPhoneErr)(err && err.message ? err.message : 'That didn’t save.');
+      } finally {
+        ref.current = false;
+        (isEmail ? setEmailBusy : setPhoneBusy)(false);
+      }
+    };
+    const leave = () => {
+      if (emailRef.current !== (contactEmail || '') && !emailBusyRef.current) onSaveField('contactEmail', emailRef.current).catch(() => {});
+      if (phoneRef.current !== (mobilePhone || '') && !phoneBusyRef.current) onSaveField('mobilePhone', phoneRef.current).catch(() => {});
+      onBack();
+    };
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Back, {
       label: "Settings",
-      onClick: onBack
+      onClick: leave
     }), /*#__PURE__*/React.createElement("h1", {
       className: "phone-h1"
     }, "My details"), /*#__PURE__*/React.createElement("p", {
       className: "phone-sub"
-    }, "Your name and role are set by the owner."), /*#__PURE__*/React.createElement("div", {
+    }, "Your name and role are set by the owner. You sign in as the name below."), /*#__PURE__*/React.createElement("div", {
       className: "phone-form"
     }, /*#__PURE__*/React.createElement("label", null, "Full name", /*#__PURE__*/React.createElement("input", {
       value: me.name || '',
@@ -6135,21 +6276,48 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement("label", null, "Role", /*#__PURE__*/React.createElement("input", {
       value: me.role || '',
       disabled: true
-    })), /*#__PURE__*/React.createElement("label", null, "Work email", /*#__PURE__*/React.createElement("input", {
+    })), /*#__PURE__*/React.createElement("label", null, "Sign-in", /*#__PURE__*/React.createElement("input", {
+      value: signInId || '',
+      disabled: true
+    })), /*#__PURE__*/React.createElement("label", null, "Contact email", /*#__PURE__*/React.createElement("input", {
       value: email,
-      onChange: e => setEmail(e.target.value),
+      disabled: emailBusy,
+      onChange: e => {
+        emailDirty.current = true;
+        setEmail(e.target.value);
+        setEmailErr('');
+      },
       autoComplete: "email",
       inputMode: "email"
-    })), /*#__PURE__*/React.createElement("label", null, "Mobile phone", /*#__PURE__*/React.createElement("input", {
-      value: phone,
-      onChange: e => setPhone(e.target.value),
-      autoComplete: "tel",
-      inputMode: "tel"
-    })), /*#__PURE__*/React.createElement("button", {
+    })), /*#__PURE__*/React.createElement("p", {
+      className: "phone-note"
+    }, "Not the name you sign in with."), emailErr ? /*#__PURE__*/React.createElement("p", {
+      className: "pin-err",
+      role: "alert"
+    }, emailErr) : null, /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-btn primary",
-      onClick: () => onSave(email, phone)
-    }, "Save")));
+      disabled: emailBusy,
+      onClick: () => saveOne('contactEmail')
+    }, emailBusy ? 'Saving...' : 'Save contact email'), /*#__PURE__*/React.createElement("label", null, "Mobile phone", /*#__PURE__*/React.createElement("input", {
+      value: phone,
+      disabled: phoneBusy,
+      onChange: e => {
+        phoneDirty.current = true;
+        setPhone(e.target.value);
+        setPhoneErr('');
+      },
+      autoComplete: "tel",
+      inputMode: "tel"
+    })), phoneErr ? /*#__PURE__*/React.createElement("p", {
+      className: "pin-err",
+      role: "alert"
+    }, phoneErr) : null, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-btn primary",
+      disabled: phoneBusy,
+      onClick: () => saveOne('mobilePhone')
+    }, phoneBusy ? 'Saving...' : 'Save mobile phone')));
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     PhoneSettings
@@ -7669,8 +7837,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         });
       }).catch(() => {});
     }, []);
-    // business hours: a template until the shop edits them; the editor and the
-    // publisher both read this fallback so a fresh shop still ships sane hours
+    // Desktop editor template only. The phone reads settings.hours. A shop
+    // that has not saved hours sees "Not set", not this seed.
     const HOURS_SEED = [{
       days: 'Mon–Fri',
       hours: '9:30am–6:00pm'
@@ -8107,7 +8275,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onLeave: onLeave,
       onSignOut: onSignOut,
       log: log,
-      hours: hoursList
+      hours: Array.isArray(settings.hours) ? settings.hours : []
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex settings-shell",
       style: {
@@ -63662,6 +63830,46 @@ window.CDOS_PERSIST = (function () {
     return { kind: 'bad' };
   }
 
+  /* A wait the keypad can say out loud. Under an hour is m:ss.
+     An hour or more is h:mm:ss, so a day is 24:00:00 and not 1440:00.
+     Zero and negative are not a wait. */
+  function formatPhoneWait(seconds) {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '';
+    const total = Math.floor(seconds);
+    const pad = (n) => String(n).padStart(2, '0');
+    if (total >= 3600) {
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return h + ':' + pad(m) + ':' + pad(s);
+    }
+    return Math.floor(total / 60) + ':' + pad(total % 60);
+  }
+
+  /* The lock sentence. A wait that is already over (0, negative, or an
+     end in the past) says the keypad is back. A live wait names the
+     till PIN, the remaining time, and the 12-hour clock when it ends. */
+  function formatPhoneLock(secondsLeft, endsAt, timeZone) {
+    const hasSeconds = typeof secondsLeft === 'number' && Number.isFinite(secondsLeft);
+    let endMs = null;
+    if (endsAt instanceof Date) endMs = endsAt.getTime();
+    else if (typeof endsAt === 'number' && Number.isFinite(endsAt)) endMs = endsAt;
+    else if (typeof endsAt === 'string' && endsAt) {
+      const parsed = Date.parse(endsAt);
+      if (Number.isFinite(parsed)) endMs = parsed;
+    }
+    const stillWaiting = hasSeconds && secondsLeft > 0;
+    const over = (hasSeconds && secondsLeft <= 0) || (endMs != null && endMs <= Date.now() && !stillWaiting);
+    if (over && (hasSeconds || endMs != null)) return 'The keypad is back.';
+    const wait = stillWaiting ? formatPhoneWait(secondsLeft) : '';
+    const endLabel = endMs != null ? formatPhoneTime(new Date(endMs), timeZone) : '';
+    const head = 'Too many wrong tries. The till PIN is locked too.';
+    const back = endLabel ? ' The keypad comes back at ' + endLabel + '.' : '';
+    if (wait) return head + ' Try again in ' + wait + '.' + back;
+    if (endLabel) return head + back;
+    return '';
+  }
+
   function formatPhoneTime(value, timeZone) {
     const zone = zoneOf(timeZone);
     if (zone === null) return UNKNOWN;
@@ -63782,6 +63990,8 @@ window.CDOS_PERSIST = (function () {
     formatPhoneDate: formatPhoneDate,
     formatPhoneListGroup: formatPhoneListGroup,
     formatPhoneMoney: formatPhoneMoney,
+    formatPhoneWait: formatPhoneWait,
+    formatPhoneLock: formatPhoneLock,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

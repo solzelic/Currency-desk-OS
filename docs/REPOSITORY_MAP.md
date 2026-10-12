@@ -113,6 +113,10 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Migration `040_till_balance_generation` keeps one generation per till
   and bumps it when that drawer's cash changes. A close names the
   generation it counted against. 039 is on main, so this file is 040.
+- Migration `041_staff_contact` adds nullable `contact_email` and
+  `mobile_phone` on `staff_users`. My details writes one of those
+  per request. Neither column is the sign-in name. 040 is the till
+  mark, so this file is 041. 027 and 030 are still open drafts.
 
 ## Test commands
 

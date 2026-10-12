@@ -8,7 +8,7 @@
   const { Ic } = window.CDOS;
   const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
 
-  function PinPad({ step, steps, question, hint, digits, error, shake, busy, locked, passwordMode, password, onPassword, onPasswordNext, onDigit, onDelete, forgotLabel, onForgot, retryLabel, onRetry, onClose }) {
+  function PinPad({ step, steps, question, hint, digits, error, shake, busy, busyLabel, locked, passwordMode, password, onPassword, onPasswordNext, onDigit, onDelete, forgotLabel, onForgot, retryLabel, onRetry, onClose }) {
     const root = React.useRef(null);
     const digitRef = React.useRef(onDigit);
     const deleteRef = React.useRef(onDelete);
@@ -63,6 +63,7 @@
 
     return (
       <div className="pinpad" data-pin-step={step} ref={root}>
+        {locked && error ? <p className="pin-lock" role="alert">{error}</p> : null}
         <div className="steps" aria-label={'Step ' + step + ' of ' + steps}>
           {Array.from({ length: steps }, (_, i) => <i key={i} className={i < step ? 'on' : ''} />)}
         </div>
@@ -83,7 +84,7 @@
             <button type="button" className="phone-btn primary" disabled={locked || busy} onClick={onPasswordNext}>Next</button>
           </label>
         ) : busy ? (
-          <div className="pin-saving" role="status">Saving...</div>
+          <div className="pin-saving" role="status">{busyLabel || 'Saving...'}</div>
         ) : (
           <div className={'pin-dots' + (shake ? ' shake' : '')} aria-hidden="true">
             {[0, 1, 2, 3].map((i) => <i key={i} className={i < filled ? 'on' : ''} />)}
@@ -92,7 +93,7 @@
         {passwordMode || busy ? null : (
           <p className="sr pin-count" role="status" aria-live="polite" aria-atomic="true">{filled} of 4 digits</p>
         )}
-        {error ? <p className="pin-err" role="alert">{error}</p> : null}
+        {!locked && error ? <p className="pin-err" role="alert">{error}</p> : null}
         {onClose ? <div className="pin-close"><button type="button" className="phone-btn secondary" onClick={onClose}>Close</button></div> : null}
         {onForgot ? <div className="forgot"><button type="button" className="phone-text" onClick={onForgot}>{forgotLabel}</button></div> : null}
         {onRetry ? <div className="forgot"><button type="button" className="phone-btn secondary" onClick={onRetry}>{retryLabel || 'Try again'}</button></div> : null}

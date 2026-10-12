@@ -88,11 +88,22 @@ describe("PINs are checked by the server", () => {
     const wrong = pin === "1357" ? "2468" : "1357";
 
     const codes: number[] = [];
+    const bodies: { remaining?: number; locked?: boolean; lockedUntil?: string; detail?: string; error?: string }[] = [];
     for (let i = 0; i < 6; i++) {
-      codes.push((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin: wrong } })).statusCode);
+      const res = await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin: wrong } });
+      codes.push(res.statusCode);
+      bodies.push(res.json());
     }
     expect(codes.filter((c) => c === 401).length).toBe(5);
     expect(codes.at(-1)).toBe(429);
+    expect(bodies[0]?.remaining).toBe(4);
+    expect(bodies[0]?.locked).toBe(false);
+    expect(bodies[4]?.locked).toBe(true);
+    expect(bodies[4]?.remaining).toBe(0);
+    expect(Date.parse(bodies[4]?.lockedUntil ?? "")).toBeGreaterThan(Date.now());
+    expect(bodies[5]?.error).toBe("locked");
+    expect(bodies[5]?.detail).toContain("till PIN");
+    expect(Date.parse(bodies[5]?.lockedUntil ?? "")).toBeGreaterThan(Date.now());
 
     // and the right PIN is refused while locked — otherwise the lockout is theatre
     const locked = await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: singhCookie, payload: { pin } });
@@ -122,6 +133,11 @@ describe("PINs are checked by the server", () => {
 
     const noProof = await app.inject({ method: "POST", url: "/api/staff/pin", cookies: costaCookie, payload: { pin: "8642" } });
     expect(noProof.statusCode).toBe(400);
+
+    const wrongCurrent = await app.inject({ method: "POST", url: "/api/staff/pin", cookies: costaCookie, payload: { pin: "8642", currentPin: current === "9753" ? "1357" : "9753" } });
+    expect(wrongCurrent.statusCode).toBe(401);
+    expect(wrongCurrent.json().remaining).toBe(4);
+    expect(wrongCurrent.json().locked).toBe(false);
 
     const ok = await app.inject({ method: "POST", url: "/api/staff/pin", cookies: costaCookie, payload: { pin: "8642", currentPin: current } });
     expect(ok.statusCode).toBe(200);

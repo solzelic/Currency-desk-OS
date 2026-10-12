@@ -1,7 +1,8 @@
 /* Auth + tenancy integration tests — full HTTP app against embedded PGlite. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { createDb, type DbHandle } from "../src/db/index.js";
+import { eq } from "drizzle-orm";
+import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { smsConfigured } from "../src/sms.js";
@@ -74,6 +75,58 @@ describe("auth", () => {
   it("returns 401 on /me with no session", async () => {
     const res = await app.inject({ method: "GET", url: "/api/auth/me" });
     expect(res.statusCode).toBe(401);
+  });
+
+  it("saves one contact field, and a staff id does not email a sign-in code", async () => {
+    const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { staffId: "j.masri", password: DEMO.password } });
+    const cookies = sessionCookie(login);
+    const before = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, "j.masri")).limit(1))[0]!;
+
+    const me = await app.inject({ method: "GET", url: "/api/auth/me", cookies });
+    expect(me.json().user.signInCode).toBe(false);
+    expect(me.json().user.id).toBe("j.masri");
+
+    const costa = await app.inject({ method: "POST", url: "/api/auth/login", payload: { staffId: "m.costa", password: DEMO.password } });
+    const costaMe = await app.inject({ method: "GET", url: "/api/auth/me", cookies: sessionCookie(costa) });
+    expect(costaMe.json().user.signInCode).toBe(false);
+
+    const both = await app.inject({
+      method: "PATCH", url: "/api/auth/contact", cookies,
+      payload: { contactEmail: "j@yorkfx.ca", mobilePhone: "4165550100" },
+    });
+    expect(both.statusCode).toBe(400);
+    expect(both.json().detail).toBe("Save one field at a time.");
+    const untouched = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, before.id)).limit(1))[0]!;
+    expect(untouched.contactEmail).toBe(before.contactEmail);
+    expect(untouched.mobilePhone).toBe(before.mobilePhone);
+
+    const bad = await app.inject({ method: "PATCH", url: "/api/auth/contact", cookies, payload: { contactEmail: "not-an-email" } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().detail).toBe("Enter an email address.");
+
+    const extra = await app.inject({
+      method: "PATCH", url: "/api/auth/contact", cookies,
+      payload: { contactEmail: "j@yorkfx.ca", bizName: "Nope" },
+    });
+    expect(extra.statusCode).toBe(400);
+    expect(extra.json().detail).toBe("Save one field at a time.");
+
+    const saved = await app.inject({ method: "PATCH", url: "/api/auth/contact", cookies, payload: { contactEmail: "j@yorkfx.ca" } });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toEqual({ ok: true, contactEmail: "j@yorkfx.ca" });
+    const phone = await app.inject({ method: "PATCH", url: "/api/auth/contact", cookies, payload: { mobilePhone: "4165550199" } });
+    expect(phone.json()).toEqual({ ok: true, mobilePhone: "4165550199" });
+
+    const again = await app.inject({ method: "GET", url: "/api/auth/me", cookies });
+    expect(again.json().user.contactEmail).toBe("j@yorkfx.ca");
+    expect(again.json().user.mobilePhone).toBe("4165550199");
+    expect(again.json().user.signInCode).toBe(false);
+
+    await handle.db.update(schema.staffUsers).set({ staffId: "j.masri@yorkfx.ca" }).where(eq(schema.staffUsers.id, before.id));
+    const emailed = await app.inject({ method: "GET", url: "/api/auth/me", cookies });
+    expect(emailed.json().user.signInCode).toBe(true);
+    expect(emailed.json().user.id).toBe("j.masri@yorkfx.ca");
+    await handle.db.update(schema.staffUsers).set({ staffId: "j.masri" }).where(eq(schema.staffUsers.id, before.id));
   });
 
   it("scopes login to the tenant (same staff id in another tenant does not match)", async () => {

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { formatPhoneTime, formatPhoneDate, formatPhoneListGroup, formatPhoneMoney } = require("../os-src/phone/format.js");
+const { formatPhoneTime, formatPhoneDate, formatPhoneListGroup, formatPhoneMoney, formatPhoneWait, formatPhoneLock } = require("../os-src/phone/format.js");
 
 const TORONTO = "America/Toronto";
 const KIRITIMATI = "Pacific/Kiritimati";
@@ -121,4 +121,31 @@ test("money prints the code after grouped digits", () => {
   assert.equal(formatPhoneMoney(1765.05, "cad"), "1,765.05 CAD");
   assert.equal(formatPhoneMoney(1765.05, "$"), "");
   assert.equal(formatPhoneMoney(1765.05, "CAD").includes("$"), false);
+});
+
+test("a wait under an hour is m:ss, and an hour or more is h:mm:ss", () => {
+  assert.equal(formatPhoneWait(299), "4:59");
+  assert.equal(formatPhoneWait(61), "1:01");
+  assert.equal(formatPhoneWait(3599), "59:59");
+  assert.equal(formatPhoneWait(3600), "1:00:00");
+  assert.equal(formatPhoneWait(86400), "24:00:00");
+  assert.equal(formatPhoneWait(0), "");
+  assert.equal(formatPhoneWait(-1), "");
+  assert.equal(formatPhoneWait(Number.NaN), "");
+});
+
+test("a finished or past lock says the keypad is back, in 12-hour time", () => {
+  const back = "The keypad is back.";
+  assert.equal(formatPhoneLock(0, "2026-10-12T15:00:00.000Z", TORONTO), back);
+  assert.equal(formatPhoneLock(-5, "2026-10-12T14:00:00.000Z", TORONTO), back);
+  assert.equal(formatPhoneLock(Number.NaN, "2020-01-01T00:00:00.000Z", TORONTO), back);
+  assert.equal(
+    formatPhoneLock(299, "2026-10-12T15:04:59.000Z", TORONTO),
+    "Too many wrong tries. The till PIN is locked too. Try again in 4:59. The keypad comes back at 11:04 AM.",
+  );
+  assert.equal(
+    formatPhoneLock(86400, "2026-10-13T15:00:00.000Z", TORONTO),
+    "Too many wrong tries. The till PIN is locked too. Try again in 24:00:00. The keypad comes back at 11:00 AM.",
+  );
+  assert.equal(formatPhoneLock(86400, "2026-10-13T15:00:00.000Z", TORONTO).includes("1440"), false);
 });

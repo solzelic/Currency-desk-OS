@@ -85,17 +85,22 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     }
     await page.screenshot({ path: shot(`settings_list-owner_${width}.png`) });
 
-    await root.getByRole("button", { name: /Shop details/ }).click();
+    const shopRow = root.getByRole("button", { name: /Shop details/ });
+    await expect(shopRow).toContainText("Name, address, and hours");
+    await expect(shopRow).not.toContainText(/phone/i);
+    await expect(root.getByRole("button", { name: "Notifications" })).toHaveCount(0);
+    await expect(root.getByText("On this phone, for you")).toHaveCount(0);
+    await shopRow.click();
     await expect(root.getByRole("heading", { name: "Shop details", exact: true })).toBeVisible();
     await expect(root.getByRole("heading", { name: "Change this on a computer" })).toBeVisible();
     await expect(root.getByText("Shop details are edited on a computer so nothing is changed by accident.")).toBeVisible();
     await expect(root.getByText("Use a computer to change this.")).toHaveCount(0);
     await expect(root.getByText("York Currency Exchange")).toBeVisible();
     await expect(root.getByText(/120 Adelaide/)).toBeVisible();
-    await expect(root.getByText("Mon to Fri")).toBeVisible();
-    await expect(root.getByText("9:30 AM to 6:00 PM")).toBeVisible();
-    await expect(root.getByText("Sat, Sun and holidays")).toBeVisible();
-    await expect(root.getByText("10:00 AM to 5:00 PM")).toBeVisible();
+    await expect(root.getByText("Hours", { exact: true })).toBeVisible();
+    await expect(root.getByText("Not set", { exact: true })).toBeVisible();
+    await expect(root.getByText("Mon to Fri")).toHaveCount(0);
+    await expect(root.getByText("(416) 555-0100")).toHaveCount(0);
     await expect(root.locator(".phq-kv")).toBeVisible();
     await expect(root.locator(".phq-kv")).not.toContainText("–");
     const screenFill = await root.locator(".phone-computer").evaluate((el) => {
@@ -150,7 +155,8 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
     expect(chevronAfterBadge).toBe(true);
     const pinRowHeight = await pinRow.evaluate((el) => el.getBoundingClientRect().height);
     expect(pinRowHeight).toBeGreaterThanOrEqual(44);
-    await expect(root.getByText("Always on")).toBeVisible();
+    await expect(root.getByText("Always on")).toHaveCount(0);
+    await expect(root.getByText("Sign-in code")).toHaveCount(0);
     await expect(root.getByRole("button", { name: "Change my PIN" })).toBeVisible();
     await expect(root.getByText("A void asks for your PIN. The owner sets this.")).toBeVisible();
     await expect(root.getByRole("switch")).toHaveCount(0);
@@ -245,7 +251,17 @@ test("a dead session and a PIN lockout are named on the keypad", async ({ page }
     await press(page, "9753");
     await routePinSave(page, 429, { error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
     await press(page, "9753");
-    await expect(page.getByText("Try again in a few minutes.")).toBeVisible();
+    const lock = page.locator(".pin-lock");
+    await expect(lock).toHaveText("Try again in a few minutes. The till PIN is locked too.");
+    await expect(page.getByText("Enter it again")).toBeVisible();
+    const lockAboveQuestion = await page.locator(".pinpad").evaluate((el) => {
+      const banner = el.querySelector(".pin-lock");
+      const question = el.querySelector(".pin-q");
+      if (!banner || !question) return false;
+      return (banner.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(lockAboveQuestion).toBe(true);
+    await expect(page.locator(".pin-err")).toHaveCount(0);
     await expect(page.getByText(/Try again in \d+:\d{2}/)).toHaveCount(0);
     await expect(page.locator(".keypad button", { hasText: /^1$/ })).toBeDisabled();
     const close = page.getByRole("button", { name: "Close", exact: true });
@@ -274,15 +290,17 @@ test("a PIN lockout counts down when the server names seconds left", async ({ pa
   await page.clock.install({ time: new Date("2026-10-12T15:00:00.000Z") });
   await routePinSave(page, 429, { error: "locked", retryAfter: 299 });
   await press(page, "9753");
-  await expect(page.getByText("Too many wrong tries. Try again in 4:59")).toBeVisible();
+  await expect(page.locator(".pin-lock")).toHaveText("Too many wrong tries. The till PIN is locked too. Try again in 4:59. The keypad comes back at 11:04 AM.");
   const key = page.locator(".keypad button", { hasText: /^1$/ });
   await expect(key).toBeDisabled();
   await expect(page.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
   await page.clock.fastForward(298_000);
-  await expect(page.getByText("Too many wrong tries. Try again in 0:01")).toBeVisible();
+  await expect(page.locator(".pin-lock")).toContainText("Try again in 0:01");
+  await expect(page.locator(".pin-lock")).toContainText("11:04 AM");
   await expect(key).toBeDisabled();
   await page.clock.fastForward(1_000);
   await expect(key).toBeEnabled();
+  await expect(page.getByText("The keypad is back.")).toBeVisible();
   await expect(page.getByText(/Try again in/)).toHaveCount(0);
 });
 
@@ -293,12 +311,24 @@ test("a teller sees only their own settings", async ({ page }) => {
     await atDesk(page, "m.costa");
     const root = await openSettings(page);
     await expect(root.getByText("PIN and sign-in")).toBeVisible();
-    await expect(root.getByRole("button", { name: "Notifications" })).toBeVisible();
+    await expect(root.getByRole("button", { name: "Notifications" })).toHaveCount(0);
+    await expect(root.getByText("On this phone, for you")).toHaveCount(0);
+    await expect(root.getByText("Always on")).toHaveCount(0);
     await expect(root.getByText("Shop settings are managed by the owner.")).toBeVisible();
     await expect(root.locator('[data-phone-row="signout"]')).toBeVisible();
     await expect(root.getByText("This shop. Change on a computer")).toHaveCount(0);
     await expect(root.getByText("Shop details")).toHaveCount(0);
     await expect(root.getByText("Other apps. Change on a computer")).toHaveCount(0);
+    const search = root.getByLabel("Search settings");
+    for (const hidden of ["billing", "localization", "presets"]) {
+      await search.fill(hidden);
+      await expect(root.getByText("Billing and plan")).toHaveCount(0);
+      await expect(root.getByText("Localization")).toHaveCount(0);
+      await expect(root.getByText("Role presets")).toHaveCount(0);
+      await expect(root.getByText(new RegExp("Nothing matches “" + hidden + "”"))).toBeVisible();
+    }
+    await search.fill("payment");
+    await expect(root.getByRole("button", { name: /Payment methods/ })).toBeVisible();
     await page.screenshot({ path: shot(`settings_list-teller_${width}.png`) });
   }
 });
@@ -369,4 +399,241 @@ test("desktop settings is the rail, with a 0-pixel phone diff", async ({ page })
   expect(Buffer.compare(before, after)).toBe(0);
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: shot("settings_desktop_1280.png") });
+});
+
+test("hours someone entered are 12-hour, and a new shop says Not set", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "j.masri");
+  await page.evaluate(() => {
+    const raw = JSON.parse(localStorage.getItem("cdos_settings") || "{}");
+    raw.hours = [
+      { days: "Mon–Fri", hours: "9:30am–6:00pm" },
+      { days: "Sat–Sun & holidays", hours: "10:00am–5:00pm" },
+    ];
+    localStorage.setItem("cdos_settings", JSON.stringify(raw));
+  });
+  await signInAtDesk(page, "j.masri");
+  await dismissTour(page);
+  const root = await openSettings(page);
+  await root.getByRole("button", { name: /Shop details/ }).click();
+  await expect(root.getByText("Mon to Fri")).toBeVisible();
+  await expect(root.getByText("9:30 AM to 6:00 PM")).toBeVisible();
+  await expect(root.getByText("Sat, Sun and holidays")).toBeVisible();
+  await expect(root.getByText("10:00 AM to 5:00 PM")).toBeVisible();
+  await expect(root.getByText("Not set")).toHaveCount(0);
+  await expect(root.locator(".phq-kv")).not.toContainText("–");
+});
+
+test("a sign-in code row appears only when this person is emailed one", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/auth/me", async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    if (body && body.user) body.user.signInCode = true;
+    await route.fulfill({ response: res, json: body });
+  });
+  await atDesk(page, "j.masri");
+  const root = await openSettings(page);
+  await root.getByText("PIN and sign-in").click();
+  await expect(root.getByText("Sign-in code")).toBeVisible();
+  await expect(root.getByText("Emailed to you at every sign-in.")).toBeVisible();
+  await expect(root.getByText("Always on")).toBeVisible();
+});
+
+test("my details saves one field only after the server confirms", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "j.masri");
+  const calls: Record<string, string>[] = [];
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/auth/contact", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, string>;
+    calls.push(body);
+    if (body.contactEmail === "nope") {
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "invalid_request", detail: "Enter an email address." }),
+      });
+      return;
+    }
+    await gate;
+    await route.continue();
+  });
+  const root = await openSettings(page);
+  await root.getByRole("button", { name: /My details/ }).click();
+  await expect(page.getByRole("heading", { name: "My details" })).toBeVisible();
+  await expect(page.getByText("Work email")).toHaveCount(0);
+  await expect(page.getByText("Not the name you sign in with.")).toBeVisible();
+  await expect(page.getByLabel("Sign-in")).toHaveValue("j.masri");
+  const email = page.getByLabel("Contact email");
+  await email.fill("nope");
+  await page.getByRole("button", { name: "Save contact email" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Enter an email address.");
+  await expect(email).toHaveValue("nope");
+  await expect(page.locator(".phone-toast")).toHaveCount(0);
+  expect(Object.keys(calls[0] || {})).toEqual(["contactEmail"]);
+
+  await email.fill("qa.phone@example.com");
+  await page.getByRole("button", { name: "Save contact email" }).click();
+  await expect(page.getByRole("button", { name: "Saving..." })).toBeVisible();
+  await expect(page.locator(".phone-toast")).toHaveCount(0);
+  release();
+  await expect(page.locator(".phone-toast")).toContainText("Saved");
+  expect(Object.keys(calls[1] || {})).toEqual(["contactEmail"]);
+  const me = await page.request.get("/api/auth/me");
+  expect((await me.json()).user.contactEmail).toBe("qa.phone@example.com");
+
+  await page.getByLabel("Mobile phone").fill("4165550142");
+  await page.getByRole("button", { name: "Save mobile phone" }).click();
+  await expect(page.locator(".phone-toast")).toContainText("Saved");
+  expect(Object.keys(calls[2] || {})).toEqual(["mobilePhone"]);
+  expect(calls.some((body) => Object.keys(body).length !== 1)).toBe(false);
+});
+
+test("closing my details within a second still saves, and Save cannot fire twice", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "j.masri");
+  let posts = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/auth/contact", async (route) => {
+    posts += 1;
+    await gate;
+    await route.continue();
+  });
+  const root = await openSettings(page);
+  await root.getByRole("button", { name: /My details/ }).click();
+  await page.getByLabel("Contact email").fill("qa.once@example.com");
+  await page.getByRole("button", { name: "Save contact email" }).click();
+  const saving = page.getByRole("button", { name: "Saving..." });
+  await expect(saving).toBeDisabled();
+  await saving.click({ force: true });
+  expect(posts).toBe(1);
+  release();
+  await expect(page.locator(".phone-toast")).toContainText("Saved");
+
+  posts = 0;
+  let started = 0;
+  await page.unroute("**/api/auth/contact");
+  await page.route("**/api/auth/contact", async (route) => {
+    started += 1;
+    await new Promise((r) => setTimeout(r, 900));
+    await route.continue();
+  });
+  await page.getByLabel("Mobile phone").fill("4165550177");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(root.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.locator(".phone-toast")).toContainText("Saved");
+  expect(started).toBe(1);
+  const me = await page.request.get("/api/auth/me");
+  expect((await me.json()).user.mobilePhone).toBe("4165550177");
+});
+
+test("a double tap on password Save sends one request", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "j.masri");
+  let posts = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/auth/change-password", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    posts += 1;
+    await gate;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  const root = await openSettings(page);
+  await root.getByText("PIN and sign-in").click();
+  await page.getByRole("button", { name: "Password", exact: true }).click();
+  await page.getByLabel("Current password").fill("yorkville");
+  await page.locator("label", { hasText: /^New password$/ }).locator("input").fill("yorkville-next");
+  await page.getByLabel("New password again").fill("yorkville-next");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const saving = page.getByRole("button", { name: "Saving..." });
+  await expect(saving).toBeDisabled();
+  await saving.click({ force: true });
+  expect(posts).toBe(1);
+  release();
+  await expect(page.locator(".phone-toast")).toContainText("Password changed");
+});
+
+test("a long, zero, negative, or past PIN wait does not read as minutes", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 360, height: 780 });
+  await atDesk(page, "j.masri");
+  await knownPin(page);
+  const root = await openSettings(page);
+  await root.getByText("PIN and sign-in").click();
+  await page.getByRole("button", { name: "Change my PIN" }).click();
+  await press(page, "1357");
+  await press(page, "9753");
+  await page.clock.install({ time: new Date("2026-10-12T15:00:00.000Z") });
+  await routePinSave(page, 429, { error: "locked", retryAfter: 86400 });
+  await press(page, "9753");
+  await expect(page.locator(".pin-lock")).toHaveText("Too many wrong tries. The till PIN is locked too. Try again in 24:00:00. The keypad comes back at 11:00 AM.");
+  await expect(page.locator(".pin-lock")).not.toContainText("1440");
+  await page.unroute("**/api/staff/pin");
+  await page.getByRole("button", { name: "Close without changing" }).click();
+
+  for (const body of [
+    { error: "locked", retryAfter: 0 },
+    { error: "locked", retryAfter: -30 },
+    { error: "locked", lockedUntil: "2026-10-12T14:00:00.000Z" },
+  ]) {
+    await page.getByRole("button", { name: "Change my PIN" }).click();
+    await press(page, "1357");
+    await press(page, "9753");
+    await routePinSave(page, 429, body);
+    await press(page, "9753");
+    await expect(page.getByText("The keypad is back.")).toBeVisible();
+    await expect(page.locator(".keypad button", { hasText: /^1$/ })).toBeEnabled();
+    await expect(page.locator(".pin-lock")).toHaveCount(0);
+    await page.unroute("**/api/staff/pin");
+    await page.getByRole("button", { name: "Close without changing" }).click();
+  }
+});
+
+test("a teller's wrong PIN warns, then names when the till PIN unlocks", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  try {
+    await atDesk(page, "m.costa");
+    const set = await page.request.post("/api/staff/pin/reset", { data: { password: "yorkville", pin: "1357" } });
+    expect(set.ok(), await set.text()).toBeTruthy();
+    const root = await openSettings(page);
+    await root.getByText("PIN and sign-in").click();
+    await expect(root.getByText("Always on")).toHaveCount(0);
+    await page.getByRole("button", { name: "Change my PIN" }).click();
+    await press(page, "0000");
+    await expect(page.getByText("That PIN isn’t right. 4 tries left.")).toBeVisible();
+    await expect(page.getByText("Enter a new PIN")).toHaveCount(0);
+    await expect(page.getByText("Enter your current PIN")).toBeVisible();
+    for (let i = 0; i < 4; i++) await press(page, "0000");
+    const lock = page.locator(".pin-lock");
+    await expect(lock).toContainText("The till PIN is locked too");
+    await expect(lock).toContainText(/Try again in \d+:\d{2}/);
+    await expect(lock).toContainText(/The keypad comes back at \d{1,2}:\d{2} (AM|PM)/);
+    await expect(lock).not.toContainText("1440");
+    await expect(page.locator(".pin-err")).toHaveCount(0);
+    const above = await page.locator(".pinpad").evaluate((el) => {
+      const banner = el.querySelector(".pin-lock");
+      const question = el.querySelector(".pin-q");
+      if (!banner || !question) return false;
+      return (banner.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(above).toBe(true);
+  } finally {
+    await page.request.post("/api/auth/login", {
+      data: { staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" },
+    });
+    await page.request.post("/api/staff/m.costa/pin");
+  }
 });
