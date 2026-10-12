@@ -71,6 +71,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **A health card number is not on a read.** The clients API (one file,
+  the list, and name lookup), the client file, search, the printable
+  client report, and the KYC CSV return the document type, the issuing
+  province when one was stored, the expiry, and the date recorded. The
+  number is not a field in that payload. A copy cached in localStorage
+  or IndexedDB is cleared the next time the desk loads. LCTR and STR
+  prefill never use a health card; if the file has no accepted ID,
+  those identifier fields stay blank for staff to fill. The number is
+  still in the database until an owner runs redaction — that command
+  is not part of this change and does not run on deploy. Ontario's
+  Health Cards and Numbers Control Act, 1991 bars a business outside
+  health care from collecting or using a health number, and FINTRAC
+  says not to use a health card where provincial law prohibits it.
+  A health card is not valid ID.
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile

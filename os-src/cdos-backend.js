@@ -667,6 +667,130 @@
   var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
   var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
 
+  /* Same rule as server/src/clients/health-card.ts. A health card
+     number is not kept in this browser. The catalogue name, any spacing
+     or case of it, and the aliases OHIP, RAMQ, MSP, Alberta Health and
+     Care Card. PR #108's catalogue matches only the exact name. */
+  function isHealthCardType(value) {
+    var spaced = String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+    if (!spaced) return false;
+    var compact = spaced.replace(/ /g, "");
+    if (compact.indexOf("healthcard") !== -1) return true;
+    if (compact.indexOf("carecard") !== -1) return true;
+    var words = spaced.split(" ");
+    for (var w = 0; w < words.length; w++) {
+      if (words[w] === "ohip" || words[w] === "ramq" || words[w] === "msp") return true;
+    }
+    if (spaced.indexOf("alberta health") !== -1) return true;
+    return false;
+  }
+  var HEALTH_NUMBER_KEYS = { docNumber: 1, doc_number: 1, idNum: 1, num: 1, number: 1 };
+  var HEALTH_TYPE_KEYS = ["docType", "doc_type", "idType", "type"];
+  function objectIsHealthCard(value) {
+    if (!value || typeof value !== "object") return false;
+    for (var i = 0; i < HEALTH_TYPE_KEYS.length; i++) {
+      if (isHealthCardType(value[HEALTH_TYPE_KEYS[i]])) return true;
+    }
+    return false;
+  }
+  function scrubHealthValue(value) {
+    if (Array.isArray(value)) return value.map(scrubHealthValue);
+    if (typeof value === "string") {
+      if (value.charAt(0) !== "{" && value.charAt(0) !== "[") return value;
+      try {
+        var parsed = JSON.parse(value);
+        var cleaned = scrubHealthValue(parsed);
+        if (JSON.stringify(cleaned) === JSON.stringify(parsed)) return value;
+        return JSON.stringify(cleaned);
+      } catch (error) {
+        console.error("[CurrencyDesk] could not read a cached record while clearing a health number", error);
+        return value;
+      }
+    }
+    if (!value || typeof value !== "object") return value;
+    var drop = objectIsHealthCard(value);
+    var out = Array.isArray(value) ? [] : {};
+    Object.keys(value).forEach(function (key) {
+      if (drop && HEALTH_NUMBER_KEYS[key]) return;
+      out[key] = scrubHealthValue(value[key]);
+    });
+    return out;
+  }
+  function scrubLocalHealthNumbers() {
+    var keys = [];
+    var i;
+    for (i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    keys.forEach(function (key) {
+      if (!key) return;
+      var raw = localStorage.getItem(key);
+      if (!raw || (raw.charAt(0) !== "{" && raw.charAt(0) !== "[")) return;
+      var parsed;
+      try { parsed = JSON.parse(raw); }
+      catch (error) {
+        /* A value that is not JSON cannot hold a client record. Say so
+           and keep going: stopping here would leave a later key's
+           health number in place. */
+        console.error("[CurrencyDesk] could not read " + key + " while clearing a cached health number", error);
+        return;
+      }
+      var next = JSON.stringify(scrubHealthValue(parsed));
+      if (next !== raw) localStorage.setItem(key, next);
+    });
+  }
+  function scrubIndexedHealthNumbers() {
+    if (!window.indexedDB || typeof indexedDB.databases !== "function") return Promise.resolve();
+    return indexedDB.databases().then(function (list) {
+      var pending = (list || []).filter(function (info) { return info && info.name; }).map(function (info) {
+        return new Promise(function (resolve, reject) {
+          var open = indexedDB.open(info.name);
+          open.onerror = function () { reject(open.error || new Error("Could not open " + info.name)); };
+          open.onsuccess = function () {
+            var db = open.result;
+            var names = [];
+            var n;
+            for (n = 0; n < db.objectStoreNames.length; n++) names.push(db.objectStoreNames[n]);
+            if (!names.length) { db.close(); resolve(); return; }
+            var tx = db.transaction(names, "readwrite");
+            tx.oncomplete = function () { db.close(); resolve(); };
+            tx.onerror = function () { db.close(); reject(tx.error || new Error("Could not clear a cached health number in " + info.name)); };
+            names.forEach(function (storeName) {
+              var cursorReq = tx.objectStore(storeName).openCursor();
+              cursorReq.onerror = function () { reject(cursorReq.error || new Error("Could not read " + storeName)); };
+              cursorReq.onsuccess = function () {
+                var cursor = cursorReq.result;
+                if (!cursor) return;
+                var value = cursor.value;
+                if (typeof value === "string" && (value.charAt(0) === "{" || value.charAt(0) === "[")) {
+                  try {
+                    var parsed = JSON.parse(value);
+                    var asText = JSON.stringify(scrubHealthValue(parsed));
+                    if (asText !== value) cursor.update(asText);
+                  } catch (error) {
+                    console.error("[CurrencyDesk] could not read a cached record in " + storeName, error);
+                  }
+                } else if (value && typeof value === "object") {
+                  var cleaned = scrubHealthValue(value);
+                  if (JSON.stringify(cleaned) !== JSON.stringify(value)) cursor.update(cleaned);
+                }
+                cursor.continue();
+              };
+            });
+          };
+        });
+      });
+      return Promise.all(pending);
+    });
+  }
+  window.CDOS = window.CDOS || {};
+  window.CDOS.isHealthCardType = isHealthCardType;
+  window.CDOS.scrubClientMap = scrubHealthValue;
+  window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
+  scrubLocalHealthNumbers();
+  window.CDOS.healthNumberScrubbed = scrubIndexedHealthNumbers().catch(function (error) {
+    console.error("[CurrencyDesk] could not clear a cached health number", error);
+    throw error;
+  });
+
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
      document flattened onto it as idType / idNum / idIssued / idExpiry.
@@ -678,7 +802,7 @@
      that is the byte weight that was stopping the desk saving. */
   function toDeskRecord(record, local) {
     local = local || {};
-    var documents = record.documents || [];
+    var documents = (record.documents || []).map(function (d) { return scrubHealthValue(d); });
     var primary = documents.filter(function (d) { return d.isPrimary; })[0] || null;
     var extra = documents.filter(function (d) { return !d.isPrimary; });
     var serverHasPrimaryScan = !!(primary && primary.hasScan);
@@ -715,7 +839,9 @@
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
       idType: primary ? primary.docType : "",
-      idNum: primary ? (primary.docNumber || "") : "",
+      idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
+      idProvince: primary ? (primary.issuingJurisdiction || "") : "",
+      idRecorded: primary && primary.recordedAt ? String(primary.recordedAt).slice(0, 10) : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
       primaryDocumentId: primary ? primary.documentId : null,
@@ -729,7 +855,9 @@
         return {
           documentId: d.documentId,
           type: d.docType,
-          num: d.docNumber || "",
+          num: isHealthCardType(d.docType) ? "" : (d.docNumber || ""),
+          province: d.issuingJurisdiction || "",
+          recorded: d.recordedAt ? String(d.recordedAt).slice(0, 10) : "",
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
           hasScan: !!d.hasScan,

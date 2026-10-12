@@ -55,6 +55,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
+import { isHealthCardType } from "./health-card.js";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -1278,6 +1279,35 @@ const blank = (value: string | null | undefined) => {
 const isoDate = (value: unknown) =>
   value == null ? null : new Date(value as string | Date).toISOString().slice(0, 10);
 
+/* A health card number is not lawful to keep on a read. The row stays
+   (type, issuing province when one was stored, expiry, the date it was
+   recorded). The number key is absent, not null, so a caller cannot
+   mistake "withheld" for "blank". The stored column is unchanged. */
+function documentJson(document: Record<string, unknown>, scanCount: Map<unknown, number>) {
+  const health = isHealthCardType(document.doc_type);
+  const base = {
+    documentId: document.document_id,
+    docType: document.doc_type,
+    expiresOn: isoDate(document.expires_on),
+    isPrimary: document.is_primary,
+    hasScan: (scanCount.get(document.document_id) ?? 0) > 0,
+  };
+  if (!health) {
+    return {
+      ...base,
+      docNumber: document.doc_number ?? null,
+      issuingJurisdiction: document.issuing_jurisdiction ?? null,
+      issuedOn: isoDate(document.issued_on),
+    };
+  }
+  const row: Record<string, unknown> = {
+    ...base,
+    recordedAt: isoDate(document.created_at),
+  };
+  if (document.issuing_jurisdiction) row.issuingJurisdiction = document.issuing_jurisdiction;
+  return row;
+}
+
 function clientJson(
   row: Record<string, unknown>,
   documents: Record<string, unknown>[],
@@ -1327,16 +1357,7 @@ function clientJson(
     /* Metadata only. `hasScan` is what lets a screen draw the covered
        placeholder without the bytes ever being on the wire until
        somebody clicks, which is what makes the audit row meaningful. */
-    documents: documents.map((document) => ({
-      documentId: document.document_id,
-      docType: document.doc_type,
-      docNumber: document.doc_number ?? null,
-      issuingJurisdiction: document.issuing_jurisdiction ?? null,
-      issuedOn: isoDate(document.issued_on),
-      expiresOn: isoDate(document.expires_on),
-      isPrimary: document.is_primary,
-      hasScan: (scanCount.get(document.document_id) ?? 0) > 0,
-    })),
+    documents: documents.map((document) => documentJson(document, scanCount)),
     photograph: photograph
       ? {
           imageId: photograph.image_id,

@@ -523,8 +523,9 @@
           ...names.map(n => { const c = clients[n] || {}; const tx = data.live.filter(r => r.customer === n);
             const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
             const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-            const st = (!c.idType || !c.idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified');
-            return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
+            const idNum = (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType)) ? '' : (c.idNum || '');
+            const st = (!c.idType || !idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified');
+            return [n, c.idType || '', idNum, c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
       }
       return [];
     };
@@ -951,7 +952,7 @@
                 return (<tr key={n}>
                 <td style={{ ...tdS, fontWeight: 500 }}>{n}</td>
                 <td style={{ ...tdS, color: CD.mute }}>{c.idType || '—'}</td>
-                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{c.idNum || '—'}</td>
+                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType)) ? '—' : (c.idNum || '—')}</td>
                 <td style={{ ...tdS, color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute }}>{c.idExpiry || '—'}</td>
                 <td style={{ ...tdS, textAlign: 'center' }}><span style={{ fontSize: 10, fontWeight: 700, color: col, background: bg, padding: '2px 7px', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{st.toUpperCase()}</span></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tx.length}</td>

@@ -201,6 +201,36 @@ provider authenticated the document and was paid to do it. No amount of
 adding or removing rows in this table can grant that, and nothing here
 may quietly take it away.
 
+## Health card numbers
+
+A health card is not valid ID. Ontario's Health Cards and Numbers
+Control Act, 1991 bars a business outside health care from collecting
+or using a health number, and FINTRAC says not to use a health card
+where provincial law prohibits it.
+
+The row can still be in `desk_client_identity_documents` — type,
+issuing province, expiry, who recorded it, and when. **No read returns
+the number.** `clientJson` omits `docNumber` (the key is absent, not
+null) for a health card. The type is recognised by
+`server/src/clients/health-card.ts`: the catalogue name "health card"
+in any case or spacing, and the aliases a desk types — OHIP, RAMQ,
+MSP, Alberta Health, Care Card. The signed catalogue itself lives on
+PR #108 (`server/src/ledger/id-document-types.mjs`) and is not edited
+here; that detector matches only the exact name.
+
+The same rule is applied in the browser. The client file shows the
+type, and the province, expiry, and recorded date when they are
+stored. It does not show a number. Search, the printable client
+report, and the KYC CSV do not include one. On load, and again when
+the tenant snapshot is saved or restored, any cached copy in
+`localStorage` or IndexedDB is removed. LCTR and STR prefill
+(`os-src/cdos-lctr.jsx`) will not use a health card. Another accepted
+document on the same file is used instead. With none, the identifier
+type, number, and jurisdiction stay blank.
+
+This does not delete or rewrite the stored number. Redaction is a
+separate, owner-run command and does not run on deploy.
+
 ## Scans, and the photograph
 
 **The bytes moved to the server**, into `desk_client_images`. Three
@@ -404,6 +434,17 @@ every time.
   second till and a second branch and *not* from another tenant,
   documents as separate rows, the audit row a reveal writes, the
   identifying/signal boundary, and migration 019 run over a real blob.
+- `server/tests/health-number-read.postgres.test.ts` — a client whose
+  stored ID is a health card (OHIP, and "Health Card" with irregular
+  spacing). The API body for that client, the list entry, and the
+  lookup entry are deep-scanned: the number is neither a field nor a
+  value. The database column still holds it.
+- `server/tests/health-card.test.ts` — the alias detector, including
+  the names that must not match.
+- `tests/e2e/health-number-read.spec.ts` — after load, the number is
+  not in localStorage, IndexedDB, or on the client file; LCTR and STR
+  prefill leave the identifier blank for a health-card-only client
+  and use a passport when the file has one.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted
   deal, with the deal still resolving and the old name still finding
