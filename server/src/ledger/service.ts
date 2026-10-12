@@ -5,7 +5,8 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
-import { businessDate, readDateOnly, refDay } from "./business-date.js";
+import { readDateOnly, refDay } from "./business-date.js";
+import { branchCalendarDate } from "./branch-zone.js";
 import { now as clockNow } from "./clock.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -201,26 +202,7 @@ export async function requireOpenTill(
   return readDateOnly(session.rows[0].business_date);
 }
 
-/** Today's calendar date in the branch's zone. Used where a deal does
-    not require an open till, so there is no session date to borrow. */
-export async function branchCalendarDate(
-  client: pg.PoolClient,
-  actor: LedgerActor,
-): Promise<string> {
-  const result = await client.query(
-    `SELECT timezone FROM branches
-      WHERE tenant_id=$1 AND legal_entity_id=$2 AND id=$3`,
-    [actor.tenantId, actor.legalEntityId, actor.branchId],
-  );
-  const zone = result.rows[0]?.timezone;
-  if (typeof zone !== "string" || zone.trim() === "") {
-    throw new LedgerError(
-      "BRANCH_TIMEZONE_UNSET",
-      "This branch has no time zone, so its business date cannot be named.",
-    );
-  }
-  return businessDate(clockNow(), zone);
-}
+export { branchCalendarDate };
 
 /* ---- the identification gate ----
 

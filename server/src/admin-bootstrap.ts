@@ -9,6 +9,7 @@
    ============================================================ */
 import { eq } from "drizzle-orm";
 import { schema } from "./db/index.js";
+import { DEFAULT_BRANCH_TIMEZONE } from "./ledger/branch-zone.js";
 import { requirePackForCountry } from "./ledger/jurisdiction.js";
 import type { Db } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
@@ -24,7 +25,7 @@ export async function ensurePlatformAdmin(db: Db, email: string, password: strin
   await db.insert(schema.tenants).values({ id: tenantId, name: "CurrencyDesk Platform", plan: "premium", siteSlug: "platform" }).onConflictDoNothing();
   const canada = requirePackForCountry("CA");
   await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: "CurrencyDesk", homeCurrency: canada.homeCurrency, jurisdictionPackId: canada.packId, jurisdictionPackVersion: canada.version, jurisdiction: "FINTRAC" }).onConflictDoNothing();
-  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "HQ" }).onConflictDoNothing();
+  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "HQ", timezone: DEFAULT_BRANCH_TIMEZONE }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
   const id = `${tenantId}:${email}`;
   const existing = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.id, id)).limit(1);

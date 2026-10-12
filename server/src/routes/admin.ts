@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import { requirePackForCountry } from "../ledger/jurisdiction.js";
+import { DEFAULT_BRANCH_TIMEZONE } from "../ledger/branch-zone.js";
 import { publishStartingBoard } from "../rates/starting-board.js";
 import type { Db } from "../db/index.js";
 import { resolveSessionState, revokeAllSessions, sessionHasPlatformMfa, SESSION_COOKIE, type SessionState } from "../auth/sessions.js";
@@ -1497,7 +1498,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     await db.insert(schema.tenants).values({ id: tenantId, name: b.businessName, plan: b.plan, siteSlug: b.slug }).onConflictDoNothing();
     const canada = requirePackForCountry("CA");
     await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: b.businessName, homeCurrency: canada.homeCurrency, jurisdictionPackId: canada.packId, jurisdictionPackVersion: canada.version, jurisdiction: "FINTRAC" }).onConflictDoNothing();
-    await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
+    await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main", timezone: DEFAULT_BRANCH_TIMEZONE }).onConflictDoNothing();
     await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
     // a desk made by hand still has to arrive able to trade — same as one
     // that came through onboarding

@@ -16,6 +16,7 @@ import {
   signOffWindow,
   zonedMidnight,
 } from "../src/ledger/business-date.js";
+import { assertBranchTimeZone, BranchTimeZoneUnset } from "../src/ledger/branch-zone.js";
 
 describe("businessDate", () => {
   it("is the branch calendar date just after midnight in Jerusalem", () => {
@@ -144,5 +145,23 @@ describe("signOffWindow", () => {
     expect(new Date(window.to).getTime()).toBe(zonedMidnight("2026-10-13", "Asia/Jerusalem").getTime());
     expect(now.getTime()).toBeGreaterThanOrEqual(new Date(window.from).getTime());
     expect(now.getTime()).toBeLessThan(new Date(window.to).getTime());
+  });
+});
+
+describe("assertBranchTimeZone", () => {
+  it("accepts a real zone and refuses a blank or a zone Intl cannot read", () => {
+    expect(assertBranchTimeZone("  America/Toronto  ")).toBe("America/Toronto");
+    expect(() => assertBranchTimeZone("")).toThrow(BranchTimeZoneUnset);
+    expect(() => assertBranchTimeZone("   ")).toThrow(BranchTimeZoneUnset);
+    expect(() => assertBranchTimeZone(null)).toThrow(BranchTimeZoneUnset);
+    let refused = false;
+    try {
+      assertBranchTimeZone("Not/AZone");
+    } catch (error) {
+      refused = true;
+      expect(error).toBeInstanceOf(BranchTimeZoneUnset);
+      expect((error as BranchTimeZoneUnset).code).toBe("BRANCH_TIMEZONE_UNSET");
+    }
+    expect(refused).toBe(true);
   });
 });

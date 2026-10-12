@@ -9,6 +9,7 @@ import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/ses
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
+import { BranchTimeZoneUnset } from "./branch-zone.js";
 import { ensureLedgerPrincipal } from "./principal.js";
 import {
   LedgerProvisioningService,
@@ -360,6 +361,12 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
         code: "LEDGER_BUSY",
         message: "The ledger is handling another change to this till. Nothing was posted — try again.",
       });
+    }
+    /* A missing or unreadable branch zone is a desk that cannot name its
+       day. Intl throws RangeError for a garbage zone; that is this same
+       refusal, not an unexpected fault. */
+    if (error instanceof BranchTimeZoneUnset) {
+      return reply.code(409).send({ code: error.code, message: error.message });
     }
     if (!(error instanceof LedgerError)) {
       app.log.error(error, "ledger route failure");
