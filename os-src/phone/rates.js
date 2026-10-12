@@ -129,6 +129,99 @@
     return parts.join(" ");
   }
 
+  function nearly(left, right) {
+    return Math.abs((left || 0) - (right || 0)) < 1e-8;
+  }
+
+  function sameSpread(left, right) {
+    if (left == null && right == null) return true;
+    if (left == null || right == null) return false;
+    return nearly(left, right);
+  }
+
+  function changes(published, draft) {
+    const lines = [];
+    let count = 0;
+    if (!published) {
+      count = 1;
+      lines.push({ label: "Rate board", detail: "First publish, " + draft.order.length + " currencies" });
+    } else {
+      draft.order.forEach((code) => {
+        const was = published.rows[code];
+        const now = draft.rows[code];
+        if (!now) return;
+        if (!was) {
+          count += 1;
+          lines.push({ label: code, detail: "Added to the board" });
+          return;
+        }
+        if (!nearly(was.mid, now.mid)) {
+          count += 1;
+          const hand = now.manual ? ", set by hand" : "";
+          lines.push({ label: code + " spot", detail: formatSpot(was.mid) + " to " + formatSpot(now.mid) + hand });
+        }
+        if (!sameSpread(was.spread, now.spread)) {
+          count += 1;
+          const from = was.spread == null ? "desk margin" : formatPercent(was.spread);
+          const to = now.spread == null ? "desk margin" : formatPercent(now.spread);
+          lines.push({ label: code + " spread", detail: from + " to " + to });
+        }
+        if ((was.show !== false) !== (now.show !== false)) {
+          count += 1;
+          lines.push({ label: code, detail: now.show === false ? "Hidden from the board" : "On the board" });
+        }
+      });
+      published.order.forEach((code) => {
+        if (!draft.rows[code]) {
+          count += 1;
+          lines.push({ label: code, detail: "Removed from the board" });
+        }
+      });
+      if (published.order.join(",") !== draft.order.join(",")) {
+        count += 1;
+        lines.push({ label: "Homepage order", detail: homeSix(draft.rows, draft.order).join(", ") });
+      }
+    }
+    const marginsSame = published && nearly(published.buyMargin, draft.buyMargin) && nearly(published.sellMargin, draft.sellMargin);
+    if (!marginsSame) {
+      if (published) count += 1;
+      const detail = nearly(draft.buyMargin, draft.sellMargin)
+        ? formatPercent(draft.buyMargin) + " each"
+        : formatPercent(draft.buyMargin) + " buy, " + formatPercent(draft.sellMargin) + " sell";
+      lines.push({ label: "Buy and sell margin", detail: detail });
+    } else {
+      lines.push({ label: "Buy and sell margin", detail: formatPercent(draft.buyMargin) + " each, no change", quiet: true });
+    }
+    return { count: count, lines: lines };
+  }
+
+  function publishBody(draft) {
+    const rows = {};
+    draft.order.forEach((code) => {
+      const row = draft.rows[code];
+      if (!row || !(row.mid > 0)) return;
+      const out = { mid: row.mid, show: row.show !== false };
+      if (typeof row.spread === "number") out.spread = row.spread;
+      rows[code] = out;
+    });
+    return {
+      buyMargin: draft.buyMargin,
+      sellMargin: draft.sellMargin,
+      rows: rows,
+      order: ["CAD"].concat(draft.order.filter((code) => code !== "CAD")),
+    };
+  }
+
+  function plainPublishError(status, body) {
+    if (status === 403) return "The server refused (403). Only a manager or an admin can publish rates.";
+    if (status === 401) return "Your session ended. Sign in again, then publish.";
+    if (status === 400) {
+      const detail = body && body.detail ? String(body.detail) : "";
+      return detail ? "The server refused the board (400). " + detail : "The server refused the board (400).";
+    }
+    return "The server could not publish (" + status + "). Nothing was changed.";
+  }
+
   function clockLabel(value, zone) {
     const format = window.CDOS && window.CDOS.formatPhoneTime;
     if (typeof format !== "function" || value == null || value === "") return "";
@@ -153,6 +246,9 @@
     copyBoard: copyBoard,
     homeSix: homeSix,
     previewNote: previewNote,
+    changes: changes,
+    publishBody: publishBody,
     clockLabel: clockLabel,
+    plainPublishError: plainPublishError,
   };
 })();

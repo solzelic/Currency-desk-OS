@@ -16,6 +16,7 @@ import Decimal from "decimal.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { hasBackendPermission } from "../auth/permissions.js";
+import { audit } from "../audit.js";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
@@ -163,7 +164,18 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     if (!hasBackendPermission(who.role, "rates:change")) {
-      return reply.code(403).send({ error: "permission_denied", detail: "rates:change required" });
+      await audit(db, {
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "rates.publish_denied",
+        detail: { staffId: who.staffId, role: who.role },
+      });
+      return reply.code(403).send({
+        error: "permission_denied",
+        detail: "Only a manager or an admin can publish rates.",
+      });
     }
 
     const parsed = publishBody.safeParse(req.body);

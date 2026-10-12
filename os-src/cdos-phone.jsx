@@ -275,14 +275,16 @@
 
   /* Branches and Assistant are front-end mocks, so they are not in
      this catalog. Texts is, and the desk only passes it when Twilio
-     is set up. Search words sit beside the purpose line so "cash"
-     finds Cheques, Vault, Compliance, and Till. */
+     is set up. Pricing is not a phone app: spread, publish, and
+     margin find Rates on the bottom bar. Fee stays on the computer.
+     Search words sit beside the purpose line so "cash" finds
+     Cheques, Vault, Compliance, and Till. */
   const GROUPS = [
     { title: 'Money', ids: ['transfers', 'cheques', 'vault'] },
     { title: 'Checks', ids: ['compliance', 'tagged', 'audit'] },
     { title: 'Numbers', ids: ['reports', 'dashboard'] },
     { title: 'Tools', ids: ['telegraph', 'calc', 'loan'] },
-    { title: 'Shop setup', ids: ['pricing', 'store', 'settings'] },
+    { title: 'Shop setup', ids: ['store', 'settings'] },
   ];
   const CATALOG = {
     transfers: { title: 'Transfers', detail: 'Send money abroad, track it', words: 'remit wire send payout', icon: 'transferarrows' },
@@ -296,12 +298,11 @@
     telegraph: { title: 'Texts', detail: 'Quote requests by text', words: 'sms message', icon: 'telegraphbubble' },
     calc: { title: 'Calculator', detail: 'Add up, convert, margin', words: 'fx convert', icon: 'calcdevice' },
     loan: { title: 'Loan calculator', detail: 'Monthly loan payment', words: 'payment interest', icon: 'loancentre' },
-    pricing: { title: 'Pricing', detail: 'Spreads, fees, publish rates', words: 'spread fee rate', icon: 'pricingpercent' },
     store: { title: 'Apps', detail: 'Add or remove apps', words: 'store install', icon: 'storefront' },
     settings: { title: 'Settings', detail: 'Desk, staff, your PIN', words: 'pin staff', icon: 'gearsettings' },
   };
   const BAR = [
-    { id: 'rates', title: 'Rates', detail: 'Buy and sell prices', words: 'fx board quote spread margin', icon: 'rateboard' },
+    { id: 'rates', title: 'Rates', detail: 'Buy and sell prices', words: 'fx board quote spread publish margin', icon: 'rateboard' },
     { id: 'ledger', title: 'Ledger', detail: "Today's deals", words: 'transactions deals', icon: 'ledgerbook' },
     { id: 'clients', title: 'Clients', detail: 'Find a customer', words: 'kyc customer', icon: 'clientskyc' },
     { id: 'till', title: 'Till', detail: 'Count the drawer, close the day', words: 'cash drawer count', icon: 'tilldrawer' },

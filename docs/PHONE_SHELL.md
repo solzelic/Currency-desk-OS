@@ -301,7 +301,7 @@ Browse groups, in order. A group with nothing this role can open is omitted.
 | Checks | Compliance, Tagged deals, Audit trail |
 | Numbers | Reports, Dashboard |
 | Tools | Texts (only when Twilio is set up), Calculator, Loan calculator |
-| Shop setup | Pricing, Apps, Settings |
+| Shop setup | Apps, Settings |
 
 Each row is the app's coloured icon (accent on an 11% tint, 40px) and a
 one-line purpose.
@@ -336,8 +336,19 @@ no steppers, no drag, and no board switch. Buy and sell are CAD per
 A manager or an admin can switch to Public preview. That board is
 the first six currencies still on the board, with the same
 `boardQuote` figures. The line under it names anything hidden and
-anything past those six. It is not live. This slice has no Publish
-button.
+anything past those six. It is not live.
+
+Publish is one sticky button. With nothing to send it reads
+"Nothing to publish" and there is no second line under it. A change
+reads "Publish 1 change" (or "Publish N changes") and opens a padded
+page: Back at the top left, the change list in a card, and Publish
+now full width. The post is `POST /api/rates/publish`. A teller or a
+supervisor is refused with "Only a manager or an admin can publish
+rates." and an audit row `rates.publish_denied`. The phone shows
+that sentence and does not add "rates:change required".
+
+Phone Pricing is gone. Spread, margin, and publish find Rates.
+Fee, floor, rounding, and the simulator stay on the computer.
 
 Currency names are `BY[code].name` in `yorkfx-converter.js`. Lock is
 the desktop flag `yorkfx_rates_locked` in this browser.

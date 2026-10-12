@@ -1,7 +1,8 @@
-/* Phone Rates editor. Margins, spot, per-row spread, order, and
-   whether a currency is on the board, plus a public preview of the
-   homepage six. Tellers get the read-only list. Publish is a later
-   slice. Desktop Rates stays the Rate Board iframe. */
+/* Phone Rates. The desk editor for the public board: margins, spot,
+   per-row spread, order, a public preview, and one Publish. Tellers
+   get the read-only list. Fee, floor, rounding, and the deal
+   simulator stay on the computer Pricing screen. Desktop Rates stays
+   the Rate Board iframe. */
 (function () {
   const { useEffect, useState } = React;
   const R = () => window.CDOS.phoneRates;
@@ -41,6 +42,9 @@
     const [spotText, setSpotText] = useState("");
     const [spreadText, setSpreadText] = useState(null);
     const [clampNote, setClampNote] = useState("");
+    const [confirm, setConfirm] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [publishError, setPublishError] = useState("");
 
     async function load() {
       setPhase("load");
@@ -139,6 +143,51 @@
       window.addEventListener("pointerup", up);
     }
 
+    async function publishNow() {
+      if (publishing) return;
+      setPublishing(true);
+      setPublishError("");
+      const body = rates.publishBody(draft);
+      let response;
+      try {
+        response = await fetch("/api/rates/publish", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        setPublishing(false);
+        setPublishError("Could not reach the server. Nothing was published.");
+        return;
+      }
+      let payload = null;
+      try { payload = await response.json(); } catch (error) { payload = null; }
+      if (!response.ok || !payload || !payload.board) {
+        setPublishing(false);
+        setPublishError(!response.ok
+          ? rates.plainPublishError(response.status, payload)
+          : "The server did not return the board. Check Rates before trying again.");
+        return;
+      }
+      try {
+        const saved = JSON.stringify(payload.board);
+        localStorage.setItem("yorkfx_rates_v1", saved);
+        if (payload.board.order) localStorage.setItem("yorkfx_board_order", JSON.stringify(payload.board.order));
+        if (window.applyBoardOrder) window.applyBoardOrder();
+        if (window.applyRateConfig) window.applyRateConfig();
+        window.dispatchEvent(new StorageEvent("storage", { key: "yorkfx_rates_v1", newValue: saved }));
+      } catch (error) {
+        setPublishError("Published. This browser could not save its copy of the board.");
+      }
+      const next = rates.copyBoard(payload.board);
+      setPublished(next);
+      setDraft(next);
+      setConfirm(false);
+      setOpenCode(null);
+      setPublishing(false);
+    }
+
     if (!shell) return <p role="alert">The phone shell did not load.</p>;
     if (phase === "load") {
       return <div className="phone-rates" data-phone-rates=""><shell.Screen app="rates" title="Rates"><shell.LoadingState label="Loading rates" /></shell.Screen></div>;
@@ -153,12 +202,16 @@
       );
     }
 
+    const diff = rates.changes(published, draft);
+    const idle = diff.count === 0;
     const when = rates.clockLabel(published && published.publishedAt, zone);
     const who = publisherName(published && published.publishedBy, me, settings, srvUser);
     const stamp = when ? (who ? when + ", " + who : when) : "";
     let status = "Not published yet";
     if (!can) status = published ? ("Published " + (stamp || "earlier") + " · Ask a manager to change rates") : "Not published yet. Ask a manager to change rates";
+    else if (diff.count > 0) status = diff.count + (diff.count === 1 ? " change" : " changes") + " not published" + (stamp ? " · last " + stamp : "");
     else if (published) status = stamp ? "Published " + stamp : "Published";
+    const publishLabel = idle ? "Nothing to publish" : ("Publish " + diff.count + (diff.count === 1 ? " change" : " changes"));
     const home = draft.order.slice(0, 6);
     const rest = draft.order.slice(6);
 
@@ -252,10 +305,11 @@
             </>
           ) : null}
           <div className="phone-rate-lock">
-            <p><i />{status}</p>
+            <p className={diff.count > 0 && can ? "is-warn" : ""}><i />{status}</p>
             {can ? <button type="button" className="phone-rate-lockbtn" aria-pressed={!!locked} aria-label={locked ? "Rates locked in this browser" : "Lock rates in this browser"} onClick={onToggleLock}>{locked ? "Locked" : "Lock"}</button> : null}
           </div>
           {feedNote ? <p className="phone-rate-banner" role="alert">{feedNote}</p> : null}
+          {publishError && !confirm ? <p className="phone-rate-banner" role="alert">{publishError}</p> : null}
           {list(home, "On your homepage, top 6", can ? "Drag to reorder" : "")}
           {rest.length ? list(rest, "Rate board page only", "") : null}
         </>
@@ -283,9 +337,34 @@
       );
     }
 
+    const sticky = can ? <shell.StickyAction label={publishLabel} disabled={idle || publishing} onClick={() => { setPublishError(""); setConfirm(true); }} /> : null;
+
     return (
       <div className="phone-rates" data-phone-rates="" data-can-publish={can ? "yes" : "no"}>
-        <shell.Screen app="rates" title="Rates">{body}</shell.Screen>
+        <shell.Screen app="rates" title="Rates" sticky={sticky}>{body}</shell.Screen>
+        {confirm ? ReactDOM.createPortal(
+          <div className="phone-task fixed inset-0" data-app="rates" style={{ background: "var(--cd-scrim)", zIndex: 9200 }}>
+            <div role="dialog" aria-label="Publish rates?" className="phone-task-sheet phone-rate-sheet">
+              <div className="phone-rate-sheet-h">
+                <button type="button" className="phone-rate-back" onClick={() => { if (!publishing) setConfirm(false); }}>Back</button>
+                <h2>Publish rates?</h2>
+                <span />
+              </div>
+              <div className="phone-task-body">
+                <p>These go to your website and rate board. Customers see them within about a minute.</p>
+                <ul className="phone-rate-chg">
+                  {diff.lines.map((line) => <li key={line.label}><span>{line.label}</span><b>{line.detail}</b></li>)}
+                </ul>
+                <p className="phone-rate-hint">Publishing is saved with your name and the time. Only managers and admins can publish.</p>
+                {publishError ? <p className="phone-rate-banner" role="alert">{publishError}</p> : null}
+              </div>
+              <div className="phone-task-foot">
+                <button type="button" className="phone-task-go" disabled={publishing} onClick={publishNow}>{publishing ? "Publishing" : "Publish now"}</button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        ) : null}
       </div>
     );
   }

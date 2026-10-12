@@ -84,7 +84,8 @@ test("a manager edits the board the server published", async ({ page }) => {
   await expect(screen.getByText("On your homepage, top 6")).toBeVisible();
   await expect(screen.locator('[data-code="USD"]')).toContainText("US Dollar");
   await expect(screen.getByRole("button", { name: "Public preview" })).toBeVisible();
-  await expect(screen.getByRole("button", { name: /Publish/ })).toHaveCount(0);
+  await expect(screen.getByRole("button", { name: "Nothing to publish" })).toBeDisabled();
+  await expect(screen.locator(".phone-sticky-why")).toHaveCount(0);
   const before = await screen.locator('[data-code="USD"] .is-buy').innerText();
   await screen.getByRole("button", { name: "Raise Buy margin, under spot" }).click();
   await expect(screen.getByText("1.55%")).toBeVisible();
@@ -153,5 +154,5 @@ test("spread finds Rates", async ({ page }) => {
   await page.getByRole("textbox", { name: "Search apps" }).fill("spread");
   const names = await page.locator("#phone-more .phone-more-name").allTextContents();
   expect(names).toContain("Rates");
-  expect(names).toContain("Pricing");
+  expect(names).not.toContain("Pricing");
 });

@@ -571,6 +571,16 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone Rates publish. One sticky button posts
+`POST /api/rates/publish`. With nothing to send it reads "Nothing
+to publish" and has no helper line under it. A teller or a
+supervisor is refused before the board is checked, with the plain
+sentence "Only a manager or an admin can publish rates." and an
+audit row `rates.publish_denied`. Phone Pricing is folded into
+Rates. Fee, floor, rounding, and the simulator stay on the computer.
+Figures stay CAD per 1 through `boardQuote`. The desktop Rate Board
+iframe is unchanged.
+
 **2026-10-12**, phone Rates public preview. A manager or an admin
 can switch the phone Rates editor to the homepage six. Figures stay
 CAD per 1 through `boardQuote`. Hidden currencies and the rest of

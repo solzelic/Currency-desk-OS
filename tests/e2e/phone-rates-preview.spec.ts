@@ -66,7 +66,6 @@ test("public preview lists the homepage six through boardQuote", async ({ page }
   await expect(usd).toContainText(expected.sell);
   expect(expected.per).toBe(1);
   await expect(screen).toContainText("MXN is hidden.");
-  await expect(screen.getByRole("button", { name: /Publish/ })).toHaveCount(0);
   const text = await screen.innerText();
   expect(text).not.toContain("\u2014");
   expect(text).not.toContain("\u2013");

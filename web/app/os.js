@@ -62434,6 +62434,99 @@ window.CDOS_PERSIST = (function () {
     return parts.join(" ");
   }
 
+  function nearly(left, right) {
+    return Math.abs((left || 0) - (right || 0)) < 1e-8;
+  }
+
+  function sameSpread(left, right) {
+    if (left == null && right == null) return true;
+    if (left == null || right == null) return false;
+    return nearly(left, right);
+  }
+
+  function changes(published, draft) {
+    const lines = [];
+    let count = 0;
+    if (!published) {
+      count = 1;
+      lines.push({ label: "Rate board", detail: "First publish, " + draft.order.length + " currencies" });
+    } else {
+      draft.order.forEach((code) => {
+        const was = published.rows[code];
+        const now = draft.rows[code];
+        if (!now) return;
+        if (!was) {
+          count += 1;
+          lines.push({ label: code, detail: "Added to the board" });
+          return;
+        }
+        if (!nearly(was.mid, now.mid)) {
+          count += 1;
+          const hand = now.manual ? ", set by hand" : "";
+          lines.push({ label: code + " spot", detail: formatSpot(was.mid) + " to " + formatSpot(now.mid) + hand });
+        }
+        if (!sameSpread(was.spread, now.spread)) {
+          count += 1;
+          const from = was.spread == null ? "desk margin" : formatPercent(was.spread);
+          const to = now.spread == null ? "desk margin" : formatPercent(now.spread);
+          lines.push({ label: code + " spread", detail: from + " to " + to });
+        }
+        if ((was.show !== false) !== (now.show !== false)) {
+          count += 1;
+          lines.push({ label: code, detail: now.show === false ? "Hidden from the board" : "On the board" });
+        }
+      });
+      published.order.forEach((code) => {
+        if (!draft.rows[code]) {
+          count += 1;
+          lines.push({ label: code, detail: "Removed from the board" });
+        }
+      });
+      if (published.order.join(",") !== draft.order.join(",")) {
+        count += 1;
+        lines.push({ label: "Homepage order", detail: homeSix(draft.rows, draft.order).join(", ") });
+      }
+    }
+    const marginsSame = published && nearly(published.buyMargin, draft.buyMargin) && nearly(published.sellMargin, draft.sellMargin);
+    if (!marginsSame) {
+      if (published) count += 1;
+      const detail = nearly(draft.buyMargin, draft.sellMargin)
+        ? formatPercent(draft.buyMargin) + " each"
+        : formatPercent(draft.buyMargin) + " buy, " + formatPercent(draft.sellMargin) + " sell";
+      lines.push({ label: "Buy and sell margin", detail: detail });
+    } else {
+      lines.push({ label: "Buy and sell margin", detail: formatPercent(draft.buyMargin) + " each, no change", quiet: true });
+    }
+    return { count: count, lines: lines };
+  }
+
+  function publishBody(draft) {
+    const rows = {};
+    draft.order.forEach((code) => {
+      const row = draft.rows[code];
+      if (!row || !(row.mid > 0)) return;
+      const out = { mid: row.mid, show: row.show !== false };
+      if (typeof row.spread === "number") out.spread = row.spread;
+      rows[code] = out;
+    });
+    return {
+      buyMargin: draft.buyMargin,
+      sellMargin: draft.sellMargin,
+      rows: rows,
+      order: ["CAD"].concat(draft.order.filter((code) => code !== "CAD")),
+    };
+  }
+
+  function plainPublishError(status, body) {
+    if (status === 403) return "The server refused (403). Only a manager or an admin can publish rates.";
+    if (status === 401) return "Your session ended. Sign in again, then publish.";
+    if (status === 400) {
+      const detail = body && body.detail ? String(body.detail) : "";
+      return detail ? "The server refused the board (400). " + detail : "The server refused the board (400).";
+    }
+    return "The server could not publish (" + status + "). Nothing was changed.";
+  }
+
   function clockLabel(value, zone) {
     const format = window.CDOS && window.CDOS.formatPhoneTime;
     if (typeof format !== "function" || value == null || value === "") return "";
@@ -62458,7 +62551,10 @@ window.CDOS_PERSIST = (function () {
     copyBoard: copyBoard,
     homeSix: homeSix,
     previewNote: previewNote,
+    changes: changes,
+    publishBody: publishBody,
     clockLabel: clockLabel,
+    plainPublishError: plainPublishError,
   };
 })();
 
@@ -62937,8 +63033,10 @@ window.CDOS_PERSIST = (function () {
 
   /* Branches and Assistant are front-end mocks, so they are not in
      this catalog. Texts is, and the desk only passes it when Twilio
-     is set up. Search words sit beside the purpose line so "cash"
-     finds Cheques, Vault, Compliance, and Till. */
+     is set up. Pricing is not a phone app: spread, publish, and
+     margin find Rates on the bottom bar. Fee stays on the computer.
+     Search words sit beside the purpose line so "cash" finds
+     Cheques, Vault, Compliance, and Till. */
   const GROUPS = [{
     title: 'Money',
     ids: ['transfers', 'cheques', 'vault']
@@ -62953,7 +63051,7 @@ window.CDOS_PERSIST = (function () {
     ids: ['telegraph', 'calc', 'loan']
   }, {
     title: 'Shop setup',
-    ids: ['pricing', 'store', 'settings']
+    ids: ['store', 'settings']
   }];
   const CATALOG = {
     transfers: {
@@ -63022,12 +63120,6 @@ window.CDOS_PERSIST = (function () {
       words: 'payment interest',
       icon: 'loancentre'
     },
-    pricing: {
-      title: 'Pricing',
-      detail: 'Spreads, fees, publish rates',
-      words: 'spread fee rate',
-      icon: 'pricingpercent'
-    },
     store: {
       title: 'Apps',
       detail: 'Add or remove apps',
@@ -63045,7 +63137,7 @@ window.CDOS_PERSIST = (function () {
     id: 'rates',
     title: 'Rates',
     detail: 'Buy and sell prices',
-    words: 'fx board quote spread margin',
+    words: 'fx board quote spread publish margin',
     icon: 'rateboard'
   }, {
     id: 'ledger',
@@ -63221,10 +63313,11 @@ window.CDOS_PERSIST = (function () {
 })();
 
 /* ---- os-src/cdos-rates-phone.jsx ---- */
-/* Phone Rates editor. Margins, spot, per-row spread, order, and
-   whether a currency is on the board, plus a public preview of the
-   homepage six. Tellers get the read-only list. Publish is a later
-   slice. Desktop Rates stays the Rate Board iframe. */
+/* Phone Rates. The desk editor for the public board: margins, spot,
+   per-row spread, order, a public preview, and one Publish. Tellers
+   get the read-only list. Fee, floor, rounding, and the deal
+   simulator stay on the computer Pricing screen. Desktop Rates stays
+   the Rate Board iframe. */
 (function () {
   const {
     useEffect,
@@ -63279,6 +63372,9 @@ window.CDOS_PERSIST = (function () {
     const [spotText, setSpotText] = useState("");
     const [spreadText, setSpreadText] = useState(null);
     const [clampNote, setClampNote] = useState("");
+    const [confirm, setConfirm] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [publishError, setPublishError] = useState("");
     async function load() {
       setPhase("load");
       setLoadError("");
@@ -63387,6 +63483,57 @@ window.CDOS_PERSIST = (function () {
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     }
+    async function publishNow() {
+      if (publishing) return;
+      setPublishing(true);
+      setPublishError("");
+      const body = rates.publishBody(draft);
+      let response;
+      try {
+        response = await fetch("/api/rates/publish", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          credentials: "same-origin",
+          body: JSON.stringify(body)
+        });
+      } catch (error) {
+        setPublishing(false);
+        setPublishError("Could not reach the server. Nothing was published.");
+        return;
+      }
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+      if (!response.ok || !payload || !payload.board) {
+        setPublishing(false);
+        setPublishError(!response.ok ? rates.plainPublishError(response.status, payload) : "The server did not return the board. Check Rates before trying again.");
+        return;
+      }
+      try {
+        const saved = JSON.stringify(payload.board);
+        localStorage.setItem("yorkfx_rates_v1", saved);
+        if (payload.board.order) localStorage.setItem("yorkfx_board_order", JSON.stringify(payload.board.order));
+        if (window.applyBoardOrder) window.applyBoardOrder();
+        if (window.applyRateConfig) window.applyRateConfig();
+        window.dispatchEvent(new StorageEvent("storage", {
+          key: "yorkfx_rates_v1",
+          newValue: saved
+        }));
+      } catch (error) {
+        setPublishError("Published. This browser could not save its copy of the board.");
+      }
+      const next = rates.copyBoard(payload.board);
+      setPublished(next);
+      setDraft(next);
+      setConfirm(false);
+      setOpenCode(null);
+      setPublishing(false);
+    }
     if (!shell) return /*#__PURE__*/React.createElement("p", {
       role: "alert"
     }, "The phone shell did not load.");
@@ -63413,11 +63560,14 @@ window.CDOS_PERSIST = (function () {
         onRetry: load
       })));
     }
+    const diff = rates.changes(published, draft);
+    const idle = diff.count === 0;
     const when = rates.clockLabel(published && published.publishedAt, zone);
     const who = publisherName(published && published.publishedBy, me, settings, srvUser);
     const stamp = when ? who ? when + ", " + who : when : "";
     let status = "Not published yet";
-    if (!can) status = published ? "Published " + (stamp || "earlier") + " · Ask a manager to change rates" : "Not published yet. Ask a manager to change rates";else if (published) status = stamp ? "Published " + stamp : "Published";
+    if (!can) status = published ? "Published " + (stamp || "earlier") + " · Ask a manager to change rates" : "Not published yet. Ask a manager to change rates";else if (diff.count > 0) status = diff.count + (diff.count === 1 ? " change" : " changes") + " not published" + (stamp ? " · last " + stamp : "");else if (published) status = stamp ? "Published " + stamp : "Published";
+    const publishLabel = idle ? "Nothing to publish" : "Publish " + diff.count + (diff.count === 1 ? " change" : " changes");
     const home = draft.order.slice(0, 6);
     const rest = draft.order.slice(6);
     function prices(code) {
@@ -63565,7 +63715,9 @@ window.CDOS_PERSIST = (function () {
         }))
       }, "+")))))) : null, /*#__PURE__*/React.createElement("div", {
         className: "phone-rate-lock"
-      }, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("i", null), status), can ? /*#__PURE__*/React.createElement("button", {
+      }, /*#__PURE__*/React.createElement("p", {
+        className: diff.count > 0 && can ? "is-warn" : ""
+      }, /*#__PURE__*/React.createElement("i", null), status), can ? /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "phone-rate-lockbtn",
         "aria-pressed": !!locked,
@@ -63574,7 +63726,10 @@ window.CDOS_PERSIST = (function () {
       }, locked ? "Locked" : "Lock") : null), feedNote ? /*#__PURE__*/React.createElement("p", {
         className: "phone-rate-banner",
         role: "alert"
-      }, feedNote) : null, list(home, "On your homepage, top 6", can ? "Drag to reorder" : ""), rest.length ? list(rest, "Rate board page only", "") : null);
+      }, feedNote) : null, publishError && !confirm ? /*#__PURE__*/React.createElement("p", {
+        className: "phone-rate-banner",
+        role: "alert"
+      }, publishError) : null, list(home, "On your homepage, top 6", can ? "Drag to reorder" : ""), rest.length ? list(rest, "Rate board page only", "") : null);
     } else {
       const six = rates.homeSix(draft.rows, draft.order);
       const note = rates.previewNote(draft.rows, draft.order);
@@ -63603,14 +63758,60 @@ window.CDOS_PERSIST = (function () {
         }, /*#__PURE__*/React.createElement("b", null, quote.label), /*#__PURE__*/React.createElement("span", null, quote.buy), /*#__PURE__*/React.createElement("span", null, quote.sell));
       }), note ? /*#__PURE__*/React.createElement("p", null, note) : null));
     }
+    const sticky = can ? /*#__PURE__*/React.createElement(shell.StickyAction, {
+      label: publishLabel,
+      disabled: idle || publishing,
+      onClick: () => {
+        setPublishError("");
+        setConfirm(true);
+      }
+    }) : null;
     return /*#__PURE__*/React.createElement("div", {
       className: "phone-rates",
       "data-phone-rates": "",
       "data-can-publish": can ? "yes" : "no"
     }, /*#__PURE__*/React.createElement(shell.Screen, {
       app: "rates",
-      title: "Rates"
-    }, body));
+      title: "Rates",
+      sticky: sticky
+    }, body), confirm ? ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "phone-task fixed inset-0",
+      "data-app": "rates",
+      style: {
+        background: "var(--cd-scrim)",
+        zIndex: 9200
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": "Publish rates?",
+      className: "phone-task-sheet phone-rate-sheet"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-sheet-h"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-rate-back",
+      onClick: () => {
+        if (!publishing) setConfirm(false);
+      }
+    }, "Back"), /*#__PURE__*/React.createElement("h2", null, "Publish rates?"), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
+      className: "phone-task-body"
+    }, /*#__PURE__*/React.createElement("p", null, "These go to your website and rate board. Customers see them within about a minute."), /*#__PURE__*/React.createElement("ul", {
+      className: "phone-rate-chg"
+    }, diff.lines.map(line => /*#__PURE__*/React.createElement("li", {
+      key: line.label
+    }, /*#__PURE__*/React.createElement("span", null, line.label), /*#__PURE__*/React.createElement("b", null, line.detail)))), /*#__PURE__*/React.createElement("p", {
+      className: "phone-rate-hint"
+    }, "Publishing is saved with your name and the time. Only managers and admins can publish."), publishError ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-rate-banner",
+      role: "alert"
+    }, publishError) : null), /*#__PURE__*/React.createElement("div", {
+      className: "phone-task-foot"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-task-go",
+      disabled: publishing,
+      onClick: publishNow
+    }, publishing ? "Publishing" : "Publish now")))), document.body) : null);
   }
   window.CDOS.PhoneRates = PhoneRates;
 })();
@@ -68851,11 +69052,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        only when the server says Twilio is set up — smsConfigured on
        the session, the same flag sendSms uses. Branches invents cash
        in the browser and never reads /api/desk/branches. Assistant
-       calls window.claude and has no model API. Both stay off the
+       calls window.claude and has no model API. Pricing's list,
+       spread, and publish live on phone Rates; fee, floor, rounding,
+       and the simulator stay on the computer. All three stay off the
        phone. Store is the same door as the desktop edge rail, which
        is not an app-bar id. */
     const phoneAllowed = visibleApps.filter(id => {
-      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant') return false;
+      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant' || id === 'pricing') return false;
       if (id === 'telegraph') return !!(srvUser && srvUser.smsConfigured);
       return true;
     });

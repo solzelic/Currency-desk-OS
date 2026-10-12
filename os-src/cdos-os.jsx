@@ -2299,11 +2299,13 @@
        only when the server says Twilio is set up — smsConfigured on
        the session, the same flag sendSms uses. Branches invents cash
        in the browser and never reads /api/desk/branches. Assistant
-       calls window.claude and has no model API. Both stay off the
+       calls window.claude and has no model API. Pricing's list,
+       spread, and publish live on phone Rates; fee, floor, rounding,
+       and the simulator stay on the computer. All three stay off the
        phone. Store is the same door as the desktop edge rail, which
        is not an app-bar id. */
     const phoneAllowed = visibleApps.filter(id => {
-      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant') return false;
+      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant' || id === 'pricing') return false;
       if (id === 'telegraph') return !!(srvUser && srvUser.smsConfigured);
       return true;
     });

@@ -1,7 +1,7 @@
 /* Rate board API tests — permission gating and the publish/read cycle. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { createDb, type DbHandle } from "../src/db/index.js";
+import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
@@ -46,15 +46,69 @@ describe("rate board", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("rejects publishing from a teller (no rates:change permission)", async () => {
-    const cookies = await loginAs("m.costa");
+  const denied = async (staffId: string, payload: Record<string, unknown>) => {
+    const before = await app.inject({ method: "GET", url: "/api/rates" });
+    const cookies = await loginAs(staffId);
     const res = await app.inject({
       method: "POST",
       url: "/api/rates/publish",
       cookies,
-      payload: { buyMargin: 0.02, sellMargin: 0.02, rows: { USD: { mid: 1.37 } } },
+      payload,
+    });
+    const after = await app.inject({ method: "GET", url: "/api/rates" });
+    const rows = await handle.db.select().from(schema.auditEvents);
+    const refusals = rows.filter((row) => row.action === "rates.publish_denied" && (row.detail as { staffId?: string }).staffId === staffId);
+    return { res, before: before.json().board, after: after.json().board, refusals };
+  };
+
+  it("refuses a teller with a plain error and an audit row", async () => {
+    const { res, before, after, refusals } = await denied("m.costa", {
+      buyMargin: 0.02,
+      sellMargin: 0.02,
+      rows: { USD: { mid: 1.37 } },
     });
     expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({
+      error: "permission_denied",
+      detail: "Only a manager or an admin can publish rates.",
+    });
+    expect(after.publicationId).toBe(before.publicationId);
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]?.detail).toMatchObject({ staffId: "m.costa", role: "teller" });
+  });
+
+  it("refuses a supervisor with a plain error and an audit row", async () => {
+    const { res, before, after, refusals } = await denied("a.singh", {
+      buyMargin: 0.02,
+      sellMargin: 0.02,
+      rows: { USD: { mid: 1.37 } },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({
+      error: "permission_denied",
+      detail: "Only a manager or an admin can publish rates.",
+    });
+    expect(after.publicationId).toBe(before.publicationId);
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]?.detail).toMatchObject({ staffId: "a.singh", role: "supervisor" });
+  });
+
+  it("a teller who posts a broken board is still refused, not told the board is invalid", async () => {
+    const earlier = (await handle.db.select().from(schema.auditEvents)).filter(
+      (row) => row.action === "rates.publish_denied" && (row.detail as { staffId?: string }).staffId === "m.costa",
+    ).length;
+    const { res, before, after, refusals } = await denied("m.costa", {
+      buyMargin: 0.02,
+      sellMargin: 0.02,
+      rows: { USD: { mid: -5 } },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({
+      error: "permission_denied",
+      detail: "Only a manager or an admin can publish rates.",
+    });
+    expect(after.publicationId).toBe(before.publicationId);
+    expect(refusals).toHaveLength(earlier + 1);
   });
 
   it("lets a branch manager publish, and the new board becomes current", async () => {
