@@ -518,17 +518,24 @@ test("the KYC CSV that opens has no health number", async ({ page }) => {
   });
   await page.reload();
   await landOnDesktop(page);
+  /* The register is the desk's client map. That map is filled when
+     Clients loads the server files, which is what a person does before
+     they print the sheet. */
+  await page.getByText(/^Clients · KYC$|^Clients$/).first().click();
+  await rendered(page, /New contact|contacts$/);
+  await page.getByText(name).first().waitFor({ state: "visible", timeout: 20_000 });
   await page.getByText(/^Reports$/).first().click();
   await rendered(page, /End-of-Day Sign-Off/);
   await page.getByText("Client & KYC Register").first().click();
   await page.locator("#cdos-report-doc").waitFor({ state: "visible", timeout: 30_000 });
+  await expect(page.locator("#cdos-report-doc")).toContainText(name);
   const sheet = await page.locator("#cdos-report-doc").innerText();
   expect(sheet).toContain(name);
   expect(sheet).toContain("OHIP");
   expect(sheet).not.toContain(secret);
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "CSV" }).click(),
+    page.getByRole("button", { name: "CSV", exact: true }).click(),
   ]);
   const csv = readFileSync((await download.path())!, "utf8");
   expect(csv).toContain(name);
