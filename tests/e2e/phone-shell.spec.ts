@@ -63,6 +63,36 @@ test("amounts show the currency code", async ({ page }) => {
   expect(money.cad).not.toContain("$");
 });
 
+test("a clock is 3:02 PM and today's list group starts with Today", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  const labels = await page.evaluate(() => {
+    const time = window.CDOS.formatPhoneTime;
+    const date = window.CDOS.formatPhoneDate;
+    const group = window.CDOS.formatPhoneListGroup;
+    const today = window.CDOS.businessDate();
+    return {
+      clock: time("15:02"),
+      midnight: time("00:00"),
+      noon: time("12:00"),
+      date: date("2026-06-18"),
+      today: group(today, today),
+      other: group("2026-06-18", today),
+      sameTime: time("15:02") === window.CDOS.Phone.formatTime("15:02"),
+      sameGroup: group(today, today) === window.CDOS.Phone.formatListGroup(today, today),
+    };
+  });
+  expect(labels.clock).toBe("3:02 PM");
+  expect(labels.midnight).toBe("12:00 AM");
+  expect(labels.noon).toBe("12:00 PM");
+  expect(labels.date).toBe("Jun 18, 2026");
+  expect(labels.today).toMatch(/^Today, [A-Z][a-z]{2} \d{1,2}$/);
+  expect(labels.other).toBe("Jun 18, 2026");
+  expect(labels.sameTime).toBe(true);
+  expect(labels.sameGroup).toBe(true);
+  expect(labels.clock).not.toMatch(/[ap]m/);
+});
+
 test("the bar is five tabs and has no centre plus", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page, "a.singh");
