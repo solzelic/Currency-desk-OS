@@ -107,6 +107,12 @@
        `disabled` alone loses the race against a double-click — the second
        press lands while the first render is still pending. A ref cannot. */
     const [cool, setCool] = useState(0);
+    /* A lock is not a resend cooldown. `retryAfter` on a lock is how
+       long the counter lasts (fifteen minutes). Feeding that into the
+       countdown turned the button into "Another code in 900s" and hid
+       the time the desk can actually try again. */
+    const [locked, setLocked] = useState(false);
+    const [lockUntil, setLockUntil] = useState('');
     const sending = useRef(false);
     useEffect(() => {
       if (cool <= 0) return;
@@ -114,6 +120,14 @@
       return () => clearTimeout(t);
     }, [cool]);
     const startCooldown = (secs) => setCool(Math.max(1, Math.round(secs || 120)));
+    const applyLock = (d) => {
+      if (!d || d.error !== 'too_many_attempts') return false;
+      setLocked(true);
+      setLockUntil(typeof d.until === 'string' ? d.until : '');
+      setErr('');
+      return true;
+    };
+    const clearLock = () => { setLocked(false); setLockUntil(''); };
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
@@ -166,8 +180,9 @@
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
           sending.current = false; setBusy(false);
+          if (applyLock(d)) return;
           startCooldown(d && d.retryAfter);
-          setErr((d && d.detail) || 'A code went out moments ago — check your email.');
+          setErr((d && d.detail) || 'A code went out moments ago. Check your email.');
           return;
         }
         if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + ') — try again in a moment.'); return; }
@@ -276,7 +291,15 @@
       try {
         const res = await fetch('/api/auth/login/start', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ staffId: a.staffId, password: pw }) });
         const d = await res.json().catch(() => null);
-        if (res.status === 429) { startCooldown(d && d.retryAfter); setNote((d && d.detail) || 'A code went out moments ago.'); return; }
+        if (res.status === 429) {
+          if (d && d.error === 'too_many_attempts') {
+            setNote(d.until ? 'Try again at ' + d.until : ((d && d.detail) || 'Too many tries.'));
+            return;
+          }
+          startCooldown(d && d.retryAfter);
+          setNote((d && d.detail) || 'A code went out moments ago.');
+          return;
+        }
         setNote('A new code is on its way.'); setCode(''); startCooldown(120);
       } catch (_) { setNote('Couldn’t resend — try again.'); }
       finally { sending.current = false; }
@@ -374,7 +397,7 @@
         </div>
         <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{first ? 'Welcome back, ' + first : 'Welcome back'}</h1>
         <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--si-mute)', marginBottom: 18 }}>
-          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
+          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); clearLock(); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
         </div>
         <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>PASSWORD</div>
         <div style={{ position: 'relative' }}>
@@ -390,11 +413,18 @@
             style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 11.5 }}>
             Send yourself a reset code</button>.
         </div>
-        {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && cool === 0 && pw.length >= 4), marginTop: 16 }}>
-          {busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
-        <div style={{ textAlign: 'center', fontSize: 11.5, color: note ? 'var(--si-primary)' : 'var(--si-mute)', marginTop: 14, fontWeight: note ? 700 : 400 }}>
-          {note || "We'll email a fresh code to confirm it's you."}</div>
+        {/* The clock is the lock. 22px is the same size as the code
+            digits, so a phone can read the time without zooming. The
+            old line was 12px and sat under a countdown of retryAfter. */}
+        {lockUntil && <div style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--si-ink)', marginTop: 16, lineHeight: 1.35 }}>Try again at {lockUntil}</div>}
+        {err && !lockUntil && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
+        <button type="submit" disabled={busy || locked || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4), marginTop: 16 }}>
+          {busy ? 'Checking…' : locked ? 'Locked' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
+        {/* A staff id with no @ has nowhere to send a code. Saying we
+            will email one tells them the wrong next step, and it is
+            worse on a lock, where the button is not going to send. */}
+        {idInput.indexOf('@') >= 0 && !locked && <div style={{ textAlign: 'center', fontSize: 11.5, color: note ? 'var(--si-primary)' : 'var(--si-mute)', marginTop: 14, fontWeight: note ? 700 : 400 }}>
+          {note || "We'll email a fresh code to confirm it's you."}</div>}
       </form>));
     }
 

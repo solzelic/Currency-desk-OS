@@ -58809,6 +58809,12 @@ ${snap}`;
        `disabled` alone loses the race against a double-click — the second
        press lands while the first render is still pending. A ref cannot. */
     const [cool, setCool] = useState(0);
+    /* A lock is not a resend cooldown. `retryAfter` on a lock is how
+       long the counter lasts (fifteen minutes). Feeding that into the
+       countdown turned the button into "Another code in 900s" and hid
+       the time the desk can actually try again. */
+    const [locked, setLocked] = useState(false);
+    const [lockUntil, setLockUntil] = useState('');
     const sending = useRef(false);
     useEffect(() => {
       if (cool <= 0) return;
@@ -58816,6 +58822,17 @@ ${snap}`;
       return () => clearTimeout(t);
     }, [cool]);
     const startCooldown = secs => setCool(Math.max(1, Math.round(secs || 120)));
+    const applyLock = d => {
+      if (!d || d.error !== 'too_many_attempts') return false;
+      setLocked(true);
+      setLockUntil(typeof d.until === 'string' ? d.until : '');
+      setErr('');
+      return true;
+    };
+    const clearLock = () => {
+      setLocked(false);
+      setLockUntil('');
+    };
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = raw => {
@@ -58912,8 +58929,9 @@ ${snap}`;
           const d = await res.json().catch(() => null);
           sending.current = false;
           setBusy(false);
+          if (applyLock(d)) return;
           startCooldown(d && d.retryAfter);
-          setErr(d && d.detail || 'A code went out moments ago — check your email.');
+          setErr(d && d.detail || 'A code went out moments ago. Check your email.');
           return;
         }
         if (res && !res.ok) {
@@ -59134,6 +59152,10 @@ ${snap}`;
         });
         const d = await res.json().catch(() => null);
         if (res.status === 429) {
+          if (d && d.error === 'too_many_attempts') {
+            setNote(d.until ? 'Try again at ' + d.until : d && d.detail || 'Too many tries.');
+            return;
+          }
           startCooldown(d && d.retryAfter);
           setNote(d && d.detail || 'A code went out moments ago.');
           return;
@@ -59483,6 +59505,7 @@ ${snap}`;
           setStep('id');
           setPw('');
           setErr('');
+          clearLock();
         },
         style: {
           background: 'none',
@@ -59575,7 +59598,17 @@ ${snap}`;
           textDecoration: 'underline',
           fontSize: 11.5
         }
-      }, "Send yourself a reset code"), "."), err && /*#__PURE__*/React.createElement("div", {
+      }, "Send yourself a reset code"), "."), lockUntil && /*#__PURE__*/React.createElement("div", {
+        style: {
+          textAlign: 'center',
+          fontSize: 22,
+          fontWeight: 800,
+          letterSpacing: '-0.01em',
+          color: 'var(--si-ink)',
+          marginTop: 16,
+          lineHeight: 1.35
+        }
+      }, "Try again at ", lockUntil), err && !lockUntil && /*#__PURE__*/React.createElement("div", {
         style: {
           color: 'var(--si-flag)',
           fontSize: 12,
@@ -59583,12 +59616,12 @@ ${snap}`;
         }
       }, err), /*#__PURE__*/React.createElement("button", {
         type: "submit",
-        disabled: busy || cool > 0 || pw.length < 4,
+        disabled: busy || locked || cool > 0 || pw.length < 4,
         style: {
-          ...primaryBtn(!busy && cool === 0 && pw.length >= 4),
+          ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4),
           marginTop: 16
         }
-      }, busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), /*#__PURE__*/React.createElement("div", {
+      }, busy ? 'Checking…' : locked ? 'Locked' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 11.5,
