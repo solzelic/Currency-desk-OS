@@ -475,4 +475,71 @@ postgres("a switched session is the person on the deal", () => {
     const openNow = await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(openNow.rows.map((row) => row.opened_by)).toEqual([idOf("s.iqbal")]);
   });
+
+  it("an exchange records the switched session, not a poster named in the body", async () => {
+    await setPin(B, "4829");
+    await setPin("s.iqbal", "8642");
+    const singh = await login(B);
+    const headers = { "x-workspace-id": DEMO.workspaceId };
+    const open = await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
+    if (!open.rows.length) {
+      const opening = await app.inject({
+        method: "POST", url: "/api/ledger/opening-balances", cookies: singh,
+        payload: { balances: { CAD: "50000.00", USD: "4000.00" } },
+      });
+      expect(opening.statusCode, opening.body).toBe(201);
+      const opened = await app.inject({
+        method: "POST", url: "/api/ledger/till-sessions/open", cookies: singh,
+      });
+      expect(opened.statusCode, opened.body).toBe(201);
+    }
+    const switched = await switchTo(singh, "s.iqbal", "8642");
+    expect(switched.statusCode, switched.body).toBe(200);
+    expect(switched.json().user.id).toBe("s.iqbal");
+    const iqbal = cookieOf(switched);
+    const holder = await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
+    if (holder.rows[0]?.opened_by !== idOf("s.iqbal")) {
+      const counts = await pool!.query(
+        "SELECT currency, available_amount FROM ledger_till_balances WHERE workspace_id=$1",
+        [DEMO.workspaceId],
+      );
+      const handover = await app.inject({
+        method: "POST", url: "/api/ledger/till-sessions/handover", cookies: iqbal, headers,
+        payload: {
+          idempotencyKey: "exchange-handover-iqbal",
+          counts: Object.fromEntries(counts.rows.map((row) => [row.currency, row.available_amount])),
+        },
+      });
+      expect(handover.statusCode, handover.body).toBe(201);
+    }
+    const customer = await app.inject({
+      method: "POST", url: "/api/ledger/customers", cookies: iqbal, headers,
+      payload: { name: "Exchange switch", risk: "normal", idStatus: "verified" },
+    });
+    expect(customer.statusCode, customer.body).toBe(201);
+    const posted = await app.inject({
+      method: "POST", url: "/api/ledger/exchanges", cookies: iqbal, headers,
+      payload: {
+        idempotencyKey: "exchange-switch-iqbal",
+        customerId: customer.json().customerId,
+        from: "CAD",
+        to: "USD",
+        inputAmount: "100.00",
+        feeCad: "4.00",
+        purpose: "Personal travel",
+        sourceOfFunds: "Employment income",
+        actorId: idOf(B),
+        complianceCapturedBy: idOf(B),
+      },
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+    const row = await pool!.query(
+      "SELECT actor_id, compliance_captured_by FROM ledger_transactions WHERE transaction_id=$1",
+      [posted.json().transactionId],
+    );
+    expect(row.rows[0]).toEqual({
+      actor_id: idOf("s.iqbal"),
+      compliance_captured_by: idOf("s.iqbal"),
+    });
+  });
 });
