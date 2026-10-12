@@ -46,6 +46,7 @@ import {
   minorUnits,
   resolveDeskCurrencies,
 } from "./currencies.js";
+import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { type LedgerActor } from "./service.js";
 
@@ -269,7 +270,7 @@ export class LedgerReportingService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await authorizeLedgerActor(client, actor, "ledger:view");
+      const role = await authorizeLedgerActor(client, actor, "ledger:view");
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
 
       /* The home-currency size of a deal is one of its two legs — whichever
@@ -397,7 +398,7 @@ export class LedgerReportingService {
       const posted = Number(row.posted);
       const fees = row.fees_home == null ? null : money(row.fees_home);
       const realized = row.realized_home == null ? null : money(row.realized_home);
-      return {
+      return redactDeskEarnings(role, {
         homeCurrency: home,
         tillId: actor.tillId,
         from: window.from ?? null,
@@ -459,7 +460,7 @@ export class LedgerReportingService {
             item.realized_home == null ? null : money(item.realized_home),
           pricedDeals: Number(item.priced),
         })),
-      };
+      });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -486,7 +487,7 @@ export class LedgerReportingService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await authorizeLedgerActor(client, actor, "ledger:view");
+      const role = await authorizeLedgerActor(client, actor, "ledger:view");
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
 
       const till = await client.query(
@@ -673,7 +674,7 @@ export class LedgerReportingService {
               : null,
         };
       };
-      return {
+      return redactDeskEarnings(role, {
         homeCurrency: home,
         branchId: actor.branchId,
         tillId: actor.tillId,
@@ -715,7 +716,7 @@ export class LedgerReportingService {
         unpricedCurrencies: currencies
           .filter((item) => item.costBasisHome === null)
           .map((item) => item.currency),
-      };
+      });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
