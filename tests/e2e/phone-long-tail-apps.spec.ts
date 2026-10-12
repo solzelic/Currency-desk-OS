@@ -112,7 +112,8 @@ test("every remaining more app is a phone screen at 360 and 390", async ({ page 
       await screen.getByRole("button", { name: action }).click();
       const reports = page.locator('.win.show.active[data-app="reports"]');
       await expect(reports).toBeVisible();
-      await expect(reports).toContainText("Today");
+      // The launcher lists Period Summary. "Today" appears only after Generate.
+      await expect(reports).toContainText("Period Summary");
     }
   }
 });
