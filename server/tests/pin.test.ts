@@ -265,4 +265,31 @@ describe("PINs are checked by the server", () => {
     const costa = await staffRow("m.costa");
     expect((await app.inject({ method: "POST", url: `/api/admin/staff/${costa.id}/reset-pin`, cookies: costaCookie })).statusCode).toBe(403);
   });
+
+  it("a burst of wrong guesses stops at five", async () => {
+    const burst = async (staffId: string, n: number) => {
+      const row = await staffRow(staffId);
+      const issued = await app.inject({
+        method: "POST", url: `/api/admin/staff/${row.id}/reset-pin`, cookies: adminCookie,
+      });
+      expect(issued.statusCode, issued.body).toBe(200);
+      const pin = issued.json().pin as string;
+      const cookie = cookieOf(await signIn(staffId));
+      const wrong = pin === "1111" ? "2222" : "1111";
+      const replies = await Promise.all(Array.from({ length: n }, () =>
+        app.inject({
+          method: "POST", url: "/api/staff/pin/verify", cookies: cookie, payload: { pin: wrong },
+        }),
+      ));
+      const codes = replies.map((res) => res.statusCode);
+      expect(codes.filter((code) => code === 401), codes.join(",")).toHaveLength(5);
+      expect(codes.filter((code) => code === 429)).toHaveLength(n - 5);
+      const again = await app.inject({
+        method: "POST", url: "/api/staff/pin/verify", cookies: cookie, payload: { pin: wrong },
+      });
+      expect(again.statusCode, again.body).toBe(429);
+    };
+    await burst("a.singh", 40);
+    await burst("m.costa", 150);
+  });
 });

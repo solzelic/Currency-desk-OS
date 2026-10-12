@@ -177,7 +177,10 @@ without invalidating anyone. Session tokens are stored as SHA-256 — a
 database leak cannot be replayed as a login. One-time codes are hashed and
 compared in constant time. Till PINs were once in the state blob the browser
 downloads whole; they live hashed on the staff record now, and the write path
-strips them on every save so an older client cannot put one back.
+strips them on every save so an older client cannot put one back. A guess is
+reserved before that hash is checked, and released when the PIN is right, so
+a burst of guesses cannot all pass the lock. The lock still lives in memory
+on this process.
 
 **Sessions die on command.** Opaque tokens in an httpOnly cookie, not JWTs. A
 JWT stays valid until it expires no matter what happened in between, and at a

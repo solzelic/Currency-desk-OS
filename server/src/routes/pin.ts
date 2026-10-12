@@ -46,20 +46,38 @@ const MAX_TRIES = 5;
 const LOCK_MS = 5 * 60 * 1000;
 const tries = new Map<string, { count: number; until: number }>();
 
-function lockState(userId: string): { locked: boolean; remaining: number } {
+export function lockState(userId: string): { locked: boolean; remaining: number } {
   const t = tries.get(userId);
   if (!t) return { locked: false, remaining: MAX_TRIES };
   if (t.until > Date.now()) return { locked: true, remaining: 0 };
   if (t.until) { tries.delete(userId); return { locked: false, remaining: MAX_TRIES }; }
   return { locked: false, remaining: Math.max(0, MAX_TRIES - t.count) };
 }
-function recordFailure(userId: string): { locked: boolean; remaining: number } {
+
+/* Take the guess before the slow check. A check that runs first, then waits
+   on the hash, lets every request in that wait through: they all read
+   "four left" and all go on to be counted afterwards. The count moves
+   here, before that wait. A right answer gives the guess back. */
+export function reservePinAttempt(userId: string): boolean {
+  const existing = tries.get(userId);
+  if (existing && existing.until > Date.now()) return false;
+  if (existing && existing.until) tries.delete(userId);
   const t = tries.get(userId) ?? { count: 0, until: 0 };
+  if (t.count >= MAX_TRIES) {
+    t.until = Date.now() + LOCK_MS;
+    t.count = 0;
+    tries.set(userId, t);
+    return false;
+  }
   t.count += 1;
-  if (t.count >= MAX_TRIES) { t.until = Date.now() + LOCK_MS; t.count = 0; }
+  if (t.count >= MAX_TRIES) {
+    t.until = Date.now() + LOCK_MS;
+    t.count = 0;
+  }
   tries.set(userId, t);
-  return lockState(userId);
+  return true;
 }
+
 export const clearPinAttempts = (userId: string): void => { tries.delete(userId); };
 
 /* What support sees when somebody rings up unable to get in: whether the
@@ -105,8 +123,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     // back to its own check until this desk's PINs have been set here
     if (!target.pinHash) return reply.code(409).send({ error: "no_pin", detail: "No PIN is set for this person." });
 
-    const state = lockState(target.id);
-    if (state.locked) {
+    if (!reservePinAttempt(target.id)) {
       return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
     }
     if (await verifyPassword(parsed.data.pin, target.pinHash)) {
@@ -115,7 +132,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       // their own afterwards rather than interrupting a customer mid-deal
       return { ok: true, mustChange: target.pinMustChange };
     }
-    const after = recordFailure(target.id);
+    const after = lockState(target.id);
     await audit(db, {
       tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
       actorId: who.id, action: "pin.failed", detail: { of: target.staffId },
@@ -144,9 +161,8 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     if (!me) return reply.code(404).send({ error: "not_found" });
     if (me.pinHash) {
       if (!parsed.data.currentPin) return reply.code(400).send({ error: "current_required", detail: "Enter your current PIN." });
-      if (lockState(me.id).locked) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
+      if (!reservePinAttempt(me.id)) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
       if (!(await verifyPassword(parsed.data.currentPin, me.pinHash))) {
-        recordFailure(me.id);
         return reply.code(401).send({ error: "wrong_pin" });
       }
     }
@@ -176,9 +192,8 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
 
     const me = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     if (!me) return reply.code(404).send({ error: "not_found" });
-    if (lockState(me.id).locked) return reply.code(429).send({ error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
+    if (!reservePinAttempt(me.id)) return reply.code(429).send({ error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
     if (!(await verifyPassword(parsed.data.password, me.passwordHash))) {
-      recordFailure(me.id);
       await audit(db, {
         tenantId: me.tenantId, legalEntityId: me.legalEntityId, branchId: me.branchId,
         actorId: me.id, action: "pin.reset_failed",
