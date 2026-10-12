@@ -223,6 +223,13 @@
   }
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
 
+  /* Address is required over the identification line only on Canada
+     version 2. The cash step adds the amount. The phone field tag
+     uses this same gate, and no other. */
+  function addressRequiredOverIdLine(pack) {
+    return !!(pack && pack.packId === 'pack-ca-v2');
+  }
+
   /* ===================== BENEFICIARY MODAL ===================== */
   function BeneficiaryModal({ init, sender, corridors, lockSender, onClose, onSave }) {
     const [b, setB] = useState(() => init || { id: 'b' + Date.now(), name: '', relationship: 'Parent', sender: sender || '', corridor: corridors.find(c => c.active) ? corridors.find(c => c.active).id : corridors[0].id, method: 'cash', partner: '', pickupCity: '', phone: '', address: '', bank: '', branch: '', account: '', walletId: '' });
@@ -408,11 +415,10 @@
            a transfer under the line does not. The server is the
            authority; this stops the teller finding out only after the
            round trip. */
-        const packId = packNow && packNow.packId;
         const remLine = thresholds && thresholds.remittanceIdThreshold && thresholds.remittanceIdThreshold.effective != null
           ? Number(thresholds.remittanceIdThreshold.effective) : null;
         const cashHome = direction === 'send' ? (amtN + feeN) : (Number(recvAmt) || 0);
-        if (packId === 'pack-ca-v2' && remLine != null && cashHome >= remLine) {
+        if (addressRequiredOverIdLine(packNow) && remLine != null && cashHome >= remLine) {
           const name = direction === 'send' ? (ben && ben.name) : receiveBeneficiaryName;
           const address = direction === 'send' ? (ben && ben.address) : receiveBeneficiaryAddress;
           if (!String(name || '').trim() || !String(address || '').trim()) {
@@ -755,6 +761,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, bookTransfers, bookBeneficiaries, FLOW, STATUS, statusLabel, METHODS, methodLabel, RELATIONSHIPS, StatusPill, flagOf, cadOf, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
+    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, bookTransfers, bookBeneficiaries, FLOW, STATUS, statusLabel, METHODS, methodLabel, RELATIONSHIPS, StatusPill, flagOf, cadOf, transferRuling, addressRequiredOverIdLine, BeneficiaryModal, TransferModal, TransferDetail }
   });
 })();

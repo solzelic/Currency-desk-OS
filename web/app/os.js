@@ -37119,6 +37119,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     children
   }) => ReactDOM.createPortal(children, document.body);
 
+  /* Address is required over the identification line only on Canada
+     version 2. The cash step adds the amount. The phone field tag
+     uses this same gate, and no other. */
+  function addressRequiredOverIdLine(pack) {
+    return !!(pack && pack.packId === 'pack-ca-v2');
+  }
+
   /* ===================== BENEFICIARY MODAL ===================== */
   function BeneficiaryModal({
     init,
@@ -37574,10 +37581,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
            a transfer under the line does not. The server is the
            authority; this stops the teller finding out only after the
            round trip. */
-        const packId = packNow && packNow.packId;
         const remLine = thresholds && thresholds.remittanceIdThreshold && thresholds.remittanceIdThreshold.effective != null ? Number(thresholds.remittanceIdThreshold.effective) : null;
         const cashHome = direction === 'send' ? amtN + feeN : Number(recvAmt) || 0;
-        if (packId === 'pack-ca-v2' && remLine != null && cashHome >= remLine) {
+        if (addressRequiredOverIdLine(packNow) && remLine != null && cashHome >= remLine) {
           const name = direction === 'send' ? ben && ben.name : receiveBeneficiaryName;
           const address = direction === 'send' ? ben && ben.address : receiveBeneficiaryAddress;
           if (!String(name || '').trim() || !String(address || '').trim()) {
@@ -38498,6 +38504,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       flagOf,
       cadOf,
       transferRuling,
+      addressRequiredOverIdLine,
       BeneficiaryModal,
       TransferModal,
       TransferDetail
@@ -63417,8 +63424,14 @@ window.CDOS_PERSIST = (function () {
     }, amountNote)));
   }
   function needsAddress() {
+    const {
+      T
+    } = shell();
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
-    return !!(pack && pack.packId === 'pack-ca-v2');
+    if (typeof T.addressRequiredOverIdLine !== 'function') {
+      throw new Error('Phone transfers: the address rule did not load.');
+    }
+    return T.addressRequiredOverIdLine(pack);
   }
   function maskId(num) {
     const s = String(num || '').replace(/\s+/g, '');
@@ -63461,6 +63474,12 @@ window.CDOS_PERSIST = (function () {
       T,
       Ic
     } = shell();
+    const [, setPackTick] = useState(0);
+    useEffect(() => {
+      const bump = () => setPackTick(n => n + 1);
+      window.addEventListener('cdos-jurisdiction', bump);
+      return () => window.removeEventListener('cdos-jurisdiction', bump);
+    }, []);
     const first = corridors.find(c => c.active) || corridors[0];
     const [b, setB] = useState(() => ({
       id: 'b' + Date.now(),

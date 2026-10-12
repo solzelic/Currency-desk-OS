@@ -212,8 +212,12 @@
   }
 
   function needsAddress() {
+    const { T } = shell();
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
-    return !!(pack && pack.packId === 'pack-ca-v2');
+    if (typeof T.addressRequiredOverIdLine !== 'function') {
+      throw new Error('Phone transfers: the address rule did not load.');
+    }
+    return T.addressRequiredOverIdLine(pack);
   }
 
   function maskId(num) {
@@ -242,6 +246,12 @@
 
   function BenSheet({ sender, lockSender, corridors, onClose, onSave }) {
     const { T, Ic } = shell();
+    const [, setPackTick] = useState(0);
+    useEffect(() => {
+      const bump = () => setPackTick((n) => n + 1);
+      window.addEventListener('cdos-jurisdiction', bump);
+      return () => window.removeEventListener('cdos-jurisdiction', bump);
+    }, []);
     const first = corridors.find((c) => c.active) || corridors[0];
     const [b, setB] = useState(() => ({
       id: 'b' + Date.now(), name: '', relationship: 'Parent', sender: sender || '',

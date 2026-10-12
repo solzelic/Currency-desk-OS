@@ -535,9 +535,23 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
   const before = posts.length;
   await list.getByRole("button", { name: "Add a beneficiary" }).click();
   const sheet = page.locator(".phone-ben-sheet");
-  await expect(sheet.getByRole("alert")).toHaveText("1 thing missing: Full name");
-  await expect(sheet).not.toContainText("Needed for large transfers");
-  await expect(sheet.getByText("Optional").first()).toBeVisible();
+  /* The tag is the shared gate's answer for the pack this desk loaded.
+     It does not assume which pack York is. */
+  const addressTag = await page.evaluate(() => {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    const rule = window.CDOS._transfers && window.CDOS._transfers.addressRequiredOverIdLine;
+    if (typeof rule !== "function") throw new Error("the address rule did not load");
+    return rule(pack) ? "Needed for large transfers" : "Optional";
+  });
+  const address = sheet.locator(".phone-flabel").filter({ hasText: "Address" });
+  await expect(address).toContainText(addressTag);
+  if (addressTag === "Needed for large transfers") {
+    await expect(address).not.toContainText("Optional");
+    await expect(sheet.getByRole("alert")).toHaveText("2 things missing: Full name, Address");
+  } else {
+    await expect(sheet.getByRole("alert")).toHaveText("1 thing missing: Full name");
+    await expect(sheet).not.toContainText("Needed for large transfers");
+  }
   await expect(sheet.getByRole("button", { name: "Save beneficiary" })).toBeDisabled();
   await expect(sheet.getByText("Add the full name to save.")).toBeVisible();
   await expect(sheet.getByText("Type the name as it is on their ID.")).toBeVisible();
@@ -545,6 +559,10 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
     roots: [".phone-ben-sheet", ".phone-head", "#phone-dock"],
   });
   await sheet.getByPlaceholder("Receiver's name").fill("Ada Carter");
+  if (addressTag === "Needed for large transfers") {
+    await expect(sheet.getByRole("alert")).toHaveText("1 thing missing: Address");
+    await sheet.getByPlaceholder("Street, city, country").fill("1 King Street, Toronto");
+  }
   await expect(sheet.getByRole("alert")).toHaveCount(0);
   await sheet.getByRole("button", { name: "Save beneficiary" }).click();
   await expect(list.getByText("Ada Carter")).toBeVisible();

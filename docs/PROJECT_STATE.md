@@ -119,7 +119,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   they are absent. Saved beneficiaries are the second tab: a sender's ID,
   the people already saved for them, and a new-beneficiary sheet.
   Use and New record open the existing cash step with that sender
-  filled in. The desktop pipeline is unchanged. The bar is five
+  filled in. The address tag uses the cash step's pack gate: Needed
+  for large transfers where an address is required over the
+  identification line (Canada version 2), and Optional on any other
+  pack. The York seed is version 1. The desktop pipeline is unchanged. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -631,8 +634,12 @@ menu bar, which both machines resolved the same way, matched.
 **2026-10-12**, phone saved beneficiaries. The Transfers list has a
 second tab. A sender file shows the ID already stored for that
 client, or Not on file. A new beneficiary asks for the same fields
-the desktop modal saves, and an address is required only on a
-Canada version 2 pack. York is not that pack.
+the desktop modal saves. The address tag calls the same gate as
+the cash step, `addressRequiredOverIdLine`: Canada version 2 says
+Needed for large transfers, and every other pack says Optional.
+The York seed (`server/src/seed.ts`) is `pack-ca-v1`. A desk whose
+pack has not arrived is not version 2, so the tag stays Optional
+until that pack loads. The screen does not name the desk.
 
 **2026-10-12**, phone transfer record. A row opens the record. The
 title is the two names, at 22px and weight 700, and the TR number sits
