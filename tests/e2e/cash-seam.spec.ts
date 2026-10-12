@@ -64,6 +64,14 @@ async function drawerChip(page: Page) {
   return match ? Number(match[1]!.replace(/,/g, "")) : null;
 }
 
+/* The first-run card names the till and sits over the drawer. A trial
+   click on Reconcile then times out, and the next attempt finds the
+   session already open. Skip is what a person does. */
+async function dismissTour(page: Page) {
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible()) await skip.click();
+}
+
 /* The Cash Drawer header reflows as the session, the drawer figures and
    the drawer name arrive, and the OS shell hides `.fld-bar` on downward
    scroll (0.3s max-height / transform). Playwright then reports a tab
@@ -71,6 +79,7 @@ async function drawerChip(page: Page) {
    (`div.px-4.pt-3.flex-none`). That is issue #36: the close assertion
    never ran. Wait for the chrome to finish moving; do not force:true. */
 async function settleCashDrawerChrome(page: Page) {
+  await dismissTour(page);
   await expect(page.locator(".till-which")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/figures are in/i)).toBeVisible();
   const scroller = page.locator(".win-body .overflow-auto").first();
@@ -103,6 +112,7 @@ async function clickWhenStable(locator: Locator) {
 
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
+  await dismissTour(page);
   await clickWhenStable(page.getByRole("button", { name }).first());
 }
 
@@ -139,6 +149,7 @@ test("the desk opens a till session, and the ledger is the one that says so", as
      of this test checked `isVisible()` and quietly skipped the click while
      the balances were still loading, which is the kind of test that reports
      green for a screen it never exercised. */
+  await dismissTour(page);
   const openButton = page.getByRole("button", { name: /Open the till/i }).first();
   await expect(openButton).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/hasn.t been opened/i)).toBeVisible();
