@@ -1,6 +1,7 @@
-/* Teller vs owner on the reads that used to return fees and earnings.
+/* Teller vs owner on the reads that return the book's take.
    Close-day is till:close. The earnings report is report:earnings.
-   A teller has neither. An owner has both. A supervisor has till:close only. */
+   A teller has neither. An owner has both. A supervisor has till:close only.
+   The customer-facing fee stays with the teller. The shop's take does not. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -13,7 +14,7 @@ const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
 let pool: pg.Pool, app: FastifyInstance, handle: DbHandle;
 const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
-const MONEY = ["feesHome", "earningsHome", "realizedPnlHome", "costOfSaleHome", "feeCad", "spreadCad", "feeAmount", "unrealizedPnlHome"];
+const SHOP = ["earningsHome", "realizedPnlHome", "costOfSaleHome", "spreadCad", "unrealizedPnlHome"];
 
 async function cookie(staffId: string) {
   const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { staffId, password: DEMO.password } });
@@ -79,7 +80,7 @@ postgres("tellers do not receive fees or earnings", () => {
     );
   });
 
-  it("strips fees and earnings from a teller and leaves them for an owner and a supervisor", async () => {
+  it("keeps the customer fee and strips the shop's take from a teller", async () => {
     const owner = await cookie("j.masri");
     const quote = (await app.inject({
       method: "POST", url: "/api/quotes", cookies: owner,
@@ -105,9 +106,11 @@ postgres("tellers do not receive fees or earnings", () => {
     const ownerSummary = await read("j.masri", "/api/ledger/summary");
     const supervisorSummary = await read("a.singh", "/api/ledger/summary");
     expect(tellerSummary.volumeHome).toBe("2443.30");
-    lacks(tellerSummary, ["feesHome", "earningsHome", "realizedPnlHome", "costOfSaleHome"]);
+    expect(tellerSummary.feesHome).toBe("39.00");
+    lacks(tellerSummary, ["earningsHome", "realizedPnlHome", "costOfSaleHome"]);
     expect(tellerSummary.byActor.length).toBeGreaterThan(0);
-    for (const row of [...tellerSummary.byActor, ...tellerSummary.byCurrency]) lacks(row, ["feesHome", "earningsHome", "realizedPnlHome"]);
+    for (const row of tellerSummary.byActor) lacks(row, ["feesHome", "earningsHome", "realizedPnlHome"]);
+    for (const row of tellerSummary.byCurrency) lacks(row, ["realizedPnlHome"]);
     expect(ownerSummary).toMatchObject({ feesHome: "39.00" });
     expect(ownerSummary.earningsHome).not.toBeNull();
     expect(ownerSummary.byActor.some((row: { earningsHome: string | null }) => row.earningsHome != null)).toBe(true);
@@ -121,13 +124,13 @@ postgres("tellers do not receive fees or earnings", () => {
     const tellerDeal = tellerTx.transactions.find((row: { transactionId: string }) => row.transactionId === transactionId);
     expect(deal).toMatchObject({ feeCad: "4.00", realizedPnlHome: "103.30" });
     expect(deal.spreadCad).toEqual(expect.any(String));
-    expect(tellerDeal.inputAmount).toBe("1443.30");
-    lacks(tellerDeal, ["feeCad", "spreadCad", "costOfSaleHome", "realizedPnlHome"]);
+    expect(tellerDeal).toMatchObject({ inputAmount: "1443.30", feeCad: "4.00" });
+    lacks(tellerDeal, ["spreadCad", "costOfSaleHome", "realizedPnlHome"]);
 
     const tellerReceipt = await read("m.costa", `/api/ledger/transactions/${transactionId}/receipt`);
     const ownerReceipt = await read("j.masri", `/api/ledger/transactions/${transactionId}/receipt`);
     expect(ownerReceipt.lines.join("\n")).toContain("Fee paid separately");
-    expect(tellerReceipt.lines.join("\n")).not.toContain("Fee paid separately");
+    expect(tellerReceipt.lines.join("\n")).toContain("Fee paid separately: CAD 4.00");
 
     const tellerPosition = await read("m.costa", "/api/ledger/position");
     const ownerPosition = await read("j.masri", "/api/ledger/position");
@@ -137,12 +140,13 @@ postgres("tellers do not receive fees or earnings", () => {
     const tellerCheques = await read("m.costa", "/api/ledger/cheques");
     const ownerCheques = await read("j.masri", "/api/ledger/cheques");
     expect(ownerCheques.cheques[0].feeAmount).toBe("35.00");
-    expect(tellerCheques.cheques[0].faceAmount).toBe("1000.00");
-    lacks(tellerCheques, ["feeAmount"]);
+    expect(tellerCheques.cheques[0]).toMatchObject({ faceAmount: "1000.00", feeAmount: "35.00" });
 
     const leaked = JSON.stringify({ tellerSummary, tellerTx, tellerReceipt, tellerPosition, tellerCheques });
-    lacks(JSON.parse(leaked), MONEY);
+    lacks(JSON.parse(leaked), SHOP);
     expect(leaked).not.toContain("107.30");
-    expect(leaked).not.toContain("35.00");
+    expect(leaked).not.toContain("103.30");
+    expect(leaked).toContain("4.00");
+    expect(leaked).toContain("35.00");
   });
 });

@@ -57,10 +57,11 @@ export type BackendPermission =
      business is one person. A compliance officer or a manager who wants it
      moved asks the owner, which is a conversation worth having out loud. */
   | "compliance:thresholds"
-  /* Fees, realized margin, and the per-teller split. Closing the day
+  /* Shop earnings, P&L, cost of sale, the booked spread, unrealized
+     P&L, and the per-teller money split. Closing the day
      (`till:close`) is one way to read them. Reading the same figures
-     without closing is this permission. A teller posts the deal and
-     has neither. */
+     without closing is this permission. The customer-facing fee is
+     not one of these. A teller posts the deal and has neither. */
   | "report:earnings";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {

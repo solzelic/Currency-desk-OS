@@ -443,3 +443,57 @@ test("the reporting threshold and the date on the ticket are the desk's own", as
     .toMatch(new RegExp(`·\\s*${dates.today}`));
   expect(await bodyText(page)).not.toContain("2026-06-18");
 });
+
+/* ------------------------------------------------------------------
+   6. A TELLER'S SCREENS
+
+   The shop's take is left off the teller's reads. A missing key has
+   to render as a dash. The words "undefined" and "NaN" are a figure
+   the screen invented, which is the failure this file exists to catch.
+   Reports is not on a cashier's dock. The window is opened directly
+   so the sheet still has to render.
+   ------------------------------------------------------------------ */
+function noGarbage(text: string) {
+  expect(text).not.toContain("undefined");
+  expect(text).not.toMatch(/\bNaN\b/);
+}
+
+test("a teller's ledger and reports render with no undefined or NaN", async ({ page }) => {
+  await signInAtDesk(page, "a.singh");
+  expect(await ensureOpenSession(page)).toBe("open");
+  const topUp = await ensureDrawerHas(page, { CAD: 5000, USD: 2000 });
+  expect(topUp, `the drawer could not be topped up: ${topUp}`).not.toMatch(/[45]\d\d/);
+  const deal = await postOneDeal(page, `teller-screen-${Date.now()}`);
+  expect(deal.ok, `no deal could be posted: ${deal.why}`).toBe(true);
+
+  await signInAtDesk(page, "m.costa");
+  await openApp(page, /^Ledger$/);
+  await rendered(page, /Pay-in volume/i);
+  await expect.poll(() => bodyText(page), { timeout: 30_000 }).toMatch(/\d+ records?/);
+  noGarbage(await bodyText(page));
+
+  await page.getByRole("button", { name: /Fees collected/ }).click();
+  await expect(page.getByText(/Volume & earnings/)).toBeVisible();
+  await page.getByRole("button", { name: "Fees & earnings" }).click();
+  noGarbage(await bodyText(page));
+  await page.mouse.click(8, 8);
+
+  await page.locator(".win.show.active tbody tr").first().click();
+  await expect(page.getByText("Earnings on this deal")).toBeVisible();
+  noGarbage(await page.locator(".win.show.active").innerText());
+
+  await page.evaluate(() => window.CDOS.openApp("reports"));
+  await rendered(page, /End-of-Day Sign-Off/);
+  noGarbage(await page.locator(".win.show.active").innerText());
+
+  for (const card of [/End-of-Day Sign-Off/, /Transaction Register/]) {
+    await page.getByRole("button", { name: card }).click();
+    const doc = page.locator("#cdos-report-doc");
+    await doc.waitFor({ state: "visible", timeout: 30_000 });
+    await expect.poll(async () => doc.innerText(), { timeout: 30_000 }).not.toContain("reading the ledger");
+    noGarbage(await doc.innerText());
+    noGarbage(await page.locator(".win.show.active").innerText());
+    await page.getByRole("button", { name: /All reports/ }).click();
+    await rendered(page, /End-of-Day Sign-Off/);
+  }
+});

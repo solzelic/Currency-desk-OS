@@ -65608,6 +65608,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }];
       });
     }
+    /* The seam test opens a window the dock hides, so a withheld
+       figure can be read on the sheet itself. The dock gate is
+       unchanged: a cashier still has no Reports icon. */
+    window.CDOS.openApp = openApp;
     const closeWin = id => {
       if (id === 'store') setEditApps(false);
       setWins(ws => ws.filter(w => w.id !== id));
