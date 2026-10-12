@@ -386,7 +386,7 @@
         action={state === 'ready' ? 'Give out a float' : null}
         onAction={() => setSheet(true)}
         toast={toast}
-        sheet={<>{sheet && <FloatSheet settings={settings} branches={branches} station={station} position={position} onClose={() => setSheet(false)} onAssignPerson={onAssignPerson} onIssueTill={onIssueTill} onDone={(label, worthText) => { setSheet(false); setToast('Float given to ' + label + '. ' + worthText + '.'); }} />}{detailNode}</>}
+        sheet={<>{sheet && <FloatSheet settings={settings} branches={branches} station={station} position={position} onClose={() => setSheet(false)} onAssignPerson={onAssignPerson} onIssueTill={onIssueTill} onDone={(label, worthText) => { setSheet(false); setToast('Gave ' + label + ' a ' + worthText + ' float.'); }} />}{detailNode}</>}
       >
         {body}
       </LongTailScreen>

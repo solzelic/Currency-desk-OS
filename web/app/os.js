@@ -63906,7 +63906,7 @@ window.CDOS_PERSIST = (function () {
         onIssueTill: onIssueTill,
         onDone: (label, worthText) => {
           setSheet(false);
-          setToast('Float given to ' + label + '. ' + worthText + '.');
+          setToast('Gave ' + label + ' a ' + worthText + ' float.');
         }
       }), detailNode)
     }, body);

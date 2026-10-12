@@ -313,15 +313,18 @@ test.describe("vault on a phone", () => {
       await shot(page, `longtail_float_${width}`);
       await sheet.getByLabel(`${issued} amount`).fill("1.00");
       const give = sheet.getByRole("button", { name: /Give float to / });
-      /* The previous width leaves "Float given" on screen for four
-         seconds. Wait for this post, and for the till to move, not
-         for that status text. */
+      const tillName = ((await give.textContent()) || "").replace(/^Give float to\s+/, "").trim();
+      expect(tillName.length).toBeGreaterThan(0);
+      /* The toast lasts four seconds, so read it as soon as the sheet
+         closes. The till movement is still the proof the float posted. */
       const posted = page.waitForResponse((res) => {
         return res.request().method() === "POST" && new URL(res.url()).pathname === "/api/ledger/till-movements" && res.ok();
       });
       await give.dblclick();
       await posted;
       await expect(sheet).toBeHidden({ timeout: 20_000 });
+      await expect(page.locator(".phone-toast")).toHaveText(`Gave ${tillName} a 1.00 ${issued} float.`);
+      if (width === 390) await shot(page, "longtail_float_toast_390");
       await expect.poll(async () => Number((await book.till())[issued] || 0), { timeout: 20_000 }).toBeCloseTo(before + 1, 2);
       await expect(page.getByText("Open the vault with a starting count first.")).toHaveCount(0);
     }
@@ -383,7 +386,7 @@ test.describe("vault on a phone", () => {
         await backAboveTitle(screen);
         await shot(page, `longtail_empty_${width}`);
         expect(await book.till()).toEqual(before);
-        await expect(page.getByRole("status").filter({ hasText: "Float given to" })).toHaveCount(0);
+        await expect(page.locator(".phone-toast")).toHaveCount(0);
       }
       await phoneSweep(page, { roots: ['.longtail[data-app="vault"]'] });
     } finally {
