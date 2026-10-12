@@ -711,6 +711,11 @@ for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
         });
         if (utcHeading !== heading) expect(doc).not.toContain(utcHeading);
 
+        const slug = timeZone === "Asia/Jerusalem" ? "jerusalem" : "toronto";
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.screenshot({ path: `/opt/cursor/artifacts/signoff-${slug}-1280.png` });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: `/opt/cursor/artifacts/signoff-${slug}-390.png` });
         if (timeZone === "Asia/Jerusalem") {
           await page.setViewportSize({ width: 1280, height: 900 });
           await page.screenshot({ path: "/opt/cursor/artifacts/signoff-after-1280.png" });

@@ -7,6 +7,7 @@ import { assertTradeable } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { businessDate, readDateOnly, signOffWindow } from "./business-date.js";
+import { loadBranchTimeZone } from "./branch-zone.js";
 import { now as clockNow } from "./clock.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -129,27 +130,6 @@ export class TillControlService {
     };
   }
 
-  /** The branch's own zone. The server's zone and the browser's zone do not
-   *  choose the business date. */
-  private async branchTimeZone(
-    client: pg.PoolClient,
-    actor: LedgerActor,
-  ): Promise<string> {
-    const result = await client.query(
-      `SELECT timezone FROM branches
-        WHERE tenant_id=$1 AND legal_entity_id=$2 AND id=$3`,
-      [actor.tenantId, actor.legalEntityId, actor.branchId],
-    );
-    const zone = result.rows[0]?.timezone;
-    if (typeof zone !== "string" || zone.trim() === "") {
-      throw new LedgerError(
-        "BRANCH_TIMEZONE_UNSET",
-        "This branch has no time zone, so its business date cannot be named.",
-      );
-    }
-    return zone;
-  }
-
   /** The window the sign-off sheet must request. Branch midnight of the
    *  session's business date, through the next branch midnight. A desk
    *  still open after that midnight keeps this business date, and the
@@ -159,7 +139,7 @@ export class TillControlService {
     actor: LedgerActor,
     row: Record<string, unknown>,
   ) {
-    const timeZone = await this.branchTimeZone(client, actor);
+    const timeZone = await loadBranchTimeZone(client, actor);
     const date = readDateOnly(row.business_date);
     const closedAt = row.closed_at == null ? null : new Date(row.closed_at as string);
     const window = signOffWindow({
@@ -345,7 +325,7 @@ export class TillControlService {
           scope(actor),
         );
         const now = clockNow();
-        const timeZone = await this.branchTimeZone(client, actor);
+        const timeZone = await loadBranchTimeZone(client, actor);
         const sessionId = `till_session_${randomUUID()}`;
         await client.query(
           `INSERT INTO ledger_till_sessions

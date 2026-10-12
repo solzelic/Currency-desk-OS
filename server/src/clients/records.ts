@@ -53,8 +53,8 @@
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
-import { businessDate, calendarBefore, readDateOnly } from "../ledger/business-date.js";
-import { now as clockNow } from "../ledger/clock.js";
+import { calendarBefore, readDateOnly } from "../ledger/business-date.js";
+import { branchCalendarDate } from "../ledger/branch-zone.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 
@@ -1065,7 +1065,7 @@ export class ClientRecordService {
        somebody forgot to update. The expiry and today are both
        YYYY-MM-DD in the branch zone. The same calendar day is still
        current. */
-    const on = await this.branchCalendarDate(client, actor);
+    const on = await branchCalendarDate(client, actor);
     const expired = row.primary_expiry != null && calendarBefore(row.primary_expiry, on);
     const status: VerificationStatus =
       row.numbered === 0
@@ -1159,27 +1159,11 @@ export class ClientRecordService {
    * it away either. The three states this DOES own are the ones that
    * follow mechanically from what the desk is holding.
    */
-  /** Today's calendar date in this branch's zone. The database session's
-   *  `current_date` is the server's zone, which is already tomorrow in
-   *  Toronto for the hours after UTC midnight. */
-  private async branchCalendarDate(client: pg.PoolClient, actor: LedgerActor): Promise<string> {
-    const result = await client.query(
-      `SELECT timezone FROM branches
-        WHERE tenant_id=$1 AND legal_entity_id=$2 AND id=$3`,
-      [actor.tenantId, actor.legalEntityId, actor.branchId],
-    );
-    const zone = result.rows[0]?.timezone;
-    if (typeof zone !== "string" || zone.trim() === "") {
-      throw new LedgerError(
-        "BRANCH_TIMEZONE_UNSET",
-        "This branch has no time zone, so an ID expiry cannot be compared to a business date.",
-      );
-    }
-    return businessDate(clockNow(), zone);
-  }
-
   private async refreshVerification(client: pg.PoolClient, actor: LedgerActor, clientId: string) {
-    const on = await this.branchCalendarDate(client, actor);
+    /* Today's calendar date in this branch's zone. The database session's
+       `current_date` is the server's zone, which is already tomorrow in
+       Toronto for the hours after UTC midnight. */
+    const on = await branchCalendarDate(client, actor);
     await client.query(
       `UPDATE desk_clients c
           SET verification_status = CASE

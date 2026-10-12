@@ -18,6 +18,7 @@
 import Decimal from "decimal.js";
 import { and, eq, notInArray, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
+import { DEFAULT_BRANCH_TIMEZONE } from "../ledger/branch-zone.js";
 import { publishStartingBoard, seedOpeningFloat } from "../rates/starting-board.js";
 import { UK_PACK_V2 } from "../ledger/uk-mlr.js";
 import { AE_FX_CID, AE_PACK_V2 } from "../ledger/uae-exchange.js";
@@ -400,7 +401,7 @@ export async function provisionDesk(
     jurisdictionPackVersion: pack?.version ?? 1,
     idThreshold: chosenIdLine,
   }).onConflictDoNothing();
-  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
+  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main", timezone: DEFAULT_BRANCH_TIMEZONE }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
 
   /* A DESK ARRIVES ABLE TO TRADE.

@@ -1,6 +1,8 @@
 /* The product clock is the real one. A seam test that has to stand just
    after midnight sends x-cd-now, and only a server started with
    CD_TEST_CLOCK=1 honours it. */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import Fastify from "fastify";
 import { bindTestClock, now } from "../src/ledger/clock.js";
@@ -46,6 +48,11 @@ describe("test clock", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().now).toBe("2026-10-11T21:30:00.000Z");
     await app.close();
+  });
+
+  it("render.yaml does not switch the test clock on", () => {
+    const yaml = readFileSync(resolve(import.meta.dirname, "../../render.yaml"), "utf8");
+    expect(yaml).not.toContain("CD_TEST_CLOCK");
   });
 
   it("refuses a header that is not a time", async () => {

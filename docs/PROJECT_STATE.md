@@ -64,7 +64,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 | Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
 | Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
-| Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt` |
+| Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. A session that is already open keeps the date it stored. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt`. `branches.timezone` is NOT NULL and defaults to America/Toronto. A blank zone or a zone the server cannot read is refused as `BRANCH_TIMEZONE_UNSET` (409) |
 | Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
 
 ## Production/build surfaces
@@ -579,6 +579,14 @@ date in the branch time zone. That date and today are compared as
 YYYY-MM-DD. A UTC conversion was marking the last valid day expired
 and, where the process zone is ahead of UTC, printing the expiry as
 the day before.
+
+**2026-10-12**, branch time zone. Signup, the demo seed, the platform
+admin, and a location opened from the desk write `America/Toronto` when
+they do not name a zone. The column has been `NOT NULL` with that
+default since the desk table was created. A blank value or a string
+that is not a time zone is `BRANCH_TIMEZONE_UNSET`, HTTP 409. The
+header `x-cd-now` changes the clock only when `CD_TEST_CLOCK=1`.
+Production does not set that variable.
 
 **2026-10-11**, till date. Opening a till just after midnight stores the
 branch calendar date, and a later read returns that same date. Deal

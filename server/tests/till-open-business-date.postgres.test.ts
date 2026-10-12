@@ -163,4 +163,150 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
       expect(readDateOnly(stored.rows[0].business_date)).toBe(item.businessDate);
     });
   }
+
+  it("stores America/Toronto when a branch is created without a zone", async () => {
+    const column = await pool.query(
+      `SELECT is_nullable, column_default
+         FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'branches' AND column_name = 'timezone'`,
+    );
+    expect(column.rows[0].is_nullable).toBe("NO");
+    expect(String(column.rows[0].column_default)).toContain("America/Toronto");
+    const seeded = await pool.query("SELECT timezone FROM branches WHERE id=$1", [DEMO.branchId]);
+    expect(seeded.rows[0].timezone).toBe("America/Toronto");
+    await expect(
+      pool.query("UPDATE branches SET timezone = NULL WHERE id=$1", [DEMO.branchId]),
+    ).rejects.toMatchObject({ code: "23502" });
+  });
+
+  async function login() {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { staffId: "j.masri", password: DEMO.password, tenantId: DEMO.tenantId },
+    });
+    expect(res.statusCode).toBe(200);
+    return {
+      cdos_session: res.cookies.find((cookie) => cookie.name === "cdos_session")!.value,
+    };
+  }
+
+  async function openTill(zone: string) {
+    await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [DEMO.branchId, zone]);
+    const cookies = await login();
+    return app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/open",
+      cookies,
+      headers: { "x-workspace-id": DEMO.workspaceId },
+    });
+  }
+
+  it("refuses to open a till when the zone is blank", async () => {
+    const opened = await openTill("   ");
+    expect(opened.statusCode, opened.body).toBe(409);
+    expect(opened.json().code).toBe("BRANCH_TIMEZONE_UNSET");
+  });
+
+  it("refuses a zone Intl cannot read, instead of failing the request", async () => {
+    const opened = await openTill("Not/AZone");
+    expect(opened.statusCode, opened.body).toBe(409);
+    expect(opened.json().code).toBe("BRANCH_TIMEZONE_UNSET");
+  });
+
+  it("refuses to read an open session when the zone is not a real zone", async () => {
+    await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [
+      DEMO.branchId,
+      "America/Toronto",
+    ]);
+    const next = await pool.query(
+      `SELECT COALESCE(max(session_number),0)+1 AS n
+         FROM ledger_till_sessions
+        WHERE tenant_id=$1 AND branch_id=$2 AND workspace_id=$3`,
+      [DEMO.tenantId, DEMO.branchId, DEMO.workspaceId],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_sessions
+        (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+         session_number,business_date,status,opened_by,opened_at)
+       VALUES ($1,$2,$3,$4,$5,'till-01',$6,'2026-10-11','open',$7,'2026-10-11T14:00:00Z')`,
+      [
+        `till_session_bad_zone_${next.rows[0].n}`,
+        DEMO.tenantId,
+        DEMO.legalEntityId,
+        DEMO.branchId,
+        DEMO.workspaceId,
+        next.rows[0].n,
+        `${DEMO.tenantId}:j.masri`,
+      ],
+    );
+    await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [DEMO.branchId, "Not/AZone"]);
+    const cookies = await login();
+    const read = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies,
+      headers: { "x-workspace-id": DEMO.workspaceId },
+    });
+    expect(read.statusCode, read.body).toBe(409);
+    expect(read.json().code).toBe("BRANCH_TIMEZONE_UNSET");
+  });
+
+  it("keeps the business date already stored on an open till", async () => {
+    await pool.query("UPDATE branches SET timezone=$2 WHERE id=$1", [
+      DEMO.branchId,
+      "Asia/Jerusalem",
+    ]);
+    const next = await pool.query(
+      `SELECT COALESCE(max(session_number),0)+1 AS n
+         FROM ledger_till_sessions
+        WHERE tenant_id=$1 AND branch_id=$2 AND workspace_id=$3`,
+      [DEMO.tenantId, DEMO.branchId, DEMO.workspaceId],
+    );
+    const sessionId = `till_session_already_open_${next.rows[0].n}`;
+    await pool.query(
+      `INSERT INTO ledger_till_sessions
+        (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+         session_number,business_date,status,opened_by,opened_at)
+       VALUES ($1,$2,$3,$4,$5,'till-01',$6,'2026-10-11','open',$7,'2026-10-11T07:00:00Z')`,
+      [
+        sessionId,
+        DEMO.tenantId,
+        DEMO.legalEntityId,
+        DEMO.branchId,
+        DEMO.workspaceId,
+        next.rows[0].n,
+        `${DEMO.tenantId}:j.masri`,
+      ],
+    );
+    const cookies = await login();
+    const read = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies,
+      headers: {
+        "x-workspace-id": DEMO.workspaceId,
+        "x-cd-now": "2026-10-12T00:30:00+03:00",
+      },
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    const body = read.json();
+    expect(body.session.businessDate).toBe("2026-10-11");
+    expect(body.day.businessDate).toBe("2026-10-11");
+    expect(body.day.timeZone).toBe("Asia/Jerusalem");
+    const from = zonedClock(body.day.from, "Asia/Jerusalem");
+    expect(from).toEqual({ date: "2026-10-11", hour: "00", minute: "00" });
+    const stored = await pool.query(
+      `SELECT business_date, business_date::text AS text
+         FROM ledger_till_sessions WHERE session_id=$1`,
+      [sessionId],
+    );
+    expect(stored.rows[0].text).toBe("2026-10-11");
+    expect(readDateOnly(stored.rows[0].business_date)).toBe("2026-10-11");
+    expect(body.session.businessDate).toBe(readDateOnly(stored.rows[0].business_date));
+    const utcSlice = (stored.rows[0].business_date as Date).toISOString().slice(0, 10);
+    if (utcSlice !== "2026-10-11") {
+      expect(body.session.businessDate).not.toBe(utcSlice);
+    }
+  });
 });
