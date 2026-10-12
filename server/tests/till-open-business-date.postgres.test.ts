@@ -67,6 +67,10 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
     handle = await createDb();
     pool = new pg.Pool({ connectionString: url });
     await seed(handle.db);
+    const seeded = await pool.query("SELECT timezone FROM branches WHERE id=$1", [DEMO.branchId]);
+    if (seeded.rows[0]?.timezone !== "America/Toronto") {
+      throw new Error(`the demo desk was not seeded in America/Toronto: ${seeded.rows[0]?.timezone}`);
+    }
     app = await buildApp(handle.db);
   });
 
@@ -164,7 +168,7 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
     });
   }
 
-  it("stores America/Toronto when a branch is created without a zone", async () => {
+  it("rejects a null time zone on branches", async () => {
     const column = await pool.query(
       `SELECT is_nullable, column_default
          FROM information_schema.columns
@@ -172,8 +176,6 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
     );
     expect(column.rows[0].is_nullable).toBe("NO");
     expect(String(column.rows[0].column_default)).toContain("America/Toronto");
-    const seeded = await pool.query("SELECT timezone FROM branches WHERE id=$1", [DEMO.branchId]);
-    expect(seeded.rows[0].timezone).toBe("America/Toronto");
     await expect(
       pool.query("UPDATE branches SET timezone = NULL WHERE id=$1", [DEMO.branchId]),
     ).rejects.toMatchObject({ code: "23502" });
