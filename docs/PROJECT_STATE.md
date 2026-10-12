@@ -132,9 +132,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   one continues. A ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. The desktop
-  resize grip is hidden. At 430px, Rates is the cashier list: four decimals, We buy in
-  #1E5AA8 and We sell in #7A3E96, a quote, and one New deal button.
-  The prices are in the desk's currency. Wider than that, the Rate Board is unchanged. The cash-drawer count keeps its currency chips and
+  resize grip is hidden. At 430px, Rates is the cashier list: four
+  decimals, We buy in #1E5AA8 and We sell in #7A3E96, a quote, and
+  one New deal button. The prices are in the desk's currency. Wider
+  than that, the Rate Board is unchanged. The cash-drawer count keeps its currency chips and
   Save count on screen. The whole Cash drawer scrolls as one column,
   so the header, the session line, and the hand-off scroll away and
   the denomination rows use that room. The count panel stays a solid
@@ -582,8 +583,9 @@ existing New transaction with that currency, side, and amount, and
 the cursor on Client. New deal starts a deal with no quote. Amounts
 go through `formatPhoneMoney`. The status line says Live only for a
 real provider snapshot from the last two hours, and the time reads
-like "3:02 pm", through `formatPhoneTime`. A lock says Rates locked. Anything else says when it was last
-updated, or that it is not a live feed. There is no Example data
+like "3:02 PM", through `formatPhoneTime`. A lock says Rates locked.
+Anything else says when it was last updated, or that it is not a
+live feed. There is no Example data
 tag. A board with nothing to quote says so. Feed, margins, and
 publish stay on the desktop Rate Board and in Pricing. An owner or
 a manager gets an Edit link to Pricing. A cashier does not. A

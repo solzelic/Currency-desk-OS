@@ -40,7 +40,7 @@
     return text + ' ' + (code || HOME_FALLBACK);
   }
 
-  /* The shared clock. 15:02 is "3:02 pm". A calendar day would
+  /* The shared clock. 15:02 is "3:02 PM". A calendar day would
      go through formatPhoneDate and read "Oct 11, 2026". This
      screen names a time only. An instant uses the branch zone,
      which defaults to America/Toronto. */
