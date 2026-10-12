@@ -264,6 +264,9 @@
     const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy);
     const [dayBook, setDayBook] = useState({ loading: true, summary: null, error: '' });
     const [sessionErr, setSessionErr] = useState('');     // last failed till action, shown on screen
+    /* The currency whose balance changed when a close was refused
+       as stale. The phone Count again button opens that currency. */
+    const [staleCcy, setStaleCcy] = useState('');
     const [tillBusy, setTillBusy] = useState('');         // 'open' | 'count' | 'close'
     /* The till picker below switches THIS DESK's local station — ids this
        browser invented ("b01t1"). The server names its tills separately and
@@ -793,13 +796,30 @@
             /* Drop the pin first. Reading the book while it is still
                stored would put the old mark back, and the next count
                would close against the drawer that just moved. */
+            const before = serverBalances || {};
             clearAllCounts();
             const fresh = await window.CDOS.Backend.loadTill();
             applyBook(fresh);
             applySession(fresh);
+            const after = (fresh && fresh.balances) || {};
+            const seen = {};
+            const moved = [];
+            Object.keys(before).concat(Object.keys(after)).forEach(c => {
+              if (seen[c]) return;
+              seen[c] = true;
+              const a = before[c] == null || before[c] === '' ? null : Number(before[c]);
+              const b = after[c] == null || after[c] === '' ? null : Number(after[c]);
+              if (a == null && b == null) return;
+              if (a == null || b == null || Math.abs(a - b) > 0.004) moved.push(c);
+            });
+            moved.sort();
+            setStaleCcy(moved[0] || '');
           } catch (refreshError) {
+            setStaleCcy('');
             setServerBalanceError(refreshError.message || 'Server balances unavailable');
           }
+        } else {
+          setStaleCcy('');
         }
       } finally {
         setClosing(false);
@@ -910,8 +930,16 @@
           serverSession={serverSession}
           balances={serverBalances}
           error={sessionErr || serverBalanceError}
+          onCountAgain={() => {
+            const next = staleCcy;
+            setSessionErr('');
+            setStaleCcy('');
+            if (next) setCcy(next);
+            setTab('count');
+          }}
           onRetry={() => {
             setSessionErr('');
+            setStaleCcy('');
             const run = refreshTill();
             if (run && run.catch) run.catch(error => setServerBalanceError((error && error.message) || 'Server balances unavailable'));
           }}

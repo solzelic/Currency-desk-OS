@@ -13604,6 +13604,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       error: ''
     });
     const [sessionErr, setSessionErr] = useState(''); // last failed till action, shown on screen
+    /* The currency whose balance changed when a close was refused
+       as stale. The phone Count again button opens that currency. */
+    const [staleCcy, setStaleCcy] = useState('');
     const [tillBusy, setTillBusy] = useState(''); // 'open' | 'count' | 'close'
     /* The till picker below switches THIS DESK's local station — ids this
        browser invented ("b01t1"). The server names its tills separately and
@@ -14410,13 +14413,30 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             /* Drop the pin first. Reading the book while it is still
                stored would put the old mark back, and the next count
                would close against the drawer that just moved. */
+            const before = serverBalances || {};
             clearAllCounts();
             const fresh = await window.CDOS.Backend.loadTill();
             applyBook(fresh);
             applySession(fresh);
+            const after = fresh && fresh.balances || {};
+            const seen = {};
+            const moved = [];
+            Object.keys(before).concat(Object.keys(after)).forEach(c => {
+              if (seen[c]) return;
+              seen[c] = true;
+              const a = before[c] == null || before[c] === '' ? null : Number(before[c]);
+              const b = after[c] == null || after[c] === '' ? null : Number(after[c]);
+              if (a == null && b == null) return;
+              if (a == null || b == null || Math.abs(a - b) > 0.004) moved.push(c);
+            });
+            moved.sort();
+            setStaleCcy(moved[0] || '');
           } catch (refreshError) {
+            setStaleCcy('');
             setServerBalanceError(refreshError.message || 'Server balances unavailable');
           }
+        } else {
+          setStaleCcy('');
         }
       } finally {
         setClosing(false);
@@ -14522,8 +14542,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         serverSession: serverSession,
         balances: serverBalances,
         error: sessionErr || serverBalanceError,
+        onCountAgain: () => {
+          const next = staleCcy;
+          setSessionErr('');
+          setStaleCcy('');
+          if (next) setCcy(next);
+          setTab('count');
+        },
         onRetry: () => {
           setSessionErr('');
+          setStaleCcy('');
           const run = refreshTill();
           if (run && run.catch) run.catch(error => setServerBalanceError(error && error.message || 'Server balances unavailable'));
         },
@@ -63188,9 +63216,10 @@ window.CDOS_PERSIST = (function () {
    Session times go through formatPhoneTime: "3:02 PM".
    A figure the ledger did not return is left out, not shown as 0.
 
-   Reconcile is a list of currencies. Hand off, Move cash, and the
-   vault are desktop panels: on a phone they say so, and they do
-   not open those panels.
+   Reconcile is a list of currencies. Move cash and the vault are
+   desktop panels: on a phone they say so, and they do not open
+   those panels. Hand off is not on this card until a phone
+   hand-off exists.
    ============================================================ */
 (function () {
   const {
@@ -63247,14 +63276,16 @@ window.CDOS_PERSIST = (function () {
     return fn ? fn(d) || '' : '';
   }
 
-  /* The ledger stores a staff id. The roster is how that id is spelled
-     for a person. No roster match keeps the id. It does not invent one. */
+  /* The book stores a staff id (a.singh). The phone card says that
+     id. A roster display name is a different spelling of the same
+     person, and this line does not substitute it. */
   function operatorOf(current, roster) {
     if (!current || !current.operator || current.operator === '—') return null;
     const id = String(current.operator).toLowerCase();
     const hit = (roster || []).find(s => String(s.staffId || '').toLowerCase() === id || String(s.name || '').toLowerCase() === id);
+    const name = hit && hit.staffId ? hit.staffId : current.operator;
     return {
-      name: hit ? hit.name : current.operator,
+      name: name,
       since: current.since || null
     };
   }
@@ -63264,13 +63295,29 @@ window.CDOS_PERSIST = (function () {
   }
 
   /* Counted minus expected, in words. No figure until both exist. */
-  function diffWords(ccy, counted, expected) {
-    if (counted == null || expected == null) return '';
+  /* The amount is its own piece so Reconcile can weight it. A match
+     has no amount: the phrase is the figure. Over is the amount
+     plus the word, and only a short is the danger colour. */
+  function diffParts(ccy, counted, expected) {
+    if (counted == null || expected == null) return null;
     const v = Math.round((Number(counted) - Number(expected)) * 100) / 100;
-    if (Math.abs(v) < 0.005) return 'Matches the book';
+    if (Math.abs(v) < 0.005) return {
+      tone: 'match',
+      amount: 'Matches the book',
+      tail: ''
+    };
     const said = money(Math.abs(v), ccy);
-    if (!said) return '';
-    return said + (v > 0 ? ' over' : ' short');
+    if (!said) return null;
+    return {
+      tone: v < 0 ? 'short' : 'over',
+      amount: said,
+      tail: v < 0 ? ' short' : ' over'
+    };
+  }
+  function diffWords(ccy, counted, expected) {
+    const parts = diffParts(ccy, counted, expected);
+    if (!parts) return '';
+    return parts.tone === 'match' ? parts.amount : parts.amount + parts.tail;
   }
 
   /* Desktop panels. The phone does not open them. */
@@ -63282,26 +63329,39 @@ window.CDOS_PERSIST = (function () {
   function reconCopy(r) {
     const expected = r.expected == null ? null : money(r.expected, r.c);
     const counted = r.counted == null ? null : money(r.counted, r.c);
-    const words = diffWords(r.c, r.counted, r.expected);
+    const parts = diffParts(r.c, r.counted, r.expected);
+    const words = parts ? parts.tone === 'match' ? parts.amount : parts.amount + parts.tail : '';
     const countedLine = counted ? 'Counted ' + counted : 'Not counted yet';
-    const tone = words === 'Matches the book' ? 'match' : words && words.slice(-6) === ' short' ? 'short' : '';
     return {
       title: r.c,
       subtitle: 'Expected ' + (expected || '—'),
+      countedLine: countedLine,
+      figure: parts ? parts.amount : '',
+      tail: parts ? parts.tail : '',
       note: words ? countedLine + ' · ' + words : countedLine,
-      tone: tone
+      tone: parts ? parts.tone : ''
     };
   }
 
   /* The ledger id is till-01. The desk already calls that drawer Till 1.
-     A stored name wins. A raw id is spoken the same way, and is never
-     sent back as an id. */
-  function spokenTill(name) {
+     A stored display name wins ("Till 1", "Express"). A raw id such as
+     till-day is not a name: the sheet says Till N for its place in
+     the list. That label is never sent back as an id. */
+  function spokenTill(name, index) {
     const text = String(name || '').replace(/\s+—.*/, '').trim();
-    const raw = /^till-0*(\d+)$/i.exec(text);
-    if (!raw) return text;
-    const n = Number(raw[1]);
-    return Number.isFinite(n) ? 'Till ' + n : text;
+    const numbered = /^till-0*(\d+)$/i.exec(text);
+    if (numbered) {
+      const n = Number(numbered[1]);
+      if (Number.isFinite(n)) return 'Till ' + n;
+    }
+    if (text && !/^till[-_]/i.test(text)) return text;
+    const n = index == null ? null : Number(index) + 1;
+    return n ? 'Till ' + n : 'Till';
+  }
+  function statusLine(note) {
+    const text = String(note || '').trim();
+    if (!text) return '';
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
   /* A teller counting blind must not see the whole drawer valued in
@@ -63386,7 +63446,12 @@ window.CDOS_PERSIST = (function () {
     const firstCoin = denoms.findIndex(d => d.t === 'coin');
     const amount = (n, ccy) => n == null || !ccy ? null : money(n, ccy);
     const Phone = window.CDOS.Phone;
-    const tillLabel = spokenTill(p.tillName);
+    const Ic = window.CDOS.Ic;
+    const tillList = p.tills || [];
+    const tillIndex = tillList.findIndex(o => o.on);
+    const tillSource = p.tillName || (tillIndex >= 0 ? tillList[tillIndex].name : '');
+    const tillLabel = spokenTill(tillSource, tillIndex >= 0 ? tillIndex : null);
+    const countStale = p.error === 'Money moved since you counted. Count again.';
     /* The headline is every currency the drawer holds, valued in the
        home currency. It is not the CAD to count. A teller in a blind
        count does not see it: expected is hidden, and this total is
@@ -63510,7 +63575,17 @@ window.CDOS_PERSIST = (function () {
         setAside(null);
         p.setTab('reconcile');
       }
-    }, "Reconcile and close")), p.error ? /*#__PURE__*/React.createElement(Phone.ErrorState, {
+    }, "Reconcile and close")), p.error ? countStale ? /*#__PURE__*/React.createElement("div", {
+      className: "phone-error",
+      role: "alert"
+    }, /*#__PURE__*/React.createElement("p", null, p.error), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-text-btn",
+      onClick: () => {
+        setAside(null);
+        p.onCountAgain();
+      }
+    }, "Count again")) : /*#__PURE__*/React.createElement(Phone.ErrorState, {
       message: p.error,
       onRetry: p.onRetry
     }) : null, loading && wait.skel ? /*#__PURE__*/React.createElement(Phone.LoadingState, {
@@ -63524,23 +63599,19 @@ window.CDOS_PERSIST = (function () {
       message: COMPUTER[aside]
     }), showWork && p.tab !== 'history' && /*#__PURE__*/React.createElement("section", {
       className: "till-phone-card"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "till-phone-top"
-    }, showDrawer ? /*#__PURE__*/React.createElement("div", {
+    }, tillLabel ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-phone-till",
+      onClick: () => setSheet(true)
+    }, tillLabel) : null, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-meta"
+    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ', ' + p.countedN + ' of ' + p.reconCount + ' counted')), showDrawer ? /*#__PURE__*/React.createElement("div", {
       className: "till-phone-drawer"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-phone-k"
     }, "Drawer value, all currencies in ", p.homeCcy), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-amount"
-    }, amount(p.drawerTotal, p.homeCcy))) : /*#__PURE__*/React.createElement("span", {
-      className: "till-phone-drawer"
-    }), tillLabel ? /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      className: "till-phone-till",
-      onClick: () => setSheet(true)
-    }, tillLabel) : null), /*#__PURE__*/React.createElement("div", {
-      className: "till-phone-meta"
-    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ' · ' + p.countedN + ' of ' + p.reconCount + ' counted')), /*#__PURE__*/React.createElement("div", {
+    }, amount(p.drawerTotal, p.homeCcy))) : null, /*#__PURE__*/React.createElement("div", {
       className: "till-phone-actions"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -63549,10 +63620,7 @@ window.CDOS_PERSIST = (function () {
     }, "Move cash"), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => setAside('vault')
-    }, "Vault"), /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setAside('handoff')
-    }, "Hand off"))), showWork && p.tab === 'count' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.FilterChips, {
+    }, "Vault"))), showWork && p.tab === 'count' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.FilterChips, {
       chips: p.currencies.map(c => ({
         id: c,
         label: p.isCounted(c) ? c + ' counted' : c
@@ -63625,12 +63693,15 @@ window.CDOS_PERSIST = (function () {
       title: "Currencies"
     }, p.recon.map(r => {
       const copy = reconCopy(r);
+      const note = copy.figure ? /*#__PURE__*/React.createElement(React.Fragment, null, copy.countedLine, ' · ', /*#__PURE__*/React.createElement("span", {
+        className: 'till-recon-amt is-' + copy.tone
+      }, copy.figure), copy.tail) : copy.countedLine;
       return /*#__PURE__*/React.createElement(Phone.ListRow, {
         key: r.c,
         className: 'till-recon-row' + (copy.tone ? ' is-' + copy.tone : ''),
         title: copy.title,
         subtitle: copy.subtitle,
-        note: copy.note
+        note: note
       });
     })), p.closeBlocked && /*#__PURE__*/React.createElement("p", {
       className: "till-phone-note"
@@ -63658,15 +63729,24 @@ window.CDOS_PERSIST = (function () {
       className: "till-sheet-panel"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-sheet-title"
-    }, "Which till?"), (p.tills || []).map(o => /*#__PURE__*/React.createElement("button", {
+    }, "Which till?"), tillList.map((o, i) => /*#__PURE__*/React.createElement("button", {
       type: "button",
       key: o.key,
       className: "till-sheet-row",
+      "aria-current": o.on ? 'true' : undefined,
       onClick: () => {
         setSheet(false);
         p.onPickTill(o.key);
       }
-    }, /*#__PURE__*/React.createElement("span", null, spokenTill(o.name) || o.name), /*#__PURE__*/React.createElement("span", null, o.on ? 'This till' : o.occupant || o.note || ''))))), p.confirmClose && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, spokenTill(o.name, i)), o.on ? /*#__PURE__*/React.createElement("span", {
+      className: "till-sheet-check",
+      "aria-label": "Current till"
+    }, Ic ? /*#__PURE__*/React.createElement(Ic, {
+      n: "check",
+      s: 16
+    }) : null) : /*#__PURE__*/React.createElement("span", {
+      className: "till-sheet-status"
+    }, o.occupant || statusLine(o.note)))))), p.confirmClose && /*#__PURE__*/React.createElement("div", {
       className: "till-sheet",
       role: "dialog",
       "aria-label": "Close the till"

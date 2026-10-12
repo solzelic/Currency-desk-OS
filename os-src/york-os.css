@@ -3133,17 +3133,25 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-phone-meta, .till-phone-who { font-size: 12px; line-height: 16px; color: var(--gray-700, #3D3A35); margin-top: 2px; }
   .till-phone-meta { white-space: normal; overflow: visible; }
   .till-phone-who { color: var(--gray-900, #161513); }
-  .till-phone-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .till-phone-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
   .till-phone-actions button {
     min-height: 44px; width: 100%; box-sizing: border-box; border-radius: 10px;
     border: 1px solid var(--color-border, #E2DFD8); background: #fff;
     font-weight: 600; font-size: 13px; padding: 0 4px; color: var(--gray-900, #161513);
   }
   .till-phone-actions button:disabled { color: var(--gray-500, #6B6760); }
-  .till-phone-till {
-    margin: 0; min-height: 44px; min-width: 44px; border: 0; background: transparent; flex: none;
-    font-weight: 700; padding: 0 8px; color: var(--gray-900, #161513);
+  .till-phone-card .till-phone-till {
+    display: flex; align-items: flex-end; justify-content: flex-start;
+    width: 100%; box-sizing: border-box; margin: 0; min-height: 44px; padding: 8px 0 0;
+    border: 0; background: transparent; text-align: left;
+    font-size: 17px; line-height: 22px; font-weight: 600;
+    color: var(--gray-900, #161513);
   }
+  .till-phone-card .till-phone-meta {
+    font-size: 13px; line-height: 18px; margin-top: 2px;
+    color: var(--color-text-muted, #6B6760);
+  }
+  .till-phone-card .till-phone-drawer { margin-top: 8px; }
   .till-phone-sec { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--tap-min); }
   .till-phone-sec h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 650; }
   .till-phone-group {
@@ -3257,8 +3265,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
   }
-  .till-phone .till-recon-row.is-short .phone-row-note { color: var(--color-negative); }
-  .till-phone .till-recon-row.is-match .phone-row-note { color: var(--color-positive); }
+  .till-phone .till-recon-amt {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  .till-phone .till-recon-amt.is-short { color: var(--color-negative); }
+  .till-phone .till-recon-amt.is-match { color: var(--color-positive); }
   .till-phone .phone-sticky-btn {
     background: var(--brand-primary);
     color: var(--brand-on-primary, #fff);
@@ -3321,11 +3334,17 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-sheet-title { font-size: 17px; font-weight: 700; padding: 8px 0; color: var(--gray-900, #161513); }
   .till-sheet-row {
-    width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between;
+    width: 100%; min-height: 56px; display: flex; align-items: center; justify-content: space-between;
     gap: 8px; border: 0; border-top: 1px solid var(--color-border, #E2DFD8);
     background: transparent; text-align: left; font-weight: 600; font-size: 14px;
-    color: var(--gray-900, #161513);
+    color: var(--gray-900, #161513); cursor: pointer;
   }
+  .till-sheet-row > span:first-child { flex: 1 1 auto; min-width: 0; }
+  .till-sheet-status {
+    flex: none; font-weight: 400; font-size: 13px; line-height: 18px; text-align: right;
+    color: var(--color-text-muted, #6B6760);
+  }
+  .till-sheet-check { display: inline-flex; flex: none; color: var(--gray-900, #161513); }
   .till-sheet .till-save { width: 100%; margin-top: 12px; }
   /* The footer is fixed over the column, and the column runs under
      the bar. The pad is that covered band, so the last note can

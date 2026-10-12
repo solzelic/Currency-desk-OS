@@ -10,9 +10,10 @@
    Session times go through formatPhoneTime: "3:02 PM".
    A figure the ledger did not return is left out, not shown as 0.
 
-   Reconcile is a list of currencies. Hand off, Move cash, and the
-   vault are desktop panels: on a phone they say so, and they do
-   not open those panels.
+   Reconcile is a list of currencies. Move cash and the vault are
+   desktop panels: on a phone they say so, and they do not open
+   those panels. Hand off is not on this card until a phone
+   hand-off exists.
    ============================================================ */
 (function () {
   const { useState, useEffect } = React;
@@ -58,13 +59,15 @@
     return fn ? (fn(d) || '') : '';
   }
 
-  /* The ledger stores a staff id. The roster is how that id is spelled
-     for a person. No roster match keeps the id. It does not invent one. */
+  /* The book stores a staff id (a.singh). The phone card says that
+     id. A roster display name is a different spelling of the same
+     person, and this line does not substitute it. */
   function operatorOf(current, roster) {
     if (!current || !current.operator || current.operator === '—') return null;
     const id = String(current.operator).toLowerCase();
     const hit = (roster || []).find(s => String(s.staffId || '').toLowerCase() === id || String(s.name || '').toLowerCase() === id);
-    return { name: hit ? hit.name : current.operator, since: current.since || null };
+    const name = hit && hit.staffId ? hit.staffId : current.operator;
+    return { name: name, since: current.since || null };
   }
 
   function faceOf(v, ccy) {
@@ -73,13 +76,22 @@
   }
 
   /* Counted minus expected, in words. No figure until both exist. */
-  function diffWords(ccy, counted, expected) {
-    if (counted == null || expected == null) return '';
+  /* The amount is its own piece so Reconcile can weight it. A match
+     has no amount: the phrase is the figure. Over is the amount
+     plus the word, and only a short is the danger colour. */
+  function diffParts(ccy, counted, expected) {
+    if (counted == null || expected == null) return null;
     const v = Math.round((Number(counted) - Number(expected)) * 100) / 100;
-    if (Math.abs(v) < 0.005) return 'Matches the book';
+    if (Math.abs(v) < 0.005) return { tone: 'match', amount: 'Matches the book', tail: '' };
     const said = money(Math.abs(v), ccy);
-    if (!said) return '';
-    return said + (v > 0 ? ' over' : ' short');
+    if (!said) return null;
+    return { tone: v < 0 ? 'short' : 'over', amount: said, tail: v < 0 ? ' short' : ' over' };
+  }
+
+  function diffWords(ccy, counted, expected) {
+    const parts = diffParts(ccy, counted, expected);
+    if (!parts) return '';
+    return parts.tone === 'match' ? parts.amount : (parts.amount + parts.tail);
   }
 
   /* Desktop panels. The phone does not open them. */
@@ -92,26 +104,40 @@
   function reconCopy(r) {
     const expected = r.expected == null ? null : money(r.expected, r.c);
     const counted = r.counted == null ? null : money(r.counted, r.c);
-    const words = diffWords(r.c, r.counted, r.expected);
+    const parts = diffParts(r.c, r.counted, r.expected);
+    const words = parts ? (parts.tone === 'match' ? parts.amount : (parts.amount + parts.tail)) : '';
     const countedLine = counted ? ('Counted ' + counted) : 'Not counted yet';
-    const tone = words === 'Matches the book' ? 'match' : (words && words.slice(-6) === ' short' ? 'short' : '');
     return {
       title: r.c,
       subtitle: 'Expected ' + (expected || '—'),
+      countedLine: countedLine,
+      figure: parts ? parts.amount : '',
+      tail: parts ? parts.tail : '',
       note: words ? (countedLine + ' · ' + words) : countedLine,
-      tone: tone,
+      tone: parts ? parts.tone : '',
     };
   }
 
   /* The ledger id is till-01. The desk already calls that drawer Till 1.
-     A stored name wins. A raw id is spoken the same way, and is never
-     sent back as an id. */
-  function spokenTill(name) {
+     A stored display name wins ("Till 1", "Express"). A raw id such as
+     till-day is not a name: the sheet says Till N for its place in
+     the list. That label is never sent back as an id. */
+  function spokenTill(name, index) {
     const text = String(name || '').replace(/\s+—.*/, '').trim();
-    const raw = /^till-0*(\d+)$/i.exec(text);
-    if (!raw) return text;
-    const n = Number(raw[1]);
-    return Number.isFinite(n) ? ('Till ' + n) : text;
+    const numbered = /^till-0*(\d+)$/i.exec(text);
+    if (numbered) {
+      const n = Number(numbered[1]);
+      if (Number.isFinite(n)) return 'Till ' + n;
+    }
+    if (text && !/^till[-_]/i.test(text)) return text;
+    const n = index == null ? null : Number(index) + 1;
+    return n ? ('Till ' + n) : 'Till';
+  }
+
+  function statusLine(note) {
+    const text = String(note || '').trim();
+    if (!text) return '';
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
   /* A teller counting blind must not see the whole drawer valued in
@@ -172,7 +198,12 @@
     const firstCoin = denoms.findIndex(d => d.t === 'coin');
     const amount = (n, ccy) => (n == null || !ccy) ? null : money(n, ccy);
     const Phone = window.CDOS.Phone;
-    const tillLabel = spokenTill(p.tillName);
+    const Ic = window.CDOS.Ic;
+    const tillList = p.tills || [];
+    const tillIndex = tillList.findIndex(o => o.on);
+    const tillSource = p.tillName || (tillIndex >= 0 ? tillList[tillIndex].name : '');
+    const tillLabel = spokenTill(tillSource, tillIndex >= 0 ? tillIndex : null);
+    const countStale = p.error === 'Money moved since you counted. Count again.';
     /* The headline is every currency the drawer holds, valued in the
        home currency. It is not the CAD to count. A teller in a blind
        count does not see it: expected is hidden, and this total is
@@ -273,7 +304,12 @@
             </div>
           )}
 
-          {p.error ? <Phone.ErrorState message={p.error} onRetry={p.onRetry} /> : null}
+          {p.error ? (countStale ? (
+            <div className="phone-error" role="alert">
+              <p>{p.error}</p>
+              <button type="button" className="phone-text-btn" onClick={() => { setAside(null); p.onCountAgain(); }}>Count again</button>
+            </div>
+          ) : <Phone.ErrorState message={p.error} onRetry={p.onRetry} />) : null}
           {loading && wait.skel ? <Phone.LoadingState rows={3} label="Loading the till" /> : null}
 
           {!loading && !failed && (noSession || closed) && (
@@ -291,26 +327,25 @@
 
           {showWork && p.tab !== 'history' && (
             <section className="till-phone-card">
-              <div className="till-phone-top">
-                {showDrawer ? (
-                  <div className="till-phone-drawer">
-                    <div className="till-phone-k">Drawer value, all currencies in {p.homeCcy}</div>
-                    <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy)}</div>
-                  </div>
-                ) : <span className="till-phone-drawer" />}
-                {tillLabel ? <button type="button" className="till-phone-till" onClick={() => setSheet(true)}>{tillLabel}</button> : null}
-              </div>
+              {tillLabel ? <button type="button" className="till-phone-till" onClick={() => setSheet(true)}>{tillLabel}</button> : null}
               <div className="till-phone-meta">
                 <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since) : '')) : 'Nobody on this till'}</div>
                 <div>
                   {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open') : 'No open session'}
-                  {' · ' + p.countedN + ' of ' + p.reconCount + ' counted'}
+                  {', ' + p.countedN + ' of ' + p.reconCount + ' counted'}
                 </div>
               </div>
+              {showDrawer ? (
+                <div className="till-phone-drawer">
+                  <div className="till-phone-k">Drawer value, all currencies in {p.homeCcy}</div>
+                  <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy)}</div>
+                </div>
+              ) : null}
+              {/* Hand off is a desktop dialog and a dead end on a phone.
+                  Put the button back beside these two when a phone hand-off exists. */}
               <div className="till-phone-actions">
                 <button type="button" onClick={() => setAside('move')} disabled={!p.canMove}>Move cash</button>
                 <button type="button" onClick={() => setAside('vault')}>Vault</button>
-                <button type="button" onClick={() => setAside('handoff')}>Hand off</button>
               </div>
             </section>
           )}
@@ -358,7 +393,15 @@
               <Phone.ListSection title="Currencies">
                 {p.recon.map(r => {
                   const copy = reconCopy(r);
-                  return <Phone.ListRow key={r.c} className={'till-recon-row' + (copy.tone ? (' is-' + copy.tone) : '')} title={copy.title} subtitle={copy.subtitle} note={copy.note} />;
+                  const note = copy.figure ? (
+                    <>
+                      {copy.countedLine}
+                      {' · '}
+                      <span className={'till-recon-amt is-' + copy.tone}>{copy.figure}</span>
+                      {copy.tail}
+                    </>
+                  ) : copy.countedLine;
+                  return <Phone.ListRow key={r.c} className={'till-recon-row' + (copy.tone ? (' is-' + copy.tone) : '')} title={copy.title} subtitle={copy.subtitle} note={note} />;
                 })}
               </Phone.ListSection>
               {p.closeBlocked && <p className="till-phone-note">{p.closeReason}</p>}
@@ -381,10 +424,12 @@
             <button type="button" className="till-sheet-scrim" aria-label="Close till list" onClick={() => setSheet(false)} />
             <div className="till-sheet-panel">
               <div className="till-sheet-title">Which till?</div>
-              {(p.tills || []).map(o => (
-                <button type="button" key={o.key} className="till-sheet-row" onClick={() => { setSheet(false); p.onPickTill(o.key); }}>
-                  <span>{spokenTill(o.name) || o.name}</span>
-                  <span>{o.on ? 'This till' : (o.occupant || o.note || '')}</span>
+              {tillList.map((o, i) => (
+                <button type="button" key={o.key} className="till-sheet-row" aria-current={o.on ? 'true' : undefined} onClick={() => { setSheet(false); p.onPickTill(o.key); }}>
+                  <span>{spokenTill(o.name, i)}</span>
+                  {o.on
+                    ? <span className="till-sheet-check" aria-label="Current till">{Ic ? <Ic n="check" s={16} /> : null}</span>
+                    : <span className="till-sheet-status">{o.occupant || statusLine(o.note)}</span>}
                 </button>
               ))}
             </div>

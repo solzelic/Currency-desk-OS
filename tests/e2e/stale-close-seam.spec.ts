@@ -237,6 +237,9 @@ test("the stale-close refusal is readable on a phone", async ({ page }, testInfo
   await closeTheDay(page);
 
   await expect(page.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
+  const again = page.locator(".till-phone .phone-error").getByRole("button", { name: "Count again" });
+  await expect(again).toBeVisible();
+  await expect(page.locator(".till-phone .phone-error").getByRole("button", { name: "Try again" })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("stale-close-390.png") });
   fs.mkdirSync("/opt/cursor/artifacts/pr116", { recursive: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -245,6 +248,9 @@ test("the stale-close refusal is readable on a phone", async ({ page }, testInfo
   await expect(page.getByText(MESSAGE)).toBeVisible();
   await page.screenshot({ path: "/opt/cursor/artifacts/pr116/stale_360.png" });
   await phoneSweep(page, { roots: [".till-phone", ".phone-head", "#phone-dock"] });
+  await again.click();
+  await expect(page.locator(".till-phone .phone-seg-btn", { hasText: "Count" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".till-phone .phone-chip.is-on")).toContainText(/^CAD/);
 });
 
 test("a refresh in the middle of a count still closes against the mark it started on", async ({ page }) => {

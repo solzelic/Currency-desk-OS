@@ -147,9 +147,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   footer sits on the bottom bar: what was counted, the expected
   amount (hidden until Show, while a blind count is on), the
   difference in words, and one button, Save count or Close the till.
-  There is no round + on this screen. Move cash, Vault, and Hand off
-  are one row of equal buttons. Switching till opens a sheet from
-  the bottom of the screen. A slow first load shows a skeleton, then
+  There is no round + on this screen. Move cash and Vault are one
+  row of two equal buttons. Hand off is not on the phone card.
+  Switching till opens a sheet from the bottom of the screen. A
+  slow first load shows a skeleton, then
   "Waking the server" if it is still going after a few seconds. A
   till with no open session says so and offers Open the till. Wider
   than 430px, the desktop drawer is unchanged.
@@ -613,13 +614,15 @@ columns: a fixed-width label, a 44px minus, a centred numeric field
 subtotal. An empty row subtotal is `0.00 CAD`, and the footer total
 is the sum of those subtotals. Enter total instead replaces the
 rows, and the footer labels that figure as the entered total. Coins
-are further down the notes list. The till button shows the
-desk's name (`Till 1`), not the ledger id. The session line is
-who is on the drawer, then the session number and how many
-currencies are counted. Reconcile and close is a list of
-currencies — expected, counted, and the difference in words with
-the code, in the body face — and one sticky Close the till. A
-shortfall is the danger colour; a match is the success colour.
+are further down the notes list. The till card is left-aligned:
+the till name (`Till 1`) at 17px weight 600, then the staff id
+and the time (`a.singh, since 12:08 AM`), then the session and
+the count (`Session #3 open, 1 of 2 counted`) at 13px muted.
+Reconcile and close is a list of currencies — expected, counted,
+and the difference in words with the code. The short or over
+amount, and a match, are weight 600. A shortfall is the danger
+colour; a match is the success colour. An over amount stays the
+body colour.
 Close opens a sheet that states each currency's difference, then
 a second tap posts. The server does not require a manager or a
 typed reason: it requires `till:close`, a count of every
@@ -630,9 +633,15 @@ when it is shown, is labelled `Drawer value, all currencies in CAD`.
 A teller (Cashier, Trainee, Senior teller) does not see it while
 the count is blind. The desktop still shows that same figure as
 `In drawer · ledger` during a blind count, and only blurs the
-per-currency expected. The till switch is a sheet from the bottom.
-Hand off, Move cash, and Vault are desktop panels; on a phone each
-says Open this on a computer and does not open the panel. Amounts
+per-currency expected. The till switch is a sheet from the bottom. Each row is 56px and
+the whole row is the control. The row shows a display name, or
+`Till N` when the book only has a raw id such as `till-day`. The
+current till has a check. A till that is not open says `Not open`,
+muted. Move cash and Vault are desktop panels; on a phone each
+says Open this on a computer and does not open the panel. Hand off
+is not offered on the phone until a phone hand-off exists. A stale
+close says the book moved and its button is Count again, which
+opens the Count tab on the currency that moved. Amounts
 use `formatPhoneMoney` (`1,765.05 CAD`). Primary buttons use the
 Till accent (`--brand-primary` on `data-app="till"`). Selected
 chips stay gray-900. There is no round + on the till. A missing
