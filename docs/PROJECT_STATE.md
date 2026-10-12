@@ -66,7 +66,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
 | Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. A session that is already open keeps the date it stored. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt`. `branches.timezone` is NOT NULL and defaults to America/Toronto. A blank zone or a zone the server cannot read is refused as `BRANCH_TIMEZONE_UNSET` (409) |
 | Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
-| Compliance windows | FINTRAC's static 24-hour window starts at midnight in the branch zone and runs 24 consecutive hours (`staticAggregationWindow`). A rolling window is an instant and has no zone. A structuring watch and a search for today or yesterday use the branch calendar date. The EU AMLR disclaimer compares Article 90's date with that same calendar date. The browser uses the zone the till session names |
+| Compliance windows | FINTRAC's static 24-hour window starts at midnight in the branch zone and runs 24 consecutive hours (`staticAggregationWindow`). A rolling window is an instant and has no zone. A structuring watch is the last N times 24 hours, ending at the moment being measured. The screen still calls it an N-day rolling watch. A search for today or yesterday uses the branch calendar date. The EU AMLR disclaimer compares Article 90's date with that same calendar date. The browser uses the zone the till session names |
 
 ## Production/build surfaces
 
@@ -80,8 +80,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   rule starts at midnight in the branch time zone and runs 24
   consecutive hours, including on a daylight-saving night. Two
   deals at 23:50 and 00:10 local fall in different static windows
-  and in one rolling 24-hour window. The structuring watch and a
-  search for today or yesterday use the branch calendar date. The
+  and in one rolling 24-hour window. The structuring watch is N
+  times 24 hours ending at the moment being measured. One day
+  includes a deal 23 hours ago on the previous calendar date. A
+  search for today or yesterday uses the branch calendar date. The
   EU AMLR disclaimer drops on the branch's 10 July 2027, not on
   the UTC date. The browser uses the zone the till session names.
 - **The desk fits a phone.** At 430px wide and under, a window fills
@@ -582,6 +584,12 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-12**, structuring watch. The watch is N times 24 hours ending
+at the moment being measured. N of 1 includes a deal 23 hours
+earlier on the previous calendar date, and leaves out a deal on
+that date that is more than 24 hours earlier. The screen still
+says N-day rolling. Search today and yesterday stay calendar dates.
 
 **2026-10-12**, compliance windows. The FINTRAC static window, the
 structuring watch, search today and yesterday, and the EU AMLR

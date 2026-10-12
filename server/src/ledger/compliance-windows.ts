@@ -39,14 +39,15 @@ export function calendarDayWindow(isoDate: string, timeZone: string): InstantWin
   };
 }
 
-/** First calendar date of an N-day watch that ends on the branch's today.
-    `days` of 1 includes today and yesterday. The dates are compared as
-    YYYY-MM-DD. This is not a rolling instant. */
-export function structuringWatchStart(at: Date, timeZone: string, days: number): string {
-  if (!Number.isInteger(days) || days < 0) {
+/** Start of a rolling watch of `days` × 24 hours ending at `at`.
+    A deal 23 hours earlier is inside, including when that instant
+    falls on the previous calendar date. The window has no zone.
+    The screen still calls this an N-day rolling watch. */
+export function structuringWatchStart(at: Date, days: number): Date {
+  if (!Number.isInteger(days) || days <= 0) {
     throw new Error("A structuring watch needs a whole number of days.");
   }
-  return addCalendarDays(businessDate(at, timeZone), -days);
+  return rollingWindow(at, days * 24).start;
 }
 
 /** "today" or "yesterday" as the branch's calendar date. */

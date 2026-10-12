@@ -500,13 +500,15 @@
     if (!_branchTimeZone) return new Date(String(isoDate) + 'T' + (time || '00:00'));
     return zonedWallTime(isoDate, time || '00:00', _branchTimeZone);
   };
-  /* The structuring watch counts calendar dates in the branch zone.
-     The screen's "rolling" label is a separate question; this is the
-     cutoff the date comparison already used, read on the right clock. */
-  const structuringWatchStart = (days) => {
+  /* Rolling N × 24 hours ending at `at` (now, when `at` is omitted).
+     N of 1 includes a deal 23 hours ago, even on the previous
+     calendar date. The screen still says "N-day rolling". */
+  const structuringWatchStart = (days, at) => {
     const n = Number(days);
-    if (!Number.isInteger(n) || n < 0) throw new Error('The structuring watch needs a whole number of days.');
-    return addCalendarDays(branchCalendarDate(), -n);
+    if (!Number.isInteger(n) || n <= 0) throw new Error('The structuring watch needs a whole number of days.');
+    const end = at instanceof Date ? at : new Date();
+    if (Number.isNaN(end.getTime())) throw new Error('The structuring watch needs a real instant.');
+    return new Date(end.getTime() - n * 24 * 60 * 60 * 1000);
   };
   const readCalendarDate = (value) => {
     if (value instanceof Date) {

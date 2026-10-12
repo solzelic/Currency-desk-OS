@@ -7,7 +7,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff, counterCashIn, counterCashOut } = window.CDOS;
+  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, counterCashIn, counterCashOut } = window.CDOS;
 
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -69,8 +69,12 @@
         ? (n) => n > TH
         : (n) => n >= TH;
       const single = TH != null && above(cashForReport(row));
-      // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
+      /* Structuring watch: N × 24 hours ending at this deal. N of 1
+         includes a deal 23 hours earlier on the previous date. */
+      const end = dt(row);
+      const watchDays = Number(settings && settings.structuringDays);
+      const watchHours = Number.isInteger(watchDays) && watchDays > 0 ? watchDays * 24 : null;
+      const agg = watchHours == null ? 0 : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= watchHours; })())
         .reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
@@ -78,7 +82,6 @@
       // A pack whose large-cash window is 'none', a calendar-month pack
       // (India), and a banking-day pack (the Philippines) do not use this
       // clock. Do not invent 24 for those.
-      const end = dt(row);
       const hours = (monthCash || bankingDay || !aggregate) ? null : (regime.aggHours || 24);
       const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);

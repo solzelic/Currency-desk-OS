@@ -97,7 +97,8 @@ Read on 7 October 2026.
 - The annual compliance report is not prepared or filed.
 - Nothing is submitted to AUSTRAC. A filing sealed in the ledger is still
   a record, not a lodgment.
-- The structuring watch is a product watch. It is not an SMR.
+- The structuring watch is a product watch. It looks back N times
+  24 hours. It is not an SMR.
 - The browser cannot translate a foreign-to-foreign cash leg on an AUD
   desk (Act s.18). When one leg is AUD, that leg is the figure. When
   neither leg is AUD, the screen does not invent a rate.
