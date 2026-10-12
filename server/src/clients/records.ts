@@ -1062,8 +1062,9 @@ export class ClientRecordService {
        expiry is "expired" — the two states the posting gate actually
        acts on, computed from the documents rather than from a field
        somebody forgot to update. */
+    const today = civilToday();
     const expiry = civilDate(row.primary_expiry);
-    const expired = expiry != null && expiry < civilToday();
+    const expired = expiry != null && expiry < today;
     const status: VerificationStatus =
       row.numbered === 0
         ? "unverified"
@@ -1157,6 +1158,10 @@ export class ClientRecordService {
    * follow mechanically from what the desk is holding.
    */
   private async refreshVerification(client: pg.PoolClient, clientId: string) {
+    /* The counter record compares the same primary expiry with civilToday().
+       current_date follows the database TimeZone, so the two checks can
+       disagree when that zone is not the process zone. Both use this day. */
+    const today = civilToday();
     await client.query(
       `UPDATE desk_clients c
           SET verification_status = CASE
@@ -1167,12 +1172,12 @@ export class ClientRecordService {
             WHEN EXISTS (
               SELECT 1 FROM desk_client_identity_documents d
                WHERE d.client_id=c.client_id AND d.is_primary
-                 AND d.expires_on IS NOT NULL AND d.expires_on < current_date
+                 AND d.expires_on IS NOT NULL AND d.expires_on < $2::date
             ) THEN 'expired'
             ELSE 'identified'
           END
         WHERE c.client_id=$1 AND c.verification_status <> 'verified'`,
-      [clientId],
+      [clientId, today],
     );
   }
 
