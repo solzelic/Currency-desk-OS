@@ -591,9 +591,13 @@ desktop form is not opened. My details saves one of contact email
 or mobile per request. “Saved” waits for that response. The
 sign-in code row is drawn only when this person is emailed a code.
 Localization, Billing and plan, and Role presets are omitted from
-a teller’s list and from their search. A PIN lock is a `.pin-lock`
-above the question. The sentence names the till PIN. A wait of an
-hour or more is `h:mm:ss` (`24:00:00` for a day). The keypad’s
+a teller’s list and from their search. A PIN lock with a clock is
+a `.pin-lock` above the question. The sentence names the till PIN.
+A lock with no clock is the sheet titled “PIN locked”. Its body is
+“Too many wrong tries. Try again in a few minutes. You can’t switch
+staff on the till until then.” The dots and the keypad are hidden,
+and Close stays. A wait of an hour or more is `h:mm:ss`
+(`24:00:00` for a day). The keypad’s
 return is a 12-hour time. PIN before a void is a sentence, not a
 switch. The void gate reads `settings.pinOnVoid` and
 `employee.requirePin`, and this screen does not write either.

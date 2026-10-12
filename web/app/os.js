@@ -4950,6 +4950,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     busy,
     busyLabel,
     locked,
+    plainLock,
     passwordMode,
     password,
     onPassword,
@@ -5014,6 +5015,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         document.removeEventListener("paste", onPaste);
       };
     }, [closed, digits]);
+
+    /* A lock with no clock is a heading, a sentence, and Close.
+       The dots and the keypad stay off the screen. */
+    if (plainLock) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "pinpad",
+        "data-pin-lock": "plain",
+        ref: root
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "pin-lock-body",
+        role: "alert"
+      }, error), onClose ? /*#__PURE__*/React.createElement("div", {
+        className: "pin-close"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-btn secondary",
+        onClick: onClose
+      }, "Close")) : null);
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "pinpad",
       "data-pin-step": step,
@@ -5416,8 +5436,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     /* A lockout counts down only from a time the server sent.
        `retryAfter` is seconds left. `lockedUntil` is the end the
        staff PIN routes already know. 0, a negative, or a past end
-       means the keypad is back. No clock at all keeps the keys shut
-       and offers Close. */
+       means the keypad is back. No clock at all is the PIN locked
+       screen: the heading, one sentence, and Close. The dots and
+       the keypad are not on that screen. */
     useEffect(() => {
       if (!lockUntil) return undefined;
       const paint = () => {
@@ -5535,7 +5556,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (until == null) {
         setLockUntil(0);
         setLockPlain(true);
-        setErr('Try again in a few minutes. The till PIN is locked too.');
+        setErr('Too many wrong tries. Try again in a few minutes. You can\u2019t switch staff on the till until then.');
         return;
       }
       setLockPlain(false);
@@ -5638,11 +5659,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       save(next, proof());
     };
     return /*#__PURE__*/React.createElement(FullScreenSheet, {
-      title: hasPin ? 'Change your PIN' : 'Set your PIN',
+      title: lockPlain ? 'PIN locked' : hasPin ? 'Change your PIN' : 'Set your PIN',
       onClose: onClose
     }, /*#__PURE__*/React.createElement(PinPad, {
       step: stepNo,
       steps: steps,
+      plainLock: lockPlain,
       question: step === 'current' ? 'Enter your current PIN' : step === 'password' ? 'Enter your sign-in password' : step === 'new' ? 'Enter a new PIN' : 'Enter it again',
       hint: step === 'password' ? 'Your sign-in password proves it’s you. The new PIN is yours alone.' : step === 'current' ? '4 digits.' : '4 digits. Do not share it.',
       digits: digits,

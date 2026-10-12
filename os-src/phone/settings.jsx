@@ -101,8 +101,9 @@
     /* A lockout counts down only from a time the server sent.
        `retryAfter` is seconds left. `lockedUntil` is the end the
        staff PIN routes already know. 0, a negative, or a past end
-       means the keypad is back. No clock at all keeps the keys shut
-       and offers Close. */
+       means the keypad is back. No clock at all is the PIN locked
+       screen: the heading, one sentence, and Close. The dots and
+       the keypad are not on that screen. */
     useEffect(() => {
       if (!lockUntil) return undefined;
       const paint = () => {
@@ -191,7 +192,7 @@
       if (until == null) {
         setLockUntil(0);
         setLockPlain(true);
-        setErr('Try again in a few minutes. The till PIN is locked too.');
+        setErr('Too many wrong tries. Try again in a few minutes. You can\u2019t switch staff on the till until then.');
         return;
       }
       setLockPlain(false);
@@ -267,10 +268,11 @@
     };
 
     return (
-      <FullScreenSheet title={hasPin ? 'Change your PIN' : 'Set your PIN'} onClose={onClose}>
+      <FullScreenSheet title={lockPlain ? 'PIN locked' : (hasPin ? 'Change your PIN' : 'Set your PIN')} onClose={onClose}>
         <PinPad
           step={stepNo}
           steps={steps}
+          plainLock={lockPlain}
           question={step === 'current' ? 'Enter your current PIN' : step === 'password' ? 'Enter your sign-in password' : step === 'new' ? 'Enter a new PIN' : 'Enter it again'}
           hint={step === 'password' ? 'Your sign-in password proves it’s you. The new PIN is yours alone.' : (step === 'current' ? '4 digits.' : '4 digits. Do not share it.')}
           digits={digits}

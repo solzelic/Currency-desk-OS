@@ -8,7 +8,7 @@
   const { Ic } = window.CDOS;
   const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
 
-  function PinPad({ step, steps, question, hint, digits, error, shake, busy, busyLabel, locked, passwordMode, password, onPassword, onPasswordNext, onDigit, onDelete, forgotLabel, onForgot, retryLabel, onRetry, onClose }) {
+  function PinPad({ step, steps, question, hint, digits, error, shake, busy, busyLabel, locked, plainLock, passwordMode, password, onPassword, onPasswordNext, onDigit, onDelete, forgotLabel, onForgot, retryLabel, onRetry, onClose }) {
     const root = React.useRef(null);
     const digitRef = React.useRef(onDigit);
     const deleteRef = React.useRef(onDelete);
@@ -60,6 +60,17 @@
         document.removeEventListener("paste", onPaste);
       };
     }, [closed, digits]);
+
+    /* A lock with no clock is a heading, a sentence, and Close.
+       The dots and the keypad stay off the screen. */
+    if (plainLock) {
+      return (
+        <div className="pinpad" data-pin-lock="plain" ref={root}>
+          <p className="pin-lock-body" role="alert">{error}</p>
+          {onClose ? <div className="pin-close"><button type="button" className="phone-btn secondary" onClick={onClose}>Close</button></div> : null}
+        </div>
+      );
+    }
 
     return (
       <div className="pinpad" data-pin-step={step} ref={root}>

@@ -2,7 +2,7 @@
    rail, and the phone list must not paint there. */
 import type { Locator, Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
-import { mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync } from "node:fs";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const SHOTS = "/opt/cursor/artifacts/screenshots";
@@ -251,22 +251,22 @@ test("a dead session and a PIN lockout are named on the keypad", async ({ page }
     await press(page, "9753");
     await routePinSave(page, 429, { error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
     await press(page, "9753");
-    const lock = page.locator(".pin-lock");
-    await expect(lock).toHaveText("Try again in a few minutes. The till PIN is locked too.");
-    await expect(page.getByText("Enter it again")).toBeVisible();
-    const lockAboveQuestion = await page.locator(".pinpad").evaluate((el) => {
-      const banner = el.querySelector(".pin-lock");
-      const question = el.querySelector(".pin-q");
-      if (!banner || !question) return false;
-      return (banner.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-    });
-    expect(lockAboveQuestion).toBe(true);
-    await expect(page.locator(".pin-err")).toHaveCount(0);
+    const sheet = page.locator(".sheet");
+    await expect(sheet.getByRole("heading", { name: "PIN locked" })).toBeVisible();
+    await expect(sheet.getByRole("alert")).toHaveText("Too many wrong tries. Try again in a few minutes. You can\u2019t switch staff on the till until then.");
+    await expect(page.getByText("Enter it again")).toHaveCount(0);
+    await expect(page.getByText("The till PIN is locked too.")).toHaveCount(0);
+    await expect(sheet.locator(".pin-dots")).toHaveCount(0);
+    await expect(sheet.locator(".keypad")).toHaveCount(0);
     await expect(page.getByText(/Try again in \d+:\d{2}/)).toHaveCount(0);
-    await expect(page.locator(".keypad button", { hasText: /^1$/ })).toBeDisabled();
     const close = page.getByRole("button", { name: "Close", exact: true });
     await expect(close).toBeVisible();
-    await page.screenshot({ path: shot(`settings_pin-lockout_${width}.png`) });
+    const lockDir = "/cursor/stores/self/pr110";
+    mkdirSync(lockDir, { recursive: true });
+    const lockName = `settings_pin-lockout_${width}.png`;
+    await page.screenshot({ path: `${lockDir}/${lockName}` });
+    mkdirSync("/opt/cursor/artifacts/pr110", { recursive: true });
+    copyFileSync(`${lockDir}/${lockName}`, `/opt/cursor/artifacts/pr110/${lockName}`);
     await page.unroute("**/api/staff/pin");
     await close.click();
     await expect(page.locator(".sheet")).toHaveCount(0);
