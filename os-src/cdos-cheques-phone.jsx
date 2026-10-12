@@ -118,6 +118,15 @@
     return '';
   }
 
+  /* The number printed on the cheque. The book reference (CHQ-…) is
+     not that number. A row with no number falls back to the reference
+     so the line is never blank. */
+  function chequeNo(cheque) {
+    const number = cheque && String(cheque.chequeNumber || '').trim();
+    if (number) return number;
+    return (cheque && cheque.ref) || '';
+  }
+
   /* The calendar day in the string. A local midnight run through
      toISOString moves the hold back one day east of UTC. */
   function shortDay(iso) {
@@ -435,7 +444,7 @@
                         className="phq-row"
                         title={shownName(c)}
                         subtitle={metaLine(c)}
-                        note={c.ref || ''}
+                        note={chequeNo(c)}
                         amount={face(c) ? ('Cheque ' + face(c)) : ''}
                         meta={paidLine(c)}
                         badge={{ label: badge[1], tone: badge[0] }}
@@ -450,10 +459,10 @@
         </P.Screen>
         <Toast text={toast} onDone={function () { setToast(''); }} />
         {detail && ReactDOM.createPortal(
-          <div className="phq-sheet" role="dialog" aria-label={detail.ref} data-app="cheques">
+          <div className="phq-sheet" role="dialog" aria-label={chequeNo(detail)} data-app="cheques">
             <div className="phq-sheet-h">
               <button type="button" onClick={function () { setDetailId(null); setAsk(''); setErr(''); }}>Close</button>
-              <h2>{detail.ref}</h2>
+              <h2>{chequeNo(detail)}</h2>
               <span />
             </div>
             <div className="phq-sheet-b">

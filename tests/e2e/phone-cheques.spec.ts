@@ -6,7 +6,7 @@
    mode, because the sheet sits outside the phone shell. */
 import { existsSync, mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { test, expect } from "./fixtures";
+import { test, expect, signInAtDesk } from "./fixtures";
 
 const STORE = "/cursor/stores/self/pr118";
 
@@ -93,7 +93,10 @@ async function mountList(page: Page, role: string): Promise<void> {
     document.documentElement.setAttribute("data-cdtheme", "dark");
     const host = document.createElement("div");
     host.id = "cheque-host";
-    host.style.cssText = "position:fixed;inset:0;z-index:100000;background:#F7F6F3;overflow:auto;";
+    /* Leave the bottom bar visible. A cream host here is the gap
+       under a short dark panel. */
+    host.style.cssText =
+      "position:fixed;left:0;right:0;top:0;bottom:var(--phone-bar-h,64px);z-index:600;overflow:hidden;background:transparent;padding:0;";
     document.body.appendChild(host);
     window.ReactDOM.createRoot(host).render(React.createElement(Harness));
   }, role);
@@ -111,7 +114,9 @@ test("a held row shows the hold date, and a real desk drops the sample", async (
   await expect(page.getByText("Jakob Miller")).toHaveCount(0);
   await expect(page.locator("[data-phone-cheque='sample']")).toHaveCount(0);
   await row.click();
-  await expect(page.locator(".phq-sheet h2")).toHaveText("CHQ-REAL");
+  await expect(row).toContainText("104829");
+  await expect(row).not.toContainText("CHQ-REAL");
+  await expect(page.locator(".phq-sheet h2")).toHaveText("104829");
   await expect(page.getByRole("button", { name: "Reverse" })).toHaveCount(0);
   const ink = await page.locator(".phq-sheet h2").evaluate((node) => getComputedStyle(node).color);
   const value = await page.locator(".phq-sheet .phone-summary dd").first().evaluate((node) => getComputedStyle(node).color);
@@ -156,21 +161,41 @@ test("sample cheques are labelled when the desk has no book", async ({ page }) =
   await expect(page.locator(".phq-row", { hasText: "Jakob Miller" }).first()).toBeVisible();
 });
 
+async function fillsToBar(page: Page, selector: string): Promise<void> {
+  await expect(page.locator("#phone-dock")).toBeVisible();
+  const shellBottom = await page.locator(selector).evaluate((node) => node.getBoundingClientRect().bottom);
+  const barTop = await page.locator("#phone-dock").evaluate((node) => node.getBoundingClientRect().top);
+  expect(shellBottom).toBeGreaterThanOrEqual(barTop - 1);
+}
+
 test("a senior teller can reverse, and the list is shot at 360 and 390", async ({ page }) => {
+  const keep = existsSync("/cursor/stores");
+  if (keep) mkdirSync(STORE, { recursive: true });
+  await page.context().clearCookies();
   await page.setViewportSize({ width: 360, height: 800 });
-  await mountList(page, "Senior teller");
-  if (existsSync("/cursor/stores")) {
-    mkdirSync(STORE, { recursive: true });
-    await page.screenshot({ path: `${STORE}/list_360.png` });
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.screenshot({ path: `${STORE}/list_390.png` });
+  await signInAtDesk(page);
+  const skip = page.locator(".cdos-tour-skip");
+  for (let i = 0; i < 15; i++) {
+    if (await skip.isVisible()) {
+      await skip.click();
+      break;
+    }
+    await page.waitForTimeout(200);
   }
+  await mountList(page, "Senior teller");
+  await fillsToBar(page, "#cheque-host .phone-shell");
+  await expect(page.locator(".phq-row")).toContainText("104829");
+  if (keep) await page.screenshot({ path: `${STORE}/list_360.png` });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fillsToBar(page, "#cheque-host .phone-shell");
+  if (keep) await page.screenshot({ path: `${STORE}/list_390.png` });
   await page.locator(".phq-row").click();
   await expect(page.getByRole("button", { name: "Reverse" })).toBeVisible();
-  if (existsSync("/cursor/stores")) {
-    await page.setViewportSize({ width: 360, height: 800 });
-    await page.screenshot({ path: `${STORE}/detail_360.png` });
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.screenshot({ path: `${STORE}/detail_390.png` });
-  }
+  await expect(page.locator(".phq-sheet h2")).toHaveText("104829");
+  await page.setViewportSize({ width: 360, height: 800 });
+  await fillsToBar(page, ".phq-sheet");
+  if (keep) await page.screenshot({ path: `${STORE}/detail_360.png` });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fillsToBar(page, ".phq-sheet");
+  if (keep) await page.screenshot({ path: `${STORE}/detail_390.png` });
 });

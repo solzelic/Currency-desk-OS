@@ -3104,7 +3104,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .phone-shell[data-app="cheques"] {
     flex: 1 1 auto;
-    min-height: 0;
+    /* The shared shell fills to the bar. This rule is more specific,
+       and min-height 0 let the page show under a short list. */
+    min-height: calc(100dvh - var(--phone-bar-h, 64px));
     background: var(--color-bg, #F7F6F3);
   }
   .phone-shell[data-app="cheques"] > .phone-title { padding: 8px 16px 0; }
@@ -3146,7 +3148,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      #161513 on #14130F and fails 4.5:1. */
   .phq-sheet {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* Stop at the bar. inset 0 covered it, and a short shell left
+       the page cream in the gap. */
+    bottom: var(--phone-bar-h, 64px);
     z-index: 8000;
     display: flex;
     flex-direction: column;

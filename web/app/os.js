@@ -64079,6 +64079,15 @@ window.CDOS_PERSIST = (function () {
     return '';
   }
 
+  /* The number printed on the cheque. The book reference (CHQ-…) is
+     not that number. A row with no number falls back to the reference
+     so the line is never blank. */
+  function chequeNo(cheque) {
+    const number = cheque && String(cheque.chequeNumber || '').trim();
+    if (number) return number;
+    return cheque && cheque.ref || '';
+  }
+
   /* The calendar day in the string. A local midnight run through
      toISOString moves the hold back one day east of UTC. */
   function shortDay(iso) {
@@ -64483,7 +64492,7 @@ window.CDOS_PERSIST = (function () {
         className: "phq-row",
         title: shownName(c),
         subtitle: metaLine(c),
-        note: c.ref || '',
+        note: chequeNo(c),
         amount: face(c) ? 'Cheque ' + face(c) : '',
         meta: paidLine(c),
         badge: {
@@ -64506,7 +64515,7 @@ window.CDOS_PERSIST = (function () {
     }), detail && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "phq-sheet",
       role: "dialog",
-      "aria-label": detail.ref,
+      "aria-label": chequeNo(detail),
       "data-app": "cheques"
     }, /*#__PURE__*/React.createElement("div", {
       className: "phq-sheet-h"
@@ -64517,7 +64526,7 @@ window.CDOS_PERSIST = (function () {
         setAsk('');
         setErr('');
       }
-    }, "Close"), /*#__PURE__*/React.createElement("h2", null, detail.ref), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
+    }, "Close"), /*#__PURE__*/React.createElement("h2", null, chequeNo(detail)), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
       className: "phq-sheet-b"
     }, /*#__PURE__*/React.createElement(SummaryList, {
       rows: [{

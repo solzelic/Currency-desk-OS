@@ -604,9 +604,10 @@ pixels. The sign-in shot still turns the card blur off, because two
 renders of main with the blur on did not match.
 
 **2026-10-12**, phone cheque list. The phone register shows the hold
-date on a held row. Sample cheques are labelled and only appear when
+date on a held row, and the row and the detail title show the cheque
+number (104829), not the book reference. Sample cheques are labelled and only appear when
 the desk has no ledger. A cashier is not offered Reverse. The detail
-sheet is portaled onto the body. In dark mode its title and
+sheet is portaled onto the body and stops at the bottom bar. In dark mode its title and
 values use the phone ink `#F6F3EC` on `#14130F`, above 4.5:1. In the
 light theme those figures are `--gray-900` on the light surface. The
 bottom bar stays white, and the till line uses the muted token, so
