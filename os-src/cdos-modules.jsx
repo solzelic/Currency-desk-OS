@@ -424,10 +424,51 @@
     </div>);
   }
 
+  /* The receipt speaks the teller's name and a calendar date. The
+     quote and receipt identifiers stay one tap down, under Details. */
+  const RECEIPT_THANKS = 'Thank you. Keep for your records.';
+  const RECEIPT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function receiptDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || '').trim());
+    if (!match) return value || '—';
+    const month = RECEIPT_MONTHS[Number(match[2]) - 1];
+    if (!month) return value;
+    return month + ' ' + Number(match[3]) + ', ' + match[1];
+  }
+  function receiptTeller(actor, settings) {
+    const raw = String(actor || '').trim();
+    if (!raw) return '—';
+    const id = raw.includes(':') ? raw.slice(raw.lastIndexOf(':') + 1) : raw;
+    const people = ((settings && settings.employees) || []).concat((window.CDOS && window.CDOS.STAFF) || []);
+    for (let i = 0; i < people.length; i++) {
+      const person = people[i];
+      if (!person) continue;
+      if (person.staffId === id || person.code === id) return person.name;
+    }
+    return id.split('.').filter(Boolean).map(part => {
+      const word = String(part).trim();
+      return word ? word.charAt(0).toUpperCase() + word.slice(1) : '';
+    }).filter(Boolean).join('. ');
+  }
+  function receiptThanks(value) {
+    const text = String(value || '').trim();
+    if (!text || text === 'Thank you — keep for your records') return RECEIPT_THANKS;
+    return text;
+  }
+  /* The quote id is printed again under Details. The cash lines stay. */
+  function shownReceiptLine(line) {
+    const text = String(line || '');
+    if (/^Quote:\s+/.test(text)) return false;
+    if (/\bqt_/.test(text) || /\brcpt_/.test(text)) return false;
+    return true;
+  }
+
   /* ---- RECEIPT ---- */
   function ReceiptModal({ row, onClose, settings }) {
     const s = settings || {};
     const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
+    const quoteId = row.quoteRef ? `${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}` : '';
+    const receiptId = row.serverReceipt && row.serverReceipt.receiptId;
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="overflow-hidden cd-paper-island" style={{ width: 340, background: CD.panel, border: `1px solid ${CD.ink}` }}>
         <div id="rcpt" className="p-5" style={{ fontFamily: 'Space Mono, ui-monospace, monospace' }}>
@@ -438,16 +479,15 @@
             {(s.bizPhone || s.bizCity) && <div className="text-[10px] mt-0.5" style={{ color: CD.faint }}>{[s.bizCity, s.bizPhone].filter(Boolean).join(' · ')}</div>}
           </div>
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
-          <Line k="Reference" v={row.ref || '—'} /><Line k="Date" v={row.date} /><Line k="Customer" v={row.customer || '—'} /><Line k="Type" v={row.type} /><Line k="Teller" v={row.teller} />
+          <Line k="Reference" v={row.ref || '—'} /><Line k="Date" v={receiptDate(row.date)} /><Line k="Customer" v={row.customer || '—'} /><Line k="Type" v={row.type} /><Line k="Teller" v={receiptTeller(row.teller, s)} />
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
           {row.serverReceipt && row.serverReceipt.lines
-            ? row.serverReceipt.lines.map((line, i) => <div key={i} className="text-[11px] leading-snug" style={{ color: CD.ink }}>{line}</div>)
+            ? row.serverReceipt.lines.filter(shownReceiptLine).map((line, i) => <div key={i} className="text-[11px] leading-snug" style={{ color: CD.ink }}>{line}</div>)
             : <><Line k="Pay-in" v={`${num(row.inAmt)} ${row.inCcy}`} /><Line k="Rate" v={row.rate} /><Line k="Pay-out" v={`${num(row.outAmt)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} /></>}
           {row.type !== 'Cheque Cashing' && row.side && <Line k="Pricing" v={row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross'} />}
-          {row.quoteRef && <Line k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} />}
-          {row.serverReceipt && <><div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} /><Line k="Server receipt" v={row.serverReceipt.receiptId} /><div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div></>}
+          {(quoteId || receiptId) && <details className="mt-3"><summary className="text-[11px]" style={{ color: CD.mute, cursor: 'pointer' }}>Details</summary>{quoteId ? <Line k="Quote" v={quoteId} /> : null}{receiptId ? <Line k="Server receipt" v={receiptId} /> : null}{row.serverReceipt ? <div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div> : null}</details>}
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
-          <div className="text-center text-[11px]" style={{ color: CD.mute }}>{s.receiptFooter || 'Thank you — keep for your records'}</div>
+          <div className="text-center text-[11px]" style={{ color: CD.mute }}>{receiptThanks(s.receiptFooter)}</div>
           {s.receiptDisclaimer && <div className="text-center text-[9px] mt-2" style={{ color: CD.faint }}>{s.receiptDisclaimer}</div>}
         </div>
         <div className="flex gap-2 p-3" style={{ borderTop: `1px solid ${CD.line}` }}>

@@ -4574,6 +4574,45 @@
     }, "Apply"))));
   }
 
+  /* The receipt speaks the teller's name and a calendar date. The
+     quote and receipt identifiers stay one tap down, under Details. */
+  const RECEIPT_THANKS = 'Thank you. Keep for your records.';
+  const RECEIPT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function receiptDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || '').trim());
+    if (!match) return value || '—';
+    const month = RECEIPT_MONTHS[Number(match[2]) - 1];
+    if (!month) return value;
+    return month + ' ' + Number(match[3]) + ', ' + match[1];
+  }
+  function receiptTeller(actor, settings) {
+    const raw = String(actor || '').trim();
+    if (!raw) return '—';
+    const id = raw.includes(':') ? raw.slice(raw.lastIndexOf(':') + 1) : raw;
+    const people = (settings && settings.employees || []).concat(window.CDOS && window.CDOS.STAFF || []);
+    for (let i = 0; i < people.length; i++) {
+      const person = people[i];
+      if (!person) continue;
+      if (person.staffId === id || person.code === id) return person.name;
+    }
+    return id.split('.').filter(Boolean).map(part => {
+      const word = String(part).trim();
+      return word ? word.charAt(0).toUpperCase() + word.slice(1) : '';
+    }).filter(Boolean).join('. ');
+  }
+  function receiptThanks(value) {
+    const text = String(value || '').trim();
+    if (!text || text === 'Thank you — keep for your records') return RECEIPT_THANKS;
+    return text;
+  }
+  /* The quote id is printed again under Details. The cash lines stay. */
+  function shownReceiptLine(line) {
+    const text = String(line || '');
+    if (/^Quote:\s+/.test(text)) return false;
+    if (/\bqt_/.test(text) || /\brcpt_/.test(text)) return false;
+    return true;
+  }
+
   /* ---- RECEIPT ---- */
   function ReceiptModal({
     row,
@@ -4582,6 +4621,8 @@
   }) {
     const s = settings || {};
     const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
+    const quoteId = row.quoteRef ? `${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}` : '';
+    const receiptId = row.serverReceipt && row.serverReceipt.receiptId;
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -4638,7 +4679,7 @@
       v: row.ref || '—'
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Date",
-      v: row.date
+      v: receiptDate(row.date)
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Customer",
       v: row.customer || '—'
@@ -4647,13 +4688,13 @@
       v: row.type
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Teller",
-      v: row.teller
+      v: receiptTeller(row.teller, s)
     }), /*#__PURE__*/React.createElement("div", {
       className: "my-3",
       style: {
         borderTop: `1px dashed ${CD.line}`
       }
-    }), row.serverReceipt && row.serverReceipt.lines ? row.serverReceipt.lines.map((line, i) => /*#__PURE__*/React.createElement("div", {
+    }), row.serverReceipt && row.serverReceipt.lines ? row.serverReceipt.lines.filter(shownReceiptLine).map((line, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       className: "text-[11px] leading-snug",
       style: {
@@ -4674,23 +4715,26 @@
     })), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
       k: "Pricing",
       v: row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross'
-    }), row.quoteRef && /*#__PURE__*/React.createElement(Line, {
-      k: "Quote",
-      v: `${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`
-    }), row.serverReceipt && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      className: "my-3",
+    }), (quoteId || receiptId) && /*#__PURE__*/React.createElement("details", {
+      className: "mt-3"
+    }, /*#__PURE__*/React.createElement("summary", {
+      className: "text-[11px]",
       style: {
-        borderTop: `1px dashed ${CD.line}`
+        color: CD.mute,
+        cursor: 'pointer'
       }
-    }), /*#__PURE__*/React.createElement(Line, {
+    }, "Details"), quoteId ? /*#__PURE__*/React.createElement(Line, {
+      k: "Quote",
+      v: quoteId
+    }) : null, receiptId ? /*#__PURE__*/React.createElement(Line, {
       k: "Server receipt",
-      v: row.serverReceipt.receiptId
-    }), /*#__PURE__*/React.createElement("div", {
+      v: receiptId
+    }) : null, row.serverReceipt ? /*#__PURE__*/React.createElement("div", {
       className: "text-[9px] mt-1",
       style: {
         color: CD.faint
       }
-    }, "Verified against the authoritative ledger before display.")), /*#__PURE__*/React.createElement("div", {
+    }, "Verified against the authoritative ledger before display.") : null), /*#__PURE__*/React.createElement("div", {
       className: "my-3",
       style: {
         borderTop: `1px dashed ${CD.line}`
@@ -4700,7 +4744,7 @@
       style: {
         color: CD.mute
       }
-    }, s.receiptFooter || 'Thank you — keep for your records'), s.receiptDisclaimer && /*#__PURE__*/React.createElement("div", {
+    }, receiptThanks(s.receiptFooter)), s.receiptDisclaimer && /*#__PURE__*/React.createElement("div", {
       className: "text-center text-[9px] mt-2",
       style: {
         color: CD.faint
@@ -10912,7 +10956,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       label: "Footer line"
     }, /*#__PURE__*/React.createElement(Inp, {
       k: "receiptFooter",
-      placeholder: "Thank you \u2014 keep for your records"
+      placeholder: "Thank you. Keep for your records."
     })), /*#__PURE__*/React.createElement(Field, {
       label: "Disclaimer",
       desc: "Small print at the bottom of every receipt."
@@ -64373,7 +64417,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         rateRounding: '4dp',
         // receipts
         receiptHeader: 'York Currency Exchange',
-        receiptFooter: 'Thank you — keep for your records',
+        receiptFooter: 'Thank you. Keep for your records.',
         receiptDisclaimer: 'All sales final. Rates as quoted at time of transaction.',
         showLogoOnReceipt: true,
         showMsbOnReceipt: true

@@ -90,6 +90,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   exchange and the fee, and adds the cash the teller hands over:
   `You receive 134.36 CAD`, `134.36 CAD less 5.00 CAD service fee`, and
   `Cash to customer 129.36 CAD`. A sell adds `Cash from customer 105.00 CAD`.
+  The receipt names the teller as `M. Costa`, the date as `Oct 12, 2026`,
+  and keeps the quote and receipt identifiers behind Details. It closes
+  with `Thank you. Keep for your records.`
   The frozen quote line carries the same fee and cash lines. A till that
   cannot pay the currency says `The till doesn't have enough USD. Ask a
   manager to move cash in.` On the customer screen the big number is

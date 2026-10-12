@@ -638,10 +638,26 @@ test("the big buy number is the cash handed to the customer", async ({ page, req
     await expect(receipt).toContainText("You receive 134.36 CAD");
     await expect(receipt).toContainText("134.36 CAD less 5.00 CAD service fee");
     await expect(receipt).toContainText("Cash to customer 129.36 CAD");
+    const printed = (await receipt.innerText()).replace(/\s+/g, " ");
+    expect(printed).toContain("M. Costa");
+    expect(printed).not.toContain("tnt-yorkfx:m.costa");
+    const postedDay = new Date(posted.postedAt);
+    const spokenDay = `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][postedDay.getUTCMonth()]} ${postedDay.getUTCDate()}, ${postedDay.getUTCFullYear()}`;
+    expect(printed).toContain(spokenDay);
+    expect(printed).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(printed).toContain("Thank you. Keep for your records.");
+    expect(printed).not.toContain("Thank you —");
+    expect(printed).toContain("Details");
+    expect(printed).not.toMatch(/qt_|rcpt_/);
     for (const size of BUY_CASH_VIEWPORTS) {
       await page.setViewportSize(size);
       await page.screenshot({ path: testInfo.outputPath(`buy_receipt_${size.width}.png`) });
     }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await receipt.locator("summary").click();
+    const opened = (await receipt.innerText()).replace(/\s+/g, " ");
+    expect(opened).toContain(String(posted.quoteId));
+    expect(opened).toContain(String(posted.receipt.receiptId));
   } finally {
     await restoreBoard(request);
   }
