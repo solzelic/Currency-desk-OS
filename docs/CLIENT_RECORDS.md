@@ -188,18 +188,114 @@ different days. The old shape had a "primary" ID as loose fields
 the first document was structurally different from every other one and
 every screen had to special-case it. Now exactly one row per client
 carries `is_primary`, enforced by a partial unique index, and it is the
-one that drives the desk's KYC standing.
+document the file shows. The desk's label looks at every document.
 
-`verification_status` is derived from the documents, not typed:
+A new identity document is refused unless staff typed the type and the
+number and the request says `source: "staff"`. The sentence is a 422:
+"Type the ID type and number yourself. ID scanning is not connected,
+so a record with no staff entry is refused." A photo does not stand in
+for the number. "Not stated" is refused. Changing the type or the
+number on a document that already exists is the same rule; changing
+only the expiry, the issue date, or attaching a photo to a number
+already on file is not. Existing rows are not rewritten, and there is
+no new column: `source` is checked at the door and not stored.
+
+`verification_status` is derived from the documents, not taken from
+the request. `POST /api/clients` and `PATCH /api/clients/:id` may
+echo the standing the server would have derived. A different value
+is a 422, `STATUS_NOT_CLIENT_SET`:
 
 - no document with a number → `unverified`
 - the primary document is past its expiry → `expired`
 - otherwise → `identified`
 
-`verified` is never set or cleared by that derivation. It means a
-provider authenticated the document and was paid to do it. No amount of
-adding or removing rows in this table can grant that, and nothing here
-may quietly take it away.
+`verified` is not one of those. It would mean a provider authenticated
+the document, and no provider is connected, so a request cannot set
+it. Screening outcome and what it matched are the same: a request
+cannot set `clear`, `hit`, or `pending`. The demo seed does not pass
+them on create; the passport it files is what makes that file
+`identified`. A row that already says `verified` is left as it is.
+While no provider is connected, the desk does not read that word.
+Verified on the screen is only a Persona inquiry the server
+reported, and that integration does not send one.
+`displayIdStanding` is Identified for one current
+government-issued photo ID, and that paper is the primary.
+Current means the expiry is on or after the desk's business
+date, or that type's own no-expiry flag is set and the expiry
+is blank. The flag lives on each row of
+`server/src/ledger/id-document-types.mjs` (the desk helper
+keeps the same rows). Only "Canadian citizenship card
+(pre-2012)" has it. The person pickers name the 2012 paper
+"Citizenship certificate (2012 or later, no photo)". A stored
+"Citizenship Card" is shown as that name. A stored
+"Driver licence" is shown as "Driver's Licence", and a
+stored "PR Card" as "Permanent Resident Card". Standing
+and the edit screen use that one lookup. "Secure
+Certificate of Indian Status" is a photo ID and still needs
+an expiry. The laminated Certificate of Indian Status is not
+listed. Both "Driver's Licence" and "Driver's License" are
+photo IDs. A birth certificate is not a photo ID. Health
+Card is not on the pickers. A health card already stored is
+a read-only row in the client file, with no edit and no
+make primary, and it reads "Health cards can't be used as
+ID". In edit mode that row is under "Not accepted as ID",
+below the picker, and Primary ID reads "No current photo
+ID" when the file has no current accepted photo ID.
+The same heading holds a health-card alias and any type
+the catalogue does not list. The names live in one list,
+`os-src/health-card-aliases.js`: OHIP, RAMQ, MSP, Medicare,
+Alberta Health, a care card, "health card", "Carte
+d'assurance maladie", "BC Services Card", and "Ontario
+Health Insurance Plan". They are health cards: masked, not
+editable, never under Primary ID. A save whose type is not
+a catalogue name is refused (422, `ID_TYPE_NOT_IN_CATALOGUE`,
+"That ID type is not one this desk accepts. Pick a type from
+the list."). A type such as "Library card" cannot be saved,
+and a row already stored is read-only there with the number
+masked. The 2012 citizenship certificate stays editable and
+out of Primary ID, because the catalogue accepts it and it
+is not a photo ID. A not-accepted number on the read, the
+screen, and a report is the last four characters, always
+eight wide. A shorter number is eight stars. When the read
+leaves that number off, or sends it blank, the row says
+"Number not shown". It does not say undefined. The column
+keeps the full value. A bad save is a desk sentence, not
+the parser's wording. LCTR does not copy the primary
+number into the identifier field. ID dates read like
+"Jan 1, 2020" on the desk and on a phone. A non-primary
+document does not identify the client. The green line names
+that qualifying photo ID. An expired paper is never that
+line and never has a check. On a phone a date reads like
+"Jan 1, 2020". A desk width keeps the ISO day. The business
+date is the trading day, not the browser's local date.
+Missing ID names the reason: "ID has no expiry date",
+"Health cards can't be used as ID", "Photo ID expired on"
+the spoken date when an expired photo ID sits beside another
+current document, "A current photo ID is needed" when the
+file has only non-photo documents or a photo ID that is not
+the primary, "ID type not stated", "No ID number", or
+"No ID on file". Dual process and a credit file are not a
+method the desk can record. When the only photo ID is expired
+and nothing current sits beside it, the label is Expired.
+The stored `verification_status` column is still the older
+numbered-document derivation. This screen does not follow
+that column, and this change does not rewrite it.
+If the client response carries `idStanding`, the desk shows
+that and does not derive a label. The field is absent until
+the server sends it. The client file, the KYC panel, the
+register, the transaction pick lists, the New Transaction
+checklist, and the posting gates call that helper. The ledger
+customer payload's `idStatus` is the same answer, because that
+route still requires the field and stores it. Client create
+and update do not send `verificationStatus`, `screeningOutcome`,
+or `screeningMatched`. The stored value stays `verified`. The read-only audit
+`DATABASE_URL=… node scripts/audit-synthetic-kyc.mjs` lists those
+client ids, and any client whose screening outcome is set, without
+printing the outcome. Its `stored_verified` count is distinct
+client ids. Cleaning one up is the owner's decision.
+
+No other HTTP route writes these columns. A bulk import does not. The
+admin count only reads them.
 
 ## Scans, and the photograph
 
@@ -372,7 +468,8 @@ be read as more than it is:
   to. The other half of a remittance record, and browser-only.
 - **KYC provider checks** (`cdos_kyc_v1`) — the evidence behind
   `verification_status`. The status is on the server; the inquiry that
-  produced it is not.
+  produced it is not. A finished check does not fill a date of birth,
+  an address, or an ID number. Those are what staff type.
 - A desk with **no ledger database** keeps the browser-only store
   entirely. The client routes register only where the ledger's do,
   because they join `ledger_customers`, which the embedded database has

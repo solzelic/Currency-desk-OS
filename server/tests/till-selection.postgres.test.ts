@@ -49,7 +49,7 @@ const scopeOf = (workspaceId: string, tillId: string) => [
 
 async function resetLedger() {
   await pool.query(
-    "TRUNCATE ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_till_balances,ledger_principals CASCADE",
+    "TRUNCATE ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_till_balances,ledger_till_balance_generations,ledger_principals CASCADE",
   );
   for (const [workspaceId, tillId, cad] of [
     [DEMO.workspaceId, "till-01", "27000.00"],
@@ -107,6 +107,13 @@ postgres("naming a till, against real PostgreSQL", () => {
   });
 
   afterAll(async () => {
+    /* The generation mark is not removed with the cash. Leave it and the
+       next file's new till-02 reads 4 instead of a drawer that has never
+       moved. */
+    await pool.query(
+      "DELETE FROM ledger_till_balance_generations WHERE workspace_id = ANY($1::text[])",
+      [[DEMO.workspaceId, SECOND_WORKSPACE, FOREIGN_WORKSPACE]],
+    );
     await app.close();
     await handle.close();
     await pool.end();
