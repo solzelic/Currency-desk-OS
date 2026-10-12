@@ -3,6 +3,7 @@
    inserts a new pack and does not rewrite a published one. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { zonedWallTime } from "../src/ledger/business-date.js";
 import { SETTLEMENT_DEAL_KINDS } from "../src/ledger/cheques.js";
 import {
   NOT_A_DEAL_SQL,
@@ -37,6 +38,20 @@ describe("Canada pack deadlines and the 24 hour window", () => {
     expect(isoDay(deadlineDate(day("2026-10-09"), 1, "business_days"))).toBe(
       "2026-10-12",
     );
+  });
+
+  it("keeps a 23:30 deal on the branch date in Vancouver and Halifax", () => {
+    /* Sunday 11 October 2026, 23:30 local. In both zones that instant
+       is already the next UTC date. The large-cash deadline is 15
+       calendar days (26 October). The transfer deadline is 5 working
+       days (Friday 16 October). Neither moves. */
+    for (const zone of ["America/Vancouver", "America/Halifax"]) {
+      const at = zonedWallTime("2026-10-11", "23:30:00", zone);
+      expect(at.toISOString().slice(0, 10)).toBe("2026-10-12");
+      expect(isoDay(deadlineDate(at, 15, "calendar_days", zone))).toBe("2026-10-26");
+      expect(isoDay(deadlineDate(at, 5, "business_days", zone))).toBe("2026-10-16");
+      expect(() => deadlineDate(at, 15, "calendar_days")).toThrow(/branch time zone/);
+    }
   });
 
   it("anchors the window at midnight in the branch zone, for 24 hours", () => {

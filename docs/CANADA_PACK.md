@@ -61,6 +61,9 @@ Cheque cashing uses the foreign-exchange line. A cashed cheque is not
 cash received.
 
 Large cash, s.30 and s.126, filed within 15 calendar days, s.132(3).
+The 15 days are added to the branch calendar date of the deal. A
+deal at 23:30 stays on that local date. The UTC date of the instant
+is not the start.
 Cash the desk received. The 24-hour total includes every amount in
 the window, including one already at CAD 10,000. A single receipt at
 the line stays its own report. Two or more that reach the line are
@@ -74,7 +77,8 @@ that exists only because the window adds up. The gate can refuse the
 deal in front of it. It does not unwind a deal that already posted.
 
 Electronic funds transfer report: CAD 10,000, within 5 working days,
-s.132(1). FINTRAC's 24-hour guidance still tells this form to leave
+s.132(1). Those working days start on the same branch calendar date.
+FINTRAC's 24-hour guidance still tells this form to leave
 a single transfer already at CAD 10,000 out of the aggregate and file
 it on its own. Version 2 keeps that older rule for the EFTR only.
 

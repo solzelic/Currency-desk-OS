@@ -28,6 +28,7 @@
    ============================================================ */
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { addCalendarDays, businessDate } from "./business-date.js";
 import { assertBranchTimeZone, BranchTimeZoneUnset } from "./branch-zone.js";
 import { now as clockNow } from "./clock.js";
 import { idKindForDeal } from "./compliance-gate.js";
@@ -477,28 +478,49 @@ export async function beneficiaryRecordGap(
 }
 
 /* "Within N days after the day" starts counting the next day.
-   Working days here are Monday to Friday. FINTRAC also drops
-   statutory holidays. This does not: there is no holiday calendar
-   in the pack, and inventing one would be a guess. docs/CANADA_PACK.md. */
+   The start is a civil date: the branch calendar date of the deal
+   when a zone is named, otherwise the UTC calendar fields of a
+   date that is already midnight UTC. Days are added to that date.
+   They are not added as 24-hour instants, so a zone offset cannot
+   move the due date onto the next day. Working days are Monday to
+   Friday. FINTRAC also drops statutory holidays. This does not:
+   there is no holiday calendar in the pack, and inventing one
+   would be a guess. docs/CANADA_PACK.md. */
+function civilDay(day: Date, timeZone?: string): string {
+  if (timeZone) return businessDate(day, timeZone);
+  const midnight =
+    day.getUTCHours() === 0 &&
+    day.getUTCMinutes() === 0 &&
+    day.getUTCSeconds() === 0 &&
+    day.getUTCMilliseconds() === 0;
+  if (!midnight) {
+    throw new Error("The filing deadline needs the branch time zone.");
+  }
+  const month = String(day.getUTCMonth() + 1).padStart(2, "0");
+  const date = String(day.getUTCDate()).padStart(2, "0");
+  return `${day.getUTCFullYear()}-${month}-${date}`;
+}
+
+function dateFromCivil(iso: string): Date {
+  const [year, month, date] = iso.split("-").map(Number);
+  return new Date(Date.UTC(year!, month! - 1, date!));
+}
+
 export function deadlineDate(
   day: Date,
   value: number,
   unit: "calendar_days" | "business_days",
+  timeZone?: string,
 ): Date {
-  const cursor = new Date(
-    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()),
-  );
-  if (unit === "calendar_days") {
-    cursor.setUTCDate(cursor.getUTCDate() + value);
-    return cursor;
-  }
+  let cursor = civilDay(day, timeZone);
+  if (unit === "calendar_days") return dateFromCivil(addCalendarDays(cursor, value));
   let left = value;
   while (left > 0) {
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-    const dow = cursor.getUTCDay();
+    cursor = addCalendarDays(cursor, 1);
+    const dow = dateFromCivil(cursor).getUTCDay();
     if (dow !== 0 && dow !== 6) left -= 1;
   }
-  return cursor;
+  return dateFromCivil(cursor);
 }
 
 export function isoDay(day: Date): string {
