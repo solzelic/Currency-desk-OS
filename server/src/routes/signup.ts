@@ -19,7 +19,7 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword } from "../auth/password.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
-import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail } from "../email.js";
+import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail, type EmailStatus } from "../email.js";
 import { closeApplication, provisionDesk, slugTaken } from "../onboarding/provision.js";
 import { tenantPlan } from "./tenant.js";
 
@@ -123,14 +123,14 @@ async function emailInUse(db: Db, email: string): Promise<boolean> {
 export function registerSignupRoutes(app: FastifyInstance, db: Db) {
   const cookieOpts = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/" };
 
-  async function issueCode(email: string, businessName: string): Promise<void> {
+  async function issueCode(email: string, businessName: string): Promise<EmailStatus> {
     const code = makeCode();
     await db
       .update(schema.pendingSignups)
       .set({ codeHash: hashCode(code), attempts: 0, expiresAt: new Date(Date.now() + CODE_TTL_MS) })
       .where(eq(schema.pendingSignups.email, email));
     const mail = verificationEmail(code, businessName);
-    await sendEmail(email, mail.subject, { text: mail.text, html: mail.html });
+    return sendEmail(email, mail.subject, { text: mail.text, html: mail.html });
   }
 
   app.post("/api/signup", async (req, reply) => {
@@ -173,7 +173,13 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
       target: schema.pendingSignups.email,
       set: { businessName: row.businessName, ownerName: row.ownerName, passwordHash, slug: row.slug, onboarding: row.onboarding },
     });
-    await issueCode(b.email, b.businessName);
+    const sent = await issueCode(b.email, b.businessName);
+    if (sent === "failed") {
+      return reply.code(503).send({
+        error: "email_unavailable",
+        detail: "We couldn't send the code. Try again in a moment.",
+      });
+    }
     return reply.code(201).send({ ok: true, email: b.email });
   });
 
@@ -183,8 +189,11 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     if (!allow("resend:" + parsed.data.email, 4)) return reply.code(429).send({ error: "slow_down", detail: "Hold on — wait before requesting another code." });
     const rows = await db.select().from(schema.pendingSignups).where(eq(schema.pendingSignups.email, parsed.data.email)).limit(1);
     const p = rows[0];
+    /* Uniform on purpose. A 503 only when a row exists would say the
+       address is pending. The create route is where a failed send is
+       shown, because that caller just submitted the address. */
     if (p) await issueCode(p.email, p.businessName);
-    return { ok: true }; // uniform response — don't reveal whether a pending signup exists
+    return { ok: true };
   });
 
   app.post("/api/signup/verify", async (req, reply) => {

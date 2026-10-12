@@ -41,6 +41,8 @@ If `RESEND_API_KEY` or `EMAIL_FROM` is missing and `NODE_ENV` is
 `RESEND_API_KEY and EMAIL_FROM are not set`. It does not contain the
 code, the subject, or the body. A sign-in subject line is the code.
 A provider error body that cannot be read still logs the status.
+Signup answers 503 when that send fails, so the screen does not move
+on to a code that was never mailed.
 The panel still says, per send, when a message did not reach a person.
 Until sending is on, **the admin panel is the only notification** for
 inbound enquiries; somebody has to be opening it.
