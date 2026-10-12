@@ -687,8 +687,13 @@ so it is not opened.
 A cashier sees their own rows and sign out. Texts, receipts,
 billing, the ticker, and the role matrix are not phone screens.
 A PIN is four digits on a keypad, and the fourth digit of the last
-step saves it. A dead session and a lockout are named on that
-keypad. PIN before a void is a sentence. The void gate reads the
+step saves it. The Your PIN row is the whole target, with a chevron
+after the badge, and it opens that keypad. A dead session is named
+on it. A lockout counts down `m:ss` only when the 429 body includes
+seconds left (`retryAfter`) or an end time (`lockedUntil` or
+`until`). The staff PIN routes send neither, so the keypad says
+“Try again in a few minutes.” and offers Close. PIN before a void
+is a sentence. The void gate reads the
 shop flag and that person's require PIN, and the phone does not
 write either. Wider than 430px, Settings is still the rail beside
 the form.

@@ -137,14 +137,26 @@ test("settings lists, search, PIN, and sign-out on a phone", async ({ page }) =>
 
     await root.getByText("PIN and sign-in").click();
     await expect(root.getByRole("heading", { name: "PIN and sign-in" })).toBeVisible();
-    await expect(root.locator(".badge", { hasText: "PIN set" })).toBeVisible();
+    const pinRow = root.getByRole("button", { name: /Your PIN/ });
+    await expect(pinRow.locator(".d")).toHaveText("Asked when you take a till, switch user or void.");
+    await expect(pinRow.locator(".badge")).toHaveText("PIN set");
+    await expect(pinRow.locator(".cv")).toBeVisible();
+    const chevronAfterBadge = await pinRow.evaluate((el) => {
+      const badge = el.querySelector(".badge");
+      const chevron = el.querySelector(".cv");
+      if (!badge || !chevron) return false;
+      return (badge.compareDocumentPosition(chevron) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(chevronAfterBadge).toBe(true);
+    const pinRowHeight = await pinRow.evaluate((el) => el.getBoundingClientRect().height);
+    expect(pinRowHeight).toBeGreaterThanOrEqual(44);
     await expect(root.getByText("Always on")).toBeVisible();
     await expect(root.getByRole("button", { name: "Change my PIN" })).toBeVisible();
     await expect(root.getByText("A void asks for your PIN. The owner sets this.")).toBeVisible();
     await expect(root.getByRole("switch")).toHaveCount(0);
     await page.screenshot({ path: shot(`settings_pin-detail_${width}.png`) });
 
-    await page.getByRole("button", { name: "Change my PIN" }).click();
+    await pinRow.click();
     await expect(page.getByText("Enter your current PIN")).toBeVisible();
     await press(page, "1357");
     await expect(page.getByText("Enter a new PIN")).toBeVisible();
@@ -231,14 +243,47 @@ test("a dead session and a PIN lockout are named on the keypad", async ({ page }
     await page.getByRole("button", { name: "Change my PIN" }).click();
     await press(page, "1357");
     await press(page, "9753");
-    await routePinSave(page, 429, { error: "locked" });
+    await routePinSave(page, 429, { error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
     await press(page, "9753");
-    await expect(page.getByText("Too many wrong tries. Wait a few minutes.")).toBeVisible();
+    await expect(page.getByText("Try again in a few minutes.")).toBeVisible();
+    await expect(page.getByText(/Try again in \d+:\d{2}/)).toHaveCount(0);
     await expect(page.locator(".keypad button", { hasText: /^1$/ })).toBeDisabled();
+    const close = page.getByRole("button", { name: "Close", exact: true });
+    await expect(close).toBeVisible();
     await page.screenshot({ path: shot(`settings_pin-lockout_${width}.png`) });
     await page.unroute("**/api/staff/pin");
-    await page.getByRole("button", { name: "Close without changing" }).click();
+    await close.click();
+    await expect(page.locator(".sheet")).toHaveCount(0);
+    await expect(root.getByRole("heading", { name: "PIN and sign-in" })).toBeVisible();
   }
+});
+
+/* The cashier route does not send a time. This body is the shape the
+   keypad already understands (`retryAfter` seconds, or an ISO end),
+   so a later server can name one without the screen inventing it. */
+test("a PIN lockout counts down when the server names seconds left", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 360, height: 780 });
+  await atDesk(page, "j.masri");
+  await knownPin(page);
+  const root = await openSettings(page);
+  await root.getByText("PIN and sign-in").click();
+  await page.getByRole("button", { name: "Change my PIN" }).click();
+  await press(page, "1357");
+  await press(page, "9753");
+  await page.clock.install({ time: new Date("2026-10-12T15:00:00.000Z") });
+  await routePinSave(page, 429, { error: "locked", retryAfter: 299 });
+  await press(page, "9753");
+  await expect(page.getByText("Too many wrong tries. Try again in 4:59")).toBeVisible();
+  const key = page.locator(".keypad button", { hasText: /^1$/ });
+  await expect(key).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+  await page.clock.fastForward(298_000);
+  await expect(page.getByText("Too many wrong tries. Try again in 0:01")).toBeVisible();
+  await expect(key).toBeDisabled();
+  await page.clock.fastForward(1_000);
+  await expect(key).toBeEnabled();
+  await expect(page.getByText(/Try again in/)).toHaveCount(0);
 });
 
 test("a teller sees only their own settings", async ({ page }) => {

@@ -882,6 +882,7 @@
   .pin-dots.shake { animation: phone-pin-shake 0.28s linear; }
   .pin-saving { margin: 28px 0; text-align: center; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--w-text); }
   .pin-err { margin: 8px 16px; text-align: center; color: var(--w-danger); font-size: 14px; line-height: 20px; }
+  .pin-close { margin: 8px 16px 0; }
   .pin-pw { display: flex; flex-direction: column; gap: 12px; margin: 24px 16px; }
   .pin-pw input {
     height: 48px;

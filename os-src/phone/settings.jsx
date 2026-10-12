@@ -37,6 +37,17 @@
   ];
 
   const initials = (name) => (name || '?').split(/[ .]+/).filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+  /* Milliseconds when the keypad may open again, or null when the
+     body has no clock. A sentence in `detail` is not a time. */
+  function lockEndMs(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    const secs = payload.retryAfter != null ? payload.retryAfter : payload.secondsLeft;
+    if (typeof secs === 'number' && Number.isFinite(secs)) return Date.now() + Math.max(0, secs) * 1000;
+    const iso = typeof payload.lockedUntil === 'string' ? payload.lockedUntil : (typeof payload.until === 'string' ? payload.until : '');
+    if (!iso) return null;
+    const t = Date.parse(iso);
+    return Number.isFinite(t) ? t : null;
+  }
   const bell = (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -67,11 +78,37 @@
     const [err, setErr] = useState('');
     const [busy, setBusy] = useState(false);
     const [locked, setLocked] = useState(false);
+    const [lockUntil, setLockUntil] = useState(0);
+    const [lockPlain, setLockPlain] = useState(false);
     const [shake, setShake] = useState(false);
     const [retry, setRetry] = useState(null);
     const busyRef = useRef(false);
     const live = useRef(true);
     useEffect(() => () => { live.current = false; }, []);
+    /* A lockout counts down only from a time the server actually sent.
+       The staff PIN routes answer 429 with `error: "locked"` and a
+       sentence, and no end. `retryAfter` is seconds left (the same
+       field a code cooldown uses). `lockedUntil` / `until` is an ISO
+       end, the shape support already stores. Anything else is not a
+       clock, so the keys stay shut and Close is the way out. */
+    useEffect(() => {
+      if (!lockUntil) return undefined;
+      const paint = () => {
+        const left = Math.ceil((lockUntil - Date.now()) / 1000);
+        if (left <= 0) {
+          setLockUntil(0);
+          setLocked(false);
+          setErr('');
+          return;
+        }
+        const m = Math.floor(left / 60);
+        const s = left % 60;
+        setErr('Too many wrong tries. Try again in ' + m + ':' + String(s).padStart(2, '0'));
+      };
+      paint();
+      const id = setInterval(paint, 1000);
+      return () => clearInterval(id);
+    }, [lockUntil]);
     const steps = hasPin ? 3 : 2;
     const stepNo = (step === 'current' || step === 'password') ? 1 : step === 'new' ? (hasPin ? 2 : 1) : (hasPin ? 3 : 2);
 
@@ -118,8 +155,19 @@
         return;
       }
       if (res.status === 429) {
+        let payload = {};
+        try { payload = await res.json(); } catch (err) { payload = {}; }
+        const until = lockEndMs(payload);
+        setDigits('');
         setLocked(true);
-        setErr('Too many wrong tries. Wait a few minutes.');
+        if (until == null) {
+          setLockUntil(0);
+          setLockPlain(true);
+          setErr('Try again in a few minutes.');
+          return;
+        }
+        setLockPlain(false);
+        setLockUntil(until);
         return;
       }
       setErr('That didn’t save. Try again.');
@@ -174,6 +222,7 @@
             setErr(''); setDigits(''); setCur(''); setPw('');
           } : null}
           onRetry={retry ? () => save(retry.pin, retry) : null}
+          onClose={lockPlain ? onClose : null}
         />
       </FullScreenSheet>
     );
@@ -441,7 +490,7 @@
             <h1 className="phone-h1">PIN and sign-in</h1>
             <p className="phone-sub">Only you can change these.</p>
             <section className="phone-list">
-              <NavRow icon={keyIcon} title="Your PIN" detail="Asked when you take a till, switch user or void." badge={mustChange ? 'Pick your own' : hasPin ? 'PIN set' : 'No PIN yet'} badgeTone={mustChange ? 'warn' : hasPin ? 'pos' : 'neutral'} />
+              <NavRow icon={keyIcon} title="Your PIN" detail="Asked when you take a till, switch user or void." badge={mustChange ? 'Pick your own' : hasPin ? 'PIN set' : 'No PIN yet'} badgeTone={mustChange ? 'warn' : hasPin ? 'pos' : 'neutral'} onClick={() => setPinOpen(true)} />
             </section>
             <div className="phone-sec">Sign-in</div>
             <section className="phone-list">
