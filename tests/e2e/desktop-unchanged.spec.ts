@@ -49,11 +49,10 @@ const DESK_FONT_SPECS = [
 ];
 
 const require = createRequire(path.join(process.cwd(), "package.json"));
-const { decodePng, diffRgba, capFor, withinDesktopCap } = require("./tests/e2e/helpers/desktop-pixels.cjs") as {
+const { decodePng, diffRgba, exactPixels } = require("./tests/e2e/helpers/desktop-pixels.cjs") as {
   decodePng: (buffer: Buffer) => { width: number; height: number; data: Buffer };
   diffRgba: (actual: Buffer, expected: Buffer) => { diffPixels: number; maxDelta: number; overOne: number };
-  capFor: (name: string) => number;
-  withinDesktopCap: (name: string, diff: { diffPixels: number; maxDelta: number; overOne: number }) => boolean;
+  exactPixels: (diff: { diffPixels: number; maxDelta: number; overOne: number }) => boolean;
 };
 
 const DESKTOP = { width: 1280, height: 800 };
@@ -490,19 +489,16 @@ async function shoot(page: Page, testInfo: TestInfo, name: string): Promise<void
     throw new Error(`${name}: size ${actual.width}x${actual.height} vs baseline ${expected.width}x${expected.height}`);
   }
   const diff = diffRgba(actual.data, expected.data);
-  const cap = capFor(name);
-  remember(name, { ...diff, cap, width: actual.width, height: actual.height });
+  remember(name, { ...diff, cap: 0, width: actual.width, height: actual.height });
   await testInfo.attach(`${name}-pixels`, {
-    body: JSON.stringify({ ...diff, cap }),
+    body: JSON.stringify({ ...diff, cap: 0 }),
     contentType: "application/json",
   });
-  if (!withinDesktopCap(name, diff)) {
+  if (!exactPixels(diff)) {
     throw new Error(
       `${name}: ${diff.diffPixels} pixels differ, max channel delta ${diff.maxDelta}, ` +
-      `${diff.overOne} pixels exceed 1 level, cap ${cap}. ` +
-      (diff.maxDelta > 1
-        ? "A channel moved by more than 1. That is a desktop change, not antialiasing."
-        : "More pixels differ than the antialiasing cap."),
+      `${diff.overOne} pixels exceed 1 level, cap 0. ` +
+      "Any differing pixel is a desktop change.",
     );
   }
 }

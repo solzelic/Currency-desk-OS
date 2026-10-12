@@ -37,7 +37,7 @@ const readmePath = path.join(root, "tests", "e2e", "README.md");
 const committedDir = path.join(root, "tests", "e2e", "desktop-unchanged.spec.ts-snapshots");
 const require = createRequire(path.join(root, "server", "package.json"));
 const { Client } = require("pg");
-const { decodePng, diffRgba, withinDesktopCap } = require(path.join(root, "tests", "e2e", "helpers", "desktop-pixels.cjs"));
+const { decodePng, diffRgba, exactPixels } = require(path.join(root, "tests", "e2e", "helpers", "desktop-pixels.cjs"));
 
 const SHA_LINE = /^main-sha:\s*([0-9a-f]{40})\s*$/m;
 
@@ -158,7 +158,7 @@ function compareDirs(leftDir, rightDir) {
 }
 
 function exact(rows) {
-  return rows.length === 13 && rows.every((row) => withinDesktopCap(row.name, row));
+  return rows.length === 13 && rows.every((row) => exactPixels(row));
 }
 
 async function render(outDir) {

@@ -43,10 +43,9 @@ jobs:
       - name: Phone formatters and dark shell contrast
         run: npm run test:phone-format
 
-      # Sign-in is exact once the capture turns the glass blur off.
-      # 13 pixels, or a channel delta of 13, has to fail here, and so
-      # does any gap on another picture.
-      - name: Desktop pixel allowance
+      # Every 1280 picture is exact. 13 pixels, or a channel delta
+      # of 13, fails here, and so does any other gap.
+      - name: Desktop pictures are exact
         run: node --test tests/desktop-pixels.test.mjs
 
       # The served pages are generated from the designs and committed. If a
