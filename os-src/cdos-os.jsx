@@ -1461,6 +1461,14 @@
     const zTop = useRef(10);
     const [clock, setClock] = useState(() => new Date());
     const [locked, setLocked] = useState(() => { try { return localStorage.getItem('yorkfx_rates_locked') === '1'; } catch (e) { return false; } });
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhoneLayout(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
     const [opMenu, setOpMenu] = useState(false);
     const [deskLocked, setDeskLocked] = useState(false);   // B · session lock (PIN unlock)
     const [handover, setHandover] = useState(false);        // C · operator handover
@@ -2254,7 +2262,13 @@
 
     function renderApp(id) {
       switch (baseApp(id)) {
-        case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
+        case 'rates': {
+          if (phoneLayout && window.CDOS.PhoneRates) {
+            const PhoneRates = window.CDOS.PhoneRates;
+            return <PhoneRates me={me} srvUser={srvUser} settings={settings} locked={locked} onToggleLock={toggleLock} />;
+          }
+          return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
+        }
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />

@@ -62302,6 +62302,145 @@ window.CDOS_PERSIST = (function () {
 })();
 
 
+/* ---- os-src/phone/rates.js ---- */
+/* Phone rate board. cdos-rates-phone.jsx calls these.
+   Buy and sell match the desk: spot times (1 - spread, or the buy
+   margin) and (1 + spread, or the sell margin). Names are
+   yorkfx-converter.js BY[code].name. Figures are CAD per 1, the
+   same places as fmtCad on the public rates page. */
+(function () {
+  const CAN_CHANGE = { branch_manager: true, administrator: true };
+
+  function canChangeRates(role) {
+    return !!CAN_CHANGE[role];
+  }
+
+  function currencyName(code) {
+    const book = (typeof BY !== "undefined" && BY) || {};
+    const row = book[code];
+    return row && row.name ? row.name : code;
+  }
+
+  function round(value, places) {
+    const scale = Math.pow(10, places);
+    return Math.round(value * scale) / scale;
+  }
+
+  function formatSpot(value) {
+    if (typeof value !== "number" || !(value > 0) || !Number.isFinite(value)) return "";
+    const places = value >= 100 ? 2 : (value >= 1 ? 4 : 5);
+    return value.toFixed(places);
+  }
+
+  function buyPrice(mid, spread, buyMargin) {
+    const margin = typeof spread === "number" ? spread : buyMargin;
+    if (!(mid > 0) || typeof margin !== "number") return null;
+    return mid * (1 - margin);
+  }
+
+  function sellPrice(mid, spread, sellMargin) {
+    const margin = typeof spread === "number" ? spread : sellMargin;
+    if (!(mid > 0) || typeof margin !== "number") return null;
+    return mid * (1 + margin);
+  }
+
+  function boardQuote(code, mid, spread, buyMargin, sellMargin) {
+    return {
+      code: code,
+      label: code,
+      per: 1,
+      spot: formatSpot(mid),
+      buy: formatSpot(buyPrice(mid, spread, buyMargin)),
+      sell: formatSpot(sellPrice(mid, spread, sellMargin)),
+    };
+  }
+
+  function formatPercent(fraction) {
+    if (typeof fraction !== "number" || !Number.isFinite(fraction)) return "";
+    return (fraction * 100).toFixed(2) + "%";
+  }
+
+  function percentNumber(fraction) {
+    if (typeof fraction !== "number" || !Number.isFinite(fraction)) return "";
+    return (fraction * 100).toFixed(2);
+  }
+
+  function clampSpot(value, feed) {
+    if (!(value > 0) || !Number.isFinite(value)) {
+      return { ok: false, value: null, clamped: false, hasFeed: !!(feed > 0) };
+    }
+    if (!(feed > 0)) return { ok: true, value: round(value, 6), clamped: false, hasFeed: false };
+    const next = Math.min(feed * 1.02, Math.max(feed * 0.98, value));
+    return { ok: true, value: round(next, 6), clamped: Math.abs(next - value) > 1e-9, hasFeed: true };
+  }
+
+  function stepMargin(fraction, direction) {
+    const next = (fraction || 0) + direction * 0.0005;
+    return Math.max(0, Math.min(0.2, round(next, 5)));
+  }
+
+  function codesOf(board) {
+    const rows = (board && board.rows) || {};
+    const order = [];
+    const given = board && Array.isArray(board.order) ? board.order : [];
+    given.forEach((code) => {
+      if (code !== "CAD" && rows[code] && order.indexOf(code) < 0) order.push(code);
+    });
+    Object.keys(rows).forEach((code) => {
+      if (code !== "CAD" && order.indexOf(code) < 0) order.push(code);
+    });
+    return order;
+  }
+
+  function copyBoard(board) {
+    const order = codesOf(board);
+    const rows = {};
+    order.forEach((code) => {
+      const row = board.rows[code] || {};
+      rows[code] = {
+        mid: typeof row.mid === "number" ? row.mid : 0,
+        show: row.show !== false,
+        spread: typeof row.spread === "number" ? row.spread : null,
+        manual: !!row.manual,
+      };
+    });
+    return {
+      buyMargin: typeof board.buyMargin === "number" ? board.buyMargin : 0.015,
+      sellMargin: typeof board.sellMargin === "number" ? board.sellMargin : 0.015,
+      rows: rows,
+      order: order,
+      publishedAt: board.publishedAt || null,
+      publishedBy: board.publishedBy || "",
+    };
+  }
+
+  function clockLabel(value, zone) {
+    const format = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof format !== "function" || value == null || value === "") return "";
+    const when = typeof value === "number" ? new Date(value) : value;
+    const label = format(when, zone || "");
+    if (!label || label.indexOf("\u2014") >= 0 || label.indexOf("\u2013") >= 0) return "";
+    return label;
+  }
+
+  window.CDOS = window.CDOS || {};
+  window.CDOS.phoneRates = {
+    canChangeRates: canChangeRates,
+    currencyName: currencyName,
+    formatSpot: formatSpot,
+    boardQuote: boardQuote,
+    formatPercent: formatPercent,
+    percentNumber: percentNumber,
+    buyPrice: buyPrice,
+    sellPrice: sellPrice,
+    clampSpot: clampSpot,
+    stepMargin: stepMargin,
+    copyBoard: copyBoard,
+    clockLabel: clockLabel,
+  };
+})();
+
+
 /* ---- os-src/cdos-phone.jsx ---- */
 /* Phone shell. Shared layout for every phone screen.
    Props and names are the contract in docs/PHONE_SHELL.md.
@@ -62884,7 +63023,7 @@ window.CDOS_PERSIST = (function () {
     id: 'rates',
     title: 'Rates',
     detail: 'Buy and sell prices',
-    words: 'fx board quote',
+    words: 'fx board quote spread margin',
     icon: 'rateboard'
   }, {
     id: 'ledger',
@@ -63057,6 +63196,359 @@ window.CDOS_PERSIST = (function () {
     formatPhoneListGroup,
     Phone
   });
+})();
+
+/* ---- os-src/cdos-rates-phone.jsx ---- */
+/* Phone Rates editor. Margins, spot, per-row spread, order, and
+   whether a currency is on the board. Tellers get the read-only
+   list. Public preview and Publish are later slices. Desktop Rates
+   stays the Rate Board iframe. */
+(function () {
+  const {
+    useEffect,
+    useState
+  } = React;
+  const R = () => window.CDOS.phoneRates;
+  const Phone = () => window.CDOS.Phone;
+  function publisherName(id, me, settings, srvUser) {
+    if (!id || id === "seed") return "";
+    const people = settings && settings.employees || [];
+    for (let i = 0; i < people.length; i++) {
+      const person = people[i];
+      if (person && (person.staffId === id || person.code === id || person.name === id)) return person.name || "";
+    }
+    if (srvUser && srvUser.staffId === id && srvUser.name) return srvUser.name;
+    if (me && me.name && (me.code === id || me.name === id)) return me.name;
+    return "";
+  }
+  function patchRow(draft, code, patch) {
+    const row = draft.rows[code];
+    if (!row) return draft;
+    return {
+      ...draft,
+      rows: {
+        ...draft.rows,
+        [code]: {
+          ...row,
+          ...patch
+        }
+      }
+    };
+  }
+  function PhoneRates({
+    me,
+    srvUser,
+    settings,
+    locked,
+    onToggleLock
+  }) {
+    const rates = R();
+    const shell = Phone();
+    const can = rates.canChangeRates(srvUser && srvUser.role);
+    const zone = settings && settings.timezone;
+    const [phase, setPhase] = useState("load");
+    const [loadError, setLoadError] = useState("");
+    const [feedNote, setFeedNote] = useState("");
+    const [published, setPublished] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [feed, setFeed] = useState({});
+    const [openCode, setOpenCode] = useState(null);
+    const [spotText, setSpotText] = useState("");
+    const [spreadText, setSpreadText] = useState(null);
+    const [clampNote, setClampNote] = useState("");
+    async function load() {
+      setPhase("load");
+      setLoadError("");
+      setFeedNote("");
+      let response;
+      try {
+        response = await fetch("/api/rates", {
+          credentials: "same-origin"
+        });
+      } catch (error) {
+        setLoadError("Could not reach the server. The rate board did not load.");
+        setPhase("error");
+        return;
+      }
+      if (!response.ok) {
+        setLoadError("The rate board did not load (" + response.status + ").");
+        setPhase("error");
+        return;
+      }
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        setLoadError("The rate board came back in a form this screen cannot read.");
+        setPhase("error");
+        return;
+      }
+      let mids = {};
+      try {
+        const market = await fetch("/api/rates/market", {
+          credentials: "same-origin"
+        });
+        if (!market.ok) {
+          setFeedNote("The feed did not load (" + market.status + "). A hand-set spot cannot be checked against it.");
+        } else {
+          const body = await market.json();
+          if (body && body.mids && typeof body.mids === "object") mids = body.mids;
+        }
+      } catch (error) {
+        setFeedNote("The feed did not load. A hand-set spot cannot be checked against it.");
+      }
+      const board = data && data.board ? rates.copyBoard(data.board) : null;
+      if (!board || !board.order.length) {
+        setLoadError("There are no currencies on this board.");
+        setPhase("error");
+        return;
+      }
+      setPublished(board);
+      setDraft(board);
+      setFeed(mids);
+      setPhase("ready");
+    }
+    useEffect(() => {
+      load();
+    }, []);
+    function commitSpot(code) {
+      const parsed = parseFloat(String(spotText).replace(/,/g, ""));
+      const held = rates.clampSpot(parsed, feed[code]);
+      if (!held.ok) return;
+      setDraft(current => patchRow(current, code, {
+        mid: held.value,
+        manual: true
+      }));
+      setSpotText(rates.formatSpot(held.value));
+      setClampNote(held.clamped ? "Held within 2% of the feed." : "");
+    }
+    function applySpread(code, raw) {
+      setSpreadText(raw);
+      if (String(raw).trim() === "") {
+        setDraft(current => patchRow(current, code, {
+          spread: null
+        }));
+        return;
+      }
+      const parsed = parseFloat(raw);
+      if (!Number.isFinite(parsed)) return;
+      const fraction = Math.max(0, Math.min(0.2, parsed / 100));
+      setDraft(current => patchRow(current, code, {
+        spread: fraction
+      }));
+    }
+    function onGrip(event, code) {
+      event.preventDefault();
+      function move(ev) {
+        const node = document.elementFromPoint(ev.clientX, ev.clientY);
+        const over = node && node.closest ? node.closest("[data-code]") : null;
+        const overCode = over && over.getAttribute("data-code");
+        if (!overCode || overCode === code) return;
+        setDraft(current => {
+          const order = current.order.slice();
+          const from = order.indexOf(code);
+          const to = order.indexOf(overCode);
+          if (from < 0 || to < 0 || from === to) return current;
+          order.splice(from, 1);
+          order.splice(to, 0, code);
+          return {
+            ...current,
+            order: order
+          };
+        });
+      }
+      function up() {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      }
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    }
+    if (!shell) return /*#__PURE__*/React.createElement("p", {
+      role: "alert"
+    }, "The phone shell did not load.");
+    if (phase === "load") {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "phone-rates",
+        "data-phone-rates": ""
+      }, /*#__PURE__*/React.createElement(shell.Screen, {
+        app: "rates",
+        title: "Rates"
+      }, /*#__PURE__*/React.createElement(shell.LoadingState, {
+        label: "Loading rates"
+      })));
+    }
+    if (phase === "error" || !draft) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "phone-rates",
+        "data-phone-rates": ""
+      }, /*#__PURE__*/React.createElement(shell.Screen, {
+        app: "rates",
+        title: "Rates"
+      }, /*#__PURE__*/React.createElement(shell.ErrorState, {
+        message: loadError || "The rate board did not load.",
+        onRetry: load
+      })));
+    }
+    const when = rates.clockLabel(published && published.publishedAt, zone);
+    const who = publisherName(published && published.publishedBy, me, settings, srvUser);
+    const stamp = when ? who ? when + ", " + who : when : "";
+    let status = "Not published yet";
+    if (!can) status = published ? "Published " + (stamp || "earlier") + " · Ask a manager to change rates" : "Not published yet. Ask a manager to change rates";else if (published) status = stamp ? "Published " + stamp : "Published";
+    const home = draft.order.slice(0, 6);
+    const rest = draft.order.slice(6);
+    function prices(code) {
+      const row = draft.rows[code];
+      return rates.boardQuote(code, row.mid, row.spread, draft.buyMargin, draft.sellMargin);
+    }
+    function rowView(code) {
+      const row = draft.rows[code];
+      if (!row) return null;
+      const quote = prices(code);
+      if (can && openCode === code) {
+        const spreadShown = spreadText != null ? spreadText : rates.percentNumber(row.spread != null ? row.spread : draft.buyMargin);
+        const feedMid = feed[code];
+        return /*#__PURE__*/React.createElement("div", {
+          key: code,
+          className: "phone-rate-edit",
+          "data-code": code
+        }, /*#__PURE__*/React.createElement("div", {
+          className: "phone-rate-edit-h"
+        }, /*#__PURE__*/React.createElement("b", null, code, ", ", rates.currencyName(code)), /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "phone-rate-done",
+          onClick: () => {
+            commitSpot(code);
+            setOpenCode(null);
+            setSpreadText(null);
+          }
+        }, "Done")), /*#__PURE__*/React.createElement("div", {
+          className: "phone-rate-two"
+        }, /*#__PURE__*/React.createElement("label", null, "Spot, CAD per 1", row.manual ? /*#__PURE__*/React.createElement("span", {
+          className: "phone-rate-pin"
+        }, "Set by hand") : null, /*#__PURE__*/React.createElement("input", {
+          inputMode: "decimal",
+          "aria-label": "Spot for " + code,
+          value: spotText,
+          onChange: e => setSpotText(e.target.value),
+          onBlur: () => commitSpot(code)
+        })), /*#__PURE__*/React.createElement("label", null, "Spread for ", code, /*#__PURE__*/React.createElement("span", {
+          className: "phone-rate-pct"
+        }, /*#__PURE__*/React.createElement("input", {
+          inputMode: "decimal",
+          "aria-label": "Spread for " + code,
+          value: spreadShown,
+          onChange: e => applySpread(code, e.target.value)
+        }), /*#__PURE__*/React.createElement("span", null, "%")))), /*#__PURE__*/React.createElement("div", {
+          className: "phone-rate-res"
+        }, /*#__PURE__*/React.createElement("span", {
+          className: "is-buy"
+        }, "We buy ", quote.buy, " CAD"), /*#__PURE__*/React.createElement("span", {
+          className: "is-sell"
+        }, "We sell ", quote.sell, " CAD")), /*#__PURE__*/React.createElement("p", {
+          className: "phone-rate-hint"
+        }, feedMid > 0 ? "Spot set by hand stays within 2% of the feed." : "No feed rate is loaded, so this spot is not checked against one.", clampNote ? " " + clampNote : "", feedMid > 0 ? /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "phone-rate-feed",
+          onClick: () => {
+            setDraft(current => patchRow(current, code, {
+              mid: rates.clampSpot(feedMid, feedMid).value,
+              manual: false
+            }));
+            setSpotText(rates.formatSpot(feedMid));
+            setClampNote("");
+          }
+        }, "Use feed spot") : null));
+      }
+      return /*#__PURE__*/React.createElement("div", {
+        key: code,
+        className: "phone-rate-row" + (row.show === false ? " is-off" : ""),
+        "data-code": code
+      }, can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-grip",
+        "aria-label": "Drag " + code + " to reorder",
+        onPointerDown: e => onGrip(e, code)
+      }, "\u283F") : null, can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-main",
+        onClick: () => {
+          setOpenCode(code);
+          setSpotText(rates.formatSpot(row.mid));
+          setSpreadText(null);
+          setClampNote("");
+        }
+      }, /*#__PURE__*/React.createElement("b", null, quote.label), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", quote.spot)) : /*#__PURE__*/React.createElement("span", {
+        className: "phone-rate-main"
+      }, /*#__PURE__*/React.createElement("b", null, quote.label), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", quote.spot)), /*#__PURE__*/React.createElement("span", {
+        className: "phone-rate-px"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "is-buy"
+      }, "Buy ", quote.buy), /*#__PURE__*/React.createElement("span", {
+        className: "is-sell"
+      }, "Sell ", quote.sell)), can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-tg" + (row.show === false ? " is-off" : ""),
+        role: "switch",
+        "aria-checked": row.show !== false,
+        "aria-label": code + " on the board",
+        onClick: () => setDraft(current => patchRow(current, code, {
+          show: row.show === false
+        }))
+      }, /*#__PURE__*/React.createElement("i", null)) : null);
+    }
+    const list = (codes, title, meta) => /*#__PURE__*/React.createElement("section", {
+      className: "phone-rate-sec"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-sec-h"
+    }, /*#__PURE__*/React.createElement("span", null, title), meta ? /*#__PURE__*/React.createElement("span", null, meta) : null), /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-list"
+    }, codes.map(rowView)));
+    const body = /*#__PURE__*/React.createElement(React.Fragment, null, can ? /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-mg"
+    }, [["buyMargin", "Buy margin, under spot"], ["sellMargin", "Sell margin, over spot"]].map(([key, label]) => /*#__PURE__*/React.createElement("div", {
+      key: key,
+      className: "phone-rate-box"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-k"
+    }, label), /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-step"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": "Lower " + label,
+      onClick: () => setDraft(current => ({
+        ...current,
+        [key]: rates.stepMargin(current[key], -1)
+      }))
+    }, "\u2212"), /*#__PURE__*/React.createElement("b", null, rates.formatPercent(draft[key])), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": "Raise " + label,
+      onClick: () => setDraft(current => ({
+        ...current,
+        [key]: rates.stepMargin(current[key], 1)
+      }))
+    }, "+"))))) : null, /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-lock"
+    }, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("i", null), status), can ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-rate-lockbtn",
+      "aria-pressed": !!locked,
+      "aria-label": locked ? "Rates locked in this browser" : "Lock rates in this browser",
+      onClick: onToggleLock
+    }, locked ? "Locked" : "Lock") : null), feedNote ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-rate-banner",
+      role: "alert"
+    }, feedNote) : null, list(home, "On your homepage, top 6", can ? "Drag to reorder" : ""), rest.length ? list(rest, "Rate board page only", "") : null);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-rates",
+      "data-phone-rates": "",
+      "data-can-publish": can ? "yes" : "no"
+    }, /*#__PURE__*/React.createElement(shell.Screen, {
+      app: "rates",
+      title: "Rates"
+    }, body));
+  }
+  window.CDOS.PhoneRates = PhoneRates;
 })();
 
 /* ---- os-src/cdos-os.jsx ---- */
@@ -66467,6 +66959,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return false;
       }
     });
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhoneLayout(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
     const [opMenu, setOpMenu] = useState(false);
     const [deskLocked, setDeskLocked] = useState(false); // B · session lock (PIN unlock)
     const [handover, setHandover] = useState(false); // C · operator handover
@@ -67941,10 +68441,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     function renderApp(id) {
       switch (baseApp(id)) {
         case 'rates':
-          return /*#__PURE__*/React.createElement("iframe", {
-            src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
-            title: "Rate Board"
-          });
+          {
+            if (phoneLayout && window.CDOS.PhoneRates) {
+              const PhoneRates = window.CDOS.PhoneRates;
+              return /*#__PURE__*/React.createElement(PhoneRates, {
+                me: me,
+                srvUser: srvUser,
+                settings: settings,
+                locked: locked,
+                onToggleLock: toggleLock
+              });
+            }
+            return /*#__PURE__*/React.createElement("iframe", {
+              src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
+              title: "Rate Board"
+            });
+          }
         case 'telegraph':
           return /*#__PURE__*/React.createElement(Telegraph, {
             settings: settings,

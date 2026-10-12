@@ -301,7 +301,7 @@
     settings: { title: 'Settings', detail: 'Desk, staff, your PIN', words: 'pin staff', icon: 'gearsettings' },
   };
   const BAR = [
-    { id: 'rates', title: 'Rates', detail: 'Buy and sell prices', words: 'fx board quote', icon: 'rateboard' },
+    { id: 'rates', title: 'Rates', detail: 'Buy and sell prices', words: 'fx board quote spread margin', icon: 'rateboard' },
     { id: 'ledger', title: 'Ledger', detail: "Today's deals", words: 'transactions deals', icon: 'ledgerbook' },
     { id: 'clients', title: 'Clients', detail: 'Find a customer', words: 'kyc customer', icon: 'clientskyc' },
     { id: 'till', title: 'Till', detail: 'Count the drawer, close the day', words: 'cash drawer count', icon: 'tilldrawer' },

@@ -320,6 +320,23 @@ under "On the bottom bar". The browse list has no search footer. A query
 shows "Search looks at app names and what each app does." Nothing matches
 is an empty state. There is no "Example data" badge. That tag is mockups only.
 
+## Rates
+
+Under 430px the Rates tab is the board editor in
+`os-src/cdos-rates-phone.jsx` and `os-src/phone/rates.js`. Wider than
+430px, Rates is still the Rate Board iframe.
+
+A manager or an admin edits the buy margin, the sell margin, the
+spot, a spread on one currency, whether that currency is on the
+board, and the order. The first six places are the homepage group.
+A teller sees the list and the buy and sell prices, stacked, with
+no steppers, no drag, and no board switch. Buy and sell are CAD per
+1, from `boardQuote`, the same places as the public rates page.
+This slice has no public preview and no Publish button.
+
+Currency names are `BY[code].name` in `yorkfx-converter.js`. Lock is
+the desktop flag `yorkfx_rates_locked` in this browser.
+
 ## Seam locators
 
 An inactive window stays in the document. At 430px and under it is not

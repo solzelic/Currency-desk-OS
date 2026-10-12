@@ -1,0 +1,136 @@
+/* Phone rate board. cdos-rates-phone.jsx calls these.
+   Buy and sell match the desk: spot times (1 - spread, or the buy
+   margin) and (1 + spread, or the sell margin). Names are
+   yorkfx-converter.js BY[code].name. Figures are CAD per 1, the
+   same places as fmtCad on the public rates page. */
+(function () {
+  const CAN_CHANGE = { branch_manager: true, administrator: true };
+
+  function canChangeRates(role) {
+    return !!CAN_CHANGE[role];
+  }
+
+  function currencyName(code) {
+    const book = (typeof BY !== "undefined" && BY) || {};
+    const row = book[code];
+    return row && row.name ? row.name : code;
+  }
+
+  function round(value, places) {
+    const scale = Math.pow(10, places);
+    return Math.round(value * scale) / scale;
+  }
+
+  function formatSpot(value) {
+    if (typeof value !== "number" || !(value > 0) || !Number.isFinite(value)) return "";
+    const places = value >= 100 ? 2 : (value >= 1 ? 4 : 5);
+    return value.toFixed(places);
+  }
+
+  function buyPrice(mid, spread, buyMargin) {
+    const margin = typeof spread === "number" ? spread : buyMargin;
+    if (!(mid > 0) || typeof margin !== "number") return null;
+    return mid * (1 - margin);
+  }
+
+  function sellPrice(mid, spread, sellMargin) {
+    const margin = typeof spread === "number" ? spread : sellMargin;
+    if (!(mid > 0) || typeof margin !== "number") return null;
+    return mid * (1 + margin);
+  }
+
+  function boardQuote(code, mid, spread, buyMargin, sellMargin) {
+    return {
+      code: code,
+      label: code,
+      per: 1,
+      spot: formatSpot(mid),
+      buy: formatSpot(buyPrice(mid, spread, buyMargin)),
+      sell: formatSpot(sellPrice(mid, spread, sellMargin)),
+    };
+  }
+
+  function formatPercent(fraction) {
+    if (typeof fraction !== "number" || !Number.isFinite(fraction)) return "";
+    return (fraction * 100).toFixed(2) + "%";
+  }
+
+  function percentNumber(fraction) {
+    if (typeof fraction !== "number" || !Number.isFinite(fraction)) return "";
+    return (fraction * 100).toFixed(2);
+  }
+
+  function clampSpot(value, feed) {
+    if (!(value > 0) || !Number.isFinite(value)) {
+      return { ok: false, value: null, clamped: false, hasFeed: !!(feed > 0) };
+    }
+    if (!(feed > 0)) return { ok: true, value: round(value, 6), clamped: false, hasFeed: false };
+    const next = Math.min(feed * 1.02, Math.max(feed * 0.98, value));
+    return { ok: true, value: round(next, 6), clamped: Math.abs(next - value) > 1e-9, hasFeed: true };
+  }
+
+  function stepMargin(fraction, direction) {
+    const next = (fraction || 0) + direction * 0.0005;
+    return Math.max(0, Math.min(0.2, round(next, 5)));
+  }
+
+  function codesOf(board) {
+    const rows = (board && board.rows) || {};
+    const order = [];
+    const given = board && Array.isArray(board.order) ? board.order : [];
+    given.forEach((code) => {
+      if (code !== "CAD" && rows[code] && order.indexOf(code) < 0) order.push(code);
+    });
+    Object.keys(rows).forEach((code) => {
+      if (code !== "CAD" && order.indexOf(code) < 0) order.push(code);
+    });
+    return order;
+  }
+
+  function copyBoard(board) {
+    const order = codesOf(board);
+    const rows = {};
+    order.forEach((code) => {
+      const row = board.rows[code] || {};
+      rows[code] = {
+        mid: typeof row.mid === "number" ? row.mid : 0,
+        show: row.show !== false,
+        spread: typeof row.spread === "number" ? row.spread : null,
+        manual: !!row.manual,
+      };
+    });
+    return {
+      buyMargin: typeof board.buyMargin === "number" ? board.buyMargin : 0.015,
+      sellMargin: typeof board.sellMargin === "number" ? board.sellMargin : 0.015,
+      rows: rows,
+      order: order,
+      publishedAt: board.publishedAt || null,
+      publishedBy: board.publishedBy || "",
+    };
+  }
+
+  function clockLabel(value, zone) {
+    const format = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof format !== "function" || value == null || value === "") return "";
+    const when = typeof value === "number" ? new Date(value) : value;
+    const label = format(when, zone || "");
+    if (!label || label.indexOf("\u2014") >= 0 || label.indexOf("\u2013") >= 0) return "";
+    return label;
+  }
+
+  window.CDOS = window.CDOS || {};
+  window.CDOS.phoneRates = {
+    canChangeRates: canChangeRates,
+    currencyName: currencyName,
+    formatSpot: formatSpot,
+    boardQuote: boardQuote,
+    formatPercent: formatPercent,
+    percentNumber: percentNumber,
+    buyPrice: buyPrice,
+    sellPrice: sellPrice,
+    clampSpot: clampSpot,
+    stepMargin: stepMargin,
+    copyBoard: copyBoard,
+    clockLabel: clockLabel,
+  };
+})();

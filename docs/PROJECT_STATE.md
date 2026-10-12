@@ -571,6 +571,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone Rates editor. Under 430px the Rates tab is the
+board editor: margins, spot, spread, order, and on the board. A
+teller sees the list. Figures are CAD per 1 through `boardQuote`.
+Public preview and Publish are not on this slice. The desktop Rate
+Board iframe is unchanged.
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
