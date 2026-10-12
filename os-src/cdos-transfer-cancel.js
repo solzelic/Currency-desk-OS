@@ -5,19 +5,36 @@
 
   var TELLER_MESSAGE = "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
   var PAID_OUT_MESSAGE = "This transfer was already paid out. It cannot be cancelled.";
+  var RECEIVE_MESSAGE = "A received transfer can't be cancelled here. Ask a manager.";
 
   /* OS names of the roles that already hold transaction:reverse.
      Cashier and Trainee do not. This does not grant anything. */
   var CAN_POST = { Owner: true, Manager: true, "Senior teller": true };
 
-  function money(amount) {
+  function placesOf(currency) {
+    var fn = window.CDOS && window.CDOS.currencyPlaces;
+    if (typeof fn !== "function") return 2;
+    return fn(currency) === 0 ? 0 : 2;
+  }
+
+  /* places is 0 for a currency such as JPY. Everything else on this
+     sheet is two decimals, which is what the ledger stored. */
+  function money(amount, places) {
     var text = String(amount == null ? "" : amount).trim();
     var match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
     if (!match) throw new Error("The ledger did not return a cash figure.");
-    var frac = (match[3] || "00").slice(0, 2);
-    while (frac.length < 2) frac += "0";
-    var whole = match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return match[1] + whole + "." + frac;
+    var digits = places === 0 ? 0 : 2;
+    var whole = match[2];
+    if (digits === 0) {
+      var frac = match[3] || "";
+      if (frac.charAt(0) >= "5") whole = String(Number(whole) + 1);
+      whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      return match[1] + whole;
+    }
+    var pennies = (match[3] || "00").slice(0, 2);
+    while (pennies.length < 2) pennies += "0";
+    whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return match[1] + whole + "." + pennies;
   }
 
   function positive(amount) {
@@ -39,13 +56,16 @@
     if (obligation.status === "reversed") {
       return { kind: "already", message: "This transfer is already cancelled." };
     }
+    if (obligation.dealKind === "remittance_receive") {
+      return { kind: "refused", message: RECEIVE_MESSAGE };
+    }
     if (obligation.status !== "open") {
       return { kind: "refused", message: "This transfer cannot be cancelled." };
     }
     var inbound = positive(obligation.cashInHome);
     var cash = inbound ? obligation.cashInHome : obligation.cashOutHome;
-    var home = money(cash) + " " + obligation.homeCurrency;
-    var face = money(obligation.faceAmount) + " " + obligation.faceCurrency;
+    var home = money(cash, placesOf(obligation.homeCurrency)) + " " + obligation.homeCurrency;
+    var face = money(obligation.faceAmount, placesOf(obligation.faceCurrency)) + " " + obligation.faceCurrency;
     var partner = obligation.counterparty;
     var sentence = inbound
       ? "This gives the customer back " + home + " from your drawer and cancels the " + face + " owed to " + partner + "."
@@ -90,6 +110,7 @@
     transferCancel: {
       TELLER_MESSAGE: TELLER_MESSAGE,
       PAID_OUT_MESSAGE: PAID_OUT_MESSAGE,
+      RECEIVE_MESSAGE: RECEIVE_MESSAGE,
       canPost: function (role) { return !!CAN_POST[role]; },
       review: review,
       idempotencyKey: idempotencyKey,

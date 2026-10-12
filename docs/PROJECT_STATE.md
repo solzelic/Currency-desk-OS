@@ -77,8 +77,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   gives the cash back, the fee included, and the partner obligation is
   reversed. The confirm sheet quotes the server's cash and face figures.
   A cashier sees "Only a manager can cancel a transfer that took cash.
-  Ask a manager to cancel." and is not offered Cancel. A transfer the
-  partner has already paid out is refused. The phone contract is
+  Ask a manager to cancel." and is not offered Cancel. A closed till
+  refuses the cancel, and the reversal is dated to the open session's
+  stored business date so a signed-off day stays. A receive is refused.
+  The sheet reads that one transaction. A transfer the partner has
+  already paid out is refused. The phone contract is
   `docs/TRANSFER_CANCEL.md`. Before this, desktop Cancel only changed a
   local status, so the cash stayed in the drawer and the partner stayed
   owed.
@@ -586,8 +589,11 @@ exists and nobody holds it. Granting it is a later decision.
 `POST /api/ledger/obligation-deals/:transactionId/reversal`. The confirm
 sheet quotes the stored `cashInHome` and `faceAmount`. The fee is
 refunded because that reversal mirrors `revenue:fee`. A cashier cannot
-post it and is told to ask a manager. `paid_out_at` (migration 041)
-makes a paid-out transfer refuse cancel. Phone files are unchanged; the
+post it and is told to ask a manager. A closed till refuses the
+cancel. A receive is refused. The sheet reads that one transaction,
+not the newest page of the list. `paid_out_at` (migration 042) makes a
+paid-out transfer refuse cancel. The reversal is dated to the open
+session's stored business date. Phone files are unchanged; the
 contract is `docs/TRANSFER_CANCEL.md`.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the

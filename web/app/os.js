@@ -2583,6 +2583,9 @@
           body: JSON.stringify(payload),
         });
       },
+      loadObligationDeal: function (transactionId) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId));
+      },
       reverseObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/reversal", {
           method: "POST",
@@ -36155,19 +36158,36 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 
   var TELLER_MESSAGE = "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
   var PAID_OUT_MESSAGE = "This transfer was already paid out. It cannot be cancelled.";
+  var RECEIVE_MESSAGE = "A received transfer can't be cancelled here. Ask a manager.";
 
   /* OS names of the roles that already hold transaction:reverse.
      Cashier and Trainee do not. This does not grant anything. */
   var CAN_POST = { Owner: true, Manager: true, "Senior teller": true };
 
-  function money(amount) {
+  function placesOf(currency) {
+    var fn = window.CDOS && window.CDOS.currencyPlaces;
+    if (typeof fn !== "function") return 2;
+    return fn(currency) === 0 ? 0 : 2;
+  }
+
+  /* places is 0 for a currency such as JPY. Everything else on this
+     sheet is two decimals, which is what the ledger stored. */
+  function money(amount, places) {
     var text = String(amount == null ? "" : amount).trim();
     var match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
     if (!match) throw new Error("The ledger did not return a cash figure.");
-    var frac = (match[3] || "00").slice(0, 2);
-    while (frac.length < 2) frac += "0";
-    var whole = match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return match[1] + whole + "." + frac;
+    var digits = places === 0 ? 0 : 2;
+    var whole = match[2];
+    if (digits === 0) {
+      var frac = match[3] || "";
+      if (frac.charAt(0) >= "5") whole = String(Number(whole) + 1);
+      whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      return match[1] + whole;
+    }
+    var pennies = (match[3] || "00").slice(0, 2);
+    while (pennies.length < 2) pennies += "0";
+    whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return match[1] + whole + "." + pennies;
   }
 
   function positive(amount) {
@@ -36189,13 +36209,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     if (obligation.status === "reversed") {
       return { kind: "already", message: "This transfer is already cancelled." };
     }
+    if (obligation.dealKind === "remittance_receive") {
+      return { kind: "refused", message: RECEIVE_MESSAGE };
+    }
     if (obligation.status !== "open") {
       return { kind: "refused", message: "This transfer cannot be cancelled." };
     }
     var inbound = positive(obligation.cashInHome);
     var cash = inbound ? obligation.cashInHome : obligation.cashOutHome;
-    var home = money(cash) + " " + obligation.homeCurrency;
-    var face = money(obligation.faceAmount) + " " + obligation.faceCurrency;
+    var home = money(cash, placesOf(obligation.homeCurrency)) + " " + obligation.homeCurrency;
+    var face = money(obligation.faceAmount, placesOf(obligation.faceCurrency)) + " " + obligation.faceCurrency;
     var partner = obligation.counterparty;
     var sentence = inbound
       ? "This gives the customer back " + home + " from your drawer and cancels the " + face + " owed to " + partner + "."
@@ -36240,6 +36263,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     transferCancel: {
       TELLER_MESSAGE: TELLER_MESSAGE,
       PAID_OUT_MESSAGE: PAID_OUT_MESSAGE,
+      RECEIVE_MESSAGE: RECEIVE_MESSAGE,
       canPost: function (role) { return !!CAN_POST[role]; },
       review: review,
       idempotencyKey: idempotencyKey,
@@ -36289,11 +36313,26 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     dealMargin,
     newTx,
     mkRef,
-    reportingLimit
+    reportingLimit,
+    currencyPlaces
   } = window.CDOS;
   const stamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
   }).replace(',', '');
+  function amountLine(amount, ccy) {
+    const places = typeof currencyPlaces === 'function' && currencyPlaces(ccy) === 0 ? 0 : 2;
+    const n = Number(amount);
+    if (!Number.isFinite(n)) return '—';
+    return n.toLocaleString('en-CA', {
+      minimumFractionDigits: places,
+      maximumFractionDigits: places
+    }) + ' ' + ccy;
+  }
   const flagOf = c => {
     try {
       return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || '';
@@ -38044,10 +38083,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         return;
       }
       try {
-        const book = await window.CDOS.Backend.loadObligations({
-          limit: 200
-        });
-        const row = (book.obligations || []).find(o => o.transactionId === t.serverTransactionId);
+        const row = await window.CDOS.Backend.loadObligationDeal(t.serverTransactionId);
         const review = Cancel.review(row);
         if (review.kind === 'confirm') setSentence(review.sentence);else setCancelError(review.message);
       } catch (error) {
@@ -38071,6 +38107,23 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
       } catch (error) {
         setCancelError(error.message || 'The transfer was not cancelled.');
+        try {
+          const row = await window.CDOS.Backend.loadObligationDeal(t.serverTransactionId);
+          if (row && row.status === 'reversed') advance('cancelled', 'Already cancelled on the ledger');else if (row && (row.paidOutAt || row.status === 'settled')) {
+            setTransfers(list => list.map(x => x.id === t.id && x.status !== 'paid' ? {
+              ...x,
+              status: 'paid',
+              timeline: [...(x.timeline || []), {
+                status: 'paid',
+                ts: stamp(),
+                by: me.name,
+                note: 'Already paid out on the ledger'
+              }]
+            } : x));
+          }
+        } catch (readError) {
+          log && log('Ledger refresh failed', readError.message || 'The transfer status was not refreshed');
+        }
       } finally {
         setBusy(false);
       }
@@ -38177,7 +38230,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Customer pays' : 'Amount in',
-      v: `${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`,
+      v: amountLine(t.payAmt, dir === 'send' ? home : t.ccy),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Rate",
@@ -38185,11 +38238,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee",
-      v: fmt(t.fee, home),
+      v: amountLine(t.fee, home),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Beneficiary gets' : 'Customer gets',
-      v: `${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`,
+      v: amountLine(t.recvAmt, dir === 'send' ? t.ccy : home),
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
@@ -38332,13 +38385,21 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         background: CD.lineSoft,
         color: CD.ink,
         border: `1px solid ${CD.line}`,
-        borderRadius: 9
+        borderRadius: 9,
+        minWidth: 0,
+        maxWidth: '100%',
+        overflowWrap: 'break-word',
+        whiteSpace: 'normal'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "info",
       s: 15,
       c: CD.ink
-    }), /*#__PURE__*/React.createElement("span", null, Cancel.TELLER_MESSAGE))), cancelError && !ask && /*#__PURE__*/React.createElement("p", {
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        minWidth: 0
+      }
+    }, Cancel.TELLER_MESSAGE))), cancelError && !ask && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       className: "text-[13px]",
       style: {
@@ -38388,26 +38449,28 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, cancelError), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col gap-2 mt-4"
-    }, sentence && !cancelError && /*#__PURE__*/React.createElement("button", {
+    }, sentence && /*#__PURE__*/React.createElement("button", {
       type: "button",
       disabled: busy,
       onClick: confirmCancel,
-      className: "px-4 py-2.5 text-sm font-semibold text-white",
+      className: "px-4 text-sm font-semibold text-white",
       style: {
         background: busy ? 'var(--cd-disabled)' : CD.flag,
         borderRadius: 8,
-        cursor: busy ? 'wait' : 'pointer'
+        cursor: busy ? 'wait' : 'pointer',
+        minHeight: 44
       }
     }, busy ? 'Cancelling…' : 'Cancel transfer'), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => {
         if (!busy) setAsk(false);
       },
-      className: "px-4 py-2.5 text-sm font-medium",
+      className: "px-4 text-sm font-medium",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 8,
-        color: CD.ink
+        color: CD.ink,
+        minHeight: 44
       }
     }, "Keep it")))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 pt-1"

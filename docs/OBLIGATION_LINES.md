@@ -240,7 +240,7 @@ stood. A cheque NSF is a different act and still keeps its fee.
 
 Desktop Cancel posts this reversal in the same action. The confirm sheet reads
 `cashInHome`, `faceAmount`, `faceCurrency`, and `counterparty` from
-`GET /api/ledger/obligations` and says what will happen, for example: "This
+`GET /api/ledger/obligation-deals/:transactionId` and says what will happen, for example: "This
 gives the customer back 609.99 CAD from your drawer and cancels the 20,272.05
 PHP owed to Cebuana Lhuillier." The browser does not add the fee. The
 idempotency key is `web:transfer-cancel:<transactionId>`, so a second tap
@@ -252,10 +252,10 @@ transfer that took cash. Ask a manager to cancel." The desktop does not offer
 that person a Cancel button.
 
 The reversal is refused if the drawer can no longer fund the cash going back
-out (`REVERSAL_NOT_ALLOWED`, "Till cannot support this reversal.") and refused
+out (`REVERSAL_NOT_ALLOWED`, "The drawer does not have the cash to give back.") and refused
 once the partner has paid the beneficiary or the obligation is settled. That
 refusal is "This transfer was already paid out. It cannot be cancelled."
-`paid_out_at` (migration 041) is set by
+`paid_out_at` (migration 042) is set by
 `POST /api/ledger/obligation-deals/:transactionId/payout`, which moves no cash.
 A written-off or otherwise discharged obligation keeps the older message: a
 discharged promise is undone by a new deal.

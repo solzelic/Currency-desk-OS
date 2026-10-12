@@ -13,9 +13,10 @@ transfer screens. It publishes `window.CDOS.transferCancel`.
 | member | what it does |
 |---|---|
 | `TELLER_MESSAGE` | `Only a manager can cancel a transfer that took cash. Ask a manager to cancel.` |
+| `RECEIVE_MESSAGE` | `A received transfer can't be cancelled here. Ask a manager.` |
 | `PAID_OUT_MESSAGE` | `This transfer was already paid out. It cannot be cancelled.` |
 | `canPost(role)` | true for Owner, Manager, and Senior teller. Those OS roles already map to `transaction:reverse`. Cashier and Trainee are false. This grants nothing. |
-| `review(obligation)` | `{ kind: "confirm", sentence }` or `{ kind, message }`. The sentence is built from the obligation row. It does not add the fee and it does not price the corridor. |
+| `review(obligation)` | `{ kind: "confirm", sentence }` or `{ kind, message }`. The sentence is built from the one obligation row `GET /api/ledger/obligation-deals/:transactionId` returned. It does not add the fee and it does not price the corridor. A receive is refused with `RECEIVE_MESSAGE`. |
 | `idempotencyKey(transactionId)` | `web:transfer-cancel:<transactionId>`. Stable for the life of the deal, so a second tap replays. |
 | `paidOutKey(transactionId)` | `web:transfer-paid:<transactionId>`. |
 | `postCancel(transactionId)` | `POST /api/ledger/obligation-deals/:transactionId/reversal` with that key and reason `Cancelled at the counter`. Retries once on `IDEMPOTENCY_IN_PROGRESS`. Any other error is thrown. |
@@ -37,10 +38,13 @@ does not add an approval workflow.
 - `paidOutAt` — set once the partner has paid the beneficiary, otherwise null.
 - `status` — `open`, `settled`, `written_off`, or `reversed`.
 
-Those fields are the stored deal. `cashInHome` is the till movement the
-reversal will undo. `faceAmount` is the partner face the post stored on
-`ledger_obligations`, not a price the confirm sheet computes. The browser
-does not multiply the principal by a board rate when it draws this sheet.
+Those fields are the stored deal. The confirm sheet reads them from
+`GET /api/ledger/obligation-deals/:transactionId`, the one transaction,
+not from the newest page of `GET /api/ledger/obligations`. `cashInHome`
+is the till movement the reversal will undo. `faceAmount` is the partner
+face the post stored on `ledger_obligations`, not a price the confirm
+sheet computes. The browser does not multiply the principal by a board
+rate when it draws this sheet.
 
 Send confirm, when `cashInHome` is greater than zero:
 
@@ -72,6 +76,25 @@ Payout requires `transaction:post`. It writes `ledger_obligations.paid_out_at`
 and moves no cash. A later reversal is **422** `REVERSAL_NOT_ALLOWED` with
 `PAID_OUT_MESSAGE`. A settled obligation gets the same refusal: the partner
 has already been funded.
+
+A cancel needs an open till session. With none, the response is **422**
+`REVERSAL_NOT_ALLOWED` and the message "Open the till before cancelling a
+transfer." Nothing is posted, so the signed-off day's totals stay. When a
+session is open, `ledger_reversals.business_date` and `till_session_id`
+are that session's stored business date and id. PR #128's
+`businessDate(at, timeZone)` helper is not on main, so the date is the one
+till-open wrote on `ledger_till_sessions`. A reversal posted outside a
+summary window does not take the original deal out of that window.
+
+A receive (`remittance_receive`) is **422** `REVERSAL_NOT_ALLOWED` with
+`RECEIVE_MESSAGE`. This screen does not collect the cash back.
+
+```
+GET /api/ledger/obligation-deals/:transactionId
+```
+
+`ledger:view`. Unknown id is **404** `TRANSACTION_NOT_FOUND`, "That transfer
+is not on the ledger."
 
 ## What the reversal does to the money
 

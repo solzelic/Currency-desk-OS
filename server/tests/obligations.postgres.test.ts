@@ -20,7 +20,10 @@ import {
   ObligationService,
   TRANSFER_CANCEL_TELLER_MESSAGE,
   TRANSFER_PAID_OUT_MESSAGE,
+  TRANSFER_RECEIVE_MESSAGE,
+  TRANSFER_TILL_CLOSED_MESSAGE,
 } from "../src/ledger/obligations.js";
+import { LedgerReportingService } from "../src/ledger/reporting.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -407,7 +410,7 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
 
   /* ---------------- undoing a mistake ---------------- */
 
-  it("puts a mis-keyed send back exactly, and touches no profit and loss", async () => {
+  it("puts a mis-keyed send back exactly, and mirrors the fee instead of booking a loss", async () => {
     const posted = (await service.remittanceSend(teller, send)) as Record<string, string>;
     const undone = (await service.reverse(
       supervisor,
@@ -692,6 +695,17 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       [first.reversalId],
     );
     expect(fee.rows).toEqual([{ side: "debit", amount_cad: "9.99" }]);
+    const dated = await pool.query(
+      "SELECT business_date::text AS business_date, till_session_id FROM ledger_reversals WHERE reversal_id=$1",
+      [first.reversalId],
+    );
+    const session = await pool.query(
+      "SELECT business_date::text AS business_date FROM ledger_till_sessions WHERE session_id='session-1'",
+    );
+    expect(dated.rows[0]).toEqual({
+      business_date: session.rows[0].business_date,
+      till_session_id: "session-1",
+    });
 
     /* A new key is not a second reversal. The obligation is already
        reversed, so the book refuses it and the drawer stays put. */
@@ -750,5 +764,182 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       status: "open",
     });
     expect(listed.obligations[0]!.paidOutAt).toBeTruthy();
+  });
+
+  it("refuses a cancel after the day is signed off, and the day's totals stay", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-closed",
+      reference: "TR-CLOSED-1",
+    })) as Record<string, string>;
+    const before = {
+      cad: (await cad()).toFixed(2),
+      journal: (await pool.query("SELECT coalesce(sum(amount_cad),0)::text AS total FROM ledger_journal_entries")).rows[0].total,
+      reversals: (await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount,
+    };
+    await pool.query(
+      "UPDATE ledger_till_sessions SET status='closed', closed_at=now(), closed_by='supervisor-1' WHERE session_id='session-1'",
+    );
+    await expect(
+      service.reverse(supervisor, posted.transactionId!, `web:transfer-cancel:${posted.transactionId}`, "Cancelled at the counter"),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_TILL_CLOSED_MESSAGE,
+    });
+    expect((await cad()).toFixed(2)).toBe(before.cad);
+    expect(
+      (await pool.query("SELECT coalesce(sum(amount_cad),0)::text AS total FROM ledger_journal_entries")).rows[0].total,
+    ).toBe(before.journal);
+    expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(before.reversals);
+    expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("open");
+  });
+
+  it("dates a later cancel to the open session and leaves the signed-off day", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-nextday",
+      reference: "TR-NEXT-1",
+      payoutAmount: "20272.05",
+    })) as Record<string, string>;
+    /* The deal has to sit in an earlier window than the reversal. The
+       transaction row is append-only, so the trigger is off only for
+       this backdate. */
+    await pool.query("ALTER TABLE ledger_transactions DISABLE TRIGGER ledger_tx_immutable");
+    try {
+      await pool.query(
+        "UPDATE ledger_transactions SET posted_at = now() - interval '2 days' WHERE transaction_id=$1",
+        [posted.transactionId],
+      );
+    } finally {
+      await pool.query("ALTER TABLE ledger_transactions ENABLE TRIGGER ledger_tx_immutable");
+    }
+    await pool.query(
+      "UPDATE ledger_till_sessions SET status='closed', closed_at=now() - interval '2 days', closed_by='supervisor-1', business_date = current_date - 2 WHERE session_id='session-1'",
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_sessions
+         (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,session_number,business_date,status,opened_by,opened_at)
+       VALUES ('session-2','tenant-1','le-1','branch-1','workspace-1','till-1',2,current_date,'open','supervisor-1',now())`,
+    );
+    const reporting = new LedgerReportingService(pool);
+    const day = {
+      from: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      to: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const before = await reporting.summary(supervisor, day);
+    expect(before.posted).toBe(1);
+    expect(before.feesHome).toBe("9.99");
+    const drawer = (await cad()).toFixed(2);
+    const reversed = (await service.reverse(
+      supervisor,
+      posted.transactionId!,
+      `web:transfer-cancel:${posted.transactionId}`,
+      "Cancelled at the counter",
+    )) as Record<string, string>;
+    const session = await pool.query(
+      "SELECT business_date::text AS business_date FROM ledger_till_sessions WHERE session_id='session-2'",
+    );
+    expect(reversed.businessDate).toBe(session.rows[0].business_date);
+    expect(reversed.tillSessionId).toBe("session-2");
+    const after = await reporting.summary(supervisor, day);
+    expect(after.posted).toBe(before.posted);
+    expect(after.reversed).toBe(before.reversed);
+    expect(after.feesHome).toBe(before.feesHome);
+    expect(after.volumeHome).toBe(before.volumeHome);
+    expect((await cad()).toFixed(2)).toBe(new Decimal(drawer).minus("609.99").toFixed(2));
+    expect(
+      (await pool.query("SELECT status FROM ledger_till_sessions WHERE session_id='session-1'")).rows[0].status,
+    ).toBe("closed");
+  });
+
+  it("refuses to cancel a transfer the desk received", async () => {
+    const posted = (await service.remittanceReceive(teller, {
+      ...receive,
+      idempotencyKey: "recv-cancel",
+      reference: "TR-RECV-1",
+    })) as Record<string, string>;
+    const before = (await cad()).toFixed(2);
+    await expect(
+      service.reverse(supervisor, posted.transactionId!, `web:transfer-cancel:${posted.transactionId}`, "Cancelled at the counter"),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_RECEIVE_MESSAGE,
+    });
+    expect((await cad()).toFixed(2)).toBe(before);
+    expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("open");
+    expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(0);
+  });
+
+  it("reads one obligation by its transaction, past a page of 200", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-buried",
+      reference: "TR-BURIED-1",
+      payoutAmount: "20272.05",
+    })) as Record<string, string>;
+    await pool.query(
+      "UPDATE ledger_obligations SET opened_at = now() - interval '30 days' WHERE transaction_id=$1",
+      [posted.transactionId],
+    );
+    const txCols = (
+      await pool.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='ledger_transactions'
+            AND is_generated = 'NEVER'
+          ORDER BY ordinal_position`,
+      )
+    ).rows.map((row) => row.column_name as string);
+    const txSelect = txCols
+      .map((name) =>
+        name === "transaction_id" ? `'bulk-' || i`
+          : name === "transaction_ref" ? `'BULK-' || i`
+            : name === "quote_id" ? "NULL"
+              : `src.${name}`,
+      )
+      .join(", ");
+    await pool.query(
+      `INSERT INTO ledger_transactions (${txCols.join(",")})
+       SELECT ${txSelect}
+         FROM ledger_transactions src, generate_series(1,249) AS i
+        WHERE src.transaction_id=$1`,
+      [posted.transactionId],
+    );
+    const obCols = (
+      await pool.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='ledger_obligations'
+          ORDER BY ordinal_position`,
+      )
+    ).rows.map((row) => row.column_name as string);
+    const obSelect = obCols
+      .map((name) =>
+        name === "obligation_id" ? `'bulk-ob-' || i`
+          : name === "obligation_ref" ? `'BO-' || i`
+            : name === "transaction_id" ? `'bulk-' || i`
+              : name === "opened_at" ? "now()"
+                : `src.${name}`,
+      )
+      .join(", ");
+    await pool.query(
+      `INSERT INTO ledger_obligations (${obCols.join(",")})
+       SELECT ${obSelect}
+         FROM ledger_obligations src, generate_series(1,249) AS i
+        WHERE src.transaction_id=$1`,
+      [posted.transactionId],
+    );
+    const page = (await service.list(supervisor, { limit: 200 })) as {
+      obligations: Array<{ transactionId: string }>;
+    };
+    expect(page.obligations).toHaveLength(200);
+    expect(page.obligations.some((row) => row.transactionId === posted.transactionId)).toBe(false);
+    const one = (await service.read(supervisor, posted.transactionId!)) as Record<string, string>;
+    expect(one).toMatchObject({
+      transactionId: posted.transactionId,
+      cashInHome: "609.99",
+      faceAmount: "20272.05",
+      faceCurrency: "PHP",
+      status: "open",
+    });
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_obligations")).rows[0].n).toBe(250);
   });
 });

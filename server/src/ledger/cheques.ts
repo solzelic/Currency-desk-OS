@@ -977,7 +977,7 @@ export class ChequeService {
         if (!updated.rowCount)
           throw new LedgerError(
             "REVERSAL_NOT_ALLOWED",
-            "Till cannot support this reversal.",
+            "The drawer does not have the cash to give back.",
           );
         await client.query(
           "INSERT INTO ledger_till_movements (transaction_id,reversal_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,$2,'reversal',$3,$4,$5,$6)",

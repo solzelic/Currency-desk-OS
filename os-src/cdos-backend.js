@@ -639,6 +639,9 @@
           body: JSON.stringify(payload),
         });
       },
+      loadObligationDeal: function (transactionId) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId));
+      },
       reverseObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/reversal", {
           method: "POST",

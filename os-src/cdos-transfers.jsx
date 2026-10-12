@@ -17,9 +17,15 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit } = window.CDOS;
+  const { CD, Ic, fmt, num, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit, currencyPlaces } = window.CDOS;
 
-  const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  const stamp = () => new Date().toLocaleString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit', hour12: true }).replace(',', '');
+  function amountLine(amount, ccy) {
+    const places = typeof currencyPlaces === 'function' && currencyPlaces(ccy) === 0 ? 0 : 2;
+    const n = Number(amount);
+    if (!Number.isFinite(n)) return '—';
+    return n.toLocaleString('en-CA', { minimumFractionDigits: places, maximumFractionDigits: places }) + ' ' + ccy;
+  }
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const cadOf = (amt, c) => c === 'CAD' ? (+amt || 0) : (+amt || 0) / (crossRate('CAD', c) || 1);
   /* Money as integer cents. The server adds the same figures with
@@ -706,8 +712,7 @@
         return;
       }
       try {
-        const book = await window.CDOS.Backend.loadObligations({ limit: 200 });
-        const row = (book.obligations || []).find(o => o.transactionId === t.serverTransactionId);
+        const row = await window.CDOS.Backend.loadObligationDeal(t.serverTransactionId);
         const review = Cancel.review(row);
         if (review.kind === 'confirm') setSentence(review.sentence);
         else setCancelError(review.message);
@@ -729,6 +734,15 @@
         }
       } catch (error) {
         setCancelError(error.message || 'The transfer was not cancelled.');
+        try {
+          const row = await window.CDOS.Backend.loadObligationDeal(t.serverTransactionId);
+          if (row && row.status === 'reversed') advance('cancelled', 'Already cancelled on the ledger');
+          else if (row && (row.paidOutAt || row.status === 'settled')) {
+            setTransfers(list => list.map(x => x.id === t.id && x.status !== 'paid' ? { ...x, status: 'paid', timeline: [...(x.timeline || []), { status: 'paid', ts: stamp(), by: me.name, note: 'Already paid out on the ledger' }] } : x));
+          }
+        } catch (readError) {
+          log && log('Ledger refresh failed', readError.message || 'The transfer status was not refreshed');
+        }
       } finally {
         setBusy(false);
       }
@@ -759,10 +773,10 @@
             {ben && ben.method === 'bank' && <DRow k="Account" v={`${ben.bank} · ${ben.account}`} mono />}
             {ben && ben.method === 'cash' && <DRow k="Pickup" v={ben.pickupCity} />}
             {ben && ben.method === 'wallet' && <DRow k="Wallet" v={ben.walletId} mono />}
-            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={`${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`} mono />
+            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={amountLine(t.payAmt, dir === 'send' ? home : t.ccy)} mono />
             <DRow k="Rate" v={`${num(t.rate)} ${dir === 'send' ? t.ccy : home}/${dir === 'send' ? home : t.ccy}`} mono />
-            <DRow k="Fee" v={fmt(t.fee, home)} mono />
-            <DRow k={dir === 'send' ? 'Beneficiary gets' : 'Customer gets'} v={`${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`} mono accent={CD.green} />
+            <DRow k="Fee" v={amountLine(t.fee, home)} mono />
+            <DRow k={dir === 'send' ? 'Beneficiary gets' : 'Customer gets'} v={amountLine(t.recvAmt, dir === 'send' ? t.ccy : home)} mono accent={CD.green} />
             <DRow k="Purpose" v={t.purpose} />
           </div>
 
@@ -794,7 +808,7 @@
                 : <button onClick={() => advance('hold', 'Placed on hold')} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, color: CD.amber, borderRadius: 8 }}><Ic n="alert" s={15} c={CD.amber} /> Hold</button>}
               {canPost
                 ? <button type="button" data-transfer-cancel="open" onClick={openCancel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> Cancel</button>
-                : <p data-transfer-cancel="teller" role="status" className="w-full text-[13px] px-3 py-2 flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9 }}><Ic n="info" s={15} c={CD.ink} /><span>{Cancel.TELLER_MESSAGE}</span></p>}
+                : <p data-transfer-cancel="teller" role="status" className="w-full text-[13px] px-3 py-2 flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9, minWidth: 0, maxWidth: '100%', overflowWrap: 'break-word', whiteSpace: 'normal' }}><Ic n="info" s={15} c={CD.ink} /><span style={{ minWidth: 0 }}>{Cancel.TELLER_MESSAGE}</span></p>}
             </div>
           )}
           {cancelError && !ask && <p role="alert" className="text-[13px]" style={{ color: CD.flag }}>{cancelError}</p>}
@@ -806,8 +820,8 @@
                 {!sentence && !cancelError && <p className="text-sm mt-3" style={{ color: CD.mute }}>Reading the ledger…</p>}
                 {cancelError && <p role="alert" className="text-sm mt-3" style={{ color: CD.flag }}>{cancelError}</p>}
                 <div className="flex flex-col gap-2 mt-4">
-                  {sentence && !cancelError && <button type="button" disabled={busy} onClick={confirmCancel} className="px-4 py-2.5 text-sm font-semibold text-white" style={{ background: busy ? 'var(--cd-disabled)' : CD.flag, borderRadius: 8, cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Cancelling…' : 'Cancel transfer'}</button>}
-                  <button type="button" onClick={() => { if (!busy) setAsk(false); }} className="px-4 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}>Keep it</button>
+                  {sentence && <button type="button" disabled={busy} onClick={confirmCancel} className="px-4 text-sm font-semibold text-white" style={{ background: busy ? 'var(--cd-disabled)' : CD.flag, borderRadius: 8, cursor: busy ? 'wait' : 'pointer', minHeight: 44 }}>{busy ? 'Cancelling…' : 'Cancel transfer'}</button>}
+                  <button type="button" onClick={() => { if (!busy) setAsk(false); }} className="px-4 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, minHeight: 44 }}>Keep it</button>
                 </div>
               </div>
             </div>

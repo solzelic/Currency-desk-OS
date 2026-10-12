@@ -89,6 +89,25 @@ async function sendSixHundred(page: Page) {
 test("the confirm sheet quotes the server, and cancel puts the drawer back", async ({ page }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
+  const dealGets: string[] = [];
+  const cancelKeys: string[] = [];
+  page.on("request", (req) => {
+    const url = req.url();
+    if (req.method() === "GET" && /\/api\/ledger\/obligation-deals\/[^/]+$/.test(url)) dealGets.push(url);
+  });
+  await page.route("**/api/ledger/obligation-deals/*/reversal", async (route) => {
+    const body = route.request().postDataJSON() as { idempotencyKey?: string };
+    cancelKeys.push(String(body.idempotencyKey || ""));
+    if (cancelKeys.length === 1) {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "INTERNAL_ERROR", message: "Try the cancel again." }),
+      });
+      return;
+    }
+    await route.continue();
+  });
   const book = await openDeskAndTill(page);
   const before = Number((await book.till()).CAD);
   const payableBefore = (await obligations(page)).outstanding.payable;
@@ -130,13 +149,32 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
     `This gives the customer back ${grouped(row!.cashInHome!)} ${row!.homeCurrency} from your drawer ` +
     `and cancels the ${grouped(row!.faceAmount!)} ${row!.faceCurrency} owed to ${row!.counterparty}.`,
   );
-  await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-1280.png` });
+  /* D5: the sheet's only figures are the stored cash and face. The
+     lookup that filled it was that transaction, not the newest page. */
+  expect(dealGets.some((url) => url.endsWith(`/api/ledger/obligation-deals/${row!.transactionId}`))).toBe(true);
+  const byId = await page.evaluate(async (transactionId) => {
+    const response = await fetch(`/api/ledger/obligation-deals/${transactionId}`);
+    return response.json();
+  }, row!.transactionId);
+  expect(parsed![1]!.replace(/,/g, "")).toBe(plain(byId.cashInHome));
+  expect(parsed![3]!.replace(/,/g, "")).toBe(plain(byId.faceAmount));
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(effect).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-360.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(effect).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-390.png` });
   await page.setViewportSize({ width: 1280, height: 800 });
 
-  await page.getByRole("button", { name: "Cancel transfer" }).click();
+  const cancel = page.getByRole("button", { name: "Cancel transfer" });
+  await cancel.click();
+  await expect(page.locator("[data-transfer-cancel='confirm'] [role='alert']")).toContainText("Try the cancel again.");
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  expect(cancelKeys).toEqual([
+    `web:transfer-cancel:${row!.transactionId}`,
+    `web:transfer-cancel:${row!.transactionId}`,
+  ]);
   await expect(page.locator("[data-transfer-cancel='confirm']")).toHaveCount(0, { timeout: 15_000 });
   await expect
     .poll(async () => Number((await book.till()).CAD) - before, { timeout: 15_000 })
@@ -169,12 +207,14 @@ test("a cashier is told to ask a manager, and Cancel is not offered", async ({ p
     "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.",
   );
   await expect(page.locator("[data-transfer-cancel='open']")).toHaveCount(0);
-  await teller.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: `${SHOTS}/transfer-cancel-teller-1280.png` });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(teller).toBeVisible();
-  await teller.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: `${SHOTS}/transfer-cancel-teller-390.png` });
+  for (const width of [360, 390]) {
+    await page.setViewportSize({ width, height: width === 360 ? 800 : 844 });
+    await teller.scrollIntoViewIfNeeded();
+    await expect(teller).toBeVisible();
+    const fits = await teller.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+    expect(fits, `cashier notice overflows at ${width}`).toBe(true);
+    await page.screenshot({ path: `${SHOTS}/transfer-cancel-teller-${width}.png` });
+  }
 
   const ledgerLine = await page.locator("div.fixed.inset-0.flex.justify-end").getByText(/^Ledger /).innerText();
   const ref = ledgerLine.replace(/^Ledger\s+/, "").trim();

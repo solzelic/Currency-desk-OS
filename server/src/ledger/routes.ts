@@ -1495,6 +1495,17 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     }
   });
 
+  app.get("/api/ledger/obligation-deals/:transactionId", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await obligations.read(actor, (req.params as { transactionId: string }).transactionId))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
   app.post("/api/ledger/obligation-deals/:transactionId/reversal", async (req, reply) => {
     const parsed = reverseBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
