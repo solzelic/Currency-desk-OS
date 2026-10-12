@@ -98,7 +98,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `Jun 18, 2026`. A list group for the business day is `Today, Oct 11`. A `YYYY-MM-DD` string stays on that calendar day
   (`docs/PHONE_SHELL.md`). Shared rows, a profile row, a toggle, a
   full-screen sheet, a PIN keypad, and a toast live in `os-src/phone/`.
-  A screen uses those. It does not keep a local copy. ChoiceTiles,
+  Text on those six is at least 4.5:1 on its background in light and
+  in dark. The toast sits where it does not cover a control, and taps
+  pass through the line. Its words are announced from a live region
+  after it mounts, and an action toast stays while that action has
+  focus. The keypad takes a hardware key and a paste, and it says
+  “N of 4 digits”. The sheet keeps focus inside. Escape closes it and
+  returns focus to the control that opened it. A screen uses those.
+  It does not keep a local copy. ChoiceTiles,
   AmountField, SummaryList, and StepHeader are the next shared files,
   added on top of these six. The phone header initials and a profile
   avatar use the same sans. Each phone window
@@ -634,6 +641,16 @@ empty stylesheet. The 1280 spec now serves Archivo and Space Mono from
 `tests/e2e/fonts/` for both the main capture and the branch compare.
 A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
+
+**2026-10-12**, shared phone pieces, both themes. Text on NavRow,
+ProfileRow, Toggle, FullScreenSheet, PinPad, and Toast is at least
+4.5:1 on its background in light and in dark. The toast moves off a
+control, and the line does not take the tap. The words land in a
+live region after the toast mounts. An action toast stays while that
+action has focus. The keypad takes a hardware digit, Backspace,
+Delete, and a paste, and it says “N of 4 digits”. The sheet traps
+focus. Escape closes it and returns focus to the control that opened
+it.
 
 **2026-10-12**, phone toast. The shared toast sits at the bottom, 16px
 above the sticky action, or 16px above the tab bar when there is no

@@ -4840,25 +4840,72 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 /* FullScreenSheet — a dialog that covers the phone, including the
    bottom bar. Portaled to the body so a transformed window cannot
    trap it above the bar. Hidden above 430px by the stylesheet, so
-   a resize back to the desktop does not leave it on screen. */
+   a resize back to the desktop does not leave it on screen.
+   Focus stays inside the sheet. Escape closes it and returns focus
+   to the control that opened it. */
 (function () {
   const {
     Ic
   } = window.CDOS;
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  function shown(el) {
+    const st = getComputedStyle(el);
+    if (st.display === "none" || st.visibility === "hidden") return false;
+    const box = el.getBoundingClientRect();
+    return box.width > 0 && box.height > 0;
+  }
+  function focusables(root) {
+    return Array.from(root.querySelectorAll(FOCUSABLE)).filter(el => {
+      if (el.getAttribute("tabindex") === "-1") return false;
+      if (el.getAttribute("aria-hidden") === "true") return false;
+      return shown(el);
+    });
+  }
   function FullScreenSheet({
     title,
     label,
     onClose,
     children
   }) {
+    const root = React.useRef(null);
+    const closeRef = React.useRef(onClose);
+    closeRef.current = onClose;
     React.useEffect(() => {
+      const opener = document.activeElement;
+      const sheet = root.current;
+      const items = () => sheet ? focusables(sheet) : [];
+      const first = items()[0];
+      if (first) first.focus();
       const onKey = e => {
-        if (e.key === 'Escape') onClose();
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          if (closeRef.current) closeRef.current();
+          return;
+        }
+        if (e.key !== "Tab" || !sheet) return;
+        const list = items();
+        if (!list.length) {
+          e.preventDefault();
+          return;
+        }
+        const index = list.indexOf(document.activeElement);
+        const next = e.shiftKey ? index <= 0 ? list[list.length - 1] : list[index - 1] : index < 0 || index >= list.length - 1 ? list[0] : list[index + 1];
+        e.preventDefault();
+        next.focus();
       };
-      document.addEventListener('keydown', onKey);
-      return () => document.removeEventListener('keydown', onKey);
-    }, [onClose]);
+      document.addEventListener("keydown", onKey, true);
+      return () => {
+        document.removeEventListener("keydown", onKey, true);
+        if (opener && typeof opener.focus === "function" && document.contains(opener)) {
+          try {
+            opener.focus();
+          } catch (err) {/* the opener can be gone */}
+        }
+      };
+    }, []);
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      ref: root,
       className: "sheet",
       role: "dialog",
       "aria-modal": "true",
@@ -4883,8 +4930,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 /* ---- os-src/phone/pin-pad.jsx ---- */
 /* PinPad — one question, four dots, a keypad. The parent decides
    when four digits is enough. This only draws the step and reports
-   each key. Delete removes one digit. The keypad locks while a
-   save is in flight so the last digit cannot submit twice. */
+   each key. Delete removes one digit. A hardware digit, Backspace,
+   Delete, and a paste do the same. The count is announced as
+   "N of 4 digits". The keypad locks while a save is in flight so
+   the last digit cannot submit twice. */
 (function () {
   const {
     Ic
@@ -4911,10 +4960,62 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     retryLabel,
     onRetry
   }) {
+    const root = React.useRef(null);
+    const digitRef = React.useRef(onDigit);
+    const deleteRef = React.useRef(onDelete);
+    digitRef.current = onDigit;
+    deleteRef.current = onDelete;
     const filled = Math.min(4, (digits || '').length);
+    const closed = !!(passwordMode || busy || locked);
+    React.useEffect(() => {
+      if (closed) return undefined;
+      const onKey = e => {
+        const pad = root.current;
+        if (!pad || pad.getBoundingClientRect().width < 1) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const target = e.target;
+        if (target && target.closest) {
+          const field = target.closest("input, textarea, select");
+          if (field && !pad.contains(field)) return;
+        }
+        if (/^[0-9]$/.test(e.key)) {
+          e.preventDefault();
+          if (digitRef.current) digitRef.current(e.key);
+        } else if (e.key === "Backspace" || e.key === "Delete") {
+          e.preventDefault();
+          if (deleteRef.current) deleteRef.current();
+        }
+      };
+      const onPaste = e => {
+        const pad = root.current;
+        if (!pad || pad.getBoundingClientRect().width < 1) return;
+        const target = e.target;
+        if (target && target.closest) {
+          const field = target.closest("input, textarea");
+          if (field && !pad.contains(field)) return;
+        }
+        const data = e.clipboardData || window.clipboardData;
+        if (!data) return;
+        const text = data.getData("text/plain") || data.getData("text") || "";
+        const room = 4 - Math.min(4, String(digits || "").length);
+        const chars = String(text).replace(/\D/g, "").slice(0, room);
+        if (!chars) return;
+        e.preventDefault();
+        chars.split("").forEach(ch => {
+          if (digitRef.current) digitRef.current(ch);
+        });
+      };
+      document.addEventListener("keydown", onKey);
+      document.addEventListener("paste", onPaste);
+      return () => {
+        document.removeEventListener("keydown", onKey);
+        document.removeEventListener("paste", onPaste);
+      };
+    }, [closed, digits]);
     return /*#__PURE__*/React.createElement("div", {
       className: "pinpad",
-      "data-pin-step": step
+      "data-pin-step": step,
+      ref: root
     }, /*#__PURE__*/React.createElement("div", {
       className: "steps",
       "aria-label": 'Step ' + step + ' of ' + steps
@@ -4951,11 +5052,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       role: "status"
     }, "Saving...") : /*#__PURE__*/React.createElement("div", {
       className: 'pin-dots' + (shake ? ' shake' : ''),
-      "aria-label": filled + ' of 4 digits entered'
+      "aria-hidden": "true"
     }, [0, 1, 2, 3].map(i => /*#__PURE__*/React.createElement("i", {
       key: i,
       className: i < filled ? 'on' : ''
-    }))), error ? /*#__PURE__*/React.createElement("p", {
+    }))), passwordMode || busy ? null : /*#__PURE__*/React.createElement("p", {
+      className: "sr pin-count",
+      role: "status",
+      "aria-live": "polite",
+      "aria-atomic": "true"
+    }, filled, " of 4 digits"), error ? /*#__PURE__*/React.createElement("p", {
       className: "pin-err",
       role: "alert"
     }, error) : null, onForgot ? /*#__PURE__*/React.createElement("div", {
@@ -5001,10 +5107,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 })();
 
 /* ---- os-src/phone/toast.jsx ---- */
-/* Toast — one line after a save. It sits at the bottom, 16px above
-   the sticky action, or 16px above the tab bar when the screen has
-   none. Inset 16px. It leaves after 4 seconds. role=status so a
-   screen reader hears it without the cashier hunting for it. */
+/* Toast — one line after a save. It sits 16px above the sticky
+   action, or 16px above the tab bar, when that band covers no
+   control. When it would, it sits 16px below the phone header or
+   the sheet header. Taps pass through the line. The action still
+   takes them. The words go into a live region after the toast
+   mounts, so a screen reader hears them. An action toast stays
+   up while that action has focus. */
 (function () {
   const {
     Ic
@@ -5018,6 +5127,40 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const dock = document.getElementById("phone-dock");
     return dock ? dock.getBoundingClientRect().top : window.innerHeight;
   }
+  function headerBottom() {
+    let bottom = 0;
+    const nodes = document.querySelectorAll(".sheet-h, .phone-head");
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      const st = getComputedStyle(el);
+      if (st.display === "none" || st.visibility === "hidden") continue;
+      const box = el.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) continue;
+      if (box.bottom > bottom) bottom = box.bottom;
+    }
+    return bottom;
+  }
+  function controlBoxes(except) {
+    const nodes = document.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [role="switch"]');
+    const boxes = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      if (except && except.contains(el)) continue;
+      const st = getComputedStyle(el);
+      if (st.display === "none" || st.visibility === "hidden") continue;
+      const box = el.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) continue;
+      boxes.push(box);
+    }
+    return boxes;
+  }
+  function hits(rect, boxes) {
+    for (let i = 0; i < boxes.length; i++) {
+      const box = boxes[i];
+      if (rect.left < box.right - 0.5 && rect.right > box.left + 0.5 && rect.top < box.bottom - 0.5 && rect.bottom > box.top + 0.5) return true;
+    }
+    return false;
+  }
   function Toast({
     text,
     actionLabel,
@@ -5027,34 +5170,110 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const node = React.useRef(null);
     const done = React.useRef(onDone);
     done.current = onDone;
+    const action = React.useRef(actionLabel);
+    action.current = actionLabel;
+    const timer = React.useRef(null);
+    const remaining = React.useRef(4000);
+    const started = React.useRef(0);
+    const held = React.useRef(false);
+    /* Empty on the first paint. The effect fills it after mount. */
+    const [live, setLive] = React.useState("");
+    const clearTimer = () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+    const finish = () => {
+      if (held.current && action.current) return;
+      if (done.current) done.current();
+    };
+    const arm = ms => {
+      clearTimer();
+      remaining.current = ms;
+      started.current = Date.now();
+      if (held.current && action.current) return;
+      timer.current = setTimeout(finish, ms);
+    };
+
     /* Depend on the text, not the callback. A parent re-render would
        otherwise restart the four seconds and the toast would stick. */
     React.useEffect(() => {
       if (!text) return undefined;
-      const t = setTimeout(() => {
-        if (done.current) done.current();
-      }, 4000);
-      return () => clearTimeout(t);
+      const el = node.current;
+      held.current = !!(action.current && el && document.activeElement && el.contains(document.activeElement));
+      arm(4000);
+      return () => clearTimer();
+    }, [text]);
+    React.useEffect(() => {
+      setLive(text || "");
     }, [text]);
     React.useLayoutEffect(() => {
       const el = node.current;
-      if (!el) return undefined;
+      if (!el || !text) return undefined;
       const place = () => {
-        el.style.bottom = window.innerHeight - anchorTop() + 16 + "px";
+        const height = el.offsetHeight;
+        if (height < 1) return;
+        const boxes = controlBoxes(el);
+        const width = window.innerWidth;
+        const bottomInset = Math.round(window.innerHeight - anchorTop() + 16);
+        const bottomTop = window.innerHeight - bottomInset - height;
+        const bottomRect = {
+          left: 16,
+          right: width - 16,
+          top: bottomTop,
+          bottom: bottomTop + height
+        };
+        if (!hits(bottomRect, boxes)) {
+          el.style.top = "auto";
+          el.style.bottom = bottomInset + "px";
+          return;
+        }
+        el.style.bottom = "auto";
+        el.style.top = headerBottom() + 16 + "px";
       };
       place();
       window.addEventListener("resize", place);
       return () => window.removeEventListener("resize", place);
     }, [text, actionLabel]);
+    const hold = () => {
+      if (!action.current) return;
+      held.current = true;
+      if (!timer.current) return;
+      const elapsed = Date.now() - started.current;
+      remaining.current = Math.max(0, remaining.current - elapsed);
+      clearTimer();
+    };
+    const release = e => {
+      if (!action.current) return;
+      const next = e.relatedTarget;
+      if (node.current && next && node.current.contains(next)) return;
+      held.current = false;
+      if (remaining.current <= 0) {
+        finish();
+        return;
+      }
+      arm(remaining.current);
+    };
     if (!text) return null;
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       ref: node,
       className: "phone-toast",
-      role: "status"
+      onFocus: hold,
+      onBlur: release
+    }, /*#__PURE__*/React.createElement("span", {
+      "aria-hidden": "true"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",
       s: 16
-    }), /*#__PURE__*/React.createElement("span", null, text), actionLabel ? /*#__PURE__*/React.createElement("button", {
+    })), /*#__PURE__*/React.createElement("span", {
+      "aria-hidden": "true"
+    }, text), /*#__PURE__*/React.createElement("span", {
+      className: "phone-toast-live",
+      role: "status",
+      "aria-live": "polite",
+      "aria-atomic": "true"
+    }, live), actionLabel ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-toast-go",
       onClick: onAction

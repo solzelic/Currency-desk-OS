@@ -501,7 +501,11 @@ hides every surface they draw. The hide rule sits outside the phone
 query and before the query that shows them. A later unconditional
 `display: none` would hide them on a phone too. A sheet is portaled
 to `document.body`, so that hide covers a node outside the window.
-Colours in this shared CSS are `tokens.css` variables.
+Colours in this shared CSS are `tokens.css` variables, except where a
+pair has to follow the desk theme. Every text and background pair on
+these six is at least 4.5:1 in light and in dark. A light chip that
+carries its own ink (a badge, an icon tile, a banner) keeps that pair
+in both themes.
 
 ### NavRow
 
@@ -531,28 +535,37 @@ it. It is `aria-hidden`. The row carries the switch role.
 `os-src/phone/full-screen-sheet.jsx`. A dialog portaled to
 `document.body`, so a transformed window cannot trap it above the
 bottom bar. It covers the bar. Escape and the close button call
-`onClose`. The close button’s name is “Close without changing”.
-`title` is the bar. `label` is the dialog’s accessible name when the
-title is not the question. `.sheet` is `display: none` above 430px,
-so a resize does not leave the dialog up.
+`onClose`. Escape also returns focus to the control that opened the
+sheet. Tab and Shift+Tab stay inside the sheet. The close button’s
+name is “Close without changing”. `title` is the bar. `label` is the
+dialog’s accessible name when the title is not the question. `.sheet`
+is `display: none` above 430px, so a resize does not leave the dialog
+up.
 
 ### PinPad
 
 `os-src/phone/pin-pad.jsx`. One question, four dots, a keypad. The
 parent decides what four digits means. Delete removes one digit.
-`busy` replaces the dots with “Saving...” and locks the keys.
-`locked` locks them too. `passwordMode` replaces the keypad with a
-password field and Next. `data-pin-step` is the step number.
+A hardware digit key does too, and Backspace or Delete removes one.
+A paste of digits fills the remaining places, up to four. The count
+is a live region, “N of 4 digits”. `busy` replaces the dots with
+“Saving...” and locks the keys. `locked` locks them too.
+`passwordMode` replaces the keypad with a password field and Next.
+`data-pin-step` is the step number.
 
 ### Toast
 
-`os-src/phone/toast.jsx`. One line, portaled to `document.body`,
-`role="status"`. It sits at the bottom, 16px above the sticky action,
-or 16px above the tab bar when the screen has no sticky action. It
-is inset 16px from the screen edges. The face is `--gray-900`, white
-14/20 (`--text-small` on `--gray-0`), and `--radius-md`.
-`actionLabel` and `onAction` are optional. The action is a white
-weight-600 text button. It leaves after 4 seconds and calls `onDone`.
+`os-src/phone/toast.jsx`. One line, portaled to `document.body`.
+The words are inserted into a `role="status"` live region after the
+toast mounts. It is inset 16px from the screen edges. It sits 16px
+above the sticky action, or 16px above the tab bar when the screen
+has no sticky action, when that band covers no control. When it
+would cover one, it sits 16px below the sheet header or the phone
+header. The line itself does not take taps. The action does.
+The face is `--gray-900`, white 14/20 (`--text-small` on `--gray-0`),
+and `--radius-md`. `actionLabel` and `onAction` are optional. The
+action is a white weight-600 text button. It leaves after 4 seconds
+and calls `onDone`. It does not leave while the action has focus.
 The timer follows the text, not the callback, so a parent re-render
 does not keep it on screen.
 

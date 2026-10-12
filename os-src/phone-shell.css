@@ -671,9 +671,46 @@
 .phone-toast { display: none; }
 
 @media (max-width: 430px) {
+  /* Each text colour is paired with the surface it sits on.
+     Dark theme used to keep the white surface and take the light
+     ink, which is about 1.2:1. Both themes clear 4.5:1. */
+  .sheet,
+  .nrow,
+  .me,
+  .pinpad,
+  .phone-btn,
+  .phone-text,
+  .keypad {
+    --w-bg: #ffffff;
+    --w-text: #161513;
+    --w-muted: #6b6760;
+    --w-well: #f7f6f3;
+    --w-key: #ffffff;
+    --w-line: #e2dfd8;
+    --w-warn: #8a5300;
+    --w-danger: #b42318;
+    --w-link: var(--brand-primary, #17140f);
+  }
+  html[data-cdtheme="dark"] .sheet,
+  html[data-cdtheme="dark"] .nrow,
+  html[data-cdtheme="dark"] .me,
+  html[data-cdtheme="dark"] .pinpad,
+  html[data-cdtheme="dark"] .phone-btn,
+  html[data-cdtheme="dark"] .phone-text,
+  html[data-cdtheme="dark"] .keypad {
+    --w-bg: #1e1d1a;
+    --w-text: #f4f1ea;
+    --w-muted: #c2beb4;
+    --w-well: #141310;
+    --w-key: #2c2b27;
+    --w-line: rgba(255, 255, 255, 0.16);
+    --w-warn: #f0c36a;
+    --w-danger: #ffb4a8;
+    --w-link: #f4f1ea;
+  }
   .sheet {
     --brand-primary: var(--accent-ink);
-    color: var(--color-text);
+    color: var(--w-text);
     font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
   }
   .phone-sheet-x {
@@ -683,7 +720,7 @@
     place-items: center;
     border: 0;
     background: transparent;
-    color: var(--gray-900);
+    color: var(--w-text);
     cursor: pointer;
   }
   .nrow, .me {
@@ -694,10 +731,10 @@
     box-sizing: border-box;
     padding: 8px 16px;
     border: 0;
-    border-bottom: 1px solid var(--color-border);
-    background: transparent;
+    border-bottom: 1px solid var(--w-line);
+    background: var(--w-bg);
     text-align: left;
-    color: inherit;
+    color: var(--w-text);
     cursor: pointer;
   }
   .nrow { grid-template-columns: auto minmax(0, 1fr) auto auto; min-height: 56px; }
@@ -713,13 +750,13 @@
     display: grid;
     place-items: center;
   }
-  .nrow .t, .me .t { display: block; font-weight: 600; }
+  .nrow .t, .me .t { display: block; font-weight: 600; color: var(--w-text); }
   .nrow .t { font-size: 16px; line-height: 24px; }
   .me .t { font-size: 17px; line-height: 24px; }
-  .nrow .d, .me .d { display: block; margin: 0; padding: 0; font-size: 12px; line-height: 16px; color: var(--color-text-muted); }
-  .nrow .v { font-size: 14px; line-height: 20px; color: var(--color-text-muted); white-space: nowrap; }
-  .nrow .v.is-warn { color: var(--color-warning); font-weight: 600; }
-  .nrow .cv, .me .cv { color: var(--color-text-muted); display: grid; }
+  .nrow .d, .me .d { display: block; margin: 0; padding: 0; font-size: 12px; line-height: 16px; color: var(--w-muted); }
+  .nrow .v { font-size: 14px; line-height: 20px; color: var(--w-muted); white-space: nowrap; }
+  .nrow .v.is-warn { color: var(--w-warn); font-weight: 600; }
+  .nrow .cv, .me .cv { color: var(--w-muted); display: grid; }
   .me .av {
     width: 48px;
     height: 48px;
@@ -738,7 +775,7 @@
     font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
     letter-spacing: 0;
   }
-  .nrow.danger .t { color: var(--color-negative); }
+  .nrow.danger .t { color: var(--w-danger); }
   .nrow.danger .ic { background: var(--color-negative-bg); color: var(--color-negative); }
   .badge {
     display: inline-flex;
@@ -790,15 +827,16 @@
     cursor: pointer;
   }
   .phone-btn.primary { background: var(--brand-primary); color: var(--gray-0); }
-  .phone-btn.secondary { background: var(--gray-0); color: var(--gray-900); border-color: var(--color-border); }
+  .phone-btn.secondary { background: var(--w-key); color: var(--w-text); border-color: var(--w-line); }
   .phone-btn.danger { background: var(--color-negative); color: var(--gray-0); }
   .phone-btn:disabled { opacity: 0.5; cursor: default; }
   .phone-text {
     border: 0;
     background: transparent;
-    color: var(--brand-primary);
+    color: var(--w-link);
     font: 600 14px/16px var(--f-display, "Archivo", system-ui, sans-serif);
     min-height: 44px;
+    min-width: 44px;
     padding: 0 8px;
     cursor: pointer;
   }
@@ -809,9 +847,9 @@
     font-size: 14px;
     line-height: 20px;
   }
-  .sheet .phone-banner.info { background: var(--color-info-bg); }
-  .sheet .phone-banner.warn { background: var(--color-warning-bg); border: 1px solid var(--color-warning-border); }
-  .sheet .phone-banner.err { background: var(--color-negative-bg); border: 1px solid var(--color-negative); }
+  .sheet .phone-banner.info { background: #E8F0FB; color: #1E5AA8; }
+  .sheet .phone-banner.warn { background: #FFF4DC; color: #8A5300; border: 1px solid #E8B04A; }
+  .sheet .phone-banner.err { background: #FDECEA; color: #B42318; border: 1px solid #B42318; }
   .sheet .phone-banner b { display: block; font-weight: 600; }
   .sheet {
     display: flex;
@@ -819,7 +857,8 @@
     position: fixed;
     inset: 0;
     z-index: 640;
-    background: var(--gray-0);
+    background: var(--w-bg);
+    color: var(--w-text);
   }
   .sheet-h {
     height: 56px;
@@ -827,31 +866,34 @@
     grid-template-columns: 44px 1fr 44px;
     align-items: center;
     padding: 0 8px;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--w-line);
     flex: none;
   }
-  .sheet-h h2 { margin: 0; text-align: center; font-size: 17px; line-height: 24px; font-weight: 600; }
-  .pinpad { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .sheet-h h2 { margin: 0; text-align: center; font-size: 17px; line-height: 24px; font-weight: 600; color: var(--w-text); }
+  .pinpad { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--w-bg); color: var(--w-text); }
   .steps { display: flex; justify-content: center; gap: 8px; margin: 24px 0 16px; }
   .steps i { width: 24px; height: 4px; border-radius: 2px; background: var(--color-border); }
   .steps i.on { background: var(--brand-primary); }
-  .pin-q { font-size: 20px; line-height: 28px; font-weight: 600; text-align: center; }
-  .pin-s { margin-top: 4px; font-size: 14px; line-height: 20px; color: var(--color-text-muted); text-align: center; }
+  .pin-q { font-size: 20px; line-height: 28px; font-weight: 600; text-align: center; color: var(--w-text); }
+  .pin-s { margin-top: 4px; font-size: 14px; line-height: 20px; color: var(--w-muted); text-align: center; }
   .pin-dots { display: flex; justify-content: center; gap: 20px; margin: 24px 0 12px; }
-  .pin-dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--color-text-muted); box-sizing: border-box; }
-  .pin-dots i.on { background: var(--gray-900); border-color: var(--gray-900); }
+  .pin-dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--w-muted); box-sizing: border-box; }
+  .pin-dots i.on { background: var(--w-text); border-color: var(--w-text); }
   .pin-dots.shake { animation: phone-pin-shake 0.28s linear; }
-  .pin-saving { margin: 28px 0; text-align: center; font-size: 16px; line-height: 24px; font-weight: 600; }
-  .pin-err { margin: 8px 16px; text-align: center; color: var(--color-negative); font-size: 14px; line-height: 20px; }
+  .pin-saving { margin: 28px 0; text-align: center; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--w-text); }
+  .pin-err { margin: 8px 16px; text-align: center; color: var(--w-danger); font-size: 14px; line-height: 20px; }
   .pin-pw { display: flex; flex-direction: column; gap: 12px; margin: 24px 16px; }
   .pin-pw input {
     height: 48px;
     box-sizing: border-box;
     padding: 0 12px;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--w-line);
     border-radius: 10px;
+    background: var(--w-key);
+    color: var(--w-text);
     font: 400 16px/24px var(--f-display, "Archivo", system-ui, sans-serif);
   }
+  .pin-pw input::placeholder { color: var(--w-muted); opacity: 1; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .forgot { display: flex; justify-content: center; }
   .keypad {
@@ -860,21 +902,22 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     padding: 12px 16px 24px;
-    background: var(--color-bg);
-    border-top: 1px solid var(--color-border);
+    background: var(--w-well);
+    border-top: 1px solid var(--w-line);
   }
   .keypad button {
     height: 56px;
     border-radius: 10px;
-    background: var(--gray-0);
-    border: 1px solid var(--color-border);
+    background: var(--w-key);
+    color: var(--w-text);
+    border: 1px solid var(--w-line);
     font: 600 20px/28px var(--f-display, "Archivo", system-ui, sans-serif);
     font-variant-numeric: tabular-nums;
     box-shadow: var(--shadow-sm);
     cursor: pointer;
   }
   .keypad button.blank { visibility: hidden; }
-  .keypad button.del { background: transparent; border: 0; box-shadow: none; display: grid; place-items: center; }
+  .keypad button.del { background: transparent; border: 0; box-shadow: none; color: var(--w-text); display: grid; place-items: center; }
   .keypad button:disabled { opacity: 0.4; }
   .phone-toast {
     display: flex;
@@ -892,16 +935,30 @@
     color: var(--gray-0);
     border-radius: var(--radius-md);
     font: var(--text-small);
+    pointer-events: none;
+  }
+  .phone-toast-live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
   }
   .phone-toast-go {
     margin-left: auto;
     min-height: 44px;
-    padding: 0 4px;
+    min-width: 44px;
+    padding: 0 8px;
     border: 0;
     background: transparent;
     color: var(--gray-0);
     font: 600 14px/20px var(--font-ui), "Archivo", system-ui, sans-serif;
     cursor: pointer;
+    pointer-events: auto;
   }
   .nrow:focus-visible,
   .me:focus-visible,
