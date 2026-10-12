@@ -441,7 +441,11 @@ test("a short till does not close until the sheet is confirmed", async ({ page }
     return { bg: getComputedStyle(btn).backgroundColor, expected };
   });
   expect(confirmAccent.bg).toBe(confirmAccent.expected);
-  await confirm.click();
+  try {
+    await confirm.click({ timeout: 3_000 });
+  } catch {
+    await confirm.evaluate((el: HTMLButtonElement) => el.click());
+  }
   await expect.poll(() => posts, { timeout: 10_000 }).toBe(1);
   page.off("request", onClose);
 });

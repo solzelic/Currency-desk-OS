@@ -3323,7 +3323,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-sheet-panel {
     position: relative; background: var(--cd-panel, #fff);
     border-radius: 14px 14px 0 0; max-height: 70vh; overflow: auto;
-    padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 16px calc(16px + var(--phone-bar-h) + env(safe-area-inset-bottom, 0px));
   }
   .till-sheet-title { font-size: 17px; font-weight: 700; padding: 8px 0; color: var(--gray-900, #161513); }
   .till-sheet-row {
