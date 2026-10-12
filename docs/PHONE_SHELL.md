@@ -642,7 +642,7 @@ At 430px none of them mount the desktop window.
 | Dashboard | none | none | Open this on a computer. Full dashboard is on a computer. | See today in Reports |
 | Calculator | Result | Add up / Convert / Margin | The scratch total, or the convert and margin fields | Use in a new deal, on Convert only |
 | Loan calculator | none | none | Open this on a computer. The payment schedule is on a computer. | none |
-| Tagged | Count still open | chips: Open / Done | The tag reason, the date, the pay-in | Mark as checked, on the detail |
+| Tagged | Count still open. Hidden when that count is 0. | chips: Open / Done | The tag reason, the date, the pay-in | Mark as checked, on the detail |
 | Store | none | none | Open this on a computer. Adding and removing apps is on a computer. | none |
 | Assistant | none | none | Chat. A Beta tag | Ask, in place of the sticky button |
 

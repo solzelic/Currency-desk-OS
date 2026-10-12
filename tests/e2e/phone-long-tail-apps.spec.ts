@@ -89,6 +89,8 @@ test("every remaining more app is a phone screen at 360 and 390", async ({ page 
   await expect(tagged.getByRole("heading", { name: "Tagged deals" })).toBeVisible();
   await expect(tagged.getByRole("tab", { name: /Open/ })).toBeVisible();
   await expect(tagged.getByText("No tagged deals.")).toBeVisible();
+  await expect(tagged.locator(".phone-stat")).toHaveCount(0);
+  await expect(tagged.getByText("Still open")).toHaveCount(0);
   await expect(tagged.getByText("No tagged transactions yet")).toHaveCount(0);
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });

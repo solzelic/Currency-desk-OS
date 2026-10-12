@@ -240,7 +240,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   built-in reorder bands stay on the desktop pill. Assistant
   stays off More. `openApp` also refuses it on a phone unless
   `window.claude.complete` exists, so no other door can raise it.
-  Calculator and Tagged deals use the same screen. Dashboard is an
+  Calculator and Tagged deals use the same screen. The tagged count
+  card is hidden when nothing is tagged, and the screen keeps "No
+  tagged deals." Dashboard is an
   empty state — icon, title, and "Full dashboard is on a computer" —
   with a primary "See today in Reports" that opens Reports. The loan
   calculator and Store use the same empty state. The payment schedule

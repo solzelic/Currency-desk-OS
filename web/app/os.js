@@ -64348,6 +64348,7 @@ window.CDOS_PERSIST = (function () {
       const hay = [row.customer, row.ref, row.inCcy, row.outCcy, reasonOf(row)].join(' ').toLowerCase();
       return hay.indexOf(needle) >= 0;
     };
+    const taggedCount = (rows || []).filter(r => r.tagged).length;
     const openRows = (rows || []).filter(r => r.tagged).filter(match);
     const doneRows = done.filter(match);
     const list = chip === 'done' ? doneRows : openRows;
@@ -64360,11 +64361,11 @@ window.CDOS_PERSIST = (function () {
     return /*#__PURE__*/React.createElement(Long.LongTailScreen, {
       app: "tagged",
       title: "Tagged deals",
-      summary: [{
+      summary: taggedCount > 0 ? [{
         label: 'Tagged',
-        value: String(openRows.length),
+        value: String(taggedCount),
         sub: 'Still open'
-      }],
+      }] : null,
       chips: [{
         id: 'open',
         label: 'Open',

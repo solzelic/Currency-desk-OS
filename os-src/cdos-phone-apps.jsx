@@ -183,6 +183,7 @@
       const hay = [row.customer, row.ref, row.inCcy, row.outCcy, reasonOf(row)].join(' ').toLowerCase();
       return hay.indexOf(needle) >= 0;
     };
+    const taggedCount = (rows || []).filter(r => r.tagged).length;
     const openRows = (rows || []).filter(r => r.tagged).filter(match);
     const doneRows = done.filter(match);
     const list = chip === 'done' ? doneRows : openRows;
@@ -195,7 +196,7 @@
     return (
       <Long.LongTailScreen
         app="tagged" title="Tagged deals"
-        summary={[{ label: 'Tagged', value: String(openRows.length), sub: 'Still open' }]}
+        summary={taggedCount > 0 ? [{ label: 'Tagged', value: String(taggedCount), sub: 'Still open' }] : null}
         chips={[{ id: 'open', label: 'Open', count: openRows.length }, { id: 'done', label: 'Done', count: doneRows.length }]}
         chip={chip} onChip={setChip}
         search={q} onSearch={setQ} searchPlaceholder="Find a name or number"
