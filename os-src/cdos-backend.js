@@ -144,7 +144,10 @@
       serverTransactionId: transaction.transactionId,
       serverQuoteId: transaction.quoteId || null,
       ref: transaction.transactionRef,
-      date: posted.toISOString().slice(0, 10),
+      /* The calendar date in the branch zone. toISOString is the UTC
+         date, which is still yesterday just after midnight in a zone
+         ahead of UTC. */
+      date: window.CDOS.branchCalendarDate(posted),
       time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
       customer: customerName || transaction.customerId,
       beneficiary: "",

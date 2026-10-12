@@ -63,6 +63,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 | Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
+| Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt` |
 | Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
 
 ## Production/build surfaces
@@ -526,6 +527,11 @@ date in the branch time zone. That date and today are compared as
 YYYY-MM-DD. A UTC conversion was marking the last valid day expired
 and, where the process zone is ahead of UTC, printing the expiry as
 the day before.
+
+**2026-10-11**, till date. Opening a till just after midnight stores the
+branch calendar date, and a later read returns that same date. Deal
+references on an open till use it. The date on a posted deal is the
+branch calendar date of the posting instant.
 
 **2026-10-11**, sign-off business date. The sheet's trading day is the
 open till session's business date in the branch time zone, and the

@@ -12,6 +12,7 @@ import {
   calendarBefore,
   calendarDaysUntil,
   readDateOnly,
+  refDay,
   signOffWindow,
   zonedMidnight,
 } from "../src/ledger/business-date.js";
@@ -32,6 +33,11 @@ describe("businessDate", () => {
     const at = new Date("2026-10-11T23:30:00-04:00");
     expect(businessDate(at, "America/Toronto")).toBe("2026-10-11");
     expect(at.toISOString().slice(0, 10)).toBe("2026-10-12");
+  });
+
+  it("stamps a reference from the calendar date, not from an instant", () => {
+    expect(refDay("2026-10-12")).toBe("261012");
+    expect(refDay(readDateOnly(new Date(2026, 9, 12)))).toBe("261012");
   });
 
   it("rejects a clock or a zone it cannot read", () => {
