@@ -397,24 +397,30 @@ export async function countryIdentification(
         const trigger =
           deskReport && deskReport.lt(rule.trigger) ? deskReport : rule.trigger;
         const zone = await branchZone(client, args.branchId);
-        const window = staticWindow(clockNow(), zone);
-        const keys: Partial<Record<Axis, string | null>> = {
-          conductor: args.deal.customerId?.trim() || null,
-          on_behalf_of: personKey(args.deal.onBehalfOf),
-          beneficiary: personKey(args.deal.beneficiaryName),
-        };
-        for (const axis of rule.axes) {
-          const who = keys[axis];
-          if (!who) continue;
-          const prior = await cashReceived(
-            client,
-            args.legalEntityId,
-            window,
-            axis,
-            who,
-          );
-          if (prior.add(args.amountHome).gte(trigger)) {
-            return { split: true, refusal: ID_BLOCKED };
+        const now = clockNow();
+        const window = staticWindow(now, zone);
+        /* The extra hour on a fall-back day is past midnight plus 24
+           hours. That receipt is not in this window, so it is not
+           added to cash that is. */
+        if (now.getTime() >= window.start.getTime() && now.getTime() < window.end.getTime()) {
+          const keys: Partial<Record<Axis, string | null>> = {
+            conductor: args.deal.customerId?.trim() || null,
+            on_behalf_of: personKey(args.deal.onBehalfOf),
+            beneficiary: personKey(args.deal.beneficiaryName),
+          };
+          for (const axis of rule.axes) {
+            const who = keys[axis];
+            if (!who) continue;
+            const prior = await cashReceived(
+              client,
+              args.legalEntityId,
+              window,
+              axis,
+              who,
+            );
+            if (prior.add(args.amountHome).gte(trigger)) {
+              return { split: true, refusal: ID_BLOCKED };
+            }
           }
         }
       }

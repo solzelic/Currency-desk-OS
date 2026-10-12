@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { zonedWallTime } from "../src/ledger/business-date.js";
+import { calendarDayWindow, instantInWindow, staticAggregationWindow } from "../src/ledger/compliance-windows.js";
 import { withNow } from "../src/ledger/clock.js";
 import { resolvePack } from "../src/ledger/jurisdiction.js";
 import { ObligationService } from "../src/ledger/obligations.js";
@@ -584,6 +585,70 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
         })),
       ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
     }
+  });
+
+  /* 1 November 2026 is the Toronto fall-back. The civil day is 25 hours.
+     The static window is still midnight plus 24 hours, so 22:00 is inside
+     it and 23:30 is not. The gate follows that window. */
+  it("keeps the identity window at 24 hours on the Toronto fall-back", async () => {
+    const zone = "America/Toronto";
+    const morning = zonedWallTime("2026-11-01", "10:00:00", zone);
+    const evening = zonedWallTime("2026-11-01", "22:00:00", zone);
+    const extra = zonedWallTime("2026-11-01", "23:30:00", zone);
+    const window = staticAggregationWindow(evening, zone);
+    const calendar = calendarDayWindow("2026-11-01", zone);
+    expect(window.end.getTime() - window.start.getTime()).toBe(24 * 60 * 60 * 1000);
+    expect(calendar.end.getTime() - calendar.start.getTime()).not.toBe(24 * 60 * 60 * 1000);
+    expect(instantInWindow(window, morning, false)).toBe(true);
+    expect(instantInWindow(window, evening, false)).toBe(true);
+    expect(instantInWindow(window, extra, false)).toBe(false);
+    const customer = "ca2-dst-toronto";
+    const stampZone = async (client: pg.PoolClient) => {
+      await client.query(
+        `INSERT INTO branches (id, tenant_id, legal_entity_id, name, timezone)
+         VALUES ('br-ca2', $1, $2, 'Gate', $3)
+         ON CONFLICT (id) DO UPDATE SET timezone = EXCLUDED.timezone`,
+        [TENANT, V2, zone],
+      );
+    };
+    await expect(
+      withNow(evening, () => withTx(async (client) => {
+        await stampZone(client);
+        await priorCash(client, V2, "ca2-dst-morning", {
+          amount: "8000.00",
+          customerId: customer,
+          postedAt: morning,
+        });
+        const pack = await resolvePack(client, V2);
+        return requireIdentification(
+          client,
+          actor(V2, "teller", "ca2-window"),
+          pack,
+          new Decimal("2500.00"),
+          "missing",
+          fx(customer),
+        );
+      })),
+    ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    await expect(
+      withNow(extra, () => withTx(async (client) => {
+        await stampZone(client);
+        await priorCash(client, V2, "ca2-dst-evening", {
+          amount: "8000.00",
+          customerId: customer,
+          postedAt: evening,
+        });
+        const pack = await resolvePack(client, V2);
+        return requireIdentification(
+          client,
+          actor(V2, "teller", "ca2-window"),
+          pack,
+          new Decimal("2500.00"),
+          "missing",
+          fx(customer),
+        );
+      })),
+    ).resolves.toMatchObject({ identificationRequired: false });
   });
 
   it("adds the on-behalf-of axis and the beneficiary axis, and does not mix them", async () => {

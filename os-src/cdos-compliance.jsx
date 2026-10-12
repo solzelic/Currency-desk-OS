@@ -529,7 +529,14 @@
       : ['conductor', 'beneficiary'];
     const startMins = parseHHMM((settings && settings.aggWindowStart) || '00:00');
     const buckets = {};
-    (events || []).forEach(e => { if (!(e.amt > 0)) return; const w = windowOf(e.t, startMins, H); (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e); });
+    (events || []).forEach(e => {
+      if (!(e.amt > 0)) return;
+      const w = windowOf(e.t, startMins, H);
+      /* Midnight plus 24 hours, not the civil day. On a fall-back night
+         the last hour is past that end and is not in the window. */
+      if (e.t.getTime() < w.start.getTime() || e.t.getTime() >= w.end.getTime()) return;
+      (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e);
+    });
     const fmtT = (d) => d.toLocaleString('en-CA', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
     const out = [];
     Object.keys(buckets).forEach(key => {

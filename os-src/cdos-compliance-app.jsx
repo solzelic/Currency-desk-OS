@@ -7,6 +7,13 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const { CD, Ic, fmt, num, TODAY } = window.CDOS;
   const C = window.CDOS._compliance;
+  if (!C || typeof C.aggClusters !== 'function') {
+    function Compliance() {
+      return (<div data-testid="compliance-engine-error" className="p-4" style={{ color: 'var(--cd-ink)' }}>The compliance engine did not load. This screen cannot say whether a deal is reportable.</div>);
+    }
+    window.CDOS = Object.assign(window.CDOS || {}, { Compliance });
+    return;
+  }
   const { REGIMES, getRegime, screeningNote, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn } = C;
   const computeFlags = window.CDOS.computeFlags;
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
@@ -683,7 +690,7 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp }) {
+  function ComplianceDesk({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp }) {
     const [tab, setTab] = useState('screening');
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
@@ -850,6 +857,14 @@
       </div>
       {worksheet && <window.CDOS.LCTR.Worksheet report={worksheet} ctx={ctx} onFile={onSeal} onClose={() => setWorksheet(null)} />}
     </div>);
+  }
+
+  function Compliance(props) {
+    const engine = window.CDOS._compliance;
+    if (!engine || typeof engine.aggClusters !== 'function') {
+      return (<div data-testid="compliance-engine-error" className="p-4" style={{ color: 'var(--cd-ink)' }}>The compliance engine did not load. This screen cannot say whether a deal is reportable.</div>);
+    }
+    return <ComplianceDesk {...props} />;
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, { Compliance, computeReportables, openReportables });

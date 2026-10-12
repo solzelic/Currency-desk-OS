@@ -124,6 +124,10 @@ These are not implemented. The pack does not pretend they are.
   gate uses. A branch row with no readable zone is refused. A missing
   branch row still falls back to `America/Toronto`. The end of the
   window is that instant plus 24 hours, not the next local midnight.
+  On a fall-back day that leaves the last hour outside the window.
+  A receipt in that hour is not added to the cash already inside it.
+  If the compliance engine does not load, the client card says so.
+  It does not call the deals not reportable.
   The time on a posted deal uses the zone the till session names.
   `rolling24Structuring` is a rolling lookback. It is not an LCTR.
 - Other fields s.36 asks for on a ticket (telephone, the rate, an

@@ -3350,7 +3350,11 @@
     const monthCash = regime && regime.windowKind === 'calendar_month';
     const bankingDay = regime && regime.windowKind === 'banking_day';
     const engine = window.CDOS._compliance;
-    const lctr = !monthCash && !bankingDay && aggregate && engine && engine.aggClusters ? engine.aggClusters(rows, regime, settings) || [] : [];
+    /* A missing engine is not an empty cluster. Empty would read as
+       "not reportable". The card has to say the engine did not load. */
+    const needsStatic = !monthCash && !bankingDay && aggregate;
+    const engineMissing = needsStatic && !(engine && engine.aggClusters);
+    const lctr = !engineMissing && needsStatic ? engine.aggClusters(rows, regime, settings) || [] : [];
     rows.forEach(row => {
       if (row.status === 'void') {
         map[row.id] = {
@@ -3382,7 +3386,7 @@
       const rollingEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
       const rolling24Structuring = hours != null && TH != null && !single && above(rollingSum) && rollingEnd;
       const mine = lctr.filter(c => c.txs && c.txs.some(t => t.id === row.id));
-      const agg24 = !single && mine.some(c => c.endRow && c.endRow.id === row.id);
+      const agg24 = engineMissing ? null : !single && mine.some(c => c.endRow && c.endRow.id === row.id);
       const agg24Sum = mine.reduce((m, c) => Math.max(m, Number(c.total) || 0), 0);
       const rec = clients[row.customer];
       let kyc = 'ok';
@@ -24404,6 +24408,35 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     onOpenLedger,
     onFixId
   }) {
+    const regime = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const needsStatic = !regime || regime.aggregate !== false && regime.windowKind !== 'calendar_month' && regime.windowKind !== 'banking_day';
+    const engine = window.CDOS._compliance;
+    if (needsStatic && !(engine && engine.aggClusters)) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "mb-5 p-4",
+        "data-testid": "compliance-engine-error",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.flag}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center gap-2 text-[10px] uppercase tracking-widest",
+        style: {
+          color: CD.faint,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "shield",
+        s: 13,
+        c: CD.flag
+      }), " Compliance"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[12.5px] mt-2",
+        style: {
+          color: CD.ink
+        }
+      }, "The compliance engine did not load. This screen cannot say whether these deals are reportable."));
+    }
     const live = mine.filter(r => r.status !== 'void');
     const rpt = live.filter(r => {
       const f = flags[r.id] || {};
@@ -24440,7 +24473,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "shield",
       s: 13,
       c: open ? CD.flag : CD.green
-    }), " Compliance"), open ? /*#__PURE__*/React.createElement(Pill, {
+    }), " Compliance"), /*#__PURE__*/React.createElement("span", {
+      "data-testid": "client-reportable-count",
+      style: {
+        position: 'absolute',
+        width: 1,
+        height: 1,
+        overflow: 'hidden',
+        clip: 'rect(0,0,0,0)'
+      }
+    }, rpt.length), open ? /*#__PURE__*/React.createElement(Pill, {
       text: `${open} open`,
       c: CD.flag,
       bg: CD.flagSoft
@@ -42509,6 +42551,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     (events || []).forEach(e => {
       if (!(e.amt > 0)) return;
       const w = windowOf(e.t, startMins, H);
+      /* Midnight plus 24 hours, not the civil day. On a fall-back night
+         the last hour is past that end and is not in the window. */
+      if (e.t.getTime() < w.start.getTime() || e.t.getTime() >= w.end.getTime()) return;
       (buckets[w.key] = buckets[w.key] || {
         w,
         evs: []
@@ -44093,6 +44138,21 @@ ${(filing.map || []).map(blockHTML).join('')}
     TODAY
   } = window.CDOS;
   const C = window.CDOS._compliance;
+  if (!C || typeof C.aggClusters !== 'function') {
+    function Compliance() {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-testid": "compliance-engine-error",
+        className: "p-4",
+        style: {
+          color: 'var(--cd-ink)'
+        }
+      }, "The compliance engine did not load. This screen cannot say whether a deal is reportable.");
+    }
+    window.CDOS = Object.assign(window.CDOS || {}, {
+      Compliance
+    });
+    return;
+  }
   const {
     REGIMES,
     getRegime,
@@ -46016,7 +46076,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
 
   /* ===================== ROOT ===================== */
-  function Compliance({
+  function ComplianceDesk({
     rows,
     setRows,
     clients,
@@ -46443,6 +46503,19 @@ ${(filing.map || []).map(blockHTML).join('')}
       onFile: onSeal,
       onClose: () => setWorksheet(null)
     }));
+  }
+  function Compliance(props) {
+    const engine = window.CDOS._compliance;
+    if (!engine || typeof engine.aggClusters !== 'function') {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-testid": "compliance-engine-error",
+        className: "p-4",
+        style: {
+          color: 'var(--cd-ink)'
+        }
+      }, "The compliance engine did not load. This screen cannot say whether a deal is reportable.");
+    }
+    return /*#__PURE__*/React.createElement(ComplianceDesk, props);
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Compliance,

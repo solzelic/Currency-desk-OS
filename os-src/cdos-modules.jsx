@@ -67,7 +67,11 @@
     const monthCash = regime && regime.windowKind === 'calendar_month';
     const bankingDay = regime && regime.windowKind === 'banking_day';
     const engine = window.CDOS._compliance;
-    const lctr = (!monthCash && !bankingDay && aggregate && engine && engine.aggClusters)
+    /* A missing engine is not an empty cluster. Empty would read as
+       "not reportable". The card has to say the engine did not load. */
+    const needsStatic = !monthCash && !bankingDay && aggregate;
+    const engineMissing = needsStatic && !(engine && engine.aggClusters);
+    const lctr = (!engineMissing && needsStatic)
       ? (engine.aggClusters(rows, regime, settings) || [])
       : [];
     rows.forEach(row => {
@@ -90,7 +94,7 @@
       const rollingEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
       const rolling24Structuring = hours != null && TH != null && !single && above(rollingSum) && rollingEnd;
       const mine = lctr.filter(c => c.txs && c.txs.some(t => t.id === row.id));
-      const agg24 = !single && mine.some(c => c.endRow && c.endRow.id === row.id);
+      const agg24 = engineMissing ? null : (!single && mine.some(c => c.endRow && c.endRow.id === row.id));
       const agg24Sum = mine.reduce((m, c) => Math.max(m, Number(c.total) || 0), 0);
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
