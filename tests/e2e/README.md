@@ -29,6 +29,10 @@ greater-or-equal sign.
 
 main-sha: 5216ef4780b750c2dcce5847296288920d63b443
 
+The committed clients and ledger pictures are that commit's render from
+browser-seam run 38248054959. On that run the other eleven pictures
+already matched, and those two were 3,720 and 1,548 pixels off.
+
 Do not replace a PNG with a picture of a feature branch. A difference
 means the desktop changed. The pixel rule is in
 `tests/e2e/desktop-unchanged.spec.ts`.
