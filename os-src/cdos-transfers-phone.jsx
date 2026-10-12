@@ -40,8 +40,32 @@
     return pick ? pick.ts : (events[0] ? events[0].ts : '');
   }
 
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  function shiftDay(iso, delta) {
+    const y = Number(String(iso).slice(0, 4));
+    const m = Number(String(iso).slice(5, 7));
+    const d = Number(String(iso).slice(8, 10));
+    if (!y || !m || !d) return '';
+    const utc = new Date(Date.UTC(y, m - 1, d + delta));
+    return utc.getUTCFullYear() + '-' + String(utc.getUTCMonth() + 1).padStart(2, '0') + '-' + String(utc.getUTCDate()).padStart(2, '0');
+  }
+
+  /* The heading is that record's day. Today and Yesterday are words.
+     Any other day is the month and the day, as in Jun 18. */
+  function dayHeading(date, book) {
+    const text = String(date || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+    if (book && text === book) return 'Today';
+    if (book && text === shiftDay(book, -1)) return 'Yesterday';
+    const month = Number(text.slice(5, 7));
+    const dayNum = Number(text.slice(8, 10));
+    if (month < 1 || month > 12) return '';
+    return MONTHS[month - 1] + ' ' + dayNum;
+  }
+
   function PhoneTransfers({ transfers, beneficiaries, corridors, onNew, onOpen }) {
-    const { Phone, T, time, day, group } = shell();
+    const { Phone, T, time } = shell();
     const [q, setQ] = useState('');
     const [filter, setFilter] = useState('active');
     const benOf = (id) => beneficiaries.find((b) => b.id === id);
@@ -64,6 +88,13 @@
       return (t.senderName + ' ' + (ben ? ben.name : '') + ' ' + t.ref).toLowerCase().indexOf(needle) >= 0;
     }).sort((a, b) => (b.date + b.ref).localeCompare(a.date + a.ref));
     const book = today();
+    const groups = [];
+    list.forEach((t) => {
+      const key = String(t.date || '').slice(0, 10);
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) last.rows.push(t);
+      else groups.push({ key: key, title: dayHeading(key, book) || 'Records', rows: [t] });
+    });
     const emptyCopy = filter === 'hold' ? 'Nothing is on hold.' : filter === 'paid' ? 'Nothing has been paid out.' : filter === 'all' ? 'No transfers yet.' : 'Nothing is in progress.';
     const empty = needle
       ? <Phone.EmptyState title="No records" message="Nothing matches that search." />
@@ -77,13 +108,12 @@
           { id: 'paid', label: 'Paid out', count: counts.paid },
           { id: 'all', label: 'All', count: counts.all },
         ]} />
-        {list.length ? (
-          <Phone.ListSection title={shown(group(book, book)) || 'Records'} meta="Sender to beneficiary">
-            {list.map((t) => {
+        {groups.length ? groups.map((g, i) => (
+          <Phone.ListSection key={g.key || String(i)} title={g.title} meta={i === 0 ? 'Sender to beneficiary' : null}>
+            {g.rows.map((t) => {
               const ben = benOf(t.beneficiaryId);
               const who = t.direction === 'send' ? (ben ? ben.name : (corOf(t.corridor).country || '')) : t.senderName;
               const how = [ben && ben.relationship, corOf(t.corridor).country, T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')].filter(Boolean).join(' \u00b7 ');
-              const meta = book && t.date === book ? shown(time(handStamp(t))) : shown(day(t.date));
               return (
                 <Phone.ListRow
                   key={t.id}
@@ -91,14 +121,14 @@
                   title={t.senderName + ' to ' + who}
                   subtitle={how}
                   note={t.ref}
-                  meta={meta}
+                  meta={shown(time(handStamp(t)))}
                   badge={{ label: T.statusLabel(t.status, t.direction), tone: toneOf(t.status) }}
                   onClick={onOpen ? () => onOpen(t.id) : undefined}
                 />
               );
             })}
           </Phone.ListSection>
-        ) : empty}
+        )) : empty}
       </Phone.Screen>
     );
   }

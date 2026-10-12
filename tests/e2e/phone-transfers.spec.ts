@@ -4,6 +4,19 @@ import { test, expect, signInAtDesk } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
 const PHONE = { width: 390, height: 844 };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function dayHeading(date: string, book: string): string {
+  const text = date.slice(0, 10);
+  if (book && text === book) return "Today";
+  const y = Number(book.slice(0, 4));
+  const m = Number(book.slice(5, 7));
+  const d = Number(book.slice(8, 10));
+  const utc = new Date(Date.UTC(y, m - 1, d - 1));
+  const yesterday = utc.getUTCFullYear() + "-" + String(utc.getUTCMonth() + 1).padStart(2, "0") + "-" + String(utc.getUTCDate()).padStart(2, "0");
+  if (text === yesterday) return "Yesterday";
+  return MONTHS[Number(text.slice(5, 7)) - 1] + " " + Number(text.slice(8, 10));
+}
 
 async function dismissTour(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
@@ -58,13 +71,11 @@ test("the record list names who sent to whom", async ({ page }) => {
   await expect(list.getByText("Sent").first()).toBeVisible();
 
   const book = await page.evaluate(() => window.CDOS.businessDate());
-  if (book === "2026-06-18") {
-    await expect(list.getByText("10:14 AM")).toBeVisible();
-    await expect(list.getByText("9:43 AM")).toBeVisible();
-  } else {
-    await expect(list.getByText("Jun 18, 2026").first()).toBeVisible();
-    await expect(list.getByText("Today,")).toBeVisible();
-  }
+  await expect(list.getByText("10:14 AM")).toBeVisible();
+  await expect(list.getByText("9:43 AM")).toBeVisible();
+  await expect(list.getByText(dayHeading("2026-06-18", book), { exact: true })).toBeVisible();
+  await expect(list.getByText("Today,", { exact: false })).toHaveCount(0);
+  await expect(list).not.toContainText("Jun 18, 2026");
   await expect(list).not.toContainText("2026-06-18");
   await expect(list).not.toContainText("10:31");
   await expect(list).not.toContainText("48 221 905");
@@ -84,11 +95,15 @@ test("the record list names who sent to whom", async ({ page }) => {
   await list.getByRole("tab", { name: "On hold 1" }).click();
   await expect(list.getByText("Brooke Lawson to Lin Wei")).toBeVisible();
   await expect(list.getByText("Rachel Carter to Maria Carter")).toHaveCount(0);
-  await expect(list.getByText("Jun 17, 2026")).toBeVisible();
+  await expect(list.getByText("3:06 PM")).toBeVisible();
+  await expect(list.getByText(dayHeading("2026-06-17", book), { exact: true })).toBeVisible();
+  await expect(list).not.toContainText("Jun 17, 2026");
 
   await list.getByRole("tab", { name: "Paid out 1" }).click();
   await expect(list.getByText("Paid out", { exact: true })).toBeVisible();
-  await expect(list.getByText("Jun 16, 2026")).toBeVisible();
+  await expect(list.getByText("11:22 AM")).toBeVisible();
+  await expect(list.getByText(dayHeading("2026-06-16", book), { exact: true })).toBeVisible();
+  await expect(list).not.toContainText("Jun 16, 2026");
   await expect(list.getByText("Brooke Lawson to Lin Wei")).toHaveCount(0);
 
   await list.getByRole("tab", { name: "All 4" }).click();
@@ -116,6 +131,7 @@ test("the record list names who sent to whom", async ({ page }) => {
   await openTransfers(page);
   const again = page.locator(".phone-transfers");
   await expect(again.getByText("10:14 AM")).toBeVisible();
+  await expect(again.getByText("Today", { exact: true })).toBeVisible();
   await expect(again.getByText("10:31")).toHaveCount(0);
   await expect(again).not.toContainText("2026-06-18");
 
@@ -128,6 +144,44 @@ test("the record list names who sent to whom", async ({ page }) => {
   await phoneSweep(page, {
     roots: [".phone-transfers", ".phone-head", "#phone-dock"],
   });
+});
+
+test("the list groups records from three different days", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page);
+  await page.evaluate(() => {
+    const book = window.CDOS.businessDate();
+    const y = Number(book.slice(0, 4));
+    const m = Number(book.slice(5, 7));
+    const d = Number(book.slice(8, 10));
+    const utc = new Date(Date.UTC(y, m - 1, d - 1));
+    const yesterday = utc.getUTCFullYear() + "-" + String(utc.getUTCMonth() + 1).padStart(2, "0") + "-" + String(utc.getUTCDate()).padStart(2, "0");
+    const rows = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
+    const byRef = (ref: string) => rows.find((item: { ref?: string }) => item.ref === ref);
+    const todayRow = byRef("TR-260618-003");
+    const yesterdayRow = byRef("TR-260618-002");
+    const olderRow = byRef("TR-260617-019");
+    if (!todayRow || !yesterdayRow || !olderRow) throw new Error("seed transfers are not in the browser book");
+    todayRow.date = book;
+    yesterdayRow.date = yesterday;
+    olderRow.date = "2024-06-18";
+    localStorage.setItem("cdos_transfers_v1", JSON.stringify(rows));
+  });
+  await page.reload();
+  await dismissTour(page);
+  await openTransfers(page);
+  const list = page.locator(".phone-transfers");
+  await list.getByRole("tab", { name: "All 4" }).click();
+  await expect(list.getByText("Today", { exact: true })).toBeVisible();
+  await expect(list.getByText("Yesterday", { exact: true })).toBeVisible();
+  await expect(list.getByText("Jun 18", { exact: true })).toBeVisible();
+  await expect(list.getByText("10:14 AM")).toBeVisible();
+  await expect(list.getByText("9:43 AM")).toBeVisible();
+  await expect(list.getByText("3:06 PM")).toBeVisible();
+  await expect(list.getByText("Today,", { exact: false })).toHaveCount(0);
+  await expect(list).not.toContainText("Jun 18, 2026");
+  await expect(list).not.toContainText("2024-06-18");
+  await expect(list).not.toContainText("10:31");
 });
 
 test("the desktop pipeline stays at 1280", async ({ page }) => {

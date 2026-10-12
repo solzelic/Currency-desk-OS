@@ -500,6 +500,7 @@ Records and Compliance stay on both.
 Transfers adopts the same screen for its record list: title, search,
 `FilterChips`, `ListRow`s, and a sticky **New transfer record**. A row
 is the sender, the beneficiary, how it pays out, the TR reference, and
-either a 12-hour time (business day) or `formatPhoneDate`. Amounts stay
+a 12-hour time. The day is the group heading: Today, Yesterday, or the
+month and day. Amounts stay
 off the list. The cash step is still `TransferModal`. The desktop
 pipeline is unchanged.

@@ -107,7 +107,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   search, filter chips, list rows, and a sticky New transaction. The
   desktop ledger is unchanged. Under 430px Transfers is the phone record
   list: search by sender, beneficiary, or TR number, the pipeline chips,
-  and a row that names who sent to whom. Amounts, the tracking PIN, a
+  and a row that names who sent to whom. Rows are grouped under
+  the record's own day: Today, Yesterday, or the month and day
+  (Jun 18). The row shows the 12-hour time. Amounts, the tracking PIN, a
   receipt, and the EFT report stay off that list. New transfer record
   opens the existing cash step. The desktop pipeline is unchanged.
   Saved beneficiaries and the record page are not on the phone yet. The bar is five
@@ -620,8 +622,8 @@ A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
 
 **2026-10-12**, phone Transfers list. Under 430px the Transfers window is
-the record list (who sent to whom, the pipeline chips, a 12-hour time
-when the record is from the business day). The cash step is still the
+the record list (who sent to whom, the pipeline chips, grouped under
+the record's own day, with a 12-hour time on the row). The cash step is still the
 existing New transfer sheet. Records stay in the browser, where the
 desktop already keeps them. The desktop pipeline is the same tree.
 
