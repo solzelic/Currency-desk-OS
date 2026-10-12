@@ -1,6 +1,5 @@
 Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo)
 Copyright 2016 The Space Mono Project Authors (https://github.com/googlefonts/spacemono)
-Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

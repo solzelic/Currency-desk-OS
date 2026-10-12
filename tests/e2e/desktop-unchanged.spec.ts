@@ -16,7 +16,7 @@
 
    Text is Archivo and Space Mono from tests/e2e/fonts, served in place
    of fonts.googleapis.com. U+2192 and U+2265 are not in those latin
-   files, so the capture also serves Noto Sans for them on Archivo and
+   files, so the capture also serves DejaVu Sans for them on Archivo and
    DejaVu Sans Mono for them on Space Mono. The runner's fontconfig is
    not a face in this picture. A shot is refused when those faces have
    not loaded, including the arrow and the greater-or-equal sign.

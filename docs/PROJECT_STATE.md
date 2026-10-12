@@ -578,10 +578,11 @@ came back as 31 March 2030, and the till's business date did the same
 thing to the sign-off heading and the reporting window. Those values
 are now the local year, month, and day. A phone clock or date that is
 not the whole string is the word Unknown. The 1280 capture pins the
-browser zone to UTC, so 15:02Z stays 15:02, and it serves Noto Sans
-and DejaVu Sans Mono for → and ≥. The shot asks the browser to load
-those two characters; checking them before that request reports the
-face as missing. The sign-in shot still turns the
+browser zone to UTC, so 15:02Z stays 15:02, and it serves DejaVu Sans
+and DejaVu Sans Mono for → and ≥. The shot loads those two characters
+before it checks the face. A Noto Sans subset with an empty character
+map made Chromium reject every Archivo weight; the sans files are
+DejaVu Sans, which carries the glyphs. The sign-in shot still turns the
 card blur off, because two renders of main with the blur on did not
 match.
 

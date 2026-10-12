@@ -13,7 +13,7 @@
    every pixel. A laptop render is not a substitute.
 
    The spec serves Archivo and Space Mono from tests/e2e/fonts, and
-   Noto Sans plus DejaVu Sans Mono for → and ≥. The picture does not
+   DejaVu Sans plus DejaVu Sans Mono for → and ≥. The picture does not
    use the runner's fontconfig fallback. The browser zone is UTC, so
    the pinned 15:02Z clock paints 15:02.
 
