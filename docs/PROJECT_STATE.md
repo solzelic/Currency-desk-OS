@@ -578,8 +578,10 @@ authenticated narrative dashboard.
 `POST /api/quotes`, and the rate on that sheet is the server's
 customer rate with trailing zeros stripped, not a 4-decimal round
 multiplied again in the browser. The list stays four decimals.
-Currency names are sentence case from `Intl.DisplayNames` (`US
-dollar`). The status line is `Updated 3:02 PM · refreshes hourly`
+Currency names are the catalog in `yorkfx-converter.js` (`US
+Dollar`, `Saudi Riyal`), not `Intl.DisplayNames`. Pricing #117's
+phone list still asks DisplayNames; it should read this same table.
+The status line is `Updated 3:02 PM · refreshes hourly`
 through `formatPhoneTime`. The amber dot and the words "Rates may
 be out of date" appear only when that snapshot is older than the
 hourly refresh, or when there is no time to show. A lock still says

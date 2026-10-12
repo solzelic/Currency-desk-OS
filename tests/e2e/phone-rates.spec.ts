@@ -127,6 +127,9 @@ for (const width of [360, 390]) {
     for (const code of ["INR", "PHP", "MXN", "JPY"]) {
       await expect(page.locator(`.code-${code}`)).toContainText("x100");
     }
+    await expect(usd.locator(".phone-row-sub")).toHaveText("US Dollar");
+    await expect(page.locator(".code-SAR .phone-row-sub")).toHaveText("Saudi Riyal");
+    await expect(page.locator(".code-AED .phone-row-sub")).toHaveText("UAE Dirham");
     await page.screenshot({ path: `${SHOTS}/rates_list_${width}.png` });
 
     await page.getByLabel("Find a currency").fill("peso");
@@ -139,7 +142,7 @@ for (const width of [360, 390]) {
     await usd.click();
     const sheet = page.locator(".phone-quote");
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("heading", { name: /Quote US dollar/ })).toBeVisible();
+    await expect(sheet.getByRole("heading", { name: "Quote US Dollar" })).toBeVisible();
     const amount = sheet.getByLabel("Customer gives");
     await expect(amount).toBeFocused();
     await amount.fill("500");
