@@ -700,7 +700,7 @@
             <div><span>Customer sells 500 {code}, gets</span><b data-pr="gets">{view.known ? pricingMoney(view.out, view.home) : '—'}</b></div>
             <div><span>You earn on that deal</span><b data-pr="earn">{view.known ? pricingMoney(view.earn, view.home) : '—'}</b></div>
           </div>
-          <p className="pr-hint">Nothing changes on the Rate Board until you tap Publish.</p>
+          <p className="pr-hint">Nothing changes on the rate board until you tap Publish.</p>
           <button type="button" className="pr-link" onClick={() => useDefault(code)}>Use the default ({pctText(defSpread)})</button>
         </PricingSheet>
       );

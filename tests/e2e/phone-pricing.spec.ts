@@ -165,6 +165,7 @@ for (const width of [360, 390]) {
     }
     const shown = await phone.innerText();
     expect(shown).not.toMatch(/\blive\b/i);
+    expect(shown).not.toMatch(/Rate Board/);
     await expect(page.locator("#phone-fab")).toHaveCount(0);
     const row = await phone.locator(".phone-row").first().boundingBox();
     expect(row && row.height).toBeGreaterThanOrEqual(44);
@@ -264,10 +265,11 @@ for (const width of [360, 390]) {
     const sell = await sheet.locator("[data-pr='sell']").evaluate((el) => getComputedStyle(el).color);
     expect(buy).toBe("rgb(30, 90, 168)");
     expect(sell).toBe("rgb(122, 62, 150)");
-    await expect(sheet).toContainText("Nothing changes on the Rate Board until you tap Publish.");
+    await expect(sheet).toContainText("Nothing changes on the rate board until you tap Publish.");
     await expect(sheet).toContainText("Market rate now");
     const sheetText = await sheet.innerText();
     expect(sheetText).not.toMatch(/\blive\b/i);
+    expect(sheetText).not.toMatch(/Rate Board/);
     await shot(page, `pricing_stepper_${width}`);
   });
 

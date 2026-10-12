@@ -54823,7 +54823,7 @@ ${snap}`;
         "data-pr": "earn"
       }, view.known ? pricingMoney(view.earn, view.home) : '—'))), /*#__PURE__*/React.createElement("p", {
         className: "pr-hint"
-      }, "Nothing changes on the Rate Board until you tap Publish."), /*#__PURE__*/React.createElement("button", {
+      }, "Nothing changes on the rate board until you tap Publish."), /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "pr-link",
         onClick: () => useDefault(code)
