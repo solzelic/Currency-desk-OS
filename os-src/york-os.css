@@ -3015,13 +3015,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 
 /* Counted now and Variance were fading off the right edge. The
    phone table mask clips the last 22px, and six columns do not
-   fit at 360 or 390. Drop Source and Last count here so the
+   fit at 430 or under. Drop Source and Last count here so the
    count and the variance stay whole, with no fade.
-   The 430px rule sets width: max-content !important on
+   The wider-table rule sets width: max-content !important on
    .win-body .overflow-hidden:has(table) table. This selector
    has to be more specific than that, or the table stays wider
    than the phone. */
-@media (max-width: 390px) {
+@media (max-width: 430px) {
   .win-body .till-close-table.overflow-hidden:has(table) {
     -webkit-mask-image: none !important;
     mask-image: none !important;
