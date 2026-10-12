@@ -33,6 +33,11 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # build:os copies decimal.js out of the server install. Without this,
+      # the generated web/vendor/decimal.js cannot be rebuilt.
+      - name: Install the server
+        run: npm ci
+        working-directory: server
 
       # Cheapest gate there is, and it catches a whole class on its own: a
       # file the browser cannot parse is not a degraded page, it is a
