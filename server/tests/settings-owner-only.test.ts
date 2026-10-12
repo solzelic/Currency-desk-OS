@@ -11,7 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { OWNER_ONLY_FIELDS, OWNER_ONLY_REFUSAL, NON_OWNER_MAY_CHANGE, ownsSettings } from "../src/state/owner-settings.js";
+import { OWNER_ONLY_FIELDS, OWNER_ONLY_REFUSAL, NON_OWNER_MAY_CHANGE, MANAGER_MAY_CHANGE, ownsSettings } from "../src/state/owner-settings.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -104,6 +104,8 @@ describe("owner-only settings", () => {
     expect(NON_OWNER_MAY_CHANGE).not.toContain("threshold");
     expect(NON_OWNER_MAY_CHANGE).not.toContain("defaultSpread");
     expect(NON_OWNER_MAY_CHANGE).not.toContain("requireCountOnHandoff");
+    expect(MANAGER_MAY_CHANGE).toContain("defaultSpread");
+    expect(MANAGER_MAY_CHANGE).not.toContain("threshold");
   });
 
   it.each(OWNER_ONLY_FIELDS)("a teller cannot change %s, and the owner can", async (field) => {
@@ -238,6 +240,27 @@ describe("owner-only settings", () => {
     });
     expect(denied.statusCode).toBe(403);
     expect((await read()).json().state.cdos_settings.threshold).toBe(10000);
+  });
+
+  it("a manager can save the default spread, and a teller cannot", async () => {
+    const denied = await put(teller, {
+      ...baseline,
+      cdos_settings: { ...baseline.cdos_settings, defaultSpread: 2.5 },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json().detail).toBe(OWNER_ONLY_REFUSAL);
+    expect((await read()).json().state.cdos_settings.defaultSpread).toBe(1.5);
+    const audits = await refusalAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.detail).toMatchObject({ groups: ["rates"], fields: ["defaultSpread"] });
+
+    const saved = await put(manager, {
+      ...baseline,
+      cdos_settings: { ...baseline.cdos_settings, defaultSpread: 2.5 },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect((await read()).json().state.cdos_settings.defaultSpread).toBe(2.5);
+    expect(await refusalAudits()).toHaveLength(1);
   });
 
   it("does not offer owner-only rows to a teller", async () => {

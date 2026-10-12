@@ -158,7 +158,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        saves. The field is not dropped to hide a change. */
     const storedState = (current?.state ?? null) as Record<string, unknown> | null;
     if (!ownsSettings(who.role)) {
-      const edits = ownerOnlyEdits(storedState, state);
+      const edits = ownerOnlyEdits(storedState, state, who.role);
       if (edits.length) {
         await audit(db, {
           tenantId: who.tenantId,
@@ -173,7 +173,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         });
         return reply.code(403).send({ error: "forbidden", detail: OWNER_ONLY_REFUSAL });
       }
-      state = keepOwnerFields(storedState, state);
+      state = keepOwnerFields(storedState, state, who.role);
     }
 
     /* Describe what is being saved. This NEVER refuses — the browser holds

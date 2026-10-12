@@ -17,11 +17,10 @@ import { hasBackendPermission } from "../auth/permissions.js";
 export const OWNER_ONLY_REFUSAL =
   "Only the owner can change that setting. Nothing was saved.";
 
-/* What a teller or a manager screen actually writes into cdos_settings.
-   My account, the people a sign-in adopts, and the app-settings tabs a
-   manager is allowed to open. Shop, compliance, billing, hours, and the
-   two keys called out as the owner's (the handoff count, the default
-   spread) are not on this list. */
+/* What a teller screen writes into cdos_settings. My account, the
+   people a sign-in adopts, and the app-settings tabs. Shop, compliance,
+   billing, hours, and the handoff count are not on this list. The
+   default spread is not on it either; a manager may change that. */
 export const NON_OWNER_MAY_CHANGE = [
   "staff", "employees",
   "defaultClientRisk", "idExpiryWarnDays", "riskTierNotes", "escalateMediumRisk",
@@ -37,7 +36,15 @@ export const NON_OWNER_MAY_CHANGE = [
   "receiptHeader", "receiptFooter", "receiptDisclaimer", "showLogoOnReceipt", "showMsbOnReceipt",
 ] as const;
 
-const ALLOWED = new Set<string>(NON_OWNER_MAY_CHANGE);
+/** The teller list, plus the default spread. Owners may change anything. */
+export const MANAGER_MAY_CHANGE = [...NON_OWNER_MAY_CHANGE, "defaultSpread"] as const;
+
+const TELLER_ALLOWED = new Set<string>(NON_OWNER_MAY_CHANGE);
+const MANAGER_ALLOWED = new Set<string>(MANAGER_MAY_CHANGE);
+
+function allowedFor(role: string): Set<string> {
+  return role === "branch_manager" ? MANAGER_ALLOWED : TELLER_ALLOWED;
+}
 
 export const OWNER_ONLY_GROUPS = {
   shop: [
@@ -155,7 +162,9 @@ function groupOf(field: string): OwnerGroup {
 export function ownerOnlyEdits(
   stored: Record<string, unknown> | null | undefined,
   incoming: Record<string, unknown>,
+  role = "",
 ): OwnerEdit[] {
+  const allowed = allowedFor(role);
   const hits: OwnerEdit[] = [];
   const before = readSettings(stored?.cdos_settings);
   const sentSettings = has(incoming, "cdos_settings");
@@ -167,12 +176,12 @@ export function ownerOnlyEdits(
     }
   } else if (sentSettings && after.kind === "none" && before.kind === "record") {
     for (const field of Object.keys(before.record)) {
-      if (!ALLOWED.has(field)) hits.push({ group: groupOf(field), field });
+      if (!allowed.has(field)) hits.push({ group: groupOf(field), field });
     }
   } else if (after.kind === "record") {
     const prior = before.kind === "record" ? before.record : {};
     for (const field of Object.keys(after.record)) {
-      if (ALLOWED.has(field)) continue;
+      if (allowed.has(field)) continue;
       const previous = has(prior, field) ? prior[field] : undefined;
       if (stable(previous) !== stable(after.record[field])) hits.push({ group: groupOf(field), field });
     }
@@ -195,7 +204,9 @@ export function ownerOnlyEdits(
 export function keepOwnerFields(
   stored: Record<string, unknown> | null | undefined,
   incoming: Record<string, unknown>,
+  role = "",
 ): Record<string, unknown> {
+  const allowed = allowedFor(role);
   if (!stored) return incoming;
   const next: Record<string, unknown> = { ...incoming };
   const before = readSettings(stored.cdos_settings);
@@ -208,7 +219,7 @@ export function keepOwnerFields(
     let copied = false;
     const merged: Record<string, unknown> = { ...after.record };
     for (const field of Object.keys(before.record)) {
-      if (ALLOWED.has(field)) continue;
+      if (allowed.has(field)) continue;
       if (!has(after.record, field)) {
         merged[field] = before.record[field];
         copied = true;

@@ -10752,9 +10752,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "chev",
       s: 13,
       c: CD.faint
-    })))), ownerDesk && /*#__PURE__*/React.createElement(Row, {
+    })))), (ownerDesk || me.role === 'Manager') && /*#__PURE__*/React.createElement(Row, {
       title: "Default spread",
-      desc: "Buy/sell margin over the spot rate, applied to any currency without its own spread below. The owner sets this."
+      desc: "Buy/sell margin over the spot rate, applied to any currency without its own spread below. A manager or the owner sets this."
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center",
       style: inSty

@@ -76,10 +76,12 @@ New agent pull requests are frozen until the repository owner pushes a commit to
 
 - **Owner-only settings stay with the owner.** Non-owners may change
   an allowlist of desk fields their own screens write (their account,
-  the people a sign-in adopts, and the manager's app settings). Every
-  other field in the desk settings — shop, compliance including the
-  large-cash line, localization, billing, hours and timezone, role
-  presets, the default spread, and the handoff count — is the owner's.
+  the people a sign-in adopts, and the manager's app settings). A
+  manager may also change the default spread. Every other field in
+  the desk settings — shop, compliance including the large-cash line,
+  localization, billing, hours and timezone, role presets, and the
+  handoff count — is the owner's. A teller who sends a different
+  default spread is refused, audited, and the stored spread is kept.
   A different value on `PUT /api/tenant/state` is 403, an audit row, and
   nothing in that save is written. An equal value, or a key the client
   left out, is not a change: the stored value stays and the rest saves.
@@ -702,13 +704,15 @@ officer do not close the day, and they do not hold
 exists and nobody holds it. Granting it is a later decision.
 
 **2026-10-12**, owner-only settings. Non-owners may change only the
-allowlist their screens write. A different owner-only value, including
-the large-cash line, is refused whole and audited. Leaving a derived
-key out (role presets, billing plan) keeps the stored value and saves
-the rest. A refusal reloads the stored desk and saving continues.
-Public contact and hours publish from a manager tab. The settings
-rail follows the signed-in role, so that tab stays available after a
-teller has rewritten the shared preset.
+allowlist their screens write. A manager may also change the default
+spread. A teller who sends a different default spread is refused,
+audited, and the stored spread is kept. A different owner-only value,
+including the large-cash line, is refused whole and audited. Leaving a
+derived key out (role presets, billing plan) keeps the stored value
+and saves the rest. A refusal reloads the stored desk and saving
+continues. Public contact and hours publish from a manager tab. The
+settings rail follows the signed-in role, so that tab stays available
+after a teller has rewritten the shared preset.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the
