@@ -17,7 +17,7 @@ const SCREENS: Record<string, { label: string; text: RegExp }> = {
   vault: { label: "Cash on Hand · Vault", text: /Vault|safe|float/i },
   compliance: { label: "Compliance", text: /Not connected/ },
   tagged: { label: "Tagged", text: /Tag/ },
-  audit: { label: "Audit Trail", text: /Audit/ },
+  audit: { label: "Audit Trail", text: /APPEND-ONLY|Transaction posted/ },
   reports: { label: "Reports", text: /End-of-Day Sign-Off/ },
   dashboard: { label: "Dashboard", text: /Cash position|Dashboard/ },
   telegraph: { label: "Texts", text: /Text|Message/ },
