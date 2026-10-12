@@ -475,7 +475,7 @@ test("the window title bar is hidden on a phone and visible on the desktop", asy
     await expectNoDesktopChrome(page);
   }
   await expect(page.getByRole("button", { name: "Cash drawer", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reconcile & close", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Count & close", exact: true })).toBeVisible();
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await settled(page);
   await expectNoDesktopChrome(page);

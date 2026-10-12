@@ -152,7 +152,7 @@ async function postFortyCad(page: Page, key: string) {
 }
 
 async function closeTheDay(page: Page) {
-  await clickDrawerTab(page, /Reconcile & close/i);
+  await clickDrawerTab(page, /Count & close/i);
   await press(page.getByRole("button", { name: "Close the day", exact: true }).first());
   await press(page.getByRole("button", { name: "Close the day", exact: true }).last());
 }

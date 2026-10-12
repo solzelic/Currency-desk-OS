@@ -8260,7 +8260,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Reconcile & close"), /*#__PURE__*/React.createElement(Row, {
+    }, "Count & close"), /*#__PURE__*/React.createElement(Row, {
       title: "Variance tolerance",
       desc: "A drawer counted within this of expected reads as balanced; beyond it, it's flagged off on the reconcile and at close."
     }, /*#__PURE__*/React.createElement("div", {
@@ -13149,7 +13149,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
    of every currency. Saves a dated snapshot, reconciles against the
    ledger's expected float, closes the trading day, and keeps a
    year of daily history you can scroll back through.
-   Day Close is folded in here as the "Reconcile & close" tab.
+   Day Close is folded in here as the "Count & close" tab.
    ============================================================ */
 (function () {
   const {
@@ -14572,7 +14572,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        drawers" is only when this branch actually has several. */
     const drawerTotal = Math.max(1, ledgerScope && ledgerScope.workspaces && ledgerScope.workspaces.length || 0);
     const drawersCounted = recon.length > 0 && countedN >= recon.length ? 1 : 0;
-    const countBeforeClose = drawerTotal === 1 ? 'Count the drawer before closing. The close writes your count back as the balance' : `Count all ${drawerTotal} drawers before closing. The close writes your count back as the balance`;
+    /* One count, in three places: the session line, the session strip,
+       and the heading chip. It is tills, never currencies. Two currencies
+       in one drawer is still "0 of 1 counted", not "0/2". */
+    const drawerCountLabel = `${drawersCounted} of ${drawerTotal} counted`;
+    const balanceSentence = 'Your count becomes the new till balance.';
+    const countBeforeClose = drawerTotal === 1 ? `Count the drawer before closing. ${balanceSentence}` : `Count all ${drawerTotal} drawers before closing. ${balanceSentence}`;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     /* Cross-currency totals for the reconcile footer. Null where any row
@@ -14621,7 +14626,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         // would silently overwrite real money with a guess, so refuse instead.
         const missing = recon.filter(r => r.counted == null).map(r => r.c);
         if (missing.length) {
-          throw new Error(`Count ${missing.join(', ')} before closing. The close writes your count back as the till balance.`);
+          throw new Error(`Count ${missing.join(', ')} before closing. ${balanceSentence}`);
         }
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
@@ -14693,7 +14698,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const closedEarnedCcy = closedBook && closedBook.homeCurrency || day.summary && day.summary.earnedCurrency || homeCcy;
     const closedEarnedWhy = dayBook.error || day.summary && day.summary.earnedWhy || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : day.summary && day.summary.txns != null ? day.summary.txns : null;
-    const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Count & close', 'coins'], ['history', 'History', 'clock']];
 
     /* The phone count panel covers the bottom of the scrolling
        column. Its height is the pad that lets the last denomination
@@ -14897,7 +14902,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
       className: "till-statusline"
-    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", drawersCounted, " of ", drawerTotal, " counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? serverSession ? `Session ${serverSession.sessionNumber}` : 'No session' : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", drawerCountLabel), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
       }
@@ -15099,11 +15104,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace'
       }
     }, "#", serverSession.sessionNumber), " open \xB7 ", deskDay(serverSession.businessDate), " \xB7 opened by ", named(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
-      className: "ml-auto flex-none",
+      className: "till-session-count ml-auto flex-none",
       style: {
         color: CD.faint
       }
-    }, serverCcys.length, " currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+    }, drawerCountLabel)), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -15750,15 +15755,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "Expected is what the system says should be in the drawer. Counted is what you count.")), /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px] px-2.5 py-1",
+      className: "till-count-chip text-[11px] px-2.5 py-1",
       style: {
-        background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)',
-        color: countedN === recon.length ? CD.green : CD.mute,
+        background: drawersCounted === drawerTotal ? CD.greenSoft : 'var(--cd-chip)',
+        color: drawersCounted === drawerTotal ? CD.green : CD.mute,
         borderRadius: 999,
         fontFamily: 'Space Mono, monospace'
       }
-    }, countedN, "/", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+    }, drawerCountLabel)), /*#__PURE__*/React.createElement("div", {
+      className: "till-close-table overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -15848,7 +15853,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.mute
         }
-      }, "count \u2192") : /*#__PURE__*/React.createElement("span", {
+      }, "Count") : /*#__PURE__*/React.createElement("span", {
         title: countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : '',
         style: {
           cursor: countedAt[r.c] ? 'help' : 'default'
@@ -15948,7 +15953,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink
       }
     }, offLedgerCcys.join(', ')), ". These stay in your own history and are left out of the close, so they cannot change a real balance."), /*#__PURE__*/React.createElement("p", {
-      className: "mt-2 text-[11px]",
+      className: "till-close-note mt-2 text-[11px]",
       style: {
         color: CD.faint
       }
@@ -16435,7 +16440,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 9,
         background: 'transparent'
       }
-    }, "\u2190 Back to count"), /*#__PURE__*/React.createElement("button", {
+    }, "Back to count"), /*#__PURE__*/React.createElement("button", {
       onClick: confirmAndClose,
       className: "till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white",
       style: {

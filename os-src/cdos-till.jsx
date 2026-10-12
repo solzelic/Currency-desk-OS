@@ -4,7 +4,7 @@
    of every currency. Saves a dated snapshot, reconciles against the
    ledger's expected float, closes the trading day, and keeps a
    year of daily history you can scroll back through.
-   Day Close is folded in here as the "Reconcile & close" tab.
+   Day Close is folded in here as the "Count & close" tab.
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
@@ -792,9 +792,14 @@
        drawers" is only when this branch actually has several. */
     const drawerTotal = Math.max(1, (ledgerScope && ledgerScope.workspaces && ledgerScope.workspaces.length) || 0);
     const drawersCounted = recon.length > 0 && countedN >= recon.length ? 1 : 0;
+    /* One count, in three places: the session line, the session strip,
+       and the heading chip. It is tills, never currencies. Two currencies
+       in one drawer is still "0 of 1 counted", not "0/2". */
+    const drawerCountLabel = `${drawersCounted} of ${drawerTotal} counted`;
+    const balanceSentence = 'Your count becomes the new till balance.';
     const countBeforeClose = drawerTotal === 1
-      ? 'Count the drawer before closing. The close writes your count back as the balance'
-      : `Count all ${drawerTotal} drawers before closing. The close writes your count back as the balance`;
+      ? `Count the drawer before closing. ${balanceSentence}`
+      : `Count all ${drawerTotal} drawers before closing. ${balanceSentence}`;
     const closeBlocked = serverBacked
       ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length)
       : (!!(settings && settings.requireCountOnClose) && countedN < recon.length);
@@ -849,7 +854,7 @@
         // would silently overwrite real money with a guess, so refuse instead.
         const missing = recon.filter(r => r.counted == null).map(r => r.c);
         if (missing.length) {
-          throw new Error(`Count ${missing.join(', ')} before closing. The close writes your count back as the till balance.`);
+          throw new Error(`Count ${missing.join(', ')} before closing. ${balanceSentence}`);
         }
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
@@ -920,7 +925,7 @@
     const closedEarnedWhy = dayBook.error || (day.summary && day.summary.earnedWhy) || (dayBook.loading ? 'reading the ledger…' : 'nothing posted on this trading day');
     const closedTxns = closedBook ? closedBook.posted : (day.summary && day.summary.txns != null ? day.summary.txns : null);
 
-    const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Reconcile & close', 'coins'], ['history', 'History', 'clock']];
+    const TABS = [['count', 'Cash drawer', 'wallet'], ['reconcile', 'Count & close', 'coins'], ['history', 'History', 'clock']];
 
     /* The phone count panel covers the bottom of the scrolling
        column. Its height is the pad that lets the last denomination
@@ -977,7 +982,7 @@
               </div>)}
             </span>) : (stationTill ? <b className="till-pick" style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span className="till-statusline">
-            <span>{serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {drawersCounted} of {drawerTotal} counted</span>
+            <span>{serverBacked ? (serverSession ? `Session ${serverSession.sessionNumber}` : 'No session') : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {drawerCountLabel}</span>
             {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute }}>· {serverBalanceError ? 'figures unavailable' : serverBalancesReady ? 'figures are in' : 'loading figures'}</span>}
             {/* the ledger's own name for the drawer these figures belong to —
                 the picker to the left names a local till, which is a different
@@ -1052,7 +1057,7 @@
           <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: CD.mute }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: CD.green, flex: 'none' }}></span>
             <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {deskDay(serverSession.businessDate)} · opened by {named(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
-            <span className="ml-auto flex-none" style={{ color: CD.faint }}>{serverCcys.length} currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
+            <span className="till-session-count ml-auto flex-none" style={{ color: CD.faint }}>{drawerCountLabel}</span>
           </div>
         )}
         {sessionClosed && (
@@ -1239,16 +1244,16 @@
         </div>) : (<div data-tour="till-reconcile" className="p-4">
           <div className="flex items-center justify-between mb-3">
             <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>{closeDayLabel((serverSession && serverSession.businessDate) || window.CDOS.businessDate())}</div><div className="text-[11px]" style={{ color: CD.mute }}>Expected is what the system says should be in the drawer. Counted is what you count.</div></div>
-            <span className="text-[11px] px-2.5 py-1" style={{ background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)', color: countedN === recon.length ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>
+            <span className="till-count-chip text-[11px] px-2.5 py-1" style={{ background: drawersCounted === drawerTotal ? CD.greenSoft : 'var(--cd-chip)', color: drawersCounted === drawerTotal ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{drawerCountLabel}</span>
           </div>
-          <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10 }}>
+          <div className="till-close-table overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10 }}>
             <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title={serverBacked ? 'What the system says should be in the drawer' : 'Issued by the vault. Not editable here'} className="inline-flex items-center gap-1">{serverBacked ? 'Source' : 'Opening · vault'} <Ic n="lock" s={10} c={CD.faint} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
               <tbody>{recon.map(r => { const ls = lastSaved[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
                 <td className="px-3 py-2 text-right" title={serverBacked ? 'What the system says should be in the drawer' : 'What the vault issued to this drawer. Change it with Issue float or Return at the vault, never by typing'} style={{ fontVariantNumeric: 'tabular-nums', color: serverBacked ? CD.green : CD.mute }}>{serverBacked ? 'The system' : '—'}</td>
                 <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.expected == null ? CD.faint : CD.ink }}>{r.expected == null ? '—' : num(r.expected, r.c)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt, r.c)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : 'Never'}</td>
-                <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted, r.c)}</span>}</td>
+                <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>Count</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted, r.c)}</span>}</td>
                 <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)}</td>
               </tr>); })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{totalExpHome == null ? '—' : num(totalExpHome, homeCcy)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{totalCountHome == null ? '—' : num(totalCountHome, homeCcy)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy)}</td></tr></tfoot></table>
           </div>
@@ -1261,7 +1266,7 @@
             {canCloseDay && offRows.length === 0 && countedN > 0 && <span className="text-[11px]" style={{ color: CD.green }}>All counted drawers balanced</span>}
           </div>
           {offLedgerCcys.length > 0 && <div className="mt-2 text-[11px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Counted, but not in the system: <b style={{ color: CD.ink }}>{offLedgerCcys.join(', ')}</b>. These stay in your own history and are left out of the close, so they cannot change a real balance.</div>}
-          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Closing saves your count. Any difference is recorded under your name.</p>
+          <p className="till-close-note mt-2 text-[11px]" style={{ color: CD.faint }}>Closing saves your count. Any difference is recorded under your name.</p>
         </div>))}
 
         {/* ===== HISTORY ===== */}
@@ -1366,7 +1371,7 @@
             {countedN < recon.length && <div className="mt-3 text-[11.5px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>{recon.length - countedN} drawer(s) not counted yet. They will lock at expected with no variance. Go back and count them first if you want a true close.</div>}
           </div>
           <div className="px-5 py-3 flex items-center justify-between gap-3 flex-none" style={{ borderTop: `1px solid ${CD.line}` }}>
-            <button onClick={() => { setConfirmClose(false); setTab('count'); }} className="text-sm font-medium px-3.5 py-2" style={{ color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9, background: 'transparent' }}>← Back to count</button>
+            <button onClick={() => { setConfirmClose(false); setTab('count'); }} className="text-sm font-medium px-3.5 py-2" style={{ color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9, background: 'transparent' }}>Back to count</button>
             <button onClick={confirmAndClose} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }} onMouseEnter={e => e.currentTarget.style.background = CD.flag} onMouseLeave={e => e.currentTarget.style.background = CD.ink}><Ic n="lock" s={14} c="var(--cd-on-ink)" /> Close the day</button>
           </div>
         </div>

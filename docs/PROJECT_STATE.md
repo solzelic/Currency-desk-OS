@@ -606,10 +606,15 @@ A desk still open after midnight stays on the date it opened on.
 The close panel is headed "Close the day" and that calendar date
 (Mon Oct 12). Its subtitle is "Expected is what the system says
 should be in the drawer. Counted is what you count." The close
-button says "Close the day". One drawer reads "Count the drawer"
-and "0 of 1 counted"; "Count all 2 drawers" is only when the branch
-has several drawers. The grey line under the table is "Closing
-saves your count. Any difference is recorded under your name."
+button says "Close the day". The tab says "Count & close".
+The session line, the session strip, and the heading chip all
+read the same till count ("0 of 1 counted" when this branch has
+one drawer and nothing is counted). That count is tills, not
+currencies. One drawer reads "Count the drawer before closing.
+Your count becomes the new till balance." "Count all 2 drawers"
+is only when the branch has several drawers. The grey line under
+the table is "Closing saves your count. Any difference is
+recorded under your name."
 Money shows its currency's decimal places: CAD is two, so a total
 is 23,640.70 and never 23,640.7. The drawer bar
 reads "On the drawer: A. Singh, Senior teller": initial and surname,

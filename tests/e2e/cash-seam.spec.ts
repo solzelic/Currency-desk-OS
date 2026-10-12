@@ -157,7 +157,7 @@ test("the desk opens a till session, and the ledger is the one that says so", as
 
   /* The close panel is headed with the session's trading day, and the
      session line prints the open time as 6:09 AM, not 06:09 a.m. */
-  await clickDrawerTab(page, /Reconcile & close/i);
+  await clickDrawerTab(page, /Count & close/i);
   const heading = closeDayHeading(session.businessDate);
   await expect(page.getByText(heading, { exact: true })).toBeVisible();
   await expect(page.getByText(/Reconcile & close — Day/)).toHaveCount(0);
@@ -191,15 +191,40 @@ test("the desk opens a till session, and the ledger is the one that says so", as
   });
   const drawers = Math.max(1, Array.isArray(roster.workspaces) ? roster.workspaces.length : 0);
   const currencies = Object.keys(balances).length;
+  const label = `0 of ${drawers} counted`;
   const status = page.locator(".till-statusline");
-  await expect(status).toContainText(`0 of ${drawers} counted`);
+  const strip = page.locator(".till-session-count");
+  const chip = page.locator(".till-count-chip");
+  await expect(status).toContainText(label);
+  await expect(strip).toHaveText(label);
+  await expect(chip).toHaveText(label);
+  /* A slash count is the old currency fraction (0/2). Any of the three
+     places using it, or a different total, is the mismatch. */
+  const pair = (text: string) => {
+    const of = text.match(/(\d+) of (\d+) counted/);
+    const slash = text.match(/(\d+)\/(\d+)/);
+    return {
+      done: of?.[1] ?? slash?.[1] ?? "",
+      total: of?.[2] ?? slash?.[2] ?? "",
+      slash: Boolean(slash),
+    };
+  };
+  const statusCount = pair(await status.innerText());
+  const stripCount = pair(await strip.innerText());
+  const chipCount = pair(await chip.innerText());
+  expect(stripCount, "the session strip uses the session line's count").toEqual(statusCount);
+  expect(chipCount, "the heading chip uses the session line's count").toEqual(statusCount);
+  expect(statusCount.slash, "the count is tills, not a currency fraction").toBe(false);
+  expect(statusCount.total).toBe(String(drawers));
   if (drawers !== currencies) {
-    await expect(status).not.toContainText(`0 of ${currencies} counted`);
+    expect(statusCount.total).not.toBe(String(currencies));
+    await expect(strip).not.toContainText(`0/${currencies}`);
+    await expect(chip).not.toContainText(`0/${currencies}`);
   }
   const countBeforeClose =
     drawers === 1
-      ? "Count the drawer before closing. The close writes your count back as the balance"
-      : `Count all ${drawers} drawers before closing. The close writes your count back as the balance`;
+      ? "Count the drawer before closing. Your count becomes the new till balance."
+      : `Count all ${drawers} drawers before closing. Your count becomes the new till balance.`;
   await expect(page.getByRole("button", { name: "Close the day", exact: true }).first()).toBeVisible();
   await expect(page.getByText(countBeforeClose)).toBeVisible();
   await expect(
@@ -259,10 +284,10 @@ test("closing writes the counted figure back, and refuses to guess one", async (
   await page.locator('input[placeholder="0.00"]').first().fill(String(short));
   await saveDrawerCount(page);
 
-  await clickDrawerTab(page, /Reconcile & close/i);
+  await clickDrawerTab(page, /Count & close/i);
   const closeButton = page.getByRole("button", { name: "Close the day", exact: true }).first();
   await expect(closeButton).toBeDisabled();
-  await expect(page.getByText(/Count the drawer before closing|Count all \d+ drawers before closing/)).toBeVisible();
+  await expect(page.getByText(/Count the drawer before closing\. Your count becomes the new till balance\.|Count all \d+ drawers before closing\. Your count becomes the new till balance\./)).toBeVisible();
 
   // now count the rest honestly, and close
   await clickDrawerTab(page, /Cash drawer/i);
@@ -272,7 +297,7 @@ test("closing writes the counted figure back, and refuses to guess one", async (
     await page.locator('input[placeholder="0.00"]').first().fill(String(Number(before[ccy]!)));
   }
   await saveDrawerCount(page);
-  await clickDrawerTab(page, /Reconcile & close/i);
+  await clickDrawerTab(page, /Count & close/i);
   await page.getByRole("button", { name: "Close the day", exact: true }).first().click();
   await page.getByRole("button", { name: "Close the day", exact: true }).last().click();
 
