@@ -2981,11 +2981,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: none;
   }
   .cd-tx-rate-line > .cd-tx-kicker {
-    flex: 1 1 8rem;
-    min-width: 8rem;
+    flex: 1 0 100%;
+    min-width: 0;
+    max-width: 100%;
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
   }
   .cd-tx-check-go {
     display: flex;

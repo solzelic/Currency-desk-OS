@@ -35930,25 +35930,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       "data-testid": "tx-ticket-pays",
       style: {
         fontWeight: 800,
-        fontSize: 26,
+        fontSize: exchangeReady && fx && fx.giveDetail ? 18 : 26,
         letterSpacing: '-0.01em',
         fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1.1
+        lineHeight: 1.25
       }
-    }, isExchange ? exchangeReady && fx.giveDetail ? /*#__PURE__*/React.createElement(React.Fragment, null, fx.giveAmount, " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 500,
-        fontSize: 15,
-        color: 'var(--cd-on-ink-soft)'
-      }
-    }, fx.giveCurrency), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontWeight: 500,
-        fontSize: 13,
-        color: 'var(--cd-on-ink-soft)',
-        marginTop: 4
-      }
-    }, "(", fx.giveDetail, ")")) : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.paysLabel : amtN > 0 ? num(amtN) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange ? exchangeReady && fx.giveDetail ? fx.give : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.paysLabel : amtN > 0 ? num(amtN) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -35993,26 +35980,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-ticket-get",
       style: {
         fontWeight: 800,
-        fontSize: 26,
+        fontSize: exchangeReady && fx && fx.receiveDetail ? 18 : 26,
         letterSpacing: '-0.01em',
         fontVariantNumeric: 'tabular-nums',
         color: '#7fd1a3',
-        lineHeight: 1.1
+        lineHeight: 1.25
       }
-    }, isExchange ? exchangeReady && fx.receiveDetail ? /*#__PURE__*/React.createElement(React.Fragment, null, fx.receiveAmount, " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 500,
-        fontSize: 15,
-        color: 'rgba(127,209,163,0.7)'
-      }
-    }, fx.receiveCurrency), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontWeight: 500,
-        fontSize: 13,
-        color: 'rgba(127,209,163,0.7)',
-        marginTop: 4
-      }
-    }, "(", fx.receiveDetail, ")")) : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.receivesLabel : '—', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange ? exchangeReady && fx.receiveDetail ? fx.receive : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.receivesLabel : '—', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
