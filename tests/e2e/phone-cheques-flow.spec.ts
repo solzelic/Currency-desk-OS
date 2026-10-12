@@ -5,7 +5,7 @@
    switch is on. */
 import { existsSync, mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { test, expect } from "./fixtures";
+import { test, expect, signInAtDesk } from "./fixtures";
 
 const STORE = "/cursor/stores/self/pr118";
 
@@ -80,7 +80,8 @@ async function mountFlow(page: Page): Promise<void> {
     }
     const host = document.createElement("div");
     host.id = "flow-host";
-    host.style.cssText = "position:fixed;inset:0;background:#F7F6F3;overflow:auto;";
+    host.style.cssText =
+      "position:fixed;left:0;right:0;top:0;bottom:var(--phone-bar-h,64px);z-index:600;overflow:hidden;background:transparent;padding:0;";
     document.body.appendChild(host);
     window.ReactDOM.createRoot(host).render(React.createElement(Harness));
   });
@@ -105,7 +106,17 @@ async function reachPay(page: Page, amount: string): Promise<void> {
 }
 
 test("the hold preview matches the saved day, and the fee rounds half up", async ({ page }) => {
+  await page.context().clearCookies();
   await page.setViewportSize({ width: 390, height: 844 });
+  await signInAtDesk(page);
+  const skip = page.locator(".cdos-tour-skip");
+  for (let i = 0; i < 15; i++) {
+    if (await skip.isVisible()) {
+      await skip.click();
+      break;
+    }
+    await page.waitForTimeout(200);
+  }
   await mountFlow(page);
   await reachPay(page, "1000.25");
   await expect(page.getByText("Held to Oct 13")).toBeVisible();
@@ -120,6 +131,10 @@ test("the hold preview matches the saved day, and the fee rounds half up", async
   });
   expect(ink.title).toBe("rgb(246, 243, 236)");
   expect(ink.value).toBe("rgb(246, 243, 236)");
+  await expect(page.locator("#phone-dock")).toBeVisible();
+  const sheetBottom = await page.locator(".phq-sheet").evaluate((node) => node.getBoundingClientRect().bottom);
+  const barTop = await page.locator("#phone-dock").evaluate((node) => node.getBoundingClientRect().top);
+  expect(sheetBottom).toBeGreaterThanOrEqual(barTop - 1);
   if (existsSync("/cursor/stores")) {
     mkdirSync(STORE, { recursive: true });
     await page.screenshot({ path: `${STORE}/step3_390.png` });
