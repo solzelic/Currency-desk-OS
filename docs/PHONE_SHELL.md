@@ -407,6 +407,13 @@ The capture replaces a transaction ref (`CD-` plus a random suffix),
 a six-character seam-run token, and a UUID with fixed text of the
 same length before it takes the picture. The UUID match does not
 require a word boundary, so `cust_` plus an id is frozen too.
+The Northwood cheque number is still minted as `00` plus the
+millisecond, so a second day on the same database is a new piece
+of paper. The picture rewrites that one `#` to `#00898`, the digits
+in the committed Cheques PNG. Sample numbers 004821, 1180, 00917,
+and 88204 are left as they are. On Actions run 38193394311 that
+number was the whole Cheques miss: 29 pixels, identical on both
+attempts. The PNG was not replaced.
 Those values change every suite run. The first committed pictures
 did not freeze the ref, so the next Actions run differed by that
 column. The Cheques picture in the tree is the Actions render from

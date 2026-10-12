@@ -571,6 +571,13 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, desktop cheque number. The Cheques picture missed
+by 29 pixels on both attempts of Actions run 38193394311, and by
+34 on run 38193282295. The pixels are the Northwood cheque number.
+The book still posts a new number each day. The picture rewrites
+that one `#` to `#00898`, the digits already in the committed PNG.
+The PNG was not replaced.
+
 **2026-10-12**, desktop picture noise. The 1280 comparison allows
 20 pixels at threshold 0.2, which is the Till antialiasing on
 Actions run 38188660101. The Cheques customer id is frozen with

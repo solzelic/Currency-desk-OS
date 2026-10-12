@@ -13,6 +13,13 @@
    The Cheques window on the same run differed by 592 pixels in one
    band: the customer id `cust_` plus a live UUID. That is content.
    It is frozen below, and 20 pixels does not cover it.
+   After that freeze, Cheques still missed on both attempts of a run:
+   34 pixels on 38193282295, 29 pixels on 38193394311. The two attempts
+   were the same picture. The band is the Northwood cheque number,
+   `00` plus the millisecond. The book keeps minting a new number,
+   because a second day on the same database is a new piece of paper.
+   The picture rewrites that one `#` to `#00898`, the digits already
+   in the committed PNG. The other pictures stay.
 
    A laptop paints the fallback font differently from Actions. That
    gap is thousands of pixels and is not a layout change. Do not
@@ -30,6 +37,12 @@ const FROZEN_DAY = "Monday, October 12, 2026";
 const FROZEN_ISO = "2026-06-18";
 const FROZEN_TIME = "14:30";
 const FROZEN_UUID = "00000000-0000-4000-8000-000000000000";
+/* The digits painted beside Northwood in the committed Cheques PNG.
+   The day-at-the-desk seam posts `00` plus the millisecond so a
+   leftover database can cash the cheque again. That post stays.
+   Only the picture is pinned, and only this row: 004821, 1180,
+   00917, and 88204 are the desk's own samples. */
+const FROZEN_CHEQUE = "#00898";
 
 const SHOT = {
   maxDiffPixels: 20,
@@ -132,6 +145,15 @@ async function freezeWindowText(page: Page): Promise<void> {
        shot. Stop the window's intervals, then the text. */
     stopIntervals(window);
     fix(root);
+    /* The Northwood `#` is its own span, next to the maker. A general
+       digit replace would also rewrite the sample cheque 00917. */
+    root.querySelectorAll("span").forEach((el) => {
+      const text = (el.textContent || "").trim();
+      if (!/^#\d+$/.test(text)) return;
+      const holder = el.parentElement;
+      if (!holder || !(holder.textContent || "").includes("Northwood Property Management")) return;
+      if (text !== frozen.cheque) el.textContent = frozen.cheque;
+    });
     root.querySelectorAll("iframe").forEach((frame) => {
       try {
         const win = frame.contentWindow;
@@ -142,7 +164,7 @@ async function freezeWindowText(page: Page): Promise<void> {
         /* A cross-origin frame is not part of this window's text. */
       }
     });
-  }, { day: FROZEN_DAY, iso: FROZEN_ISO, time: FROZEN_TIME, uuid: FROZEN_UUID });
+  }, { day: FROZEN_DAY, iso: FROZEN_ISO, time: FROZEN_TIME, uuid: FROZEN_UUID, cheque: FROZEN_CHEQUE });
 }
 
 /* The page clock stays at the instant this test started. Timers are
