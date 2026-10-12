@@ -42595,33 +42595,116 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      country line. */
   const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== homeCountry() ? rec.country : ''].filter(Boolean).join(', ');
 
-  /* A health card is never an identifier on a regulator report. An
-     accepted document on the same file is used instead. With none, the
-     identifier fields stay blank for staff to fill. */
-  function acceptedIdentifier(person) {
-    const health = t => window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(t);
-    const usable = (type, num) => type && !health(type) && String(num || '').trim();
-    if (!person) return {
-      type: '',
-      num: ''
+  /* Shown when the identifier is left blank. A blank does not stop
+     the filing. Staff record a valid ID first when they can, and
+     otherwise file and keep this note. */
+  const NO_ACCEPTED_ID_NOTICE = 'No accepted ID on file. Record a valid ID before filing if you can, otherwise file with what you have and note why.';
+
+  /* The accepted photo ID list from the catalogue on PR #108
+     (server/src/ledger/id-document-types.mjs). That file is not on
+     this branch. A health card is absent here on purpose, and the
+     2012-or-later citizenship certificate and a birth certificate
+     are absent because they are not photo ID. A blank expiry is
+     current only for the pre-2012 citizenship card. */
+  const ACCEPTED_PHOTO_ID = [{
+    name: 'Passport'
+  }, {
+    name: "Driver's Licence",
+    aliases: ['Driver licence', "Driver's License", 'Drivers Licence', 'Drivers License', 'Driver License']
+  }, {
+    name: 'Provincial ID'
+  }, {
+    name: 'Permanent Resident Card',
+    aliases: ['PR Card']
+  }, {
+    name: 'Canadian citizenship card (pre-2012)',
+    noExpiryAllowed: true
+  }, {
+    name: 'Secure Certificate of Indian Status'
+  }];
+  const photoTypeKey = value => String(value ?? '').toLowerCase().replace(/['\u2018\u2019]/g, '').replace(/[^a-z0-9]+/g, ' ').replace(/ +/g, ' ').trim();
+  const PHOTO_ID_BY_KEY = new Map();
+  ACCEPTED_PHOTO_ID.forEach(row => {
+    [row.name, ...(row.aliases || [])].forEach(name => {
+      const key = photoTypeKey(name);
+      if (key) PHOTO_ID_BY_KEY.set(key, row);
+    });
+  });
+  const isHealthType = type => !!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(type));
+  const filingAsOf = deal => {
+    const dated = deal && String(deal.date || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dated)) return dated;
+    try {
+      return window.CDOS.businessDate();
+    } catch (e) {
+      return new Date().toISOString().slice(0, 10);
+    }
+  };
+  /* A current accepted photo ID. A health card, an expired document,
+     a document with no number, and a type the catalogue does not
+     accept as photo ID all fail. */
+  function currentAcceptedPhoto(doc, asOf) {
+    if (!doc) return null;
+    const type = doc.type || doc.docType || doc.idType || '';
+    const num = String(doc.num || doc.docNumber || doc.idNum || '').trim();
+    if (!String(type).trim() || !num || isHealthType(type)) return null;
+    const row = PHOTO_ID_BY_KEY.get(photoTypeKey(type));
+    if (!row) return null;
+    const expiry = String(doc.expiry || doc.expiresOn || doc.idExpiry || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) {
+      if (!row.noExpiryAllowed) return null;
+    } else if (expiry < asOf) {
+      return null;
+    }
+    const jurisdiction = String(doc.jurisdiction || doc.issuingJurisdiction || doc.idProvince || doc.province || '').trim();
+    return {
+      type,
+      num,
+      jurisdiction
     };
-    if (usable(person.idType, person.idNum)) return {
+  }
+  function clientPhotoIds(person) {
+    if (!person) return [];
+    return [person.idType || person.idNum ? {
       type: person.idType,
-      num: person.idNum
+      num: person.idNum,
+      expiry: person.idExpiry,
+      jurisdiction: person.idProvince
+    } : null, ...(person.ids || []), ...(person.documents || [])].filter(Boolean);
+  }
+  /* The document the deal recorded, when the row carries one. A
+     Canadian deal does not snapshot that document today; the field is
+     read when it is present. */
+  function recordedOnDeal(deal) {
+    if (!deal) return null;
+    return deal.recordedId || deal.identityDocument || null;
+  }
+  function withJurisdiction(picked, person) {
+    let jurisdiction = picked.jurisdiction;
+    if (!jurisdiction && person && person.province) {
+      const country = person.country || homeCountry();
+      jurisdiction = country ? `${person.province}, ${country}` : person.province;
+    } else if (!jurisdiction && person) {
+      jurisdiction = person.country || '';
+    }
+    return {
+      type: picked.type,
+      num: picked.num,
+      jurisdiction,
+      notice: ''
     };
-    const extra = (person.ids || []).find(d => d && usable(d.type, d.num));
-    if (extra) return {
-      type: extra.type,
-      num: extra.num
-    };
-    const doc = (person.documents || []).find(d => d && usable(d.docType, d.docNumber));
-    if (doc) return {
-      type: doc.docType,
-      num: doc.docNumber
-    };
+  }
+  function filingIdentifier(person, deal) {
+    const asOf = filingAsOf(deal);
+    const recorded = currentAcceptedPhoto(recordedOnDeal(deal), asOf);
+    if (recorded) return withJurisdiction(recorded, person);
+    const fallback = clientPhotoIds(person).map(doc => currentAcceptedPhoto(doc, asOf)).find(Boolean);
+    if (fallback) return withJurisdiction(fallback, person);
     return {
       type: '',
-      num: ''
+      num: '',
+      jurisdiction: '',
+      notice: NO_ACCEPTED_ID_NOTICE
     };
   }
 
@@ -42651,8 +42734,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const cadIn = r => r.inCcy === cur ? Number(r.inAmt) || 0 : (Number(r.inAmt) || 0) / (window.CDOS.crossRate(cur, r.inCcy) || 1);
     const F = (id, label, cat, source, value, opts = {}) => {
       const has = value != null && String(value).trim() !== '';
-      // only a mandatory (*) / mandatory-for-processing (‡) empty blocks filing
-      const missing = !opts.prompt && source !== 'ENGINE' && !has && (cat === '*' || cat === '‡');
+      // only a mandatory (*) / mandatory-for-processing (‡) empty blocks filing.
+      // A blank identifier, when no accepted ID is on file, does not.
+      const blocksFiling = opts.blocksFiling !== false;
+      const missing = blocksFiling && !opts.prompt && source !== 'ENGINE' && !has && (cat === '*' || cat === '‡');
       return {
         id,
         label,
@@ -42661,8 +42746,24 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         value: has ? String(value) : '',
         prompt: !!opts.prompt,
         hint: opts.hint || '',
-        missing
+        missing,
+        notice: opts.notice || '',
+        blocksFiling
       };
+    };
+    const identifierFields = (prefix, id) => {
+      const open = !!id.notice;
+      return [F(`${prefix}_idtype`, 'Identifier type', open ? '' : '*', 'KYC', id.type, {
+        hint: 'Never a SIN. Never a health card.',
+        notice: id.notice || '',
+        blocksFiling: !open
+      }), F(`${prefix}_idnum`, 'Identifier number', open ? '' : '*', 'KYC', id.num, {
+        hint: 'Document number — never a SIN, never a health number',
+        blocksFiling: !open
+      }), F(`${prefix}_idjur`, 'Identifier jurisdiction', open ? '' : '*', 'KYC', id.jurisdiction, {
+        hint: 'Province / state + country that issued the ID',
+        blocksFiling: !open
+      })];
     };
     const partyName = name => clients && clients[name] || {};
 
@@ -42673,8 +42774,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjectId = acceptedIdentifier(subj);
-      const subjJur = subjectId.type ? subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : subj.country || '' : '';
+      const subjectDeal = txns.find(r => r.recordedId || r.identityDocument) || txns[0] || null;
+      const subjectId = filingIdentifier(subj, subjectDeal);
       const win = settings && +settings.structuringDays || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
@@ -42693,13 +42794,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         hint: 'YYYY-MM-DD'
       }), F('su_occ', 'Occupation (descriptive)', '*', 'KYC', subj.occupation, {
         hint: 'e.g. "retail store manager"'
-      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), F('su_idtype', 'Identifier type', '*', 'KYC', subjectId.type, {
-        hint: 'Never a SIN. Never a health card.'
-      }), F('su_idnum', 'Identifier number', '*', 'KYC', subjectId.num, {
-        hint: 'Document number — never a SIN, never a health number'
-      }), F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjJur, {
-        hint: 'Province / state + country that issued the ID'
-      }), F('su_tel', 'Telephone', '', 'KYC', subj.phone), F('su_rel', 'Relationship to your business', '', 'PROMPT', '', {
+      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), ...identifierFields('su', subjectId), F('su_tel', 'Telephone', '', 'KYC', subj.phone), F('su_rel', 'Relationship to your business', '', 'PROMPT', '', {
         prompt: true,
         hint: 'e.g. "walk-in since 2023, regular FX customer"'
       })];
@@ -42799,8 +42894,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const condId = acceptedIdentifier(cond);
-      const idJur = condId.type ? cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : cond.country || '' : '';
+      const condId = filingIdentifier(cond, r);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [F('sa_amount', 'Amount (starting action)', '*', 'LEDGER', num(r.inAmt)), F('sa_currency', 'Currency — report ORIGINAL, do not convert', '*', 'LEDGER', r.inCcy), F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)), F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : {
@@ -42828,13 +42922,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           hint: 'YYYY-MM-DD'
         }), F('cd_occ', 'Occupation (descriptive)', '*', 'KYC', cond.occupation, {
           hint: 'e.g. "retail store manager"'
-        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), F('cd_idtype', 'Identifier type', '*', 'KYC', condId.type, {
-          hint: 'Never a SIN. Never a health card.'
-        }), F('cd_idnum', 'Identifier number', '*', 'KYC', condId.num, {
-          hint: 'Document number — never a SIN, never a health number'
-        }), F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', idJur, {
-          hint: 'Province / state + country that issued the ID'
-        }), F('cd_tel', 'Telephone', '', 'KYC', cond.phone), {
+        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), ...identifierFields('cd', condId), F('cd_tel', 'Telephone', '', 'KYC', cond.phone), {
           divider: 'Third party — acting on behalf of someone else?'
         }, F('tp_det', 'Third-party determination made? (Y/N)', '†', cap ? 'LEDGER' : 'PROMPT', cap ? cap.thirdParty ? 'Yes' : 'No' : '', cap ? {} : {
           prompt: true,
@@ -43010,7 +43098,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 
     // effective value of a field = the owner's override if present, else the desk's pre-fill
     const evOf = (f, k) => k in vals ? vals[k] : f.value || '';
-    const isMandatory = f => (f.cat === '*' || f.cat === '‡') && f.source !== 'ENGINE';
+    const isMandatory = f => f.blocksFiling !== false && (f.cat === '*' || f.cat === '‡') && f.source !== 'ENGINE';
 
     // every editable (non-divider) field key, in order
     const allKeys = useMemo(() => {
@@ -43444,7 +43532,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         style: {
           color: CD.faint
         }
-      }, "Normally pulled from ", f.source === 'CONFIG' ? 'Settings' : 'the client profile', " \u2014 fill it here and it\u2019s captured on the sealed copy."), f.hint && !f.prompt && !f.missing && dv.trim() && isFocused && /*#__PURE__*/React.createElement("div", {
+      }, "Normally pulled from ", f.source === 'CONFIG' ? 'Settings' : 'the client profile', " \u2014 fill it here and it\u2019s captured on the sealed copy."), f.notice && !dv.trim() && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-1 ml-0.5",
+        style: {
+          color: CD.ink
+        }
+      }, f.notice), f.hint && !f.prompt && !f.missing && dv.trim() && isFocused && /*#__PURE__*/React.createElement("div", {
         className: "text-[9.5px] mt-0.5 ml-0.5",
         style: {
           color: CD.faint
@@ -43769,7 +43862,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       regime
     } = ctx;
     const op = settings.operatingName || settings.bizName || 'CurrencyDesk OS';
-    const fieldRows = inst => (inst.fields || []).map(f => f.divider ? `<tr><td class="dv" colspan="3">${esc(f.divider)}</td></tr>` : `<tr><td class="cat">${esc(f.cat || '')}</td><td class="lbl">${esc(f.label)}${f.filledByTeller ? ' <span class="pr">prompt</span>' : ''}</td><td class="val${f.value ? '' : ' empty'}">${esc(f.value || '—')}</td></tr>`).join('');
+    const fieldRows = inst => (inst.fields || []).map(f => f.divider ? `<tr><td class="dv" colspan="3">${esc(f.divider)}</td></tr>` : `<tr><td class="cat">${esc(f.cat || '')}</td><td class="lbl">${esc(f.label)}${f.filledByTeller ? ' <span class="pr">prompt</span>' : ''}</td><td class="val${f.value ? '' : ' empty'}">${esc(f.value || '—')}${f.notice && !f.value ? `<div>${esc(f.notice)}</div>` : ''}</td></tr>`).join('');
     const blockHTML = b => `<div class="blk"><div class="bt">${esc(b.title)}</div>${b.instances.map(inst => `<div class="inst">${inst.label ? `<div class="il">${esc(inst.label)}</div>` : ''}<table class="ft">${fieldRows(inst)}</table></div>`).join('')}</div>`;
     const links = (filing.refs || []).map(r => `<span class="lk">${esc(r)}</span>`).join(' ');
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(filing.kind)} ${esc(filing.reportRef)} — filed copy</title>

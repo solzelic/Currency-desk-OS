@@ -224,9 +224,20 @@ stored. It does not show a number. Search, the printable client
 report, and the KYC CSV do not include one. On load, and again when
 the tenant snapshot is saved or restored, any cached copy in
 `localStorage` or IndexedDB is removed. LCTR and STR prefill
-(`os-src/cdos-lctr.jsx`) will not use a health card. Another accepted
-document on the same file is used instead. With none, the identifier
-type, number, and jurisdiction stay blank.
+(`os-src/cdos-lctr.jsx`) takes the document the deal recorded, when
+the row carries one and that document is a current accepted photo ID.
+A Canadian deal does not snapshot that document today, so the field
+is empty on a live row and the prefill uses the client's current
+accepted photo ID instead: passport, driver's licence, provincial
+ID, permanent resident card, pre-2012 citizenship card, or Secure
+Certificate of Indian Status. The list is the photo rows of the
+catalogue on PR #108. A health card, an expired document, a document
+with no expiry except the pre-2012 citizenship card, and a type that
+catalogue does not accept as photo ID are not used. With no accepted
+ID, the identifier type, number, and jurisdiction stay blank and the
+worksheet shows: "No accepted ID on file. Record a valid ID before
+filing if you can, otherwise file with what you have and note why."
+That blank does not block the filing.
 
 This does not delete or rewrite the stored number. Redaction is a
 separate, owner-run command and does not run on deploy.
@@ -443,8 +454,11 @@ every time.
   the names that must not match.
 - `tests/e2e/health-number-read.spec.ts` — after load, the number is
   not in localStorage, IndexedDB, or on the client file; LCTR and STR
-  prefill leave the identifier blank for a health-card-only client
-  and use a passport when the file has one.
+  prefill uses a document the deal recorded when it is a current
+  accepted photo ID, falls back to a current accepted photo ID on
+  the file, and leaves the identifier blank — with the notice, and
+  without blocking the filing — when the file has only a health card
+  or only an expired document.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted
   deal, with the deal still resolving and the old name still finding

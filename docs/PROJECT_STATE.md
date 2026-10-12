@@ -77,8 +77,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   province when one was stored, the expiry, and the date recorded. The
   number is not a field in that payload. A copy cached in localStorage
   or IndexedDB is cleared the next time the desk loads. LCTR and STR
-  prefill never use a health card; if the file has no accepted ID,
-  those identifier fields stay blank for staff to fill. The number is
+  prefill uses the document the deal recorded when that document
+  is a current accepted photo ID. Otherwise it uses the client's
+  current accepted photo ID: passport, driver's licence, provincial
+  ID, PR card, pre-2012 citizenship card, or Secure Certificate of
+  Indian Status. A health card, an expired document, and any other
+  type are not used. With none of those, the identifier stays blank,
+  staff see "No accepted ID on file. Record a valid ID before filing
+  if you can, otherwise file with what you have and note why.", and
+  the blank does not block the LCTR or the STR. The number is
   still in the database until an owner runs redaction — that command
   is not part of this change and does not run on deploy. Ontario's
   Health Cards and Numbers Control Act, 1991 bars a business outside

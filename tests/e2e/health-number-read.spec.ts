@@ -153,11 +153,13 @@ test("a loaded client file keeps no health number in the browser", async ({ page
   expect(screen).not.toContain(SECRET);
 });
 
-test("LCTR and STR prefill leave the ID blank for a health-card-only client", async ({ page }) => {
+const NOTICE = "No accepted ID on file. Record a valid ID before filing if you can, otherwise file with what you have and note why.";
+
+test("LCTR and STR prefill an accepted photo ID and do not block without one", async ({ page }) => {
   await signInAtDesk(page);
   await page.waitForFunction(() => (window as any).CDOS && (window as any).CDOS.LCTR && (window as any).CDOS.LCTR.buildMap);
 
-  const filled = await page.evaluate(({ regime, secret }) => {
+  const filled = await page.evaluate(({ regime, secret, notice }) => {
     const settings = {
       timezone: "America/Toronto",
       structuringDays: 7,
@@ -169,25 +171,9 @@ test("LCTR and STR prefill leave the ID blank for a health-card-only client", as
       locationNumber: "00001",
       retentionYears: 5,
     };
-    const healthOnly = {
-      idType: "OHIP",
-      idNum: secret,
-      province: "ON",
-      country: "Canada",
-      ids: [],
-      documents: [{ docType: "Care Card", docNumber: secret }],
-    };
-    const withPassport = {
-      idType: "Alberta Health",
-      idNum: secret,
-      province: "AB",
-      country: "Canada",
-      ids: [{ type: "Passport", num: "P8844221" }],
-      documents: [],
-    };
-    const row = {
-      ref: "TX-HEALTH",
-      customer: "Health Only",
+    const row = (ref: string, customer: string, recordedId?: Record<string, string>) => ({
+      ref,
+      customer,
       date: "2026-10-01",
       time: "10:00",
       inCcy: "CAD",
@@ -195,43 +181,116 @@ test("LCTR and STR prefill leave the ID blank for a health-card-only client", as
       outCcy: "USD",
       outAmt: 8000,
       type: "Exchange",
-    };
-    const read = (blocks: { instances?: { fields?: { id?: string; value?: string }[] }[] }[]) => {
-      const fields: Record<string, string> = {};
+      recordedId: recordedId || null,
+    });
+    const read = (blocks: { instances?: { fields?: { id?: string; value?: string; notice?: string; blocksFiling?: boolean }[] }[] }[]) => {
+      const fields: Record<string, { value: string; notice: string; blocksFiling: boolean }> = {};
       blocks.forEach((block) => {
         (block.instances || []).forEach((instance) => {
           (instance.fields || []).forEach((field) => {
-            if (field && field.id) fields[field.id] = field.value || "";
+            if (field && field.id) {
+              fields[field.id] = {
+                value: field.value || "",
+                notice: field.notice || "",
+                blocksFiling: field.blocksFiling !== false,
+              };
+            }
           });
         });
       });
       return fields;
     };
+    const idOf = (fields: ReturnType<typeof read>, prefix: string) => ({
+      type: fields[`${prefix}_idtype`]?.value || "",
+      num: fields[`${prefix}_idnum`]?.value || "",
+      jur: fields[`${prefix}_idjur`]?.value || "",
+      notice: fields[`${prefix}_idtype`]?.notice || "",
+      blocks: [fields[`${prefix}_idtype`], fields[`${prefix}_idnum`], fields[`${prefix}_idjur`]].some((field) => field && field.blocksFiling),
+    });
     const build = (window as any).CDOS.LCTR.buildMap;
-    const clients = { "Health Only": healthOnly, "Health Plus": withPassport };
-    const str = read(build(
-      { kind: "STR", subject: "Health Only", refs: [], reportRef: "R-STR", amount: 0 },
-      { settings, clients, rows: [], regime },
-    ));
-    const lctr = read(build(
-      { kind: "LCTR", subject: "Health Only", refs: ["TX-HEALTH"], reportRef: "R-LCTR", amount: 12000, basis: null },
-      { settings, clients, rows: [row], regime },
-    ));
-    const accepted = read(build(
-      { kind: "STR", subject: "Health Plus", refs: [], reportRef: "R-PASS", amount: 0 },
-      { settings, clients, rows: [], regime },
-    ));
-    const dumped = JSON.stringify({ str, lctr, accepted });
-    return {
-      str: { type: str.su_idtype, num: str.su_idnum, jur: str.su_idjur },
-      lctr: { type: lctr.cd_idtype, num: lctr.cd_idnum, jur: lctr.cd_idjur },
-      accepted: { type: accepted.su_idtype, num: accepted.su_idnum },
-      leaked: dumped.includes(secret),
+    const gate = (window as any).CDOS.LCTR.requiredFillKeys;
+    const clients = {
+      "Deal Recorded": {
+        idType: "Passport",
+        idNum: "P-CURRENT-FILE",
+        idExpiry: "2030-04-01",
+        province: "ON",
+        country: "Canada",
+      },
+      "Fallback Licence": {
+        idType: "OHIP",
+        idNum: secret,
+        idExpiry: "2030-04-01",
+        province: "ON",
+        country: "Canada",
+        ids: [{ type: "Driver's Licence", num: "D445566", expiry: "2029-08-01", jurisdiction: "ON, Canada" }],
+      },
+      "Health Only": {
+        idType: "OHIP",
+        idNum: secret,
+        idExpiry: "2030-04-01",
+        province: "ON",
+        country: "Canada",
+        documents: [{ docType: "Care Card", docNumber: secret, expiresOn: "2030-04-01" }],
+      },
+      "Expired Only": {
+        idType: "Passport",
+        idNum: "P-EXPIRED-ONLY",
+        idExpiry: "2020-01-01",
+        province: "ON",
+        country: "Canada",
+      },
     };
-  }, { regime: REGIME, secret: SECRET });
+    const recordedRow = row("TX-RECORDED", "Deal Recorded", {
+      type: "Provincial ID",
+      num: "PID-9001",
+      expiry: "2031-01-01",
+      jurisdiction: "BC, Canada",
+    });
+    const healthRow = row("TX-HEALTH", "Health Only");
+    const expiredRow = row("TX-EXPIRED", "Expired Only");
+    const fallbackRow = row("TX-FALLBACK", "Fallback Licence", {
+      type: "Health Card",
+      num: secret,
+      expiry: "2030-04-01",
+      jurisdiction: "ON",
+    });
+    const one = (kind: string, subject: string, refs: string[], rows: unknown[], reportRef: string) => build(
+      { kind, subject, refs, reportRef, amount: 12000, basis: null },
+      { settings, clients, rows, regime },
+    );
+    const recorded = one("LCTR", "Deal Recorded", ["TX-RECORDED"], [recordedRow], "R-REC");
+    const recordedStr = one("STR", "Deal Recorded", ["TX-RECORDED"], [recordedRow], "R-REC-STR");
+    const fallback = one("LCTR", "Fallback Licence", ["TX-FALLBACK"], [fallbackRow], "R-FALL");
+    const health = one("LCTR", "Health Only", ["TX-HEALTH"], [healthRow], "R-HEALTH");
+    const healthStr = one("STR", "Health Only", ["TX-HEALTH"], [healthRow], "R-HEALTH-STR");
+    const expired = one("LCTR", "Expired Only", ["TX-EXPIRED"], [expiredRow], "R-EXP");
+    const expiredStr = one("STR", "Expired Only", ["TX-EXPIRED"], [expiredRow], "R-EXP-STR");
+    const blankGates = (blocks: unknown) => gate(blocks).filter((key: string) => /idtype|idnum|idjur/.test(key));
+    return {
+      recorded: idOf(read(recorded), "cd"),
+      recordedStr: idOf(read(recordedStr), "su"),
+      fallback: idOf(read(fallback), "cd"),
+      health: idOf(read(health), "cd"),
+      healthStr: idOf(read(healthStr), "su"),
+      expired: idOf(read(expired), "cd"),
+      expiredStr: idOf(read(expiredStr), "su"),
+      healthGates: blankGates(health).concat(blankGates(healthStr)),
+      expiredGates: blankGates(expired).concat(blankGates(expiredStr)),
+      leaked: JSON.stringify({ recorded, recordedStr, fallback, health, healthStr, expired, expiredStr }).includes(secret),
+      notice,
+    };
+  }, { regime: REGIME, secret: SECRET, notice: NOTICE });
 
-  expect(filled.str).toEqual({ type: "", num: "", jur: "" });
-  expect(filled.lctr).toEqual({ type: "", num: "", jur: "" });
-  expect(filled.accepted).toEqual({ type: "Passport", num: "P8844221" });
+  expect(filled.recorded).toMatchObject({ type: "Provincial ID", num: "PID-9001", jur: "BC, Canada", notice: "", blocks: true });
+  expect(filled.recordedStr).toMatchObject({ type: "Provincial ID", num: "PID-9001", notice: "" });
+  expect(filled.recorded.num).not.toBe("P-CURRENT-FILE");
+  expect(filled.fallback).toMatchObject({ type: "Driver's Licence", num: "D445566", jur: "ON, Canada", notice: "" });
+  expect(filled.health).toMatchObject({ type: "", num: "", jur: "", notice: NOTICE, blocks: false });
+  expect(filled.healthStr).toMatchObject({ type: "", num: "", jur: "", notice: NOTICE, blocks: false });
+  expect(filled.expired).toMatchObject({ type: "", num: "", jur: "", notice: NOTICE, blocks: false });
+  expect(filled.expiredStr).toMatchObject({ type: "", num: "", jur: "", notice: NOTICE, blocks: false });
+  expect(filled.healthGates).toEqual([]);
+  expect(filled.expiredGates).toEqual([]);
   expect(filled.leaked).toBe(false);
 });
