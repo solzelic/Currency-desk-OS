@@ -150,6 +150,20 @@ test("audit trail lists and searches at 360 and 390", async ({ page }) => {
     await expect(trail.getByText("2026-06-18")).toHaveCount(0);
     await expect(trail.getByText("Jun 18, 2026")).toBeVisible();
     await expect(trail.locator(".phone-row").first()).toContainText(/\d{1,2}:\d{2} (AM|PM)/);
+    const chips = trail.locator(".phone-chips");
+    const chipBox = await chips.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        scrolls: el.scrollWidth > el.clientWidth + 1,
+        mask: style.maskImage || "",
+      };
+    });
+    expect(chipBox.scrolls).toBe(true);
+    expect(chipBox.mask).not.toBe("none");
+    const back = trail.getByRole("button", { name: "More" });
+    const backBox = await back.boundingBox();
+    expect(backBox && backBox.height).toBeGreaterThanOrEqual(44);
+    expect(backBox && backBox.width).toBeGreaterThanOrEqual(44);
     await expect(trail).not.toContainText(" pm");
     await expect(trail).not.toContainText(" p.m.");
     await shot(page, `longtail_audit_${width}`);
@@ -258,6 +272,16 @@ test.describe("vault on a phone", () => {
       await expect(screen.locator("#phone-fab")).toHaveCount(0);
       await expect(screen.locator(`[data-currency="${issued}"]`)).toContainText(money(amount, issued));
       await expect(screen.getByRole("button", { name: "More" })).toBeVisible();
+      const fill = await screen.locator(".phone-sticky-btn").evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(fill).toBe("rgb(23, 20, 15)");
+      const back = screen.getByRole("button", { name: "More" });
+      const backType = await back.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const svg = el.querySelector("svg");
+        const box = svg ? svg.getBoundingClientRect() : null;
+        return { size: style.fontSize, line: style.lineHeight, weight: style.fontWeight, w: box && box.width, h: box && box.height };
+      });
+      expect(backType).toEqual({ size: "16px", line: "24px", weight: "600", w: 24, h: 24 });
       await expect(screen.getByText("Running low")).toHaveCount(0);
       await expect(screen.getByText("Canadian dollar")).toBeVisible();
       await expect(screen.getByText("No rate yet")).toHaveCount(0);
