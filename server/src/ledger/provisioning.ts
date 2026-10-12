@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { minorUnitExceptions } from "./currencies.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
@@ -254,12 +255,16 @@ export class LedgerProvisioningService {
         scope(actor),
       );
       await client.query("COMMIT");
+      const codes = result.rows.map((row) => String(row.currency).trim());
       return {
         tillId: actor.tillId,
         balanceGeneration: mark.rows[0]?.generation ?? "0",
         balances: Object.fromEntries(
           result.rows.map((row) => [row.currency.trim(), row.available_amount]),
         ),
+        /* So the count sheet can ask for a whole yen, or three places
+           on a dinar, without keeping an ISO table of its own. */
+        minorUnits: minorUnitExceptions(codes),
       };
     } catch (error) {
       await client.query("ROLLBACK");

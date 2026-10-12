@@ -451,8 +451,13 @@
      ============================================================ */
   let _currencies = null;
   const deskCurrencies = () => _currencies;
-  /** How many decimal places this currency is actually paid in. */
+  /** How many decimal places this currency is actually paid in.
+      The shared table in currency-places.js is the source. The
+      jurisdiction payload names the same exceptions; it is not a
+      second table. */
   const currencyPlaces = (code) => {
+    const table = window.CDOS && window.CDOS.currencyPlacesTable;
+    if (table && typeof table.minorUnits === 'function') return table.minorUnits(code);
     const known = _currencies && _currencies.minorUnits;
     const stated = known && known[String(code || '').toUpperCase()];
     return typeof stated === 'number' ? stated : 2;

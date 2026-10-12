@@ -3,7 +3,14 @@ import Decimal from "decimal.js";
 import type pg from "pg";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
-import { assertTradeable } from "./currencies.js";
+import {
+  assertTradeable,
+  countProblem,
+  countVariance,
+  expectedAtCount,
+  minorUnitExceptions,
+  storedCount,
+} from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
@@ -64,6 +71,29 @@ const scope = (actor: LedgerActor) => [
 ];
 const fixed = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
+
+/* A count, in the currency's major units, as a string the columns
+   can store. "189175" yen. "125.005" dinars.
+
+   The format check runs before Decimal sees the text. A comma, a
+   minus, an exponent, or a blank is a sentence, not a library error.
+   Yen have no decimals, so "108252.50" is not a count of yen. A dinar
+   has three, and these columns hold two. Rounding that third place
+   off would be the close dropping cash and calling it balanced. An
+   amount that already fits — a whole yen, or "125.000" dinars — is
+   stored at the column's scale. One that does not fit is refused,
+   and the sentence says what to enter instead. */
+function countedAmount(currency: string, raw: string): string {
+  const problem = countProblem(raw, currency);
+  if (problem) throw new LedgerError("INVALID_REQUEST", problem);
+  return storedCount(raw);
+}
+
+function notHeldSentence(codes: string[]): string {
+  if (codes.length === 1) return `${codes[0]} is not held in this drawer.`;
+  if (codes.length === 2) return `${codes[0]} and ${codes[1]} are not held in this drawer.`;
+  return `${codes.slice(0, -1).join(", ")} and ${codes[codes.length - 1]} are not held in this drawer.`;
+}
 const sessionJson = (row: Record<string, unknown>) => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
@@ -216,7 +246,8 @@ export class TillControlService {
        · The refusal that matters already exists, at the point where an
          uncounted currency could overwrite real money: the CLOSE refuses
          (INCOMPLETE_TILL_COUNT) unless every ledger currency has a real
-         count. Moving that refusal earlier would not protect any cash it
+         count, and the refusal names the currency that is missing.
+         Moving that refusal earlier would not protect any cash it
          does not already protect.
 
      A count typed in and not yet saved is the one genuine hazard, and it is
@@ -267,6 +298,9 @@ export class TillControlService {
             row.currency.trim(),
             row.available_amount,
           ]),
+        ),
+        minorUnits: minorUnitExceptions(
+          balances.rows.map((row) => String(row.currency)),
         ),
       };
     } catch (error) {
@@ -366,6 +400,7 @@ export class TillControlService {
         const balanceMap = new Map(
           balances.map((row) => [row.currency.trim(), row.available_amount]),
         );
+        const storedCounts = new Map<string, string>();
         for (const currency of Object.keys(counts)) {
           if (!balanceMap.has(currency)) {
             throw new LedgerError(
@@ -373,6 +408,7 @@ export class TillControlService {
               `No authoritative ${currency} balance exists for this till.`,
             );
           }
+          storedCounts.set(currency, countedAmount(currency, counts[currency]!));
         }
         const batchId = `till_count_${randomUUID()}`;
         const now = new Date();
@@ -390,9 +426,8 @@ export class TillControlService {
             now,
           ],
         );
-        for (const [currency, counted] of Object.entries(counts)) {
-          const expected = fixed(balanceMap.get(currency)!);
-          const countedAmount = fixed(counted!);
+        for (const [currency, stored] of storedCounts) {
+          const expected = expectedAtCount(currency, String(balanceMap.get(currency)));
           await client.query(
             `INSERT INTO ledger_till_counts
               (batch_id,currency,expected_amount,counted_amount,variance_amount)
@@ -401,8 +436,8 @@ export class TillControlService {
               batchId,
               currency,
               expected,
-              countedAmount,
-              fixed(new Decimal(countedAmount).minus(expected)),
+              stored,
+              countVariance(stored, expected),
             ],
           );
         }
@@ -499,14 +534,24 @@ export class TillControlService {
         .map((row) => row.currency.trim())
         .sort();
       const countCurrencies = Object.keys(counts).sort();
-      if (
-        !balanceCurrencies.length ||
-        balanceCurrencies.join(",") !== countCurrencies.join(",")
-      ) {
-        throw new LedgerError(
-          "INCOMPLETE_TILL_COUNT",
-          "Every authoritative till currency must be counted before closing.",
-        );
+      /* Name the currency. The old sentence said "every currency" and
+         did not say which one, so a drawer holding yen looked the same
+         as a drawer nobody had counted. A currency the count names that
+         the drawer does not hold is named too — dropping it would be a
+         count of a different drawer. */
+      const missing = balanceCurrencies.filter((currency) => counts[currency] == null);
+      const unexpected = countCurrencies.filter((currency) => !balanceCurrencies.includes(currency));
+      if (!balanceCurrencies.length || missing.length || unexpected.length) {
+        const sentences = [
+          !balanceCurrencies.length ? "This till has no balances to close." : "",
+          missing.length ? `Count ${missing.join(", ")} before closing.` : "",
+          unexpected.length ? notHeldSentence(unexpected) : "",
+        ].filter(Boolean);
+        throw new LedgerError("INCOMPLETE_TILL_COUNT", sentences.join(" "));
+      }
+      const storedCounts = new Map<string, string>();
+      for (const currency of balanceCurrencies) {
+        storedCounts.set(currency, countedAmount(currency, counts[currency]!));
       }
       const batchId = `till_close_${randomUUID()}`;
       const now = new Date();
@@ -526,8 +571,8 @@ export class TillControlService {
       );
       for (const row of balances) {
         const currency = row.currency.trim() as Currency;
-        const expected = fixed(row.available_amount);
-        const counted = fixed(counts[currency]!);
+        const expected = expectedAtCount(currency, String(row.available_amount));
+        const counted = storedCounts.get(currency)!;
         await client.query(
           `INSERT INTO ledger_till_counts
             (batch_id,currency,expected_amount,counted_amount,variance_amount)
@@ -537,7 +582,7 @@ export class TillControlService {
             currency,
             expected,
             counted,
-            fixed(new Decimal(counted).minus(expected)),
+            countVariance(counted, expected),
           ],
         );
         await client.query(

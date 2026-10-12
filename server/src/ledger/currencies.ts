@@ -48,31 +48,49 @@
    migration, and pretending otherwise here is exactly the kind of
    silent-wrongness docs/ABSENT_FIGURES.md exists to forbid.
    ============================================================ */
+import { createRequire } from "node:module";
 import Decimal from "decimal.js";
 import { z } from "zod";
 import { LedgerError } from "./service.js";
 
+/* The table lives in os-src/currency-places.js so the count sheet, this
+   module, and the quote helper (os-src/quote-terms.js) share one copy.
+   Do not paste the exponents back in here. */
+const currencyPlaces = createRequire(import.meta.url)("../../../os-src/currency-places.js") as {
+  minorUnits(code: string): number;
+  countProblem(raw: string, currency: string): string;
+  roundHalfUp(amount: string, places: number): string;
+  sumAmounts(values: readonly string[]): string;
+  subtractAmounts(left: string, right: string): string;
+};
+
 /** The scale the ledger's money columns actually hold. */
 export const LEDGER_SCALE = 2;
 
-/* ISO 4217 exponents for everything this product can reach — the
-   indicative board in ../rates/starting-board.ts, the pack home
-   currencies, and the corridors. Anything not named here is treated as
-   two, which is true of the overwhelming majority of ISO 4217 and is the
-   assumption the whole codebase already made; naming the exceptions is
-   what makes that assumption safe rather than lucky. */
-const EXCEPTIONS: Readonly<Record<string, number>> = {
-  /* no minor unit at all */
-  BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
-  PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0,
-  XPF: 0,
-  /* three, and therefore not storable at the ledger's scale */
-  BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
-};
-
-/** ISO 4217 minor units for a code — 2 unless it is one of the exceptions. */
+/** ISO 4217 minor units for a code — 2 unless the shared table names it. */
 export function minorUnits(code: string): number {
-  return EXCEPTIONS[code.toUpperCase()] ?? 2;
+  return currencyPlaces.minorUnits(code);
+}
+
+/** Why a typed count cannot be saved, or "" when it is a count.
+    Format first: this does not parse, and it does not call Decimal. */
+export function countProblem(raw: string, currency: string): string {
+  return currencyPlaces.countProblem(raw, currency);
+}
+
+/** Minor units for the codes that are not the ordinary two.
+
+    A screen must not keep its own copy of this table. Two-place
+    currencies are left out, so a missing key means two places and a
+    zero means a currency with no minor unit at all — yen, not "unknown". */
+export function minorUnitExceptions(codes: readonly string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const code of codes) {
+    const key = code.trim().toUpperCase();
+    const places = minorUnits(key);
+    if (places !== 2) out[key] = places;
+  }
+  return out;
 }
 
 /** The shape of a currency code. Not whether this desk trades it. */
@@ -169,6 +187,23 @@ export function roundTo(amount: Decimal, currency: string): Decimal {
 export function fixedIn(amount: Decimal, currency: string): string {
   const places = minorUnits(currency);
   return amount.toDecimalPlaces(places).toFixed(places);
+}
+
+/** What a close compares against. 189174.85 yen is 189175, then stored
+    at the column's two places. Decimal, half up — not a binary round. */
+export function expectedAtCount(currency: string, available: string): string {
+  return roundTo(new Decimal(available), currency).toDecimalPlaces(LEDGER_SCALE).toFixed(LEDGER_SCALE);
+}
+
+/** counted − expected, at the column's two places, as an exact string. */
+export function countVariance(counted: string, expected: string): string {
+  return new Decimal(counted).minus(expected).toDecimalPlaces(LEDGER_SCALE).toFixed(LEDGER_SCALE);
+}
+
+/** A count the columns can store, at their two places. The caller has
+    already refused a figure this would have to round. */
+export function storedCount(raw: string): string {
+  return new Decimal(raw).toDecimalPlaces(LEDGER_SCALE).toFixed(LEDGER_SCALE);
 }
 
 /* ============================================================

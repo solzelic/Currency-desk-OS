@@ -276,6 +276,11 @@
             tillId: results[0].tillId || null,
             balances: results[0].balances || {},
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
+            /* Exceptions only: yen is 0, a dinar is 3, and a missing
+               key is the ordinary two. The places themselves live in
+               os-src/currency-places.js. This payload is not a second
+               copy of that table. */
+            minorUnits: results[0].minorUnits || {},
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
           };

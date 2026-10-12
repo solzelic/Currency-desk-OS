@@ -1149,7 +1149,26 @@ button { font-family: inherit; }
 .till-step { transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease; }
 .till-step:hover { background: rgba(10,10,10,0.05); color: var(--ink); }
 .till-step:active { transform: scale(0.9); }
-.till-chip { transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease; }
+.till-chip { transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease; min-height: 44px; box-sizing: border-box; }
+.till-mode { min-height: 44px; box-sizing: border-box; white-space: nowrap; }
+/* The total is one field. A native input's minimum width is wider
+   than a 360px card, and width 100% then spills past the card.
+   The field grows in the row and is allowed to shrink to nothing. */
+.till-total-card,
+.till-total-box {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.till-total-box { width: 100%; }
+.till-total-input {
+  min-width: 0;
+  width: 0;
+  flex: 1 1 0%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+}
 .till-chip:active { transform: scale(0.96); }
 
 /* ============================================================
@@ -2341,10 +2360,18 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-denom > .flex.flex-wrap {
     flex-wrap: nowrap !important;
     overflow-x: auto;
-    margin-bottom: 6px;
+    margin-bottom: 2px;
   }
-  .till-denom > [data-tour="till-count"] { margin-bottom: 6px !important; }
+  .till-denom > [data-tour="till-count"] { margin-bottom: 2px !important; }
   .till-chip { flex: none; }
+  /* The bill row is a 28px stepper. The 12px of padding around it
+     pushed the third note under the count panel at 360 once the
+     two-till note was on screen. Three pixels still clears the
+     stepper, and three notes stay fully above the panel. */
+  .till-den-row {
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+  }
   .till-count-foot {
     position: sticky !important;
     bottom: var(--phone-bar-h) !important;
@@ -2352,10 +2379,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     margin-top: 0 !important;
     margin-left: -16px;
     margin-right: -16px;
-    padding-top: 8px !important;
+    padding-top: 2px !important;
     padding-left: 16px !important;
     padding-right: 16px !important;
-    padding-bottom: 8px !important;
+    padding-bottom: 2px !important;
     background: var(--cd-paper, #f4f3f0) !important;
   }
   /* Content scrolls under the bar. This padding is the bar plus
