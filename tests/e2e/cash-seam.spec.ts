@@ -190,8 +190,8 @@ test("the phone close and the sign-off stay whole at 360, 390 and 430", async ({
 
     const history = page.locator('[data-tour="till"] .fld-tab', { hasText: "History" });
     await expect(history).toBeVisible();
-    expect(await history.innerText()).toContain("History");
-    expect(await history.innerText()).not.toMatch(/Hist…|Hist\.\.\./);
+    const historyLabel = (await history.innerText()).replace(/\s+/g, "");
+    expect(historyLabel.toLowerCase()).toBe("history");
     await inside(history, `${size.width} History tab`);
     const fade = await page.locator('[data-tour="till"] .fld-bar').evaluate((el) => {
       const mask = getComputedStyle(el).maskImage;
@@ -218,10 +218,18 @@ test("the phone close and the sign-off stay whole at 360, 390 and 430", async ({
     }
 
     await page.evaluate(() => window.CDOS.openApp("reports"));
-    const reports = page.locator(".win.show.active");
-    await reports.getByRole("button", { name: /End-of-Day Sign-Off/ }).click();
     const doc = page.locator("#cdos-report-doc");
-    await expect(doc).toBeVisible({ timeout: 30_000 });
+    /* One click opens the sheet and removes the card. A retried
+       Playwright click then waits for a button that is gone. */
+    await expect.poll(async () => {
+      if (await doc.isVisible()) return "open";
+      await page.evaluate(() => {
+        const win = document.querySelector(".win.show.active");
+        const button = win && [...win.querySelectorAll("button")].find((el) => /End-of-Day Sign-Off/.test(el.innerText));
+        if (button instanceof HTMLElement) button.click();
+      });
+      return "clicked";
+    }, { timeout: 30_000 }).toBe("open");
     await expect(doc).toContainText("Till 1, Main counter");
     expect(await doc.innerText()).not.toMatch(/Till 1\s*[—–-]\s*Main counter/);
     const earned = doc.locator('.signoff-kpi[data-kpi="Earned today"]');
