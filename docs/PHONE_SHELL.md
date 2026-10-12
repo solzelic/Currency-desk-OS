@@ -398,16 +398,19 @@ the dialogs they were.
 whole desk. At 1280×800 it captures the menu bar, the open window, and
 the dock for every app — Ledger, Clients, Rates, Till, Compliance,
 Reports, Settings, Pricing, Transfers, Cheques, Vault, and Audit — and
-the sign-in screen (`#lock`). The comparison is `maxDiffPixels: 0` and
-`threshold: 0`. Animations and the caret are off. The sign-in card is
-captured with its glass blur and soft shadow held still — those two
-effects rasterize a few corner pixels differently from one launch to
-the next, and the rest of the screen is unchanged. The menu bar's
-brand dot is a hard square in these pictures; the live desk still
-draws the circle. The PNGs are this repository's CI runner, not a
-laptop. A one-character
-change in a rate, a code, an amount, a fee, a hold date, or a cheque
-number fails the picture.
+the sign-in screen (`#lock`). The PNGs are a render of the main commit
+named in `tests/e2e/README.md`, taken in the browser-seam job, not a
+render of a feature branch and not a laptop. The same job renders that
+commit twice and keeps the pictures only when they match. Animations
+and the caret are off. The sign-in card is captured with its glass blur
+and soft shadow held still — those two effects rasterize a few corner
+pixels differently from one launch to the next, and the rest of the
+screen is unchanged. The menu bar's brand dot is a hard square in these
+pictures; the live desk still draws the circle. A pixel may differ by
+at most 1 in each channel, and only up to the cap named for that
+picture in the spec. A picture with no cap is exact. A channel that
+moves by 2 or more fails. A one-character change in a rate, a code, an
+amount, a fee, a hold date, or a cheque number fails the picture.
 
 The page clock is `2026-06-18T15:02:00.000Z` (15:02 on the menu bar,
 3:02 PM where the desk uses a 12-hour clock). The audit seed's

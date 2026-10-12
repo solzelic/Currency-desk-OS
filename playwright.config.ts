@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 /* ============================================================
@@ -13,6 +14,17 @@ import { defineConfig, devices } from "@playwright/test";
    syncing off so no test depends on a rate provider being up.
    ============================================================ */
 const PORT = 4173;
+
+/* The desktop baselines are a render of main, taken by the same spec.
+   DESKTOP_MAIN_ROOT is that checkout. The test process stays in this
+   branch so the measurement does not change between the two renders. */
+const mainRoot = process.env.DESKTOP_MAIN_ROOT || "";
+const serverDir = mainRoot ? path.join(mainRoot, "server") : "server";
+const staticDir = mainRoot || "..";
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -32,7 +44,7 @@ export default defineConfig({
        the send is written to the server's output instead of delivered. No
        test-only endpoint, no backdoor in the product. */
     command:
-      "mkdir -p test-results && cd server && npx tsx src/index.ts 2>&1 | tee ../test-results/server.log",
+      `mkdir -p test-results && cd ${shellQuote(serverDir)} && npx tsx src/index.ts 2>&1 | tee ${shellQuote(path.resolve("test-results/server.log"))}`,
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
@@ -44,7 +56,7 @@ export default defineConfig({
          uncompiled shell named in STATIC_INDEX, the built site at the
          front. The server still prefers web/app when that output is
          present — that is what a customer loads. */
-      STATIC_DIR: "..",
+      STATIC_DIR: staticDir,
       STATIC_INDEX: "CurrencyDesk OS.html",
       SITE_INDEX: "web/index.html",
       /* A database that exists only for this run — unless a real PostgreSQL

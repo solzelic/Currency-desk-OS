@@ -571,6 +571,13 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
+the seam job's render of the commit in `tests/e2e/README.md`, checked
+out and captured twice in that job. A picture matches when every
+channel is within 1 and the number of differing pixels is within the
+cap in `tests/e2e/desktop-unchanged.spec.ts`. A picture with no cap
+is exact. A channel that moves by 2 or more fails.
+
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the
 audit seed still shows 9:05 AM, and the Cheques picture is the seeded

@@ -110,6 +110,17 @@ jobs:
           echo "::error::Chromium install failed after 3 attempts"
           exit 1
 
+      # The 1280 pictures have to be a render of the main commit named in
+      # tests/e2e/README.md, taken in this job (this runner, this Chromium,
+      # this Postgres). The script checks that commit out, renders it
+      # twice, and refuses the pictures when the two renders differ.
+      # The suite below compares this branch to that render.
+      - name: Render the desktop from the pinned main commit
+        id: main_desktop
+        env:
+          SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
+        run: node scripts/capture-main-desktop-baselines.mjs --out test-results/main-desktop
+
       # One customer from the public site to a working desk, then every
       # browser↔ledger seam, then the day-long shift that is the deployment
       # gate. The database exists only for this run; the server provisions
@@ -117,9 +128,11 @@ jobs:
       # deployment would. The suite deliberately leaves ledger state behind
       # — that is why the database is disposable.
       - name: Walk the seams against a real book
+        id: seams
         env:
           SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/seam-report.json
+          DESKTOP_BASELINE_DIR: test-results/main-desktop
           # This job opens one desk per country from one address, and a
           # retry counts again. Production leaves SIGNUP_IP_MAX unset.
           SIGNUP_IP_MAX: "16"
@@ -128,8 +141,22 @@ jobs:
       # Green must mean "ran", not "skipped". A spec file that executed zero
       # tests is the missing-database signature this job exists to prevent.
       - name: No seam spec silently skipped
-        if: always()
+        if: ${{ steps.seams.outcome == 'success' || steps.seams.outcome == 'failure' }}
         run: node scripts/check-seam-ran.mjs test-results/seam-report.json
+
+      - name: Committed desktop pictures match that main render
+        id: committed_desktop
+        if: ${{ steps.main_desktop.outcome == 'success' }}
+        run: node scripts/capture-main-desktop-baselines.mjs --compare-committed test-results/main-desktop
+
+      # A 1px shift and a colour change on the ledger have to fail the
+      # picture. The step restores the stylesheet either way.
+      - name: Ledger breaks still fail the desktop picture
+        if: ${{ steps.seams.outcome == 'success' && steps.committed_desktop.outcome == 'success' }}
+        env:
+          SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
+          DESKTOP_BASELINE_DIR: test-results/main-desktop
+        run: node scripts/prove-desktop-baseline-breaks.mjs
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -140,14 +167,16 @@ jobs:
             test-results/
           retention-days: 7
 
-      # The desktop-unchanged spec writes its PNGs here when they are
-      # missing, then fails until those PNGs are committed. The pictures
-      # are this runner's render. Download this artifact and commit it.
-      # Do not replace those files from a laptop.
+      # The fresh render of the pinned main commit. Commit these PNGs.
+      # Do not commit a render of the pull request, and do not replace
+      # them from a laptop.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: desktop-unchanged-baselines
-          path: tests/e2e/desktop-unchanged.spec.ts-snapshots/
+          path: |
+            test-results/main-desktop/
+            test-results/desktop-pixel-report.json
+            test-results/desktop-break-proof.json
           retention-days: 14
           if-no-files-found: ignore

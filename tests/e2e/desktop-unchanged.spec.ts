@@ -1,10 +1,16 @@
 /* One desktop picture for the whole desk.
 
    At 1280×800 the menu bar, the open window, and the dock of every app,
-   and the sign-in screen, must match the committed PNG. The comparison
-   is maxDiffPixels 0 and threshold 0. Animations and the caret are off.
+   and the sign-in screen, must match the PNG rendered from the main
+   commit in tests/e2e/README.md. Animations and the caret are off.
    A changed rate, code, amount, fee, hold date, or cheque number fails
    the picture. Nothing rewrites the text after it renders.
+
+   A pixel may differ by at most 1 in each channel (red, green, blue,
+   alpha), and only as many pixels as AA_CAPS names for that picture.
+   A picture with no cap is exact. A channel that moves by 2 or more
+   fails even when the count is inside the cap. The break proof parses
+   the sentence this file throws.
 
    The page clock is 2026-06-18T15:02:00.000Z. The menu bar is 24-hour,
    so it reads 15:02. The audit seed's 09:05 is the AM case: the desk
@@ -15,8 +21,23 @@
    Cheques is one seeded cheque. The number, the hold date, the fee, and
    the customer id come from the constants below and from the stub, not
    from a string written onto the DOM after paint. */
-import type { Locator, Page } from "@playwright/test";
+import { createRequire } from "node:module";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import type { Locator, Page, TestInfo } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
+
+const require = createRequire(path.join(process.cwd(), "package.json"));
+const { decodePng, diffRgba } = require("./tests/e2e/helpers/desktop-pixels.cjs") as {
+  decodePng: (buffer: Buffer) => { width: number; height: number; data: Buffer };
+  diffRgba: (actual: Buffer, expected: Buffer) => { diffPixels: number; maxDelta: number; overOne: number };
+};
+
+/* Measured against the pinned main render in the seam job. A non-zero
+   value is the count of pixels that differed by exactly one level, and
+   it is a hard cap. Leave a picture out when it matched exactly.
+   Do not raise a cap to hide a layout or colour change. */
+const AA_CAPS: Record<string, number> = {};
 
 const DESKTOP = { width: 1280, height: 800 };
 const AFTERNOON = Date.parse("2026-06-18T15:02:00.000Z");
@@ -26,14 +47,6 @@ const FEE = "5.00";
 const RATE = 1.3914;
 const CUSTOMER_ID = "cust_11111111-1111-4111-8111-111111111111";
 const CHEQUE_ID = "chq_11111111-1111-4111-8111-111111111111";
-
-const SHOT = {
-  maxDiffPixels: 0,
-  threshold: 0,
-  animations: "disabled" as const,
-  caret: "hide" as const,
-  scale: "css" as const,
-};
 
 const APPS: { id: string; title: RegExp }[] = [
   { id: "ledger", title: /Ledger/ },
@@ -308,7 +321,12 @@ async function openDesktopApp(page: Page, id: string, title: RegExp): Promise<Lo
   await dock.scrollIntoViewIfNeeded();
   await dock.click();
   const win = page.locator(".win.show.active");
-  await expect(win).toHaveAttribute("data-app", id);
+  /* Main's windows do not carry data-app. The capture of main still
+     takes the picture. This branch's windows do, and the pixel compare
+     is what shows whether that attribute changed the desktop. */
+  if (process.env.DESKTOP_BASELINE_FROM !== "main") {
+    await expect(win).toHaveAttribute("data-app", id);
+  }
   await expect(win.locator(".win-title")).toContainText(title);
   await expect(win).toHaveCSS("transform", "none");
   await expect(win).toHaveClass(/bar-hidden/);
@@ -321,7 +339,11 @@ async function openDesktopApp(page: Page, id: string, title: RegExp): Promise<Lo
   }
   if (id === "rates") {
     const frame = page.frameLocator('iframe[title="Rate Board"]');
-    await expect(frame.locator("#edSince")).toContainText("2m 00s");
+    if (process.env.DESKTOP_BASELINE_FROM === "main") {
+      await expect(frame.locator("body")).toBeVisible();
+    } else {
+      await expect(frame.locator("#edSince")).toContainText("2m 00s");
+    }
   }
   if (id === "audit") {
     await expect(win).toContainText("9:05 AM");
@@ -331,7 +353,67 @@ async function openDesktopApp(page: Page, id: string, title: RegExp): Promise<Lo
   return win;
 }
 
-test("sign-in is unchanged at 1280", async ({ page }) => {
+function baselineFile(testInfo: TestInfo, name: string): string {
+  const platformName = path.basename(testInfo.snapshotPath(name));
+  if (process.env.DESKTOP_UPDATE_BASELINES === "1") {
+    const dir = process.env.DESKTOP_SNAPSHOT_DIR;
+    if (!dir || process.env.DESKTOP_BASELINE_FROM !== "main") {
+      throw new Error("Refusing to write desktop pictures unless this run is rendering main.");
+    }
+    return path.join(dir, platformName);
+  }
+  if (process.env.DESKTOP_BASELINE_DIR) return path.join(process.env.DESKTOP_BASELINE_DIR, platformName);
+  return testInfo.snapshotPath(name);
+}
+
+function remember(name: string, row: Record<string, unknown>): void {
+  const file = path.join(process.cwd(), "test-results", "desktop-pixel-report.json");
+  mkdirSync(path.dirname(file), { recursive: true });
+  let prev: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    try { prev = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>; } catch { prev = {}; }
+  }
+  prev[name] = row;
+  writeFileSync(file, JSON.stringify(prev, null, 2));
+}
+
+/* The thrown sentence is parsed by scripts/prove-desktop-baseline-breaks.mjs.
+   Keep the shape: "<name>: <n> pixels differ, max channel delta <n>, <n> pixels exceed 1 level, cap <n>." */
+async function shoot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+  const shot = await page.screenshot({ animations: "disabled", caret: "hide", scale: "css" });
+  const file = baselineFile(testInfo, name);
+  if (process.env.DESKTOP_UPDATE_BASELINES === "1") {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, shot);
+    remember(name, { wrote: file });
+    return;
+  }
+  if (!existsSync(file)) throw new Error(`${name}: no baseline at ${file}`);
+  const actual = decodePng(shot);
+  const expected = decodePng(readFileSync(file));
+  if (actual.width !== expected.width || actual.height !== expected.height) {
+    throw new Error(`${name}: size ${actual.width}x${actual.height} vs baseline ${expected.width}x${expected.height}`);
+  }
+  const diff = diffRgba(actual.data, expected.data);
+  const cap = AA_CAPS[name] ?? 0;
+  remember(name, { ...diff, cap, width: actual.width, height: actual.height });
+  await testInfo.attach(`${name}-pixels`, {
+    body: JSON.stringify({ ...diff, cap }),
+    contentType: "application/json",
+  });
+  if (diff.maxDelta > 1 || diff.diffPixels > cap) {
+    throw new Error(
+      `${name}: ${diff.diffPixels} pixels differ, max channel delta ${diff.maxDelta}, ` +
+      `${diff.overOne} pixels exceed 1 level, cap ${cap}. ` +
+      (diff.maxDelta > 1
+        ? "A channel moved by more than 1. That is a desktop change, not antialiasing."
+        : "More pixels differ than the antialiasing cap."),
+    );
+  }
+}
+
+test("sign-in is unchanged at 1280", async ({ page }, testInfo) => {
+  test.skip(process.env.DESKTOP_ONLY === "ledger", "the break proof shoots the ledger only");
   await page.setViewportSize(DESKTOP);
   await pinDesk(page);
   await page.context().clearCookies();
@@ -363,10 +445,10 @@ test("sign-in is unchanged at 1280", async ({ page }) => {
     ].join("\n"),
   });
   await page.evaluate(() => window.scrollTo(0, 0));
-  await expect(page).toHaveScreenshot("sign-in-1280.png", SHOT);
+  await shoot(page, testInfo, "sign-in-1280.png");
 });
 
-test("every desktop window is unchanged at 1280", async ({ page }) => {
+test("every desktop window is unchanged at 1280", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   await page.setViewportSize(DESKTOP);
   await pinDesk(page);
@@ -385,13 +467,20 @@ test("every desktop window is unchanged at 1280", async ({ page }) => {
   await expect(page.locator("#menubar")).toBeVisible();
   await expect(page.locator(".mb-clock")).toContainText("15:02");
 
+  const failures: string[] = [];
   for (const app of APPS) {
+    if (process.env.DESKTOP_ONLY && process.env.DESKTOP_ONLY !== app.id) continue;
     await openDesktopApp(page, app.id, app.title);
-    await expect(page).toHaveScreenshot(`${app.id}-1280.png`, SHOT);
+    try {
+      await shoot(page, testInfo, `${app.id}-1280.png`);
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
     if (app.id === "cheques") {
       const scrim = page.locator("div.fixed.inset-0.flex.justify-end");
       await scrim.click({ position: { x: 16, y: 80 } });
       await expect(scrim).toHaveCount(0);
     }
   }
+  if (failures.length) throw new Error(failures.join("\n"));
 });
