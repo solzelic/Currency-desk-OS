@@ -63416,14 +63416,24 @@ window.CDOS_PERSIST = (function () {
     (rec.documents || []).forEach(doc => push(doc.docType || doc.type, doc.docNumber || doc.num));
     return out;
   }
+
+  /* A phone query is digits, with the punctuation people type in a
+     number. An ID that also contains a digit is not a phone, so those
+     digits are not compared to every number on file. */
+  function queryIsPhone(needle) {
+    const compact = String(needle || "").replace(/[\s().+-]/g, "");
+    return compact.length >= 3 && /^\d+$/.test(compact);
+  }
   function matchesQuery(person, needle) {
     const rec = person.rec || {};
     const folded = fold(needle);
     if (!folded) return true;
     if (fold(person.name).indexOf(folded) !== -1) return true;
     if (fold(rec.email).indexOf(folded) !== -1) return true;
-    const want = phoneDigits(needle);
-    if (want && phoneDigits(rec.phone).indexOf(want) !== -1) return true;
+    if (queryIsPhone(needle)) {
+      const want = phoneDigits(needle);
+      if (want && phoneDigits(rec.phone).indexOf(want) !== -1) return true;
+    }
     return idNumbers(rec).some(num => fold(num).indexOf(folded) !== -1);
   }
   function PhoneClients({
