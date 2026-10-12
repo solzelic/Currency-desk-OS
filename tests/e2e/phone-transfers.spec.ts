@@ -76,7 +76,8 @@ async function openPhoneTransfers(page: Page, width: number, staffId = "a.singh"
 }
 
 function summaryValue(detail: ReturnType<Page["getByRole"]>, label: string) {
-  return detail.locator(".phone-summary div").filter({ hasText: label }).locator("dd");
+  const exact = new RegExp("^" + label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$");
+  return detail.locator(".phone-summary dt", { hasText: exact }).locator("xpath=following-sibling::dd[1]");
 }
 
 async function shot(page: Page, name: string): Promise<void> {
@@ -192,7 +193,7 @@ for (const width of [360, 390]) {
     await page.locator(".ph-xfer-row").filter({ hasText: "In transit" }).click();
     const detail = page.getByRole("dialog");
     await expect(detail.getByRole("heading", { name: "Maria Carter" })).toBeVisible();
-    await expect(detail.getByText("TR-260618-003")).toBeVisible();
+    await expect(detail.getByText("TR-260618-003")).toHaveCount(2);
     await expect(detail.getByText("Rachel Carter to Maria Carter")).toBeVisible();
     await expect(detail.getByText("History")).toBeVisible();
     await expect(detail.getByText("Updated by staff, not by the partner.")).toBeVisible();
@@ -470,7 +471,7 @@ test("amount times the displayed rate equals the gross to the cent", async ({ pa
   expect(productCents(amount, rate)).toBe(2393567);
   await expect(summaryValue(detail, "Total paid")).toHaveText("609.99 CAD");
   expect(await detail.locator(".phone-summary dt").allTextContents()).toEqual([
-    "Amount sent", "Fee", "Total paid", "Rate", "Method", "Partner",
+    "Amount sent", "Fee", "Total paid", "Rate", "Method", "Partner", "Desk reference",
   ]);
 });
 
