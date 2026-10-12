@@ -505,6 +505,7 @@ is not moved. An instant is. `24:05` is not a clock. The day is the
 group heading: Today, Yesterday, or the month and day. A sample row
 is labelled Demo. The country is not repeated on a row that already
 uses it as the name. Amounts stay
-off the list. A row opens the record: sender, beneficiary, why, the
+off the list. A row opens the record. The title is the two names, and
+the TR number sits under it. Then sender, beneficiary, why, the
 hand-set status, and amounts in a collapsed row. The cash step is still
 `TransferModal`. The desktop pipeline is unchanged.

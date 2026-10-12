@@ -112,7 +112,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   (Jun 18). The row shows the 12-hour time in the branch zone. A sample
   row is labelled Demo. Amounts, the tracking PIN, a
   receipt, and the EFT report stay off that list. New transfer record
-  opens the existing cash step. A row opens the record: sender, beneficiary,
+  opens the existing cash step. A row opens the record: the title is
+  the two names, the TR number sits under it, then sender, beneficiary,
   purpose, source of funds, the hand-set status, and amounts collapsed
   at the end. The desktop pipeline is unchanged. Saved beneficiaries
   are not on the phone yet. The bar is five
@@ -625,9 +626,11 @@ A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
 
 **2026-10-12**, phone transfer record. A row opens the record kept in
-the browser. Status moves one step, the same way the desktop drawer
-does, and the actor is the person signed in. Amounts sit in a collapsed
-row. The tracking PIN, the receipt, and the EFT report stay off.
+the browser. The title is the two names, at 22px and weight 700, and
+the TR number sits under it in mono 13px muted. Status moves one step,
+the same way the desktop drawer does, and the actor is the person
+signed in. Amounts sit in a collapsed row. The tracking PIN, the
+receipt, and the EFT report stay off.
 
 **2026-10-12**, phone Transfers list. Under 430px the Transfers window is
 the record list (who sent to whom, the pipeline chips, grouped under

@@ -63275,6 +63275,7 @@ window.CDOS_PERSIST = (function () {
       const label = T.statusLabel(key, t.direction);
       return 'Mark ' + label.charAt(0).toLowerCase() + label.slice(1);
     };
+    const who = t.direction === 'send' ? ben ? ben.name : cor.country || '' : t.senderName;
     let sticky = null;
     if (!terminal) {
       sticky = /*#__PURE__*/React.createElement("div", {
@@ -63301,7 +63302,9 @@ window.CDOS_PERSIST = (function () {
       onBack: onBack
     }), /*#__PURE__*/React.createElement("div", {
       className: "phone-detail-title"
-    }, /*#__PURE__*/React.createElement("h1", null, t.ref), /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", null, t.senderName + ' to ' + who), /*#__PURE__*/React.createElement("p", {
+      className: "phone-detail-ref"
+    }, t.ref)), /*#__PURE__*/React.createElement("span", {
       className: 'phone-badge tone-' + toneOf(t.status)
     }, T.statusLabel(t.status, t.direction))), /*#__PURE__*/React.createElement("section", {
       className: "phone-card"

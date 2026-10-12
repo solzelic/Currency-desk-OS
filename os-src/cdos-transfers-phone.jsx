@@ -124,6 +124,7 @@
       const label = T.statusLabel(key, t.direction);
       return 'Mark ' + label.charAt(0).toLowerCase() + label.slice(1);
     };
+    const who = t.direction === 'send' ? (ben ? ben.name : (cor.country || '')) : t.senderName;
     let sticky = null;
     if (!terminal) {
       sticky = (
@@ -143,7 +144,10 @@
       <Phone.Screen app="transfers" className="phone-drill" sticky={sticky}>
         <Crumb onBack={onBack} />
         <div className="phone-detail-title">
-          <h1>{t.ref}</h1>
+          <div>
+            <h1>{t.senderName + ' to ' + who}</h1>
+            <p className="phone-detail-ref">{t.ref}</p>
+          </div>
           <span className={'phone-badge tone-' + toneOf(t.status)}>{T.statusLabel(t.status, t.direction)}</span>
         </div>
         <section className="phone-card"><h2>Sender</h2><Kv rows={[{ k: 'Name', v: t.senderName }, { k: 'ID', v: idLine(clients && clients[t.senderName]) }]} /></section>

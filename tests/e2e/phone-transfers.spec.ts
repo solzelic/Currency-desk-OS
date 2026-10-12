@@ -273,7 +273,8 @@ test("a record shows the people and the hand-set status", async ({ page }) => {
   const list = page.locator(".phone-transfers");
 
   await list.getByText("Jakob Miller to Rohan Miller").click();
-  await expect(list.getByRole("heading", { level: 1, name: "TR-260618-002" })).toBeVisible();
+  await expect(list.getByRole("heading", { level: 1, name: "Jakob Miller to Rohan Miller" })).toBeVisible();
+  await expect(list.locator(".phone-detail-ref")).toHaveText("TR-260618-002");
   await expect(list.getByRole("button", { name: "Mark in transit" })).toBeVisible();
   await expect(list.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
   await expect(list.getByText("Rohan Miller, Sibling")).toBeVisible();
@@ -300,7 +301,16 @@ test("a record shows the people and the hand-set status", async ({ page }) => {
   await list.getByRole("tab", { name: "In progress 2" }).click();
   await list.getByText("Rachel Carter to Maria Carter").click();
   const detail = page.locator(".phone-transfers");
-  await expect(detail.getByRole("heading", { level: 1, name: "TR-260618-003" })).toBeVisible();
+  const title = detail.getByRole("heading", { level: 1, name: "Rachel Carter to Maria Carter" });
+  await expect(title).toBeVisible();
+  await expect(title).toHaveCSS("font-size", "22px");
+  await expect(title).toHaveCSS("font-weight", "700");
+  const ref = detail.locator(".phone-detail-ref");
+  await expect(ref).toHaveText("TR-260618-003");
+  await expect(ref).toHaveCSS("font-size", "13px");
+  await expect(ref).toHaveCSS("color", "rgb(107, 103, 96)");
+  const family = await ref.evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(family.toLowerCase()).toMatch(/mono|menlo/);
   await expect(detail.getByText("Maria Carter, Parent")).toBeVisible();
   await expect(detail.getByText("Philippines")).toBeVisible();
   await expect(detail.getByText("Cash pickup, Cebuana Lhuillier")).toBeVisible();
