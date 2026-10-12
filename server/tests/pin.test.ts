@@ -265,4 +265,174 @@ describe("PINs are checked by the server", () => {
     const costa = await staffRow("m.costa");
     expect((await app.inject({ method: "POST", url: `/api/admin/staff/${costa.id}/reset-pin`, cookies: costaCookie })).statusCode).toBe(403);
   });
+
+  it("a burst of wrong guesses stops at five", async () => {
+    const burst = async (staffId: string, n: number) => {
+      const row = await staffRow(staffId);
+      const issued = await app.inject({
+        method: "POST", url: `/api/admin/staff/${row.id}/reset-pin`, cookies: adminCookie,
+      });
+      expect(issued.statusCode, issued.body).toBe(200);
+      const pin = issued.json().pin as string;
+      const cookie = cookieOf(await signIn(staffId));
+      const wrong = pin === "1111" ? "2222" : "1111";
+      const replies = await Promise.all(Array.from({ length: n }, () =>
+        app.inject({
+          method: "POST", url: "/api/staff/pin/verify", cookies: cookie, payload: { pin: wrong },
+        }),
+      ));
+      const codes = replies.map((res) => res.statusCode);
+      expect(codes.filter((code) => code === 401), codes.join(",")).toHaveLength(5);
+      expect(codes.filter((code) => code === 429)).toHaveLength(n - 5);
+      const again = await app.inject({
+        method: "POST", url: "/api/staff/pin/verify", cookies: cookie, payload: { pin: wrong },
+      });
+      expect(again.statusCode, again.body).toBe(429);
+    };
+    await burst("a.singh", 40);
+    await burst("m.costa", 150);
+  });
+
+  const EASY = ["0000", "1111", "1234", "9876", "1999"];
+
+  const issuePin = async (staffId: string) => {
+    const row = await staffRow(staffId);
+    const issued = await app.inject({
+      method: "POST", url: `/api/admin/staff/${row.id}/reset-pin`, cookies: adminCookie,
+    });
+    expect(issued.statusCode, issued.body).toBe(200);
+    const pin = issued.json().pin as string;
+    return { pin, cookie: cookieOf(await signIn(staffId)), wrong: pin === "1111" ? "2222" : "1111" };
+  };
+
+  it("a right PIN on the keypad gives that guess back", async () => {
+    const { pin, cookie, wrong } = await issuePin("s.iqbal");
+    const right = await app.inject({
+      method: "POST", url: "/api/staff/pin/verify", cookies: cookie, payload: { pin },
+    });
+    expect(right.statusCode, right.body).toBe(200);
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      codes.push((await app.inject({
+        method: "POST", url: "/api/staff/pin/verify", cookies: cookie, payload: { pin: wrong },
+      })).statusCode);
+    }
+    expect(codes.filter((code) => code === 401), codes.join(",")).toHaveLength(5);
+    expect(codes.at(-1)).toBe(429);
+  });
+
+  it("a wrong current PIN counts, and a correct one is given back before a later refusal", async () => {
+    const first = await issuePin("a.singh");
+    const burst = await Promise.all(Array.from({ length: 40 }, () =>
+      app.inject({
+        method: "POST", url: "/api/staff/pin", cookies: first.cookie,
+        payload: { pin: "4829", currentPin: first.wrong },
+      }),
+    ));
+    const codes = burst.map((res) => res.statusCode);
+    expect(codes.filter((code) => code === 401), codes.join(",")).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(35);
+
+    const fresh = await issuePin("a.singh");
+    for (let i = 0; i < 4; i++) {
+      const wrong = await app.inject({
+        method: "POST", url: "/api/staff/pin", cookies: fresh.cookie,
+        payload: { pin: "4829", currentPin: fresh.wrong },
+      });
+      expect(wrong.statusCode, wrong.body).toBe(401);
+    }
+    for (const easy of EASY) {
+      const res = await app.inject({
+        method: "POST", url: "/api/staff/pin", cookies: fresh.cookie,
+        payload: { pin: easy, currentPin: fresh.pin },
+      });
+      expect(res.statusCode, `${easy} ${res.body}`).toBe(422);
+      expect(res.json().error).toBe("weak_pin");
+    }
+    const fifth = await app.inject({
+      method: "POST", url: "/api/staff/pin", cookies: fresh.cookie,
+      payload: { pin: "4829", currentPin: fresh.wrong },
+    });
+    expect(fifth.statusCode, fifth.body).toBe(401);
+    const locked = await app.inject({
+      method: "POST", url: "/api/staff/pin", cookies: fresh.cookie,
+      payload: { pin: "4829", currentPin: fresh.wrong },
+    });
+    expect(locked.statusCode, locked.body).toBe(429);
+  });
+
+  it("a wrong forgot-PIN password counts, and the right one is given back before a later refusal", async () => {
+    const first = await issuePin("r.haddad");
+    const burst = await Promise.all(Array.from({ length: 40 }, () =>
+      app.inject({
+        method: "POST", url: "/api/staff/pin/reset", cookies: first.cookie,
+        payload: { password: "not-the-password", pin: "4829" },
+      }),
+    ));
+    const codes = burst.map((res) => res.statusCode);
+    expect(codes.filter((code) => code === 401), codes.join(",")).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(35);
+
+    const fresh = await issuePin("r.haddad");
+    for (let i = 0; i < 4; i++) {
+      const wrong = await app.inject({
+        method: "POST", url: "/api/staff/pin/reset", cookies: fresh.cookie,
+        payload: { password: "not-the-password", pin: "4829" },
+      });
+      expect(wrong.statusCode, wrong.body).toBe(401);
+    }
+    for (const easy of EASY) {
+      const res = await app.inject({
+        method: "POST", url: "/api/staff/pin/reset", cookies: fresh.cookie,
+        payload: { password: "yorkville", pin: easy },
+      });
+      expect(res.statusCode, `${easy} ${res.body}`).toBe(422);
+      expect(res.json().error).toBe("weak_pin");
+    }
+    const fifth = await app.inject({
+      method: "POST", url: "/api/staff/pin/reset", cookies: fresh.cookie,
+      payload: { password: "not-the-password", pin: "4829" },
+    });
+    expect(fifth.statusCode, fifth.body).toBe(401);
+    const locked = await app.inject({
+      method: "POST", url: "/api/staff/pin/reset", cookies: fresh.cookie,
+      payload: { password: "yorkville", pin: "4829" },
+    });
+    expect(locked.statusCode, locked.body).toBe(429);
+    expect((await app.inject({
+      method: "POST", url: "/api/staff/pin/verify", cookies: fresh.cookie, payload: { pin: fresh.pin },
+    })).statusCode).toBe(429);
+  });
+
+  it("five easy new PINs with the right current PIN do not lock M. Costa", async () => {
+    const costa = await staffRow("m.costa");
+    const issued = await app.inject({
+      method: "POST", url: `/api/admin/staff/${costa.id}/reset-pin`, cookies: adminCookie,
+    });
+    expect(issued.statusCode, issued.body).toBe(200);
+    const current = issued.json().pin as string;
+    for (const easy of EASY) {
+      const res = await app.inject({
+        method: "POST", url: "/api/staff/pin", cookies: costaCookie,
+        payload: { pin: easy, currentPin: current },
+      });
+      expect(res.statusCode, `${easy} ${res.body}`).toBe(422);
+      expect(res.json().error).toBe("weak_pin");
+      if (easy === "0000") expect(res.json().detail).toBe("0000 is too easy to guess. Pick a different PIN.");
+    }
+    const again = await app.inject({
+      method: "POST", url: "/api/staff/pin", cookies: costaCookie,
+      payload: { pin: "0000", currentPin: current },
+    });
+    expect(again.statusCode, again.body).toBe(422);
+    const wrong = current === "1111" ? "2222" : "1111";
+    const next = await app.inject({
+      method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: wrong },
+    });
+    expect(next.statusCode, next.body).toBe(401);
+    expect(next.json().locked).toBe(false);
+    expect((await app.inject({
+      method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: current },
+    })).statusCode).toBe(200);
+  });
 });

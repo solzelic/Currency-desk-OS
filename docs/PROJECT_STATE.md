@@ -572,6 +572,14 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, PIN guesses. A wrong PIN, and a wrong sign-in password on the
+forgot-PIN door, is counted before the slow check. That guess is given
+back as soon as the current PIN or password checks out, so a later
+refusal does not count. Only a wrong current PIN, or a wrong password
+on that door, counts. A right PIN on the keypad gives the run back.
+A burst of wrong guesses still stops at five. The lock still lives in
+memory on this process.
+
 **2026-10-12**, phone back. `Phone.Back` is a 24px chevron and the
 parent name, in `var(--color-text)` at 16px / 24px line height,
 weight 600. The hit is 44px tall and covers the icon and the name.

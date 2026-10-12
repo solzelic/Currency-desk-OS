@@ -46,20 +46,60 @@ const MAX_TRIES = 5;
 const LOCK_MS = 5 * 60 * 1000;
 const tries = new Map<string, { count: number; until: number }>();
 
-function lockState(userId: string): { locked: boolean; remaining: number } {
+export function lockState(userId: string): { locked: boolean; remaining: number } {
   const t = tries.get(userId);
   if (!t) return { locked: false, remaining: MAX_TRIES };
   if (t.until > Date.now()) return { locked: true, remaining: 0 };
   if (t.until) { tries.delete(userId); return { locked: false, remaining: MAX_TRIES }; }
   return { locked: false, remaining: Math.max(0, MAX_TRIES - t.count) };
 }
-function recordFailure(userId: string): { locked: boolean; remaining: number } {
+
+/* Take the guess before the slow check. A check that runs first, then waits
+   on the hash, lets every request in that wait through: they all read
+   "four left" and all go on to be counted afterwards. The count moves
+   here, before that wait. A right answer gives the guess back. */
+export function reservePinAttempt(userId: string): boolean {
+  const existing = tries.get(userId);
+  if (existing && existing.until > Date.now()) return false;
+  if (existing && existing.until) tries.delete(userId);
   const t = tries.get(userId) ?? { count: 0, until: 0 };
+  if (t.count >= MAX_TRIES) {
+    t.until = Date.now() + LOCK_MS;
+    t.count = 0;
+    tries.set(userId, t);
+    return false;
+  }
   t.count += 1;
-  if (t.count >= MAX_TRIES) { t.until = Date.now() + LOCK_MS; t.count = 0; }
+  if (t.count >= MAX_TRIES) {
+    t.until = Date.now() + LOCK_MS;
+    t.count = 0;
+  }
   tries.set(userId, t);
-  return lockState(userId);
+  return true;
 }
+
+/* Give back the guess just taken, the moment the current PIN or password
+   checks out. A later refusal (a new PIN that is too easy, for one) must
+   not count. Only a wrong current secret counts. The guess that fills the
+   quota is also the one that locks and zeroes the count, so giving that
+   one back reopens the keypad and leaves the earlier wrong guesses. */
+export function releasePinAttempt(userId: string): void {
+  const t = tries.get(userId);
+  if (!t) return;
+  if (t.until > Date.now() && t.count === 0) {
+    t.until = 0;
+    t.count = MAX_TRIES - 1;
+    tries.set(userId, t);
+    return;
+  }
+  if (t.count <= 1) {
+    tries.delete(userId);
+    return;
+  }
+  t.count -= 1;
+  tries.set(userId, t);
+}
+
 export const clearPinAttempts = (userId: string): void => { tries.delete(userId); };
 
 /* What support sees when somebody rings up unable to get in: whether the
@@ -70,18 +110,31 @@ export function pinLockedUntil(userId: string): string | null {
 }
 
 /* A PIN nobody would pick: not a repeat, not a run, not a date. Those are
-   the first things guessed, and a code the desk issues should never be one. */
+   the first things guessed. Issuing one, and accepting one somebody chose,
+   use the same list. */
+export function isWeakPin(pin: string): boolean {
+  if (!/^\d{4}$/.test(pin)) return true;
+  const d = pin.split("").map(Number);
+  const allSame = d.every((x) => x === d[0]);
+  const ascending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 1) % 10);
+  const descending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 9) % 10);
+  const looksLikeYear = pin.startsWith("19") || pin.startsWith("20");
+  return allSame || ascending || descending || looksLikeYear;
+}
+
+export function weakPinDetail(pin: string): string | null {
+  if (!isWeakPin(pin)) return null;
+  return pin === "0000"
+    ? "0000 is too easy to guess. Pick a different PIN."
+    : "That PIN is too easy to guess. Pick a different PIN.";
+}
+
 export function generatePin(): string {
   for (;;) {
     const bytes = new Uint32Array(1);
     globalThis.crypto.getRandomValues(bytes);
     const pin = String(bytes[0]! % 10000).padStart(4, "0");
-    const d = pin.split("").map(Number) as number[];
-    const allSame = d.every((x) => x === d[0]);
-    const ascending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 1) % 10);
-    const descending = d.every((x, i) => i === 0 || x === (d[i - 1]! + 9) % 10);
-    const looksLikeYear = pin.startsWith("19") || pin.startsWith("20");
-    if (!allSame && !ascending && !descending && !looksLikeYear) return pin;
+    if (!isWeakPin(pin)) return pin;
   }
 }
 
@@ -105,8 +158,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     // back to its own check until this desk's PINs have been set here
     if (!target.pinHash) return reply.code(409).send({ error: "no_pin", detail: "No PIN is set for this person." });
 
-    const state = lockState(target.id);
-    if (state.locked) {
+    if (!reservePinAttempt(target.id)) {
       return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
     }
     if (await verifyPassword(parsed.data.pin, target.pinHash)) {
@@ -115,7 +167,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       // their own afterwards rather than interrupting a customer mid-deal
       return { ok: true, mustChange: target.pinMustChange };
     }
-    const after = recordFailure(target.id);
+    const after = lockState(target.id);
     await audit(db, {
       tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
       actorId: who.id, action: "pin.failed", detail: { of: target.staffId },
@@ -144,12 +196,14 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     if (!me) return reply.code(404).send({ error: "not_found" });
     if (me.pinHash) {
       if (!parsed.data.currentPin) return reply.code(400).send({ error: "current_required", detail: "Enter your current PIN." });
-      if (lockState(me.id).locked) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
+      if (!reservePinAttempt(me.id)) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
       if (!(await verifyPassword(parsed.data.currentPin, me.pinHash))) {
-        recordFailure(me.id);
         return reply.code(401).send({ error: "wrong_pin" });
       }
+      releasePinAttempt(me.id);
     }
+    const weak = weakPinDetail(parsed.data.pin);
+    if (weak) return reply.code(422).send({ error: "weak_pin", detail: weak });
     await db.update(schema.staffUsers)
       .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: false })
       .where(eq(schema.staffUsers.id, me.id));
@@ -176,15 +230,17 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
 
     const me = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     if (!me) return reply.code(404).send({ error: "not_found" });
-    if (lockState(me.id).locked) return reply.code(429).send({ error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
+    if (!reservePinAttempt(me.id)) return reply.code(429).send({ error: "locked", detail: "Too many wrong tries. Try again in a few minutes." });
     if (!(await verifyPassword(parsed.data.password, me.passwordHash))) {
-      recordFailure(me.id);
       await audit(db, {
         tenantId: me.tenantId, legalEntityId: me.legalEntityId, branchId: me.branchId,
         actorId: me.id, action: "pin.reset_failed",
       });
       return reply.code(401).send({ error: "wrong_password", detail: "That is not your sign-in password." });
     }
+    releasePinAttempt(me.id);
+    const weak = weakPinDetail(parsed.data.pin);
+    if (weak) return reply.code(422).send({ error: "weak_pin", detail: weak });
 
     await db.update(schema.staffUsers)
       .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: false })
