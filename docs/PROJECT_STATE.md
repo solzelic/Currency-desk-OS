@@ -119,10 +119,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   they are absent. Saved beneficiaries are the second tab: a sender's ID,
   the people already saved for them, and a new-beneficiary sheet.
   Use and New record open the existing cash step with that sender
-  filled in. The address tag uses the cash step's pack gate: Needed
-  for large transfers where an address is required over the
-  identification line (Canada version 2), and Optional on any other
-  pack. The York seed is version 1. The desktop pipeline is unchanged. The bar is five
+  filled in. The address tag says Needed for large transfers. The
+  missing list still uses the cash step's pack gate, so an address
+  is required only on Canada version 2. The York seed is version 1.
+  The desktop pipeline is unchanged. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -635,11 +635,14 @@ menu bar, which both machines resolved the same way, matched.
 second tab. A sender file shows the ID already stored for that
 client, or Not on file. A new beneficiary asks for the same fields
 the desktop modal saves. The address tag calls the same gate as
-the cash step, `addressRequiredOverIdLine`: Canada version 2 says
-Needed for large transfers, and every other pack says Optional.
-The York seed (`server/src/seed.ts`) is `pack-ca-v1`. A desk whose
-pack has not arrived is not version 2, so the tag stays Optional
-until that pack loads. The screen does not name the desk.
+the cash step. The tag says Needed for large transfers. The
+missing list still uses `addressRequiredOverIdLine`: an address
+is required only on Canada version 2. The York seed
+(`server/src/seed.ts`) is `pack-ca-v1`. A desk whose pack has not
+arrived is not version 2, so the address stays off the missing
+list until that pack loads. The payout partner starts empty. The
+select shows that empty choice, and the banner lists Payout
+partner, until a partner is chosen. The screen does not name the desk.
 A second tap does not write a second person. A save that throws is
 not kept in the browser store. Sample people are labelled Demo.
 

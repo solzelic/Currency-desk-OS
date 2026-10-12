@@ -260,13 +260,18 @@
     }));
     const cor = corridors.find((c) => c.id === b.corridor) || first || { partners: [] };
     const methods = T.METHODS.filter((m) => (cor.partners || []).some((p) => p.methods.includes(m[0])));
-    const partners = (cor.partners || []).filter((p) => p.methods.includes(b.method));
+    const partnerNames = (cor.partners || []).filter((p) => p.methods.includes(b.method)).map((p) => p.name);
     const set = (k, v) => setB((s) => ({ ...s, [k]: v }));
     useEffect(() => {
       if (!methods.find((m) => m[0] === b.method) && methods[0]) setB((s) => ({ ...s, method: methods[0][0] }));
     }, [b.corridor]);
     useEffect(() => {
-      if (!partners.find((p) => p.name === b.partner)) setB((s) => ({ ...s, partner: partners[0] ? partners[0].name : '' }));
+      setB((s) => {
+        const corNow = corridors.find((c) => c.id === s.corridor) || first || { partners: [] };
+        const names = (corNow.partners || []).filter((p) => p.methods.includes(s.method)).map((p) => p.name);
+        if (!s.partner || names.indexOf(s.partner) >= 0) return s;
+        return { ...s, partner: '' };
+      });
     }, [b.corridor, b.method]);
     if (!first) throw new Error('Phone transfers: this desk has no corridors.');
     const large = needsAddress();
@@ -310,11 +315,11 @@
             </div>
             <label className="phone-field"><span className="phone-flabel">Payout partner <span className="phone-req">Required</span></span>
               <select className={!b.partner ? 'is-err' : ''} value={b.partner} onChange={(e) => set('partner', e.target.value)} aria-invalid={!b.partner}>
-                {partners.map((p) => <option key={p.name}>{p.name}</option>)}
-                {!partners.length ? <option value="">No partner for this method</option> : null}
+                <option value="">Choose a partner</option>
+                {partnerNames.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
-            <label className="phone-field"><span className="phone-flabel">Address {large ? <span className="phone-req">Needed for large transfers</span> : <span className="phone-opt">Optional</span>}</span>
+            <label className="phone-field"><span className="phone-flabel">Address <span className="phone-req">Needed for large transfers</span></span>
               <input className={large && !String(b.address || '').trim() ? 'is-err' : ''} value={b.address || ''} onChange={(e) => set('address', e.target.value)} placeholder="Street, city, country" />
             </label>
             {b.method === 'bank' ? <label className="phone-field"><span className="phone-flabel">Account number <span className="phone-opt">Optional</span></span><input value={b.account} onChange={(e) => set('account', e.target.value)} /></label> : null}

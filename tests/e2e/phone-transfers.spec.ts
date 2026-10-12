@@ -1,5 +1,5 @@
 /* Phone Transfers list. The desktop pipeline picture is not updated here. */
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect, signInAtDesk } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
 
@@ -16,6 +16,29 @@ function dayHeading(date: string, book: string): string {
   const yesterday = utc.getUTCFullYear() + "-" + String(utc.getUTCMonth() + 1).padStart(2, "0") + "-" + String(utc.getUTCDate()).padStart(2, "0");
   if (text === yesterday) return "Yesterday";
   return MONTHS[Number(text.slice(5, 7)) - 1] + " " + Number(text.slice(8, 10));
+}
+
+function missingLine(parts: string[]): string {
+  if (parts.length === 1) return "1 thing missing: " + parts[0];
+  return parts.length + " things missing: " + parts.join(", ");
+}
+
+async function partnerAgrees(sheet: Locator): Promise<void> {
+  const partner = sheet.getByRole("combobox", { name: /Payout partner/ });
+  const value = await partner.inputValue();
+  const alert = sheet.getByRole("alert").first();
+  const text = (await alert.count()) ? await alert.innerText() : "";
+  const listed = text.includes("Payout partner");
+  if (value && listed) throw new Error("the banner still lists Payout partner after it was chosen");
+  if (!value && !listed) throw new Error("an empty payout partner left the missing list");
+  const shown = await partner.evaluate((el) => {
+    const select = el as HTMLSelectElement;
+    const opt = select.options[select.selectedIndex];
+    return opt ? opt.text : "";
+  });
+  if (!value && shown !== "Choose a partner") {
+    throw new Error("the partner select shows " + shown + " while the form has no partner");
+  }
 }
 
 async function dismissTour(page: Page): Promise<void> {
@@ -536,23 +559,26 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
   const before = posts.length;
   await list.getByRole("button", { name: "Add a beneficiary" }).click();
   const sheet = page.locator(".phone-ben-sheet");
-  /* The tag is the shared gate's answer for the pack this desk loaded.
-     It does not assume which pack York is. */
-  const addressTag = await page.evaluate(() => {
+  const addressRequired = await page.evaluate(() => {
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     const rule = window.CDOS._transfers && window.CDOS._transfers.addressRequiredOverIdLine;
     if (typeof rule !== "function") throw new Error("the address rule did not load");
-    return rule(pack) ? "Needed for large transfers" : "Optional";
+    return !!rule(pack);
   });
   const address = sheet.locator(".phone-flabel").filter({ hasText: "Address" });
-  await expect(address).toContainText(addressTag);
-  if (addressTag === "Needed for large transfers") {
-    await expect(address).not.toContainText("Optional");
-    await expect(sheet.getByRole("alert")).toHaveText("2 things missing: Full name, Address");
-  } else {
-    await expect(sheet.getByRole("alert")).toHaveText("1 thing missing: Full name");
-    await expect(sheet).not.toContainText("Needed for large transfers");
-  }
+  await expect(address).toContainText("Needed for large transfers");
+  await expect(address).not.toContainText("Optional");
+  const partner = sheet.getByRole("combobox", { name: /Payout partner/ });
+  await expect(partner).toHaveValue("");
+  await expect(partner).toHaveClass(/is-err/);
+  await expect(sheet.getByRole("alert")).toHaveText(missingLine(["Full name", "Payout partner"].concat(addressRequired ? ["Address"] : [])));
+  await partnerAgrees(sheet);
+  await partner.selectOption("Palawan Express");
+  await expect(partner).toHaveValue("Palawan Express");
+  await expect(partner).not.toHaveClass(/is-err/);
+  await expect(sheet.getByRole("alert")).toHaveText(missingLine(["Full name"].concat(addressRequired ? ["Address"] : [])));
+  await expect(sheet.getByRole("alert")).not.toContainText("Payout partner");
+  await partnerAgrees(sheet);
   await expect(sheet.getByRole("button", { name: "Save beneficiary" })).toBeDisabled();
   await expect(sheet.getByText("Add the full name to save.")).toBeVisible();
   await expect(sheet.getByText("Type the name as it is on their ID.")).toBeVisible();
@@ -560,7 +586,8 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
     roots: [".phone-ben-sheet", ".phone-head", "#phone-dock"],
   });
   await sheet.getByPlaceholder("Receiver's name").fill("Ada Carter");
-  if (addressTag === "Needed for large transfers") {
+  await expect(sheet.getByPlaceholder("Receiver's name")).not.toHaveClass(/is-err/);
+  if (addressRequired) {
     await expect(sheet.getByRole("alert")).toHaveText("1 thing missing: Address");
     await sheet.getByPlaceholder("Street, city, country").fill("1 King Street, Toronto");
   }
@@ -579,8 +606,9 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
 
   await list.getByRole("button", { name: "Add a beneficiary" }).click();
   const again = page.locator(".phone-ben-sheet");
+  await again.getByRole("combobox", { name: /Payout partner/ }).selectOption("Cebuana Lhuillier");
   await again.getByPlaceholder("Receiver's name").fill("Bea Carter");
-  if (addressTag === "Needed for large transfers") {
+  if (addressRequired) {
     await again.getByPlaceholder("Street, city, country").fill("2 King Street, Toronto");
   }
   await expect(again.getByRole("button", { name: "Save beneficiary" })).toBeEnabled();
@@ -606,8 +634,9 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
 
   await list.getByRole("button", { name: "Add a beneficiary" }).click();
   const fail = page.locator(".phone-ben-sheet");
+  await fail.getByRole("combobox", { name: /Payout partner/ }).selectOption("Cebuana Lhuillier");
   await fail.getByPlaceholder("Receiver's name").fill("Cara Carter");
-  if (addressTag === "Needed for large transfers") {
+  if (addressRequired) {
     await fail.getByPlaceholder("Street, city, country").fill("3 King Street, Toronto");
   }
   await page.evaluate(() => {

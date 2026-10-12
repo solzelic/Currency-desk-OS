@@ -224,8 +224,9 @@
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
 
   /* Address is required over the identification line only on Canada
-     version 2. The cash step adds the amount. The phone field tag
-     uses this same gate, and no other. */
+     version 2. The cash step adds the amount. The phone missing list
+     uses this same gate. The phone tag always says the address is
+     needed for large transfers. */
   function addressRequiredOverIdLine(pack) {
     return !!(pack && pack.packId === 'pack-ca-v2');
   }

@@ -37123,8 +37123,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   }) => ReactDOM.createPortal(children, document.body);
 
   /* Address is required over the identification line only on Canada
-     version 2. The cash step adds the amount. The phone field tag
-     uses this same gate, and no other. */
+     version 2. The cash step adds the amount. The phone missing list
+     uses this same gate. The phone tag always says the address is
+     needed for large transfers. */
   function addressRequiredOverIdLine(pack) {
     return !!(pack && pack.packId === 'pack-ca-v2');
   }
@@ -63507,7 +63508,7 @@ window.CDOS_PERSIST = (function () {
       partners: []
     };
     const methods = T.METHODS.filter(m => (cor.partners || []).some(p => p.methods.includes(m[0])));
-    const partners = (cor.partners || []).filter(p => p.methods.includes(b.method));
+    const partnerNames = (cor.partners || []).filter(p => p.methods.includes(b.method)).map(p => p.name);
     const set = (k, v) => setB(s => ({
       ...s,
       [k]: v
@@ -63519,10 +63520,17 @@ window.CDOS_PERSIST = (function () {
       }));
     }, [b.corridor]);
     useEffect(() => {
-      if (!partners.find(p => p.name === b.partner)) setB(s => ({
-        ...s,
-        partner: partners[0] ? partners[0].name : ''
-      }));
+      setB(s => {
+        const corNow = corridors.find(c => c.id === s.corridor) || first || {
+          partners: []
+        };
+        const names = (corNow.partners || []).filter(p => p.methods.includes(s.method)).map(p => p.name);
+        if (!s.partner || names.indexOf(s.partner) >= 0) return s;
+        return {
+          ...s,
+          partner: ''
+        };
+      });
     }, [b.corridor, b.method]);
     if (!first) throw new Error('Phone transfers: this desk has no corridors.');
     const large = needsAddress();
@@ -63631,19 +63639,18 @@ window.CDOS_PERSIST = (function () {
       value: b.partner,
       onChange: e => set('partner', e.target.value),
       "aria-invalid": !b.partner
-    }, partners.map(p => /*#__PURE__*/React.createElement("option", {
-      key: p.name
-    }, p.name)), !partners.length ? /*#__PURE__*/React.createElement("option", {
+    }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "No partner for this method") : null)), /*#__PURE__*/React.createElement("label", {
+    }, "Choose a partner"), partnerNames.map(name => /*#__PURE__*/React.createElement("option", {
+      key: name,
+      value: name
+    }, name)))), /*#__PURE__*/React.createElement("label", {
       className: "phone-field"
     }, /*#__PURE__*/React.createElement("span", {
       className: "phone-flabel"
-    }, "Address ", large ? /*#__PURE__*/React.createElement("span", {
+    }, "Address ", /*#__PURE__*/React.createElement("span", {
       className: "phone-req"
-    }, "Needed for large transfers") : /*#__PURE__*/React.createElement("span", {
-      className: "phone-opt"
-    }, "Optional")), /*#__PURE__*/React.createElement("input", {
+    }, "Needed for large transfers")), /*#__PURE__*/React.createElement("input", {
       className: large && !String(b.address || '').trim() ? 'is-err' : '',
       value: b.address || '',
       onChange: e => set('address', e.target.value),

@@ -512,7 +512,7 @@ ledger row and the obligation face, or they are absent. Saved beneficiaries
 are the second tab, and Use opens `TransferModal` with that sender
 and beneficiary already chosen. A second tap does not save a second
 person, and a failed write is not kept. Sample people are labelled
-Demo. The address tag follows
-`addressRequiredOverIdLine`: Needed for large transfers on Canada
-version 2, Optional otherwise. The cash step is still
+Demo. The address tag says Needed for large transfers. The
+missing list still follows `addressRequiredOverIdLine`, so an
+address is required only on Canada version 2. The cash step is still
 `TransferModal`. The desktop pipeline is unchanged.
