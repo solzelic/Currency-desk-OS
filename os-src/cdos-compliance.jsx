@@ -586,7 +586,10 @@
   function aggClusters(rows, regime, settings) {
     if (regime && regime.aggregate === false) return [];
     const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
-    return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+    /* One window for the desk: branch midnight, then 24 hours. A stored
+       aggWindowStart must not move an LCTR off the server's gate. */
+    const midnight = Object.assign({}, settings || {}, { aggWindowStart: '00:00' });
+    return aggregateEvents(events, regime, midnight, regime.largeCode, largePolicy(regime));
   }
   /* Receipts already inside an include-all cluster are not also filed
      as their own large-cash report. A lone receipt at the line is not

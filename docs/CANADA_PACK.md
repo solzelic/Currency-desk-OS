@@ -118,15 +118,14 @@ These are not implemented. The pack does not pretend they are.
 - Statutory holidays. Working days here are Monday to Friday.
   FINTRAC also drops statutory holidays. There is no holiday
   calendar in the pack.
-- The browser lets an owner move the 24-hour anchor off midnight
-  (`settings.aggWindowStart`). That choice is not stored on the
-  server. The identity gate uses midnight in the branch's time zone.
-  A branch row with no readable zone is refused. A missing branch
-  row still falls back to `America/Toronto`. The end of the window
-  is that instant plus 24 hours, not the next local midnight.
-  The compliance clusters and the time on a posted deal use the
-  zone the till session names. The ledger row's separate rolling
-  lookback is not this window.
+- The browser still stores a 24-hour anchor (`settings.aggWindowStart`).
+  An LCTR cluster and the ledger's `agg24` flag ignore it and use
+  midnight in the branch's time zone, which is what the identity
+  gate uses. A branch row with no readable zone is refused. A missing
+  branch row still falls back to `America/Toronto`. The end of the
+  window is that instant plus 24 hours, not the next local midnight.
+  The time on a posted deal uses the zone the till session names.
+  `rolling24Structuring` is a rolling lookback. It is not an LCTR.
 - Other fields s.36 asks for on a ticket (telephone, the rate, an
   account number) are not stored. The four fields the survey named
   are the ones this pack requires.
