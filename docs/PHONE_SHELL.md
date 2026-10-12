@@ -301,7 +301,7 @@ Browse groups, in order. A group with nothing this role can open is omitted.
 | Checks | Compliance, Tagged deals, Audit trail |
 | Numbers | Reports, Dashboard |
 | Tools | Texts (only when Twilio is set up), Calculator, Loan calculator |
-| Shop setup | Pricing, Apps, Settings |
+| Shop setup | Apps, Settings |
 
 Each row is the app's coloured icon (accent on an 11% tint, 40px) and a
 one-line purpose.
@@ -319,6 +319,35 @@ in the browse groups. When the query matches one of them, they are listed
 under "On the bottom bar". The browse list has no search footer. A query
 shows "Search looks at app names and what each app does." Nothing matches
 is an empty state. There is no "Example data" badge. That tag is mockups only.
+
+Pricing is not in this list. On a phone, the rate list, the per-row
+spread, and publish live on the Rates tab. Fee, the margin floor,
+rounding, and the deal simulator stay on the computer Pricing app.
+The desktop dock still has Pricing.
+
+## Rates
+
+Under 430px the Rates tab is the board editor in
+`os-src/cdos-rates-phone.jsx` and `os-src/phone/rates.js`. Wider than
+430px, Rates is still the Rate Board iframe, and that picture does
+not change.
+
+A manager or an admin edits the buy margin, the sell margin, the
+spot, a spread on one currency, whether that currency is on the
+board, and the order. The first six places are the homepage group.
+Public preview shows what the homepage will show after publish, and
+it says it is not live yet. One Publish button posts
+`/api/rates/publish`. The server permission `rates:change` is what
+allows it. A teller sees the list and the buy and sell prices, with
+no steppers, no drag, no board switch, and no Publish button. The
+line asks them to find a manager.
+
+Currency names are `BY[code].name` in `yorkfx-converter.js`. This
+screen does not quote and does not start a deal.
+
+Lock is the desktop flag `yorkfx_rates_locked` in this browser. The
+button says Lock or Locked. It is not stored on the server, and the
+screen does not say that another till can see it.
 
 ## Seam locators
 

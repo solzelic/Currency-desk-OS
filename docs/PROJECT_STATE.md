@@ -105,7 +105,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   first filter chip sits 16px in, and the
   chip row fades at the right. Under 430px the ledger is the phone shell: title, summary cards,
   search, filter chips, list rows, and a sticky New transaction. The
-  desktop ledger is unchanged. The bar is five
+  desktop ledger is unchanged. Under 430px Rates is the board editor:
+  margins, spot, a per-row spread, homepage order, a public preview,
+  and one Publish. Publish is `POST /api/rates/publish`, and only a
+  manager or an admin can do it. A teller sees the list and is asked
+  to find a manager. Pricing is not a phone app. Lock is this browser
+  only, the same local flag the desktop uses. The desktop Rates
+  window is still the Rate Board iframe. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -570,6 +576,11 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, phone Rates. Under 430px the Rates tab is the board
+editor. Publish is the existing POST, and a teller is read-only.
+Phone More no longer lists Pricing. The desktop Rate Board iframe
+is unchanged. Lock stays in this browser.
 
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the

@@ -62283,6 +62283,269 @@ window.CDOS_PERSIST = (function () {
 })();
 
 
+/* ---- os-src/phone/rates.js ---- */
+/* Phone rate board. The screen in cdos-rates-phone.jsx calls these.
+   Buy and sell match the desk editor: spot times (1 - spread, or the
+   buy margin) and (1 + spread, or the sell margin). Names come from
+   yorkfx-converter.js BY[code].name. Who may publish is the server
+   role that holds rates:change in server/src/auth/permissions.ts.
+   The post is still refused there. This file does not decide it. */
+(function () {
+  const CAN_CHANGE = { branch_manager: true, administrator: true };
+
+  function canChangeRates(role) {
+    return !!CAN_CHANGE[role];
+  }
+
+  function currencyName(code) {
+    const book = (typeof BY !== "undefined" && BY) || {};
+    const row = book[code];
+    return row && row.name ? row.name : code;
+  }
+
+  function round(value, places) {
+    const scale = Math.pow(10, places);
+    return Math.round(value * scale) / scale;
+  }
+
+  function formatSpot(value) {
+    if (typeof value !== "number" || !(value > 0) || !Number.isFinite(value)) return "";
+    return value.toFixed(Math.abs(value) >= 0.0001 ? 4 : 6);
+  }
+
+  function formatPercent(fraction) {
+    if (typeof fraction !== "number" || !Number.isFinite(fraction)) return "";
+    return (fraction * 100).toFixed(2) + "%";
+  }
+
+  function percentNumber(fraction) {
+    if (typeof fraction !== "number" || !Number.isFinite(fraction)) return "";
+    return (fraction * 100).toFixed(2);
+  }
+
+  function buyPrice(mid, spread, buyMargin) {
+    const margin = typeof spread === "number" ? spread : buyMargin;
+    if (!(mid > 0) || typeof margin !== "number") return null;
+    return mid * (1 - margin);
+  }
+
+  function sellPrice(mid, spread, sellMargin) {
+    const margin = typeof spread === "number" ? spread : sellMargin;
+    if (!(mid > 0) || typeof margin !== "number") return null;
+    return mid * (1 + margin);
+  }
+
+  function nearly(left, right) {
+    return Math.abs((left || 0) - (right || 0)) < 1e-8;
+  }
+
+  /* A hand-set spot stays within 2% of the feed, the same band the
+     desk editor uses. No feed means no band, and the caller says so. */
+  function clampSpot(value, feed) {
+    if (!(value > 0) || !Number.isFinite(value)) {
+      return { ok: false, value: null, clamped: false, hasFeed: !!(feed > 0) };
+    }
+    if (!(feed > 0)) return { ok: true, value: round(value, 6), clamped: false, hasFeed: false };
+    const next = Math.min(feed * 1.02, Math.max(feed * 0.98, value));
+    return { ok: true, value: round(next, 6), clamped: Math.abs(next - value) > 1e-9, hasFeed: true };
+  }
+
+  function stepMargin(fraction, direction) {
+    const next = (fraction || 0) + direction * 0.0005;
+    return Math.max(0, Math.min(0.2, round(next, 5)));
+  }
+
+  function codesOf(board) {
+    const rows = (board && board.rows) || {};
+    const order = [];
+    const given = board && Array.isArray(board.order) ? board.order : [];
+    given.forEach((code) => {
+      if (code !== "CAD" && rows[code] && order.indexOf(code) < 0) order.push(code);
+    });
+    Object.keys(rows).forEach((code) => {
+      if (code !== "CAD" && order.indexOf(code) < 0) order.push(code);
+    });
+    return order;
+  }
+
+  function copyBoard(board) {
+    const order = codesOf(board);
+    const rows = {};
+    order.forEach((code) => {
+      const row = board.rows[code] || {};
+      rows[code] = {
+        mid: typeof row.mid === "number" ? row.mid : 0,
+        show: row.show !== false,
+        spread: typeof row.spread === "number" ? row.spread : null,
+        manual: !!row.manual,
+      };
+    });
+    return {
+      buyMargin: typeof board.buyMargin === "number" ? board.buyMargin : 0.015,
+      sellMargin: typeof board.sellMargin === "number" ? board.sellMargin : 0.015,
+      rows: rows,
+      order: order,
+      publishedAt: board.publishedAt || null,
+      publishedBy: board.publishedBy || "",
+    };
+  }
+
+  function factoryBoard() {
+    const list = typeof CUR !== "undefined" && CUR ? CUR : [];
+    const rows = {};
+    const order = [];
+    list.forEach((item) => {
+      if (!item || item.code === "CAD") return;
+      const per = item.perCadDefault > 0 ? item.perCadDefault : item.perCad;
+      const mid = per > 0 ? round(1 / per, 6) : 0;
+      if (!(mid > 0)) return;
+      rows[item.code] = { mid: mid, show: true, spread: null, manual: false };
+      order.push(item.code);
+    });
+    return { buyMargin: 0.015, sellMargin: 0.015, rows: rows, order: order, publishedAt: null, publishedBy: "" };
+  }
+
+  function shownCodes(rows, order) {
+    return order.filter((code) => rows[code] && rows[code].show !== false);
+  }
+
+  function homeSix(rows, order) {
+    return shownCodes(rows, order).slice(0, 6);
+  }
+
+  function sameSpread(left, right) {
+    if (left == null && right == null) return true;
+    if (left == null || right == null) return false;
+    return nearly(left, right);
+  }
+
+  function changes(published, draft) {
+    const lines = [];
+    let count = 0;
+    if (!published) {
+      count = 1;
+      lines.push({ label: "Rate board", detail: "First publish, " + draft.order.length + " currencies" });
+    } else {
+      draft.order.forEach((code) => {
+        const was = published.rows[code];
+        const now = draft.rows[code];
+        if (!now) return;
+        if (!was) {
+          count += 1;
+          lines.push({ label: code, detail: "Added to the board" });
+          return;
+        }
+        if (!nearly(was.mid, now.mid)) {
+          count += 1;
+          const hand = now.manual ? ", set by hand" : "";
+          lines.push({ label: code + " spot", detail: formatSpot(was.mid) + " to " + formatSpot(now.mid) + hand });
+        }
+        if (!sameSpread(was.spread, now.spread)) {
+          count += 1;
+          const from = was.spread == null ? "desk margin" : formatPercent(was.spread);
+          const to = now.spread == null ? "desk margin" : formatPercent(now.spread);
+          lines.push({ label: code + " spread", detail: from + " to " + to });
+        }
+        if ((was.show !== false) !== (now.show !== false)) {
+          count += 1;
+          lines.push({ label: code, detail: now.show === false ? "Hidden from the board" : "On the board" });
+        }
+      });
+      published.order.forEach((code) => {
+        if (!draft.rows[code]) {
+          count += 1;
+          lines.push({ label: code, detail: "Removed from the board" });
+        }
+      });
+      if (published.order.join(",") !== draft.order.join(",")) {
+        count += 1;
+        lines.push({ label: "Homepage order", detail: homeSix(draft.rows, draft.order).join(", ") });
+      }
+    }
+    const marginsSame = published && nearly(published.buyMargin, draft.buyMargin) && nearly(published.sellMargin, draft.sellMargin);
+    if (!marginsSame) {
+      if (published) count += 1;
+      const detail = nearly(draft.buyMargin, draft.sellMargin)
+        ? formatPercent(draft.buyMargin) + " each"
+        : formatPercent(draft.buyMargin) + " buy, " + formatPercent(draft.sellMargin) + " sell";
+      lines.push({ label: "Buy and sell margin", detail: detail });
+    } else {
+      lines.push({ label: "Buy and sell margin", detail: formatPercent(draft.buyMargin) + " each, no change", quiet: true });
+    }
+    return { count: count, lines: lines };
+  }
+
+  function previewNote(rows, order) {
+    const on = shownCodes(rows, order);
+    const rest = on.slice(6);
+    const hidden = order.filter((code) => rows[code] && rows[code].show === false);
+    const parts = [];
+    if (rest.length === 1) parts.push("1 more on the rate board page (" + rest[0] + ").");
+    else if (rest.length > 1) parts.push(rest.length + " more on the rate board page (" + rest.join(", ") + ").");
+    if (hidden.length === 1) parts.push(hidden[0] + " is hidden.");
+    else if (hidden.length > 1) parts.push(hidden.join(", ") + " are hidden.");
+    return parts.join(" ");
+  }
+
+  function publishBody(draft) {
+    const rows = {};
+    draft.order.forEach((code) => {
+      const row = draft.rows[code];
+      if (!row || !(row.mid > 0)) return;
+      const out = { mid: row.mid, show: row.show !== false };
+      if (typeof row.spread === "number") out.spread = row.spread;
+      rows[code] = out;
+    });
+    return {
+      buyMargin: draft.buyMargin,
+      sellMargin: draft.sellMargin,
+      rows: rows,
+      order: ["CAD"].concat(draft.order.filter((code) => code !== "CAD")),
+    };
+  }
+
+  function clockLabel(value, zone) {
+    const format = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof format !== "function" || value == null || value === "") return "";
+    const when = typeof value === "number" ? new Date(value) : value;
+    const label = format(when, zone || "");
+    if (!label || label.indexOf("\u2014") >= 0 || label.indexOf("\u2013") >= 0) return "";
+    return label;
+  }
+
+  function plainPublishError(status, body) {
+    if (status === 403) return "The server refused (403). Only a manager or an admin can publish rates.";
+    if (status === 401) return "Your session ended. Sign in again, then publish.";
+    if (status === 400) {
+      const detail = body && body.detail ? String(body.detail) : "";
+      return detail ? "The server refused the board (400). " + detail : "The server refused the board (400).";
+    }
+    return "The server could not publish (" + status + "). Nothing was changed.";
+  }
+
+  window.CDOS = window.CDOS || {};
+  window.CDOS.phoneRates = {
+    canChangeRates: canChangeRates,
+    currencyName: currencyName,
+    formatSpot: formatSpot,
+    formatPercent: formatPercent,
+    percentNumber: percentNumber,
+    buyPrice: buyPrice,
+    sellPrice: sellPrice,
+    clampSpot: clampSpot,
+    stepMargin: stepMargin,
+    copyBoard: copyBoard,
+    factoryBoard: factoryBoard,
+    homeSix: homeSix,
+    changes: changes,
+    previewNote: previewNote,
+    publishBody: publishBody,
+    clockLabel: clockLabel,
+    plainPublishError: plainPublishError,
+  };
+})();
+
+
 /* ---- os-src/cdos-phone.jsx ---- */
 /* Phone shell. Shared layout for every phone screen.
    Props and names are the contract in docs/PHONE_SHELL.md.
@@ -62755,8 +63018,10 @@ window.CDOS_PERSIST = (function () {
 
   /* Branches and Assistant are front-end mocks, so they are not in
      this catalog. Texts is, and the desk only passes it when Twilio
-     is set up. Search words sit beside the purpose line so "cash"
-     finds Cheques, Vault, Compliance, and Till. */
+     is set up. Pricing is not a phone app: spread, publish, and
+     margin find Rates on the bottom bar. Fee stays on the computer.
+     Search words sit beside the purpose line so "cash" finds
+     Cheques, Vault, Compliance, and Till. */
   const GROUPS = [{
     title: 'Money',
     ids: ['transfers', 'cheques', 'vault']
@@ -62771,7 +63036,7 @@ window.CDOS_PERSIST = (function () {
     ids: ['telegraph', 'calc', 'loan']
   }, {
     title: 'Shop setup',
-    ids: ['pricing', 'store', 'settings']
+    ids: ['store', 'settings']
   }];
   const CATALOG = {
     transfers: {
@@ -62840,12 +63105,6 @@ window.CDOS_PERSIST = (function () {
       words: 'payment interest',
       icon: 'loancentre'
     },
-    pricing: {
-      title: 'Pricing',
-      detail: 'Spreads, fees, publish rates',
-      words: 'spread fee rate',
-      icon: 'pricingpercent'
-    },
     store: {
       title: 'Apps',
       detail: 'Add or remove apps',
@@ -62863,7 +63122,7 @@ window.CDOS_PERSIST = (function () {
     id: 'rates',
     title: 'Rates',
     detail: 'Buy and sell prices',
-    words: 'fx board quote',
+    words: 'fx board quote spread publish margin',
     icon: 'rateboard'
   }, {
     id: 'ledger',
@@ -63036,6 +63295,513 @@ window.CDOS_PERSIST = (function () {
     formatPhoneListGroup,
     Phone
   });
+})();
+
+/* ---- os-src/cdos-rates-phone.jsx ---- */
+/* Phone Rates. The desk editor for the public board: margins, spot,
+   per-row spread, order, and one Publish. Tellers get the read-only
+   list. Fee, floor, rounding, and the deal simulator stay on the
+   computer Pricing screen. Desktop Rates stays the Rate Board iframe. */
+(function () {
+  const {
+    useEffect,
+    useState
+  } = React;
+  const R = () => window.CDOS.phoneRates;
+  const Phone = () => window.CDOS.Phone;
+  function publisherName(id, me, settings, srvUser) {
+    if (!id || id === "seed") return "";
+    const people = settings && settings.employees || [];
+    for (let i = 0; i < people.length; i++) {
+      const person = people[i];
+      if (person && (person.staffId === id || person.code === id || person.name === id)) return person.name || "";
+    }
+    if (srvUser && srvUser.staffId === id && srvUser.name) return srvUser.name;
+    if (me && me.name && (me.code === id || me.name === id)) return me.name;
+    return "";
+  }
+  function patchRow(draft, code, patch) {
+    const row = draft.rows[code];
+    if (!row) return draft;
+    return {
+      ...draft,
+      rows: {
+        ...draft.rows,
+        [code]: {
+          ...row,
+          ...patch
+        }
+      }
+    };
+  }
+  function PhoneRates({
+    me,
+    srvUser,
+    settings,
+    locked,
+    onToggleLock
+  }) {
+    const rates = R();
+    const shell = Phone();
+    const can = rates.canChangeRates(srvUser && srvUser.role);
+    const zone = settings && settings.timezone;
+    const [phase, setPhase] = useState("load");
+    const [loadError, setLoadError] = useState("");
+    const [feedNote, setFeedNote] = useState("");
+    const [published, setPublished] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [feed, setFeed] = useState({});
+    const [mode, setMode] = useState("edit");
+    const [openCode, setOpenCode] = useState(null);
+    const [spotText, setSpotText] = useState("");
+    const [spreadText, setSpreadText] = useState(null);
+    const [clampNote, setClampNote] = useState("");
+    const [confirm, setConfirm] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [publishError, setPublishError] = useState("");
+    async function load() {
+      setPhase("load");
+      setLoadError("");
+      setFeedNote("");
+      let response;
+      try {
+        response = await fetch("/api/rates", {
+          credentials: "same-origin"
+        });
+      } catch (error) {
+        setLoadError("Could not reach the server. The rate board did not load.");
+        setPhase("error");
+        return;
+      }
+      if (!response.ok) {
+        setLoadError("The rate board did not load (" + response.status + ").");
+        setPhase("error");
+        return;
+      }
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        setLoadError("The rate board came back in a form this screen cannot read.");
+        setPhase("error");
+        return;
+      }
+      let mids = {};
+      try {
+        const market = await fetch("/api/rates/market", {
+          credentials: "same-origin"
+        });
+        if (!market.ok) {
+          setFeedNote("The feed did not load (" + market.status + "). A hand-set spot cannot be checked against it.");
+        } else {
+          const body = await market.json();
+          if (body && body.mids && typeof body.mids === "object") mids = body.mids;
+        }
+      } catch (error) {
+        setFeedNote("The feed did not load. A hand-set spot cannot be checked against it.");
+      }
+      const board = data && data.board ? rates.copyBoard(data.board) : null;
+      const next = board || rates.factoryBoard();
+      if (!next.order.length) {
+        setLoadError("There are no currencies on this board.");
+        setPhase("error");
+        return;
+      }
+      setPublished(board);
+      setDraft(next);
+      setFeed(mids);
+      setPhase("ready");
+    }
+    useEffect(() => {
+      load();
+    }, []);
+    function commitSpot(code) {
+      const parsed = parseFloat(String(spotText).replace(/,/g, ""));
+      const held = rates.clampSpot(parsed, feed[code]);
+      if (!held.ok) return;
+      setDraft(current => patchRow(current, code, {
+        mid: held.value,
+        manual: true
+      }));
+      setSpotText(rates.formatSpot(held.value));
+      setClampNote(held.clamped ? "Held within 2% of the feed." : "");
+    }
+    function applySpread(code, raw) {
+      setSpreadText(raw);
+      if (String(raw).trim() === "") {
+        setDraft(current => patchRow(current, code, {
+          spread: null
+        }));
+        return;
+      }
+      const parsed = parseFloat(raw);
+      if (!Number.isFinite(parsed)) return;
+      const fraction = Math.max(0, Math.min(0.2, parsed / 100));
+      setDraft(current => patchRow(current, code, {
+        spread: fraction
+      }));
+    }
+    function onGrip(event, code) {
+      event.preventDefault();
+      function move(ev) {
+        const node = document.elementFromPoint(ev.clientX, ev.clientY);
+        const over = node && node.closest ? node.closest("[data-code]") : null;
+        const overCode = over && over.getAttribute("data-code");
+        if (!overCode || overCode === code) return;
+        setDraft(current => {
+          const order = current.order.slice();
+          const from = order.indexOf(code);
+          const to = order.indexOf(overCode);
+          if (from < 0 || to < 0 || from === to) return current;
+          order.splice(from, 1);
+          order.splice(to, 0, code);
+          return {
+            ...current,
+            order: order
+          };
+        });
+      }
+      function up() {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      }
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    }
+    async function publishNow() {
+      if (publishing) return;
+      setPublishing(true);
+      setPublishError("");
+      const body = rates.publishBody(draft);
+      let response;
+      try {
+        response = await fetch("/api/rates/publish", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          credentials: "same-origin",
+          body: JSON.stringify(body)
+        });
+      } catch (error) {
+        setPublishing(false);
+        setPublishError("Could not reach the server. Nothing was published.");
+        return;
+      }
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+      if (!response.ok || !payload || !payload.board) {
+        setPublishing(false);
+        setPublishError(!response.ok ? rates.plainPublishError(response.status, payload) : "The server did not return the board. Check Rates before trying again.");
+        return;
+      }
+      try {
+        const saved = JSON.stringify(payload.board);
+        localStorage.setItem("yorkfx_rates_v1", saved);
+        if (payload.board.order) localStorage.setItem("yorkfx_board_order", JSON.stringify(payload.board.order));
+        if (window.applyBoardOrder) window.applyBoardOrder();
+        if (window.applyRateConfig) window.applyRateConfig();
+        window.dispatchEvent(new StorageEvent("storage", {
+          key: "yorkfx_rates_v1",
+          newValue: saved
+        }));
+      } catch (error) {
+        setPublishError("Published. This browser could not save its copy of the board.");
+      }
+      const next = rates.copyBoard(payload.board);
+      setPublished(next);
+      setDraft(next);
+      setConfirm(false);
+      setOpenCode(null);
+      setPublishing(false);
+    }
+    if (!shell) return /*#__PURE__*/React.createElement("p", {
+      role: "alert"
+    }, "The phone shell did not load.");
+    if (phase === "load") {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "phone-rates",
+        "data-phone-rates": ""
+      }, /*#__PURE__*/React.createElement(shell.Screen, {
+        app: "rates",
+        title: "Rates"
+      }, /*#__PURE__*/React.createElement(shell.LoadingState, {
+        label: "Loading rates"
+      })));
+    }
+    if (phase === "error" || !draft) {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "phone-rates",
+        "data-phone-rates": ""
+      }, /*#__PURE__*/React.createElement(shell.Screen, {
+        app: "rates",
+        title: "Rates"
+      }, /*#__PURE__*/React.createElement(shell.ErrorState, {
+        message: loadError || "The rate board did not load.",
+        onRetry: load
+      })));
+    }
+    const diff = rates.changes(published, draft);
+    const when = rates.clockLabel(published && published.publishedAt, zone);
+    const who = publisherName(published && published.publishedBy, me, settings, srvUser);
+    const stamp = when ? who ? when + ", " + who : when : "";
+    let status = "Not published yet";
+    if (!can) status = published ? "Published " + (stamp || "earlier") + " · Ask a manager to change rates" : "Not published yet. Ask a manager to change rates";else if (diff.count > 0) status = diff.count + (diff.count === 1 ? " change" : " changes") + " not published" + (stamp ? " · last " + stamp : "");else if (published) status = stamp ? "Published " + stamp : "Published";
+    const home = draft.order.slice(0, 6);
+    const rest = draft.order.slice(6);
+    const publishLabel = "Publish " + diff.count + (diff.count === 1 ? " change" : " changes");
+    function prices(code) {
+      const row = draft.rows[code];
+      return {
+        buy: rates.formatSpot(rates.buyPrice(row.mid, row.spread, draft.buyMargin)),
+        sell: rates.formatSpot(rates.sellPrice(row.mid, row.spread, draft.sellMargin))
+      };
+    }
+    function rowView(code) {
+      const row = draft.rows[code];
+      if (!row) return null;
+      const quote = prices(code);
+      if (can && openCode === code) {
+        const spreadShown = spreadText != null ? spreadText : rates.percentNumber(row.spread != null ? row.spread : draft.buyMargin);
+        const feedMid = feed[code];
+        return /*#__PURE__*/React.createElement("div", {
+          key: code,
+          className: "phone-rate-edit",
+          "data-code": code
+        }, /*#__PURE__*/React.createElement("div", {
+          className: "phone-rate-edit-h"
+        }, /*#__PURE__*/React.createElement("b", null, code, ", ", rates.currencyName(code)), /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "phone-rate-done",
+          onClick: () => {
+            commitSpot(code);
+            setOpenCode(null);
+            setSpreadText(null);
+          }
+        }, "Done")), /*#__PURE__*/React.createElement("div", {
+          className: "phone-rate-two"
+        }, /*#__PURE__*/React.createElement("label", null, "Spot, CAD per 1", row.manual ? /*#__PURE__*/React.createElement("span", {
+          className: "phone-rate-pin"
+        }, "Set by hand") : null, /*#__PURE__*/React.createElement("input", {
+          inputMode: "decimal",
+          "aria-label": "Spot for " + code,
+          value: spotText,
+          onChange: e => setSpotText(e.target.value),
+          onBlur: () => commitSpot(code)
+        })), /*#__PURE__*/React.createElement("label", null, "Spread for ", code, /*#__PURE__*/React.createElement("span", {
+          className: "phone-rate-pct"
+        }, /*#__PURE__*/React.createElement("input", {
+          inputMode: "decimal",
+          "aria-label": "Spread for " + code,
+          value: spreadShown,
+          onChange: e => applySpread(code, e.target.value)
+        }), /*#__PURE__*/React.createElement("span", null, "%")))), /*#__PURE__*/React.createElement("div", {
+          className: "phone-rate-res"
+        }, /*#__PURE__*/React.createElement("span", {
+          className: "is-buy"
+        }, "We buy ", quote.buy, " CAD"), /*#__PURE__*/React.createElement("span", {
+          className: "is-sell"
+        }, "We sell ", quote.sell, " CAD")), /*#__PURE__*/React.createElement("p", {
+          className: "phone-rate-hint"
+        }, feedMid > 0 ? "Spot set by hand stays within 2% of the feed." : "No feed rate is loaded, so this spot is not checked against one.", clampNote ? " " + clampNote : "", feedMid > 0 ? /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          className: "phone-rate-feed",
+          onClick: () => {
+            setDraft(current => patchRow(current, code, {
+              mid: rates.clampSpot(feedMid, feedMid).value,
+              manual: false
+            }));
+            setSpotText(rates.formatSpot(feedMid));
+            setClampNote("");
+          }
+        }, "Use feed spot") : null));
+      }
+      return /*#__PURE__*/React.createElement("div", {
+        key: code,
+        className: "phone-rate-row" + (row.show === false ? " is-off" : ""),
+        "data-code": code
+      }, can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-grip",
+        "aria-label": "Drag " + code + " to reorder",
+        onPointerDown: e => onGrip(e, code)
+      }, "\u283F") : null, can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-main",
+        onClick: () => {
+          setOpenCode(code);
+          setSpotText(rates.formatSpot(row.mid));
+          setSpreadText(null);
+          setClampNote("");
+        }
+      }, /*#__PURE__*/React.createElement("b", null, code), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", rates.formatSpot(row.mid))) : /*#__PURE__*/React.createElement("span", {
+        className: "phone-rate-main"
+      }, /*#__PURE__*/React.createElement("b", null, code), /*#__PURE__*/React.createElement("small", null, rates.currencyName(code), " \xB7 spot ", rates.formatSpot(row.mid))), /*#__PURE__*/React.createElement("span", {
+        className: "phone-rate-px"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "is-buy"
+      }, "Buy ", quote.buy), /*#__PURE__*/React.createElement("span", {
+        className: "is-sell"
+      }, "Sell ", quote.sell)), can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-tg" + (row.show === false ? " is-off" : ""),
+        role: "switch",
+        "aria-checked": row.show !== false,
+        "aria-label": code + " on the board",
+        onClick: () => setDraft(current => patchRow(current, code, {
+          show: row.show === false
+        }))
+      }, /*#__PURE__*/React.createElement("i", null)) : null);
+    }
+    const list = (codes, title, meta) => /*#__PURE__*/React.createElement("section", {
+      className: "phone-rate-sec"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-sec-h"
+    }, /*#__PURE__*/React.createElement("span", null, title), meta ? /*#__PURE__*/React.createElement("span", null, meta) : null), /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-list"
+    }, codes.map(rowView)));
+    let body;
+    if (!can || mode === "edit") {
+      body = /*#__PURE__*/React.createElement(React.Fragment, null, can ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+        className: "phone-seg",
+        role: "tablist"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: mode === "edit" ? "phone-seg-btn on" : "phone-seg-btn",
+        onClick: () => setMode("edit")
+      }, "Edit"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: mode === "preview" ? "phone-seg-btn on" : "phone-seg-btn",
+        onClick: () => setMode("preview")
+      }, "Public preview")), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-mg"
+      }, [["buyMargin", "Buy margin, under spot"], ["sellMargin", "Sell margin, over spot"]].map(([key, label]) => /*#__PURE__*/React.createElement("div", {
+        key: key,
+        className: "phone-rate-box"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-k"
+      }, label), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-step"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-label": "Lower " + label,
+        onClick: () => setDraft(current => ({
+          ...current,
+          [key]: rates.stepMargin(current[key], -1)
+        }))
+      }, "\u2212"), /*#__PURE__*/React.createElement("b", null, rates.formatPercent(draft[key])), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-label": "Raise " + label,
+        onClick: () => setDraft(current => ({
+          ...current,
+          [key]: rates.stepMargin(current[key], 1)
+        }))
+      }, "+")))))) : null, /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-lock"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: diff.count > 0 && can ? "is-warn" : ""
+      }, /*#__PURE__*/React.createElement("i", null), status), can ? /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-rate-lockbtn",
+        "aria-pressed": !!locked,
+        "aria-label": locked ? "Rates locked in this browser" : "Lock rates in this browser",
+        onClick: onToggleLock
+      }, locked ? "Locked" : "Lock") : null), feedNote ? /*#__PURE__*/React.createElement("p", {
+        className: "phone-rate-banner",
+        role: "alert"
+      }, feedNote) : null, publishError && !confirm ? /*#__PURE__*/React.createElement("p", {
+        className: "phone-rate-banner",
+        role: "alert"
+      }, publishError) : null, list(home, "On your homepage, top 6", can ? "Drag to reorder" : ""), rest.length ? list(rest, "Rate board page only", "") : null);
+    } else {
+      const six = rates.homeSix(draft.rows, draft.order);
+      const note = rates.previewNote(draft.rows, draft.order);
+      body = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+        className: "phone-seg",
+        role: "tablist"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-seg-btn",
+        onClick: () => setMode("edit")
+      }, "Edit"), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "phone-seg-btn on",
+        onClick: () => setMode("preview")
+      }, "Public preview")), /*#__PURE__*/React.createElement("p", {
+        className: "phone-rate-hint"
+      }, "What your homepage will show after you publish. Not live yet."), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-board"
+      }, /*#__PURE__*/React.createElement("h3", null, /*#__PURE__*/React.createElement("span", null, "TODAY'S RATES"), /*#__PURE__*/React.createElement("span", null, "CAD")), /*#__PURE__*/React.createElement("div", {
+        className: "phone-rate-board-r is-hd"
+      }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("span", null, "We buy"), /*#__PURE__*/React.createElement("span", null, "We sell")), six.map(code => {
+        const quote = prices(code);
+        return /*#__PURE__*/React.createElement("div", {
+          key: code,
+          className: "phone-rate-board-r"
+        }, /*#__PURE__*/React.createElement("b", null, code), /*#__PURE__*/React.createElement("span", null, quote.buy), /*#__PURE__*/React.createElement("span", null, quote.sell));
+      }), note ? /*#__PURE__*/React.createElement("p", null, note) : null));
+    }
+    const sticky = can ? /*#__PURE__*/React.createElement(shell.StickyAction, {
+      label: publishLabel,
+      disabled: diff.count === 0 || publishing,
+      disabledReason: diff.count === 0 ? "Nothing new to publish." : "",
+      onClick: () => {
+        setPublishError("");
+        setConfirm(true);
+      }
+    }) : null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-rates",
+      "data-phone-rates": "",
+      "data-can-publish": can ? "yes" : "no"
+    }, /*#__PURE__*/React.createElement(shell.Screen, {
+      app: "rates",
+      title: "Rates",
+      sticky: sticky
+    }, body), confirm ? ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "phone-task fixed inset-0",
+      "data-app": "rates",
+      style: {
+        background: "var(--cd-scrim)",
+        zIndex: 9200
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": "Publish rates?",
+      className: "phone-task-sheet phone-rate-sheet"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-rate-sheet-h"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-rate-back",
+      onClick: () => {
+        if (!publishing) setConfirm(false);
+      }
+    }, "Back"), /*#__PURE__*/React.createElement("h2", null, "Publish rates?"), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
+      className: "phone-task-body"
+    }, /*#__PURE__*/React.createElement("p", null, "These go to your website and rate board. Customers see them within about a minute."), /*#__PURE__*/React.createElement("ul", {
+      className: "phone-rate-chg"
+    }, diff.lines.map(line => /*#__PURE__*/React.createElement("li", {
+      key: line.label
+    }, /*#__PURE__*/React.createElement("span", null, line.label), /*#__PURE__*/React.createElement("b", null, line.detail)))), /*#__PURE__*/React.createElement("p", {
+      className: "phone-rate-hint"
+    }, "Publishing is saved with your name and the time. Only managers and admins can publish."), publishError ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-rate-banner",
+      role: "alert"
+    }, publishError) : null), /*#__PURE__*/React.createElement("div", {
+      className: "phone-task-foot"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-task-go",
+      disabled: publishing,
+      onClick: publishNow
+    }, publishing ? "Publishing" : "Publish now")))), document.body) : null);
+  }
+  window.CDOS.PhoneRates = PhoneRates;
 })();
 
 /* ---- os-src/cdos-os.jsx ---- */
@@ -66446,6 +67212,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return false;
       }
     });
+    /* Phone Rates replaces the Rate Board iframe only at the phone
+       breakpoint. Wider than that, the iframe stays the desktop app. */
+    const [phoneLayout, setPhoneLayout] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 430px)').matches);
+    useEffect(() => {
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhoneLayout(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
     const [opMenu, setOpMenu] = useState(false);
     const [deskLocked, setDeskLocked] = useState(false); // B · session lock (PIN unlock)
     const [handover, setHandover] = useState(false); // C · operator handover
@@ -67916,10 +68692,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     function renderApp(id) {
       switch (baseApp(id)) {
         case 'rates':
-          return /*#__PURE__*/React.createElement("iframe", {
-            src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
-            title: "Rate Board"
-          });
+          {
+            if (phoneLayout && window.CDOS.PhoneRates) {
+              const PhoneRates = window.CDOS.PhoneRates;
+              return /*#__PURE__*/React.createElement(PhoneRates, {
+                me: me,
+                srvUser: srvUser,
+                settings: settings,
+                locked: locked,
+                onToggleLock: toggleLock
+              });
+            }
+            return /*#__PURE__*/React.createElement("iframe", {
+              src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
+              title: "Rate Board"
+            });
+          }
         case 'telegraph':
           return /*#__PURE__*/React.createElement(Telegraph, {
             settings: settings,
@@ -68250,11 +69038,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        only when the server says Twilio is set up — smsConfigured on
        the session, the same flag sendSms uses. Branches invents cash
        in the browser and never reads /api/desk/branches. Assistant
-       calls window.claude and has no model API. Both stay off the
+       calls window.claude and has no model API. Pricing's list,
+       spread, and publish live on phone Rates; fee, floor, rounding,
+       and the simulator stay on the computer. All three stay off the
        phone. Store is the same door as the desktop edge rail, which
        is not an app-bar id. */
     const phoneAllowed = visibleApps.filter(id => {
-      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant') return false;
+      if (phonePrimary.has(id) || id === 'branches' || id === 'assistant' || id === 'pricing') return false;
       if (id === 'telegraph') return !!(srvUser && srvUser.smsConfigured);
       return true;
     });
