@@ -174,9 +174,9 @@ for (const width of [360, 390]) {
     await expect(page.locator("[data-phone-client]")).toBeFocused();
     await expect(page.locator('.fixed.inset-0 input[inputmode="decimal"]').first()).toHaveValue("500");
     await expect(page.locator(".cd-tx-receive")).toHaveText(quoted);
-    expect(quoted).toMatch(/^\d[\d,]*\.\d{2}$/);
+    expect(quoted).toBe("671.80");
     await expect(page.locator(".fixed.inset-0")).toContainText("500.00 USD");
-    await expect(page.locator(".fixed.inset-0")).toContainText(`${quoted} CAD`);
+    await expect(page.locator(".fixed.inset-0")).toContainText("671.80 CAD");
     await page.screenshot({ path: `${SHOTS}/rates_deal_${width}.png` });
 
     /* Customer gets is the quote this screen asked the server for.
@@ -226,6 +226,10 @@ for (const width of [360, 390]) {
     await expect(page.getByLabel("Find a currency")).toBeVisible();
     const skels = page.locator(".phone-rates-skel");
     await expect(skels).toHaveCount(6);
+    /* The window fades in at scale 0.965. A 44px row measures 42
+       until that scale is gone. */
+    const ratesWin = page.locator("#desktop .win:has(.phone-rates)");
+    await expect.poll(async () => ratesWin.evaluate((el) => getComputedStyle(el).transform)).toBe("none");
     const skelBox = await skels.first().boundingBox();
     expect(skelBox && Math.round(skelBox.height)).toBe(44);
     const searchBox = await page.getByLabel("Find a currency").boundingBox();

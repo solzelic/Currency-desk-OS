@@ -578,7 +578,15 @@ authenticated narrative dashboard.
 `POST /api/quotes`. The sheet shows that customer rate at four
 decimals. Customer gets stays the server output, not a multiply of
 the rounded rate. The list stays four decimals. The fee note is
-"The fee is set in Pricing."
+"The fee is set in Pricing." Start this deal opens New transaction
+with the typed 500 USD and that server output at two decimals
+(671.80 CAD on the demo board). While the board is loading, the
+title, a status line, the search, and six 44px table rows stay on
+screen. A failed load says "Rates did not load." and Try again uses
+the Rates accent. An empty board says "Add currencies in Pricing
+to see rates here." An owner also gets an outline Open Pricing
+button. The selected quote segment uses the Rates accent with
+white text.
 Currency names are the catalog in `yorkfx-converter.js` (`US
 Dollar`, `Saudi Riyal`), not `Intl.DisplayNames`. Pricing #117's
 phone list still asks DisplayNames; it should read this same table.
@@ -599,12 +607,13 @@ reads CAD. Tapping a row quotes it. Start this deal opens the
 existing New transaction with that currency, side, amount, and the
 server output, and the cursor on Client. New deal starts a deal
 with no quote. Amounts go through `formatPhoneMoney`. There is no
-Example data tag. A board with nothing to quote says so. Feed,
+Example data tag. A board with nothing to quote says "Add currencies
+in Pricing to see rates here." An owner also gets Open Pricing. Feed,
 margins, and publish stay on the desktop Rate Board and in Pricing.
 An owner or a manager gets an Edit link to Pricing. A cashier does
-not. A selected quote option is neutral; the primary button takes
-the Rates accent. Wider than 430px, the Rate Board iframe is
-unchanged.
+not. A selected quote option uses the Rates accent with white text,
+and the primary button takes that accent. Wider than 430px, the Rate
+Board iframe is unchanged.
 
 **2026-10-12**, desktop cheque number. The Cheques picture missed
 by 29 pixels on both attempts of Actions run 38193394311, and by
