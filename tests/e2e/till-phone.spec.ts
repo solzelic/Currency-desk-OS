@@ -299,8 +299,15 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
     expect(cardBox!.metaLeft).toBeLessThanOrEqual(1);
     expect(cardBox!.metaSize).toBe("13px");
     expect(cardBox!.metaColor).toBe(cardBox!.muted);
-    expect(cardBox!.meta).toMatch(/A\. Singh, since \d{1,2}:\d{2} [AP]M/);
-    expect(cardBox!.meta).not.toMatch(/a\.singh/);
+    const opener = await page.evaluate(async () => {
+      const res = await fetch("/api/ledger/till-session", { credentials: "same-origin" });
+      if (!res.ok) return "";
+      const body = await res.json();
+      return String((body.session && body.session.openedBy) || "");
+    });
+    const spoken = /j\.masri/i.test(opener) ? "J. Masri" : "A. Singh";
+    expect(cardBox!.meta).toMatch(new RegExp(spoken.replace(".", "\\.") + ", since \\d{1,2}:\\d{2} [AP]M"));
+    expect(cardBox!.meta).not.toMatch(/[a-z]\.[a-z]+/);
     expect(cardBox!.meta).toMatch(hasLedger
       ? /Session #\d+ open, \d+ of \d+ counted/
       : /, \d+ of \d+ counted/);
