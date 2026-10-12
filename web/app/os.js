@@ -22734,7 +22734,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }), " Capture")))))));
   }
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
+  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Permanent Resident Card'];
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
@@ -26215,45 +26215,35 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         kind: file && file.kind || rec && rec.kind || 'individual'
       };
       try {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          throw new Error('CurrencyDesk could not reach the server. Nothing was saved.');
+        }
         const shared = window.CDOS.ClientRecords;
         if (shared && !shared.serverBacked()) await shared.load(true);
-        if (shared && shared.serverBacked()) {
-          let clientId = file && file.clientId;
-          const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-          if (!clientId) {
-            const created = await shared.open(name, payload);
-            if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
-            clientId = created.clientId;
-          } else if (file.primaryDocumentId && api) {
-            await api.updateDocument(clientId, file.primaryDocumentId, {
-              docType: payload.idType,
-              docNumber: payload.idNum,
-              issuedOn: payload.idIssued,
-              expiresOn: payload.idExpiry,
-              ...(payload.photo ? {
-                scanDataUrl: payload.photo
-              } : {})
-            });
-            await shared.load(true);
-          } else {
-            await shared.record(clientId, payload);
-          }
-          setClients(prev => shared.project(prev));
-        } else {
-          const today = new Date().toISOString().slice(0, 10);
-          setClients(c => ({
-            ...c,
-            [name]: {
-              ...(c[name] || {}),
-              idType: payload.idType,
-              idNum: payload.idNum,
-              idIssued: payload.idIssued || '',
-              idExpiry: payload.idExpiry,
-              photo: payload.photo,
-              updatedAt: today
-            }
-          }));
+        if (!shared || !shared.serverBacked()) {
+          throw new Error('Couldn\'t load clients. Nothing was saved.');
         }
+        let clientId = file && file.clientId;
+        const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+        if (!clientId) {
+          const created = await shared.open(name, payload);
+          if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
+          clientId = created.clientId;
+        } else if (file.primaryDocumentId && api) {
+          await api.updateDocument(clientId, file.primaryDocumentId, {
+            docType: payload.idType,
+            docNumber: payload.idNum,
+            issuedOn: payload.idIssued,
+            expiresOn: payload.idExpiry,
+            ...(payload.photo ? {
+              scanDataUrl: payload.photo
+            } : {})
+          });
+          await shared.load(true);
+        } else {
+          await shared.record(clientId, payload);
+        }
+        setClients(prev => shared.project(prev));
         log && log('ID document recorded', name + ' · ' + payload.idType);
         onDone();
       } catch (e) {
@@ -26271,7 +26261,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       onMouseDown: onClose
     }, /*#__PURE__*/React.createElement("div", {
       role: "dialog",
-      "aria-label": "Record the ID",
+      "aria-label": "Record the ID for " + name,
       onMouseDown: e => e.stopPropagation(),
       className: "phone-task-sheet cd-tx-record-card w-full flex flex-col",
       style: {
@@ -26303,23 +26293,23 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[15px] font-semibold leading-tight",
+      className: "text-[15px] font-semibold leading-tight truncate",
       style: {
         color: CD.ink
       }
-    }, "Record the ID"), /*#__PURE__*/React.createElement("div", {
+    }, "Record the ID for ", name), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-record-sub min-w-0",
       style: {
         color: CD.mute
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-record-sub-long text-[11.5px] truncate"
-    }, name, " \xB7 type, number, and expiry go on their file"), /*#__PURE__*/React.createElement("div", {
+    }, "Type, number, and expiry go on their file"), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-record-sub-short text-[11.5px]"
     }, "Type, number and expiry"))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
-      "aria-label": "Back to the deal",
+      "aria-label": "Back to client",
       className: "phone-task-close grid place-items-center flex-none",
       style: {
         width: 44,
@@ -26372,7 +26362,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.mute,
         minHeight: 44
       }
-    }, "Back to the deal"), /*#__PURE__*/React.createElement("div", {
+    }, "Back to client"), /*#__PURE__*/React.createElement("div", {
       className: "flex-1"
     }), /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -48167,6 +48157,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       return done.catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', err && err.message || err));
     };
     const [saving, setSaving] = useState(false);
+    const [saveErr, setSaveErr] = useState('');
     /* Escape hatch: create the contact without running (or paying for) a
        verification.
         This ONE path waits for the server, unlike the mid-transaction
@@ -48178,18 +48169,38 @@ ${(filing.map || []).map(blockHTML).join('')}
        warning missing, which is the exact defect these records moved to
        the server to end. One round-trip at the end of the wizard, and
        the button says it is working. */
+    /* The server first. The browser copy is written only after the
+       file exists there. A refusal is the server's own sentence. */
     const saveManual = async () => {
       const nm = name.trim();
       if (!nm || saving) return;
-      writeContact(nm);
+      setSaveErr('');
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setSaveErr('CurrencyDesk could not reach the server. Nothing was saved.');
+        return;
+      }
+      const shared = window.CDOS.ClientRecords;
+      if (!shared || !shared.serverBacked()) {
+        setSaveErr('Couldn\'t load clients. Nothing was saved.');
+        return;
+      }
       setSaving(true);
       try {
-        await publishContact(nm);
-      } finally {
+        const created = await shared.open(nm, {
+          kind,
+          phone: phone.trim(),
+          email: email.trim(),
+          photo
+        });
+        if (!created || !created.clientId) throw new Error('CurrencyDesk could not create that contact. Nothing was saved.');
+        writeContact(nm);
         setSaving(false);
+        if (onDone) onDone(nm);
+        onClose();
+      } catch (e) {
+        setSaving(false);
+        setSaveErr(e && e.message || 'CurrencyDesk could not create that contact. Nothing was saved.');
       }
-      if (onDone) onDone(nm);
-      onClose();
     };
     /* The choose step's button used to start a check, wait, and then write
        an invented address and ID number onto the contact as "Pulled from
@@ -48525,7 +48536,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "send",
       s: 11,
       c: CD.faint
-    }), " Persona is not connected yet. Saving the contact does not send a check.")), step === 'choose' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
+    }), " Persona is not connected yet. Saving the contact does not send a check."), saveErr && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "text-[12.5px] mt-3",
+      style: {
+        color: CD.flag
+      }
+    }, saveErr)), step === 'choose' && /*#__PURE__*/React.createElement(VerifyChooserBody, {
       subject: name.trim() || 'this contact',
       hasId: !!photo,
       verified: false,
@@ -48652,12 +48669,18 @@ ${(filing.map || []).map(blockHTML).join('')}
         background: CD.panel
       }
     }, step === 'id' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      type: "button",
       onClick: () => setStep('details'),
-      className: "text-[12px] font-medium",
+      className: "phone-skip-id text-[12px] font-medium",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        minHeight: 44,
+        padding: '0 14px',
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9,
+        background: 'transparent'
       }
-    }, "Skip \u2014 add ID later"), /*#__PURE__*/React.createElement("div", {
+    }, "Skip, add ID later"), /*#__PURE__*/React.createElement("div", {
       className: "flex-1"
     }), /*#__PURE__*/React.createElement("button", {
       onClick: () => setStep('details'),
@@ -63148,13 +63171,19 @@ window.CDOS_PERSIST = (function () {
    New transaction on this screen.
 
    Layout, rows, chips, and money come from the shared phone shell
-   (docs/PHONE_SHELL.md). This file does not draw a second one. */
+   (docs/PHONE_SHELL.md). This file does not draw a second one.
+
+   The list is the server's client file. Ledger rows are not clients.
+   A document that exists only in this browser does not identify
+   anyone. /api/clients does not return a deal count or a last-deal
+   date, so the row does not invent either. */
 (function () {
   const {
     useState,
     useEffect,
     useMemo
   } = React;
+  const BRANCH_ZONE = "America/Toronto";
 
   /* 430px is the phone shell. Wider than that, the desktop list paints
      and this hook is false, so none of the markup below is mounted. */
@@ -63171,50 +63200,145 @@ window.CDOS_PERSIST = (function () {
     return on;
   }
 
-  /* The shell owns the formatter. Absent is an empty string, never
-     "0.00 CAD" for a deal the book could not value. */
-  function phoneMoney(amount, currency) {
-    const format = window.CDOS && (window.CDOS.formatPhoneMoney || window.CDOS.Phone && window.CDOS.Phone.formatMoney);
-    if (typeof format !== "function") return "";
-    return format(amount, currency) || "";
+  /* Calendar day in the branch zone. A YYYY-MM-DD string is never
+     parsed with Date: that parse is UTC midnight, which is the
+     previous evening in Toronto. toISOString() is the UTC day, so
+     9 PM in Toronto would already be tomorrow. */
+  function phoneBranchDay(at) {
+    const when = at instanceof Date ? at : new Date(at || Date.now());
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: BRANCH_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(when);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : "";
+    };
+    const year = pick("year");
+    const month = pick("month");
+    const day = pick("day");
+    if (!year || !month || !day) return "";
+    return year + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+  }
+  function shiftDay(ymd, delta) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ""));
+    if (!match) return "";
+    const utc = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    utc.setUTCDate(utc.getUTCDate() + delta);
+    return utc.toISOString().slice(0, 10);
   }
 
-  /* TODO: PR #100's displayIdStanding is the shared helper. Call it
-     when it is on this branch. Until then the same rule, locally:
-     type, number, and expiry on the document. The stored
-     verification word is ignored — ID checks are not connected, and
-     migration 019 copied "ID on file" into "verified". */
-  function phoneIdStanding(record, today) {
-    if (window.CDOS && typeof window.CDOS.displayIdStanding === "function") {
-      return window.CDOS.displayIdStanding(record, today);
-    }
+  /* `today` is already a branch calendar day. The word is Today,
+     Yesterday, or Mon D. It is not a clock. */
+  function seenWords(date, today) {
+    const day = String(date || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(today || ""))) return "";
+    if (day === today) return "Today";
+    if (day === shiftDay(today, -1)) return "Yesterday";
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const [, mo, dd] = day.split("-").map(Number);
+    return months[mo - 1] + " " + dd;
+  }
+
+  /* Day word for a calendar date, judged on the branch day of `at`.
+     PR #128's session business date replaces the wall clock once that
+     branch is underneath this one. Until then the branch zone is
+     America/Toronto, not the machine zone and not UTC. */
+  function phoneDayWord(date, at) {
+    return seenWords(date, phoneBranchDay(at));
+  }
+  function tradingDay() {
+    return phoneBranchDay(new Date());
+  }
+  function isHealthCard(type) {
+    return /health\s*card/i.test(String(type || ""));
+  }
+
+  /* #100's displayIdStanding is the shared label. `ok` is the green
+     tone that helper uses; this screen's badge paints green as `pos`.
+     Until that helper is on the branch, the same outcomes live here:
+     a health card is not ID, a blank number is not ID, a blank expiry
+     is not current, and the expiry date itself is still current.
+     A record the server did not return is Missing ID even when this
+     browser is holding a document for the name. */
+  function paintStanding(standing) {
+    standing = standing || {};
+    const tone = standing.tone === "ok" || standing.tone === "pos" ? "pos" : "warn";
+    const reason = standing.reason || standing.detail || "";
+    return Object.assign({}, standing, {
+      tone: tone,
+      reason: reason
+    });
+  }
+  function localStanding(record, today) {
     record = record || {};
     const type = String(record.idType || "").trim();
     const num = String(record.idNum || "").trim();
     let day = today ? String(today).slice(0, 10) : "";
-    if (!day) {
-      try {
-        day = String(window.CDOS.businessDate()).slice(0, 10);
-      } catch (e) {
-        day = "";
-      }
-    }
-    if (!type || !num) return {
+    if (!day) day = tradingDay();
+    if (!type) return {
       status: "missing",
       label: "Missing ID",
+      reason: "No ID on file",
+      tone: "warn"
+    };
+    if (isHealthCard(type)) return {
+      status: "missing",
+      label: "Missing ID",
+      reason: "Health cards can't be used as ID",
+      tone: "warn"
+    };
+    if (!num) return {
+      status: "missing",
+      label: "Missing ID",
+      reason: "No ID number",
       tone: "warn"
     };
     const expiry = record.idExpiry ? String(record.idExpiry).slice(0, 10) : "";
-    if (expiry && day && expiry < day) return {
-      status: "expired",
-      label: "Expired",
+    if (!expiry) return {
+      status: "missing",
+      label: "Missing ID",
+      reason: "ID has no expiry date",
       tone: "warn"
     };
+    if (!day) return {
+      status: "missing",
+      label: "Missing ID",
+      reason: "No ID on file",
+      tone: "warn"
+    };
+    if (expiry < day) {
+      return {
+        status: "expired",
+        label: "Expired",
+        reason: "Past its expiry",
+        tone: "warn"
+      };
+    }
     return {
       status: "identified",
       label: "Identified",
+      reason: "",
       tone: "pos"
     };
+  }
+  function phoneIdStanding(record, today) {
+    record = record || {};
+    if (!record.clientId && !record.serverBacked) {
+      return {
+        status: "missing",
+        label: "Missing ID",
+        reason: "No ID on file",
+        tone: "warn"
+      };
+    }
+    if (window.CDOS && typeof window.CDOS.displayIdStanding === "function") {
+      return paintStanding(window.CDOS.displayIdStanding(record, today));
+    }
+    return paintStanding(localStanding(record, today));
   }
   function shell() {
     const phone = window.CDOS && window.CDOS.Phone;
@@ -63223,80 +63347,25 @@ window.CDOS_PERSIST = (function () {
     }
     return phone;
   }
-  function shiftDay(ymd, delta) {
-    const [y, m, d] = ymd.split("-").map(Number);
-    const dt = new Date(y, m - 1, d + delta);
-    const mm = String(dt.getMonth() + 1).padStart(2, "0");
-    const dd = String(dt.getDate()).padStart(2, "0");
-    return dt.getFullYear() + "-" + mm + "-" + dd;
-  }
-  function seenWords(date, today) {
-    const day = String(date || "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
-    if (!today) return day;
-    if (day === today) return "Today";
-    if (day === shiftDay(today, -1)) return "Yesterday";
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const [, mo, dd] = day.split("-").map(Number);
-    return months[mo - 1] + " " + dd;
-  }
   function initials(name) {
     return (name || "?").split(/[\s.]+/).filter(Boolean).map(part => part[0]).join("").slice(0, 2).toUpperCase();
   }
-  function homeCurrency() {
-    try {
-      const pack = window.CDOS.deskPack && window.CDOS.deskPack();
-      return pack && pack.homeCurrency || null;
-    } catch (e) {
-      return null;
-    }
-  }
-  function tradingDay() {
-    try {
-      return String(window.CDOS.businessDate()).slice(0, 10);
-    } catch (e) {
-      return "";
-    }
-  }
 
-  /* The last posted deal, not a lifetime total. The amount is the
-     home-currency leg when the book has one, otherwise the leg that
-     exists, with its own code. No leg means no figure. */
-  function lastDeal(rows, name, home, today) {
-    const mine = (rows || []).filter(row => row.customer === name && row.status !== "void");
-    if (!mine.length) return {
-      amount: "",
-      meta: "No deals yet",
-      when: "",
-      key: ""
-    };
-    mine.sort((a, b) => ((b.date || "") + " " + (b.time || "")).localeCompare((a.date || "") + " " + (a.time || "")));
-    const last = mine[0];
-    let amount = "";
-    if (home && last.inCcy === home && last.inAmt != null && last.inAmt !== "") amount = phoneMoney(last.inAmt, home);else if (home && last.outCcy === home && last.outAmt != null && last.outAmt !== "") amount = phoneMoney(last.outAmt, home);else if (last.inCcy && last.inAmt != null && last.inAmt !== "") amount = phoneMoney(last.inAmt, last.inCcy);else if (last.outCcy && last.outAmt != null && last.outAmt !== "") amount = phoneMoney(last.outAmt, last.outCcy);
-    const when = seenWords(last.date, today);
-    const deals = mine.length === 1 ? "1 deal" : mine.length + " deals";
-    return {
-      amount,
-      meta: when ? deals + " · " + when : deals,
-      when,
-      key: (last.date || "") + " " + (last.time || "")
-    };
-  }
-
-  /* Line 2 is the last deal ("2 deals · Today", or "No deals yet").
-     "Individual" is not said. A business says Business in front. */
+  /* Line 2 is the ID, not a deal count. The client API does not
+     return how many deals someone has done or when the last one was,
+     and counting ledger rows would pretend the loaded window is the
+     whole book. A business says Business in front. */
   function rowSubtitle(person) {
-    const rest = person.deal.meta || "No deals yet";
+    const standing = person.standing || {};
     const business = person.rec.kind === "corporate" || person.rec.kind === "business";
-    return business ? "Business · " + rest : rest;
+    let line = "";
+    if (standing.status === "missing") line = standing.reason || "No ID on file";else if (standing.status === "expired") line = standing.reason || "Past its expiry";else if (person.rec.idType && !isHealthCard(person.rec.idType)) line = String(person.rec.idType);
+    if (business) return line ? "Business · " + line : "Business";
+    return line;
   }
-  function peopleOf(rows, clients, store) {
+  function peopleOf(clients, store) {
     const mode = store.mode();
     if (mode === "unknown") return [];
-    /* A failed load does not invent people from the ledger. The only
-       list it may show is the client blob this phone already held. */
-    const sourceRows = store.trouble() ? [] : rows;
     const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
     const out = [];
     const seen = {};
@@ -63311,29 +63380,53 @@ window.CDOS_PERSIST = (function () {
           rec: desk
         });
       });
-    } else {
-      Object.keys(clients || {}).forEach(name => {
-        if (seen[name]) return;
-        seen[name] = true;
-        out.push({
-          name,
-          rec: clients[name] || {}
-        });
-      });
+      return out;
     }
-    (sourceRows || []).forEach(row => {
-      const name = row.customer;
-      if (!name || name === "—" || row.status === "void" || seen[name]) return;
+    /* A failed load may show the copy this phone already held. It
+       does not invent people from ledger rows. */
+    Object.keys(clients || {}).forEach(name => {
+      if (!name || seen[name]) return;
       seen[name] = true;
       out.push({
         name,
-        rec: (clients || {})[name] || {}
+        rec: clients[name] || {}
       });
     });
     return out;
   }
+  function fold(value) {
+    return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  }
+
+  /* Digits only. A leading 1 on an 11-digit number is the country
+     code, so 1-416-555-0199 and (416) 555-0199 are the same phone. */
+  function phoneDigits(value) {
+    let digits = String(value || "").replace(/\D/g, "");
+    if (digits.length === 11 && digits.charAt(0) === "1") digits = digits.slice(1);
+    return digits;
+  }
+  function idNumbers(rec) {
+    const out = [];
+    const push = (type, num) => {
+      if (!num || isHealthCard(type)) return;
+      out.push(String(num));
+    };
+    push(rec.idType, rec.idNum);
+    (rec.ids || []).forEach(doc => push(doc.type, doc.num));
+    (rec.documents || []).forEach(doc => push(doc.docType || doc.type, doc.docNumber || doc.num));
+    return out;
+  }
+  function matchesQuery(person, needle) {
+    const rec = person.rec || {};
+    const folded = fold(needle);
+    if (!folded) return true;
+    if (fold(person.name).indexOf(folded) !== -1) return true;
+    if (fold(rec.email).indexOf(folded) !== -1) return true;
+    const want = phoneDigits(needle);
+    if (want && phoneDigits(rec.phone).indexOf(want) !== -1) return true;
+    return idNumbers(rec).some(num => fold(num).indexOf(folded) !== -1);
+  }
   function PhoneClients({
-    rows,
     clients,
     canEdit,
     store,
@@ -63347,30 +63440,43 @@ window.CDOS_PERSIST = (function () {
     const [q, setQ] = useState("");
     const [filter, setFilter] = useState("all");
     const [retryErr, setRetryErr] = useState("");
+    const [online, setOnline] = useState(() => navigator.onLine !== false);
+    const [slow, setSlow] = useState(false);
     const today = tradingDay();
-    const home = homeCurrency();
     const mode = store.mode();
-    const trouble = store.trouble();
     const loading = mode === "unknown";
-    /* A 5xx, or a reload that threw, is a failed load. A desk that was
-       never server-backed is not: that mode has an empty trouble string. */
-    const loadFailed = mode !== "server" && !!(trouble || retryErr);
-    const people = useMemo(() => peopleOf(rows, clients, store).map(person => {
+    /* Anything that is not the server's list is a failed load: offline,
+       a 401, a network error, a 5xx. A desk that never got an answer
+       is still loading, and it is not a list. */
+    const loadFailed = !loading && mode !== "server";
+    const canWrite = mode === "server" && online && !retryErr;
+    useEffect(() => {
+      const up = () => setOnline(true);
+      const down = () => setOnline(false);
+      window.addEventListener("online", up);
+      window.addEventListener("offline", down);
+      return () => {
+        window.removeEventListener("online", up);
+        window.removeEventListener("offline", down);
+      };
+    }, []);
+    useEffect(() => {
+      if (!loading) {
+        setSlow(false);
+        return undefined;
+      }
+      const timer = setTimeout(() => setSlow(true), 20000);
+      return () => clearTimeout(timer);
+    }, [loading]);
+    const people = useMemo(() => peopleOf(clients, store).map(person => {
       const standing = phoneIdStanding(person.rec, today);
-      const deal = lastDeal(rows, person.name, home, today);
       return Object.assign({}, person, {
-        standing,
-        deal
+        standing: standing
       });
-    }), [rows, clients, store, mode, today, home]);
+    }), [clients, store, mode, today]);
     const matched = useMemo(() => {
-      const needle = q.trim().toLowerCase();
-      return people.filter(person => {
-        if (!needle) return true;
-        const rec = person.rec || {};
-        const blob = [person.name, rec.phone, rec.email, rec.idNum].join(" ").toLowerCase();
-        return blob.includes(needle);
-      });
+      const needle = q.trim();
+      return people.filter(person => matchesQuery(person, needle));
     }, [people, q]);
     const counts = useMemo(() => {
       const tally = {
@@ -63386,7 +63492,7 @@ window.CDOS_PERSIST = (function () {
     }, [matched]);
     const shown = useMemo(() => {
       const list = filter === "all" ? matched : matched.filter(person => person.standing.status === filter);
-      return list.slice().sort((a, b) => (b.deal.key || "").localeCompare(a.deal.key || "") || a.name.localeCompare(b.name));
+      return list.slice().sort((a, b) => a.name.localeCompare(b.name));
     }, [matched, filter]);
 
     /* A failed load has no trustworthy counts. "All 0" would read as
@@ -63420,13 +63526,16 @@ window.CDOS_PERSIST = (function () {
       }
     };
     const addClient = () => {
-      if (!loadFailed) onAdd();
+      if (canWrite) onAdd();
     };
-    const sticky = canEdit && state !== "loading" && state !== "empty" ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
+    const recordId = name => {
+      if (canWrite && typeof onRecordId === "function") onRecordId(name);
+    };
+    const sticky = canEdit && state !== "empty" ? /*#__PURE__*/React.createElement(Phone.StickyAction, {
       label: "Add client",
       onClick: addClient,
-      disabled: loadFailed,
-      disabledReason: loadFailed ? "Couldn't load clients. Try again before adding someone." : ""
+      disabled: !canWrite,
+      disabledReason: !canWrite ? "Couldn't load clients. Try again before adding someone." : ""
     }) : null;
     return /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "clients",
@@ -63447,43 +63556,52 @@ window.CDOS_PERSIST = (function () {
       className: "phone-clients-state",
       "data-phone-state": state,
       hidden: true
-    }), state === "loading" && /*#__PURE__*/React.createElement(Phone.LoadingState, {
+    }), state === "loading" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Phone.LoadingState, {
       rows: 4,
       label: "Loading clients"
-    }), state === "error" && /*#__PURE__*/React.createElement(Phone.ErrorState, {
+    }), slow ? /*#__PURE__*/React.createElement("p", {
+      className: "phone-slow",
+      role: "status"
+    }, "Waking the server up, this can take a minute.") : null), state === "error" && /*#__PURE__*/React.createElement("div", {
+      className: "phone-state-card",
+      role: "alert"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "Couldn't load clients",
       message: "Check the connection and try again.",
-      onRetry: retry
-    }), state === "empty" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      actionLabel: "Try again",
+      onAction: retry
+    })), state === "empty" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "No clients yet",
       message: "Add a client the first time they deal with you. Their ID stays on their file for next time.",
-      actionLabel: canEdit ? "Add client" : undefined,
-      onAction: canEdit ? onAdd : undefined
+      actionLabel: canEdit && canWrite ? "Add client" : undefined,
+      onAction: canEdit && canWrite ? addClient : undefined
     }), showingLocal && /*#__PURE__*/React.createElement("p", {
       className: "phone-stale",
       role: "status"
     }, "Showing the copy on this phone. It may be out of date."), saveErr && state !== "loading" && /*#__PURE__*/React.createElement("p", {
       className: "phone-stale",
       role: "alert"
-    }, saveErr), state === "nomatch" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
+    }, saveErr), retryErr && state !== "loading" && /*#__PURE__*/React.createElement("p", {
+      className: "phone-stale",
+      role: "alert"
+    }, retryErr), state === "nomatch" && /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: q.trim() ? "No match for " + q.trim() : "No one in this filter",
       message: q.trim() ? "Nothing in this list has that name, phone, or ID." : "Nothing in this list is in that group.",
       actionLabel: q.trim() ? "Clear search" : undefined,
       onAction: q.trim() ? () => setQ("") : undefined
     }), state === "list" && /*#__PURE__*/React.createElement(Phone.ListSection, {
       title: shown.length === 1 ? "1 contact" : shown.length + " contacts",
-      meta: "Last deal"
+      meta: "Identified"
     }, shown.map(person => {
       const needsId = person.standing.status === "missing" || person.standing.status === "expired";
-      const fixId = needsId && canEdit && typeof onRecordId === "function";
+      const fixId = needsId && canEdit && canWrite && typeof onRecordId === "function";
       return /*#__PURE__*/React.createElement(Phone.ListRow, {
         key: person.name,
         className: "phone-client-row id-" + person.standing.status + (fixId ? " has-chevron" : ""),
         title: person.name,
         subtitle: rowSubtitle(person),
-        amount: person.deal.amount || undefined,
         badge: {
-          tone: person.standing.tone === "pos" ? "pos" : "warn",
+          tone: person.standing.tone === "ok" || person.standing.tone === "pos" ? "pos" : "warn",
           label: person.standing.label
         },
         leading: /*#__PURE__*/React.createElement("span", {
@@ -63491,13 +63609,15 @@ window.CDOS_PERSIST = (function () {
           "aria-hidden": "true"
         }, initials(person.name)),
         chevron: fixId,
-        onClick: () => fixId ? onRecordId(person.name) : onOpen(person.name)
+        onClick: () => fixId ? recordId(person.name) : onOpen(person.name)
       });
     })));
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     usePhoneWidth,
     phoneIdStanding,
+    phoneDayWord,
+    phoneBranchDay,
     PhoneClients
   });
 })();

@@ -101,7 +101,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await page.locator('#appbar [data-app="clients"]').click();
   const clients = page.locator(".win.show.active");
   await clients.getByRole("button", { name: "New contact" }).click();
-  await page.getByRole("button", { name: "Skip — add ID later" }).click();
+  await page.getByRole("button", { name: "Skip, add ID later" }).click();
   await page.getByPlaceholder("Jane Doe").fill("Ada Chen");
   await page.getByText("Save without verifying").click();
   const file = page.getByTestId("client-identity");

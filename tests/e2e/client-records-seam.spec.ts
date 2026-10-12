@@ -194,7 +194,7 @@ async function openClientCard(page: Page, name: string) {
    the path most contacts are actually made through. */
 async function addContact(page: Page, name: string) {
   await page.getByRole("button", { name: /^New contact$/ }).click();
-  const skipId = page.getByText(/^Skip — add ID later$/);
+  const skipId = page.getByRole("button", { name: "Skip, add ID later" });
   if (await skipId.isVisible({ timeout: 5_000 }).catch(() => false)) await skipId.click();
   const field = page.getByPlaceholder("Jane Doe");
   await field.waitFor({ state: "visible", timeout: 15_000 });

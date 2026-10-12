@@ -200,34 +200,53 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   dialog.
 - **Phone Clients.** At 430px and under, Clients is a list a cashier
   can search before anything else. Chips are All, Missing ID, Expired,
-  and Identified — the same words as the row badge. A row is about
-  72px. Line 1 is the name and the last-deal amount. Line 2 is the
-  deal count and when (`2 deals · Today`). That when is a day word
-  (Today, Yesterday, or Oct 11). Clients does not print a clock. A
-  clock on this screen would go through `os-src/phone/format.js` and
-  read like 3:02 PM. A business says Business
-  in front of that. An individual does not say Individual. The ID
-  badge sits on the right of that line. That standing is read from
-  the document on file — type, number, and expiry — and a stored
-  “verified” word is ignored, because ID checks are not connected.
-  A Missing ID or Expired row has a chevron, and the tap opens the
-  same Record the ID sheet New transaction uses. An identified row
-  opens the client file. The one primary button is Add client. There
-  is no centre plus in the tab bar and no floating New transaction
-  on this screen. An amount goes through `formatPhoneMoney` and reads
-  with its currency code last (`1,765.05 CAD`). A figure the book
-  cannot answer is absent. A failed load with nothing cached says
-  "Couldn't load clients" and "Check the connection and try again."
-  The chips keep their words and drop the counts, so a zero does not
-  read as an empty book. Add client is disabled until that load
-  succeeds, so it cannot save a client that exists only in this
-  browser. If this phone is showing the copy it already held, the
-  list stays and a line above it says "Showing the copy on this
-  phone. It may be out of date." Add client opens the existing add
-  flow full screen. Wider than 430px, Clients is the desktop list it
-  already was, including New contact. Desktop still leaves New
-  contact enabled on that failure and can write the browser's own
-  copy; the phone does not.
+  and Identified — the same words as the row badge, and the list
+  header says Identified. A row is about 72px. Line 1 is the name.
+  Line 2 is the ID standing: the reason when the ID is missing
+  (`No ID on file`, `No ID number`, `ID has no expiry date`,
+  `Health cards can't be used as ID`), `Past its expiry` when it is
+  expired, or the document type when the client is Identified.
+  `/api/clients` does not return a deal count or a last-deal date,
+  so the row does not show either and does not count ledger rows.
+  A business says Business in front of that line. An individual does
+  not say Individual. Clients does not print a clock. A clock on this
+  screen would go through `os-src/phone/format.js` and read like
+  3:02 PM. A day word, when a server date is shown, uses the branch
+  calendar day in America/Toronto (`phoneDayWord`), not the UTC date,
+  so 9 PM in Toronto is still that Toronto day. The ID badge sits on
+  the right of line 2. Standing calls `displayIdStanding` when PR #100
+  is on the branch, and maps its `ok` tone to green. Until then the
+  same outcomes are local: a health card is not ID, a document with
+  no number is not ID, a blank expiry is not current, and the expiry
+  date itself is still Identified. A stored “verified” word is
+  ignored. A record that exists only in this browser is Missing ID.
+  The list is the server's clients. Ledger rows are not clients.
+  A Missing ID or Expired row has a chevron, and the tap opens Record
+  the ID for that client. The sheet names the client, does not offer
+  Health Card, and its close control says Back to client. An
+  identified row opens the client file. The one primary button is
+  Add client. There is no centre plus in the tab bar and no floating
+  New transaction on this screen. Search ignores accents and case,
+  compares phones by digits (a leading 1 on an 11-digit number is
+  dropped), and does not match a health card number. Any load that
+  is not the server's list is a failure, including offline, a 401,
+  and a network error. The error sits in a card and says "Couldn't
+  load clients" and "Check the connection and try again." The chips
+  keep their words and drop the counts. Add client and Record ID stay
+  disabled unless that load succeeded and the browser is online. A
+  save goes to the server first and is written locally only after
+  the server accepts it; the server's own error is shown. If this
+  phone is showing the copy it already held, the list stays and a
+  line above it says "Showing the copy on this phone. It may be out
+  of date." After 20 seconds still loading, the screen says "Waking
+  the server up, this can take a minute." Add client opens the
+  existing add flow full screen. Skip, add ID later is a 44px
+  secondary button. The empty-state button uses accent #3C3B78.
+  Wider than 430px, Clients is the desktop list it already was,
+  including New contact. Desktop still leaves New contact enabled
+  when the list did not load; the phone does not. A new contact from
+  the shared wizard still waits for the server before it writes the
+  browser copy.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -623,6 +642,20 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-12**, phone Clients load and ID standing. A phone list that
+did not come from the server is a failed load, including offline, a
+401, and a network error. Add client and Record ID stay disabled
+unless that load succeeded and the browser is online. A save reaches
+the server before this browser keeps a copy. The list is not built
+from ledger rows, and a local-only document is not Identified.
+`/api/clients` has no deal count and no last-deal date, so the row
+does not invent them. ID standing uses `displayIdStanding` when it
+is on the branch (`ok` paints green). A health card, a blank number,
+and a blank expiry are Missing ID, and the expiry date itself is
+still Identified. Search folds accents and compares phones as digits.
+The error is an empty state in a card. The empty-state button is
+#3C3B78.
 
 **2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
 the seam job's render of the commit in `tests/e2e/README.md`, checked

@@ -662,6 +662,7 @@
       return done.catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', (err && err.message) || err));
     };
     const [saving, setSaving] = useState(false);
+    const [saveErr, setSaveErr] = useState('');
     /* Escape hatch: create the contact without running (or paying for) a
        verification.
 
@@ -674,14 +675,33 @@
        warning missing, which is the exact defect these records moved to
        the server to end. One round-trip at the end of the wizard, and
        the button says it is working. */
+    /* The server first. The browser copy is written only after the
+       file exists there. A refusal is the server's own sentence. */
     const saveManual = async () => {
       const nm = name.trim();
       if (!nm || saving) return;
-      writeContact(nm);
+      setSaveErr('');
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setSaveErr('CurrencyDesk could not reach the server. Nothing was saved.');
+        return;
+      }
+      const shared = window.CDOS.ClientRecords;
+      if (!shared || !shared.serverBacked()) {
+        setSaveErr('Couldn\'t load clients. Nothing was saved.');
+        return;
+      }
       setSaving(true);
-      try { await publishContact(nm); } finally { setSaving(false); }
-      if (onDone) onDone(nm);
-      onClose();
+      try {
+        const created = await shared.open(nm, { kind, phone: phone.trim(), email: email.trim(), photo });
+        if (!created || !created.clientId) throw new Error('CurrencyDesk could not create that contact. Nothing was saved.');
+        writeContact(nm);
+        setSaving(false);
+        if (onDone) onDone(nm);
+        onClose();
+      } catch (e) {
+        setSaving(false);
+        setSaveErr((e && e.message) || 'CurrencyDesk could not create that contact. Nothing was saved.');
+      }
     };
     /* The choose step's button used to start a check, wait, and then write
        an invented address and ID number onto the contact as "Pulled from
@@ -746,6 +766,7 @@
               <label className="block"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Email</div><input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@email.com" className="w-full text-sm px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }} /></label>
             </div>
             <div className="text-[11px] mt-3 flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="send" s={11} c={CD.faint} /> Persona is not connected yet. Saving the contact does not send a check.</div>
+            {saveErr && <div role="alert" className="text-[12.5px] mt-3" style={{ color: CD.flag }}>{saveErr}</div>}
           </div>)}
 
           {step === 'choose' && <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />}
@@ -775,7 +796,7 @@
         {/* footer */}
         <div className="flex items-center gap-2 px-5 py-3.5 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
           {step === 'id' && (<>
-            <button onClick={() => setStep('details')} className="text-[12px] font-medium" style={{ color: CD.mute }}>Skip — add ID later</button>
+            <button type="button" onClick={() => setStep('details')} className="phone-skip-id text-[12px] font-medium" style={{ color: CD.mute, minHeight: 44, padding: '0 14px', border: `1px solid ${CD.line}`, borderRadius: 9, background: 'transparent' }}>Skip, add ID later</button>
             <div className="flex-1" />
             <button onClick={() => setStep('details')} disabled={!photo} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: photo ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: photo ? 'pointer' : 'not-allowed' }}>Continue <Ic n="chev" s={14} c="var(--cd-on-ink)" /></button>
           </>)}
