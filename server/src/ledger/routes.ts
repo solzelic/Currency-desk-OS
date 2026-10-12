@@ -109,7 +109,16 @@ const balancesBody = z.object({
 const transactionQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
-const tillCounts = byCurrency(monetary("0"), "count");
+/* A count is in the currency's own minor units, checked in the till
+   service. Yen are whole numbers. A dinar has three, and the columns
+   hold two — the service refuses a figure they would have to round,
+   rather than this schema pretending every currency has cents. Two
+   places is what CAD has always sent, and it still matches. */
+const countAmount = z
+  .string()
+  .regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,3})?$/, "Expected a count with at most three decimal places.")
+  .refine((value) => new Decimal(value).gte(0) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
+const tillCounts = byCurrency(countAmount, "count");
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,

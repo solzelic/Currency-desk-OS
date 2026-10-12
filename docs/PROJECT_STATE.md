@@ -547,6 +547,14 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, till close. The count sheet's chips are the currencies
+the till holds. A currency with no bill table is one total, in that
+currency's minor units: a whole number for yen, three decimal places
+for a dinar. The close refuses a missing currency by name ("Count JPY
+before closing.") and refuses a figure the columns would have to
+round. A Canadian drawer's bill rows are unchanged. The phone till
+is not part of this change.
+
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the
 profile button. Five tabs sit on a fixed bar: Rates, Ledger, Clients,

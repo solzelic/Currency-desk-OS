@@ -651,11 +651,15 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         headers: { "x-workspace-id": secondWorkspaceId },
       });
       expect(second.statusCode).toBe(200);
-      // a drawer of its own: same branch, its own till, none of till-01's money
+      // a drawer of its own: same branch, its own till, none of till-01's money.
+      // minorUnits is empty because the drawer holds nothing — a missing
+      // key would look the same as "this response is from before the
+      // count sheet was told the places".
       expect(second.json()).toEqual({
         tillId: "till-02",
         balances: {},
         balanceGeneration: "0",
+        minorUnits: {},
       });
 
       const quoteBody = {

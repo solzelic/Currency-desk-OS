@@ -75,6 +75,21 @@ export function minorUnits(code: string): number {
   return EXCEPTIONS[code.toUpperCase()] ?? 2;
 }
 
+/** Minor units for the codes that are not the ordinary two.
+
+    A screen must not keep its own copy of this table. Two-place
+    currencies are left out, so a missing key means two places and a
+    zero means a currency with no minor unit at all — yen, not "unknown". */
+export function minorUnitExceptions(codes: readonly string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const code of codes) {
+    const key = code.trim().toUpperCase();
+    const places = minorUnits(key);
+    if (places !== 2) out[key] = places;
+  }
+  return out;
+}
+
 /** The shape of a currency code. Not whether this desk trades it. */
 export function isCurrencyCode(code: unknown): code is string {
   return typeof code === "string" && /^[A-Z]{3}$/.test(code.trim().toUpperCase());

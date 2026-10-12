@@ -15,7 +15,9 @@
      calendar. See the note on wallClock/businessDate in cdos-base.jsx. */
   const { CD, Ic, fmt, num, crossRate, perCadLive, dDiff, STAFF } = window.CDOS;
 
-  // denominations per currency — { v: face value in that ccy, t: 'bill' | 'coin' }
+  /* Bill tables. Not the list of currencies a till may hold — that
+     list is the till's balances. A code with no row here is counted
+     as one total, in that currency's own minor units. */
   const DEN = {
     CAD: [[100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [2, 'coin'], [1, 'coin'], [0.25, 'coin'], [0.10, 'coin'], [0.05, 'coin']],
     USD: [[100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [1, 'bill'], [0.25, 'coin'], [0.10, 'coin'], [0.05, 'coin'], [0.01, 'coin']],
@@ -28,6 +30,19 @@
     AED: [[1000, 'bill'], [500, 'bill'], [200, 'bill'], [100, 'bill'], [50, 'bill'], [20, 'bill'], [10, 'bill'], [5, 'bill'], [1, 'coin'], [0.5, 'coin'], [0.25, 'coin']],
   };
   const CCYS = Object.keys(DEN);
+  /* A typed total, limited to the places that currency is paid in.
+     Two-place currencies are left alone: the field they already have
+     accepts what the teller types, and clamping it would change the
+     digits on screen for CAD. Yen cannot take a decimal. A dinar
+     stops at the third place. */
+  const clampCount = (raw, places) => {
+    const cleaned = String(raw).replace(/[^0-9.]/g, '');
+    if (places <= 0) return cleaned.split('.')[0];
+    const dot = cleaned.indexOf('.');
+    if (dot < 0) return cleaned;
+    return cleaned.slice(0, dot + 1 + places);
+  };
+  const countPlaceholder = (places) => (places <= 0 ? '0' : ('0.' + '0'.repeat(places)));
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const denLabel = (v) => v >= 1 ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : (Math.round(v * 100) + '¢');
   /* `cadOf` stood here — a module-level conversion into Canadian dollars,
@@ -224,6 +239,10 @@
            currency that was not counted must never be sent.
        ------------------------------------------------------------------ */
     const [serverBalances, setServerBalances] = useState(null);
+    /* Minor units for a holding that is not the ordinary two. Comes
+       with the balances, so a yen row is whole units even when the
+       desk's currency list has not mentioned yen. */
+    const [heldPlaces, setHeldPlaces] = useState({});
     /* The mark on the drawer when these expected figures were read.
        The close sends it back. If money moved, the mark no longer
        matches and the close is refused. */
@@ -316,6 +335,7 @@
     }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
     const applyBook = (result) => {
       setServerBalances((result && result.balances) || {});
+      setHeldPlaces((result && result.minorUnits) || {});
       /* A count in progress keeps the mark it started on. Adopting the
          generation just fetched would let a refresh, or any other
          reread, close against money that moved after the count began. */
@@ -335,6 +355,7 @@
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) {
         setServerBalances(null);
+        setHeldPlaces({});
         setBalanceGeneration(null);
         setServerSession(null);
         setServerBalanceError('');
@@ -350,6 +371,7 @@
         .catch(error => {
           if (!active) return;
           setServerBalances(null);
+          setHeldPlaces({});
           setBalanceGeneration(null);
           setServerSession(null);
           setServerBalanceError(error.message || 'Server balances unavailable');
@@ -563,7 +585,9 @@
     useEffect(() => { try { localStorage.setItem('cdos_till_mode', JSON.stringify(mode)); } catch (e) {} }, [mode]);
     useEffect(() => { try { localStorage.setItem('cdos_till_counted_at', JSON.stringify(countedAt)); } catch (e) {} }, [countedAt]);
     useEffect(() => { const id = setInterval(() => forceTick(t => t + 1), 30000); return () => clearInterval(id); }, []);
-    const ccyMode = (c) => mode[c] || (settings && settings.tillCountMode) || 'denom';
+    /* No bill table means there is nothing to count note by note.
+       The field is the total, in that currency's places. */
+    const ccyMode = (c) => (DEN[c] ? (mode[c] || (settings && settings.tillCountMode) || 'denom') : 'total');
 
     // stamp the moment a drawer was last touched, so we can show staleness.
     // The first figure also pins the mark. Later keystrokes leave it.
@@ -579,18 +603,48 @@
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = (c) => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = (c) => ccyMode(c) === 'total' ? (parseFloat(quick[c]) || 0) : denTotal(c);
-    const isCounted = (c) => ccyMode(c) === 'total' ? (parseFloat(quick[c]) > 0) : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
-    const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
-    const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
+    /* A total of zero is a count. The old test was "greater than zero",
+       so a drawer the ledger holds at zero could never be closed: the
+       button waited for a chip the teller had already filled with 0.
+       A blank field is still not a count. */
+    const isCounted = (c) => ccyMode(c) === 'total'
+      ? (quick[c] != null && String(quick[c]).trim() !== '' && Number.isFinite(parseFloat(quick[c])) && parseFloat(quick[c]) >= 0)
+      : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
+    const placesOf = (c) => {
+      if (typeof heldPlaces[c] === 'number') return heldPlaces[c];
+      return window.CDOS.currencyPlaces ? window.CDOS.currencyPlaces(c) : 2;
+    };
+    /* What the close and the saved count send. Two places for CAD, so
+       the payload of a dollar count does not change. Whole units for
+       yen. Three places for a dinar, which the server keeps only when
+       that third place is zero. */
+    const wireAmount = (c) => ccyTotal(c).toFixed(placesOf(c));
+    // the currencies the server actually keeps a till balance for. The close
+    // must name exactly this set — a superset is rejected, and a subset means
+    // an untouched currency would be written back at whatever we sent.
+    const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
+    /* Chips follow the drawer. DEN's order is kept for the currencies
+       that have a bill table, so CAD still leads a Canadian drawer.
+       Anything the table does not know — yen, won — follows, in the
+       order the ledger listed it. */
+    const chipCcys = useMemo(() => {
+      if (!serverBacked) return CCYS;
+      if (!serverBalances) return [];
+      const held = new Set(serverCcys);
+      return CCYS.filter(c => held.has(c)).concat(serverCcys.filter(c => !DEN[c]));
+    }, [serverBacked, serverBalances, serverCcys]);
+    const countedCcys = useMemo(() => chipCcys.filter(isCounted), [chipCcys, counts, quick, mode, heldPlaces]);
+    const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy, heldPlaces]);
+    useEffect(() => {
+      if (!chipCcys.length || chipCcys.includes(ccy)) return;
+      const home = (window.CDOS.deskPack() && window.CDOS.deskPack().homeCurrency) || null;
+      setCcy(home && chipCcys.includes(home) ? home : chipCcys[0]);
+    }, [chipCcys, ccy]);
 
     // expected float per currency — DERIVED from the one shared source of truth
     // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
     // Identical to the figure the Vault shows because both call position().
     const serverBalancesReady = !serverBacked || serverBalances !== null;
-    // the currencies the server actually keeps a till balance for. The close
-    // must name exactly this set — a superset is rejected, and a subset means
-    // an untouched currency would be written back at whatever we sent.
-    const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const sessionClosed = serverBacked && !!(serverSession && serverSession.status === 'closed');
     // "the book is shut" and "no session has been opened yet" are different
@@ -650,7 +704,7 @@
         // anything else in the drawer stays a local figure until the ledger
         // carries that currency
         const serverCounts = Object.fromEntries(
-          countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, ccyTotal(c).toFixed(2)]));
+          countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, wireAmount(c)]));
         if (Object.keys(serverCounts).length) {
           if (!serverSession || serverSession.status !== 'open') {
             setSessionErr('Open the till before saving a count — there is no session to record it against.');
@@ -755,7 +809,7 @@
         }
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
-          counts: Object.fromEntries(recon.map(r => [r.c, r.counted.toFixed(2)])),
+          counts: Object.fromEntries(recon.map(r => [r.c, wireAmount(r.c)])),
           balanceGeneration,
           note: summary.note,
         }));
@@ -1013,7 +1067,7 @@
           <div className="till-denom">
           {/* currency chips */}
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {CCYS.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
+            {chipCcys.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
               <button key={c} onClick={() => setCcy(c)} className="till-chip flex items-center gap-1.5 px-2.5 py-1.5 text-xs" style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : CD.panel, color: on ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>
                 <span style={{ fontFamily: 'system-ui' }}>{flagOf(c)}</span>{c}{has && <span style={{ width: 5, height: 5, borderRadius: '50%', background: on ? 'var(--cd-panel)' : CD.green }}></span>}
               </button>); })}
@@ -1022,19 +1076,29 @@
           {/* count mode: by denomination, or a quick total.
               The tour points at this switch, not at the whole panel,
               so the card sits beside the count rather than on top of it. */}
+          {DEN[ccy] ? (
           <div data-tour="till-count" className="flex items-center justify-between mb-3">
             <div className="inline-flex" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
               {[['denom', 'Count denominations'], ['total', 'Enter total']].map(([m, l]) => <button key={m} onClick={() => setMode(o => ({ ...o, [ccy]: m }))} className="text-[11.5px] px-3 py-1.5" style={{ background: ccyMode(ccy) === m ? CD.ink : 'transparent', color: ccyMode(ccy) === m ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>{l}</button>)}
             </div>
             {isCounted(ccy) && <button onClick={() => clearCount(ccy)} className="text-[11px]" style={{ color: CD.mute }}>Clear {ccy}</button>}
           </div>
+          ) : (
+          /* No notes and no coins to count. The total is the count.
+             The tour still has a target, on this line rather than on a
+             switch that would open an empty bill table. */
+          <div data-tour="till-count" className="flex items-center justify-between mb-3">
+            <div className="text-[11.5px] px-3 py-1.5" style={{ background: CD.ink, color: 'var(--cd-on-ink)', fontFamily: 'Space Mono, monospace', borderRadius: 8 }}>Enter total</div>
+            {isCounted(ccy) && <button onClick={() => clearCount(ccy)} className="text-[11px]" style={{ color: CD.mute }}>Clear {ccy}</button>}
+          </div>
+          )}
 
           {ccyMode(ccy) === 'total' ? (
             <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-              <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Skip the breakdown — just enter the total {ccy} you counted in the drawer.</div>
+              <div className="text-[11px] mb-2" style={{ color: CD.mute }}>{DEN[ccy] ? `Skip the breakdown — just enter the total ${ccy} you counted in the drawer.` : (placesOf(ccy) === 0 ? `Enter the total ${ccy} you counted. ${ccy} has no minor unit, so this is a whole number.` : `Enter the total ${ccy} you counted, to ${placesOf(ccy)} decimal places.`)}</div>
               <div className="flex items-center" style={{ border: `1px solid ${CD.ink}`, borderRadius: 10, maxWidth: 340 }}>
                 <span className="px-3 text-sm" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderRight: `1px solid ${CD.line}` }}>{ccy}</span>
-                <input type="number" autoFocus value={quick[ccy] ?? ''} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
+                <input type="number" autoFocus value={quick[ccy] ?? ''} onChange={e => { const places = placesOf(ccy); setQuick(o => ({ ...o, [ccy]: places === 2 ? e.target.value : clampCount(e.target.value, places) })); stampCount(ccy); }} placeholder={placesOf(ccy) === 2 ? '0.00' : countPlaceholder(placesOf(ccy))} className="flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
               </div>
               {ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>≈ {fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy)}</div>}
             </div>
@@ -1060,7 +1124,7 @@
               <div className="till-count-main min-w-0">
                 <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
                 <div className="till-counted flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
-                  <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : num(ccyTotal(ccy))} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
+                  <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : num(ccyTotal(ccy))} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { const raw = e.target.value.replace(/[^0-9.]/g, ''); const places = placesOf(ccy); setQuick(o => ({ ...o, [ccy]: places === 2 ? raw : clampCount(raw, places) })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
                   <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
                 </div>
                 <div className="text-[11px] mt-1.5 flex items-center gap-2 flex-wrap" style={{ color: CD.faint }}>

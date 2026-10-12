@@ -276,6 +276,10 @@
             tillId: results[0].tillId || null,
             balances: results[0].balances || {},
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
+            /* Exceptions only: yen is 0, a dinar is 3, and a missing
+               key is the ordinary two. The count sheet must not keep
+               a second copy of that table. */
+            minorUnits: results[0].minorUnits || {},
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
           };
