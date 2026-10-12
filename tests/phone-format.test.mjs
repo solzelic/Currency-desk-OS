@@ -148,4 +148,8 @@ test("a finished or past lock says the keypad is back, in 12-hour time", () => {
     "Too many wrong tries. The till PIN is locked too. Try again in 24:00:00. The keypad comes back at 11:00 AM.",
   );
   assert.equal(formatPhoneLock(86400, "2026-10-13T15:00:00.000Z", TORONTO).includes("1440"), false);
+  assert.equal(
+    formatPhoneLock(299, "2026-10-12T15:04:59.000Z"),
+    "Too many wrong tries. The till PIN is locked too. Try again in 4:59.",
+  );
 });

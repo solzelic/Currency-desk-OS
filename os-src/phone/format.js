@@ -191,7 +191,10 @@
     const over = (hasSeconds && secondsLeft <= 0) || (endMs != null && endMs <= Date.now() && !stillWaiting);
     if (over && (hasSeconds || endMs != null)) return 'The keypad is back.';
     const wait = stillWaiting ? formatPhoneWait(secondsLeft) : '';
-    const endLabel = endMs != null ? formatPhoneTime(new Date(endMs), timeZone) : '';
+    /* An instant with no shop zone is an em dash. That is not a time
+       to read out, so the sentence names the wait and stops. */
+    const spoken = endMs != null ? formatPhoneTime(new Date(endMs), timeZone) : '';
+    const endLabel = spoken && spoken !== '\u2014' ? spoken : '';
     const head = 'Too many wrong tries. The till PIN is locked too.';
     const back = endLabel ? ' The keypad comes back at ' + endLabel + '.' : '';
     if (wait) return head + ' Try again in ' + wait + '.' + back;
