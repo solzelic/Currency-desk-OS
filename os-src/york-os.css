@@ -2382,6 +2382,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* The role sits on this line (Senior teller). Ellipsis was cutting
+     it off once the name and the hand-off buttons took the row. */
+  .till-screen > .flex.justify-between .leading-tight > .till-operator {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
   .till-denom .uppercase.tracking-widest { margin-top: 0 !important; margin-bottom: 2px !important; }
   /* A native input paints its own white fill. On this panel that
      fill reads as a hole. The field is paper, like the panel. */
