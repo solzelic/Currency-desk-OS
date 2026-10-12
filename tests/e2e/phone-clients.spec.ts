@@ -445,7 +445,7 @@ test.describe("phone clients", () => {
     await expect(row.locator(".phone-row-chev")).toHaveCount(1);
     await page.context().setOffline(true);
     await expect(page.getByRole("status").filter({ hasText: "Offline. Showing the last loaded list." })).toBeVisible();
-    await expect(page.locator(".phone-sticky-why")).toHaveText("Offline. Showing the last loaded list.");
+    await expect(page.locator(".phone-clients .phone-sticky-why")).toHaveText("Offline. Showing the last loaded list.");
     await expect(row).toBeVisible();
     await expect(page.getByText("Couldn't load clients")).toHaveCount(0);
     await expect(page.getByText("Showing the copy on this phone")).toHaveCount(0);
