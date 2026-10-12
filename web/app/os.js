@@ -2083,7 +2083,7 @@
     var body = {};
     try { body = await response.json(); } catch (_) {}
     if (!response.ok) {
-      var error = new Error(body.message || ({
+      var phrases = {
         AUTHENTICATION_REQUIRED: "Your session expired. Sign in again before posting.",
         PLAN_NOT_ENTITLED: "This workspace plan does not include server ledger posting.",
         SCOPE_DENIED: "The active workspace is not authorized for this account.",
@@ -2099,7 +2099,8 @@
         VAULT_ALREADY_INITIALIZED: "This vault already has an opening position. Change it with a recorded movement, not by restating it.",
         TILL_ALREADY_ACTIVE: "This till already has an open session.",
         IDEMPOTENCY_CONFLICT: "That till operation was already recorded.",
-        LEDGER_BUSY: "Another change to this till is being recorded. Nothing was posted — try again in a moment.",
+        IDEMPOTENCY_IN_PROGRESS: "This request is already being posted. Nothing else was posted.",
+        LEDGER_BUSY: "Another change to this till is being recorded. Nothing was posted. Try again.",
         OBLIGATION_ALREADY_FILED: "This report has already been sealed on the ledger. A correction is filed as a new report linked to the original — the sealed copy is never replaced.",
         REPORT_NOT_IN_PACK: "Your jurisdiction pack has no such report, so this desk cannot file one.",
         FILING_NOT_FOUND: "That filed report is not on this desk's record.",
@@ -2109,7 +2110,14 @@
         CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
         CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
-      })[body.code] || "The ledger server rejected this request. Nothing was posted.");
+      };
+      /* The teller sees this sentence for a duplicate already in progress,
+         including when the response carries no message of its own. */
+      var error = new Error(
+        (body.code === "IDEMPOTENCY_IN_PROGRESS" && phrases.IDEMPOTENCY_IN_PROGRESS) ||
+        body.message ||
+        phrases[body.code] ||
+        "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       throw error;

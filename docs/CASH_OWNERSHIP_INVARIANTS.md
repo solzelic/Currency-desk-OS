@@ -65,7 +65,10 @@ the daily close overwrites the evidence that they did.
   identifier. A key that changes every tap is not one either. Two
   requests that do share a key, and arrive together, replay the one
   movement; the loser of the unique index does not answer as if nothing
-  had been posted. A key that comes back with a different amount,
+  had been posted. A post the database aborts because two transactions
+  overlapped is run again. That abort is not reported as a request
+  already in progress. A key already saved with no stored answer is
+  posted once. A key that comes back with a different amount,
   currency, direction, or the rest of the movement is refused: "This
   form was already sent with different details. Nothing else was moved."
   The unique-index replay uses that same comparison, and only when the
