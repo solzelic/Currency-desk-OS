@@ -606,10 +606,9 @@ renders of main with the blur on did not match.
 **2026-10-12**, phone cheque list. The phone register shows the hold
 date on a held row. Sample cheques are labelled and only appear when
 the desk has no ledger. A cashier is not offered Reverse. The detail
-sheet is portaled onto the body, so dark mode pins its title and
-values to `--gray-900` on the light surface (rgb(22, 21, 19) on
-`#F7F6F3` / `#FFFFFF`, above 4.5:1). The same figures in the light
-theme use those tokens. A history time on the phone is the branch
+sheet is portaled onto the body. In dark mode its title and
+values use the phone ink `#F6F3EC` on `#14130F`, above 4.5:1. In the
+light theme those figures are `--gray-900` on the light surface. A history time on the phone is the branch
 zone, 12-hour, with a lowercase suffix. The cash-flow sheet is the next slice.
 
 **2026-10-12**, cheque fee. The server computes the fee from the desk's

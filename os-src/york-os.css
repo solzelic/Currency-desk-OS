@@ -3141,9 +3141,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     line-height: 20px;
   }
   /* The sheet is portaled onto the body, outside the phone shell.
-     Dark mode turns --color-text into light ink. Pin the sheet to the
-     same dark text the light surface uses, or the title and the
-     detail values fail 4.5:1. */
+     Light mode keeps gray-900 on the light page. Dark mode uses the
+     phone tokens: #F6F3EC on #14130F. Pinning gray-900 there is
+     #161513 on #14130F and fails 4.5:1. */
   .phq-sheet {
     position: fixed;
     inset: 0;
@@ -3151,22 +3151,31 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: flex;
     flex-direction: column;
     background: var(--color-bg);
-    color: var(--gray-900);
-    --color-text: var(--gray-900);
-    --ink: var(--gray-900);
+    color: var(--color-text, var(--gray-900));
+    --ink: var(--color-text, var(--gray-900));
     font-family: var(--font-ui);
   }
   html[data-cdtheme="dark"] .phq-sheet {
     background: var(--color-bg);
-    color: var(--gray-900);
-    --color-text: var(--gray-900);
-    --ink: var(--gray-900);
+    color: var(--color-text);
+    --ink: var(--color-text);
   }
   html[data-cdtheme="dark"] .phq-sheet h2,
   html[data-cdtheme="dark"] .phq-sheet .phone-summary,
   html[data-cdtheme="dark"] .phq-sheet .phone-summary dt,
-  html[data-cdtheme="dark"] .phq-sheet .phone-summary dd {
-    color: var(--gray-900);
+  html[data-cdtheme="dark"] .phq-sheet .phone-summary dd,
+  html[data-cdtheme="dark"] .phq-sheet .phq-field input,
+  html[data-cdtheme="dark"] .phq-sheet .phq-sign,
+  html[data-cdtheme="dark"] .phq-sheet .phq-pick,
+  html[data-cdtheme="dark"] .phq-sheet .phq-btn-ghost {
+    color: var(--color-text);
+  }
+  html[data-cdtheme="dark"] .phq-sheet .phq-help,
+  html[data-cdtheme="dark"] .phq-sheet .phq-note,
+  html[data-cdtheme="dark"] .phq-sheet .phq-photo,
+  html[data-cdtheme="dark"] .phq-sheet .phq-time span,
+  html[data-cdtheme="dark"] .phq-sheet .phq-cust > span:nth-child(2) > span {
+    color: var(--color-text-muted);
   }
   .phq-sheet-h {
     display: grid;

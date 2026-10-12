@@ -115,8 +115,8 @@ test("a held row shows the hold date, and a real desk drops the sample", async (
   await expect(page.getByRole("button", { name: "Reverse" })).toHaveCount(0);
   const ink = await page.locator(".phq-sheet h2").evaluate((node) => getComputedStyle(node).color);
   const value = await page.locator(".phq-sheet .phone-summary dd").first().evaluate((node) => getComputedStyle(node).color);
-  expect(ink).toBe("rgb(22, 21, 19)");
-  expect(value).toBe("rgb(22, 21, 19)");
+  expect(ink).toBe("rgb(246, 243, 236)");
+  expect(value).toBe("rgb(246, 243, 236)");
 });
 
 test("sample cheques are labelled when the desk has no book", async ({ page }) => {
