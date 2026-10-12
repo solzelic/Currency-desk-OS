@@ -67,18 +67,19 @@
     return at >= 0 && at < flow.length - 1 ? flow[at + 1] : null;
   }
 
-  /* Receive words are the desktop labels: Funded, Ready for pickup,
-     Paid to customer. A receive is not "sent". */
-  function actionLabel(t) {
+  /* "Funded" is the receive name of the send key. A receive is marked
+     Ready for pickup, then Paid to customer — the same list, no new key. */
+  function advanceKey(t) {
     const next = nextStatus(t);
+    if (t && t.direction === "receive" && t.status !== "hold" && next === "sent") return "transit";
+    return next;
+  }
+
+  function actionLabel(t) {
+    const next = advanceKey(t);
     if (!next) return "";
     if (t.status === "hold") return "Release";
-    if (t.direction === "receive") {
-      if (next === "sent") return "Mark funded";
-      if (next === "transit") return "Mark ready for pickup";
-      if (next === "paid") return "Mark paid to customer";
-      return "Mark " + T().statusLabel(next, "receive").toLowerCase();
-    }
+    if (t.direction === "receive") return "Mark " + T().statusLabel(next, "receive").toLowerCase();
     if (next === "sent") return "Mark as sent";
     if (next === "transit") return "Mark in transit";
     if (next === "paid") return "Mark paid out";
@@ -322,7 +323,8 @@
     const SummaryList = window.CDOS.SummaryList;
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     const home = (pack && pack.homeCurrency) || "CAD";
-    const owner = !!(me && me.role === "Owner");
+    const canCancel = !!(me && (me.role === "Owner" || me.role === "Manager" || me.role === "Senior teller"));
+    const receive = t.direction === "receive";
     const open = t.status !== "paid" && t.status !== "cancelled";
     const partnerPin = typedPartnerPin(t);
     const [copyError, setCopyError] = useState(null);
@@ -376,15 +378,16 @@
         </div>
         {open && (
           <div className="ph-sheet-f">
-            {label && <button type="button" className="ph-btn" onClick={() => onAdvance(t, nextStatus(t), "marked by hand")}>{label}</button>}
-            {(t.status !== "hold" || owner) && (
+            {label && <button type="button" className="ph-btn" onClick={() => onAdvance(t, advanceKey(t), "marked by hand")}>{label}</button>}
+            {(t.status !== "hold" || (!receive && canCancel)) && (
               <div className="ph-secondary">
                 {t.status !== "hold" && <button type="button" onClick={() => onAdvance(t, "hold", "marked by hand")}>Hold</button>}
-                {/* CancelConfirm stays closed until docs/TRANSFER_CANCEL.md. */}
-                {owner && <button type="button" className="is-cancel" disabled>Cancel is being fixed</button>}
+                {!receive && canCancel && <button type="button" className="is-cancel" disabled>Cancel is being fixed</button>}
               </div>
             )}
-            {!owner && <p className="ph-cancel-note">Only the owner can cancel a transfer that took cash. Ask the owner to cancel.</p>}
+            {receive
+              ? <p className="ph-cancel-note">A received transfer can't be cancelled here. Ask a manager.</p>
+              : !canCancel && <p className="ph-cancel-note">Only a manager can cancel a transfer that took cash. Ask a manager to cancel.</p>}
           </div>
         )}
       </div>,

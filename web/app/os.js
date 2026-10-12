@@ -64289,18 +64289,18 @@ window.CDOS_PERSIST = (function () {
     return at >= 0 && at < flow.length - 1 ? flow[at + 1] : null;
   }
 
-  /* Receive words are the desktop labels: Funded, Ready for pickup,
-     Paid to customer. A receive is not "sent". */
-  function actionLabel(t) {
+  /* "Funded" is the receive name of the send key. A receive is marked
+     Ready for pickup, then Paid to customer — the same list, no new key. */
+  function advanceKey(t) {
     const next = nextStatus(t);
+    if (t && t.direction === "receive" && t.status !== "hold" && next === "sent") return "transit";
+    return next;
+  }
+  function actionLabel(t) {
+    const next = advanceKey(t);
     if (!next) return "";
     if (t.status === "hold") return "Release";
-    if (t.direction === "receive") {
-      if (next === "sent") return "Mark funded";
-      if (next === "transit") return "Mark ready for pickup";
-      if (next === "paid") return "Mark paid to customer";
-      return "Mark " + T().statusLabel(next, "receive").toLowerCase();
-    }
+    if (t.direction === "receive") return "Mark " + T().statusLabel(next, "receive").toLowerCase();
     if (next === "sent") return "Mark as sent";
     if (next === "transit") return "Mark in transit";
     if (next === "paid") return "Mark paid out";
@@ -64664,7 +64664,8 @@ window.CDOS_PERSIST = (function () {
     const SummaryList = window.CDOS.SummaryList;
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     const home = pack && pack.homeCurrency || "CAD";
-    const owner = !!(me && me.role === "Owner");
+    const canCancel = !!(me && (me.role === "Owner" || me.role === "Manager" || me.role === "Senior teller"));
+    const receive = t.direction === "receive";
     const open = t.status !== "paid" && t.status !== "cancelled";
     const partnerPin = typedPartnerPin(t);
     const [copyError, setCopyError] = useState(null);
@@ -64757,19 +64758,21 @@ window.CDOS_PERSIST = (function () {
     }, label && /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "ph-btn",
-      onClick: () => onAdvance(t, nextStatus(t), "marked by hand")
-    }, label), (t.status !== "hold" || owner) && /*#__PURE__*/React.createElement("div", {
+      onClick: () => onAdvance(t, advanceKey(t), "marked by hand")
+    }, label), (t.status !== "hold" || !receive && canCancel) && /*#__PURE__*/React.createElement("div", {
       className: "ph-secondary"
     }, t.status !== "hold" && /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => onAdvance(t, "hold", "marked by hand")
-    }, "Hold"), owner && /*#__PURE__*/React.createElement("button", {
+    }, "Hold"), !receive && canCancel && /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "is-cancel",
       disabled: true
-    }, "Cancel is being fixed")), !owner && /*#__PURE__*/React.createElement("p", {
+    }, "Cancel is being fixed")), receive ? /*#__PURE__*/React.createElement("p", {
       className: "ph-cancel-note"
-    }, "Only the owner can cancel a transfer that took cash. Ask the owner to cancel."))), document.body);
+    }, "A received transfer can't be cancelled here. Ask a manager.") : !canCancel && /*#__PURE__*/React.createElement("p", {
+      className: "ph-cancel-note"
+    }, "Only a manager can cancel a transfer that took cash. Ask a manager to cancel."))), document.body);
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     PhoneTransfers

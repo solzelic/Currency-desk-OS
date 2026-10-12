@@ -587,10 +587,12 @@ The list and the detail sheet are `os-src/phone/transfers.jsx`. A row
 is the sender's name and the amount, then the country and the method,
 and the status badge. The TR number is not on the row. Mark paid out
 is the filled button on the detail. Hold is a neutral outline. Cancel
-does not run. A teller sees "Only the owner can cancel a transfer
-that took cash. Ask the owner to cancel." The owner sees Cancel
-disabled, labelled "Cancel is being fixed", until the reversal
-contract is wired. A send detail shows Amount sent, Fee, and Total paid together, then
+does not run. A cashier or trainee on a send sees "Only a manager
+can cancel a transfer that took cash. Ask a manager to cancel."
+Owner, Manager, and Senior teller see Cancel disabled, labelled
+"Cancel is being fixed", until the reversal contract is wired. A
+receive has no cancel control. It says "A received transfer can't
+be cancelled here. Ask a manager." A send detail shows Amount sent, Fee, and Total paid together, then
 Rate, Method, and Partner. The rate multiplies Amount sent back to
 the foreign payout, to the cent, using at most 12 places. A receive
 detail shows Sender paid (the foreign amount), Rate, Gross (the payout plus the fee
@@ -598,8 +600,10 @@ the partner owes), the fee kept from the proceeds, and Customer receives
 (the desk currency). Customer receives is bold and is the last money row. Method
 and Partner follow it. The rate multiplies Sender paid to Gross. That
 last money row is the cash the ledger takes out of the drawer. A receive's
-button uses the receive status words: Mark funded, Mark ready for
-pickup, Mark paid to customer. Desk reference is the transfer's own
+button uses the desktop receive labels for the steps a cashier marks:
+Mark ready for pickup, then Mark paid to customer. "Funded" is the
+receive name of the send key, and this button does not offer it. The
+status keys stay the desktop list. Desk reference is the transfer's own
 reference, a plain summary row, with "Our own reference. Not a partner
 pickup code." It is not styled as a code. The browser-minted `pin` is
 not shown. A partner PIN appears only when staff typed `partnerPin`,

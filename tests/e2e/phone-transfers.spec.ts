@@ -258,12 +258,13 @@ for (const width of [360, 390]) {
     expect(paint.paid).toMatchObject({ bg: "rgb(31, 114, 105)", color: "rgb(255, 255, 255)" });
     expect(paint.hold).toEqual({ bg: "rgb(255, 255, 255)", color: "rgb(22, 21, 19)", border: "rgb(201, 197, 188)" });
     await expect(detail.getByRole("button", { name: "Cancel transfer" })).toHaveCount(0);
-    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toHaveCount(0);
-    await expect(detail.getByText("Only the owner can cancel a transfer that took cash. Ask the owner to cancel.")).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toBeDisabled();
+    await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toHaveCount(0);
+    await expect(detail.getByText("Only the owner can cancel")).toHaveCount(0);
     await expect(detail.getByText("The cash stays recorded")).toHaveCount(0);
     await expect(detail.getByRole("alertdialog")).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Mark paid out" })).toBeVisible();
-    await shot(page, `transfers_teller_cancel_${width}`);
     await detail.getByRole("button", { name: "Mark paid out" }).click();
     await expect(detail.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
     await detail.getByRole("button", { name: "Back" }).click();
@@ -420,16 +421,19 @@ for (const width of [360, 390]) {
     await expect(detail.getByText("Receiver gets")).toHaveCount(0);
     await expect(detail.getByText("239.36 PHP")).toHaveCount(0);
     await expect(detail.getByText("10,000.00 CAD")).toHaveCount(0);
-    await expect(detail.getByRole("button", { name: "Mark funded" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Mark funded" })).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Mark as sent" })).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
-    await shot(page, `transfers_receive_${width}`);
-    await detail.getByRole("button", { name: "Mark funded" }).click();
-    await expect(detail.locator(".ph-sum-who .phone-badge")).toHaveText("Funded");
+    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Cancel transfer" })).toHaveCount(0);
+    await expect(detail.getByText("A received transfer can't be cancelled here. Ask a manager.")).toBeVisible();
+    await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Mark ready for pickup" })).toBeVisible();
+    await shot(page, `transfers_receive_${width}`);
     await detail.getByRole("button", { name: "Mark ready for pickup" }).click();
     await expect(detail.locator(".ph-sum-who .phone-badge")).toHaveText("Ready for pickup");
     await expect(detail.getByRole("button", { name: "Mark paid to customer" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Mark funded" })).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Mark as sent" })).toHaveCount(0);
     await expect(detail.getByRole("button", { name: "Mark paid out" })).toHaveCount(0);
   });
@@ -559,7 +563,8 @@ for (const width of [360, 390]) {
     await expect(cancel).toBeVisible();
     await expect(cancel).toBeDisabled();
     await expect(detail.getByRole("button", { name: "Cancel transfer" })).toHaveCount(0);
-    await expect(detail.getByText("Only the owner can cancel a transfer that took cash. Ask the owner to cancel.")).toHaveCount(0);
+    await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toHaveCount(0);
+    await expect(detail.getByText("Only the owner can cancel")).toHaveCount(0);
     await expect(detail.getByText("The cash stays recorded")).toHaveCount(0);
     await expect(detail.getByText("Amount sent")).toBeVisible();
     await expect(detail.getByText("Total paid")).toBeVisible();
@@ -567,6 +572,20 @@ for (const width of [360, 390]) {
     await cancel.click({ force: true });
     await expect(detail.locator(".ph-sum-who .phone-badge")).toHaveText("In transit");
     await expect(detail.getByText("Cancelled")).toHaveCount(0);
+  });
+}
+
+for (const width of [360, 390]) {
+  test(`a cashier is told to ask a manager before a send can be cancelled at ${width}`, async ({ page }) => {
+    await openPhoneTransfers(page, width, "m.costa");
+    await page.locator(".ph-xfer-row").filter({ hasText: "In transit" }).click();
+    const detail = page.getByRole("dialog");
+    await expect(detail.getByRole("button", { name: "Cancel is being fixed" })).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Cancel transfer" })).toHaveCount(0);
+    await expect(detail.getByText("Only a manager can cancel a transfer that took cash. Ask a manager to cancel.")).toBeVisible();
+    await expect(detail.getByText("Only the owner can cancel")).toHaveCount(0);
+    await expect(detail.getByText("A received transfer can't be cancelled here. Ask a manager.")).toHaveCount(0);
+    await shot(page, `transfers_teller_cancel_${width}`);
   });
 }
 
@@ -623,7 +642,9 @@ test("a receive pays the stored payout out of the drawer", async ({ page }) => {
   const receivedRate = await summaryValue(detail, "Rate").innerText();
   expect(Math.round(gross * 100)).toBe(Math.round(hand * 100) + Math.round(fee * 100));
   expect(productCents(received, receivedRate)).toBe(Math.round(gross * 100));
-  await expect(detail.getByRole("button", { name: "Mark funded" })).toBeVisible();
+  await expect(detail.getByRole("button", { name: "Mark ready for pickup" })).toBeVisible();
+  await expect(detail.getByRole("button", { name: "Mark funded" })).toHaveCount(0);
+  await expect(detail.getByText("A received transfer can't be cancelled here. Ask a manager.")).toBeVisible();
   await expect(detail.getByRole("button", { name: "Mark as sent" })).toHaveCount(0);
   await expect.poll(async () => before - Number((await book.till()).CAD), { timeout: 15_000 }).toBeCloseTo(hand, 2);
   const owed = await obligations(page);
