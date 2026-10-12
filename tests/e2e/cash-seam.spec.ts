@@ -46,6 +46,9 @@ async function settleCashDrawerChrome(page: Page) {
   const tabBar = page.locator(".win-body .fld-bar").first();
   await expect(tabBar).toBeVisible();
   await expect(tabBar).not.toHaveClass(/fld-hidden/);
+  /* A webfont arriving mid-click moves the header, and the tab is
+     then not stable. Wait until the faces already requested are in. */
+  await page.evaluate(() => (document.fonts ? document.fonts.ready : undefined));
 }
 
 async function clickWhenStable(locator: Locator) {
@@ -59,7 +62,15 @@ async function clickWhenStable(locator: Locator) {
 
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
-  await clickWhenStable(page.getByRole("button", { name }).first());
+  /* The tab is in the header, which settle just brought to the top.
+     scrollIntoViewIfNeeded scrolls the count, the bar moves, and the
+     click hits the header. Trial-click the tab where it already is. */
+  const tab = page.getByRole("button", { name }).first();
+  await expect(tab).toBeVisible();
+  await expect(async () => {
+    await tab.click({ trial: true, timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await tab.click();
 }
 
 async function saveDrawerCount(page: Page) {

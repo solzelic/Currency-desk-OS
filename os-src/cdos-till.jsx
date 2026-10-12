@@ -1070,7 +1070,10 @@
             })()}
           </div>
         </div>
-        <div className="till-tabwrap"><div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
+        {/* Pinned. The count scrolls in the panel below. Letting this
+            bar collapse on that scroll moved Reconcile under the header,
+            and the click landed on the header instead of the tab. */}
+        <div className="till-tabwrap"><div className="fld-bar fld-pinned" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic]) => <button key={id} data-tour={id === 'reconcile' ? 'till-reconcile-tab' : undefined} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={ic} s={13} c={tab === id ? 'var(--cd-on-ink)' : CD.mute} /> {label}</button>)}
         </div></div>
       </div>
