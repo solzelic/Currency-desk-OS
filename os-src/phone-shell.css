@@ -882,7 +882,9 @@
   .pin-dots.shake { animation: phone-pin-shake 0.28s linear; }
   .pin-saving { margin: 28px 0; text-align: center; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--w-text); }
   .pin-lock { margin: 16px 16px 0; text-align: center; color: var(--w-danger); font-size: 14px; line-height: 20px; font-weight: 600; }
-  .pin-lock-body { margin: 24px 24px 0; text-align: center; color: var(--w-text); font-size: 16px; line-height: 24px; }
+  .pin-lock-mark { display: flex; justify-content: center; margin: 32px 0 16px; color: var(--w-text); }
+  .pin-lock-body { margin: 0 24px; text-align: center; color: var(--w-text); font-size: 16px; line-height: 24px; }
+  .pinpad[data-pin-lock="plain"] .pin-close { margin-top: 16px; }
   .pin-err { margin: 8px 16px; text-align: center; color: var(--w-danger); font-size: 14px; line-height: 20px; }
   .pin-close { margin: 8px 16px 0; }
   .pin-pw { display: flex; flex-direction: column; gap: 12px; margin: 24px 16px; }

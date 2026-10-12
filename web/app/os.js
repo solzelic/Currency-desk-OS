@@ -5016,14 +5016,20 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       };
     }, [closed, digits]);
 
-    /* A lock with no clock is a heading, a sentence, and Close.
+    /* A lock with no clock is a lock icon, a sentence, and Close.
        The dots and the keypad stay off the screen. */
     if (plainLock) {
       return /*#__PURE__*/React.createElement("div", {
         className: "pinpad",
         "data-pin-lock": "plain",
         ref: root
-      }, /*#__PURE__*/React.createElement("p", {
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "pin-lock-mark",
+        "aria-hidden": "true"
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "lock",
+        s: 32
+      })), /*#__PURE__*/React.createElement("p", {
         className: "pin-lock-body",
         role: "alert"
       }, error), onClose ? /*#__PURE__*/React.createElement("div", {

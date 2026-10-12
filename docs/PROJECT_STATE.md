@@ -708,9 +708,10 @@ body includes seconds left (`retryAfter`) or an end (`lockedUntil`),
 the wait is `m:ss` under an hour and `h:mm:ss` from an hour up, plus
 the 12-hour time the keypad comes back. Zero, a negative, or a past
 end says the keypad is back. A body with no clock is a screen
-headed “PIN locked”. The body is “Too many wrong tries. Try again
-in a few minutes. You can’t switch staff on the till until then.”
-The PIN dots and the keypad are not on that screen. Close stays.
+headed “PIN locked”. A lock icon sits above the body, “Too many
+wrong tries. Try again in a few minutes. You can’t switch staff on
+the till until then.” Sixteen pixels separate that text from Close.
+The PIN dots and the keypad are not on that screen.
 The staff PIN routes send `lockedUntil`. Password Save and each contact
 Save ignore a second tap while the first request is in flight. PIN
 before a void is a sentence. The void gate reads the shop flag and

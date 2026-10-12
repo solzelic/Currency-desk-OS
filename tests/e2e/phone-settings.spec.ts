@@ -258,6 +258,14 @@ test("a dead session and a PIN lockout are named on the keypad", async ({ page }
     await expect(page.getByText("The till PIN is locked too.")).toHaveCount(0);
     await expect(sheet.locator(".pin-dots")).toHaveCount(0);
     await expect(sheet.locator(".keypad")).toHaveCount(0);
+    await expect(sheet.locator(".pin-lock-mark svg")).toBeVisible();
+    const gap = await sheet.evaluate(() => {
+      const body = document.querySelector(".pin-lock-body");
+      const close = document.querySelector(".pin-close");
+      if (!(body instanceof HTMLElement) || !(close instanceof HTMLElement)) return null;
+      return Math.round(close.getBoundingClientRect().top - body.getBoundingClientRect().bottom);
+    });
+    expect(gap).toBe(16);
     await expect(page.getByText(/Try again in \d+:\d{2}/)).toHaveCount(0);
     const close = page.getByRole("button", { name: "Close", exact: true });
     await expect(close).toBeVisible();

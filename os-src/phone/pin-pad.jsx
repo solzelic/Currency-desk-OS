@@ -61,11 +61,12 @@
       };
     }, [closed, digits]);
 
-    /* A lock with no clock is a heading, a sentence, and Close.
+    /* A lock with no clock is a lock icon, a sentence, and Close.
        The dots and the keypad stay off the screen. */
     if (plainLock) {
       return (
         <div className="pinpad" data-pin-lock="plain" ref={root}>
+          <div className="pin-lock-mark" aria-hidden="true"><Ic n="lock" s={32} /></div>
           <p className="pin-lock-body" role="alert">{error}</p>
           {onClose ? <div className="pin-close"><button type="button" className="phone-btn secondary" onClick={onClose}>Close</button></div> : null}
         </div>
