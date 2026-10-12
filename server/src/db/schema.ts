@@ -360,6 +360,32 @@ export const passwordResets = pgTable(
   (t) => [index("password_resets_user_idx").on(t.userId)],
 );
 
+/* Wrong shop-sign-in passwords. One row per account (`acct:<user id>`)
+   and one per client address (`ip:<address>`). A miss is its own bucket
+   so an unknown id locks on the same sentence as a real one. Postgres,
+   not a process map: a restart must not reset the count. */
+export const signinFailures = pgTable("signin_failures", {
+  bucket: text("bucket").primaryKey(),
+  failures: integer("failures").notNull(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+});
+
+/* Password proved, code not yet. The cookie is random; only its hash is
+   stored. Checking a code requires this row. ON DELETE CASCADE so removing
+   a staff user mid sign-in does not fail the foreign key. */
+export const loginChallenges = pgTable(
+  "login_challenges",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id").notNull().references(() => staffUsers.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("login_challenges_user_idx").on(t.userId)],
+);
+
 export const sessions = pgTable(
   "sessions",
   {

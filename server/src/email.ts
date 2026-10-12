@@ -31,6 +31,14 @@ export async function sendEmail(
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM; // e.g. "CurrencyDesk <noreply@mail.currencydesk.com>"
   if (!key || !from) {
+    /* A sign-in subject line is the code. Production must not write it
+       down just because the provider is not configured yet. Dev and test
+       still simulate — the suites read the code back from that log. */
+    if (process.env.NODE_ENV === "production") {
+      const missing = [!key ? "RESEND_API_KEY" : null, !from ? "EMAIL_FROM" : null].filter(Boolean).join(" and ");
+      console.warn(`[email refused] ${missing} is not set; nothing was sent. The message was not written to the log.`);
+      return "failed";
+    }
     console.log(`[email simulated] to=${to} :: ${subject} :: ${body.text}`);
     return "simulated";
   }
@@ -44,7 +52,9 @@ export async function sendEmail(
       }),
     });
     if (!res.ok) {
-      console.error(`[email failed] ${res.status} ${await res.text().catch(() => "")}`);
+      const providerBody = await res.text();
+      if (process.env.NODE_ENV === "production") console.error(`[email failed] provider status ${res.status}`);
+      else console.error(`[email failed] ${res.status} ${providerBody}`);
       return "failed";
     }
     return "sent";

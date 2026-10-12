@@ -113,6 +113,11 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Migration `040_till_balance_generation` keeps one generation per till
   and bumps it when that drawer's cash changes. A close names the
   generation it counted against. 039 is on main, so this file is 040.
+- Migration `041_signin_rate_limit` stores shop sign-in failure counts
+  and the emailed-code marker (the password step has to have passed
+  before a code is checked). Both tables are also in the boot DDL,
+  because PGlite does not run the SQL migrations. 040 is on main, so
+  this file is 041. 027 and 030 are still open drafts.
 
 ## Test commands
 

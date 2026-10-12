@@ -217,6 +217,16 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   at `/admin` requires TOTP after enrollment. The first sign-in enrolls
   (otpauth URI shown once, backup codes stored only as scrypt hashes).
   Desk `/login` is still password-only.
+  Password guesses on that door are limited: five wrong passwords on
+  one account, or twenty from one address, inside fifteen minutes, and
+  the next answer is "Too many tries. Try again in N minutes." The
+  count is a Postgres row, so a restart does not clear it. An unknown
+  staff id gets the same sentence. The emailed-code step answers with
+  the same words, in the same time, for an unknown id and a wrong code,
+  and it will not check a code unless this browser already passed the
+  password (a server-side marker). If `RESEND_API_KEY` or `EMAIL_FROM`
+  is missing in production, the send is refused and the code is not
+  written to the log.
 
 - **Signup mobile on the admin call** — the number `placeOutboundCall`
   dials is `enquiries.details.phone`. The mobile typed while opening a
@@ -549,6 +559,15 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
+Postgres, five per account and twenty per address, for fifteen
+minutes. The lock says "Too many tries. Try again in N minutes." and
+an unknown staff id gets that same sentence. The emailed-code step
+gives one answer, in the same time, for an unknown id and a wrong
+code, and it checks a code only after the password step has left a
+server-side marker. Production without `RESEND_API_KEY` or
+`EMAIL_FROM` does not send and does not log the code. Migration 041.
 
 **2026-10-12**, serialization retry. A post that Postgres aborts with 40001 is run
 again, up to six times. The aborted attempt wrote nothing. The same

@@ -129,10 +129,12 @@ describe("GET /api/rates/ticker for an RSD desk", () => {
     expect(start.statusCode, start.body).toBe(200);
     const line = [...logged].reverse().find((l) => l.includes("milan@ticker-rsd.example") && /\d{6}/.test(l));
     const code = line?.match(/(\d{6}) is your/)?.[1] ?? line?.match(/code is (\d{6})/)?.[1];
+    const proof = start.cookies.find((c) => c.name === "cdos_login_proof")?.value;
     const verified = await app.inject({
       method: "POST",
       url: "/api/auth/login/verify",
       payload: { staffId: "milan@ticker-rsd.example", code, tenantId: "tnt-tickersd" },
+      cookies: proof ? { cdos_login_proof: proof } : {},
     });
     expect(verified.statusCode, verified.body).toBe(200);
     return verified.cookies.find((c) => c.name === "cdos_session")!.value;
