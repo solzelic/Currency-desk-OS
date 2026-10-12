@@ -148,7 +148,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   control, the reporting line in plain words, Reportable and Structuring
   cards, and Screening or the 24-hour rule. Amounts use formatPhoneMoney,
   so the code follows the number (`10,000.00 CAD`) and a bare `$` is not
-  used. A recent day reads Today or Yesterday, and a day in the current
+  used. The 24-hour rule reads the pack's threshold and comparison.
+  Canada, which files at the line, says "At 10,000.00 CAD or more, you
+  file." A pack that compares with greater-than says over its own amount.
+  A set that totals the line shows You file. A recent day reads Today or Yesterday, and a day in the current
   year reads like Oct 9, with no year. Times use formatPhoneTime,
   12-hour with AM or PM (`10:15 AM`). The shared date always includes
   the year, and the shared list group is only Today or a full date,
@@ -587,6 +590,11 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, phone Compliance threshold. The 24-hour rule sentence
+reads the pack. Canada says "At 10,000.00 CAD or more, you file."
+A greater-than pack says over that amount. A set totalling exactly
+the line shows You file.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the

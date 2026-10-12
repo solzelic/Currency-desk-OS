@@ -77,6 +77,17 @@
     return 'Aggregation';
   }
 
+  /* The pack owns the line. A gte pack is "At 10,000.00 CAD or more".
+     A gt pack is "Over" that amount. The figure is the pack threshold
+     through formatPhoneMoney. Nothing here writes 10000 by hand. */
+  function thresholdPhrase(regime, atStart) {
+    if (!regime || regime.threshold == null || !regime.currency) return '';
+    const money = phoneMoney(regime.threshold, regime.currency);
+    if (!money) return '';
+    if (regime.comparator === 'gt') return (atStart ? 'Over ' : 'over ') + money;
+    return (atStart ? 'At ' : 'at ') + money + ' or more';
+  }
+
   /* Same people the bell already lists: ID is required on a deal and is not ok. */
   function missingId(rows, clients, settings) {
     const flags = window.CDOS.computeFlags(rows, clients, settings);
@@ -297,9 +308,19 @@
     const loadedLine = loadedAt ? 'Last loaded ' + phoneClock(loadedAt) : 'Not loaded yet';
     const fileLine = "You file in the regulator's portal. This desk does not send the report.";
     const titles = { submissions: 'What you would file', structuring: 'Possible split deals', aggregation: windowLabel(regime), screening: 'Sanctions screening', missing: 'Clients missing ID' };
-    const hourRule = regime && regime.aggHours === 24 && regime.threshold != null && regime.currency
-      ? 'Cash from one client within 24 hours adds up. Over ' + phoneMoney(regime.threshold, regime.currency) + ', you file.'
+    const lineLead = thresholdPhrase(regime, true);
+    const lineMid = thresholdPhrase(regime, false);
+    const hourRule = regime && regime.aggHours === 24 && lineLead
+      ? 'Cash from one client within 24 hours adds up. ' + lineLead + ', you file.'
       : '';
+    const singleLine = lineLead
+      ? (regime.comparator === 'gt'
+        ? 'A single amount over ' + phoneMoney(regime.threshold, regime.currency) + ' stands on its own. '
+        : 'A single amount of ' + phoneMoney(regime.threshold, regime.currency) + ' or more stands on its own. ') + fileLine
+      : 'No large-cash amount is set on this pack. ' + fileLine;
+    const noneAdded = lineMid
+      ? 'No total in this window is ' + lineMid + '. ' + fileLine
+      : 'Nothing in this window is reportable. ' + fileLine;
     const viewKey = pane === 'missing' ? 'missing' : detail;
     let title = 'Compliance';
     let subtitle = sub;
@@ -435,8 +456,8 @@
         )}
         {!showComputer && !drill && pane === 'detail' && viewKey === 'aggregation' && (
           <div data-testid="compliance-detail-aggregation">
-            {!summed && <Phone.EmptyState title="Deals are not added together" message={regime && regime.threshold != null && regime.currency ? 'A single amount of ' + phoneMoney(regime.threshold, regime.currency) + ' or more stands on its own. ' + fileLine : 'No large-cash amount is set on this pack. ' + fileLine} />}
-            {summed && !(clusters && clusters.length) && <Phone.EmptyState title="Nothing to add up" message={'No total in this window is over the line. ' + fileLine} />}
+            {!summed && <Phone.EmptyState title="Deals are not added together" message={singleLine} />}
+            {summed && !(clusters && clusters.length) && <Phone.EmptyState title="Nothing to add up" message={noneAdded} />}
             {summed && !!(clusters && clusters.length) && (
               <Phone.ListSection title="In this window">
                 {clusters.map((cluster) => (

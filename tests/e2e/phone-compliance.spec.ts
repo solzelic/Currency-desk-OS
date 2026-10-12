@@ -91,9 +91,18 @@ async function expectRowsFit(root: ReturnType<Page["locator"]>): Promise<void> {
   expect(clipped).toEqual([]);
 }
 
+/* The window fades in under the fixed top bar. A shot taken during
+   that fade washes out everything below the bar. */
+async function settled(page: Page): Promise<void> {
+  const win = page.locator(".win.show.active").first();
+  await expect(win).toHaveCSS("transform", "none");
+  await expect(win).toHaveCSS("opacity", "1");
+}
+
 async function shot(page: Page, name: string): Promise<void> {
   for (const width of [390, 360] as const) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 780 });
+    await settled(page);
     await page.screenshot({ path: `test-results/compliance_${name}_${width}.png`, fullPage: false });
   }
 }
@@ -222,6 +231,7 @@ test("owner and teller phone homes stay honest", async ({ page }) => {
       expect(homeText).not.toContain("Use the current Canada rules");
       expect(homeText).not.toContain("Change in Settings");
       expect(homeText).not.toMatch(/\$/);
+      await settled(page);
       await page.screenshot({
         path: `test-results/compliance_home_${role}_${width}.png`,
         fullPage: false,
@@ -427,7 +437,7 @@ test("fixture deals fill the phone details and one deal drill", async ({ page })
   await home.getByRole("tab", { name: "24-hour rule" }).click();
   const aggregate = await openDetail(/Large cash/, "compliance-detail-aggregation", "24-hour rule");
   await expect(shell.locator(".phone-title p")).toContainText("Cash from one client within 24 hours adds up.");
-  await expect(shell.locator(".phone-title p")).toContainText("Over 10,000.00 CAD, you file.");
+  await expect(shell.locator(".phone-title p")).toContainText("At 10,000.00 CAD or more, you file.");
   expect(await shell.innerText()).not.toMatch(/24h|static window/i);
   await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("2 cash-ins");
   await expect(aggregate.getByRole("button", { name: /Leah Cho/ })).toContainText("10,300.00 CAD");
@@ -449,4 +459,57 @@ test("fixture deals fill the phone details and one deal drill", async ({ page })
   await page.setViewportSize({ width: 360, height: 780 });
   await expectRowsFit(missing);
   await shot(page, "detail_missing_filled");
+});
+
+/* Two cash deals, neither one at the line, totalling exactly 10,000.00 CAD.
+   Canada files at the line, so this set is a report. The sentence and the
+   badge both come from that pack, not from a fixed "over 10,000". */
+test("a set totalling exactly 10,000.00 CAD shows You file", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page, "j.masri");
+  const day = await page.evaluate(() => String(window.CDOS.businessDate()).slice(0, 10));
+  await page.evaluate((businessDay) => {
+    const cash = (id: string, ref: string, time: string, amount: number) => ({
+      id,
+      ref,
+      date: businessDay,
+      time,
+      customer: "Rita Okonkwo",
+      beneficiary: "",
+      type: "Currency Exchange",
+      inCcy: "CAD",
+      inAmt: amount,
+      outCcy: "USD",
+      outAmt: 1,
+      status: "posted",
+      filed: false,
+      ackStr: false,
+      voidReason: "",
+      voidBy: "",
+      voidAt: "",
+    });
+    localStorage.setItem("cdos_rows_v1", JSON.stringify([
+      cash("fx-exact-a", "LT-EXACT-A", "09:00", 5000),
+      cash("fx-exact-b", "LT-EXACT-B", "15:00", 5000),
+    ]));
+    localStorage.setItem("cdos_clients_v1", JSON.stringify({
+      "Rita Okonkwo": { idType: "Passport", idNum: "P400004", idExpiry: "2030-06-01" },
+    }));
+  }, day);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await landOnDesktop(page);
+  await dismissTour(page);
+  await settled(page);
+  await openCompliance(page);
+  const shell = page.locator('[data-phone-shell][data-app="compliance"]');
+  const home = shell.getByTestId("compliance-phone-home");
+  await expect(home).toHaveAttribute("data-state", "ready");
+  await home.getByRole("tab", { name: "24-hour rule" }).click();
+  await home.getByRole("button", { name: /Large cash/ }).click();
+  await expect(shell.locator("h1")).toHaveText("24-hour rule");
+  await expect(shell.locator(".phone-title p")).toHaveText("Cash from one client within 24 hours adds up. At 10,000.00 CAD or more, you file.");
+  const row = shell.getByRole("button", { name: /Rita Okonkwo/ });
+  await expect(row).toContainText("10,000.00 CAD");
+  await expect(row).toContainText("You file");
+  expect(await shell.innerText()).not.toMatch(/\bOver\b/);
 });
