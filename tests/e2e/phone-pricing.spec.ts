@@ -144,16 +144,16 @@ for (const width of [360, 390]) {
     await expect(phone).not.toContainText("$");
     await expect(phone.locator(".phone-badge").first()).toHaveText(/^(Connected|Not connected|Stale)$/);
     const names = await page.locator(".pr-ccy").evaluateAll((els) => {
-      const display = new Intl.DisplayNames(["en"], { type: "currency" });
+      const page = globalThis as unknown as {
+        BY?: Record<string, { name?: string }>;
+        CUR?: Array<{ code: string; name?: string }>;
+      };
       return els.map((el) => {
         const code = (el.querySelector(".phone-row-title")?.textContent || "").trim();
         const name = (el.querySelector(".phone-row-sub")?.textContent || "").trim();
-        let expected = "";
-        try {
-          expected = display.of(code) || "";
-        } catch (err) {
-          expected = "";
-        }
+        const row = (page.BY && page.BY[code]) || (page.CUR ? page.CUR.find((item) => item.code === code) : null);
+        const catalog = row && row.name ? String(row.name) : "";
+        const expected = catalog && catalog.toUpperCase() !== code ? catalog : "";
         return { code, name, expected, custom: (el.querySelector(".phone-row-meta")?.textContent || "").trim() === "custom" };
       });
     });
@@ -163,6 +163,10 @@ for (const width of [360, 390]) {
       expect(row.name.toUpperCase(), row.code).not.toBe(row.code);
       expect(row.name, row.code).toBe(row.expected);
     }
+    const byCode = Object.fromEntries(names.map((row) => [row.code, row.name]));
+    expect(byCode.USD).toBe("US Dollar");
+    expect(byCode.SAR).toBe("Saudi Riyal");
+    expect(byCode.AED).toBe("UAE Dirham");
     const shown = await phone.innerText();
     expect(shown).not.toMatch(/\blive\b/i);
     expect(shown).not.toMatch(/Rate Board/);

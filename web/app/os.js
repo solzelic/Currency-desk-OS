@@ -54307,23 +54307,18 @@ ${snap}`;
     return on;
   }
 
-  /* One name for every code this desk trades. Intl is the source.
-     A name that is missing, or that is just the code, is blank —
-     the row already shows the code as its title. */
-  let currencyNames = null;
+  /* The name is the catalog row in yorkfx-converter.js (BY / CUR):
+     "US Dollar", "Saudi Riyal", "UAE Dirham". That is the same table
+     the phone Rates list reads. This screen does not ask
+     Intl.DisplayNames. A code the catalog does not name is left
+     blank — the row already shows the code as its title. */
   function currencyName(code) {
     const c = String(code || '').toUpperCase();
     if (!/^[A-Z]{3}$/.test(c)) return '';
-    try {
-      if (!currencyNames) currencyNames = new Intl.DisplayNames(['en'], {
-        type: 'currency'
-      });
-      const name = currencyNames.of(c);
-      if (!name || name.toUpperCase() === c) return '';
-      return name;
-    } catch (err) {
-      return '';
-    }
+    const row = typeof BY !== 'undefined' && BY[c] || (typeof CUR !== 'undefined' ? CUR.find(item => item.code === c) : null);
+    const name = row && row.name;
+    if (!name || String(name).toUpperCase() === c) return '';
+    return name;
   }
   /* Health calls a market pull stale after 180 minutes
      (RATES_STALE_MINUTES in server/src/platform/health.ts).

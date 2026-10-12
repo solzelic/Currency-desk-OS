@@ -703,8 +703,9 @@ global settings and one spread per currency. A sheet steps the
 spread and previews the next 500-unit deal with `priceDeal`. Publish
 uses the existing rate-board endpoint, once, and a toast names how
 many currencies went up and the time from `formatPhoneTime`
-(`3:02 PM`). A currency row's name comes from
-`Intl.DisplayNames`, and the code is not repeated. The source
+(`3:02 PM`). A currency row's name is the catalog in
+`yorkfx-converter.js` (`BY[code].name`), the same table the phone
+Rates list reads, and the code is not repeated. The source
 badge is Connected, Not connected, or Stale from the market pull.
 Publish stays off until a saved spread differs from the board.
 The list puts a custom spread first, then the six mobile-homepage
