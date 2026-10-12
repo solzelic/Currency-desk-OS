@@ -558,19 +558,30 @@ memory on this process.
 
 **2026-10-12**, staff switch. Taking the desk from the avatar menu is a new
 session. `POST /api/auth/switch` checks the next person's server-held
-PIN. A missing PIN, the guess `0000`, and a locked keypad are said
-inside the PIN dialog, using that person's name (initial and surname).
-`0000` does not count as a wrong try. The dialog's Cancel key uses the
-desk font at 15px. The route revokes the cookie that was live and
-issues one for them. The till stays only when they may use it;
-otherwise they pick one. The screen applies the role `/api/auth/me`
-returns after that. The Settings toggle that used to skip the PIN does
-not skip the server. A deal, a till open, and an audit row carry the
-new session. The first-run tour is once per person, on sign-in. A
-switch or a handover does not open it and does not mark it done.
-Before this, a successful switch wrote nothing, so a deal whose screen
-said one person and whose `actor_id` is another cannot be found with
-a query.
+PIN. A missing PIN, a manager-issued PIN they have not replaced, the
+guess `0000`, and a locked keypad are said inside the PIN dialog. The
+name is an initial and a surname, and the space between them does not
+break. `0000` and the other easy PINs are refused when someone sets a
+PIN, not only when they switch. `0000` on a switch does not count as a
+wrong try. Five wrong tries lock the keypad, and the lock clears on
+its own in 5 minutes. The dialog's Cancel key uses the desk font at
+15px. The route revokes the cookie that was live and issues one for
+them. Two switches from the same cookie cannot both win. The till
+session belongs to whoever counted it. A switch does not hand it over.
+A teller or a supervisor keeps that workspace only when they counted
+it, or when nobody has. A manager, an auditor, or compliance can stay
+on it to look or to approve, and they do not become the person who
+counted it. Anyone else is asked to pick a till. A deal on a till
+somebody else counted is refused until the new person does a handover
+count: a blind count closes the old session with the variance on the
+opener and opens a session they counted. The screen applies the role
+`/api/auth/me` returns after the switch. The Settings toggle that used
+to skip the PIN does not skip the server. A deal, a till open, and an
+audit row carry the new session. The first-run tour is once per person,
+on sign-in. A switch or a handover does not open it and does not mark
+it done. Before this, a successful switch wrote nothing, so a deal
+whose screen said one person and whose `actor_id` is another cannot
+be found with a query.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the

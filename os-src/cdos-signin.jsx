@@ -531,7 +531,7 @@
         <div style={{ ...PinCard, width: 448, textAlign: 'left', padding: '28px 30px' }}>
           <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--si-plum)', marginBottom: 8 }}>Handover · on the record</div>
           <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 6 }}>Who's taking the desk?</div>
-          <div style={{ fontSize: 13, color: 'var(--si-mute)', marginBottom: 16, lineHeight: 1.6 }}>The live session and the open drawer pass to the next operator. Every handover is logged with who, when, and which till.</div>
+          <div style={{ fontSize: 13, color: 'var(--si-mute)', marginBottom: 16, lineHeight: 1.6 }}>The next person signs in here. The till stays with whoever counted it until they count it to take it over. The switch is logged.</div>
           <div style={{ display: 'grid', gap: 8, maxHeight: 260, overflow: 'auto' }}>
             {others.map(o => {
               const isCur = current && o.name === current.name;
@@ -588,9 +588,9 @@
         }
         if (res.status === 401) { setErr('Incorrect PIN'); return; }
         setErr(data.detail || 'Could not switch to that account.');
-      }).catch((e) => {
+      }).catch(() => {
         setVerifying(false); setPin('');
-        setErr((e && e.message) || 'Could not reach the desk to switch accounts.');
+        setErr('Could not reach the desk to switch accounts.');
       });
     };
     return (<div style={Scrim}><style>{cdKeyframes}</style>

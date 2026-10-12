@@ -60284,7 +60284,7 @@ ${snap}`;
           marginBottom: 16,
           lineHeight: 1.6
         }
-      }, "The live session and the open drawer pass to the next operator. Every handover is logged with who, when, and which till."), /*#__PURE__*/React.createElement("div", {
+      }, "The next person signs in here. The till stays with whoever counted it until they count it to take it over. The switch is logged."), /*#__PURE__*/React.createElement("div", {
         style: {
           display: 'grid',
           gap: 8,
@@ -60426,10 +60426,10 @@ ${snap}`;
           return;
         }
         setErr(data.detail || 'Could not switch to that account.');
-      }).catch(e => {
+      }).catch(() => {
         setVerifying(false);
         setPin('');
-        setErr(e && e.message || 'Could not reach the desk to switch accounts.');
+        setErr('Could not reach the desk to switch accounts.');
       });
     };
     return /*#__PURE__*/React.createElement("div", {
@@ -65455,7 +65455,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           credentials: 'same-origin'
         });
       } catch (e) {
-        log('Account switch failed', e && e.message || 'The desk could not be reached after the switch.');
+        log('Account switch failed', 'The desk could not be reached after the switch.');
         setStage('lock');
         return;
       }

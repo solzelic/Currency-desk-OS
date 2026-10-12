@@ -1531,7 +1531,7 @@
       try {
         res = await fetch('/api/auth/me', { credentials: 'same-origin' });
       } catch (e) {
-        log('Account switch failed', (e && e.message) || 'The desk could not be reached after the switch.');
+        log('Account switch failed', 'The desk could not be reached after the switch.');
         setStage('lock');
         return;
       }

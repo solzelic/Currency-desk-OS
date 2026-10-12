@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import pg from "pg";
+import { pinDeskName } from "../auth/desk-name.js";
 import {
   hasBackendPermission,
   type BackendPermission,
@@ -179,7 +180,7 @@ export async function requireOpenTill(
   actor: LedgerActor,
 ) {
   const session = await client.query(
-    `SELECT status
+    `SELECT status, opened_by
        FROM ledger_till_sessions
       WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
         AND workspace_id=$4 AND till_id=$5
@@ -194,6 +195,14 @@ export async function requireOpenTill(
       "Open the till before posting transactions.",
     );
   }
+  const opener = session.rows[0].opened_by as string;
+  if (opener === actor.userId) return;
+  const named = await client.query(`SELECT name FROM staff_users WHERE id=$1`, [opener]);
+  const who = pinDeskName(String(named.rows[0]?.name ?? ""));
+  throw new LedgerError(
+    "TILL_HELD",
+    `Count the till to take it over from ${who || "the person who counted it"}.`,
+  );
 }
 
 /* ---- the identification gate ----

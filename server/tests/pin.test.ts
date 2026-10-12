@@ -56,6 +56,31 @@ describe("generated PINs", () => {
   });
 });
 
+describe("a chosen PIN is not one people guess first", () => {
+  it("refuses 0000 and the easy patterns at set and at reset", async () => {
+    const sign = await signIn("s.iqbal");
+    expect(sign.statusCode, sign.body).toBe(200);
+    const cookies = cookieOf(sign);
+    for (const pin of ["0000", "1111", "1234", "9876", "1999"]) {
+      const res = await app.inject({ method: "POST", url: "/api/staff/pin", cookies, payload: { pin } });
+      expect(res.statusCode, `${pin} ${res.body}`).toBe(422);
+      expect(res.json().error).toBe("weak_pin");
+      if (pin === "0000") expect(res.json().detail).toBe("0000 is too easy to guess. Pick a different PIN.");
+    }
+    const ok = await app.inject({ method: "POST", url: "/api/staff/pin", cookies, payload: { pin: "4829" } });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const reset = await app.inject({
+      method: "POST", url: "/api/staff/pin/reset", cookies,
+      payload: { password: "yorkville", pin: "0000" },
+    });
+    expect(reset.statusCode, reset.body).toBe(422);
+    expect(reset.json().error).toBe("weak_pin");
+    const row = await staffRow("s.iqbal");
+    expect(row.pinMustChange).toBe(false);
+    expect(row.pinHash).toBeTruthy();
+  });
+});
+
 describe("PINs are checked by the server", () => {
   it("says so plainly when nobody has set one, so the desk can cope", async () => {
     const res = await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "1357" } });

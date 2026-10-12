@@ -189,14 +189,21 @@ cash desk the interesting event is somebody being let go at 4pm. Every
 credential change revokes every other session.
 
 **Taking the desk is a new session.** `POST /api/auth/switch` proves the next
-person's PIN, revokes the live cookie, and issues one for them. The avatar
-menu used to change only the name on screen, so the book kept stamping
-whoever had typed the password. A missing PIN is refused in that person's
-name (initial and surname). `0000` is refused as too easy to guess, and it
-does not count as a wrong try. Too many wrong tries locks the keypad until
-a manager clears it. The workspace stays only when that person may use it;
-otherwise they pick a till. The audit row is `auth.switch` with `{from, to}`.
-The first-run tour stays closed on a switch and on a handover.
+person's PIN, revokes the live cookie, and issues one for them. Only one of
+two switches from that cookie succeeds. The avatar menu used to change only
+the name on screen, so the book kept stamping whoever had typed the password.
+A missing PIN, and a PIN a manager issued that its owner has not replaced,
+are refused in that person's name (initial and surname). `0000` is refused
+as too easy to guess, and it does not count as a wrong try. The same easy
+PINs are refused when a person sets their own. Too many wrong tries locks
+the keypad for 5 minutes, then it clears on its own. The till belongs to
+whoever counted it. Switching in does not take it. A manager, an auditor,
+or compliance may keep the workspace to look or to approve. A teller or a
+supervisor keeps it only when they are the one who counted it. Trading on
+someone else's count is refused until a handover count closes that session,
+with the variance on the opener, and opens one the new person counted. The
+audit row is `auth.switch` with `{from, to}`. The first-run tour stays
+closed on a switch and on a handover.
 
 **Nothing enumerable.** Whether an account exists is not public. The reset
 route answers identically for a stranger and a customer, in the same words —

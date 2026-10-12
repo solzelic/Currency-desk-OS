@@ -2,6 +2,7 @@
    A deal posted after that still carried the person who typed the
    password. These tests are the old behaviour going red: the switch
    is a new session, and the book stamps that session. */
+import { readFileSync } from "node:fs";
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -75,14 +76,14 @@ describe("account switch refuses a PIN the server does not hold", () => {
     expect(missing.statusCode, missing.body).toBe(409);
     expect(missing.json()).toEqual({
       error: "no_pin",
-      detail: "A. Singh has no PIN yet. Ask a manager to set one.",
+      detail: "A.\u00A0Singh has no PIN yet. They need to choose their own PIN before switching in.",
     });
 
     await handle.db.update(schema.staffUsers).set({ name: "Amrit Singh" }).where(eq(schema.staffUsers.id, idOf(B)));
     try {
       const full = await switchTo(costa, B, "1357");
       expect(full.statusCode, full.body).toBe(409);
-      expect(full.json().detail).toBe("A. Singh has no PIN yet. Ask a manager to set one.");
+      expect(full.json().detail).toBe("A.\u00A0Singh has no PIN yet. They need to choose their own PIN before switching in.");
     } finally {
       await handle.db.update(schema.staffUsers).set({ name: "A. Singh" }).where(eq(schema.staffUsers.id, idOf(B)));
     }
@@ -116,10 +117,26 @@ describe("account switch refuses a PIN the server does not hold", () => {
     });
     const costa = await login(A);
     const other = await switchTo(costa, "x.ade", "1357");
-    expect(other.statusCode, other.body).toBe(403);
-    expect(other.json().error).toBe("cross_tenant");
     const missing = await switchTo(costa, "nobody.here", "1357");
-    expect(missing.statusCode).toBe(404);
+    expect(other.statusCode, other.body).toBe(404);
+    expect(missing.statusCode, missing.body).toBe(404);
+    expect(other.json()).toEqual(missing.json());
+    expect(other.json()).toEqual({ error: "not_found", detail: "That person is not on this desk." });
+  });
+
+  it("refuses a manager-issued PIN until that person chooses their own", async () => {
+    await handle.db.update(schema.staffUsers).set({
+      pinHash: await hashPin("4829"), pinSetAt: new Date(), pinMustChange: true,
+    }).where(eq(schema.staffUsers.id, idOf("s.iqbal")));
+    const costa = await login(A);
+    const refused = await switchTo(costa, "s.iqbal", "4829");
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toEqual({
+      error: "must_change",
+      detail: "S.\u00A0Iqbal needs to choose their own PIN before switching in.",
+    });
+    const still = await app.inject({ method: "GET", url: "/api/auth/me", cookies: costa });
+    expect(still.json().user.id).toBe(A);
   });
 
   it("locks the keypad the same way a PIN check does", async () => {
@@ -131,23 +148,41 @@ describe("account switch refuses a PIN the server does not hold", () => {
     expect(tries[4]!.json()).toMatchObject({
       error: "wrong_pin",
       locked: true,
-      detail: "Too many wrong tries. Ask a manager to unlock A. Singh.",
+      detail: "Too many wrong tries. This clears on its own in 5 minutes.",
     });
     const locked = await switchTo(costa, B, "1111");
     expect(locked.statusCode, locked.body).toBe(429);
     expect(locked.json()).toEqual({
       error: "locked",
-      detail: "Too many wrong tries. Ask a manager to unlock A. Singh.",
+      detail: "Too many wrong tries. This clears on its own in 5 minutes.",
     });
     const weakWhileLocked = await switchTo(costa, B, "0000");
     expect(weakWhileLocked.statusCode, weakWhileLocked.body).toBe(429);
-    expect(weakWhileLocked.json().detail).toBe("Too many wrong tries. Ask a manager to unlock A. Singh.");
+    expect(weakWhileLocked.json().detail).toBe("Too many wrong tries. This clears on its own in 5 minutes.");
     clearPinAttempts(idOf(B));
   });
 });
 
+describe("handover says a network failure in plain words", () => {
+  it("never repeats the browser's fetch error", () => {
+    const src = readFileSync(new URL("../../os-src/cdos-signin.jsx", import.meta.url), "utf8");
+    const start = src.indexOf("function Handover");
+    const body = src.slice(start, src.indexOf("function ", start + 10));
+    expect(body).toContain("Could not reach the desk to switch accounts.");
+    expect(body).not.toContain("e.message");
+    expect(body).not.toContain("Failed to fetch");
+  });
+});
+
 describe("account switch replaces the session", () => {
-  it("keeps the till when the next person may use it, and kills the old cookie", async () => {
+  it("keeps the till when nobody else has counted it, and kills the old cookie", async () => {
+    if (pool) {
+      await pool.query(
+        `UPDATE ledger_till_sessions SET status='closed', closed_at=COALESCE(closed_at, now()), closed_by=COALESCE(closed_by, opened_by)
+          WHERE workspace_id=$1 AND status='open'`,
+        [DEMO.workspaceId],
+      );
+    }
     await setPin(B, "4829");
     const costa = await login(A);
     const switched = await switchTo(costa, B, "4829");
@@ -185,6 +220,22 @@ describe("account switch replaces the session", () => {
     expect(switched.json()).toMatchObject({ ok: true, pickTill: true, workspaceId: null, user: { id: B } });
     expect((await app.inject({ method: "GET", url: "/api/auth/me", cookies: costa })).statusCode).toBe(401);
   });
+
+  it("lets one of two switches from the same cookie win", async () => {
+    await setPin(B, "4829");
+    const costa = await login(A);
+    const [left, right] = await Promise.all([
+      switchTo(costa, B, "4829"),
+      switchTo(costa, B, "4829"),
+    ]);
+    const codes = [left.statusCode, right.statusCode].sort((a, b) => a - b);
+    expect(codes, `${left.body} ${right.body}`).toEqual([200, 409]);
+    const winner = left.statusCode === 200 ? left : right;
+    const loser = left.statusCode === 409 ? left : right;
+    expect(loser.json().error).toBe("session_replaced");
+    expect((await app.inject({ method: "GET", url: "/api/auth/me", cookies: cookieOf(winner) })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/auth/me", cookies: costa })).statusCode).toBe(401);
+  });
 });
 
 postgres("a switched session is the person on the deal", () => {
@@ -202,6 +253,13 @@ postgres("a switched session is the person on the deal", () => {
     await pool!.query(
       "INSERT INTO branches (id,tenant_id,legal_entity_id,name) VALUES ($1,$2,$3,'Yorkville') ON CONFLICT DO NOTHING",
       [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId],
+    );
+    await pool!.query(
+      `INSERT INTO staff_users (id,tenant_id,legal_entity_id,branch_id,staff_id,name,role,authorized_branch_ids,password_hash)
+       VALUES ($1,$2,$3,$4,'a.singh','A. Singh','supervisor','[]'::jsonb,'x'),
+              ($5,$2,$3,$4,'m.costa','M. Costa','teller','[]'::jsonb,'x')
+       ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`,
+      [idOf(B), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, idOf(A)],
     );
     await pool!.query("INSERT INTO market_rates (id,provider,mids,fetched_at) VALUES ('switch-snap','test','{\"USD\":1.4}',now())");
     await pool!.query(
@@ -240,7 +298,7 @@ postgres("a switched session is the person on the deal", () => {
     return posted.json().transactionId as string;
   }
 
-  it("stamps B on the deal, the audit and the till, then A on the way back", async () => {
+  it("stamps the person who counted the till, and refuses a deal until the next person counts it", async () => {
     await setPin(B, "4829");
     await setPin(A, "1357");
     const costa = await login(A);
@@ -272,17 +330,82 @@ postgres("a switched session is the person on the deal", () => {
     const till = await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(till.rows.map((row) => row.opened_by)).toEqual([idOf(B)]);
 
-    const toCosta = await switchTo(singh, A, "1357");
+    await setPin("r.haddad", "2468");
+    const toManager = await switchTo(singh, "r.haddad", "2468");
+    expect(toManager.statusCode, toManager.body).toBe(200);
+    expect(toManager.json()).toMatchObject({
+      pickTill: false, workspaceId: DEMO.workspaceId, user: { id: "r.haddad" },
+    });
+    const manager = cookieOf(toManager);
+    const look = await app.inject({
+      method: "POST", url: "/api/ledger/customers", cookies: manager,
+      payload: { name: "Manager look", risk: "normal", idStatus: "verified" },
+    });
+    expect(look.statusCode, look.body).toBe(201);
+    const lookQuote = await app.inject({
+      method: "POST", url: "/api/quotes", cookies: manager,
+      payload: {
+        customerId: look.json().customerId, from: "CAD", to: "USD",
+        inputAmount: "100.00", feeCad: "4.00", direction: "customer_buy_foreign",
+      },
+    });
+    expect(lookQuote.statusCode, lookQuote.body).toBe(201);
+    const lookPost = await app.inject({
+      method: "POST", url: `/api/quotes/${lookQuote.json().quoteId}/post`, cookies: manager,
+      payload: { idempotencyKey: "switch-manager", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+    });
+    expect(lookPost.statusCode, lookPost.body).toBe(409);
+    expect(lookPost.json().message).toBe("Count the till to take it over from A.\u00A0Singh.");
+    expect((await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'")).rows.map((row) => row.opened_by)).toEqual([idOf(B)]);
+
+    const toCosta = await switchTo(manager, A, "1357");
     expect(toCosta.statusCode, toCosta.body).toBe(200);
+    expect(toCosta.json()).toMatchObject({ pickTill: true, workspaceId: null, user: { id: A } });
     const back = cookieOf(toCosta);
-    expect((await app.inject({ method: "GET", url: "/api/auth/me", cookies: singh })).statusCode).toBe(401);
-    const second = await postDeal(back, "switch-a", idOf(B));
-    const reverse = await pool!.query(
-      "SELECT actor_id FROM ledger_transactions WHERE transaction_id=$1",
-      [second],
+    const heldQuote = await app.inject({
+      method: "POST", url: "/api/quotes", cookies: back,
+      headers: { "x-workspace-id": DEMO.workspaceId },
+      payload: {
+        customerId: look.json().customerId, from: "CAD", to: "USD",
+        inputAmount: "100.00", feeCad: "4.00", direction: "customer_buy_foreign",
+      },
+    });
+    expect(heldQuote.statusCode, heldQuote.body).toBe(201);
+    const held = await app.inject({
+      method: "POST", url: `/api/quotes/${heldQuote.json().quoteId}/post`, cookies: back,
+      headers: { "x-workspace-id": DEMO.workspaceId },
+      payload: { idempotencyKey: "switch-held", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+    });
+    expect(held.statusCode, held.body).toBe(409);
+    expect(held.json()).toEqual({
+      code: "TILL_HELD",
+      message: "Count the till to take it over from A.\u00A0Singh.",
+    });
+    const openBefore = await pool!.query("SELECT session_id, opened_by FROM ledger_till_sessions WHERE status='open'");
+    expect(openBefore.rows.map((row) => row.opened_by)).toEqual([idOf(B)]);
+
+    const handover = await app.inject({
+      method: "POST", url: "/api/ledger/till-sessions/handover", cookies: back,
+      headers: { "x-workspace-id": DEMO.workspaceId },
+      payload: { idempotencyKey: "handover-costa", counts: { CAD: "50000.00", USD: "4000.00" } },
+    });
+    expect(handover.statusCode, handover.body).toBe(201);
+    expect(handover.json().session.openedBy).toBe(idOf(A));
+    const closed = await pool!.query(
+      "SELECT status, opened_by, closed_by FROM ledger_till_sessions WHERE session_id=$1",
+      [openBefore.rows[0].session_id],
     );
+    expect(closed.rows[0]).toMatchObject({ status: "closed", opened_by: idOf(B), closed_by: idOf(B) });
+    const variance = await pool!.query(
+      "SELECT actor_id FROM ledger_till_count_batches WHERE session_id=$1 AND count_kind='close'",
+      [openBefore.rows[0].session_id],
+    );
+    expect(variance.rows.map((row) => row.actor_id)).toEqual([idOf(B)]);
+
+    const second = await postDeal(back, "switch-a", idOf(B));
+    const reverse = await pool!.query("SELECT actor_id FROM ledger_transactions WHERE transaction_id=$1", [second]);
     expect(reverse.rows[0].actor_id).toBe(idOf(A));
-    const still = await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(still.rows.map((row) => row.opened_by)).toEqual([idOf(B)]);
+    const openNow = await pool!.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
+    expect(openNow.rows.map((row) => row.opened_by)).toEqual([idOf(A)]);
   });
 });
