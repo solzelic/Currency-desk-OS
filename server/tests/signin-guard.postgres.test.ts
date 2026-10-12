@@ -14,13 +14,29 @@ import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { hashPassword } from "../src/auth/password.js";
 import { sendEmail } from "../src/email.js";
-import { CODE_REFUSAL, LOGIN_PROOF_COOKIE, accountKeyFor, ipBucket } from "../src/auth/signin-guard.js";
+import { CODE_REFUSAL, LOGIN_PROOF_COOKIE, SIGNIN_ACCOUNT_MAX, accountKeyFor, formatLockClock, ipBucket } from "../src/auth/signin-guard.js";
+import { isCloudflareIp } from "../src/auth/cloudflare-ips.js";
+import { applyResetStaffPassword } from "../src/auth/break-glass.js";
+import { verifyPassword } from "../src/auth/password.js";
 import { forget as forgetCooldown } from "../src/cooldown.js";
 
 const LOCK = /^Too many tries\. Try again in \d+ minutes?\.$/;
 const TENANT = "tnt-yorkfx";
 const PASS = "correct-horse-signin";
 const ACCOUNT_IP = "203.0.113.10";
+
+describe("sign-in address and lock clock", () => {
+  it("recognises a Cloudflare edge address and not a caller-chosen one", () => {
+    expect(isCloudflareIp("104.16.0.1")).toBe(true);
+    expect(isCloudflareIp("2606:4700::1")).toBe(true);
+    expect(isCloudflareIp("198.51.100.9")).toBe(false);
+    expect(isCloudflareIp("203.0.113.50")).toBe(false);
+  });
+
+  it("prints the lock in 12-hour branch time", () => {
+    expect(formatLockClock(new Date("2026-10-12T14:42:00.000Z"), "America/Toronto")).toBe("10:42 AM");
+  });
+});
 
 describe("production does not log a sign-in code", () => {
   it("refuses the send when RESEND_API_KEY or EMAIL_FROM is missing", async () => {
@@ -45,11 +61,38 @@ describe("production does not log a sign-in code", () => {
       const dumped = `${warnings.join("\n")}\n${logs.join("\n")}`;
       expect(dumped).not.toContain(code);
       expect(dumped).not.toContain("sam@shop.example");
-      expect(warnings.join("\n")).toContain("RESEND_API_KEY");
-      expect(warnings.join("\n")).toContain("EMAIL_FROM");
+      expect(warnings.join("\n")).toContain("RESEND_API_KEY and EMAIL_FROM are not set");
     } finally {
       warn.mockRestore();
       log.mockRestore();
+      if (prev === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev;
+      if (key === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = key;
+      if (from === undefined) delete process.env.EMAIL_FROM;
+      else process.env.EMAIL_FROM = from;
+    }
+  });
+
+  it("still logs the provider status when the error body cannot be read", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { errors.push(args.map(String).join(" ")); });
+    const prev = process.env.NODE_ENV;
+    const key = process.env.RESEND_API_KEY;
+    const from = process.env.EMAIL_FROM;
+    process.env.NODE_ENV = "production";
+    process.env.RESEND_API_KEY = "re_test_present";
+    process.env.EMAIL_FROM = "CurrencyDesk <noreply@mail.currencydesk.com>";
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 422, text: () => Promise.reject(new Error("body exploded")) }));
+    try {
+      expect(await sendEmail("sam@shop.example", "918273 is your CurrencyDesk sign-in code", { text: "Your code is 918273" })).toBe("failed");
+      const dumped = errors.join("\n");
+      expect(dumped).toContain("422");
+      expect(dumped).not.toContain("918273");
+      expect(dumped).not.toContain("body exploded");
+    } finally {
+      spy.mockRestore();
+      vi.unstubAllGlobals();
       if (prev === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = prev;
       if (key === undefined) delete process.env.RESEND_API_KEY;
@@ -67,8 +110,10 @@ postgres("shop sign-in against Postgres", () => {
   let handle: DbHandle;
   let app: FastifyInstance;
   let pool: pg.Pool;
-  let accountId = "";
-  let emailId = "";
+  const accountId = `${TENANT}:r.limit`;
+  const emailId = `${TENANT}:rate-limit@example.com`;
+  const burstId = `${TENANT}:r.burst`;
+  const resetId = `${TENANT}:r.reset`;
 
   const guess = (staffId: string, password: string, remoteAddress = ACCOUNT_IP) =>
     app.inject({
@@ -78,6 +123,19 @@ postgres("shop sign-in against Postgres", () => {
       payload: { staffId, password, tenantId: TENANT },
     });
 
+  const staffIds = [accountId, emailId, burstId, resetId];
+
+  async function wipe(): Promise<void> {
+    await pool.query("DELETE FROM login_challenges WHERE user_id = ANY($1::text[])", [staffIds]);
+    await pool.query("DELETE FROM sessions WHERE user_id = ANY($1::text[])", [staffIds]);
+    await pool.query("DELETE FROM password_resets WHERE user_id = ANY($1::text[])", [staffIds]);
+    await pool.query(
+      "DELETE FROM signin_failures WHERE bucket LIKE 'ip:203.0.113.%' OR bucket LIKE 'ip:198.51.100.%' OR bucket LIKE 'ip:104.16.%' OR bucket LIKE 'miss:%' OR bucket = ANY($1::text[])",
+      [staffIds.map((id) => `acct:${id}`)],
+    );
+    await pool.query("DELETE FROM staff_users WHERE id = ANY($1::text[])", [staffIds]);
+  }
+
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     process.env.SEED_PASSWORD = "yorkville";
@@ -85,22 +143,20 @@ postgres("shop sign-in against Postgres", () => {
     await seed(handle.db);
     app = await buildApp(handle.db);
     pool = new pg.Pool({ connectionString: url });
+    await wipe();
     const base = (await handle.db.select().from(schema.staffUsers).limit(1))[0];
     if (!base) throw new Error("seed did not create a staff user to copy");
     const passwordHash = await hashPassword(PASS);
-    accountId = `${TENANT}:r.limit`;
-    emailId = `${TENANT}:rate-limit@example.com`;
     await handle.db.insert(schema.staffUsers).values([
       { ...base, id: accountId, staffId: "r.limit", name: "Rate Limit", cdId: null, passwordHash, mustChangePassword: false, active: true },
       { ...base, id: emailId, staffId: "rate-limit@example.com", name: "Rate Limit", cdId: null, passwordHash, mustChangePassword: false, active: true },
+      { ...base, id: burstId, staffId: "r.burst", name: "Burst", cdId: null, passwordHash, mustChangePassword: false, active: true },
+      { ...base, id: resetId, staffId: "r.reset", name: "Reset", cdId: null, passwordHash, mustChangePassword: false, active: true },
     ]);
   });
 
   afterAll(async () => {
-    await pool.query("DELETE FROM signin_failures WHERE bucket LIKE 'ip:203.0.113.%' OR bucket LIKE 'ip:198.51.100.%' OR bucket LIKE 'miss:%' OR bucket = $1 OR bucket = $2", [`acct:${accountId}`, `acct:${emailId}`]);
-    await pool.query("DELETE FROM sessions WHERE user_id = ANY($1::text[])", [[accountId, emailId]]);
-    await pool.query("DELETE FROM password_resets WHERE user_id = ANY($1::text[])", [[accountId, emailId]]);
-    await pool.query("DELETE FROM staff_users WHERE id = ANY($1::text[])", [[accountId, emailId]]);
+    await wipe();
     await pool.end();
     await app.close();
     await handle.close();
@@ -312,7 +368,7 @@ postgres("shop sign-in against Postgres", () => {
       expect(res.body).not.toMatch(/\d{6}/);
       const dumped = `${warnings.join("\n")}\n${logs.join("\n")}`;
       expect(dumped).not.toMatch(/\d{6}/);
-      expect(dumped).toContain("EMAIL_FROM");
+      expect(dumped).toContain("RESEND_API_KEY and EMAIL_FROM are not set");
       const left = await handle.db.select().from(schema.loginChallenges).where(eq(schema.loginChallenges.userId, emailId));
       expect(left).toHaveLength(0);
     } finally {
@@ -325,5 +381,152 @@ postgres("shop sign-in against Postgres", () => {
       if (from === undefined) delete process.env.EMAIL_FROM;
       else process.env.EMAIL_FROM = from;
     }
+  });
+
+  it("counts the Cloudflare client, and ignores a spoofed CF-Connecting-IP", async () => {
+    const chain = await app.inject({
+      method: "POST",
+      url: "/api/auth/login/start",
+      remoteAddress: "10.0.0.8",
+      headers: { "x-forwarded-for": "203.0.113.50, 104.16.0.1", "cf-connecting-ip": "203.0.113.50" },
+      payload: { staffId: "cf-client@example.com", password: "wrong-password", tenantId: TENANT },
+    });
+    expect(chain.statusCode).toBe(401);
+    const spoof = await app.inject({
+      method: "POST",
+      url: "/api/auth/login/start",
+      remoteAddress: "10.0.0.8",
+      headers: { "x-forwarded-for": "198.51.100.9", "cf-connecting-ip": "203.0.113.77" },
+      payload: { staffId: "spoof-cf@example.com", password: "wrong-password", tenantId: TENANT },
+    });
+    expect(spoof.statusCode).toBe(401);
+    const buckets = (await pool.query("SELECT bucket FROM signin_failures WHERE bucket LIKE 'ip:%'")).rows.map((row) => row.bucket);
+    expect(buckets).toContain("ip:203.0.113.50");
+    expect(buckets).not.toContain("ip:104.16.0.1");
+    expect(buckets).toContain("ip:198.51.100.9");
+    expect(buckets).not.toContain("ip:203.0.113.77");
+  });
+
+  it("keeps counting the socket when a header rotates and nothing is in front", async () => {
+    const socket = "203.0.113.70";
+    for (let n = 1; n <= 20; n++) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/auth/login/start",
+        remoteAddress: socket,
+        headers: {
+          "x-forwarded-for": `198.51.100.${n}, 104.16.0.1`,
+          "cf-connecting-ip": `203.0.113.${100 + n}`,
+        },
+        payload: { staffId: `rotate-${n}@example.com`, password: "wrong-password", tenantId: TENANT },
+      });
+      expect(res.statusCode, `header ${n}`).toBe(n === 20 ? 429 : 401);
+    }
+    const buckets = (await pool.query("SELECT bucket FROM signin_failures WHERE bucket LIKE 'ip:%'")).rows.map((row) => row.bucket);
+    expect(buckets).toContain(`ip:${socket}`);
+    expect(buckets.some((bucket) => bucket.startsWith("ip:104.16."))).toBe(false);
+    expect(buckets.some((bucket) => /^ip:203\.0\.113\.1\d\d$/.test(bucket))).toBe(false);
+  });
+
+  it("checks a password for an unknown id, so dropping the dummy hash fails this", async () => {
+    const hash = await hashPassword("not-the-stored-password");
+    const median = async (run: () => Promise<unknown>) => {
+      const times: number[] = [];
+      for (let n = 0; n < 5; n++) {
+        const started = performance.now();
+        await run();
+        times.push(performance.now() - started);
+      }
+      times.sort((a, b) => a - b);
+      return times[2]!;
+    };
+    const direct = await median(() => verifyPassword("wrong-password", hash));
+    const unknown = await median(() => guess(`nobody-${Date.now()}@example.com`, "wrong-password", "203.0.113.91"));
+    expect(unknown, `unknown ${unknown.toFixed(1)}ms direct scrypt ${direct.toFixed(1)}ms`).toBeGreaterThan(direct * 0.5);
+  });
+
+  it("does not accept a correct password past the limit in a burst of 60", async () => {
+    await pool.query("DELETE FROM signin_failures WHERE bucket = $1", [`acct:${burstId}`]);
+    await pool.query(
+      "INSERT INTO signin_failures (bucket, failures, window_started_at) VALUES ($1, $2, now())",
+      [`acct:${burstId}`, SIGNIN_ACCOUNT_MAX - 1],
+    );
+    const results = await Promise.all(Array.from({ length: 60 }, (_, n) => guess("r.burst", PASS, `203.0.113.${100 + (n % 50)}`)));
+    const accepted = results.filter((res) => res.statusCode === 200);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.cookies.find((cookie) => cookie.name === "cdos_session")).toBeTruthy();
+    expect(results.filter((res) => res.statusCode === 429).length).toBe(59);
+    const again = await guess("r.burst", PASS, "203.0.113.99");
+    expect(again.statusCode).toBe(429);
+    expect(again.cookies.find((cookie) => cookie.name === "cdos_session")).toBeUndefined();
+  }, 60_000);
+
+  it("counts R.LIMIT and r.limit as the same account", async () => {
+    await pool.query("DELETE FROM signin_failures WHERE bucket = $1 OR bucket LIKE 'miss:%r.limit'", [`acct:${accountId}`]);
+    for (let n = 0; n < 4; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.15")).statusCode).toBe(401);
+    const fifth = await guess("R.LIMIT", "wrong-password", "203.0.113.15");
+    expect(fifth.statusCode).toBe(429);
+    const rows = await pool.query("SELECT bucket, failures FROM signin_failures WHERE bucket = $1 OR bucket LIKE 'miss:%r.limit'", [`acct:${accountId}`]);
+    expect(rows.rows.map((row) => row.bucket)).toEqual([`acct:${accountId}`]);
+    const correct = await guess("R.LIMIT", PASS, "203.0.113.15");
+    expect(correct.statusCode).toBe(429);
+  });
+
+  it("lets an owner or a manager unlock, and refuses a teller", async () => {
+    await pool.query("DELETE FROM signin_failures WHERE bucket = $1", [`acct:${accountId}`]);
+    for (let n = 0; n < 5; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.16")).statusCode).toBe(n === 4 ? 429 : 401);
+    const ipBefore = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [ipBucket("203.0.113.16")]);
+
+    const sign = async (staffId: string) => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        remoteAddress: "203.0.113.17",
+        payload: { staffId, password: "yorkville", tenantId: TENANT },
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      const cookie = res.cookies.find((item) => item.name === "cdos_session")?.value;
+      if (!cookie) throw new Error("no session");
+      return cookie;
+    };
+    const unlock = (cookie: string) => app.inject({
+      method: "POST",
+      url: "/api/auth/login/unlock",
+      remoteAddress: "203.0.113.17",
+      cookies: { cdos_session: cookie },
+      payload: { staffId: "r.limit" },
+    });
+
+    const teller = await unlock(await sign("m.costa"));
+    expect(teller.statusCode).toBe(403);
+    const still = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [`acct:${accountId}`]);
+    expect(Number(still.rows[0]?.failures)).toBeGreaterThanOrEqual(5);
+
+    const manager = await unlock(await sign("r.haddad"));
+    expect(manager.statusCode).toBe(200);
+    const cleared = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [`acct:${accountId}`]);
+    expect(cleared.rows).toHaveLength(0);
+    const ipAfter = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [ipBucket("203.0.113.16")]);
+    expect(ipAfter.rows[0]?.failures).toBe(ipBefore.rows[0]?.failures);
+    const audit = await pool.query("SELECT action, detail FROM audit_events WHERE action = 'auth.login_unlocked' AND detail->>'staffId' = 'r.limit'");
+    expect(audit.rows.length).toBeGreaterThan(0);
+
+    for (let n = 0; n < 5; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.18")).statusCode).toBe(n === 4 ? 429 : 401);
+    const owner = await unlock(await sign("j.masri"));
+    expect(owner.statusCode).toBe(200);
+    const open = await guess("r.limit", PASS, "203.0.113.18");
+    expect(open.statusCode).toBe(200);
+  });
+
+  it("clears the lock when RESET_STAFF_PASSWORD resets the password", async () => {
+    await pool.query(
+      "INSERT INTO signin_failures (bucket, failures, window_started_at) VALUES ($1, 5, now()) ON CONFLICT (bucket) DO UPDATE SET failures = 5, window_started_at = now()",
+      [`acct:${resetId}`],
+    );
+    expect(await applyResetStaffPassword(handle.db, "R.Reset:new-password-1")).toBe("reset");
+    const left = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [`acct:${resetId}`]);
+    expect(left.rows).toHaveLength(0);
+    const res = await guess("r.reset", "new-password-1", "203.0.113.19");
+    expect(res.statusCode).toBe(200);
   });
 });
