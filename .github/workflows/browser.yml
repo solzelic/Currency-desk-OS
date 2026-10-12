@@ -119,7 +119,7 @@ jobs:
         id: main_desktop
         env:
           SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
-        run: node scripts/capture-main-desktop-baselines.mjs --out test-results/main-desktop
+        run: node scripts/capture-main-desktop-baselines.mjs --out desktop-main-render
 
       # One customer from the public site to a working desk, then every
       # browser↔ledger seam, then the day-long shift that is the deployment
@@ -132,7 +132,7 @@ jobs:
         env:
           SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/seam-report.json
-          DESKTOP_BASELINE_DIR: test-results/main-desktop
+          DESKTOP_BASELINE_DIR: desktop-main-render
           # This job opens one desk per country from one address, and a
           # retry counts again. Production leaves SIGNUP_IP_MAX unset.
           SIGNUP_IP_MAX: "16"
@@ -147,7 +147,7 @@ jobs:
       - name: Committed desktop pictures match that main render
         id: committed_desktop
         if: ${{ steps.main_desktop.outcome == 'success' }}
-        run: node scripts/capture-main-desktop-baselines.mjs --compare-committed test-results/main-desktop
+        run: node scripts/capture-main-desktop-baselines.mjs --compare-committed desktop-main-render
 
       # A 1px shift and a colour change on the ledger have to fail the
       # picture. The step restores the stylesheet either way.
@@ -155,7 +155,7 @@ jobs:
         if: ${{ steps.seams.outcome == 'success' && steps.committed_desktop.outcome == 'success' }}
         env:
           SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_seam
-          DESKTOP_BASELINE_DIR: test-results/main-desktop
+          DESKTOP_BASELINE_DIR: desktop-main-render
         run: node scripts/prove-desktop-baseline-breaks.mjs
 
       - uses: actions/upload-artifact@v4
@@ -175,7 +175,7 @@ jobs:
         with:
           name: desktop-unchanged-baselines
           path: |
-            test-results/main-desktop/
+            desktop-main-render/
             test-results/desktop-pixel-report.json
             test-results/desktop-break-proof.json
           retention-days: 14

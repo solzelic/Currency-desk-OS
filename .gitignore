@@ -7,6 +7,8 @@ dist/
 coverage/
 .vite/
 test-results/
+desktop-main-render/
+desktop-main-render-again/
 playwright-report/
 *.tsbuildinfo
 .tsbuild/

@@ -9,9 +9,14 @@
    The commit is rendered twice. The pictures are kept only when those
    two renders match at every pixel. A laptop render is not a substitute.
 
+   The output directory must not sit inside Playwright's outputDir
+   (test-results). Each capture starts a new Playwright run, and that
+   run deletes test-results before the spec writes. A picture stored
+   there does not survive the second render.
+
    Usage:
-     node scripts/capture-main-desktop-baselines.mjs --out test-results/main-desktop
-     node scripts/capture-main-desktop-baselines.mjs --compare-committed test-results/main-desktop
+     node scripts/capture-main-desktop-baselines.mjs --out desktop-main-render
+     node scripts/capture-main-desktop-baselines.mjs --compare-committed desktop-main-render
 */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -117,7 +122,13 @@ function captureOnce(work, sha, outDir) {
 }
 
 function pngNames(dir) {
-  return readdirSync(dir).filter((name) => name.endsWith(".png")).sort();
+  let names;
+  try {
+    names = readdirSync(dir);
+  } catch (error) {
+    throw new Error(`no pictures in ${dir}: ${error instanceof Error ? error.message : error}`);
+  }
+  return names.filter((name) => name.endsWith(".png")).sort();
 }
 
 function compareDirs(leftDir, rightDir) {
