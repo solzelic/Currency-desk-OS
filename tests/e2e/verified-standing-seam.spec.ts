@@ -10,8 +10,11 @@ import type { Page } from "@playwright/test";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no client records");
 
-const aliasRequire = createRequire(import.meta.url);
-const { isHealthCardType } = aliasRequire("../../os-src/health-card-aliases.js") as {
+/* Playwright compiles this file to CommonJS, so import.meta is not
+   available. The parent path is the repo package, and the alias list
+   is resolved from there. */
+const aliasRequire = createRequire(path.join(process.cwd(), "package.json"));
+const { isHealthCardType } = aliasRequire("./os-src/health-card-aliases.js") as {
   isHealthCardType: (value: unknown) => boolean;
 };
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
