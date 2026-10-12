@@ -21,7 +21,7 @@ say.
 | `server/src/` | Fastify + Drizzle backend; ledger under `server/src/ledger/` | ✅ |
 | `server/src/db/migrations/` | checksummed SQL migrations — **immutable once merged** | add-only |
 | `server/tests/` | vitest suites; `*.postgres.test.ts` need `TEST_DATABASE_URL` | ✅ |
-| `os-src/` | the OS source: domain `.jsx` screens, `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css` | ✅ |
+| `os-src/` | the OS source: domain `.jsx` screens, `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css`. `os-src/quote-terms.js` is also the quote arithmetic the server loads | ✅ |
 | `CurrencyDesk OS.html` | OS shell — lists every `os-src` script; also the production fallback when `web/app` is absent | ✅ |
 | `admin.html` | admin-panel shell (one inline Babel script) + production fallback | ✅ |
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |
@@ -42,8 +42,8 @@ say.
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
-| `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` (needs `server/node_modules/decimal.js`) | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css`, `web/vendor/decimal.js` |
-| `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
+| `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` (bundles `server/node_modules/decimal.js` into the desk script with `os-src/quote-terms.js`, then minifies) | `web/app/index.html`, `web/app/os.js`, `web/app/os.js.map`, `web/app/tw.css` |
+| `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js`, `web/app/admin.js.map` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
 
 `npm run build` runs all three build steps. After any source edit, rebuild and

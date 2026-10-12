@@ -56,6 +56,19 @@
     const parts = String(iso).split('-');
     return months[Number(parts[1]) - 1] + ' ' + Number(parts[2]) + ', ' + parts[0];
   };
+  /* The same 12-hour clock the audit trail uses: hour, minute, AM/PM.
+     No seconds, and the marker is uppercase. A desk on 24-hour time
+     still reads the freeze this way — the line is a quote, not the clock. */
+  function quoteExpiry(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const ap = h < 12 ? 'AM' : 'PM';
+    let hh = h % 12;
+    if (hh === 0) hh = 12;
+    return hh + ':' + String(m).padStart(2, '0') + ' ' + ap;
+  }
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2', TG_LKEY = 'cdos_tg_log_v2';
@@ -93,8 +106,18 @@
   // (reorder currencies on the Rate Board and they reorder here too).
   function boardOrderedCCY() {
     const home = deskHome();
-    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY;
+    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY.slice();
     try {
+      const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+      const rows = cfg && cfg.rows;
+      if (rows && typeof rows === 'object') {
+        Object.keys(rows).forEach((code) => {
+          const row = rows[code];
+          if (!row || row.show === false) return;
+          const c = String(code || '').toUpperCase();
+          if (/^[A-Z]{3}$/.test(c) && base.indexOf(c) < 0) base.push(c);
+        });
+      }
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
         const rank = {}; order.forEach((c, i) => { rank[c] = i; });
@@ -1428,7 +1451,7 @@
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div data-testid="tx-frozen" className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
-                    Frozen quote · {quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount} {serverQuote.from} → {quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    Frozen quote · {quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount} {serverQuote.from} → {quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount} {serverQuote.to} · Expires {quoteExpiry(serverQuote.expiresAt)}
                   </div>}
                   {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
                   {phoneSheet && !allGreen

@@ -9,8 +9,12 @@
    own minor units. */
 (function (root, factory) {
   var api = factory();
-  if (typeof module === "object" && module.exports) module.exports = api;
-  if (typeof document !== "undefined") {
+  /* esbuild's browser bundle defines module and calls create() itself,
+     after it has put Decimal on the page. A classic script has no module,
+     so it still has to find Decimal on its own. */
+  var bundled = typeof module === "object" && module.exports;
+  if (bundled) module.exports = api;
+  if (typeof document !== "undefined" && !bundled) {
     if (!root.Decimal) throw new Error("Quote pricing needs decimal.js, and it did not load.");
     var cdos = root.CDOS || (root.CDOS = {});
     cdos.quoteTerms = api.create(root.Decimal);

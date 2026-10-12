@@ -77,7 +77,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   customer are the quote the server will post, to the currency's minor
   unit. Before the quote is frozen the preview is that same function
   (`os-src/quote-terms.js`). A frozen quote is shown from the server's
-  amounts. Yen rounds to a whole yen.
+  amounts, and its expiry reads `Expires 12:58 AM` — 12-hour, uppercase,
+  no seconds. Yen rounds to a whole yen. `decimal.js` is inside the
+  compiled desk script; the page does not load a separate copy.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
@@ -587,7 +589,8 @@ and the ledger posted CAD 4,702.63. The sheet now uses the server's
 quote function for the preview and, once the quote is frozen, the
 server's input, output, and rate. The amount is rounded half-up to the
 output currency's minor units. The rate is not rounded before the
-multiply.
+multiply. A frozen quote expires as `Expires 12:58 AM`. `decimal.js`
+is bundled into the compiled desk script.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

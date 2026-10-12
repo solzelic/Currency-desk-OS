@@ -77,6 +77,45 @@ describe("receive amount parity", () => {
     expect(roundedRateFirst.eq(right.outputAmount)).toBe(false);
   });
 
+  it("keeps a we-sell fee off the amount the customer receives", () => {
+    const input = {
+      direction: "customer_buy_foreign" as const,
+      from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "1.50",
+      marketMid: "1.36407", margin: "0.015",
+    };
+    const server = calculateQuoteTerms(input);
+    const shared = browser.calculateQuoteTerms(input);
+    expect(server.outputAmount.toFixed(2)).toBe("72.21");
+    expect(server.fee.toFixed(2)).toBe("1.50");
+    expect(shared.outputAmount.toFixed(2)).toBe("72.21");
+    const preview = browser.preview(
+      { buyMargin: 0.015, sellMargin: 0.015, rows: { USD: { mid: 1.36407, show: true } } },
+      { from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "1.50", homeCurrency: "CAD" },
+    );
+    expect(preview.outputWire).toBe("72.21");
+    expect(preview.feeWire).toBe("1.50");
+  });
+
+  it("rounds a half up, where banker's rounding would go to even", () => {
+    const input = {
+      direction: "customer_sell_foreign" as const,
+      from: "USD", to: "CAD", inputAmount: "1.00", feeCad: "0",
+      marketMid: "1.005", margin: "0",
+    };
+    const server = calculateQuoteTerms(input);
+    const shared = browser.calculateQuoteTerms(input);
+    const bankers = new Decimal("1.005").toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
+    expect(bankers.toFixed(2)).toBe("1.00");
+    expect(server.outputAmount.toFixed(2)).toBe("1.01");
+    expect(shared.outputAmount.toFixed(2)).toBe("1.01");
+    const preview = browser.preview(
+      { buyMargin: 0, sellMargin: 0, rows: { USD: { mid: 1.005, show: true } } },
+      { from: "USD", to: "CAD", inputAmount: "1.00", feeCad: "0", homeCurrency: "CAD" },
+    );
+    expect(preview.outputWire).toBe("1.01");
+    expect(preview.receivesLabel).toBe("1.01");
+  });
+
   it("refuses a fraction of a yen and accepts a whole yen written with .00", () => {
     expect(() => calculateQuoteTerms({
       direction: "customer_sell_foreign", from: "JPY", to: "CAD",

@@ -584,6 +584,33 @@ postgres("quote service against real PostgreSQL", () => {
       const stored = await pool.query("SELECT output_amount FROM ledger_transactions WHERE quote_id=$1", [quote.quoteId]);
       expect(stored.rows[0].output_amount).toBe(output);
     }
+    const feeShown = quotePreview(board, {
+      from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "1.50", homeCurrency: "CAD",
+    });
+    expect(feeShown.outputWire).toBe("72.21");
+    expect(feeShown.feeWire).toBe("1.50");
+    const feeCreated = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies,
+      payload: { ...body, from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "1.50", direction: "customer_buy_foreign" },
+    });
+    expect(feeCreated.statusCode, feeCreated.body).toBe(201);
+    expect(feeCreated.json().outputAmount).toBe("72.21");
+    expect(feeCreated.json().feeCad).toBe("1.50");
+    const feePosted = await app.inject({
+      method: "POST",
+      url: `/api/quotes/${feeCreated.json().quoteId}/post`,
+      cookies,
+      payload: postBody("parity-fee-sell"),
+    });
+    expect(feePosted.statusCode, feePosted.body).toBe(201);
+    expect(feePosted.json().outputAmount).toBe("72.21");
+    expect(feePosted.json().feeCad).toBe("1.50");
+    const feeStored = await pool.query("SELECT output_amount, fee_cad FROM ledger_transactions WHERE quote_id=$1", [feeCreated.json().quoteId]);
+    expect(feeStored.rows[0].output_amount).toBe("72.21");
+    expect(feeStored.rows[0].fee_cad).toBe("1.50");
+
     const yen = await app.inject({
       method: "POST",
       url: "/api/quotes",
@@ -592,5 +619,33 @@ postgres("quote service against real PostgreSQL", () => {
     });
     expect(yen.statusCode).toBe(400);
     expect(yen.json().code).toBe("INVALID_REQUEST");
+
+    await pool.query(
+      "UPDATE rate_boards SET buy_margin=0, sell_margin=0, board_rows=$1::jsonb, published_at=now() WHERE id='board-1'",
+      [JSON.stringify({ USD: { mid: 1.005, show: true } })],
+    );
+    const halfBoard = { buyMargin: 0, sellMargin: 0, rows: { USD: { mid: 1.005, show: true } } };
+    const halfShown = quotePreview(halfBoard, {
+      from: "USD", to: "CAD", inputAmount: "1.00", feeCad: "0", homeCurrency: "CAD",
+    });
+    expect(halfShown.outputWire).toBe("1.01");
+    const halfCreated = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies,
+      payload: { ...body, from: "USD", to: "CAD", inputAmount: "1.00", feeCad: "0.00", direction: "customer_sell_foreign" },
+    });
+    expect(halfCreated.statusCode, halfCreated.body).toBe(201);
+    expect(halfCreated.json().outputAmount).toBe("1.01");
+    const halfPosted = await app.inject({
+      method: "POST",
+      url: `/api/quotes/${halfCreated.json().quoteId}/post`,
+      cookies,
+      payload: postBody("parity-half-up"),
+    });
+    expect(halfPosted.statusCode, halfPosted.body).toBe(201);
+    expect(halfPosted.json().outputAmount).toBe("1.01");
+    const halfStored = await pool.query("SELECT output_amount FROM ledger_transactions WHERE quote_id=$1", [halfCreated.json().quoteId]);
+    expect(halfStored.rows[0].output_amount).toBe("1.01");
   });
 });

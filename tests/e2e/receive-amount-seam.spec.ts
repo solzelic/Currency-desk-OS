@@ -67,17 +67,19 @@ type BoardSnap = {
 function cleanRows(
   rows: Record<string, { mid: number; show?: boolean; spread?: number }>,
   usdMid?: number,
+  jpyMid?: number,
 ): Record<string, { mid: number; show: boolean; spread?: number }> {
   const out: Record<string, { mid: number; show: boolean; spread?: number }> = {};
   for (const [code, row] of Object.entries(rows)) {
     const clean: { mid: number; show: boolean; spread?: number } = {
-      mid: code === "USD" && usdMid != null ? usdMid : Number(row.mid),
+      mid: code === "USD" && usdMid != null ? usdMid : code === "JPY" && jpyMid != null ? jpyMid : Number(row.mid),
       show: row.show !== false,
     };
     if (row.spread != null) clean.spread = Number(row.spread);
     out[code] = clean;
   }
   if (usdMid != null && !out.USD) out.USD = { mid: usdMid, show: true };
+  if (jpyMid != null && !out.JPY) out.JPY = { mid: jpyMid, show: true };
   return out;
 }
 
@@ -85,6 +87,7 @@ async function publishBoard(
   page: Page,
   board: { buyMargin: number; sellMargin: number; rows: Record<string, { mid: number; show?: boolean; spread?: number }>; order?: string[] },
   usdMid?: number,
+  jpyMid?: number,
 ): Promise<{ status: number; body: string }> {
   return page.evaluate(async (payload) => {
     const res = await fetch("/api/rates/publish", {
@@ -96,7 +99,7 @@ async function publishBoard(
   }, {
     buyMargin: board.buyMargin,
     sellMargin: board.sellMargin,
-    rows: cleanRows(board.rows, usdMid),
+    rows: cleanRows(board.rows, usdMid, jpyMid),
     ...(board.order ? { order: board.order } : {}),
   });
 }
@@ -121,7 +124,7 @@ async function pinQaBoard(page: Page): Promise<void> {
     sellMargin: 0.015,
     rows: boardBefore.rows,
     order: boardBefore.order,
-  }, 1.36407);
+  }, 1.36407, 0.00909918);
   expect(published.status, published.body).toBe(200);
 }
 
@@ -165,6 +168,29 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
     return { status: res.status, body: await res.json().catch(() => ({})) };
   });
   expect([201, 409], `opening balances: ${JSON.stringify(funded)}`).toContain(funded.status);
+  const yen = await page.evaluate(async () => {
+    const opened = await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!opened.ok && opened.status !== 409) return { step: "open", status: opened.status, body: await opened.text() };
+    const res = await fetch("/api/ledger/till-movements", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: "yen-float-receive-parity",
+        direction: "in",
+        currency: "JPY",
+        amount: "500000.00",
+        counterpartyType: "other",
+        counterpartyRef: "yen float",
+        reason: "Stock yen so a sale can be counted out",
+      }),
+    });
+    return { step: "float", status: res.status, body: await res.text() };
+  });
+  expect(yen.status, `yen float: ${yen.body}`).toBe(201);
   await pinQaBoard(page);
   await signInAtDesk(page, "m.costa");
   await dismissTour(page);
@@ -187,6 +213,9 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   await page.locator(".cd-tx-source").fill("Employment income");
   await page.getByRole("button", { name: "Get server quote" }).click();
   await expect(page.getByTestId("tx-frozen")).toContainText("4,702.63");
+  const frozen = await page.getByTestId("tx-frozen").innerText();
+  expect(frozen, "frozen expiry").toMatch(/Expires \d{1,2}:\d{2} [AP]M$/);
+  expect(frozen).not.toMatch(/a\.m\.|p\.m\.|\d:\d{2}:\d{2}/);
   await expect(page.getByTestId("tx-receives")).toHaveText("4,702.63");
   await expect(page.getByTestId("tx-ticket-pays")).toContainText("3,500.00");
   const shot = process.env.SHOT_DIR;
@@ -236,6 +265,125 @@ test("desktop Customer receives is the posted amount for USD 3,500", async ({ pa
 test("phone Customer receives is the posted amount for USD 3,500", async ({ page }) => {
   try {
     await quoteUsdToCad(page, 390);
+  } finally {
+    await restoreBoard(page);
+  }
+});
+
+test("narrow phone Customer receives is the posted amount for USD 3,500", async ({ page }) => {
+  try {
+    await quoteUsdToCad(page, 360);
+  } finally {
+    await restoreBoard(page);
+  }
+});
+
+async function chooseCurrency(page: Page, which: number, code: string): Promise<void> {
+  await page.locator(".cd-money").nth(which).locator("button").click();
+  await page.locator("button").filter({ hasText: new RegExp(`^${code}\\b`) }).last().click();
+}
+
+async function postFrozen(page: Page, output: string, fee?: string): Promise<void> {
+  const postedWait = page.waitForResponse((res) => res.url().includes("/api/quotes/") && res.url().endsWith("/post") && res.request().method() === "POST");
+  await page.getByRole("button", { name: "Post frozen quote" }).click();
+  const postedRes = await postedWait;
+  const posted = await postedRes.json();
+  expect(postedRes.status(), JSON.stringify(posted)).toBe(201);
+  expect(posted.outputAmount, "posted output").toBe(output);
+  if (fee) expect(posted.feeCad, "posted fee").toBe(fee);
+  const listed = await page.evaluate(async () => {
+    const res = await fetch("/api/ledger/transactions?limit=20");
+    return res.json();
+  });
+  const row = (listed.transactions || []).find((tx: { quoteId?: string }) => tx.quoteId === posted.quoteId);
+  expect(row, "ledger row").toBeTruthy();
+  expect(row.outputAmount).toBe(output);
+  if (fee) expect(row.feeCad).toBe(fee);
+}
+
+test("whole yen Customer receives is the posted amount", async ({ page }) => {
+  try {
+    await quoteUsdToCad(page, 1280);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await chooseCurrency(page, 1, "JPY");
+    await expect(page.locator(".cd-tx-side")).toContainText("We sell JPY");
+    await page.locator(".cd-money input").first().fill("1000");
+    await expect(page.getByTestId("tx-receives")).toHaveText("108,252");
+    await expect(page.getByTestId("tx-ticket-receives")).toContainText("108,252");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toContainText("108,252");
+    await expect(page.getByTestId("tx-receives")).toHaveText("108,252");
+    await postFrozen(page, "108252.00");
+  } finally {
+    await restoreBoard(page);
+  }
+});
+
+test("a we-sell fee stays off the amount the customer receives", async ({ page }) => {
+  try {
+    await quoteUsdToCad(page, 1280);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().fill("100");
+    await page.locator(".cd-tx-fee").fill("1.50");
+    await expect(page.locator(".cd-tx-side")).toContainText("We sell USD");
+    await expect(page.getByTestId("tx-receives")).toHaveText("72.21");
+    await expect(page.getByTestId("tx-ticket-receives")).toContainText("72.21");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toContainText("72.21");
+    await expect(page.getByTestId("tx-receives")).toHaveText("72.21");
+    await postFrozen(page, "72.21", "1.50");
+  } finally {
+    await restoreBoard(page);
+  }
+});
+
+test("half-up Customer receives is the posted amount, not banker's rounding", async ({ page }) => {
+  try {
+    await quoteUsdToCad(page, 1280);
+    await page.evaluate(async () => {
+      const login = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" }),
+      });
+      if (!login.ok) throw new Error("half-up login " + login.status);
+    });
+    const published = await publishBoard(page, {
+      buyMargin: 0,
+      sellMargin: 0,
+      rows: boardBefore!.rows,
+      order: boardBefore!.order,
+    }, 1.005);
+    expect(published.status, published.body).toBe(200);
+    await signInAtDesk(page, "m.costa");
+    await dismissTour(page);
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem("yorkfx_rates_v1");
+      if (!raw) return false;
+      const board = JSON.parse(raw);
+      const mid = board.rows && board.rows.USD && board.rows.USD.mid;
+      return typeof mid === "number" && Math.abs(mid - 1.005) < 1e-12 && Math.abs(Number(board.buyMargin)) < 1e-12;
+    });
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().click();
+    await page.locator(".cd-tx-swap").click();
+    await expect(page.locator(".cd-tx-side")).toContainText("We buy USD");
+    await page.locator(".cd-money input").first().fill("1");
+    await expect(page.getByTestId("tx-receives")).toHaveText("1.01");
+    await expect(page.getByTestId("tx-ticket-receives")).toContainText("1.01");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toContainText("1.01");
+    await expect(page.getByTestId("tx-receives")).toHaveText("1.01");
+    await postFrozen(page, "1.01");
   } finally {
     await restoreBoard(page);
   }

@@ -33,7 +33,8 @@
    beside the other built pages in web/. Same arrangement the design pages
    already use, and CI already fails when web/ is stale.
    ============================================================ */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import esbuild from "esbuild";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,16 +43,6 @@ import babel from "@babel/standalone";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "web", "app");
 mkdirSync(OUT, { recursive: true });
-
-/* The counter prices with the same decimal.js the server uses. The page
-   loads it as a classic script, before the OS bundle. */
-{
-  const decimalSrc = path.join(ROOT, "server", "node_modules", "decimal.js", "decimal.js");
-  if (!existsSync(decimalSrc)) throw new Error("server/node_modules/decimal.js/decimal.js is missing — run npm ci in server/");
-  const vendor = path.join(ROOT, "web", "vendor");
-  mkdirSync(vendor, { recursive: true });
-  copyFileSync(decimalSrc, path.join(vendor, "decimal.js"));
-}
 
 const compile = (code, filename) =>
   babel.transform(code, { presets: ["react"], filename, sourceType: "script" }).code;
@@ -99,9 +90,82 @@ function localVendor(html) {
     .replace("<!-- React + Babel (pinned) -->", "<!-- React, from our own domain. Babel is not here: the JSX was compiled by scripts/build-os.mjs. -->");
 }
 
+/* /*! so esbuild's legal-comment pass keeps the warning. A plain
+   block comment is stripped by minify, and then the file no longer
+   says where it came from. */
 const banner = (name) =>
-  `/* Built from source by scripts/build-os.mjs — do not edit.\n` +
+  `/*! Built from source by scripts/build-os.mjs — do not edit.\n` +
   `   Edit ${name} instead, then run: npm run build:os */\n`;
+
+/* Minify one concatenated app. sourcefile is a stable relative name
+   so the map does not contain this machine's path. sourcesContent
+   embeds the pre-minify source, because the committed file is the
+   minified one. */
+function writeMinified(filename, source) {
+  const result = esbuild.transformSync(source, {
+    minify: true,
+    keepNames: true,
+    sourcemap: "external",
+    sourcefile: filename,
+    sourcesContent: true,
+    legalComments: "inline",
+    charset: "utf8",
+  });
+  const mapName = `${filename}.map`;
+  let code = result.code;
+  if (!code.includes("sourceMappingURL")) {
+    if (!code.endsWith("\n")) code += "\n";
+    code += `//# sourceMappingURL=${mapName}\n`;
+  }
+  const map = JSON.parse(result.map);
+  for (const source of map.sources || []) {
+    if (path.isAbsolute(source) || /^[A-Za-z]:[\\/]/.test(source)) {
+      throw new Error(`${mapName} source ${source} is absolute — the freshness diff would flap between machines`);
+    }
+  }
+  writeFileSync(path.join(OUT, filename), code);
+  writeFileSync(path.join(OUT, mapName), result.map);
+  return code.length;
+}
+
+/* decimal.js and the shared quote arithmetic, one script inside os.js.
+   No second request, and nothing under web/vendor is a copy of the
+   library. The server install is the copy both sides already run. */
+function quoteTermsBundle() {
+  const decimalSrc = path.join(ROOT, "server", "node_modules", "decimal.js", "decimal.js");
+  if (!existsSync(decimalSrc)) {
+    throw new Error("server/node_modules/decimal.js/decimal.js is missing — run npm ci in server/");
+  }
+  const result = esbuild.buildSync({
+    stdin: {
+      contents: [
+        'import Decimal from "decimal.js";',
+        'import quoteTerms from "./os-src/quote-terms.js";',
+        "const root = globalThis;",
+        "root.Decimal = Decimal;",
+        "const cdos = root.CDOS || (root.CDOS = {});",
+        "if (typeof quoteTerms.create !== \"function\") throw new Error(\"quote terms did not export create\");",
+        "cdos.quoteTerms = quoteTerms.create(Decimal);",
+      ].join("\n"),
+      resolveDir: ROOT,
+      sourcefile: "quote-terms-entry.js",
+    },
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    write: false,
+    nodePaths: [path.join(ROOT, "server", "node_modules")],
+    legalComments: "none",
+    charset: "utf8",
+    logLevel: "silent",
+  });
+  const code = result.outputFiles[0].text;
+  if (!code.includes("quoteTerms")) {
+    throw new Error("the quote bundle did not keep quoteTerms");
+  }
+  return code;
+}
+
 
 let built = 0;
 
@@ -149,8 +213,12 @@ const localTailwind = (html) =>
   const ours = all.filter((s) => (s.src && s.src.startsWith("os-src/")) || (!s.src && s.jsx));
   if (ours.length === 0) throw new Error("CurrencyDesk OS.html: found no app scripts to compile");
 
-  const parts = [banner("os-src/*.jsx")];
+  /* quote-terms.js is not concatenated raw. decimal.js and that module
+     are bundled above, and the page's script tag is still removed with
+     the rest so the desk does not run the arithmetic twice. */
+  const parts = [banner("os-src/*.jsx"), "\n/* ---- decimal.js + os-src/quote-terms.js ---- */\n" + quoteTermsBundle()];
   for (const s of ours) {
+    if (s.src === "os-src/quote-terms.js") continue;
     if (s.src) {
       const p = path.join(ROOT, s.src);
       const code = readFileSync(p, "utf8");
@@ -159,7 +227,7 @@ const localTailwind = (html) =>
       parts.push(`\n/* ---- inline ---- */\n` + compile(s.body, "CurrencyDesk OS.html"));
     }
   }
-  writeFileSync(path.join(OUT, "os.js"), parts.join("\n"));
+  const osBytes = writeMinified("os.js", parts.join("\n"));
 
   /* Replace the whole run of them with one tag, in the place the first one
      stood — so anything the page does before or after still happens in the
@@ -172,7 +240,7 @@ const localTailwind = (html) =>
   // tidy the blank lines the removals left behind
   html = html.replace(/\n{3,}/g, "\n\n");
   writeFileSync(path.join(OUT, "index.html"), html);
-  console.log(`  web/app/os.js         ${ours.length} scripts, ${Math.round(readFileSync(path.join(OUT, "os.js")).length / 1024)} KB`);
+  console.log(`  web/app/os.js         ${ours.length} scripts, ${osBytes} bytes`);
   built++;
 }
 
@@ -185,7 +253,7 @@ const localTailwind = (html) =>
 
   const parts = [banner("admin.html")];
   for (const s of ours) parts.push(compile(s.body, "admin.html"));
-  writeFileSync(path.join(OUT, "admin.js"), parts.join("\n"));
+  const adminBytes = writeMinified("admin.js", parts.join("\n"));
 
   const first = ours[0].whole;
   html = localVendor(html);
@@ -193,7 +261,7 @@ const localTailwind = (html) =>
   html = html.replace(" BUNDLE ", '<script src="/web/app/admin.js"></script>');
   html = html.replace(/\n{3,}/g, "\n\n");
   writeFileSync(path.join(OUT, "admin.html"), html);
-  console.log(`  web/app/admin.js      ${ours.length} script, ${Math.round(readFileSync(path.join(OUT, "admin.js")).length / 1024)} KB`);
+  console.log(`  web/app/admin.js      ${ours.length} script, ${adminBytes} bytes`);
   built++;
 }
 
