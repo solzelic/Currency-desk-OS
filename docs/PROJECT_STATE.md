@@ -209,16 +209,27 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Times on the phone use `formatPhoneTime` (`3:02 PM`) from
   `os-src/phone/format.js`. The suffix is uppercase. There is no
   "Example data" tag. A
-  primary button uses `var(--brand-primary)` from `data-app`. Vault,
-  Audit trail, and Calculator's locked accent is ink. Body text uses
+  primary button uses `var(--brand-primary)` from `data-app`. Vault
+  and Audit trail's locked accent is ink (`#17140F`). Body text uses
   the `tokens.css` font stack. The foundation loads Inter only at
-  430px. Vault's
+  430px. Each of these screens has a More back link (24px chevron,
+  16/24, weight 600, 44px). Currency names are sentence case from
+  `Intl.DisplayNames`. Audit chips scroll inside the foundation
+  FilterChips inset and fade. Vault's
   "Give out a float" posts through the existing till-movement
   endpoint, with one key per currency, and only after the vault has
   a starting count. The opening count is the existing
   opening-position dialog. A cashier's expected count stays hidden.
-  When some currencies have no rate, the vault headline shows the
-  home value the ledger could price and names the rest. Assistant
+  The position prices stock from `ledger_rates` only. The hourly
+  board the Rates app shows is a different table, and the seed writes
+  the board without writing `ledger_rates`. A missing ledger figure
+  is valued with `homePerUnit`, the same rate the Rates app uses. A
+  currency that still has no rate says the rate board has not
+  published one, and it is not counted as zero. "Running low" appears
+  only below a configured level: `vaultReserveCad` for the home
+  currency, otherwise `vaultFloors` for that code, and only when the
+  number is above zero. No configured level means no badge. The
+  built-in reorder bands stay on the desktop pill. Assistant
   stays off More. `openApp` also refuses it on a phone unless
   `window.claude.complete` exists, so no other door can raise it.
   Wider than 430px, Vault and Audit trail render the desktop they

@@ -3105,6 +3105,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
+    min-width: 0;
     height: 100%;
     box-sizing: border-box;
     padding-bottom: var(--phone-dock-h);
@@ -3112,12 +3113,53 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: var(--font-ui);
     letter-spacing: normal;
   }
-  .longtail .phone-sticky-btn {
+  /* The chip row's min-content is wider than the phone. Without this
+     the scroll refuses to shrink, the window clips the last chip, and
+     the foundation fade never reads as a scroll. The inset and the
+     fade stay the shell's .phone-chips rules. */
+  .longtail .phone-scroll { min-width: 0; }
+  .longtail .phone-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .longtail .phone-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    box-sizing: border-box;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0 0 0 -8px;
+    padding: 0 8px;
+    border: 0;
+    background: transparent;
+    color: var(--gray-900, #161513);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .longtail .phone-back svg { width: 24px; height: 24px; flex: none; }
+  /* data-app on this shell sets --brand-primary to the app accent.
+     Vault, Audit, and Calculator resolve that to ink. */
+  .longtail[data-app] .phone-sticky-btn {
     background: var(--brand-primary);
     color: var(--brand-on-primary, #fff);
     font-family: var(--font-ui);
   }
   .longtail .phone-chip { min-width: 44px; }
+  .longtail .phone-empty-ico {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    margin: 8px auto 12px;
+    border-radius: 14px;
+    background: var(--gray-100, #EFEDE8);
+    color: var(--brand-primary, #17140F);
+  }
   .longtail .phone-stats:has(.phone-stat:only-child) { grid-template-columns: 1fr; }
   /* The shell's .phone-seg is two columns, for the ledger.
      Vault has four tabs, so this screen sets its own columns.

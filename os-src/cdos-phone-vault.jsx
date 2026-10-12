@@ -13,14 +13,45 @@
     { id: 'profit', label: 'Profit' },
   ];
 
-  function stockBadge(code, qty, settings) {
-    const fn = window.CDOS.vaultStock;
-    if (!fn) return null;
-    const band = fn(code, Number(qty), settings);
-    if (!band || band.label === 'no band') return null;
-    if (band.level === 'low') return { tone: 'neg', label: 'Running low' };
-    if (band.level === 'high') return { tone: 'warn', label: 'Too much' };
-    return { tone: 'pos', label: 'Healthy' };
+  /* A low-stock badge only when the owner set a level. The built-in
+     reorder bands are not that level, and they are not shown here.
+     Home currency: settings.vaultReserveCad. Any other currency:
+     settings.vaultFloors[code]. Both have to be a number above zero.
+     Below that level the row says "Running low". Otherwise no badge. */
+  function configuredFloor(code, settings, home) {
+    if (!settings) return 0;
+    if (code === home && settings.vaultReserveCad != null && settings.vaultReserveCad !== '' && +settings.vaultReserveCad > 0) {
+      return +settings.vaultReserveCad;
+    }
+    const floor = settings.vaultFloors && settings.vaultFloors[code];
+    if (floor != null && floor !== '' && +floor > 0) return +floor;
+    return 0;
+  }
+
+  function stockBadge(code, qty, settings, home) {
+    const floor = configuredFloor(code, settings, home);
+    if (!floor || !(Number(qty) < floor)) return null;
+    return { tone: 'neg', label: 'Running low' };
+  }
+
+  /* The position prices a currency only from ledger_rates. This desk's
+     hourly board lives in the rate book the Rates app shows, which
+     homePerUnit already reads. A missing board rate stays absent. */
+  function boardPerUnit(code, home) {
+    if (!code || code === home) return 1;
+    const per = window.CDOS.homePerUnit ? Number(window.CDOS.homePerUnit(code)) : 0;
+    return per > 0 && Number.isFinite(per) ? per : 0;
+  }
+
+  function priceHolding(marketValueHome, code, qty, home) {
+    const ledger = marketValueHome == null || marketValueHome === ''
+      ? null
+      : Number(String(marketValueHome).replace(/,/g, ''));
+    if (ledger != null && Number.isFinite(ledger)) return { worth: ledger, fromBoard: false };
+    const per = boardPerUnit(code, home);
+    const units = Number(qty);
+    if (per && Number.isFinite(units)) return { worth: units * per, fromBoard: true };
+    return { worth: null, fromBoard: false };
   }
 
   function homeOf(position) {
@@ -171,7 +202,7 @@
               </select>
             </label>
           )}
-          <div className="phone-worth"><span>Float worth</span><b>{worth == null ? 'No rate yet' : worth}</b></div>
+          <div className="phone-worth"><span>Float worth</span><b>{worth == null ? 'The rate board has not published a rate.' : worth}</b></div>
           {err && <p className="phone-warn" role="alert">{err}</p>}
         </div>
         <div className="phone-sheet-f">
@@ -192,21 +223,32 @@
     const [detail, setDetail] = useState(null);
     const [toast, setToast] = useState('');
     const [readAt, setReadAt] = useState(null);
+    const [ratesAt, setRatesAt] = useState(0);
     useEffect(() => { if (!loading && position) setReadAt(new Date()); }, [loading, position]);
+    useEffect(() => {
+      const bump = () => setRatesAt(n => n + 1);
+      window.addEventListener('storage', bump);
+      return () => window.removeEventListener('storage', bump);
+    }, []);
     useEffect(() => {
       if (!toast) return undefined;
       const t = setTimeout(() => setToast(''), 4000);
       return () => clearTimeout(t);
     }, [toast]);
     const home = homeOf(position);
+    void ratesAt;
     const rows = (position && position.vaultTracked)
-      ? (position.currencies || []).filter(r => r.vault && Number(r.vault.quantity) > 0).map(r => ({
-          code: r.currency,
-          name: ccyName(r.currency),
-          qty: r.vault.quantity,
-          worth: r.vault.marketValueHome,
-          badge: stockBadge(r.currency, r.vault.quantity, settings),
-        }))
+      ? (position.currencies || []).filter(r => r.vault && Number(r.vault.quantity) > 0).map(r => {
+          const priced = priceHolding(r.vault.marketValueHome, r.currency, r.vault.quantity, home);
+          return {
+            code: r.currency,
+            name: ccyName(r.currency),
+            qty: r.vault.quantity,
+            worth: priced.worth,
+            fromBoard: priced.fromBoard,
+            badge: stockBadge(r.currency, r.vault.quantity, settings, home),
+          };
+        })
       : null;
     const needle = q.trim().toLowerCase();
     const match = (text) => !needle || String(text || '').toLowerCase().includes(needle);
@@ -225,23 +267,28 @@
     const total = position && position.vaultTotals ? position.vaultTotals.marketValueHome : null;
     const when = clockLabel(readAt);
     const known = knownHomeWorth(held);
-    const countLine = (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies') + ' · from the ledger' + (when ? ', ' + when : '');
-    /* The ledger withholds the vault total when any currency has no
-       rate. The phone headline still shows the CAD it could value. */
+    const pricedOnBoard = held.some(r => r.fromBoard);
+    const countLine = (rows ? rows.length : 0) + (rows && rows.length === 1 ? ' currency' : ' currencies')
+      + (pricedOnBoard ? ' · the rate board' : ' · from the ledger')
+      + (when ? ', ' + when : '');
+    /* The ledger total is the headline only when it priced every row.
+       A gap is filled from the rate board. A currency neither source
+       can price is named, and it is not counted as zero. */
+    const headline = known.unvalued.length
+      ? (known.sum == null ? null : money(known.sum, home))
+      : (pricedOnBoard ? (known.sum == null ? null : money(known.sum, home)) : (total == null ? null : money(total, home)));
     const summaryCard = [{
       label: 'Cash in the vault, valued in ' + home,
-      value: known.unvalued.length
-        ? (known.sum == null ? null : money(known.sum, home))
-        : (total == null ? null : money(total, home)),
+      value: headline,
       sub: known.unvalued.length
-        ? (known.unvalued.join(', ') + ' not valued, no rate yet')
+        ? ('The rate board has not published a rate for ' + known.unvalued.map(code => ccyName(code)).join(', ') + '.')
         : countLine,
     }];
     const openShifts = (shifts || []).filter(s => s.status === 'open');
     const orders = (receipts || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     const profitRows = ((summary && summary.data && summary.data.byCurrency) || []).filter(r => r.deals > 0);
     const realized = summary && summary.data ? summary.data.realizedPnlHome : null;
-    const worthLine = (r) => r.code === home ? 'home currency' : (r.worth == null ? 'No rate yet' : 'worth ' + money(r.worth, home));
+    const worthLine = (r) => r.code === home ? 'home currency' : (r.worth == null ? ('The rate board has not published a ' + r.name + ' rate.') : 'worth ' + money(r.worth, home));
 
     let body = null;
     if (state === 'ready' && tab === 'cash') {
@@ -297,7 +344,7 @@
           {detail.code && <>
             <div className="phone-kv"><span>Currency</span><b>{detail.name}</b></div>
             <div className="phone-kv"><span>In the vault</span><b>{money(detail.qty, detail.code)}</b></div>
-            <div className="phone-kv"><span>Worth</span><b>{detail.code === home ? 'Home currency' : (detail.worth == null ? 'No rate yet' : money(detail.worth, home))}</b></div>
+            <div className="phone-kv"><span>Worth</span><b>{detail.code === home ? 'Home currency' : (detail.worth == null ? ('The rate board has not published a ' + detail.name + ' rate.') : money(detail.worth, home))}</b></div>
           </>}
         </div>
       </div>

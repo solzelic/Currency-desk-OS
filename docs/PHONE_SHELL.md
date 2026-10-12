@@ -512,9 +512,24 @@ of this same component. Do not build a second template.
 A primary button on these screens is `.phone-sticky-btn`. Its fill is
 `var(--brand-primary)`, which `data-app` on the phone shell sets from
 `tokens.css`. Vault, Audit trail, and Calculator's locked accent is
-ink (`#17140F`). Body text uses `--font-ui` from `tokens.css`. At
+ink (`#17140F`). That ink is the Vault accent. The button is not a
+second near-black. Body text uses `--font-ui` from `tokens.css`. At
 430px that token is Inter. Wider than that it is Archivo. The
 foundation loads the Inter file only at 430px.
+
+The title action is a back link: a 24px chevron-left, the word More,
+16px on a 24px line, weight 600, and a 44px hit area. It presses the
+More tab. The shared control is a foundation follow-up. This link is
+the stand-in, on every long-tail screen.
+
+Currency names come from `Intl.DisplayNames` (`en`), then sentence
+case, so a row reads "Canadian dollar" and "US dollar". A short
+capital such as US stays capital. Pricing is moving to this same
+source.
+
+`FilterChips` keeps the shell's 16px inset and the right-edge fade.
+The long-tail column sets `min-width: 0` on the scroll so that row
+scrolls inside the screen instead of being clipped at the window.
 
 The float sheet's cashier, till, and "Add a currency" controls are
 native selects. The shared full-screen picker is a separate change
@@ -553,17 +568,20 @@ the string in.
 
 Headline: cash in the vault, in the desk's currency, from
 `GET /api/ledger/position`. Tabs: Cash, Floats, Orders, Profit.
-Cash rows are ledger quantities. Worth is `marketValueHome`. No rate
-is "No rate yet". When the ledger withholds the vault total because
-some currencies have no rate, the headline shows the sum of the home
-figures it did return (not a new rate, and a missing figure is not
-zero) and the subtitle names them: "USD not valued, no rate yet".
-Stock uses the same `vaultStock` comparison as the desktop. The floor
-is the owner's CAD reserve, else that currency's floor, else the
-built-in minimum. Below that floor the phone says "Running low".
-Above the built-in maximum it says "Too much". Otherwise "Healthy".
-No floor and no maximum means no badge. Settings do not raise the
-maximum. The desktop pill says "Low stock" for the same comparison.
+Cash rows are ledger quantities. Worth prefers `marketValueHome`.
+The position prices a currency only from `ledger_rates`, and this
+desk's seed writes the hourly board (`rate_boards`) without writing
+that table. The Rates app reads the board through `homePerUnit`.
+When the ledger figure is absent, the phone values the row at that
+same rate. A currency neither source can price is not counted as
+zero. The row and the headline say "The rate board has not published
+a rate for …".
+
+"Running low" is shown only when a level is configured. Home currency
+uses `settings.vaultReserveCad` when it is a number above zero. Any
+other currency uses `settings.vaultFloors[code]` on the same rule.
+The built-in reorder bands are not a configured level, and the phone
+shows no badge when none is set. The desktop pill is unchanged.
 
 "Give out a float" opens one sheet. A cashier is accountability only
 (holdings do not move; the shift is the same record the desktop assigns).

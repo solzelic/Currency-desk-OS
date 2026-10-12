@@ -257,6 +257,10 @@ test.describe("vault on a phone", () => {
       await expect(screen.getByText("Example data")).toHaveCount(0);
       await expect(screen.locator("#phone-fab")).toHaveCount(0);
       await expect(screen.locator(`[data-currency="${issued}"]`)).toContainText(money(amount, issued));
+      await expect(screen.getByRole("button", { name: "More" })).toBeVisible();
+      await expect(screen.getByText("Running low")).toHaveCount(0);
+      await expect(screen.getByText("Canadian dollar")).toBeVisible();
+      await expect(screen.getByText("No rate yet")).toHaveCount(0);
       await shot(page, `longtail_vault_${width}`);
 
       const before = Number((await book.till())[issued] || 0);
@@ -272,10 +276,16 @@ test.describe("vault on a phone", () => {
       await shot(page, `longtail_float_${width}`);
       await sheet.getByLabel(`${issued} amount`).fill("1.00");
       const give = sheet.getByRole("button", { name: /Give float to / });
+      /* The previous width leaves "Float given" on screen for four
+         seconds. Wait for this post, and for the till to move, not
+         for that status text. */
+      const posted = page.waitForResponse((res) => {
+        return res.request().method() === "POST" && new URL(res.url()).pathname === "/api/ledger/till-movements" && res.ok();
+      });
       await give.dblclick();
-      await expect(page.getByRole("status").filter({ hasText: "Float given to" })).toBeVisible({ timeout: 20_000 });
-      const after = Number((await book.till())[issued] || 0);
-      expect(after - before).toBeCloseTo(1, 2);
+      await posted;
+      await expect(sheet).toBeHidden({ timeout: 20_000 });
+      await expect.poll(async () => Number((await book.till())[issued] || 0), { timeout: 20_000 }).toBeCloseTo(before + 1, 2);
       await expect(page.getByText("Open the vault with a starting count first.")).toHaveCount(0);
     }
     /* A double tap can reopen Give out a float after the sheet closes.
