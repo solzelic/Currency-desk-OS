@@ -34,41 +34,32 @@
     return <span className="phone-tab-ico" dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
-  /* The desk name is cut first. The till name is next. The status
-     is the last segment and stays whole, so "Till closed" never wraps.
+  /* Status first, so "Till closed" is never the piece that gets cut.
+     Then one place: the till name when the desk string has one,
+     otherwise the station. A long place ends in one ellipsis.
      Every gap is the same " · ", including a caller that omitted the spaces. */
   const TILL_GAP = ' · ';
 
   function deskLine(desk) {
     const parts = String(desk || '').trim().split(/\s*·\s*/).map((part) => part.trim()).filter(Boolean);
     const last = parts[parts.length - 1];
-    if (last === 'Till open' || last === 'Till closed') {
-      return { parts: parts.slice(0, -1), status: last };
-    }
-    return { parts, status: '' };
+    const known = last === 'Till open' || last === 'Till closed';
+    const names = known ? parts.slice(0, -1) : parts;
+    return { name: names.length ? names[names.length - 1] : '', status: known ? last : '' };
   }
 
   function PhoneTopBar({ shop, desk, tillOpen, unread, onBell, avatar }) {
     const line = deskLine(desk);
-    const segments = [];
-    line.parts.forEach((part, i) => {
-      if (i > 0) segments.push(<span key={'gap-' + i} className="phone-till-sep">{TILL_GAP}</span>);
-      segments.push(
-        <span key={'part-' + i} className={'phone-till-part' + (i === 0 ? ' is-desk' : '')}>
-          <span className="phone-till-where">{part}</span>
-        </span>,
-      );
-    });
-    if (line.status) {
-      if (segments.length) segments.push(<span key="gap-status" className="phone-till-sep">{TILL_GAP}</span>);
-      segments.push(<span key="status" className="phone-till-state">{line.status}</span>);
-    }
     return (
       <header className="phone-head">
         <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><span className="phone-shop-name">{shop}</span></div>
         <div className={'phone-till' + (tillOpen ? '' : ' is-closed')}>
           <i className="phone-till-dot" />
-          <span className="phone-till-line">{segments}</span>
+          <span className="phone-till-line">
+            {line.status ? <span className="phone-till-state">{line.status}</span> : null}
+            {line.status && line.name ? <span className="phone-till-sep">{TILL_GAP}</span> : null}
+            {line.name ? <span className="phone-till-where">{line.name}</span> : null}
+          </span>
         </div>
         <button type="button" className="phone-bell" aria-label={unread == null ? 'Alerts' : (unread ? 'Alerts' : 'No alerts')} onClick={onBell}>
           {svg('<path d="M6 9a6 6 0 0 1 12 0c0 7 2 7 2 9H4c0-2 2-2 2-9"/><path d="M10 20a2 2 0 0 0 4 0"/>')}

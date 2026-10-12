@@ -571,6 +571,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone top bar. The till line is the status, then
+one place (`Till closed · Wholesale desk`). A long place ends in
+one ellipsis. The avatar initials use the sans stack at 15px,
+weight 600. The rule is inside `max-width: 430px`.
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
