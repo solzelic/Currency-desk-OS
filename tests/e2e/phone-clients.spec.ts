@@ -237,13 +237,14 @@ test.describe("phone clients", () => {
       expect(inset.row).toBeLessThanOrEqual(80);
       expect(inset.badgeBeside).toBe(true);
       expect(inset.titleAbove).toBe(true);
-      expect(inset.line).toBe("No deals yet");
-      expect(inset.line).not.toContain("Individual");
       if (width === 390) expect(inset.visible).toBeGreaterThanOrEqual(6);
       expect(inset.image).toBe("none");
       expect(inset.bg).toBe("rgb(255, 255, 255)");
       await root.getByLabel("Search clients").fill(tag);
       await expect(page.locator(".phone-client-row")).toHaveCount(3);
+      const noneLine = page.locator(".phone-client-row", { hasText: names.none }).locator(".phone-row-sub");
+      await expect(noneLine).toHaveText("No deals yet");
+      await expect(page.locator(".phone-client-row .phone-row-sub")).not.toContainText("Individual");
       await expect(root).not.toContainText("$");
       await expect(root).not.toContainText("Verified");
       await expect(root.getByRole("button", { name: "New transaction" })).toHaveCount(0);
