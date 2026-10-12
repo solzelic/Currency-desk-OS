@@ -25,10 +25,13 @@ that function. The New transaction sheet previews with it, and once a quote
 is frozen the sheet shows the frozen input, output, and rate rather than a
 second product. The teller's You give / You receive line is the cash the
 till moves: input plus the fee when the customer pays home currency, output
-less the fee when they receive it. The customer screen shows a sale as
-that total (`101.50 CAD`) and the fee under it (`100.00 CAD + 1.50 CAD service fee`).
-You receive is the gross exchange. A buy adds `Cash to customer` for the net payout.
-The footer stays `Rate as quoted now`. Those three frozen figures stay
+less the fee when they receive it. The customer screen's big number
+is the cash that changes hands. A sale shows You give as that total
+(`101.50 CAD`) and the fee under it (`100.00 CAD + 1.50 CAD service fee`).
+A buy shows You receive as the net payout (`129.36 CAD`), with
+`134.36 CAD less 5.00 CAD service fee` under it, and adds
+`Cash to customer` for the same net. The footer stays `Rate as quoted now`.
+Those three frozen figures stay
 authoritative. The customer screen and the phone rate field print the
 rate to 4 decimals, and that is the rate the posted amount is
 multiplied by. The rate stored on the quote is still 12 decimal

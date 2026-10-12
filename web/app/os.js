@@ -33730,6 +33730,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-on-ink-soft)'
       }
     }, q.getLbl), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "quote-you-receive",
       style: {
         fontWeight: 800,
         fontSize: 'clamp(46px, 8.5vw, 92px)',
@@ -35015,7 +35016,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const exactRate = exchangeReady ? String(fx.rateWire || fx.customerRate || '') : '';
     const fourRate = exchangeReady && quoteApi && exactRate !== '' ? quoteApi.displayRate(exactRate) : '';
     const sheetRate = !exchangeReady ? '—' : fourRate || fx.rateLabel;
-    // present-quote payload (exchange + send)
+    /* The big number is the cash that changes hands. A buy shows the
+       net payout; the gross exchange less the fee stays on the next line.
+       A sale already shows the net on You give. */
     const presentQ = isSend ? {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Send money',
@@ -35036,7 +35039,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       cashFromCustomer: exchangeReady && fx.cashFromCustomer ? fx.cashFromCustomer : '',
       rateLine: `1 ${inCcy} = ${fourRate || '—'} ${outCcy}`,
       getLbl: 'You receive',
-      get: exchangeReady && fx.receivesLabel ? `${fx.receivesLabel} ${outCcy}` : `— ${outCcy}`,
+      get: exchangeReady && fx.receiveAmount ? `${fx.receiveAmount} ${fx.receiveCurrency}` : `— ${outCcy}`,
       receiveNote: exchangeReady && fx.receiveNote ? fx.receiveNote : '',
       cashToCustomer: exchangeReady && fx.cashToCustomer ? fx.cashToCustomer : '',
       foot: fx && (fx.giveDetail || fx.receiveDetail) ? lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now' : feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'

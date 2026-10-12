@@ -518,6 +518,7 @@ test("a we-sell fee is cash the till takes, and the headline says so", async ({ 
     await expect(presented).not.toContainText("(100.00 + 1.50 fee)");
     await expect(presented.getByText(/^1 CAD = \d+\.\d{4} USD$/)).toBeVisible();
     await expect(presented).toContainText("You receive");
+    await expect(presented.getByTestId("quote-you-receive")).toHaveText("72.21 USD");
     await expect(presented).toContainText("Cash from customer 101.50 CAD");
     await expect(presented).toContainText("Cash to customer 72.21 USD");
     await presented.getByRole("button", { name: "Back to desk" }).click();
@@ -561,6 +562,7 @@ test("a we-buy fee is cash the till pays out, and the headline says so", async (
     await page.getByRole("button", { name: "Show customer the quote" }).click();
     const presented = page.locator("div.fixed.inset-0").last();
     await expect(presented).toContainText("You receive");
+    await expect(presented.getByTestId("quote-you-receive")).toHaveText("132.86 CAD");
     await expect(presented).toContainText("134.36 CAD");
     await expect(presented).toContainText("134.36 CAD less 1.50 CAD service fee");
     await expect(presented).toContainText("Cash to customer 132.86 CAD");
@@ -579,6 +581,67 @@ test("a we-buy fee is cash the till pays out, and the headline says so", async (
     const after = await sharedBalances(request);
     expect(centsOf(before.CAD) - centsOf(after.CAD), "till CAD movement").toBe(leadingCents(headline));
     expect(centsOf(after.USD) - centsOf(before.USD), "till USD movement").toBe(10000);
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
+/* The big green number is the cash that changes hands. A buy of 100 USD
+   at the QA board pays 134.36 CAD gross and 129.36 CAD after a 5.00 fee.
+   Handing out the gross overpays the customer by the fee. */
+const BUY_CASH_VIEWPORTS = [
+  { width: 360, height: 780 },
+  { width: 390, height: 844 },
+  { width: 430, height: 932 },
+  { width: 1280, height: 800 },
+] as const;
+
+test("the big buy number is the cash handed to the customer", async ({ page, request }, testInfo) => {
+  testInfo.setTimeout(120_000);
+  try {
+    await prepareDesk(page, 1280);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().click();
+    await page.locator(".cd-tx-swap").click();
+    await expect(page.locator(".cd-tx-side")).toContainText("We buy USD");
+    await page.locator(".cd-money input").first().fill("100");
+    await page.locator(".cd-tx-fee").fill("5");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toContainText("Cash to customer 129.36 CAD");
+    await page.getByRole("button", { name: "Show customer the quote" }).click();
+    const presented = page.locator("div.fixed.inset-0").last();
+    const big = (await presented.getByTestId("quote-you-receive").innerText()).replace(/\s+/g, " ").trim();
+    const cash = (await presented.getByText(/^Cash to customer /).innerText()).replace(/\s+/g, " ").trim();
+    expect(cash, "the big You receive line is the cash handed to the customer").toBe(`Cash to customer ${big}`);
+    expect(big).toBe("129.36 CAD");
+    await expect(presented).toContainText("134.36 CAD less 5.00 CAD service fee");
+    await expect(presented).toContainText("You give");
+    await expect(presented).toContainText("100.00 USD");
+    for (const size of BUY_CASH_VIEWPORTS) {
+      await page.setViewportSize(size);
+      await page.screenshot({ path: testInfo.outputPath(`buy_quote_${size.width}.png`) });
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await presented.getByRole("button", { name: "Back to desk" }).click();
+    const posted = await postFrozen(page, "134.36", "5.00");
+    const lines = posted.receipt.lines.join("\n");
+    expect(lines).toContain("You receive 134.36 CAD");
+    expect(lines).toContain("134.36 CAD less 5.00 CAD service fee");
+    expect(lines).toContain("Cash to customer 129.36 CAD");
+    await expect(page.locator(".tx-detail-ref")).toBeVisible();
+    await page.getByRole("button", { name: "Receipt" }).click();
+    const receipt = page.locator("#rcpt");
+    await expect(receipt).toBeVisible();
+    await expect(receipt).toContainText("You receive 134.36 CAD");
+    await expect(receipt).toContainText("134.36 CAD less 5.00 CAD service fee");
+    await expect(receipt).toContainText("Cash to customer 129.36 CAD");
+    for (const size of BUY_CASH_VIEWPORTS) {
+      await page.setViewportSize(size);
+      await page.screenshot({ path: testInfo.outputPath(`buy_receipt_${size.width}.png`) });
+    }
   } finally {
     await restoreBoard(request);
   }

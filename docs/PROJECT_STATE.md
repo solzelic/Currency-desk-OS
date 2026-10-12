@@ -92,10 +92,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `Cash to customer 129.36 CAD`. A sell adds `Cash from customer 105.00 CAD`.
   The frozen quote line carries the same fee and cash lines. A till that
   cannot pay the currency says `The till doesn't have enough USD. Ask a
-  manager to move cash in.` On the customer screen a sale reads
-  `101.50 CAD`, with `100.00 CAD + 1.50 CAD service fee` in 20px under it.
-  A buy shows You receive as the gross `134.36 CAD`, the fee under it,
-  and `Cash to customer 129.36 CAD`. The footer stays `Rate as quoted now`.
+  manager to move cash in.` On the customer screen the big number is
+  the cash that changes hands. A sale reads `101.50 CAD`, with
+  `100.00 CAD + 1.50 CAD service fee` in 20px under it. A buy shows
+  You receive as `129.36 CAD`, with `134.36 CAD less 5.00 CAD service fee`
+  under it, and `Cash to customer 129.36 CAD`. The footer stays
+  `Rate as quoted now`.
   The customer screen and the phone rate field show the rate to 4 decimals
   (`1 CAD = 0.7221 USD`).
   That displayed rate is the rate the amount is multiplied by, then

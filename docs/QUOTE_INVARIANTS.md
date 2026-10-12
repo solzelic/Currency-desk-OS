@@ -7,9 +7,12 @@
 - The exchange output on the sheet is that frozen output. A fee is separate
   home-currency tender: the customer hands over input plus the fee when they
   pay home currency, and takes output less the fee when they receive it. The
-  teller's You give / You receive headline is that net. The customer screen
-  shows You receive as the gross exchange and the fee under it, and names
-  the net payout as Cash to customer. The frozen input,
+  teller's You give / You receive headline is that net. The customer
+  screen's big number is the cash that changes hands. A buy shows You
+  receive as that net (`129.36 CAD`), with the gross exchange less the
+  fee on the next line (`134.36 CAD less 5.00 CAD service fee`), and
+  names the same net as Cash to customer. A sale already shows the net
+  on You give. The frozen input,
   output, and fee stay the figures the ledger posts. The rate drawn for the
   customer, on the phone rate field, and in the desk rate field, is
   4 decimal places. The posted amount is `input ×` that displayed rate,
