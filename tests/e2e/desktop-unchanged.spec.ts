@@ -74,91 +74,98 @@ async function dismissTour(page: Page): Promise<void> {
    each suite. The ledger mints that id with randomUUID. "_" is a
    word character, so a boundary in front of the UUID never matched
    and the id stayed live (592 pixels). The replacement below has
-   no boundary. */
-function frozenText(text: string): string {
-  let next = text.replace(/refreshed\s+\S+(\s+\S+)?/g, "refreshed 2m ago");
-  /* The committed audit picture has two day headings: the suite day
-     "Monday, October 12, 2026", and "Thursday, June 18, 2026" from
-     the book. Only the suite day moves. June 18 stays as painted. */
-  next = next.replace(
-    /\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}\b/g,
-    (match) => (match.includes("June 18, 2026") ? match : FROZEN_DAY),
-  );
-  next = next.replace(/\b\d{4}-\d{2}-\d{2}\b/g, FROZEN_ISO);
-  /* Leave AM or PM where it stands. The audit picture has both, and
-     a blanket suffix would repaint those rows. */
-  next = next.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, FROZEN_TIME);
-  next = next.replace(/\b\d+h \d+m(?: \d+s)?\b/g, "2h 00m");
-  next = next.replace(/\b\d+m \d+s\b/g, "2m 00s");
-  next = next.replace(/\b\d+s\b/g, "00s");
-  /* A posted ref is CD-, the day, and six random characters.
-     Seam names end in a six-character token that changes every
-     run. Same length, so the column stays put. */
-  next = next.replace(/\bCD-\d{6}-[0-9a-z]+\b/gi, "CD-260618-frozen");
-  next = next.replace(/\b(?=[A-Z0-9]*\d)[A-Z0-9]{6}\b/g, "000000");
-  next = next.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, FROZEN_UUID);
-  return next;
-}
-
+   no boundary. The audit picture also has two day headings. Only the
+   suite day moves; "Thursday, June 18, 2026" stays as painted. AM and
+   PM stay as painted too. */
 async function freezeWindowText(page: Page): Promise<void> {
-  await page.locator(".win.show.active").evaluate(async (root) => {
-    const frozenText = (window as unknown as { __frozenText: (text: string) => Promise<string> }).__frozenText;
+  /* The walk stays in the page. A round trip per text node timed the
+     test out on the ledger. */
+  await page.locator(".win.show.active").evaluate((root, frozen) => {
+    const rewrite = (text: string) => {
+      let next = text.replace(/refreshed\s+\S+(\s+\S+)?/g, "refreshed 2m ago");
+      next = next.replace(
+        /\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}\b/g,
+        (match) => (match.includes("June 18, 2026") ? match : frozen.day),
+      );
+      next = next.replace(/\b\d{4}-\d{2}-\d{2}\b/g, frozen.iso);
+      next = next.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, frozen.time);
+      next = next.replace(/\b\d+h \d+m(?: \d+s)?\b/g, "2h 00m");
+      next = next.replace(/\b\d+m \d+s\b/g, "2m 00s");
+      next = next.replace(/\b\d+s\b/g, "00s");
+      next = next.replace(/\bCD-\d{6}-[0-9a-z]+\b/gi, "CD-260618-frozen");
+      next = next.replace(/\b(?=[A-Z0-9]*\d)[A-Z0-9]{6}\b/g, "000000");
+      next = next.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, frozen.uuid);
+      return next;
+    };
     const stopIntervals = (win: Window) => {
       const probe = win.setInterval(() => {}, 1_000_000_000);
-      for (let i = 1; i <= probe; i++) win.clearInterval(i);
+      win.clearInterval(probe);
+      /* A faked clock hands out timer ids from 1e12. Walking those
+         never finishes. Native ids stay small. */
+      if (probe > 100000) return;
+      for (let i = 1; i < probe; i++) win.clearInterval(i);
     };
-    const fix = async (scope: ParentNode) => {
+    const fix = (scope: ParentNode) => {
       const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
-      const nodes: Text[] = [];
       let node = walker.nextNode();
       while (node) {
-        nodes.push(node as Text);
+        const text = node.textContent || "";
+        const next = rewrite(text);
+        if (next !== text) node.textContent = next;
         node = walker.nextNode();
       }
-      for (const textNode of nodes) {
-        const text = textNode.textContent || "";
-        const next = await frozenText(text);
-        if (next !== text) textNode.textContent = next;
-      }
-      for (const el of scope.querySelectorAll("input, textarea")) {
+      scope.querySelectorAll("input, textarea").forEach((el) => {
         const field = el as HTMLInputElement;
-        const next = await frozenText(field.value || "");
+        const next = rewrite(field.value || "");
         if (next !== field.value) field.value = next;
-      }
-      for (const el of scope.querySelectorAll("[title], [aria-label], [placeholder]")) {
+      });
+      scope.querySelectorAll("[title], [aria-label], [placeholder]").forEach((el) => {
         for (const attr of ["title", "aria-label", "placeholder"]) {
           const value = el.getAttribute(attr);
           if (value == null) continue;
-          const next = await frozenText(value);
+          const next = rewrite(value);
           if (next !== value) el.setAttribute(attr, next);
         }
-      }
+      });
     };
     /* A ticking interval repaints a clock between this walk and the
        shot. Stop the window's intervals, then the text. */
     stopIntervals(window);
-    await fix(root);
-    for (const frame of root.querySelectorAll("iframe")) {
+    fix(root);
+    root.querySelectorAll("iframe").forEach((frame) => {
       try {
         const win = frame.contentWindow;
         if (win) stopIntervals(win);
         const body = frame.contentDocument && frame.contentDocument.body;
-        if (body) await fix(body);
+        if (body) fix(body);
       } catch (err) {
         /* A cross-origin frame is not part of this window's text. */
       }
-    }
-  });
+    });
+  }, { day: FROZEN_DAY, iso: FROZEN_ISO, time: FROZEN_TIME, uuid: FROZEN_UUID });
 }
 
-/* The page clock stays at the instant this test started. Timers keep
-   running, so the desk still opens. #128's server header `x-cd-now`
-   is not on this branch, and the rows in these windows were written
-   by earlier tests, so a header on this page would not rewrite them.
+/* The page clock stays at the instant this test started. Timers are
+   left real: Playwright's clock hands out timer ids from 1e12, and
+   clearing them never finishes. #128's server header `x-cd-now` is
+   not on this branch, and the rows in these windows were written by
+   earlier tests, so a header on this page would not rewrite them.
    freezeWindowText turns those timestamps into the committed strings. */
 async function pinPageClock(page: Page): Promise<void> {
-  await page.clock.setFixedTime(new Date());
-  await page.exposeFunction("__frozenText", frozenText);
+  const pinned = Date.now();
+  await page.addInitScript((ms) => {
+    const RealDate = Date;
+    function PinnedDate(this: Date, ...args: unknown[]) {
+      if (!new.target) return new RealDate(ms).toString();
+      if (args.length === 0) return new RealDate(ms);
+      return new (RealDate as unknown as new (...a: unknown[]) => Date)(...args);
+    }
+    PinnedDate.now = () => ms;
+    PinnedDate.parse = RealDate.parse;
+    PinnedDate.UTC = RealDate.UTC;
+    PinnedDate.prototype = RealDate.prototype;
+    (window as unknown as { Date: DateConstructor }).Date = PinnedDate as unknown as DateConstructor;
+  }, pinned);
 }
 
 /* Rates are already served with RATES_SYNC=off. Replay the first
