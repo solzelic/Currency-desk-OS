@@ -9,8 +9,11 @@
 --
 -- 041 is already claimed by open PRs (persona events, till-session
 -- timezone). 040 is the last migration on main, so this file is 042.
--- The cancel date is the open till session's stored business_date.
--- PR #128's businessDate(at, timeZone) helper is not on main.
+-- The cancel date is the branch calendar day (branches.timezone).
+-- PR #128's businessDate(at, timeZone) helper is not on main. A branch
+-- with no timezone keeps the open session's stored business_date.
+-- Boot applies this file. A copy of the live schema has not been used
+-- to rehearse it.
 ALTER TABLE ledger_obligations
   ADD COLUMN IF NOT EXISTS paid_out_at timestamptz;
 

@@ -129,6 +129,30 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
     homeCurrency: "CAD",
     faceCurrency: "PHP",
   });
+  /* D5: the local row is a different amount and a different fee.
+     The sheet has to keep the server's 609.99 CAD and 24,326.46 PHP. */
+  await page.locator("[data-transfer-cancel='open']").evaluate((button) => {
+    const stored = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
+    for (const row of stored) {
+      if (row && row.serverTransactionId) {
+        row.payAmt = 1.11;
+        row.fee = 77.77;
+      }
+    }
+    localStorage.setItem("cdos_transfers_v1", JSON.stringify(stored));
+    const key = Object.keys(button).find((name) => name.startsWith("__reactFiber"));
+    let fiber = key ? (button as unknown as Record<string, { return?: unknown; memoizedProps?: { t?: { payAmt?: number; fee?: number; serverTransactionId?: string } } }>)[key] : undefined;
+    while (fiber) {
+      const transfer = fiber.memoizedProps && fiber.memoizedProps.t;
+      if (transfer && transfer.serverTransactionId) {
+        transfer.payAmt = 1.11;
+        transfer.fee = 77.77;
+        return;
+      }
+      fiber = fiber.return as typeof fiber;
+    }
+    throw new Error("the open transfer was not on the screen");
+  });
   await page.locator("[data-transfer-cancel='open']").click();
   const effect = page.locator("[data-transfer-cancel='effect']");
   await expect(effect).toBeVisible({ timeout: 15_000 });
@@ -158,6 +182,11 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
   }, row!.transactionId);
   expect(parsed![1]!.replace(/,/g, "")).toBe(plain(byId.cashInHome));
   expect(parsed![3]!.replace(/,/g, "")).toBe(plain(byId.faceAmount));
+  expect(shown).toContain("609.99 CAD");
+  expect(shown).toContain("24,326.46 PHP");
+  expect(shown).not.toContain("1.11");
+  expect(shown).not.toContain("77.77");
+  await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-1280.png` });
   await page.setViewportSize({ width: 360, height: 800 });
   await expect(effect).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-360.png` });
@@ -207,6 +236,7 @@ test("a cashier is told to ask a manager, and Cancel is not offered", async ({ p
     "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.",
   );
   await expect(page.locator("[data-transfer-cancel='open']")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/transfer-cancel-teller-1280.png` });
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: width === 360 ? 800 : 844 });
     await teller.scrollIntoViewIfNeeded();

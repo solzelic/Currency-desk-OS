@@ -942,4 +942,49 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
     });
     expect((await pool.query("SELECT count(*)::int AS n FROM ledger_obligations")).rows[0].n).toBe(250);
   });
+
+  it("dates a cancel after shop midnight to the branch day, not the UTC day", async () => {
+    /* 00:30 in Sydney on 13 Oct 2026 is 13:30 UTC on 12 Oct. AEDT is
+       UTC+11. The open session's stored date is the UTC day, which is
+       what a toISOString() stamp would write. */
+    const at = new Date("2026-10-12T13:30:00.000Z");
+    await pool.query(
+      "INSERT INTO tenants (id, name) VALUES ('tenant-1', 'Desk') ON CONFLICT (id) DO NOTHING",
+    );
+    await pool.query(
+      "INSERT INTO legal_entities (id, tenant_id, name) VALUES ('le-1', 'tenant-1', 'Desk') ON CONFLICT (id) DO NOTHING",
+    );
+    await pool.query(
+      `INSERT INTO branches (id, tenant_id, legal_entity_id, name, timezone)
+       VALUES ('branch-1', 'tenant-1', 'le-1', 'Sydney', 'Australia/Sydney')
+       ON CONFLICT (id) DO UPDATE SET timezone = EXCLUDED.timezone`,
+    );
+    await pool.query(
+      "UPDATE ledger_till_sessions SET business_date = '2026-10-12' WHERE session_id = 'session-1'",
+    );
+    service.postingClock = () => at;
+    try {
+      const posted = (await service.remittanceSend(teller, {
+        ...send,
+        idempotencyKey: "send-midnight",
+        reference: "TR-MIDNIGHT-1",
+      })) as Record<string, string>;
+      const reversed = (await service.reverse(
+        supervisor,
+        posted.transactionId!,
+        `web:transfer-cancel:${posted.transactionId}`,
+        "Cancelled at the counter",
+      )) as Record<string, string>;
+      expect(reversed.businessDate).toBe("2026-10-13");
+      expect(at.toISOString().slice(0, 10)).toBe("2026-10-12");
+      const stored = await pool.query(
+        "SELECT business_date::text AS business_date FROM ledger_reversals WHERE reversal_id=$1",
+        [reversed.reversalId],
+      );
+      expect(stored.rows[0].business_date).toBe("2026-10-13");
+    } finally {
+      service.postingClock = () => new Date();
+      await pool.query("DELETE FROM branches WHERE id = 'branch-1'");
+    }
+  });
 });

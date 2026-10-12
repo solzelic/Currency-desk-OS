@@ -120,9 +120,11 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   migration applies. Existing obligations stay unpaid (`paid_out_at`
   null). Existing reversals keep a null date. 041 is claimed by open
   drafts, and 040 is the last migration on main, so this file is 042.
-  The cancel date is the open till session's stored `business_date`.
-  PR #128's `businessDate(at, timeZone)` helper is not on main. The
-  cancel contract is `docs/TRANSFER_CANCEL.md`.
+  The cancel date is the branch calendar day from `branches.timezone`.
+  PR #128's `businessDate(at, timeZone)` helper is not on main. A branch
+  with no timezone keeps the open session's stored `business_date`.
+  Boot applies this file. A copy of the live schema has not been used
+  to rehearse it. The cancel contract is `docs/TRANSFER_CANCEL.md`.
 
 ## Test commands
 

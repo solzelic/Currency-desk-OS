@@ -131,6 +131,35 @@ function sessionBusinessDate(value: unknown): string {
   return String(value).slice(0, 10);
 }
 
+/* The shop's calendar day. en-CA prints YYYY-MM-DD. PR #128's
+   businessDate(at, timeZone) is not on main; this is the same fact
+   from branches.timezone. An unusable zone is not a day. */
+export function branchCalendarDate(at: Date, timeZone: string): string | null {
+  try {
+    const formatted = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(at);
+    return /^\d{4}-\d{2}-\d{2}$/.test(formatted) ? formatted : null;
+  } catch {
+    return null;
+  }
+}
+
+async function branchDay(client: pg.PoolClient, branchId: string, at: Date): Promise<string | null> {
+  try {
+    const found = await client.query("SELECT timezone FROM branches WHERE id=$1", [branchId]);
+    const zone = String(found.rows[0]?.timezone ?? "").trim();
+    if (!zone) return null;
+    return branchCalendarDate(at, zone);
+  } catch (error) {
+    if ((error as { code?: string }).code === "42P01") return null;
+    throw error;
+  }
+}
+
 /* Same shape as the one in service.ts and deliberately a separate copy:
    that one is closed over an exchange's own minimum of one cent on the
    input leg, and a fee of zero is ordinary here. */
@@ -375,6 +404,10 @@ function viewObligation(row: Record<string, any>) {
 }
 
 export class ObligationService {
+  /* The instant a reversal is posted. A test pins this to just after
+     midnight at the shop, when UTC is still the day before. */
+  postingClock: () => Date = () => new Date();
+
   constructor(private readonly pool: pg.Pool) {}
 
   /* ---- the four counter deals ---- */
@@ -1318,10 +1351,12 @@ export class ObligationService {
       if (already.rowCount)
         throw new LedgerError("REVERSAL_ALREADY_EXISTS", "Transaction already reversed.");
 
-      /* The open session's stored business date. PR #128's
-         businessDate(at, timeZone) is not on main, so the date is the
-         one till-open wrote on ledger_till_sessions. A closed session
-         is not a place a reversal can land: the signed-off day stays. */
+      /* A closed session is not a place a reversal can land. The
+         signed-off day stays. The date on the reversal is the branch's
+         calendar day when branches.timezone is set. PR #128's
+         businessDate helper is not on main. A branch with no timezone
+         keeps the open session's stored business_date. UTC is not a
+         shop day: just after midnight in Sydney, UTC is still yesterday. */
       const session = await client.query(
         `SELECT session_id, business_date
            FROM ledger_till_sessions
@@ -1335,10 +1370,11 @@ export class ObligationService {
       if (!session.rowCount)
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_TILL_CLOSED_MESSAGE);
       const openSession = session.rows[0];
-      const businessDate = sessionBusinessDate(openSession.business_date);
-
       const reversalId = `rv_${randomUUID()}`;
-      const now = new Date();
+      const now = this.postingClock();
+      const businessDate =
+        (await branchDay(client, actor.branchId, now)) ??
+        sessionBusinessDate(openSession.business_date);
       const movements = await client.query(
         "SELECT currency,direction,amount FROM ledger_till_movements WHERE transaction_id=$1 AND movement_kind='original' FOR UPDATE",
         [transactionId],

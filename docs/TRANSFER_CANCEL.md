@@ -80,11 +80,13 @@ has already been funded.
 A cancel needs an open till session. With none, the response is **422**
 `REVERSAL_NOT_ALLOWED` and the message "Open the till before cancelling a
 transfer." Nothing is posted, so the signed-off day's totals stay. When a
-session is open, `ledger_reversals.business_date` and `till_session_id`
-are that session's stored business date and id. PR #128's
-`businessDate(at, timeZone)` helper is not on main, so the date is the one
-till-open wrote on `ledger_till_sessions`. A reversal posted outside a
-summary window does not take the original deal out of that window.
+session is open, `ledger_reversals.till_session_id` is that session.
+`business_date` is the branch's calendar day from `branches.timezone` at
+the moment of the cancel. Just after midnight at the shop, that day is
+the shop's day. PR #128's `businessDate(at, timeZone)` helper is not on
+main. A branch with no timezone on file keeps the open session's stored
+business date. A reversal posted outside a summary window does not take
+the original deal out of that window.
 
 A receive (`remittance_receive`) is **422** `REVERSAL_NOT_ALLOWED` with
 `RECEIVE_MESSAGE`. This screen does not collect the cash back.
