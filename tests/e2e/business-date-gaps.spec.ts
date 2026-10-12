@@ -653,7 +653,8 @@ test.describe("desk ledger counter, Jerusalem browser", () => {
     let previous: string | null = null;
     /* 17 October is not the day this suite runs. An ID that expired
        the day before 12 October is already before today's UTC date,
-       so the old comparison stays green when the test is run that day. */
+       so the old comparison stays green when the suite runs that day.
+       The assertion below refuses to run on 17 October itself. */
     const at = "2026-10-17T00:01:00+03:00";
     expect(new Date().toISOString().slice(0, 10)).not.toBe("2026-10-17");
     const name = `Gap counter Jerusalem ${Date.now()}`;
