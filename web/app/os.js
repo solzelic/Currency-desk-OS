@@ -63067,6 +63067,47 @@ window.CDOS_PERSIST = (function () {
     };
   }
 
+  /* The unit word is not a proper noun. DisplayNames in this runtime
+     still title-cases it ("US Dollar", "Swiss Franc"). The catalog's
+     name is that string with the unit in sentence case. */
+  const UNIT_WORD = {
+    dollar: true,
+    franc: true,
+    peso: true,
+    pound: true,
+    yen: true,
+    yuan: true,
+    dirham: true,
+    rupee: true,
+    krone: true,
+    krona: true,
+    kroner: true,
+    kronor: true,
+    forint: true,
+    shekel: true,
+    won: true,
+    baht: true,
+    zloty: true,
+    lira: true,
+    riyal: true,
+    real: true,
+    rand: true,
+    euro: true,
+    shilling: true,
+    dinar: true,
+    ringgit: true,
+    rupiah: true,
+    manat: true,
+    tenge: true,
+    kina: true
+  };
+  function sentenceName(raw) {
+    return String(raw).split(' ').map(word => {
+      const bare = word.replace(/[^A-Za-z]/g, '').toLowerCase();
+      return UNIT_WORD[bare] ? word.toLowerCase() : word;
+    }).join(' ');
+  }
+
   /* Sentence case, from the same Intl.DisplayNames the rate catalog
      uses ("US dollar", "Swiss franc"). The app table is the fallback
      when that lookup is missing. */
@@ -63076,10 +63117,10 @@ window.CDOS_PERSIST = (function () {
         type: 'currency'
       });
       const spoken = names.of(code);
-      if (spoken && spoken !== code) return spoken;
+      if (spoken && spoken !== code) return sentenceName(spoken);
     } catch (e) {/* the table below */}
     const row = typeof CUR !== 'undefined' ? CUR.find(c => c.code === code) : null;
-    return row && row.name || code;
+    return sentenceName(row && row.name || code);
   }
 
   /* x100 follows the CAD board: the named small units, and any

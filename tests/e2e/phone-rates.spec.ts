@@ -19,6 +19,36 @@ async function dismissTour(page: Page): Promise<void> {
   }
 }
 
+/* POST /api/quotes will not price a deal with no customer on the
+   desk. The seam database does not populate the York book unless
+   DEMO_POPULATE is set, so the quote tests put one customer on file
+   through the same endpoint the desk uses. */
+async function ensureQuoteCustomer(page: Page): Promise<void> {
+  const made = await page.evaluate(async () => {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    const backend = window.CDOS && window.CDOS.Backend;
+    const ws = backend && backend.getWorkspace && backend.getWorkspace();
+    if (ws) headers["x-workspace-id"] = ws;
+    const existing = await fetch("/api/ledger/customers", { credentials: "same-origin", headers });
+    const body = await existing.json().catch(() => ({}));
+    if (body.customers && body.customers.length) return { ok: true };
+    const r = await fetch("/api/ledger/customers", {
+      method: "POST",
+      credentials: "same-origin",
+      headers,
+      body: JSON.stringify({
+        externalRef: "phone-rates-quote",
+        name: "Lina Farah",
+        risk: "normal",
+        idStatus: "verified",
+      }),
+    });
+    const created = await r.json().catch(() => ({}));
+    return { ok: r.status === 201 && !!created.customerId, status: r.status, created };
+  });
+  expect(made.ok, JSON.stringify(made)).toBe(true);
+}
+
 async function atDesk(page: Page, staffId = "a.singh"): Promise<void> {
   await page.context().clearCookies();
   await page.goto("/app");
@@ -29,6 +59,7 @@ async function atDesk(page: Page, staffId = "a.singh"): Promise<void> {
   await signInAtDesk(page, staffId);
   await dismissTour(page);
   await expect(page.locator(".win.show.active").first()).toHaveCSS("transform", "none");
+  await ensureQuoteCustomer(page);
 }
 
 async function openRates(page: Page): Promise<void> {
