@@ -39,6 +39,18 @@ const switchBody = z.object({
   staffId: z.string().min(1).max(120),
   pin: z.string().regex(/^\d{4}$/, "pin: four digits"),
 });
+
+/* The name on the refusal is the one the menu already shows: an initial
+   and a surname. "A. Singh" stays "A. Singh". "Amrit Singh" becomes
+   "A. Singh". A single word is left as it was typed. */
+export function pinDeskName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return name.trim();
+  const first = parts[0]!.replace(/\.$/, "");
+  const letter = first.charAt(0).toUpperCase();
+  const surname = parts[parts.length - 1]!;
+  return `${letter}. ${surname}`;
+}
 const changePasswordBody = z.object({
   currentPassword: z.string().min(1).max(512),
   newPassword: z.string().min(8, "password: at least 8 characters").max(512),
@@ -402,21 +414,40 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     if (!target.authorizedBranchIds.includes(who.branchId)) {
       return reply.code(403).send({ error: "branch_denied", detail: "That person is not on this branch." });
     }
+    const deskName = pinDeskName(target.name);
+    const lockedDetail = `Too many wrong tries. Ask a manager to unlock ${deskName}.`;
     if (!target.pinHash) {
-      return reply.code(409).send({ error: "no_pin", detail: "No PIN is set for this person." });
+      return reply.code(409).send({
+        error: "no_pin",
+        detail: `${deskName} has no PIN yet. Ask a manager to set one.`,
+      });
     }
     const locked = lockState(target.id);
     if (locked.locked) {
-      return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
+      return reply.code(429).send({ error: "locked", detail: lockedDetail });
     }
-    const pinOk = pin !== "0000" && await verifyPassword(pin, target.pinHash);
+    /* 0000 is the old browser fallback. It is refused before the hash is
+       read, and it is not a wrong try, so it does not walk the keypad
+       toward the lock. */
+    if (pin === "0000") {
+      return reply.code(422).send({
+        error: "weak_pin",
+        detail: "0000 is too easy to guess. Pick a different PIN.",
+      });
+    }
+    const pinOk = await verifyPassword(pin, target.pinHash);
     if (!pinOk) {
       const after = recordFailure(target.id);
       await audit(db, {
         tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
         actorId: who.id, action: "pin.failed", detail: { of: target.staffId, via: "auth.switch" },
       });
-      return reply.code(401).send({ error: "wrong_pin", remaining: after.remaining, locked: after.locked });
+      return reply.code(401).send({
+        error: "wrong_pin",
+        remaining: after.remaining,
+        locked: after.locked,
+        ...(after.locked ? { detail: lockedDetail } : {}),
+      });
     }
     clearPinAttempts(target.id);
 

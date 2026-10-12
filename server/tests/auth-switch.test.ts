@@ -71,15 +71,31 @@ afterAll(async () => {
 describe("account switch refuses a PIN the server does not hold", () => {
   it("refuses a person who has no PIN, and does not treat 0000 as one", async () => {
     const costa = await login(A);
-    const missing = await switchTo(costa, "r.haddad", "1357");
+    const missing = await switchTo(costa, B, "1357");
     expect(missing.statusCode, missing.body).toBe(409);
-    expect(missing.json()).toMatchObject({ error: "no_pin" });
-    expect(missing.json().detail).toMatch(/No PIN is set/);
+    expect(missing.json()).toEqual({
+      error: "no_pin",
+      detail: "A. Singh has no PIN yet. Ask a manager to set one.",
+    });
+
+    await handle.db.update(schema.staffUsers).set({ name: "Amrit Singh" }).where(eq(schema.staffUsers.id, idOf(B)));
+    try {
+      const full = await switchTo(costa, B, "1357");
+      expect(full.statusCode, full.body).toBe(409);
+      expect(full.json().detail).toBe("A. Singh has no PIN yet. Ask a manager to set one.");
+    } finally {
+      await handle.db.update(schema.staffUsers).set({ name: "A. Singh" }).where(eq(schema.staffUsers.id, idOf(B)));
+    }
 
     await setPin("s.iqbal", "0000");
     const placeholder = await switchTo(costa, "s.iqbal", "0000");
-    expect(placeholder.statusCode, placeholder.body).toBe(401);
-    expect(placeholder.json().error).toBe("wrong_pin");
+    expect(placeholder.statusCode, placeholder.body).toBe(422);
+    expect(placeholder.json()).toEqual({
+      error: "weak_pin",
+      detail: "0000 is too easy to guess. Pick a different PIN.",
+    });
+    const again = await switchTo(costa, "s.iqbal", "0000");
+    expect(again.statusCode, again.body).toBe(422);
     const still = await app.inject({ method: "GET", url: "/api/auth/me", cookies: costa });
     expect(still.statusCode).toBe(200);
     expect(still.json().user.id).toBe(A);
@@ -107,13 +123,26 @@ describe("account switch refuses a PIN the server does not hold", () => {
   });
 
   it("locks the keypad the same way a PIN check does", async () => {
-    await setPin("r.haddad", "4829");
+    await setPin(B, "4829");
     const costa = await login(A);
-    const codes: number[] = [];
-    for (let i = 0; i < 6; i++) codes.push((await switchTo(costa, "r.haddad", "1357")).statusCode);
-    expect(codes.filter((c) => c === 401)).toHaveLength(5);
-    expect(codes.at(-1)).toBe(429);
-    clearPinAttempts(idOf("r.haddad"));
+    const tries = [];
+    for (let i = 0; i < 5; i++) tries.push(await switchTo(costa, B, "1111"));
+    expect(tries.map((res) => res.statusCode)).toEqual([401, 401, 401, 401, 401]);
+    expect(tries[4]!.json()).toMatchObject({
+      error: "wrong_pin",
+      locked: true,
+      detail: "Too many wrong tries. Ask a manager to unlock A. Singh.",
+    });
+    const locked = await switchTo(costa, B, "1111");
+    expect(locked.statusCode, locked.body).toBe(429);
+    expect(locked.json()).toEqual({
+      error: "locked",
+      detail: "Too many wrong tries. Ask a manager to unlock A. Singh.",
+    });
+    const weakWhileLocked = await switchTo(costa, B, "0000");
+    expect(weakWhileLocked.statusCode, weakWhileLocked.body).toBe(429);
+    expect(weakWhileLocked.json().detail).toBe("Too many wrong tries. Ask a manager to unlock A. Singh.");
+    clearPinAttempts(idOf(B));
   });
 });
 

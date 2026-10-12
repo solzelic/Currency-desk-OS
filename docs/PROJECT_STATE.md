@@ -558,14 +558,19 @@ memory on this process.
 
 **2026-10-12**, staff switch. Taking the desk from the avatar menu is a new
 session. `POST /api/auth/switch` checks the next person's server-held
-PIN, refuses a missing PIN, and refuses `0000`. It revokes the cookie
-that was live and issues one for them. The till stays only when they
-may use it; otherwise they pick one. The screen applies the role
-`/api/auth/me` returns after that. The Settings toggle that used to
-skip the PIN does not skip the server. A deal, a till open, and an
-audit row carry the new session. Before this, a successful switch
-wrote nothing, so a deal whose screen said one person and whose
-`actor_id` is another cannot be found with a query.
+PIN. A missing PIN, the guess `0000`, and a locked keypad are said
+inside the PIN dialog, using that person's name (initial and surname).
+`0000` does not count as a wrong try. The dialog's Cancel key uses the
+desk font at 15px. The route revokes the cookie that was live and
+issues one for them. The till stays only when they may use it;
+otherwise they pick one. The screen applies the role `/api/auth/me`
+returns after that. The Settings toggle that used to skip the PIN does
+not skip the server. A deal, a till open, and an audit row carry the
+new session. The first-run tour is once per person, on sign-in. A
+switch or a handover does not open it and does not mark it done.
+Before this, a successful switch wrote nothing, so a deal whose screen
+said one person and whose `actor_id` is another cannot be found with
+a query.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the

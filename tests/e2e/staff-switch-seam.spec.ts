@@ -1,13 +1,17 @@
 /* The avatar menu used to rename the screen. This walks that menu,
-   proves the PIN, and asks the ledger who posted the deal. */
+   proves the PIN refusals stay inside the dialog, and asks the ledger
+   who posted the deal. */
 import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
-import type { Page } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 
-test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
+test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
-const SHOTS = "/opt/cursor/artifacts/staff-switch";
-const WIDTHS = [360, 390, 1280] as const;
+const SHOTS = "/opt/cursor/artifacts/pr163";
+const STORE = "/cursor/stores/self/pr163";
+const NO_PIN = "A. Singh has no PIN yet. Ask a manager to set one.";
+const WEAK = "0000 is too easy to guess. Pick a different PIN.";
+const LOCKED = "Too many wrong tries. Ask a manager to unlock A. Singh.";
 
 async function visibleAccount(page: Page) {
   const button = page.locator(".mb-acct:visible");
@@ -19,74 +23,117 @@ async function openSwitchList(page: Page) {
   await (await visibleAccount(page)).click();
   const menu = page.locator(".acct-menu:visible");
   await expect(menu.getByText("Switch account", { exact: true })).toBeVisible();
+  await menu.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
   return menu;
 }
 
-test("switching from the avatar menu posts the deal as the next person", async ({ page }) => {
+async function shot(page: Page, name: string) {
   mkdirSync(SHOTS, { recursive: true });
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/app");
-
-  const prepared = await page.evaluate(async () => {
-    const login = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" }),
-    });
-    if (!login.ok) return { ok: false, step: "login", status: login.status };
-    const till = await fetch("/api/desk/branches/br-yorkville/tills", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tillId: "till-switch" }),
-    });
-    const tillBody = await till.json().catch(() => ({}));
-    const pin = await fetch("/api/staff/a.singh/pin", { method: "POST" });
-    const pinBody = await pin.json().catch(() => ({}));
-    return {
-      ok: till.ok && pin.ok && !!(tillBody.workspaceId && pinBody.pin),
-      status: { till: till.status, pin: pin.status },
-      workspaceId: tillBody.workspaceId as string | undefined,
-      pin: pinBody.pin as string | undefined,
-      detail: tillBody,
-    };
-  });
-  expect(prepared.ok, JSON.stringify(prepared)).toBe(true);
-  const workspaceId = prepared.workspaceId!;
-  const pin = prepared.pin!;
-
-  await signInAtDesk(page, "m.costa");
-
-  for (const width of WIDTHS) {
-    await page.setViewportSize({ width, height: width >= 800 ? 800 : 780 });
-    const menu = await openSwitchList(page);
-    await page.screenshot({ path: `${SHOTS}/menu-${width}.png` });
-    await menu.getByRole("button", { name: /A\. Singh/ }).click();
-    await expect(page.getByText("Switch account", { exact: true })).toBeVisible();
-    await page.screenshot({ path: `${SHOTS}/pin-${width}.png` });
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(page.getByText("Switch account", { exact: true })).toBeHidden();
+  const path = `${SHOTS}/${name}`;
+  await page.screenshot({ path });
+  if (existsSync("/cursor/stores/self")) {
+    mkdirSync(STORE, { recursive: true });
+    copyFileSync(path, `${STORE}/${name}`);
   }
+}
 
-  await page.setViewportSize({ width: 1280, height: 800 });
+async function typePin(page: Page, digits: string) {
+  for (const digit of digits) {
+    await page.getByRole("button", { name: digit, exact: true }).click();
+  }
+}
+
+async function openSinghPin(page: Page) {
   const menu = await openSwitchList(page);
   await menu.getByRole("button", { name: /A\. Singh/ }).click();
   await expect(page.getByText("Switch account", { exact: true })).toBeVisible();
-  for (const digit of pin) {
-    await page.getByRole("button", { name: digit, exact: true }).click();
+}
+
+async function issuePin(request: APIRequestContext): Promise<string> {
+  const pin = await request.post("/api/staff/a.singh/pin");
+  const body = await pin.json();
+  expect(pin.ok(), JSON.stringify(body)).toBe(true);
+  expect(body.pin).toMatch(/^\d{4}$/);
+  return body.pin as string;
+}
+
+test("switching from the avatar menu posts the deal as the next person", async ({ page, request }) => {
+  mkdirSync(SHOTS, { recursive: true });
+  const login = await request.post("/api/auth/login", {
+    data: { staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" },
+  });
+  expect(login.ok(), await login.text()).toBe(true);
+  const till = await request.post("/api/desk/branches/br-yorkville/tills", {
+    data: { tillId: "till-switch" },
+  });
+  const tillBody = await till.json();
+  expect(till.ok(), JSON.stringify(tillBody)).toBe(true);
+  const workspaceId = tillBody.workspaceId as string;
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/app");
+  await signInAtDesk(page, "m.costa");
+
+  const menu = await openSwitchList(page);
+  await shot(page, "menu-1280.png");
+  await menu.getByRole("button", { name: /A\. Singh/ }).click();
+  await expect(page.getByText("Switch account", { exact: true })).toBeVisible();
+  const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+  await expect(cancel).toBeVisible();
+  const face = await cancel.evaluate((el) => ({
+    family: (el as HTMLElement).style.fontFamily,
+    size: (el as HTMLElement).style.fontSize,
+  }));
+  expect(face.size).toBe("15px");
+  expect(face.family.toLowerCase()).not.toContain("space mono");
+  expect(face.family).toMatch(/Archivo|f-display|system-ui/);
+  await cancel.click();
+  await expect(page.getByText("Switch account", { exact: true })).toBeHidden();
+
+  await page.setViewportSize({ width: 390, height: 780 });
+  await openSinghPin(page);
+  await typePin(page, "1357");
+  await expect(page.getByText(NO_PIN)).toBeVisible();
+  await shot(page, "refusal-no-pin-390.png");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  await issuePin(request);
+  await openSinghPin(page);
+  await typePin(page, "0000");
+  await expect(page.getByText(WEAK)).toBeVisible();
+  await shot(page, "refusal-0000-390.png");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  await openSinghPin(page);
+  for (let i = 0; i < 4; i++) {
+    await typePin(page, "1111");
+    await expect(page.getByText("Incorrect PIN")).toBeVisible();
+    await page.waitForTimeout(350);
   }
+  await typePin(page, "1111");
+  await expect(page.getByText(LOCKED)).toBeVisible();
+  await expect(page.getByRole("button", { name: "OK", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "1", exact: true })).toHaveCount(0);
+  await shot(page, "refusal-lockout-390.png");
+  await page.getByRole("button", { name: "OK", exact: true }).click();
+  await expect(page.getByText("Switch account", { exact: true })).toBeHidden();
+
+  const nextPin = await issuePin(request);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openSinghPin(page);
+  await typePin(page, nextPin);
   await expect.poll(async () => page.evaluate(async () => {
     const me = await fetch("/api/auth/me");
     if (!me.ok) return null;
     return (await me.json()).user?.id ?? null;
   })).toBe("a.singh");
   await expect(page.locator("#menubar .mb-acct-id b")).toHaveText("A. Singh");
-  await page.screenshot({ path: `${SHOTS}/desk-1280.png` });
-
-  for (const width of [360, 390] as const) {
-    await page.setViewportSize({ width, height: 780 });
-    await expect(page.locator(".phone-head .mb-acct-av:visible")).toHaveText("AS");
-    await page.screenshot({ path: `${SHOTS}/desk-${width}.png` });
-  }
+  await page.waitForTimeout(1000);
+  await expect(page.locator(".cdos-tour")).toHaveCount(0);
+  await expect(page.getByText(/First run/)).toHaveCount(0);
+  await shot(page, "desk-1280.png");
 
   const booked = await page.evaluate(async (ws) => {
     const headers = { "content-type": "application/json", "x-workspace-id": ws };
