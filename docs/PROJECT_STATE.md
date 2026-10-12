@@ -105,7 +105,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   first filter chip sits 16px in, and the
   chip row fades at the right. Under 430px the ledger is the phone shell: title, summary cards,
   search, filter chips, list rows, and a sticky New transaction. The
-  desktop ledger is unchanged. The bar is five
+  desktop ledger is unchanged. Under 430px Transfers is the phone record
+  list: search by sender, beneficiary, or TR number, the pipeline chips,
+  and a row that names who sent to whom. Amounts, the tracking PIN, a
+  receipt, and the EFT report stay off that list. New transfer record
+  opens the existing cash step. The desktop pipeline is unchanged.
+  Saved beneficiaries and the record page are not on the phone yet. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -613,6 +618,12 @@ empty stylesheet. The 1280 spec now serves Archivo and Space Mono from
 `tests/e2e/fonts/` for both the main capture and the branch compare.
 A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
+
+**2026-10-12**, phone Transfers list. Under 430px the Transfers window is
+the record list (who sent to whom, the pipeline chips, a 12-hour time
+when the record is from the business day). The cash step is still the
+existing New transfer sheet. Records stay in the browser, where the
+desktop already keeps them. The desktop pipeline is the same tree.
 
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the

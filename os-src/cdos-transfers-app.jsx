@@ -386,8 +386,22 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     </div></Portal>);
   }
 
+  function usePhoneLayout() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(query).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
+
   /* ===================== ROOT ===================== */
   function Transfers({ rows, setRows, clients, setClients, settings, me, log, beneficiaries: pBen, setBeneficiaries: pSetBen, corridors: pCor, setCorridors: pSetCor, serverBacked, onTillChanged }) {
+    const phoneLayout = usePhoneLayout();
     const [tab, setTab] = useState('pipeline');
     // beneficiaries + corridors are lifted to the OS shell so Clients shares them;
     // fall back to local stores if mounted standalone.
@@ -423,6 +437,16 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, 0);
     }, [transfers, settlements]);
     const TABS = [['pipeline', 'Pipeline', 'send'], ['settlement', 'Settlement', 'coins'], ['beneficiaries', 'Beneficiaries', 'users'], ['corridors', 'Corridors', 'globe'], ['reports', 'EFT reports', 'shield']];
+
+    if (phoneLayout && window.CDOS.PhoneTransfers) {
+      const PhoneTransfers = window.CDOS.PhoneTransfers;
+      return (
+        <div className="phone-transfers">
+          <PhoneTransfers transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} onNew={() => setModal(true)} />
+          {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={() => setModal(false)} />}
+        </div>
+      );
+    }
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
       <div className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>

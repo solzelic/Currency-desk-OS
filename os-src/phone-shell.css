@@ -650,4 +650,23 @@
     color: var(--color-text, #161513);
     font-weight: 500;
   }
+
+  .phone-transfers { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  .phone-transfers > .phone-shell { flex: 1 1 auto; min-height: 0; }
+  .phone-transfers .phone-chip { min-width: 44px; }
+  .phone-xfer-row.phone-row.has-note {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+    row-gap: 2px;
+    align-items: start;
+  }
+  .phone-xfer-row .phone-row-main,
+  .phone-xfer-row .phone-row-end { display: contents; }
+  .phone-xfer-row .phone-row-title { grid-column: 1; grid-row: 1; white-space: normal; }
+  .phone-xfer-row .phone-badge { grid-column: 2; grid-row: 1; justify-self: end; }
+  .phone-xfer-row .phone-row-sub { grid-column: 1 / -1; grid-row: 2; white-space: normal; color: var(--gray-700, #3D3A35); }
+  .phone-xfer-row .phone-row-note { grid-column: 1; grid-row: 3; }
+  .phone-xfer-row .phone-row-meta { grid-column: 2; grid-row: 3; justify-self: end; }
 }
+

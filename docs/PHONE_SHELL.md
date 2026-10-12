@@ -496,3 +496,10 @@ by day, and a sticky **New transaction**. Amounts use
 own rows; an empty book says so. The desktop ledger is the same tree
 it was: the in-page New transaction, the table, and the folder tabs.
 Records and Compliance stay on both.
+
+Transfers adopts the same screen for its record list: title, search,
+`FilterChips`, `ListRow`s, and a sticky **New transfer record**. A row
+is the sender, the beneficiary, how it pays out, the TR reference, and
+either a 12-hour time (business day) or `formatPhoneDate`. Amounts stay
+off the list. The cash step is still `TransferModal`. The desktop
+pipeline is unchanged.

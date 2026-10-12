@@ -39738,6 +39738,18 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       c: "var(--cd-on-ink)"
     }), " Record settlement")))));
   }
+  function usePhoneLayout() {
+    const query = '(max-width: 430px)';
+    const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(query).matches);
+    useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }, []);
+    return on;
+  }
 
   /* ===================== ROOT ===================== */
   function Transfers({
@@ -39755,6 +39767,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     serverBacked,
     onTillChanged
   }) {
+    const phoneLayout = usePhoneLayout();
     const [tab, setTab] = useState('pipeline');
     // beneficiaries + corridors are lifted to the OS shell so Clients shares them;
     // fall back to local stores if mounted standalone.
@@ -39833,6 +39846,34 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, 0);
     }, [transfers, settlements]);
     const TABS = [['pipeline', 'Pipeline', 'send'], ['settlement', 'Settlement', 'coins'], ['beneficiaries', 'Beneficiaries', 'users'], ['corridors', 'Corridors', 'globe'], ['reports', 'EFT reports', 'shield']];
+    if (phoneLayout && window.CDOS.PhoneTransfers) {
+      const PhoneTransfers = window.CDOS.PhoneTransfers;
+      return /*#__PURE__*/React.createElement("div", {
+        className: "phone-transfers"
+      }, /*#__PURE__*/React.createElement(PhoneTransfers, {
+        transfers: transfers,
+        beneficiaries: beneficiaries,
+        corridors: corridors,
+        onNew: () => setModal(true)
+      }), modal && /*#__PURE__*/React.createElement(TransferModal, {
+        rows,
+        setRows,
+        clients,
+        setClients,
+        settings,
+        me,
+        log,
+        corridors,
+        beneficiaries,
+        setBeneficiaries,
+        transfers,
+        setTransfers,
+        serverBacked,
+        onServerPosted: onTillChanged,
+        onClose: () => setModal(false),
+        onDone: () => setModal(false)
+      }));
+    }
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
       style: {
@@ -63056,6 +63097,163 @@ window.CDOS_PERSIST = (function () {
     formatPhoneDate,
     formatPhoneListGroup,
     Phone
+  });
+})();
+
+/* ---- os-src/cdos-transfers-phone.jsx ---- */
+/* Phone Transfers list. Who sent to whom, and where it stands.
+   The cash step stays the existing New transfer sheet.
+   Saved beneficiaries and the record page come in later PRs.
+   A tracking PIN, a receipt, and an EFT report stay off this screen. */
+(function () {
+  const {
+    useState
+  } = React;
+  function shell() {
+    const C = window.CDOS || {};
+    const Phone = C.Phone;
+    const T = C._transfers;
+    if (!Phone || !T || typeof C.formatPhoneTime !== 'function' || typeof C.formatPhoneDate !== 'function' || typeof C.formatPhoneListGroup !== 'function') {
+      throw new Error('Phone transfers: the phone shell did not load.');
+    }
+    return {
+      Phone: Phone,
+      T: T,
+      time: C.formatPhoneTime,
+      day: C.formatPhoneDate,
+      group: C.formatPhoneListGroup
+    };
+  }
+  function shown(text) {
+    if (!text || text === '\u2014' || text === '\u2013') return '';
+    return text;
+  }
+  function today() {
+    const fn = window.CDOS && window.CDOS.businessDate;
+    return typeof fn === 'function' ? fn() : '';
+  }
+  function toneOf(status) {
+    if (status === 'paid') return 'pos';
+    if (status === 'hold') return 'warn';
+    if (status === 'cancelled') return 'neg';
+    return 'neutral';
+  }
+
+  /* The last time a person moved the record. A System stamp is not that. */
+  function handStamp(t) {
+    const events = t.timeline || [];
+    let pick = null;
+    events.forEach(evt => {
+      if (evt && evt.by && evt.by !== 'System') pick = evt;
+    });
+    return pick ? pick.ts : events[0] ? events[0].ts : '';
+  }
+  function PhoneTransfers({
+    transfers,
+    beneficiaries,
+    corridors,
+    onNew,
+    onOpen
+  }) {
+    const {
+      Phone,
+      T,
+      time,
+      day,
+      group
+    } = shell();
+    const [q, setQ] = useState('');
+    const [filter, setFilter] = useState('active');
+    const benOf = id => beneficiaries.find(b => b.id === id);
+    const corOf = id => corridors.find(c => c.id === id) || {};
+    const counts = {
+      active: 0,
+      hold: 0,
+      paid: 0,
+      all: transfers.length
+    };
+    transfers.forEach(t => {
+      if (t.status === 'hold') counts.hold += 1;else if (t.status === 'paid') counts.paid += 1;else if (t.status !== 'cancelled') counts.active += 1;
+    });
+    const needle = q.trim().toLowerCase();
+    const list = transfers.filter(t => {
+      if (filter === 'hold') return t.status === 'hold';
+      if (filter === 'paid') return t.status === 'paid';
+      if (filter === 'all') return true;
+      return t.status !== 'paid' && t.status !== 'cancelled' && t.status !== 'hold';
+    }).filter(t => {
+      if (!needle) return true;
+      const ben = benOf(t.beneficiaryId);
+      return (t.senderName + ' ' + (ben ? ben.name : '') + ' ' + t.ref).toLowerCase().indexOf(needle) >= 0;
+    }).sort((a, b) => (b.date + b.ref).localeCompare(a.date + a.ref));
+    const book = today();
+    const emptyCopy = filter === 'hold' ? 'Nothing is on hold.' : filter === 'paid' ? 'Nothing has been paid out.' : filter === 'all' ? 'No transfers yet.' : 'Nothing is in progress.';
+    const empty = needle ? /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "No records",
+      message: "Nothing matches that search."
+    }) : /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "No transfers here",
+      message: emptyCopy
+    });
+    return /*#__PURE__*/React.createElement(Phone.Screen, {
+      app: "transfers",
+      title: "Transfers",
+      sticky: /*#__PURE__*/React.createElement(Phone.StickyAction, {
+        label: "+ New transfer record",
+        onClick: () => {
+          if (onNew) onNew();
+        }
+      })
+    }, /*#__PURE__*/React.createElement(Phone.Search, {
+      value: q,
+      onChange: setQ,
+      placeholder: "Sender, beneficiary or TR number",
+      label: "Sender, beneficiary or TR number"
+    }), /*#__PURE__*/React.createElement(Phone.FilterChips, {
+      value: filter,
+      onChange: setFilter,
+      chips: [{
+        id: 'active',
+        label: 'In progress',
+        count: counts.active
+      }, {
+        id: 'hold',
+        label: 'On hold',
+        count: counts.hold
+      }, {
+        id: 'paid',
+        label: 'Paid out',
+        count: counts.paid
+      }, {
+        id: 'all',
+        label: 'All',
+        count: counts.all
+      }]
+    }), list.length ? /*#__PURE__*/React.createElement(Phone.ListSection, {
+      title: shown(group(book, book)) || 'Records',
+      meta: "Sender to beneficiary"
+    }, list.map(t => {
+      const ben = benOf(t.beneficiaryId);
+      const who = t.direction === 'send' ? ben ? ben.name : corOf(t.corridor).country || '' : t.senderName;
+      const how = [ben && ben.relationship, corOf(t.corridor).country, T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')].filter(Boolean).join(' \u00b7 ');
+      const meta = book && t.date === book ? shown(time(handStamp(t))) : shown(day(t.date));
+      return /*#__PURE__*/React.createElement(Phone.ListRow, {
+        key: t.id,
+        className: "phone-xfer-row",
+        title: t.senderName + ' to ' + who,
+        subtitle: how,
+        note: t.ref,
+        meta: meta,
+        badge: {
+          label: T.statusLabel(t.status, t.direction),
+          tone: toneOf(t.status)
+        },
+        onClick: onOpen ? () => onOpen(t.id) : undefined
+      });
+    })) : empty);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    PhoneTransfers: PhoneTransfers
   });
 })();
 
