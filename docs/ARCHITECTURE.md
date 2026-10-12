@@ -241,6 +241,25 @@ unset and use a fixed development pepper. Desk tills stay password-only.
 that suspends a desk. The default for a new platform capability is "the role
 that obviously needs it", not "admin".
 
+A write in `server/src/routes/admin.ts` passes that permission to `gate`.
+Omitting it would open the route to every platform role, including the
+read-only auditor. A route that asks for two permissions has to hold both,
+and it does not write until both checks pass. On
+`PATCH /api/admin/tenants/:id` the need is taken from the fields that
+are present and checked before the body is validated, so a caller who
+does not hold it gets 403 even when the body is bad. Reads stay open
+to any platform role. The owner holds every permission. Support does
+not suspend or delete a desk. That is the rule.
+
+| Write | Need | Roles |
+| --- | --- | --- |
+| Suspend or restore a desk (`PATCH /api/admin/tenants/:id` with `suspended`) | `security:manage` | owner, security |
+| Change a desk's plan (same route, with `plan`) | `billing:write` | owner, billing |
+| Delete a desk (`DELETE /api/admin/tenants/:id`) | `security:manage` | owner, security |
+| Create a desk by hand (`POST /api/admin/tenants`) | `desks:write` | owner, support, security |
+| Block a person, reset a password, reset a PIN, issue a CD-ID | `people:write` | owner, support, security |
+| Invite a desk, edit an application (notes, status, answered, labels, rotate the code) | `applications:write` | owner, support |
+
 **Host secrets live in the host environment. Never the repo, never the
 browser, never the panel.** Stripe keys, the Resend key, the database URL.
 No screen displays one of those, including to us. Rotation happens in the

@@ -550,6 +550,22 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, platform write gates. An auditor on the platform team can
+read desks, applications, billing, people, and the audit trail. They
+cannot suspend or delete a desk, create one, change a plan, reset a
+password or a PIN, issue a CD-ID, block a person, invite a desk, or
+edit an application. Suspending and deleting a desk require
+`security:manage`. Changing a plan requires `billing:write`. A body
+that does both has to hold both, and nothing is written until both
+checks pass. Creating a desk by hand requires `desks:write`. Acting
+on a person requires `people:write`. An invitation and an application
+edit (notes, status, answered, labels, rotating the code) require
+`applications:write`. Support does not suspend a desk and does not
+change a plan. That loss of suspend and delete is the rule. The need
+is read from the fields on `PATCH /api/admin/tenants/:id` and checked
+before the body is validated, so a caller who does not hold it gets
+403 even when the body is bad. A read still answers any platform role.
+
 **2026-10-12**, cheque reversal door. `POST /api/ledger/transactions/:transactionId/reversal`
 refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return` with
 `REVERSAL_NOT_ALLOWED`. The message names
