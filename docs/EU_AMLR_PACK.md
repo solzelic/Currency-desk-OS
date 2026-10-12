@@ -22,7 +22,7 @@ that later layer.
 | Suspicious transaction report, any amount, including an attempt | Art 69 | `rpt-eu-str-v2`, kind `suspicious`, no trigger amount |
 | Reply to an FIU information request within 5 working days | Art 69 | Words on `format_rules.deadline_label`. Not a filing deadline. |
 | Keep records 5 years | Art 77 | `retention_years` 5, from the end of the relationship or the occasional transaction |
-| Applies from 10 July 2027 | Art 90 | `applies_from` 2027-07-10. Until that date the desk shows a disclaimer that national law, including transposition of the fourth and fifth directives, still governs |
+| Applies from 10 July 2027 | Art 90 | `applies_from` 2027-07-10. Until the branch's calendar date reaches that day, the desk shows a disclaimer that national law, including transposition of the fourth and fifth directives, still governs. The comparison is not the UTC date |
 
 The official Art 19(2) text says "at least EUR 1 000". The pack uses
 `gte` (at or above). A survey that said "more than EUR 1,000" does

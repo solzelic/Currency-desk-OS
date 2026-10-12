@@ -66,6 +66,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
 | Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. A session that is already open keeps the date it stored. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt`. `branches.timezone` is NOT NULL and defaults to America/Toronto. A blank zone or a zone the server cannot read is refused as `BRANCH_TIMEZONE_UNSET` (409) |
 | Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
+| Compliance windows | FINTRAC's static 24-hour window starts at midnight in the branch zone and runs 24 consecutive hours (`staticAggregationWindow`). A rolling window is an instant and has no zone. A structuring watch and a search for today or yesterday use the branch calendar date. The EU AMLR disclaimer compares Article 90's date with that same calendar date. The browser uses the zone the till session names |
 
 ## Production/build surfaces
 
@@ -75,6 +76,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Compliance windows use the branch clock.** FINTRAC's 24-hour
+  rule starts at midnight in the branch time zone and runs 24
+  consecutive hours, including on a daylight-saving night. Two
+  deals at 23:50 and 00:10 local fall in different static windows
+  and in one rolling 24-hour window. The structuring watch and a
+  search for today or yesterday use the branch calendar date. The
+  EU AMLR disclaimer drops on the branch's 10 July 2027, not on
+  the UTC date. The browser uses the zone the till session names.
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -274,9 +283,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and a transfer of funds of at least 1,000 EUR, need customer due
   diligence. Suspicious activity goes to the national financial
   intelligence unit at any amount. There is no EU large-cash report.
-  Records are kept 5 years. Until 10 July 2027 the desk shows that
-  these are the 2027 rules and that current national law still
-  governs. `pack-eu-v1` is not edited. A desk already on it stays
+  Records are kept 5 years. Until the branch's calendar date reaches
+  10 July 2027 the desk shows that these are the 2027 rules and that
+  current national law still governs. `pack-eu-v1` is not edited. A desk already on it stays
   there until the owner opts in. New European Union signups open on
   version 2, in euros. Non-euro member states are a later local
   layer. Detail, sources, and the gaps: `docs/EU_AMLR_PACK.md`.
@@ -573,6 +582,12 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-12**, compliance windows. The FINTRAC static window, the
+structuring watch, search today and yesterday, and the EU AMLR
+applies-from notice use the branch zone. A rolling 24-hour window
+stays an instant. India still uses the Asia/Kolkata month. The
+Philippines banking day is still not summed.
 
 **2026-10-11**, identity expiry. An ID is current through the end of its expiry
 date in the branch time zone. That date and today are compared as

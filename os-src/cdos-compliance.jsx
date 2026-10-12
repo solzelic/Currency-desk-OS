@@ -29,7 +29,7 @@
      cheque cashing it is the face of a cheque. See COUNTER_CASH in
      cdos-base.jsx, which mirrors the server's own `cash_in_home`. */
   const cashIn = (r) => { const c = counterCashIn(r); return c ? home(c.amount, c.ccy) : 0; };
-  const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
+  const dt = (r) => window.CDOS.branchWallTime(r.date, r.time || '00:00');
 
   /* ============================================================
      WHERE THIS DESK STANDS AGAINST ITS MANDATE
@@ -429,14 +429,37 @@
        • Singles (≥ threshold on their own) are filed individually elsewhere,
          so the aggregate rule sums only the sub-threshold cash-in. */
   function parseHHMM(s) { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : 0; }
-  // the static 24h window a timestamp falls into, anchored at startMins past midnight
+  /* The static 24h window a timestamp falls into, anchored at startMins
+     past midnight in the zone the till session names. The end is that
+     instant plus H hours, not the next midnight. The day key is that
+     zone's calendar date. A UTC slice of the start puts a Jerusalem
+     midnight on the previous day. */
   function windowOf(d, startMins, H) {
-    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-    let ws = new Date(dayStart.getTime() + startMins * 60000);
-    const mins = d.getHours() * 60 + d.getMinutes();
-    if (mins < startMins) ws = new Date(ws.getTime() - 24 * 3600000);
-    const we = new Date(ws.getTime() + (H || 24) * 3600000);
-    return { start: ws, end: we, key: ws.toISOString() };
+    const C = window.CDOS;
+    const zone = C && C.branchTimeZone && C.branchTimeZone();
+    let isoDate, mins, start;
+    if (zone && C.zonedClock && C.zonedWallTime && C.addCalendarDays) {
+      const clock = C.zonedClock(d, zone);
+      isoDate = clock.isoDate;
+      mins = clock.minutes;
+      if (mins < startMins) isoDate = C.addCalendarDays(isoDate, -1);
+      const hh = String(Math.floor(startMins / 60)).padStart(2, '0');
+      const mm = String(startMins % 60).padStart(2, '0');
+      start = C.zonedWallTime(isoDate, hh + ':' + mm, zone);
+    } else {
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+      start = new Date(dayStart.getTime() + startMins * 60000);
+      mins = d.getHours() * 60 + d.getMinutes();
+      if (mins < startMins) start = new Date(start.getTime() - 24 * 3600000);
+      const y = start.getFullYear();
+      const mo = String(start.getMonth() + 1).padStart(2, '0');
+      const da = String(start.getDate()).padStart(2, '0');
+      isoDate = y + '-' + mo + '-' + da;
+    }
+    const end = new Date(start.getTime() + (H || 24) * 3600000);
+    const hh = String(Math.floor(startMins / 60)).padStart(2, '0');
+    const mm = String(startMins % 60).padStart(2, '0');
+    return { start, end, key: isoDate + 'T' + hh + mm, day: isoDate };
   }
   /* A short, stable fingerprint of a transaction SET.
 
@@ -512,7 +535,7 @@
     Object.keys(buckets).forEach(key => {
       const { w, evs } = buckets[key];
       const windowLabel = fmtT(w.start) + ' → ' + fmtT(w.end);
-      const dayKey = w.start.toISOString().slice(0, 10);
+      const dayKey = w.day;
       const mk = (basis, keyFn) => {
         const groups = {};
         evs.forEach(e => {

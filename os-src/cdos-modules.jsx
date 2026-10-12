@@ -60,7 +60,7 @@
       return cashIn(r);
     };
     const aggregate = regime.aggregate !== false;
-    const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
+    const dt = (r) => window.CDOS.branchWallTime(r.date, r.time || '00:00');
     rows.forEach(row => {
       if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
       const monthCash = regime && regime.windowKind === 'calendar_month';
@@ -205,7 +205,11 @@
       // range cutoff measured from the most recent entry's day (so the demo data reads naturally)
       const days = (RANGES.find(r => r[0] === range) || [])[2];
       let cutoff = null;
-      if (days != null) { const ds = items.map(a => a.date).filter(Boolean).sort(); const refDate = ds.length ? ds[ds.length - 1] : new Date().toISOString().slice(0, 10); const d = new Date(refDate + 'T00:00:00'); d.setDate(d.getDate() - days); cutoff = d.toISOString().slice(0, 10); }
+      if (days != null) {
+        const ds = items.map(a => a.date).filter(Boolean).sort();
+        const refDate = ds.length ? ds[ds.length - 1] : window.CDOS.branchCalendarDate();
+        cutoff = window.CDOS.addCalendarDays(refDate, -days);
+      }
       return items.filter(a => {
         if (cutoff && a.date < cutoff) return false;
         if (actionF !== 'all' && a.action !== actionF) return false;

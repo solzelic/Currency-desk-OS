@@ -18,7 +18,16 @@
    Every bare term AND-combines. Returns { match, chips, wantsVoid, active }.
    ============================================================ */
 (function () {
-  const TODAY = (window.CDOS && window.CDOS.TODAY) || '2026-06-18';
+  function namedDay(which) {
+    const C = window.CDOS;
+    if (!C || typeof C.branchCalendarDate !== 'function' || typeof C.addCalendarDays !== 'function') {
+      throw new Error('The ledger search cannot name today in the branch time zone.');
+    }
+    const today = C.branchCalendarDate();
+    if (which === 'today') return today;
+    if (which === 'yesterday') return C.addCalendarDays(today, -1);
+    throw new Error('The ledger search does not know the day "' + which + '".');
+  }
 
   // country / name / code → currency code(s)
   const CCY_ALIASES = {
@@ -125,8 +134,7 @@
   // date predicate: 2026-06-18  2026-06  >2026-06-01  a..b  today  yesterday
   function datePred(v) {
     v = String(v).toLowerCase().trim();
-    const shift = (d, n) => { const t = new Date(d); t.setDate(t.getDate() + n); return t.toISOString().slice(0, 10); };
-    if (v === 'today') v = TODAY; else if (v === 'yesterday') v = shift(TODAY, -1);
+    if (v === 'today' || v === 'yesterday') v = namedDay(v);
     let m;
     if ((m = v.match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/))) return { fn: d => d >= m[1] && d <= m[2], label: m[1] + '→' + m[2] };
     if ((m = v.match(/^(>=|<=|>|<)(\d{4}-\d{2}(?:-\d{2})?)$/))) { const op = m[1], x = m[2]; const fn = op === '>' ? d => d > x : op === '<' ? d => d < x : op === '>=' ? d => d >= x : d => d <= x; return { fn, label: op + ' ' + x }; }

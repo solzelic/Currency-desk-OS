@@ -560,23 +560,101 @@
     if (Number.isNaN(asUtc)) throw new Error('The branch time zone could not be read.');
     return asUtc - at.getTime();
   }
-  function zonedMidnight(isoDate, timeZone) {
+  function zonedWallTime(isoDate, time, timeZone) {
     const match = CALENDAR_DATE.exec(isoDate);
-    if (!match) throw new Error('The business day is not a date.');
-    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3]);
+    const clock = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time || '');
+    if (!match || !clock) throw new Error('The wall time is not a branch time.');
+    const hour = +clock[1],
+      minute = +clock[2],
+      second = +(clock[3] || 0);
+    if (hour > 23 || minute > 59 || second > 59) throw new Error('The wall time is not a branch time.');
+    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3], hour, minute, second);
     const offset = zoneOffsetMs(new Date(guess), timeZone);
     let start = guess - offset;
     const corrected = zoneOffsetMs(new Date(start), timeZone);
     if (corrected !== offset) start = guess - corrected;
     const result = new Date(start);
-    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no midnight on ' + isoDate + '.');
+    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no ' + time + ' on ' + isoDate + '.');
+    const shown = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(result);
+    const shownPart = type => {
+      const found = shown.find(part => part.type === type);
+      return found ? Number(found.value) : NaN;
+    };
+    let gotHour = shownPart('hour');
+    if (gotHour === 24) gotHour = 0;
+    if (gotHour !== hour || shownPart('minute') !== minute || shownPart('second') !== second) {
+      throw new Error('The branch time zone has no ' + time + ' on ' + isoDate + '.');
+    }
     return result;
   }
+  function zonedMidnight(isoDate, timeZone) {
+    return zonedWallTime(isoDate, '00:00:00', timeZone);
+  }
+  function zonedClock(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(at);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '';
+    };
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    return {
+      isoDate: pick('year') + '-' + pick('month') + '-' + pick('day'),
+      minutes: +hour * 60 + +pick('minute')
+    };
+  }
+  const branchTimeZone = () => _branchTimeZone;
   const branchCalendarDate = at => {
     const when = at instanceof Date ? at : new Date();
     if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
     if (_branchTimeZone) return calendarDate(when, _branchTimeZone);
     return when.toLocaleDateString('en-CA');
+  };
+  /* HH:MM in the branch zone. The machine's clock is the stand-in only
+     until the till session has named the zone. */
+  const branchTimeOf = at => {
+    const when = at instanceof Date ? at : new Date(at);
+    if (Number.isNaN(when.getTime())) throw new Error('branchTimeOf needs a real instant');
+    const options = {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    };
+    if (_branchTimeZone) options.timeZone = _branchTimeZone;
+    const parts = new Intl.DateTimeFormat('en-CA', options).formatToParts(when);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '00';
+    };
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    return hour + ':' + pick('minute');
+  };
+  const branchWallTime = (isoDate, time) => {
+    if (!_branchTimeZone) return new Date(String(isoDate) + 'T' + (time || '00:00'));
+    return zonedWallTime(isoDate, time || '00:00', _branchTimeZone);
+  };
+  /* The structuring watch counts calendar dates in the branch zone.
+     The screen's "rolling" label is a separate question; this is the
+     cutoff the date comparison already used, read on the right clock. */
+  const structuringWatchStart = days => {
+    const n = Number(days);
+    if (!Number.isInteger(n) || n < 0) throw new Error('The structuring watch needs a whole number of days.');
+    return addCalendarDays(branchCalendarDate(), -n);
   };
   const readCalendarDate = value => {
     if (value instanceof Date) {
@@ -1218,11 +1296,7 @@
 
   /* human-readable, sortable reference: LT-YYMMDD-NNN */
   const mkRef = (date, seq) => 'LT-' + String(date).slice(2).replace(/-/g, '') + '-' + String(seq).padStart(3, '0');
-  const nowTime = () => new Date().toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+  const nowTime = () => branchTimeOf(new Date());
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
@@ -2043,7 +2117,14 @@
     refreshBusinessDate,
     businessDayWindow,
     setBranchTimeZone,
+    branchTimeZone,
     branchCalendarDate,
+    branchTimeOf,
+    branchWallTime,
+    addCalendarDays,
+    zonedClock,
+    zonedWallTime,
+    structuringWatchStart,
     calendarBefore,
     calendarDaysUntil,
     /* the one reporting line, and the pack it comes from */
@@ -2230,7 +2311,7 @@
          date, which is still yesterday just after midnight in a zone
          ahead of UTC. */
       date: window.CDOS.branchCalendarDate(posted),
-      time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      time: window.CDOS.branchTimeOf(posted),
       customer: customerName || transaction.customerId,
       beneficiary: "",
       type: DEAL_TYPE_LABEL[transaction.dealKind] || "Currency Exchange",
@@ -3262,7 +3343,7 @@
       return cashIn(r);
     };
     const aggregate = regime.aggregate !== false;
-    const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
+    const dt = r => window.CDOS.branchWallTime(r.date, r.time || '00:00');
     rows.forEach(row => {
       if (row.status === 'void') {
         map[row.id] = {
@@ -3692,10 +3773,8 @@
       let cutoff = null;
       if (days != null) {
         const ds = items.map(a => a.date).filter(Boolean).sort();
-        const refDate = ds.length ? ds[ds.length - 1] : new Date().toISOString().slice(0, 10);
-        const d = new Date(refDate + 'T00:00:00');
-        d.setDate(d.getDate() - days);
-        cutoff = d.toISOString().slice(0, 10);
+        const refDate = ds.length ? ds[ds.length - 1] : window.CDOS.branchCalendarDate();
+        cutoff = window.CDOS.addCalendarDays(refDate, -days);
       }
       return items.filter(a => {
         if (cutoff && a.date < cutoff) return false;
@@ -26603,7 +26682,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
    Every bare term AND-combines. Returns { match, chips, wantsVoid, active }.
    ============================================================ */
 (function () {
-  const TODAY = window.CDOS && window.CDOS.TODAY || '2026-06-18';
+  function namedDay(which) {
+    const C = window.CDOS;
+    if (!C || typeof C.branchCalendarDate !== 'function' || typeof C.addCalendarDays !== 'function') {
+      throw new Error('The ledger search cannot name today in the branch time zone.');
+    }
+    const today = C.branchCalendarDate();
+    if (which === 'today') return today;
+    if (which === 'yesterday') return C.addCalendarDays(today, -1);
+    throw new Error('The ledger search does not know the day "' + which + '".');
+  }
 
   // country / name / code → currency code(s)
   const CCY_ALIASES = {
@@ -26748,12 +26836,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   // date predicate: 2026-06-18  2026-06  >2026-06-01  a..b  today  yesterday
   function datePred(v) {
     v = String(v).toLowerCase().trim();
-    const shift = (d, n) => {
-      const t = new Date(d);
-      t.setDate(t.getDate() + n);
-      return t.toISOString().slice(0, 10);
-    };
-    if (v === 'today') v = TODAY;else if (v === 'yesterday') v = shift(TODAY, -1);
+    if (v === 'today' || v === 'yesterday') v = namedDay(v);
     let m;
     if (m = v.match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/)) return {
       fn: d => d >= m[1] && d <= m[2],
@@ -27437,7 +27520,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const winDays = settings && settings.structuringDays || 30;
-      const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
+      const cutoff = window.CDOS.structuringWatchStart(winDays);
       const ccyCount = {};
       const home = homeCcy();
       h.forEach(r => {
@@ -33535,7 +33618,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const h = live.filter(r => r.customer === name);
       const home = deskHome();
       const winDays = settings && settings.structuringDays || 30;
-      const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
+      const cutoff = window.CDOS.structuringWatchStart(winDays);
       let total = 0,
         windowCad = 0,
         unknown = false;
@@ -41855,7 +41938,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const c = counterCashIn(r);
     return c ? home(c.amount, c.ccy) : 0;
   };
-  const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
+  const dt = r => window.CDOS.branchWallTime(r.date, r.time || '00:00');
 
   /* ============================================================
      WHERE THIS DESK STANDS AGAINST ITS MANDATE
@@ -42314,17 +42397,41 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
     return m ? +m[1] * 60 + +m[2] : 0;
   }
-  // the static 24h window a timestamp falls into, anchored at startMins past midnight
+  /* The static 24h window a timestamp falls into, anchored at startMins
+     past midnight in the zone the till session names. The end is that
+     instant plus H hours, not the next midnight. The day key is that
+     zone's calendar date. A UTC slice of the start puts a Jerusalem
+     midnight on the previous day. */
   function windowOf(d, startMins, H) {
-    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-    let ws = new Date(dayStart.getTime() + startMins * 60000);
-    const mins = d.getHours() * 60 + d.getMinutes();
-    if (mins < startMins) ws = new Date(ws.getTime() - 24 * 3600000);
-    const we = new Date(ws.getTime() + (H || 24) * 3600000);
+    const C = window.CDOS;
+    const zone = C && C.branchTimeZone && C.branchTimeZone();
+    let isoDate, mins, start;
+    if (zone && C.zonedClock && C.zonedWallTime && C.addCalendarDays) {
+      const clock = C.zonedClock(d, zone);
+      isoDate = clock.isoDate;
+      mins = clock.minutes;
+      if (mins < startMins) isoDate = C.addCalendarDays(isoDate, -1);
+      const hh = String(Math.floor(startMins / 60)).padStart(2, '0');
+      const mm = String(startMins % 60).padStart(2, '0');
+      start = C.zonedWallTime(isoDate, hh + ':' + mm, zone);
+    } else {
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+      start = new Date(dayStart.getTime() + startMins * 60000);
+      mins = d.getHours() * 60 + d.getMinutes();
+      if (mins < startMins) start = new Date(start.getTime() - 24 * 3600000);
+      const y = start.getFullYear();
+      const mo = String(start.getMonth() + 1).padStart(2, '0');
+      const da = String(start.getDate()).padStart(2, '0');
+      isoDate = y + '-' + mo + '-' + da;
+    }
+    const end = new Date(start.getTime() + (H || 24) * 3600000);
+    const hh = String(Math.floor(startMins / 60)).padStart(2, '0');
+    const mm = String(startMins % 60).padStart(2, '0');
     return {
-      start: ws,
-      end: we,
-      key: ws.toISOString()
+      start,
+      end,
+      key: isoDate + 'T' + hh + mm,
+      day: isoDate
     };
   }
   /* A short, stable fingerprint of a transaction SET.
@@ -42415,7 +42522,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         evs
       } = buckets[key];
       const windowLabel = fmtT(w.start) + ' → ' + fmtT(w.end);
-      const dayKey = w.start.toISOString().slice(0, 10);
+      const dayKey = w.day;
       const mk = (basis, keyFn) => {
         const groups = {};
         evs.forEach(e => {
@@ -42694,8 +42801,25 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   function fmtWindowEdge(iso, tz) {
     const d = new Date(iso);
     if (isNaN(d)) return '—';
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${tzOffset(d, tz)}`;
+    const zone = window.CDOS.branchTimeZone && window.CDOS.branchTimeZone() || tz || undefined;
+    const options = {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    };
+    if (zone) options.timeZone = zone;
+    const parts = new Intl.DateTimeFormat('en-CA', options).formatToParts(d);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '00';
+    };
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    return `${pick('year')}-${pick('month')}-${pick('day')} ${hour}:${pick('minute')}:${pick('second')}${tzOffset(d, zone)}`;
   }
   // surname / given / other from a single stored name
   function nameParts(full) {

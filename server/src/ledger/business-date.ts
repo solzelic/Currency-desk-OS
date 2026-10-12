@@ -88,31 +88,70 @@ function zoneOffsetMs(at: Date, timeZone: string): number {
   return asUtc - at.getTime();
 }
 
-/** Midnight at the start of `isoDate` in `timeZone`. */
-export function zonedMidnight(isoDate: string, timeZone: string): Date {
+/** Add calendar days to a YYYY-MM-DD date. The arithmetic is on the
+    year, month and day. It is not an instant, and it is not UTC. */
+export function addCalendarDays(isoDate: string, days: number): string {
   const match = DATE.exec(isoDate);
-  if (!match) throw new Error(`business day is not a date: ${isoDate}`);
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const guess = Date.UTC(year, month - 1, day, 0, 0, 0);
+  if (!match || !Number.isInteger(days)) {
+    throw new Error(`business day is not a date: ${isoDate}`);
+  }
+  const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  utc.setUTCDate(utc.getUTCDate() + days);
+  return utc.toISOString().slice(0, 10);
+}
+
+/** A wall-clock time on a calendar date in `timeZone`, as an instant.
+    `time` is HH:MM or HH:MM:SS. A time that does not exist in that zone
+    (a spring-forward gap) is refused. */
+export function zonedWallTime(isoDate: string, time: string, timeZone: string): Date {
+  const match = DATE.exec(isoDate);
+  const clock = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time);
+  if (!match || !clock) throw new Error(`wall time is not a branch time: ${isoDate} ${time}`);
+  const hour = Number(clock[1]);
+  const minute = Number(clock[2]);
+  const second = Number(clock[3] ?? "0");
+  if (hour > 23 || minute > 59 || second > 59) {
+    throw new Error(`wall time is not a branch time: ${isoDate} ${time}`);
+  }
+  const guess = Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    hour,
+    minute,
+    second,
+  );
   const offset = zoneOffsetMs(new Date(guess), timeZone);
   let start = guess - offset;
   const corrected = zoneOffsetMs(new Date(start), timeZone);
   if (corrected !== offset) start = guess - corrected;
   const result = new Date(start);
   if (businessDate(result, timeZone) !== isoDate) {
-    throw new Error(`no midnight for ${isoDate} in ${timeZone}`);
+    throw new Error(`no ${time} for ${isoDate} in ${timeZone}`);
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(result);
+  const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? "NaN");
+  let gotHour = pick("hour");
+  if (gotHour === 24) gotHour = 0;
+  if (gotHour !== hour || pick("minute") !== minute || pick("second") !== second) {
+    throw new Error(`no ${time} for ${isoDate} in ${timeZone}`);
   }
   return result;
 }
 
+/** Midnight at the start of `isoDate` in `timeZone`. */
+export function zonedMidnight(isoDate: string, timeZone: string): Date {
+  return zonedWallTime(isoDate, "00:00:00", timeZone);
+}
+
 function nextCalendarDate(isoDate: string): string {
-  const match = DATE.exec(isoDate);
-  if (!match) throw new Error(`business day is not a date: ${isoDate}`);
-  const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-  utc.setUTCDate(utc.getUTCDate() + 1);
-  return utc.toISOString().slice(0, 10);
+  return addCalendarDays(isoDate, 1);
 }
 
 /* The window the sign-off asks the ledger for.
