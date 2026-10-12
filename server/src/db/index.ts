@@ -398,6 +398,20 @@ CREATE TABLE IF NOT EXISTS password_resets (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS password_resets_user_idx ON password_resets(user_id);
+CREATE TABLE IF NOT EXISTS signin_failures (
+  bucket text PRIMARY KEY,
+  failures integer NOT NULL,
+  window_started_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS login_challenges (
+  token_hash text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_challenges_user_idx ON login_challenges(user_id);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   user_id text NOT NULL REFERENCES staff_users(id),

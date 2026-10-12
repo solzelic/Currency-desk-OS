@@ -217,6 +217,16 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   at `/admin` requires TOTP after enrollment. The first sign-in enrolls
   (otpauth URI shown once, backup codes stored only as scrypt hashes).
   Desk `/login` is still password-only.
+  Password guesses on that door are limited: five wrong passwords on
+  one account, or twenty from one address, inside fifteen minutes, and
+  the next answer is "Too many tries. Try again in N minutes." The
+  count is a Postgres row, so a restart does not clear it. An unknown
+  staff id gets the same sentence. The emailed-code step answers with
+  the same words, in the same time, for an unknown id and a wrong code,
+  and it will not check a code unless this browser already passed the
+  password (a server-side marker). If `RESEND_API_KEY` or `EMAIL_FROM`
+  is missing in production, the send is refused and the code is not
+  written to the log.
 
 - **Signup mobile on the admin call** — the number `placeOutboundCall`
   dials is `enquiries.details.phone`. The mobile typed while opening a
@@ -549,6 +559,32 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
+Postgres, five per account and twenty per address, for fifteen
+minutes. The count is written before the answer, so a burst cannot
+slip a correct password through after the limit. The lock says "Too many tries. Try again in N minutes." The screen says "Too many tries. Try again at 10:42 AM." The hour is the shop's own clock, so the zone is not repeated. While that holds, the button reads Sign in, with a lock, and it is disabled. It comes back when that time passes. With no time from the server it says "Too many tries. Try again in a few minutes." and Try again sends the password once more. Asking for another code while locked says "Too many tries. Try again at 10:42 AM." A staff id with no @ does not see the email-code line. not you?, SHOW, and the reset link are 44px. Forgot it? and the OS mark use the body grey (#6E675E), so each clears 4.5:1. A staff id with no @ is password-only: the button reads Sign in on that step and again after the lock ends. The greeting uses the display name, as in Welcome back, M. Costa. The lock hour is the shop clock in America/Toronto, including when the process zone is Asia/Jerusalem. An unknown staff id gets that same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
+socket is a published Cloudflare address, or when the socket is a
+private address and the rightmost `X-Forwarded-For` hop is Cloudflare.
+IPv6 /64 rotation is accepted for now and is a follow-up. A missing
+or invalid header counts the socket and warns without the header
+value. Otherwise a private socket counts the rightmost hop, and
+anything else counts the socket. The first request logs the header
+names present, with no values and no IPs. Render's docs say the app
+sees the proxy IP and that the first `X-Forwarded-For` entry is the
+client. This count does not use that first entry. A caller-supplied
+header cannot open a new bucket unless the hop is Cloudflare.
+Production mail uses `is not set` for one missing name and `are not
+set` for both, and a provider error body that cannot be read still
+logs the status. An owner or a
+manager can clear the account
+counter, and `RESET_STAFF_PASSWORD` clears it too. The emailed-code
+step gives one answer, in the same time, for an unknown id and a
+wrong code, and it checks a code only after the password step has
+left a server-side marker. A wrong code says "That code isn't right.
+Check your email." Production without `RESEND_API_KEY` or
+`EMAIL_FROM` does not send and does not log the code. Migration 044. 041 is claimed by open drafts
+#96, #110, #120, and #132, 042 by #130, and 043 by #138.
 
 **2026-10-12**, serialization retry. A post that Postgres aborts with 40001 is run
 again, up to six times. The aborted attempt wrote nothing. The same

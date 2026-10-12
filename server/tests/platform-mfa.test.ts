@@ -244,10 +244,12 @@ describe("platform admin MFA", () => {
     expect(deskStart.statusCode).toBe(200);
     expect(deskStart.json().needsCode).toBe(true);
     expect(cookieOf(deskStart)).toBe("");
+    const deskProof = deskStart.cookies.find((item) => item.name === "cdos_login_proof")?.value;
     const deskSession = await app.inject({
       method: "POST",
       url: "/api/auth/login/verify",
       payload: { staffId: OPERATOR, code: codeFromLog() },
+      cookies: deskProof ? { cdos_login_proof: deskProof } : {},
     });
     expect(deskSession.statusCode).toBe(200);
     expect(cookieOf(deskSession)).toBeTruthy();
