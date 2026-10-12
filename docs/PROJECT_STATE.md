@@ -202,7 +202,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   can search before anything else. Chips are All, Missing ID, Expired,
   and Identified — the same words as the row badge. A row is about
   72px. Line 1 is the name and the last-deal amount. Line 2 is the
-  deal count and when (`2 deals · Today`). A business says Business
+  deal count and when (`2 deals · Today`). That when is a day word
+  (Today, Yesterday, or Oct 11). Clients does not print a clock. A
+  clock on this screen would read like 3:02 PM. A business says Business
   in front of that. An individual does not say Individual. The ID
   badge sits on the right of that line. That standing is read from
   the document on file — type, number, and expiry — and a stored
@@ -741,12 +743,15 @@ chip row scrolls, fades at the right, and leaves 16px after the last
 chip. The screen is the flat surface token, not the desktop gradient.
 A row is about 72px. Line 1 is the name and the last-deal amount.
 Line 2 is `2 deals · Today`, with Business only when the client is a
-business, and the ID badge on the right. A Missing ID or Expired row
-opens Record the ID. Chips and badges use the same words. A failed
-load drops the chip counts, uses the short error, and leaves Add
-client disabled. A cached list says it is the copy on this phone.
-Amounts go through `formatPhoneMoney`. Wider than 430px, the Clients
-window is unchanged.
+business, and the ID badge on the right. That when is a day word.
+Clients does not print a clock. A clock on this screen would read
+like 3:02 PM. The 16px under the title is the shared PhoneTitle.
+A Missing ID or Expired row opens Record the ID. Chips and badges
+use the same words. A failed load drops the chip counts, uses the
+short error, and leaves Add client disabled. A cached list says it
+is the copy on this phone. Amounts go through `formatPhoneMoney`.
+Wider than 430px, the Clients window is the shared 1280 picture.
+This branch does not keep a local desktop spec or baseline.
 
 **2026-10-11**, phone ledger and chip colour. Under 430px the ledger
 uses the phone shell. Selected filter chips are gray-900. Primary

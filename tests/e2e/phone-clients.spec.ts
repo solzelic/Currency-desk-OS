@@ -1,7 +1,7 @@
 /* Phone Clients. At 360 and 390 the list is search, chips, and rows.
-   At 1280 the desktop Clients window is the one it already was.
-   Amounts carry a currency code. A stored "verified" word does not
-   paint Verified — ID checks are not connected. */
+   The desktop Clients window is the shared 1280 picture in
+   desktop-unchanged.spec.ts. Amounts carry a currency code. A stored
+   "verified" word does not paint Verified — ID checks are not connected. */
 import { mkdirSync } from "node:fs";
 import type { Page, Route } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop, hasLedger } from "./fixtures";
@@ -313,21 +313,4 @@ test.describe("phone clients", () => {
       await expect(page.getByText("Persona is not connected yet.")).toBeVisible();
     });
   }
-});
-
-test("desktop clients is the window it already was", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await emptyBook(page, (route) => fulfill(route, 200, { clients: [] }));
-  await atDesk(page);
-  await openClients(page);
-  await expect(page.locator(".phone-clients")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "New contact" })).toBeVisible();
-  await expect(page.getByPlaceholder(/a file on their record/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /People/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Businesses/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Needs attention/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add client", exact: true })).toHaveCount(0);
-  await expect(page.locator("#phonebar")).toBeHidden();
-  const dest = process.env.DESKTOP_SHOT;
-  if (dest) await page.locator(".win.show.active").screenshot({ path: dest });
 });
