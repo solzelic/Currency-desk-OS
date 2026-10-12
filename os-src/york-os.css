@@ -3016,28 +3016,49 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 /* Counted now and Variance were fading off the right edge. The
    phone table mask clips the last 22px, and six columns do not
    fit at 360 or 390. Drop Source and Last count here so the
-   count and the variance stay whole, with no fade. */
+   count and the variance stay whole, with no fade.
+   The 430px rule sets width: max-content !important on
+   .win-body .overflow-hidden:has(table) table. This selector
+   has to be more specific than that, or the table stays wider
+   than the phone. */
 @media (max-width: 390px) {
-  .till-close-table {
+  .win-body .till-close-table.overflow-hidden:has(table) {
     -webkit-mask-image: none !important;
     mask-image: none !important;
-    overflow: visible !important;
+    overflow: hidden !important;
     max-width: 100%;
   }
-  .till-close-table table {
+  .win-body .till-close-table.overflow-hidden:has(table) table {
     width: 100% !important;
     min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed;
   }
-  .till-close-table th:nth-child(2),
-  .till-close-table td:nth-child(2),
-  .till-close-table th:nth-child(4),
-  .till-close-table td:nth-child(4) {
+  .win-body .till-close-table th:nth-child(2),
+  .win-body .till-close-table td:nth-child(2),
+  .win-body .till-close-table th:nth-child(4),
+  .win-body .till-close-table td:nth-child(4) {
     display: none;
   }
-  .till-close-table th,
-  .till-close-table td {
+  .win-body .till-close-table th,
+  .win-body .till-close-table td {
     white-space: nowrap !important;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
+    padding: 6px 3px !important;
+    overflow: hidden;
   }
+  .win-body .till-close-table th {
+    font-size: 10px !important;
+    letter-spacing: 0 !important;
+  }
+  .win-body .till-close-table td {
+    font-size: 12px !important;
+  }
+  .win-body .till-close-table th:nth-child(1),
+  .win-body .till-close-table td:nth-child(1) { width: 22%; }
+  .win-body .till-close-table th:nth-child(3),
+  .win-body .till-close-table td:nth-child(3) { width: 26%; }
+  .win-body .till-close-table th:nth-child(5),
+  .win-body .till-close-table td:nth-child(5) { width: 32%; }
+  .win-body .till-close-table th:nth-child(6),
+  .win-body .till-close-table td:nth-child(6) { width: 20%; }
 }

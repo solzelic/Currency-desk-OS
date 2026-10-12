@@ -614,7 +614,9 @@ currencies. One drawer reads "Count the drawer before closing.
 Your count becomes the new till balance." "Count all 2 drawers"
 is only when the branch has several drawers. The grey line under
 the table is "Closing saves your count. Any difference is
-recorded under your name."
+recorded under your name." At 360 and 390 that line clears
+the phone bar. Those widths drop Source and Last count so
+Counted now and Variance stay on the screen.
 Money shows its currency's decimal places: CAD is two, so a total
 is 23,640.70 and never 23,640.7. The drawer bar
 reads "On the drawer: A. Singh, Senior teller": initial and surname,
