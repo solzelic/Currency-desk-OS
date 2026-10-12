@@ -23,9 +23,10 @@ const A = "m.costa";
 const B = "a.singh";
 const idOf = (staffId: string) => `${DEMO.tenantId}:${staffId}`;
 
-const cookieOf = (res: { cookies: { name: string; value: string }[] }) => {
+const cookieOf = (res: { cookies: { name: string; value: string }[] }): Record<string, string> => {
   const c = res.cookies.find((x) => x.name === "cdos_session");
-  return c ? { cdos_session: c.value } : {};
+  if (!c) throw new Error("sign-in did not set a session cookie");
+  return { cdos_session: c.value };
 };
 const login = async (staffId: string) => {
   const res = await app.inject({
