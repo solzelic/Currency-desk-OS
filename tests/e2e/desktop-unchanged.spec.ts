@@ -67,7 +67,9 @@ async function freezeWindowText(page: Page): Promise<void> {
            run. Same length, so the column stays put. */
         next = next.replace(/\bCD-\d{6}-[0-9a-z]+\b/gi, "CD-260618-frozen");
         next = next.replace(/\b(?=[A-Z0-9]*\d)[A-Z0-9]{6}\b/g, "000000");
-        next = next.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "00000000-0000-4000-8000-000000000000");
+        /* No word boundary. A cheque line is cust_ plus the id, and "_"
+           is a word character, so a boundary would leave the id live. */
+        next = next.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "00000000-0000-4000-8000-000000000000");
         if (next !== text) node.textContent = next;
         node = walker.nextNode();
       }

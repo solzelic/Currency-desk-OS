@@ -386,10 +386,12 @@ run 38187138637.
 
 The capture replaces a transaction ref (`CD-` plus a random suffix),
 a six-character seam-run token, and a UUID with fixed text of the
-same length before it takes the picture. Those values change every
-suite run. The first committed pictures did not do that replacement,
-so the next Actions run of the same desk differed by the ref column.
-Those pictures were removed, and the run above wrote the frozen ones.
+same length before it takes the picture. The UUID match does not
+require a word boundary, so `cust_` plus an id is frozen too.
+Those values change every suite run. The first committed pictures
+did not freeze the ref, so the next Actions run differed by that
+column. A later Cheques picture still showed a live `cust_` id.
+That file is replaced by the next Actions render.
 
 Inter is loaded only at `max-width: 430px` (`media` on the stylesheet
 link, and `--font-ui` in `os-src/tokens.css`). Wider than that the desk
