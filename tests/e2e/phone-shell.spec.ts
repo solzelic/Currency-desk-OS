@@ -836,3 +836,96 @@ test("desktop does not request Inter", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await expect(page.locator("#phone-inter")).toHaveAttribute("href", /family=Inter/);
 });
+
+test("a toast sits 16px above the sticky action, or above the tab bar", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await atDesk(page, "a.singh");
+  await page.locator('#phonebar [data-phone-app="rates"]').click();
+  const laidOut = await page.locator(".phone-sticky").evaluateAll((els) => (
+    els.filter((el) => el.getBoundingClientRect().height > 0).length
+  ));
+  expect(laidOut).toBe(0);
+  await page.clock.install();
+
+  async function show(text: string): Promise<void> {
+    await page.evaluate((line) => {
+      const w = window as any;
+      let host = document.getElementById("toast-probe");
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "toast-probe";
+        document.body.appendChild(host);
+      }
+      const root = w.__toastRoot || w.ReactDOM.createRoot(host);
+      w.__toastRoot = root;
+      root.render(w.React.createElement(w.CDOS.Toast, {
+        text: line,
+        actionLabel: "Undo",
+        onAction: () => { w.__toastHit = true; },
+        onDone: () => root.render(w.React.createElement(w.CDOS.Toast, { text: "" })),
+      }));
+    }, text);
+    await expect(page.locator(".phone-toast")).toContainText(text);
+  }
+
+  async function gapAbove(selector: string): Promise<{ left: number; right: number; gap: number; role: string | null; bg: string; color: string; size: string; leading: string; radius: string; actionWeight: string; actionColor: string }> {
+    return page.locator(".phone-toast").evaluate((el, sel) => {
+      const box = el.getBoundingClientRect();
+      const anchor = document.querySelector(sel);
+      const anchorBox = anchor ? anchor.getBoundingClientRect() : null;
+      const cs = getComputedStyle(el);
+      const action = el.querySelector(".phone-toast-go");
+      const actionCs = action ? getComputedStyle(action) : null;
+      return {
+        left: Math.round(box.left),
+        right: Math.round(window.innerWidth - box.right),
+        gap: anchorBox ? Math.round(anchorBox.top - box.bottom) : -1,
+        role: el.getAttribute("role"),
+        bg: cs.backgroundColor,
+        color: cs.color,
+        size: cs.fontSize,
+        leading: cs.lineHeight,
+        radius: cs.borderRadius,
+        actionWeight: actionCs ? actionCs.fontWeight : "",
+        actionColor: actionCs ? actionCs.color : "",
+      };
+    }, selector);
+  }
+
+  await show("Saved");
+  const overBar = await gapAbove("#phone-dock");
+  expect(overBar.role).toBe("status");
+  expect(overBar.left).toBe(16);
+  expect(overBar.right).toBe(16);
+  expect(overBar.gap).toBe(16);
+  expect(overBar.bg).toBe("rgb(22, 21, 19)");
+  expect(overBar.color).toBe("rgb(255, 255, 255)");
+  expect(overBar.size).toBe("14px");
+  expect(overBar.leading).toBe("20px");
+  expect(overBar.radius).toBe("10px");
+  expect(overBar.actionWeight).toBe("600");
+  expect(overBar.actionColor).toBe("rgb(255, 255, 255)");
+
+  await page.evaluate(() => {
+    const bar = document.createElement("div");
+    bar.className = "phone-sticky";
+    bar.id = "toast-sticky";
+    bar.style.position = "fixed";
+    bar.style.left = "0";
+    bar.style.right = "0";
+    bar.style.bottom = "64px";
+    bar.style.height = "73px";
+    document.body.appendChild(bar);
+  });
+  await show("Saved again");
+  const overSticky = await gapAbove("#toast-sticky");
+  expect(overSticky.gap).toBe(16);
+  expect(overSticky.left).toBe(16);
+  expect(overSticky.right).toBe(16);
+
+  await page.locator(".phone-toast-go").click();
+  expect(await page.evaluate(() => (window as any).__toastHit)).toBe(true);
+
+  await page.clock.fastForward(4000);
+  await expect(page.locator(".phone-toast")).toBeHidden();
+});
