@@ -1500,7 +1500,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 {(rec.ids || []).filter(d => !idTypeRefused(d.type) && !samePaper(d, qualifiedId) && !samePaper(d, expiredId)).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div className="client-file-label mb-1">Additional ID {i + 1}</div>
                   <KV icon="id" label="Type" value={displayIdType(d.type)} />
-                  <KV icon="scroll" label="Number" value={idTypeNotAccepted(d.type) ? (shownIdNumber(d.type, d.num) || "Number not shown") : d.num} mono />
+                  <KV icon="scroll" label="Number" value={parkedAside(d.type) ? (shownIdNumber(d.type, d.num) || "Number not shown") : d.num} mono />
                   <KV icon="calendar" label="Expiry" value={shownExpiry(d.expiry, phone)} />
                   {(d.photo || d.hasScan) && <div className="mt-2"><IdScan src={d.photo} clientId={rec.clientId} documentId={d.documentId} hasScan={d.hasScan} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
                 </div>))}

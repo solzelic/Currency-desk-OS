@@ -26086,7 +26086,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }), /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
-      value: idTypeNotAccepted(d.type) ? shownIdNumber(d.type, d.num) || "Number not shown" : d.num,
+      value: parkedAside(d.type) ? shownIdNumber(d.type, d.num) || "Number not shown" : d.num,
       mono: true
     }), /*#__PURE__*/React.createElement(KV, {
       icon: "calendar",
