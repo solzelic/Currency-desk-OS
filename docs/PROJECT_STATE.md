@@ -638,8 +638,10 @@ A shot is refused when those faces have not loaded. Shop name and the
 menu bar, which both machines resolved the same way, matched.
 
 **2026-10-12**, phone toast. The shared toast sits at the bottom, 16px
-above the sticky action, inset 16px, `--radius-md`, `--gray-900`
-with white 14/20 text. It leaves after 4 seconds. `role="status"`.
+above the sticky action, or 16px above the tab bar when there is no
+sticky action. It is inset 16px, `--radius-md`, `--gray-900`, with
+white 14/20 text. An optional action is a white weight-600 text
+button. It leaves after 4 seconds. `role="status"`.
 
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the
