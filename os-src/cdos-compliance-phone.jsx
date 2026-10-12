@@ -2,8 +2,9 @@
    Phone Compliance. Desktop Compliance does not render this.
 
    The layout is the shared phone shell (docs/PHONE_SHELL.md).
-   Amounts go through formatPhoneMoney, so a threshold reads
-   "10,000.00 CAD" and never a bare "$".
+   Amounts go through formatPhoneMoney. A posted deal keeps the
+   cents ("10,000.00 CAD"). A reporting threshold drops them
+   ("10,000 CAD"). Neither prints a bare "$".
 
    Honesty, on purpose:
    - Sanctions screening is not connected. The tile has no count.
@@ -46,6 +47,12 @@
     return text;
   }
 
+  /* A reporting line has no cents. A posted deal keeps them.
+     10,000.00 CAD from the formatter becomes 10,000 CAD. */
+  function thresholdMoney(amount, currency) {
+    return phoneMoney(amount, currency).replace(/\.0+(?= [A-Z]{3}$)/, '');
+  }
+
   /* Acronyms the packs store as the regulator. Spell the office once. */
   const OFFICE = {
     FINTRAC: "FINTRAC, Canada's financial intelligence unit",
@@ -77,12 +84,12 @@
     return 'Aggregation';
   }
 
-  /* The pack owns the line. A gte pack is "At 10,000.00 CAD or more".
+  /* The pack owns the line. A gte pack is "At 10,000 CAD or more".
      A gt pack is "Over" that amount. The figure is the pack threshold
      through formatPhoneMoney. Nothing here writes 10000 by hand. */
   function thresholdPhrase(regime, atStart) {
     if (!regime || regime.threshold == null || !regime.currency) return '';
-    const money = phoneMoney(regime.threshold, regime.currency);
+    const money = thresholdMoney(regime.threshold, regime.currency);
     if (!money) return '';
     if (regime.comparator === 'gt') return (atStart ? 'Over ' : 'over ') + money;
     return (atStart ? 'At ' : 'at ') + money + ' or more';
@@ -241,11 +248,13 @@
     return 'Report';
   }
 
+  /* No shared back control on this foundation. The follow-up adds one.
+     Until then this is a 24px chevron-left and the label, in one 44px hit. */
   function backControl(label, onClick) {
     const Ic = window.CDOS.Ic;
     return (
       <button type="button" className="cph-back" onClick={onClick}>
-        {Ic ? <Ic n="arrowleft" s={18} /> : null}
+        {Ic ? <span className="cph-back-chev" aria-hidden="true"><Ic n="chev" s={24} /></span> : null}
         <span>{label}</span>
       </button>
     );
@@ -277,14 +286,15 @@
   function PhoneCompliance({
     regime, rows, clients, settings, beneficiaries, subs, clusters,
     reportable, structuring, aggregates,
-    countsState, loadedAt, onRetry, onLeave, onOpenClients, onOpenClient,
+    countsState, onRetry, onLeave, onOpenClients, onOpenClient,
     pane, detail, onOpen, onBack, computer, onCloseComputer,
   }) {
     const Phone = window.CDOS.Phone;
     const [section, setSection] = useState('screening');
     const [drill, setDrill] = useState(null);
     const [form, setForm] = useState(false);
-    useEffect(() => { setDrill(null); setForm(false); }, [pane, detail]);
+    const [explain, setExplain] = useState(null);
+    useEffect(() => { setDrill(null); setForm(false); setExplain(null); }, [pane, detail]);
     const people = useMemo(() => missingId(rows, clients, settings), [rows, clients, settings]);
     const splits = useMemo(() => splitCases(rows, clients, settings), [rows, clients, settings]);
     const reportables = useMemo(() => {
@@ -300,12 +310,11 @@
     const philippines = regime && regime.id === 'pack-ph-v1';
     const showComputer = form || !!computer;
     const sub = regime && regime.threshold != null && regime.currency
-      ? officeLine(regime) + ' · Reporting threshold ' + phoneMoney(regime.threshold, regime.currency)
+      ? officeLine(regime) + ' · Reporting threshold ' + thresholdMoney(regime.threshold, regime.currency)
       : officeLine(regime) + ' · No large-cash amount is set on this pack.';
     const notConnected = (window.CDOS._compliance && window.CDOS._compliance.NOT_CONNECTED)
       || "Sanctions screening is not connected yet. Check clients against your government's official lists yourself.";
     const screeningCopy = notConnected + ' No list provider is connected yet. Clients are not checked against any sanctions or watchlist.';
-    const loadedLine = loadedAt ? 'Last loaded ' + phoneClock(loadedAt) : 'Not loaded yet';
     const fileLine = "You file in the regulator's portal. This desk does not send the report.";
     const titles = { submissions: 'What you would file', structuring: 'Possible split deals', aggregation: windowLabel(regime), screening: 'Sanctions screening', missing: 'Clients missing ID' };
     const lineLead = thresholdPhrase(regime, true);
@@ -315,8 +324,8 @@
       : '';
     const singleLine = lineLead
       ? (regime.comparator === 'gt'
-        ? 'A single amount over ' + phoneMoney(regime.threshold, regime.currency) + ' stands on its own. '
-        : 'A single amount of ' + phoneMoney(regime.threshold, regime.currency) + ' or more stands on its own. ') + fileLine
+        ? 'A single amount over ' + thresholdMoney(regime.threshold, regime.currency) + ' stands on its own. '
+        : 'A single amount of ' + thresholdMoney(regime.threshold, regime.currency) + ' or more stands on its own. ') + fileLine
       : 'No large-cash amount is set on this pack. ' + fileLine;
     const noneAdded = lineMid
       ? 'No total in this window is ' + lineMid + '. ' + fileLine
@@ -336,6 +345,11 @@
       subtitle = drill.reason || '';
       backLabel = 'Compliance';
       back = () => setDrill(null);
+    } else if (explain) {
+      title = explain === 'identity' ? 'Automatic ID checks' : 'Sanctions screening';
+      subtitle = '';
+      backLabel = 'Compliance';
+      back = () => setExplain(null);
     } else if (pane !== 'home') {
       title = titles[viewKey] || 'Compliance';
       subtitle = viewKey === 'missing' ? 'ID is required on a deal and is not on the client file.'
@@ -381,6 +395,16 @@
             <Phone.EmptyState title="Open this on a computer" message="The filing worksheet is the regulator's form, field by field. This phone does not show that form, and this desk does not send the report." />
           </div>
         )}
+        {!showComputer && !drill && explain === 'screening' && (
+          <div data-testid="compliance-not-connected">
+            <Phone.EmptyState title="Not connected" message={screeningCopy} />
+          </div>
+        )}
+        {!showComputer && !drill && explain === 'identity' && (
+          <div data-testid="compliance-id-not-connected">
+            <Phone.EmptyState title="Not connected" message="Automatic ID checks are not connected. Check ID in person and keep it on the client file." />
+          </div>
+        )}
         {!showComputer && drill && dealList(drill.groups || [], drill.note)}
         {!showComputer && !drill && pane === 'missing' && (
           <div data-testid="compliance-detail-missing">
@@ -408,14 +432,12 @@
             {!philippines && !!reportables.length && (
               <Phone.ListSection title="Reports">
                 {reportables.map((report) => {
-                  const filed = subs && subs[report.id] && subs[report.id].status === 'submitted';
                   return (
                     <Phone.ListRow
                       key={report.id}
                       title={report.subject || 'Unnamed client'}
                       subtitle={[kindWords(regime, report.kind), phoneDate(report.date)].filter(Boolean).join(' · ')}
                       amount={regime && regime.currency ? phoneMoney(report.amount, regime.currency) : ''}
-                      badge={{ label: filed ? 'Filed' : 'You file', tone: filed ? 'pos' : 'neutral' }}
                       chevron
                       onClick={() => setForm(true)}
                     />
@@ -480,11 +502,12 @@
             )}
           </div>
         )}
-        {pane === 'home' && !showComputer && !drill && (
+        {pane === 'home' && !showComputer && !drill && !explain && (
           <div data-testid="compliance-phone-home" data-state={countsState} data-empty={empty ? 'true' : 'false'}>
             {failed && (
-              <div data-testid="compliance-error">
-                <Phone.ErrorState message="Could not load compliance counts. Check your connection, then try again. Your ledger is not affected." />
+              <div data-testid="compliance-error" className="cph-error">
+                <h2>Couldn't load compliance counts</h2>
+                <p>Check your connection, then try again. Your ledger is not affected.</p>
               </div>
             )}
             {loading && (
@@ -498,14 +521,16 @@
                   id: 'reportable',
                   label: 'Reportable',
                   value: !ready ? 'Not loaded' : (regime && regime.id === 'pack-ph-v1') ? 'Not filed here' : String(reportable),
-                  caption: !ready ? loadedLine : (regime && regime.id === 'pack-ph-v1') ? 'You file' : (reportable ? 'You file' : 'Nothing to file'),
+                  caption: !ready ? '' : (regime && regime.id === 'pack-ph-v1') ? 'You file' : (reportable ? 'You file' : 'Nothing to file'),
+                  chevron: ready,
                   onClick: ready ? () => onOpen('submissions') : undefined,
                 },
                 {
                   id: 'structuring',
                   label: 'Structuring',
                   value: ready ? String(structuring) : 'Not loaded',
-                  caption: !ready ? loadedLine : (structuring ? 'Warnings only' : 'No patterns to watch'),
+                  caption: !ready ? '' : (structuring ? 'Warnings only' : 'No patterns to watch'),
+                  chevron: ready,
                   onClick: ready ? () => onOpen('structuring') : undefined,
                 },
               ]} />
@@ -530,17 +555,19 @@
               <Phone.ListSection title="Checks">
                 <div data-testid="sanctions-screening-tile">
                   <Phone.ListRow
+                    className="cph-check"
                     title="Sanctions screening"
-                    subtitle={notConnected + ' No list provider is connected yet. Clients are not checked against any sanctions or watchlist.'}
-                    badge={{ label: 'Not connected', tone: 'neutral' }}
+                    subtitle="Check names by hand for now"
                     chevron
-                    onClick={() => onOpen('screening')}
+                    onClick={() => setExplain('screening')}
                   />
                 </div>
                 <Phone.ListRow
+                  className="cph-check"
                   title="Automatic ID checks"
-                  subtitle="Not available yet. Check ID in person and keep it on the client file."
-                  badge={{ label: 'Not connected', tone: 'neutral' }}
+                  subtitle="Check ID in person for now"
+                  chevron
+                  onClick={() => setExplain('identity')}
                 />
                 <Phone.ListRow title="Open Clients" subtitle="Check ID in person and keep it on the client file." chevron onClick={onOpenClients} />
               </Phone.ListSection>

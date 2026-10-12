@@ -3100,21 +3100,58 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   [data-app="compliance"] .cph-back {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     width: auto;
-    min-width: 48px;
-    height: 48px;
-    min-height: 48px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
     box-sizing: border-box;
-    margin: 0 8px;
-    padding: 0 8px;
+    margin: 0;
+    padding: 0 16px 0 8px;
     border: 0;
     background: transparent;
-    color: var(--gray-900, #161513);
+    color: var(--color-text, #161513);
     font-weight: 600;
     font-size: 16px;
-    line-height: 20px;
+    line-height: 24px;
     cursor: pointer;
+  }
+  [data-app="compliance"] .cph-back-chev {
+    display: inline-flex;
+    transform: rotate(180deg);
+    color: var(--color-text, #161513);
+  }
+  [data-app="compliance"] .phone-stat { position: relative; }
+  [data-app="compliance"] .phone-stat.has-chev { padding-right: 28px; }
+  [data-app="compliance"] .phone-stat-chev {
+    position: absolute;
+    top: 12px;
+    right: 10px;
+    display: flex;
+    color: var(--color-text-muted, #6B6760);
+    pointer-events: none;
+  }
+  [data-app="compliance"] .cph-error {
+    margin: 0 0 12px;
+    padding: 16px;
+    text-align: left;
+    background: #fff;
+    border: 1px solid var(--color-border, #E2DFD8);
+    border-radius: var(--radius-lg, 14px);
+  }
+  [data-app="compliance"] .cph-error h2 {
+    margin: 0;
+    font-size: 17px;
+    line-height: 24px;
+    font-weight: 600;
+    color: var(--color-text, #161513);
+  }
+  [data-app="compliance"] .cph-error p {
+    margin: 4px 0 0;
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 400;
+    color: var(--color-text-muted, #6B6760);
   }
   [data-app="compliance"] .phone-title {
     padding-left: 16px;

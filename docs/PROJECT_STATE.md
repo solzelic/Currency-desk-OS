@@ -146,12 +146,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   The ledger search is one line, with its help mark in that line.
   Compliance on a phone is the shared phone shell. The home is a More
   control, the reporting line in plain words, Reportable and Structuring
-  cards, and Screening or the 24-hour rule. Amounts use formatPhoneMoney,
-  so the code follows the number (`10,000.00 CAD`) and a bare `$` is not
-  used. The 24-hour rule reads the pack's threshold and comparison.
-  Canada, which files at the line, says "At 10,000.00 CAD or more, you
-  file." A pack that compares with greater-than says over its own amount.
-  A set that totals the line shows You file. A recent day reads Today or Yesterday, and a day in the current
+  cards, and Screening or the 24-hour rule.   Amounts use formatPhoneMoney,
+  so a posted deal reads `10,000.00 CAD` and a bare `$` is not
+  used. A reporting threshold drops the cents: `10,000 CAD`. The 24-hour
+  rule reads the pack's threshold and comparison. Canada, which files
+  at the line, says "At 10,000 CAD or more, you file." A pack that
+  compares with greater-than says over its own amount.
+  A set that totals the line shows You file, with cents on that total.
+  A filings row is the name and the amount, then "Large cash · Today",
+  with no You file badge. The back control is a chevron-left and its
+  label until the shared one lands. A recent day reads Today or Yesterday, and a day in the current
   year reads like Oct 9, with no year. Times use formatPhoneTime,
   12-hour with AM or PM (`10:15 AM`). The shared date always includes
   the year, and the shared list group is only Today or a full date,
@@ -160,12 +164,15 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   how many deals and the total. A selected
   filter chip is gray-900. Only the sticky primary button takes the
   compliance accent. Each detail reached from the home is a phone list
-  or an empty state. Screening says Not connected and shows no count.
-  Automatic ID checks say not connected and open Clients. Possible split
+  or an empty state. The sanctions row is "Check names by hand for now"
+  and opens the not-connected explanation, which shows no count.
+  Automatic ID checks say "Check ID in person for now" and open theirs.
+  Neither row repeats its title. Possible split
   deals are warnings. The desk does not send the report. The filing
   worksheet is not shown on a phone: that screen says to open it on a
-  computer. A failed filings load says Not loaded, with Try again, and
-  does not show a zero. There is no centre plus and no floating New
+  computer. A failed load is a left-aligned card, "Couldn't load
+  compliance counts", and the stat cards say Not loaded with no
+  subline. Try again stays. It does not show a zero. There is no centre plus and no floating New
   transaction. Wider than 430px, the desk is unchanged: the dots stay
   12px, and the module tab bar ends before the store and ID buttons.
 - **New transaction on a phone.** Under 600px the dialog is a
@@ -590,6 +597,15 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, phone Compliance review. The back control is a 24px
+chevron-left and its label, with a 44px hit, until the shared control
+lands. Check rows are one line: "Check names by hand for now" and
+"Check ID in person for now". A threshold has no cents (`10,000 CAD`,
+"At 10,000 CAD or more, you file."). A posted total keeps them.
+Reportable and Structuring cards carry a 16px chevron. A failed load
+is a left-aligned card, and those cards say Not loaded with no
+subline. A filings row has no You file badge.
 
 **2026-10-12**, phone Compliance threshold. The 24-hour rule sentence
 reads the pack. Canada says "At 10,000.00 CAD or more, you file."

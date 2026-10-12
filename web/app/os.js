@@ -1073,9 +1073,6 @@
   // exact booked margin for a posted row: prefer the stored figure, else the
   // legacy live-mid estimate (so historical rows still show a spread)
   function dealMargin(r) {
-    /* A server row with no stored spread had it withheld. Estimating one
-       from the live mid would put the earnings back on the screen. */
-    if (r && r.serverTransactionId && r.spreadCad == null) return null;
     if (r && r.spreadCad != null && !isNaN(r.spreadCad)) return Math.max(0, +r.spreadCad);
     const mid = (+r.inAmt || 0) * crossRate(r.inCcy, r.outCcy);
     const d = mid - (+r.outAmt || 0);
@@ -2102,13 +2099,9 @@
       rate: Number(transaction.rate),
       outCcy: transaction.to,
       outAmt: Number(transaction.outputAmount),
-      fee: transaction.feeCad == null ? null : Number(transaction.feeCad),
-      /* A missing key is the server withholding the book's take. Null is
-         a deal the book has no figure for. Collapsing the two would let
-         the ledger rebuild a spread the read was not allowed to carry. */
-      earningsWithheld: !Object.prototype.hasOwnProperty.call(transaction, "spreadCad"),
+      fee: Number(transaction.feeCad),
       midRate: transaction.marketMid == null ? null : Number(transaction.marketMid),
-      spreadCad: transaction.spreadCad == null ? null : Number(transaction.spreadCad),
+      spreadCad: Number(transaction.spreadCad || 0),
       side: transaction.from === "CAD" ? "sell" : "buy",
       quoteRef: transaction.quoteId || null,
       rateBoardPublicationId: transaction.rateBoardPublicationId || null,
@@ -29697,10 +29690,10 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     // the deal was two-side priced; falls back to the live-mid estimate for legacy rows)
     const inCad = homeOf(row.inAmt, row.inCcy) || 0;
     const spreadCad = dealMargin(row);
-    const feeCad = row.fee == null ? null : +row.fee;
-    const earned = feeCad == null || spreadCad == null ? null : feeCad + spreadCad;
-    const marginPct = earned == null || !inCad ? null : earned / inCad * 100;
-    const spreadPct = spreadCad == null || !inCad ? null : spreadCad / inCad * 100;
+    const feeCad = +row.fee || 0;
+    const earned = feeCad + spreadCad;
+    const marginPct = inCad ? earned / inCad * 100 : 0;
+    const spreadPct = inCad ? spreadCad / inCad * 100 : 0;
     return /*#__PURE__*/React.createElement("div", {
       className: "absolute inset-0 flex flex-col",
       style: {
@@ -30178,21 +30171,20 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       onOpenClient: onOpenClient
     }), !isVoid && (() => {
       const flat = row.inCcy === row.outCcy;
-      const withheld = !!row.earningsWithheld;
       return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] uppercase tracking-widest mb-2",
         style: {
           color: CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, withheld ? 'Fee on this deal' : 'Earnings on this deal'), /*#__PURE__*/React.createElement("div", {
+      }, "Earnings on this deal"), /*#__PURE__*/React.createElement("div", {
         className: "p-3",
         style: {
           background: 'var(--cd-panel)',
           border: `1px solid ${CD.line}`,
           borderRadius: 10
         }
-      }, !withheld && /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("div", {
         className: "grid grid-cols-2 gap-3 mb-1"
       }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
         className: "text-[11px]",
@@ -30216,11 +30208,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, marginPct == null ? '—' : `${marginPct.toFixed(2)}%`))), /*#__PURE__*/React.createElement(DRow, {
+      }, marginPct.toFixed(2), "%"))), /*#__PURE__*/React.createElement(DRow, {
         k: flat ? 'Service fee' : 'Commission / fee',
-        v: feeCad == null ? '—' : `${fmtHome(feeCad)}${inCad ? `  ·  ${(feeCad / inCad * 100).toFixed(2)}%` : ''}`,
+        v: `${fmtHome(feeCad)}${inCad ? `  ·  ${(feeCad / inCad * 100).toFixed(2)}%` : ''}`,
         mono: true
-      }), !withheld && !flat && /*#__PURE__*/React.createElement(DRow, {
+      }), !flat && /*#__PURE__*/React.createElement(DRow, {
         k: "FX spread (rate markup)",
         v: spreadCad > 0 ? `${fmtHome(spreadCad)}  ·  ${spreadPct.toFixed(2)}%` : '—',
         mono: true
@@ -30242,7 +30234,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         style: {
           color: CD.ink
         }
-      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", row.marginOverride.at, row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), !withheld && /*#__PURE__*/React.createElement("p", {
+      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", row.marginOverride.at, row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), /*#__PURE__*/React.createElement("p", {
         className: "mt-1.5 text-[11px]",
         style: {
           color: CD.faint
@@ -30391,17 +30383,14 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     rows,
     client,
     focus,
-    onClose,
-    earningsHidden
+    onClose
   }) {
-    const [tab, setTab] = useState(earningsHidden ? 'volume' : focus || 'volume');
+    const [tab, setTab] = useState(focus || 'volume');
     const d = useMemo(() => {
       const live = rows.filter(r => r.status !== 'void' && (!client || r.customer === client));
       let vol = 0,
         fees = 0,
-        margin = 0,
-        feesKnown = true,
-        marginKnown = true;
+        margin = 0;
       const byCcy = {},
         byType = {},
         feeType = {},
@@ -30409,15 +30398,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         perTx = [];
       live.forEach(r => {
         const v = homeOf(r.inAmt, r.inCcy) || 0;
-        const fee = r.fee == null ? null : +r.fee;
+        const fee = +r.fee || 0;
         const m = dealMargin(r);
         vol += v;
-        if (fee == null) feesKnown = false;else fees += fee;
-        if (m == null) marginKnown = false;else margin += m;
+        fees += fee;
+        margin += m;
         byCcy[r.inCcy] = (byCcy[r.inCcy] || 0) + v;
         byType[r.type] = (byType[r.type] || 0) + v;
-        if (fee != null) feeType[r.type] = (feeType[r.type] || 0) + fee;
-        if (fee != null) feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee;
+        feeType[r.type] = (feeType[r.type] || 0) + fee;
+        feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee;
         perTx.push({
           ref: r.ref,
           customer: r.customer,
@@ -30427,15 +30416,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           vol: v,
           fee,
           margin: m,
-          total: fee == null || m == null ? null : fee + m
+          total: fee + m
         });
       });
       const sortE = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
       return {
         vol,
-        fees: feesKnown ? fees : null,
-        margin: marginKnown ? margin : null,
-        rev: feesKnown && marginKnown ? fees + margin : null,
+        fees,
+        margin,
+        rev: fees + margin,
         n: live.length,
         byCcy: sortE(byCcy),
         byType: sortE(byType),
@@ -30445,8 +30434,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       };
     }, [rows, client]);
     const avgTicket = d.n ? d.vol / d.n : 0;
-    const avgFee = d.n && d.fees != null ? d.fees / d.n : null;
-    const effRate = d.vol && d.rev != null ? d.rev / d.vol * 100 : null;
+    const avgFee = d.n ? d.fees / d.n : 0;
+    const effRate = d.vol ? d.rev / d.vol * 100 : 0;
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -30506,7 +30495,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       c: CD.mute
     }))), /*#__PURE__*/React.createElement("div", {
       className: "flex-none flex gap-1.5 px-5 pt-3"
-    }, (earningsHidden ? [['volume', 'Pay-in volume']] : [['volume', 'Pay-in volume'], ['fees', 'Fees & earnings']]).map(([id, lbl]) => /*#__PURE__*/React.createElement("button", {
+    }, [['volume', 'Pay-in volume'], ['fees', 'Fees & earnings']].map(([id, lbl]) => /*#__PURE__*/React.createElement("button", {
       key: id,
       onClick: () => setTab(id),
       className: "text-sm px-3.5 py-2 font-medium",
@@ -30554,7 +30543,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.faint
       }
-    }, "All amounts converted to CAD at the live spot rate for comparison. Voided records excluded.")), tab === 'fees' && !earningsHidden && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, "All amounts converted to CAD at the live spot rate for comparison. Voided records excluded.")), tab === 'fees' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-4 gap-2 mb-4"
     }, /*#__PURE__*/React.createElement(Kpi, {
       label: "Fees collected",
@@ -30571,7 +30560,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       accent: CD.green
     }), /*#__PURE__*/React.createElement(Kpi, {
       label: "Margin %",
-      value: effRate == null ? '—' : `${effRate.toFixed(2)}%`,
+      value: `${effRate.toFixed(2)}%`,
       accent: CD.green,
       sub: "of pay-in volume"
     })), /*#__PURE__*/React.createElement("div", {
@@ -30667,7 +30656,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, t.total == null || !t.vol ? '—' : (t.total / t.vol * 100).toFixed(2) + '%'))), d.perTx.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    }, t.vol ? (t.total / t.vol * 100).toFixed(2) + '%' : '—'))), d.perTx.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       colSpan: 6,
       className: "px-4 py-8 text-center",
       style: {
@@ -30678,7 +30667,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.faint
       }
-    }, "Revenue = posted fees + estimated FX spread (live spot value \u2212 actual pay-out). Effective take \u2248 ", effRate == null ? '—' : `${effRate.toFixed(2)}%`, " of volume."))))), document.body);
+    }, "Revenue = posted fees + estimated FX spread (live spot value \u2212 actual pay-out). Effective take \u2248 ", effRate.toFixed(2), "% of volume."))))), document.body);
   }
 
   /* =====================================================================
@@ -31080,10 +31069,6 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     const [modal, setModal] = useState(false);
     const [detailId, setDetailId] = useState(null);
     const [breakdown, setBreakdown] = useState(null); // 'volume' | 'fees' | null
-    /* The server omits spreadCad when this role cannot read earnings.
-       The sheet would rebuild Fees by teller from each row's fee, so
-       the sheet and its link stay off the screen. */
-    const earningsHidden = rows.some(r => r.earningsWithheld);
     const [sort, setSort] = useState({
       key: 'date',
       dir: 'desc'
@@ -31362,12 +31347,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       // pay-in volume in the desk's own money — the home leg of each deal,
       // and a count of the deals that have no home leg to take. See dealHome.
       const volume = sumDealHome(src, homeCcy());
-      const feesKnown = src.every(x => x.fee != null);
       return {
         n: src.length,
         vol: volume.total,
         unvalued: volume.unvalued,
-        fees: feesKnown ? src.reduce((s, x) => s + (+x.fee || 0), 0) : null,
+        fees: src.reduce((s, x) => s + (+x.fee || 0), 0),
         rpt,
         openRpt,
         str: str.size,
@@ -31382,7 +31366,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         posted = 0;
       const liveRows = filtered.filter(r => r.status !== 'void');
       posted = liveRows.length;
-      if (liveRows.some(r => r.fee == null)) fees = null;else liveRows.forEach(r => {
+      liveRows.forEach(r => {
         fees += +r.fee || 0;
       });
       vol = sumDealHome(liveRows, homeCcy()).total;
@@ -31430,7 +31414,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         n = 0;
       const liveRecs = recs.filter(r => r.status !== 'void');
       n = liveRecs.length;
-      if (liveRecs.some(r => r.fee == null)) fees = null;else liveRecs.forEach(r => {
+      liveRecs.forEach(r => {
         fees += +r.fee || 0;
       });
       vol = sumDealHome(liveRecs, homeCcy()).total;
@@ -31609,9 +31593,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           id: 'fees',
           label: 'Fees collected',
           value: feesText,
-          caption: earningsHidden ? null : stats.n ? 'View earnings' : 'Nothing posted',
-          onClick: !earningsHidden && stats.n ? () => setBreakdown('fees') : undefined,
-          disabled: !!earningsHidden
+          caption: stats.n ? 'View earnings' : 'Nothing posted',
+          onClick: stats.n ? () => setBreakdown('fees') : undefined
         }, {
           id: 'rpt',
           label: 'Reportable',
@@ -31747,7 +31730,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         rows: rows.filter(r => inRange(r.date)),
         client: client,
         focus: breakdown,
-        earningsHidden: earningsHidden,
         onClose: () => setBreakdown(null)
       })));
     }
@@ -31940,8 +31922,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), /*#__PURE__*/React.createElement(StatCard, {
       label: "Fees collected",
       value: stats.n ? fmtHome(stats.fees) : '—',
-      sub: earningsHidden ? stats.n ? null : 'nothing posted in this range' : stats.n ? 'view earnings ›' : 'nothing posted in this range',
-      onClick: earningsHidden ? undefined : () => stats.n && setBreakdown('fees')
+      sub: stats.n ? 'view earnings ›' : 'nothing posted in this range',
+      onClick: () => stats.n && setBreakdown('fees')
     }), /*#__PURE__*/React.createElement(StatCard, {
       label: `Reportable ≥ ${limit.label}`,
       value: stats.openRpt > 0 ? `${stats.openRpt} open` : stats.rpt > 0 ? 'all filed' : '0',
@@ -32511,7 +32493,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rows: rows.filter(r => inRange(r.date)),
       client: client,
       focus: breakdown,
-      earningsHidden: earningsHidden,
       onClose: () => setBreakdown(null)
     })));
   }
@@ -62514,15 +62495,19 @@ window.CDOS_PERSIST = (function () {
     return /*#__PURE__*/React.createElement("div", {
       className: 'phone-stats cols-' + cols
     }, (cards || []).map((card, i) => {
-      const button = !!(card.onClick || card.disabled);
-      const Tag = button ? 'button' : 'div';
+      const Tag = card.onClick ? 'button' : 'div';
       return /*#__PURE__*/React.createElement(Tag, {
         key: card.id || i,
-        type: button ? 'button' : undefined,
-        className: "phone-stat",
-        disabled: card.disabled ? true : undefined,
-        onClick: card.disabled ? undefined : card.onClick
-      }, /*#__PURE__*/React.createElement("span", {
+        type: card.onClick ? 'button' : undefined,
+        className: 'phone-stat' + (card.chevron ? ' has-chev' : ''),
+        onClick: card.onClick
+      }, card.chevron ? /*#__PURE__*/React.createElement("span", {
+        className: "phone-stat-chev",
+        "aria-hidden": "true"
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "chev",
+        s: 16
+      })) : null, /*#__PURE__*/React.createElement("span", {
         className: "phone-stat-label"
       }, card.label), /*#__PURE__*/React.createElement("span", {
         className: "phone-stat-value num"
@@ -63133,8 +63118,9 @@ window.CDOS_PERSIST = (function () {
    Phone Compliance. Desktop Compliance does not render this.
 
    The layout is the shared phone shell (docs/PHONE_SHELL.md).
-   Amounts go through formatPhoneMoney, so a threshold reads
-   "10,000.00 CAD" and never a bare "$".
+   Amounts go through formatPhoneMoney. A posted deal keeps the
+   cents ("10,000.00 CAD"). A reporting threshold drops them
+   ("10,000 CAD"). Neither prints a bare "$".
 
    Honesty, on purpose:
    - Sanctions screening is not connected. The tile has no count.
@@ -63179,6 +63165,12 @@ window.CDOS_PERSIST = (function () {
     return text;
   }
 
+  /* A reporting line has no cents. A posted deal keeps them.
+     10,000.00 CAD from the formatter becomes 10,000 CAD. */
+  function thresholdMoney(amount, currency) {
+    return phoneMoney(amount, currency).replace(/\.0+(?= [A-Z]{3}$)/, '');
+  }
+
   /* Acronyms the packs store as the regulator. Spell the office once. */
   const OFFICE = {
     FINTRAC: "FINTRAC, Canada's financial intelligence unit",
@@ -63208,12 +63200,12 @@ window.CDOS_PERSIST = (function () {
     return 'Aggregation';
   }
 
-  /* The pack owns the line. A gte pack is "At 10,000.00 CAD or more".
+  /* The pack owns the line. A gte pack is "At 10,000 CAD or more".
      A gt pack is "Over" that amount. The figure is the pack threshold
      through formatPhoneMoney. Nothing here writes 10000 by hand. */
   function thresholdPhrase(regime, atStart) {
     if (!regime || regime.threshold == null || !regime.currency) return '';
-    const money = phoneMoney(regime.threshold, regime.currency);
+    const money = thresholdMoney(regime.threshold, regime.currency);
     if (!money) return '';
     if (regime.comparator === 'gt') return (atStart ? 'Over ' : 'over ') + money;
     return (atStart ? 'At ' : 'at ') + money + ' or more';
@@ -63365,16 +63357,22 @@ window.CDOS_PERSIST = (function () {
     if (regime && kind && kind === regime.strCode) return 'Suspicious activity';
     return 'Report';
   }
+
+  /* No shared back control on this foundation. The follow-up adds one.
+     Until then this is a 24px chevron-left and the label, in one 44px hit. */
   function backControl(label, onClick) {
     const Ic = window.CDOS.Ic;
     return /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "cph-back",
       onClick: onClick
-    }, Ic ? /*#__PURE__*/React.createElement(Ic, {
-      n: "arrowleft",
-      s: 18
-    }) : null, /*#__PURE__*/React.createElement("span", null, label));
+    }, Ic ? /*#__PURE__*/React.createElement("span", {
+      className: "cph-back-chev",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 24
+    })) : null, /*#__PURE__*/React.createElement("span", null, label));
   }
   function splitCases(rows, clients, settings) {
     const flags = window.CDOS.computeFlags(rows, clients, settings);
@@ -63422,7 +63420,6 @@ window.CDOS_PERSIST = (function () {
     structuring,
     aggregates,
     countsState,
-    loadedAt,
     onRetry,
     onLeave,
     onOpenClients,
@@ -63438,9 +63435,11 @@ window.CDOS_PERSIST = (function () {
     const [section, setSection] = useState('screening');
     const [drill, setDrill] = useState(null);
     const [form, setForm] = useState(false);
+    const [explain, setExplain] = useState(null);
     useEffect(() => {
       setDrill(null);
       setForm(false);
+      setExplain(null);
     }, [pane, detail]);
     const people = useMemo(() => missingId(rows, clients, settings), [rows, clients, settings]);
     const splits = useMemo(() => splitCases(rows, clients, settings), [rows, clients, settings]);
@@ -63456,10 +63455,9 @@ window.CDOS_PERSIST = (function () {
     const empty = ready && !reportable && !structuring && !people.length && (!summed || !aggregates);
     const philippines = regime && regime.id === 'pack-ph-v1';
     const showComputer = form || !!computer;
-    const sub = regime && regime.threshold != null && regime.currency ? officeLine(regime) + ' · Reporting threshold ' + phoneMoney(regime.threshold, regime.currency) : officeLine(regime) + ' · No large-cash amount is set on this pack.';
+    const sub = regime && regime.threshold != null && regime.currency ? officeLine(regime) + ' · Reporting threshold ' + thresholdMoney(regime.threshold, regime.currency) : officeLine(regime) + ' · No large-cash amount is set on this pack.';
     const notConnected = window.CDOS._compliance && window.CDOS._compliance.NOT_CONNECTED || "Sanctions screening is not connected yet. Check clients against your government's official lists yourself.";
     const screeningCopy = notConnected + ' No list provider is connected yet. Clients are not checked against any sanctions or watchlist.';
-    const loadedLine = loadedAt ? 'Last loaded ' + phoneClock(loadedAt) : 'Not loaded yet';
     const fileLine = "You file in the regulator's portal. This desk does not send the report.";
     const titles = {
       submissions: 'What you would file',
@@ -63471,7 +63469,7 @@ window.CDOS_PERSIST = (function () {
     const lineLead = thresholdPhrase(regime, true);
     const lineMid = thresholdPhrase(regime, false);
     const hourRule = regime && regime.aggHours === 24 && lineLead ? 'Cash from one client within 24 hours adds up. ' + lineLead + ', you file.' : '';
-    const singleLine = lineLead ? (regime.comparator === 'gt' ? 'A single amount over ' + phoneMoney(regime.threshold, regime.currency) + ' stands on its own. ' : 'A single amount of ' + phoneMoney(regime.threshold, regime.currency) + ' or more stands on its own. ') + fileLine : 'No large-cash amount is set on this pack. ' + fileLine;
+    const singleLine = lineLead ? (regime.comparator === 'gt' ? 'A single amount over ' + thresholdMoney(regime.threshold, regime.currency) + ' stands on its own. ' : 'A single amount of ' + thresholdMoney(regime.threshold, regime.currency) + ' or more stands on its own. ') + fileLine : 'No large-cash amount is set on this pack. ' + fileLine;
     const noneAdded = lineMid ? 'No total in this window is ' + lineMid + '. ' + fileLine : 'Nothing in this window is reportable. ' + fileLine;
     const viewKey = pane === 'missing' ? 'missing' : detail;
     let title = 'Compliance';
@@ -63491,6 +63489,11 @@ window.CDOS_PERSIST = (function () {
       subtitle = drill.reason || '';
       backLabel = 'Compliance';
       back = () => setDrill(null);
+    } else if (explain) {
+      title = explain === 'identity' ? 'Automatic ID checks' : 'Sanctions screening';
+      subtitle = '';
+      backLabel = 'Compliance';
+      back = () => setExplain(null);
     } else if (pane !== 'home') {
       title = titles[viewKey] || 'Compliance';
       subtitle = viewKey === 'missing' ? 'ID is required on a deal and is not on the client file.' : viewKey === 'structuring' ? 'Warnings only. The desk does not stop the deal.' : viewKey === 'submissions' && reportables.length ? fileLine : viewKey === 'aggregation' && summed && clusters && clusters.length ? hourRule || fileLine : '';
@@ -63532,6 +63535,16 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
       title: "Open this on a computer",
       message: "The filing worksheet is the regulator's form, field by field. This phone does not show that form, and this desk does not send the report."
+    })), !showComputer && !drill && explain === 'screening' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-not-connected"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Not connected",
+      message: screeningCopy
+    })), !showComputer && !drill && explain === 'identity' && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-id-not-connected"
+    }, /*#__PURE__*/React.createElement(Phone.EmptyState, {
+      title: "Not connected",
+      message: "Automatic ID checks are not connected. Check ID in person and keep it on the client file."
     })), !showComputer && drill && dealList(drill.groups || [], drill.note), !showComputer && !drill && pane === 'missing' && /*#__PURE__*/React.createElement("div", {
       "data-testid": "compliance-detail-missing"
     }, !people.length && /*#__PURE__*/React.createElement(Phone.EmptyState, {
@@ -63563,16 +63576,11 @@ window.CDOS_PERSIST = (function () {
     }), !philippines && !!reportables.length && /*#__PURE__*/React.createElement(Phone.ListSection, {
       title: "Reports"
     }, reportables.map(report => {
-      const filed = subs && subs[report.id] && subs[report.id].status === 'submitted';
       return /*#__PURE__*/React.createElement(Phone.ListRow, {
         key: report.id,
         title: report.subject || 'Unnamed client',
         subtitle: [kindWords(regime, report.kind), phoneDate(report.date)].filter(Boolean).join(' · '),
         amount: regime && regime.currency ? phoneMoney(report.amount, regime.currency) : '',
-        badge: {
-          label: filed ? 'Filed' : 'You file',
-          tone: filed ? 'pos' : 'neutral'
-        },
         chevron: true,
         onClick: () => setForm(true)
       });
@@ -63619,15 +63627,14 @@ window.CDOS_PERSIST = (function () {
       },
       chevron: true,
       onClick: () => openDeals(cluster.subject || 'Large cash', fileLine, '', cluster.txs, tx => tx.amt != null && regime && regime.currency ? phoneMoney(tx.amt, regime.currency) : '')
-    })))), pane === 'home' && !showComputer && !drill && /*#__PURE__*/React.createElement("div", {
+    })))), pane === 'home' && !showComputer && !drill && !explain && /*#__PURE__*/React.createElement("div", {
       "data-testid": "compliance-phone-home",
       "data-state": countsState,
       "data-empty": empty ? 'true' : 'false'
     }, failed && /*#__PURE__*/React.createElement("div", {
-      "data-testid": "compliance-error"
-    }, /*#__PURE__*/React.createElement(Phone.ErrorState, {
-      message: "Could not load compliance counts. Check your connection, then try again. Your ledger is not affected."
-    })), loading && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "compliance-error",
+      className: "cph-error"
+    }, /*#__PURE__*/React.createElement("h2", null, "Couldn't load compliance counts"), /*#__PURE__*/React.createElement("p", null, "Check your connection, then try again. Your ledger is not affected.")), loading && /*#__PURE__*/React.createElement("div", {
       "data-testid": "compliance-loading"
     }, /*#__PURE__*/React.createElement(Phone.LoadingState, {
       rows: 3,
@@ -63638,13 +63645,15 @@ window.CDOS_PERSIST = (function () {
         id: 'reportable',
         label: 'Reportable',
         value: !ready ? 'Not loaded' : regime && regime.id === 'pack-ph-v1' ? 'Not filed here' : String(reportable),
-        caption: !ready ? loadedLine : regime && regime.id === 'pack-ph-v1' ? 'You file' : reportable ? 'You file' : 'Nothing to file',
+        caption: !ready ? '' : regime && regime.id === 'pack-ph-v1' ? 'You file' : reportable ? 'You file' : 'Nothing to file',
+        chevron: ready,
         onClick: ready ? () => onOpen('submissions') : undefined
       }, {
         id: 'structuring',
         label: 'Structuring',
         value: ready ? String(structuring) : 'Not loaded',
-        caption: !ready ? loadedLine : structuring ? 'Warnings only' : 'No patterns to watch',
+        caption: !ready ? '' : structuring ? 'Warnings only' : 'No patterns to watch',
+        chevron: ready,
         onClick: ready ? () => onOpen('structuring') : undefined
       }]
     }), ready && /*#__PURE__*/React.createElement("p", {
@@ -63684,21 +63693,17 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement("div", {
       "data-testid": "sanctions-screening-tile"
     }, /*#__PURE__*/React.createElement(Phone.ListRow, {
+      className: "cph-check",
       title: "Sanctions screening",
-      subtitle: notConnected + ' No list provider is connected yet. Clients are not checked against any sanctions or watchlist.',
-      badge: {
-        label: 'Not connected',
-        tone: 'neutral'
-      },
+      subtitle: "Check names by hand for now",
       chevron: true,
-      onClick: () => onOpen('screening')
+      onClick: () => setExplain('screening')
     })), /*#__PURE__*/React.createElement(Phone.ListRow, {
+      className: "cph-check",
       title: "Automatic ID checks",
-      subtitle: "Not available yet. Check ID in person and keep it on the client file.",
-      badge: {
-        label: 'Not connected',
-        tone: 'neutral'
-      }
+      subtitle: "Check ID in person for now",
+      chevron: true,
+      onClick: () => setExplain('identity')
     }), /*#__PURE__*/React.createElement(Phone.ListRow, {
       title: "Open Clients",
       subtitle: "Check ID in person and keep it on the client file.",
@@ -67589,10 +67594,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }];
       });
     }
-    /* The seam test opens a window the dock hides, so a withheld
-       figure can be read on the sheet itself. The dock gate is
-       unchanged: a cashier still has no Reports icon. */
-    window.CDOS.openApp = openApp;
     const closeWin = id => {
       if (id === 'store') setEditApps(false);
       setWins(ws => ws.filter(w => w.id !== id));

@@ -99,7 +99,8 @@
           const button = !!(card.onClick || card.disabled);
           const Tag = button ? 'button' : 'div';
           return (
-            <Tag key={card.id || i} type={button ? 'button' : undefined} className="phone-stat" disabled={card.disabled ? true : undefined} onClick={card.disabled ? undefined : card.onClick}>
+            <Tag key={card.id || i} type={button ? 'button' : undefined} className={'phone-stat' + (card.chevron ? ' has-chev' : '')} disabled={card.disabled ? true : undefined} onClick={card.disabled ? undefined : card.onClick}>
+              {card.chevron ? <span className="phone-stat-chev" aria-hidden="true"><Ic n="chev" s={16} /></span> : null}
               <span className="phone-stat-label">{card.label}</span>
               <span className="phone-stat-value num">{card.value}</span>
               {card.caption ? <span className="phone-stat-cap">{card.caption}</span> : null}
