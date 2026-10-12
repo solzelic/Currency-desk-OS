@@ -35938,7 +35938,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: exchangeReady && fx && fx.giveDetail ? 18 : 26,
         letterSpacing: '-0.01em',
         fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1.25
+        lineHeight: exchangeReady && fx && fx.giveDetail ? 1.25 : 1.1
       }
     }, isExchange ? exchangeReady && fx.giveDetail ? fx.give : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.paysLabel : amtN > 0 ? num(amtN) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
@@ -35989,7 +35989,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         letterSpacing: '-0.01em',
         fontVariantNumeric: 'tabular-nums',
         color: '#7fd1a3',
-        lineHeight: 1.25
+        lineHeight: exchangeReady && fx && fx.receiveDetail ? 1.25 : 1.1
       }
     }, isExchange ? exchangeReady && fx.receiveDetail ? fx.receive : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.receivesLabel : '—', " ", /*#__PURE__*/React.createElement("span", {
       style: {
