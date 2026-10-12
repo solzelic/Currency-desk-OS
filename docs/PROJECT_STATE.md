@@ -571,6 +571,29 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, teller earnings. A teller can post a deal and still cannot
+read what the desk earned. The customer-facing fee stays, because the
+customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
+and leaves off `earningsHome`, `realizedPnlHome`, `costOfSaleHome`,
+the same money on each teller (`feesHome`, `earningsHome`,
+`realizedPnlHome`), and `realizedPnlHome` on each currency. The
+transaction list keeps `feeCad` and leaves off `spreadCad`,
+`costOfSaleHome`, `realizedPnlHome`, and `marketMid`. A reprinted
+receipt still prints the fee line. Position leaves off
+`unrealizedPnlHome`, `costBasisHome`, `marketValueHome`, the market
+unit, and the average cost, and it keeps the quantity. The cheque
+register keeps `feeAmount`. A quote that is still being priced keeps
+its fee and its spread. Once that quote is posted, cancelled, or
+expired, the read and the post and cancel acknowledgements leave off
+the spread and the mid. The ledger does not offer a teller the
+earnings sheet, the view-earnings link, or empty spread, revenue, and
+margin cards. Closing the day (`till:close`) is what opens those
+reads. A teller cannot close the day. An owner, a supervisor, and a branch manager close
+the day and still see the figures. An auditor and a compliance
+officer do not close the day, and they do not hold
+`report:earnings`, which is the same as on main. That permission
+exists and nobody holds it. Granting it is a later decision.
+
 **2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
 the seam job's render of the commit in `tests/e2e/README.md`, checked
 out and captured twice in that job. The sign-in card in that render

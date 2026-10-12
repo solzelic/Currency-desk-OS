@@ -60,6 +60,7 @@ import {
   isPhilippinesPack,
   philippinesPurposeRequired,
 } from "./philippines-pack.js";
+import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -242,7 +243,7 @@ export class ChequeService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await authorizeLedgerActor(client, actor, "ledger:view");
+      const role = await authorizeLedgerActor(client, actor, "ledger:view");
       const rows = await client.query(
         `SELECT c.*, t.transaction_ref AS cashing_transaction_ref
            FROM ledger_cheques c
@@ -273,13 +274,13 @@ export class ChequeService {
         });
         timeline.set(event.cheque_id, list);
       }
-      return {
+      return redactDeskEarnings(role, {
         branchId: actor.branchId,
         cheques: rows.rows.map((row) => ({
           ...chequeJson(row),
           timeline: timeline.get(row.cheque_id) ?? [],
         })),
-      };
+      });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { LedgerError, type LedgerActor } from "./service.js";
+import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
@@ -273,7 +274,7 @@ export class LedgerProvisioningService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await authorizeLedgerActor(client, actor, "ledger:view");
+      const role = await authorizeLedgerActor(client, actor, "ledger:view");
       const result = await client.query(
         /* Deals only. A cheque clearance and a cheque return each write a
            journal and therefore each need a transaction row to hang it
@@ -296,7 +297,7 @@ export class LedgerProvisioningService {
         [...scope(actor), limit],
       );
       await client.query("COMMIT");
-      return {
+      return redactDeskEarnings(role, {
         transactions: result.rows.map((row) => ({
           transactionId: row.transaction_id,
           transactionRef: row.transaction_ref,
@@ -346,7 +347,7 @@ export class LedgerProvisioningService {
               }
             : null,
         })),
-      };
+      });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -359,7 +360,7 @@ export class LedgerProvisioningService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await authorizeLedgerActor(client, actor, "ledger:view");
+      const role = await authorizeLedgerActor(client, actor, "ledger:view");
       const result = await client.query(
         `SELECT t.*,c.name AS customer_name
            FROM ledger_transactions t
@@ -377,7 +378,7 @@ export class LedgerProvisioningService {
       }
       const row = result.rows[0];
       await client.query("COMMIT");
-      return {
+      return redactDeskEarnings(role, {
         receiptId: `rcpt_${row.transaction_id}`,
         transactionId: row.transaction_id,
         transactionRef: row.transaction_ref,
@@ -391,7 +392,7 @@ export class LedgerProvisioningService {
           `Fee paid separately: CAD ${row.fee_cad}`,
           `Received: ${row.output_amount} ${row.to_currency.trim()}`,
         ],
-      };
+      });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

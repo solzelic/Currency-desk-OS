@@ -15,6 +15,7 @@ import {
   type FrozenQuote,
   type LedgerActor,
 } from "../ledger/service.js";
+import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
 import { calculateQuoteTerms, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -101,6 +102,13 @@ export class QuoteService {
       !found.rows[0].authorized_branch_ids.includes(actor.branchId)
     )
       throw new LedgerError("AUTHORIZATION_DENIED", `Missing ${permission}.`);
+    return found.rows[0].role as string;
+  }
+  /* The ticket being priced still carries its spread and its mid.
+     A posted, cancelled, or expired quote is a deal that already
+     happened, and that read is the book's take. */
+  private forReader<T>(role: string, body: T, priced: boolean): T {
+    return priced ? body : redactDeskEarnings(role, body);
   }
   private async event(
     client: pg.PoolClient,
@@ -399,7 +407,7 @@ export class QuoteService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.principal(client, actor, "quote:view");
+      const role = await this.principal(client, actor, "quote:view");
       const value = await this.effective(client, quoteId);
       const q = value.q;
       if (
@@ -422,7 +430,7 @@ export class QuoteService {
       }
       const result = this.response(value);
       await client.query("COMMIT");
-      return result;
+      return this.forReader(role, result, q.status === "active");
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;
@@ -434,7 +442,7 @@ export class QuoteService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.principal(client, actor, "quote:cancel");
+      const role = await this.principal(client, actor, "quote:cancel");
       const value = await this.effective(client, quoteId),
         q = value.q;
       if (
@@ -458,7 +466,7 @@ export class QuoteService {
       q.status = "cancelled";
       const result = this.response(value);
       await client.query("COMMIT");
-      return result;
+      return this.forReader(role, result, false);
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;
@@ -602,7 +610,7 @@ export class QuoteService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.principal(client, actor, "quote:post");
+      const role = await this.principal(client, actor, "quote:post");
       const value = await this.effective(client, quoteId),
         q = value.q;
       if (
@@ -620,7 +628,7 @@ export class QuoteService {
         );
         if (replay.rowCount && replay.rows[0].response) {
           await client.query("COMMIT");
-          return replay.rows[0].response;
+          return this.forReader(role, replay.rows[0].response, false);
         }
         throw new LedgerError("QUOTE_NOT_ACTIVE", "Quote already posted.");
       }
@@ -629,7 +637,9 @@ export class QuoteService {
       if (new Date(q.expires_at).getTime() <= Date.now())
         throw new LedgerError("QUOTE_EXPIRED", "Quote has expired.");
       await client.query("COMMIT");
-      return this.ledger.postFrozenQuote(
+      return this.forReader(
+        role,
+        await this.ledger.postFrozenQuote(
         actor,
         {
           quoteId,
@@ -658,6 +668,8 @@ export class QuoteService {
           reportSuspicion: capture?.reportSuspicion,
         } as FrozenQuote,
         idempotencyKey,
+      ),
+        false,
       );
     } catch (e) {
       await client.query("ROLLBACK");
