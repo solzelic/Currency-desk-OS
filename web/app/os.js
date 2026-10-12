@@ -14316,6 +14316,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       return Math.abs(home == null ? r.variance : home) > tolHome + 0.005;
     };
     const offRows = recon.filter(offOf);
+    const offSumHome = totalHome(offRows.map(r => [r.variance, r.c]));
+    /* The sentence the close stores. The server keeps it as close_note
+       and does not require one. The phone sheet shows this same sentence. */
+    const closeNote = offRows.length ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}` : 'All counted drawers balanced';
     const countedN = recon.filter(r => r.counted != null).length;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
@@ -14326,7 +14330,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const totalCountHome = totalHome(recon.filter(r => r.counted != null).map(r => [r.counted, r.c]));
     const totalVarHome = totalHome(recon.filter(r => r.variance != null).map(r => [r.variance, r.c]));
     const doClose = async () => {
-      const offSumHome = totalHome(offRows.map(r => [r.variance, r.c]));
       /* WHAT THE DESK MADE TODAY IS NOT THIS SCREEN'S TO WORK OUT.
           What stood here summed `(inAmt × mid) − outAmt` over the browser's
          copy of the day's rows and called it earnings. That is a spread
@@ -14354,7 +14357,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         earnedCurrency: book && book.homeCurrency || homeCcy || null,
         earnedWhy: book ? earnedHome == null ? 'nothing posted on this trading day' : null : dayBook.error || 'the ledger could not be reached',
         businessDate: serverSession && serverSession.businessDate || window.CDOS.businessDate(),
-        note: offRows.length ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}` : 'All counted drawers balanced'
+        note: closeNote
       };
       if (serverBacked) {
         if (!serverSession || serverSession.status !== 'open') {
@@ -14533,7 +14536,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         roster: roster,
         drawerTotal: drawerTotal,
         homeCcy: homeCcy,
-        tillName: ledgerTill && ledgerTill.tillId || activeOption && activeOption.name || stationTill || '',
+        role: me && me.role,
+        closeNote: closeNote,
+        tillName: stationTill || activeOption && activeOption.name || ledgerTill && ledgerTill.tillId || '',
         tills: tillOptions,
         onPickTill: pickTill,
         canMove: !!onMoveCash,
@@ -63279,11 +63284,31 @@ window.CDOS_PERSIST = (function () {
     const counted = r.counted == null ? null : money(r.counted, r.c);
     const words = diffWords(r.c, r.counted, r.expected);
     const countedLine = counted ? 'Counted ' + counted : 'Not counted yet';
+    const tone = words === 'Matches the book' ? 'match' : words && words.slice(-6) === ' short' ? 'short' : '';
     return {
       title: r.c,
       subtitle: 'Expected ' + (expected || '—'),
-      note: words ? countedLine + ' · ' + words : countedLine
+      note: words ? countedLine + ' · ' + words : countedLine,
+      tone: tone
     };
+  }
+
+  /* The ledger id is till-01. The desk already calls that drawer Till 1.
+     A stored name wins. A raw id is spoken the same way, and is never
+     sent back as an id. */
+  function spokenTill(name) {
+    const text = String(name || '').replace(/\s+—.*/, '').trim();
+    const raw = /^till-0*(\d+)$/i.exec(text);
+    if (!raw) return text;
+    const n = Number(raw[1]);
+    return Number.isFinite(n) ? 'Till ' + n : text;
+  }
+
+  /* A teller counting blind must not see the whole drawer valued in
+     the home currency. That figure is the book. Owner and Manager
+     still see it, labelled, because the desktop already shows it. */
+  function tellerRole(role) {
+    return role === 'Cashier' || role === 'Trainee' || role === 'Senior teller';
   }
   function QtyRow({
     d,
@@ -63297,7 +63322,9 @@ window.CDOS_PERSIST = (function () {
     const have = Number.isFinite(n) ? n : 0;
     const sub = d.v * have;
     const face = faceOf(d.v, ccy);
-    const line = shown === '' || !sub ? null : money(sub, ccy);
+    /* An empty row is a count of zero, which the book can answer.
+       The code stays on the figure. */
+    const line = money(sub, ccy) || '0.00 ' + ccy;
     return /*#__PURE__*/React.createElement("div", {
       className: "till-den-row",
       "data-till-coin": d.t === 'coin' ? '' : undefined
@@ -63329,7 +63356,7 @@ window.CDOS_PERSIST = (function () {
       onClick: () => setCount(ccy, d.i, String(have + 1))
     }, "+")), /*#__PURE__*/React.createElement("span", {
       className: "till-den-sub"
-    }, line || '—'));
+    }, line));
   }
   function PhoneTill(p) {
     const [sheet, setSheet] = useState(false);
@@ -63354,6 +63381,12 @@ window.CDOS_PERSIST = (function () {
     const firstCoin = denoms.findIndex(d => d.t === 'coin');
     const amount = (n, ccy) => n == null || !ccy ? null : money(n, ccy);
     const Phone = window.CDOS.Phone;
+    const tillLabel = spokenTill(p.tillName);
+    /* The headline is every currency the drawer holds, valued in the
+       home currency. It is not the CAD to count. A teller in a blind
+       count does not see it: expected is hidden, and this total is
+       the expected drawer. */
+    const showDrawer = p.drawerTotal != null && !!p.homeCcy && !(p.blind && tellerRole(p.role));
     const footLabel = p.tab === 'reconcile' ? p.closing ? 'Closing…' : 'Close the till' : p.saved ? 'Saved' : p.busy === 'count' ? 'Saving…' : 'Save count';
     const footDisabled = p.tab === 'reconcile' ? !p.canClose || p.closing || p.closeBlocked : !open || !counted || p.saved || p.busy === 'count';
     const onFoot = () => {
@@ -63425,8 +63458,10 @@ window.CDOS_PERSIST = (function () {
     return /*#__PURE__*/React.createElement("div", {
       ref: p.rootRef,
       className: "till-screen till-phone-host",
+      "data-app": "till",
       "data-tour": "till",
-      "data-phone-till": loading ? 'loading' : failed ? 'error' : aside || (noSession || closed ? 'empty' : p.tab)
+      "data-phone-till": loading ? 'loading' : failed ? 'error' : aside || (noSession || closed ? 'empty' : p.tab),
+      "data-till-blind": p.blind && tellerRole(p.role) ? '' : undefined
     }, /*#__PURE__*/React.createElement(Phone.Screen, {
       app: "till",
       className: "till-phone",
@@ -63482,15 +63517,21 @@ window.CDOS_PERSIST = (function () {
       className: "till-phone-card"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-phone-top"
+    }, showDrawer ? /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-drawer"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-k"
+    }, "Drawer value, all currencies in ", p.homeCcy), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-amount"
-    }, amount(p.drawerTotal, p.homeCcy) || '—'), p.tillName ? /*#__PURE__*/React.createElement("button", {
+    }, amount(p.drawerTotal, p.homeCcy))) : /*#__PURE__*/React.createElement("span", {
+      className: "till-phone-drawer"
+    }), tillLabel ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-phone-till",
       onClick: () => setSheet(true)
-    }, p.tillName) : null), /*#__PURE__*/React.createElement("div", {
+    }, tillLabel) : null), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-meta"
-    }, who ? who.name + (who.since ? ', since ' + clock12(who.since) : '') + ' · ' : 'Nobody on this till · ', p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open · ' + (clock12(p.openedAt) || '—') : 'No open session', ' · ' + p.countedN + ' of ' + p.reconCount + ' counted'), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ' · ' + p.countedN + ' of ' + p.reconCount + ' counted')), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-actions"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -63559,7 +63600,7 @@ window.CDOS_PERSIST = (function () {
       const copy = reconCopy(r);
       return /*#__PURE__*/React.createElement(Phone.ListRow, {
         key: r.c,
-        className: "till-recon-row",
+        className: 'till-recon-row' + (copy.tone ? ' is-' + copy.tone : ''),
         title: copy.title,
         subtitle: copy.subtitle,
         note: copy.note
@@ -63598,7 +63639,7 @@ window.CDOS_PERSIST = (function () {
         setSheet(false);
         p.onPickTill(o.key);
       }
-    }, /*#__PURE__*/React.createElement("span", null, o.name), /*#__PURE__*/React.createElement("span", null, o.on ? 'This till' : o.occupant || o.note || ''))))), p.confirmClose && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, spokenTill(o.name) || o.name), /*#__PURE__*/React.createElement("span", null, o.on ? 'This till' : o.occupant || o.note || ''))))), p.confirmClose && /*#__PURE__*/React.createElement("div", {
       className: "till-sheet",
       role: "dialog",
       "aria-label": "Close the till"
@@ -63613,13 +63654,17 @@ window.CDOS_PERSIST = (function () {
       className: "till-sheet-title"
     }, "Close the till"), /*#__PURE__*/React.createElement("p", {
       className: "till-phone-note"
-    }, "The close writes each counted figure back as the till balance."), p.recon.map(r => {
+    }, "Review the difference on each currency. Closing writes each counted figure back as the till balance."), p.recon.map(r => {
       const copy = reconCopy(r);
       return /*#__PURE__*/React.createElement("div", {
         key: r.c,
-        className: "till-sheet-line"
-      }, /*#__PURE__*/React.createElement("b", null, copy.title), /*#__PURE__*/React.createElement("span", null, copy.subtitle), /*#__PURE__*/React.createElement("span", null, copy.note));
-    }), /*#__PURE__*/React.createElement("button", {
+        className: 'till-sheet-line' + (copy.tone ? ' is-' + copy.tone : '')
+      }, /*#__PURE__*/React.createElement("b", null, copy.title), /*#__PURE__*/React.createElement("span", null, copy.subtitle), /*#__PURE__*/React.createElement("span", {
+        className: "till-sheet-diff"
+      }, copy.note));
+    }), p.closeNote ? /*#__PURE__*/React.createElement("p", {
+      className: "till-phone-note"
+    }, p.closeNote) : null, /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-save",
       onClick: p.onConfirmClose

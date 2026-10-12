@@ -94,11 +94,31 @@
     const counted = r.counted == null ? null : money(r.counted, r.c);
     const words = diffWords(r.c, r.counted, r.expected);
     const countedLine = counted ? ('Counted ' + counted) : 'Not counted yet';
+    const tone = words === 'Matches the book' ? 'match' : (words && words.slice(-6) === ' short' ? 'short' : '');
     return {
       title: r.c,
       subtitle: 'Expected ' + (expected || '—'),
       note: words ? (countedLine + ' · ' + words) : countedLine,
+      tone: tone,
     };
+  }
+
+  /* The ledger id is till-01. The desk already calls that drawer Till 1.
+     A stored name wins. A raw id is spoken the same way, and is never
+     sent back as an id. */
+  function spokenTill(name) {
+    const text = String(name || '').replace(/\s+—.*/, '').trim();
+    const raw = /^till-0*(\d+)$/i.exec(text);
+    if (!raw) return text;
+    const n = Number(raw[1]);
+    return Number.isFinite(n) ? ('Till ' + n) : text;
+  }
+
+  /* A teller counting blind must not see the whole drawer valued in
+     the home currency. That figure is the book. Owner and Manager
+     still see it, labelled, because the desktop already shows it. */
+  function tellerRole(role) {
+    return role === 'Cashier' || role === 'Trainee' || role === 'Senior teller';
   }
 
   function QtyRow({ d, ccy, counts, setCount }) {
@@ -108,7 +128,9 @@
     const have = Number.isFinite(n) ? n : 0;
     const sub = d.v * have;
     const face = faceOf(d.v, ccy);
-    const line = shown === '' || !sub ? null : money(sub, ccy);
+    /* An empty row is a count of zero, which the book can answer.
+       The code stays on the figure. */
+    const line = money(sub, ccy) || ('0.00 ' + ccy);
     return (
       <div className="till-den-row" data-till-coin={d.t === 'coin' ? '' : undefined}>
         <span className="till-den-face">{face}</span>
@@ -117,7 +139,7 @@
           <input className="till-den-qty" type="text" inputMode="decimal" autoComplete="off" enterKeyHint="done" aria-label={face + ' count'} value={shown} onChange={e => setCount(ccy, d.i, e.target.value.replace(/[^0-9]/g, ''))} />
           <button type="button" className="till-step" aria-label={'Add one ' + face} onClick={() => setCount(ccy, d.i, String(have + 1))}>+</button>
         </div>
-        <span className="till-den-sub">{line || '—'}</span>
+        <span className="till-den-sub">{line}</span>
       </div>
     );
   }
@@ -145,6 +167,12 @@
     const firstCoin = denoms.findIndex(d => d.t === 'coin');
     const amount = (n, ccy) => (n == null || !ccy) ? null : money(n, ccy);
     const Phone = window.CDOS.Phone;
+    const tillLabel = spokenTill(p.tillName);
+    /* The headline is every currency the drawer holds, valued in the
+       home currency. It is not the CAD to count. A teller in a blind
+       count does not see it: expected is hidden, and this total is
+       the expected drawer. */
+    const showDrawer = p.drawerTotal != null && !!p.homeCcy && !(p.blind && tellerRole(p.role));
 
     const footLabel = p.tab === 'reconcile' ? (p.closing ? 'Closing…' : 'Close the till') : (p.saved ? 'Saved' : (p.busy === 'count' ? 'Saving…' : 'Save count'));
     const footDisabled = p.tab === 'reconcile'
@@ -216,7 +244,7 @@
     const showWork = !loading && !failed && !noSession && !closed && !aside;
 
     return (
-      <div ref={p.rootRef} className="till-screen till-phone-host" data-tour="till" data-phone-till={loading ? 'loading' : (failed ? 'error' : (aside || (noSession || closed ? 'empty' : p.tab)))}>
+      <div ref={p.rootRef} className="till-screen till-phone-host" data-app="till" data-tour="till" data-phone-till={loading ? 'loading' : (failed ? 'error' : (aside || (noSession || closed ? 'empty' : p.tab)))} data-till-blind={p.blind && tellerRole(p.role) ? '' : undefined}>
         <Phone.Screen
           app="till"
           className="till-phone"
@@ -256,13 +284,20 @@
           {showWork && p.tab !== 'history' && (
             <section className="till-phone-card">
               <div className="till-phone-top">
-                <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy) || '—'}</div>
-                {p.tillName ? <button type="button" className="till-phone-till" onClick={() => setSheet(true)}>{p.tillName}</button> : null}
+                {showDrawer ? (
+                  <div className="till-phone-drawer">
+                    <div className="till-phone-k">Drawer value, all currencies in {p.homeCcy}</div>
+                    <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy)}</div>
+                  </div>
+                ) : <span className="till-phone-drawer" />}
+                {tillLabel ? <button type="button" className="till-phone-till" onClick={() => setSheet(true)}>{tillLabel}</button> : null}
               </div>
               <div className="till-phone-meta">
-                {who ? (who.name + (who.since ? ', since ' + clock12(who.since) : '') + ' · ') : 'Nobody on this till · '}
-                {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open · ' + (clock12(p.openedAt) || '—')) : 'No open session'}
-                {' · ' + p.countedN + ' of ' + p.reconCount + ' counted'}
+                <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since) : '')) : 'Nobody on this till'}</div>
+                <div>
+                  {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open') : 'No open session'}
+                  {' · ' + p.countedN + ' of ' + p.reconCount + ' counted'}
+                </div>
               </div>
               <div className="till-phone-actions">
                 <button type="button" onClick={() => setAside('move')} disabled={!p.canMove}>Move cash</button>
@@ -306,7 +341,7 @@
               <Phone.ListSection title="Currencies">
                 {p.recon.map(r => {
                   const copy = reconCopy(r);
-                  return <Phone.ListRow key={r.c} className="till-recon-row" title={copy.title} subtitle={copy.subtitle} note={copy.note} />;
+                  return <Phone.ListRow key={r.c} className={'till-recon-row' + (copy.tone ? (' is-' + copy.tone) : '')} title={copy.title} subtitle={copy.subtitle} note={copy.note} />;
                 })}
               </Phone.ListSection>
               {p.closeBlocked && <p className="till-phone-note">{p.closeReason}</p>}
@@ -331,7 +366,7 @@
               <div className="till-sheet-title">Which till?</div>
               {(p.tills || []).map(o => (
                 <button type="button" key={o.key} className="till-sheet-row" onClick={() => { setSheet(false); p.onPickTill(o.key); }}>
-                  <span>{o.name}</span>
+                  <span>{spokenTill(o.name) || o.name}</span>
                   <span>{o.on ? 'This till' : (o.occupant || o.note || '')}</span>
                 </button>
               ))}
@@ -344,17 +379,18 @@
             <button type="button" className="till-sheet-scrim" aria-label="Back to the count" onClick={() => p.setConfirmClose(false)} />
             <div className="till-sheet-panel">
               <div className="till-sheet-title">Close the till</div>
-              <p className="till-phone-note">The close writes each counted figure back as the till balance.</p>
+              <p className="till-phone-note">Review the difference on each currency. Closing writes each counted figure back as the till balance.</p>
               {p.recon.map(r => {
                 const copy = reconCopy(r);
                 return (
-                  <div key={r.c} className="till-sheet-line">
+                  <div key={r.c} className={'till-sheet-line' + (copy.tone ? (' is-' + copy.tone) : '')}>
                     <b>{copy.title}</b>
                     <span>{copy.subtitle}</span>
-                    <span>{copy.note}</span>
+                    <span className="till-sheet-diff">{copy.note}</span>
                   </div>
                 );
               })}
+              {p.closeNote ? <p className="till-phone-note">{p.closeNote}</p> : null}
               <button type="button" className="till-save" onClick={p.onConfirmClose}>Close the till</button>
             </div>
           </div>

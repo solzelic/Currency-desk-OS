@@ -124,6 +124,51 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
     expect(fields.every((f) => f.align === "right")).toBe(true);
     expect(fields.every((f) => f.appearance === "textfield" || f.appearance === "none")).toBe(true);
     await expect(page.locator(".till-phone").getByRole("spinbutton")).toHaveCount(0);
+    const overlap = await page.locator(".till-phone .till-den-row").evaluateAll((rows) => {
+      const box = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+      };
+      const hit = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) =>
+        a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+      const problems: string[] = [];
+      rows.forEach((row, i) => {
+        const minus = row.querySelectorAll(".till-step")[0];
+        const plus = row.querySelectorAll(".till-step")[1];
+        const parts = [row.querySelector(".till-den-face"), minus, row.querySelector(".till-den-qty"), plus, row.querySelector(".till-den-sub")];
+        if (parts.some((part) => !part)) {
+          problems.push("missing " + i);
+          return;
+        }
+        const boxes = parts.map((part) => box(part as Element));
+        for (let a = 0; a < boxes.length; a++) {
+          for (let b = a + 1; b < boxes.length; b++) {
+            if (hit(boxes[a], boxes[b])) problems.push("overlap " + i + " " + a + " " + b);
+          }
+        }
+        if (Math.abs(boxes[1].width - 44) > 1 || Math.abs(boxes[1].height - 44) > 1) problems.push("minus " + i);
+        if (Math.abs(boxes[3].width - 44) > 1 || Math.abs(boxes[3].height - 44) > 1) problems.push("plus " + i);
+        const sub = parts[4] as Element;
+        const qty = parts[2] as HTMLElement;
+        if (!/0\.00 [A-Z]{3}/.test(sub.textContent || "")) problems.push("subtotal " + (sub.textContent || ""));
+        if ((sub.textContent || "").includes("—")) problems.push("dash");
+        if (getComputedStyle(qty).boxShadow !== "none") problems.push("shadow");
+      });
+      for (let i = 0; i < rows.length - 1; i++) {
+        if (hit(box(rows[i]), box(rows[i + 1]))) problems.push("rows " + i);
+      }
+      return problems;
+    });
+    expect(overlap, size.width + " denomination rows").toEqual([]);
+    /* A teller on a blind count does not see the whole-drawer total. */
+    await expect(page.locator(".till-phone-amount")).toHaveCount(0);
+    await expect(page.locator(".till-phone")).not.toContainText("Drawer value");
+    await expect(page.locator("[data-till-blind]")).toHaveCount(1);
+    const tillButton = page.locator(".till-phone-till");
+    if (await tillButton.count()) {
+      await expect(tillButton).toHaveText("Till 1");
+      await expect(tillButton).not.toContainText("till-01");
+    }
     const moves = await page.getByRole("button", { name: "Move cash" }).boundingBox();
     const vault = await page.getByRole("button", { name: "Vault" }).boundingBox();
     expect(moves && vault && Math.abs(moves.width - vault.width)).toBeLessThanOrEqual(1);
@@ -154,6 +199,17 @@ test("the difference is in words, and a double tap saves once", async ({ page })
       if (r.bottom > limit - 8) screen.scrollTop += r.bottom - limit + 16;
     });
     await field.fill("1");
+    await expect(page.locator(".till-phone .phone-sticky-btn")).toBeEnabled();
+    const accent = await page.locator(".till-phone .phone-sticky-btn").evaluate((btn) => {
+      const root = btn.closest("[data-app='till']") || document.body;
+      const probe = document.createElement("span");
+      probe.style.background = "var(--brand-primary)";
+      root.appendChild(probe);
+      const expected = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { bg: getComputedStyle(btn).backgroundColor, expected };
+    });
+    expect(accent.bg).toBe(accent.expected);
     const show = page.getByRole("button", { name: "Show expected amount" });
     if (await show.isVisible()) await show.click();
     await expect(page.locator(".till-diff").first()).toHaveText(/(over|short|Matches the book)/);
@@ -337,6 +393,57 @@ test("count, coins, the till sheet, reconcile, and hand off pass the phone sweep
   await expect(page.getByText("local note")).toBeVisible();
   await shotBoth(page, "handoff");
   await phoneSweep(page, { roots: SWEEP });
+});
+
+test("a short till does not close until the sheet is confirmed", async ({ page }) => {
+  test.skip(!hasLedger, "needs the ledger");
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page);
+  await tillOpen(page);
+  await openPhoneTill(page);
+  const balances: Record<string, string> = await page.evaluate(async () => {
+    const res = await fetch("/api/ledger/till-balances", { credentials: "same-origin" });
+    if (!res.ok) return {};
+    const body = await res.json();
+    return (body && body.balances) || {};
+  });
+  const currencies = Object.keys(balances);
+  expect(currencies.length).toBeGreaterThan(0);
+  for (const ccy of currencies) {
+    await page.locator(".till-phone").getByRole("tab", { name: new RegExp("^" + ccy + "\\b") }).first().click();
+    const enter = page.getByRole("button", { name: "Enter total instead" });
+    if (await enter.isVisible()) await enter.click();
+    const figure = ccy === "CAD" ? "1.00" : String(Math.max(Number(balances[ccy]) || 0, 0.01));
+    await page.locator(".till-phone").getByRole("textbox", { name: ccy + " total" }).fill(figure);
+  }
+  await page.getByRole("tab", { name: "Reconcile and close" }).click();
+  const sticky = page.locator(".till-phone .phone-sticky-btn", { hasText: "Close the till" });
+  await expect(sticky).toBeEnabled();
+  let posts = 0;
+  const onClose = (req: { method: () => string; url: () => string }) => {
+    if (req.method() === "POST" && req.url().includes("/close")) posts += 1;
+  };
+  page.on("request", onClose);
+  await sticky.click();
+  const sheet = page.locator(".till-sheet").last();
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText(/CAD short/);
+  expect(posts).toBe(0);
+  const confirm = page.locator(".till-sheet .till-save");
+  const confirmAccent = await confirm.evaluate((btn) => {
+    const root = btn.closest("[data-app='till']") || document.body;
+    const probe = document.createElement("span");
+    probe.style.background = "var(--brand-primary)";
+    root.appendChild(probe);
+    const expected = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return { bg: getComputedStyle(btn).backgroundColor, expected };
+  });
+  expect(confirmAccent.bg).toBe(confirmAccent.expected);
+  await confirm.click();
+  await expect.poll(() => posts, { timeout: 10_000 }).toBe(1);
+  page.off("request", onClose);
 });
 
 test("desktop till is the desktop till at 1280", async ({ page }) => {

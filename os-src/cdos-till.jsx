@@ -696,6 +696,12 @@
        tolerance nobody can apply is not a reason to declare a drawer clean. */
     const offOf = (r) => { if (r.variance == null) return false; const home = homeOf(r.variance, r.c); return Math.abs(home == null ? r.variance : home) > tolHome + 0.005; };
     const offRows = recon.filter(offOf);
+    const offSumHome = totalHome(offRows.map(r => [r.variance, r.c]));
+    /* The sentence the close stores. The server keeps it as close_note
+       and does not require one. The phone sheet shows this same sentence. */
+    const closeNote = offRows.length
+      ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}`
+      : 'All counted drawers balanced';
     const countedN = recon.filter(r => r.counted != null).length;
     const closeBlocked = serverBacked
       ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length)
@@ -708,7 +714,6 @@
     const totalCountHome = totalHome(recon.filter(r => r.counted != null).map(r => [r.counted, r.c]));
     const totalVarHome = totalHome(recon.filter(r => r.variance != null).map(r => [r.variance, r.c]));
     const doClose = async () => {
-      const offSumHome = totalHome(offRows.map(r => [r.variance, r.c]));
       /* WHAT THE DESK MADE TODAY IS NOT THIS SCREEN'S TO WORK OUT.
 
          What stood here summed `(inAmt × mid) − outAmt` over the browser's
@@ -738,9 +743,7 @@
         earnedCurrency: (book && book.homeCurrency) || homeCcy || null,
         earnedWhy: book ? (earnedHome == null ? 'nothing posted on this trading day' : null) : (dayBook.error || 'the ledger could not be reached'),
         businessDate: (serverSession && serverSession.businessDate) || window.CDOS.businessDate(),
-        note: offRows.length
-          ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}`
-          : 'All counted drawers balanced',
+        note: closeNote,
       };
       if (serverBacked) {
         if (!serverSession || serverSession.status !== 'open') {
@@ -921,7 +924,9 @@
           roster={roster}
           drawerTotal={drawerTotal}
           homeCcy={homeCcy}
-          tillName={(ledgerTill && ledgerTill.tillId) || (activeOption && activeOption.name) || stationTill || ''}
+          role={me && me.role}
+          closeNote={closeNote}
+          tillName={stationTill || (activeOption && activeOption.name) || (ledgerTill && ledgerTill.tillId) || ''}
           tills={tillOptions}
           onPickTill={pickTill}
           canMove={!!onMoveCash}
