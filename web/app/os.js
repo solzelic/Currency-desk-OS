@@ -455,26 +455,148 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return businessDate();
       const answer = await B.loadTillSession();
+      if (answer && answer.day && answer.day.timeZone) setBranchTimeZone(answer.day.timeZone);
       if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
+      _tradingWindow = answer && answer.day && answer.day.from && answer.day.to ? {
+        from: answer.day.from,
+        to: answer.day.to
+      } : null;
     } catch (e) {/* no session, no server, or not signed in: the clock stands in */}
     return businessDate();
   }
-  /* The window a "today" figure covers, as two instants, from the desk's
-     own midnight. The server deliberately refuses to guess this — see the
-     note on LedgerReportingService.summary — because a business day
-     belongs to a branch's clock and this browser is standing in the
-     branch. `days` looks back that many days from the business date. */
+  /* The span a screen asks the book for. Once the till session has named
+     the branch zone, midnight is that zone's midnight. A browser-local
+     midnight drops a deal posted in the evening in Toronto once UTC has
+     already rolled to the next day: the session is still on that Toronto
+     date, and the deal is inside it, but the window ended at UTC midnight.
+     Before the zone is known, the machine's own midnight stands in.
+     The signed close-out does not use this. That sheet asks for the
+     window the session returns. */
   function businessDayWindow(days) {
-    const end = new Date(businessDate() + 'T00:00:00');
-    end.setDate(end.getDate() + 1);
-    const start = new Date(end);
-    start.setDate(start.getDate() - Math.max(1, days || 1));
+    const n = Math.max(1, days || 1);
+    const date = String(businessDate() || '').slice(0, 10);
+    if (_branchTimeZone && CALENDAR_DATE.test(date)) {
+      const end = zonedMidnight(addCalendarDays(date, 1), _branchTimeZone);
+      const start = zonedMidnight(addCalendarDays(date, 1 - n), _branchTimeZone);
+      if (_tradingWindow && new Date(_tradingWindow.to).getTime() > end.getTime()) {
+        return {
+          from: start.toISOString(),
+          to: new Date(_tradingWindow.to).toISOString()
+        };
+      }
+      return {
+        from: start.toISOString(),
+        to: end.toISOString()
+      };
+    }
+    const endLocal = new Date(date + 'T00:00:00');
+    endLocal.setDate(endLocal.getDate() + 1);
+    const startLocal = new Date(endLocal);
+    startLocal.setDate(startLocal.getDate() - n);
     return {
-      from: start.toISOString(),
-      to: end.toISOString()
+      from: startLocal.toISOString(),
+      to: endLocal.toISOString()
     };
   }
   const TODAY = wallClock();
+  /* An ID expiry is a calendar date. It stays current through that
+     day in the branch's zone. The session's trading day is a different
+     question — a till opened yesterday is still on yesterday after
+     midnight — and the UTC date is a third, wrong one. `new Date` of
+     a YYYY-MM-DD string is UTC midnight, which is already the previous
+     evening in Toronto and the next morning's display in Jerusalem. */
+  const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+  function calendarDate(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(at);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '';
+    };
+    const year = pick('year'),
+      month = pick('month'),
+      day = pick('day');
+    if (!year || !month || !day) throw new Error('The branch time zone could not be read.');
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  let _branchTimeZone = null;
+  /* The session's own window, when the server has named one. A desk
+     still open after branch midnight keeps deals posted after that
+     midnight inside the trading day. */
+  let _tradingWindow = null;
+  const setBranchTimeZone = zone => {
+    _branchTimeZone = zone ? String(zone) : null;
+    return _branchTimeZone;
+  };
+  function addCalendarDays(isoDate, days) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const utc = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    utc.setUTCDate(utc.getUTCDate() + days);
+    return utc.toISOString().slice(0, 10);
+  }
+  function zoneOffsetMs(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(at);
+    const pick = type => {
+      const found = parts.find(part => part.type === type);
+      return found ? Number(found.value) : NaN;
+    };
+    let hour = pick('hour');
+    if (hour === 24) hour = 0;
+    const asUtc = Date.UTC(pick('year'), pick('month') - 1, pick('day'), hour, pick('minute'), pick('second'));
+    if (Number.isNaN(asUtc)) throw new Error('The branch time zone could not be read.');
+    return asUtc - at.getTime();
+  }
+  function zonedMidnight(isoDate, timeZone) {
+    const match = CALENDAR_DATE.exec(isoDate);
+    if (!match) throw new Error('The business day is not a date.');
+    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3]);
+    const offset = zoneOffsetMs(new Date(guess), timeZone);
+    let start = guess - offset;
+    const corrected = zoneOffsetMs(new Date(start), timeZone);
+    if (corrected !== offset) start = guess - corrected;
+    const result = new Date(start);
+    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no midnight on ' + isoDate + '.');
+    return result;
+  }
+  const branchCalendarDate = at => {
+    const when = at instanceof Date ? at : new Date();
+    if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
+    if (_branchTimeZone) return calendarDate(when, _branchTimeZone);
+    return when.toLocaleDateString('en-CA');
+  };
+  const readCalendarDate = value => {
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) throw new Error('expiry is not a date');
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${value.getFullYear()}-${month}-${day}`;
+    }
+    const match = CALENDAR_DATE.exec(String(value == null ? '' : value).slice(0, 10));
+    if (!match) throw new Error('expiry is not a calendar date');
+    return match[0];
+  };
+  const calendarBefore = (left, right) => readCalendarDate(left) < readCalendarDate(right);
+  /* Day count from the year, month and day fields. Date.UTC here is
+     the arithmetic, not a conversion of the expiry into an instant. */
+  const calendarDaysUntil = (expiry, on) => {
+    const from = readCalendarDate(on).split('-').map(Number);
+    const to = readCalendarDate(expiry).split('-').map(Number);
+    return Math.round((Date.UTC(to[0], to[1] - 1, to[2]) - Date.UTC(from[0], from[1] - 1, from[2])) / 86400000);
+  };
 
   /* ============================================================
      THE REPORTING LINE — one number, in the desk's own money
@@ -1908,6 +2030,10 @@
     setBusinessDate,
     refreshBusinessDate,
     businessDayWindow,
+    setBranchTimeZone,
+    branchCalendarDate,
+    calendarBefore,
+    calendarDaysUntil,
     /* the one reporting line, and the pack it comes from */
     reportingLimit,
     overReportingLimit,
@@ -2045,8 +2171,12 @@
     var risk = riskText.indexOf("high") >= 0 ? "high"
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
+    /* Expired only when the expiry calendar date is before the branch's
+       calendar date. The same day is still current. The UTC date is
+       already tomorrow on a Toronto evening, which is how a valid ID
+       was refused on its last day. */
     var idStatus = !record.idType || !record.idNum ? "missing"
-      : record.idExpiry && record.idExpiry < new Date().toISOString().slice(0, 10) ? "expired"
+      : record.idExpiry && window.CDOS.calendarBefore(record.idExpiry, window.CDOS.branchCalendarDate()) ? "expired"
       : "verified";
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
     return { externalRef: externalRef, name: String(name).trim(), risk: risk, idStatus: idStatus };
@@ -2084,7 +2214,10 @@
       serverTransactionId: transaction.transactionId,
       serverQuoteId: transaction.quoteId || null,
       ref: transaction.transactionRef,
-      date: posted.toISOString().slice(0, 10),
+      /* The calendar date in the branch zone. toISOString is the UTC
+         date, which is still yesterday just after midnight in a zone
+         ahead of UTC. */
+      date: window.CDOS.branchCalendarDate(posted),
       time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
       customer: customerName || transaction.customerId,
       beneficiary: "",
@@ -2211,6 +2344,18 @@
       loadTillSession: function () {
         return request("/api/ledger/till-session");
       },
+      /* The close of day. The preview and the signed sheet are the
+         same route. A teller is refused; the screen does not get the
+         earnings with a flag it might ignore. */
+      loadCloseOfDay: function () {
+        return request("/api/ledger/close-of-day");
+      },
+      saveCloseOfDay: function (payload) {
+        return request("/api/ledger/close-of-day", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
       /* The drawer always wants both halves of the same picture — what the
          server says the till holds, and which session that holding sits in.
          Fetching them separately let one arrive without the other and the
@@ -2226,6 +2371,7 @@
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
+            day: results[1].day || null,
           };
         });
       },
@@ -2391,9 +2537,9 @@
       /* Totals over a window. `from` and `to` are ISO instants and BOTH
          are optional; omitting them means "everything this till has ever
          posted", which is the only window that needs no timezone to be
-         right. The server deliberately does not decide where a day starts
-         — see businessDayWindow() in cdos-base.jsx, which builds the
-         window from the till session's own business date. */
+         right. The sign-off sheet passes the window the till session
+         named. businessDayWindow() uses that same zone's midnight for
+         other screens once the session has named it. */
       loadLedgerSummary: function (window) {
         var query = [];
         if (window && window.from) query.push("from=" + encodeURIComponent(window.from));
@@ -13547,10 +13693,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     cashVersion,
     onSessionSync,
     ledgerScope,
-    onSelectLedgerTill
+    onSelectLedgerTill,
+    returnAfterCount = false,
+    onReturnFromCount
   }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
+    /* Reports asks for the count tab, then this screen hands the
+       desk back once that count is saved. A count started here
+       stays here. */
+    useEffect(() => {
+      if (returnAfterCount) setTab('count');
+    }, [returnAfterCount]);
     const tillRootRef = useRef(null);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
@@ -13567,6 +13721,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        matches and the close is refused. */
     const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
+    const [serverDay, setServerDay] = useState(null);
+    const [sessionLoaded, setSessionLoaded] = useState(false);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
         This screen totalled every drawer "in CAD" and labelled it so — a
@@ -13660,6 +13816,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const applySession = result => {
       const session = result && result.session || null;
       setServerSession(session);
+      setServerDay(result && result.day || null);
+      if (result && result.day && result.day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(result.day.timeZone);
+      /* The trading day is the one the server named for this session.
+         Opening the till after midnight has to move the desk onto that
+         date. The wall clock is only the stand-in before a session exists. */
+      if (session && session.businessDate && window.CDOS.setBusinessDate) window.CDOS.setBusinessDate(session.businessDate);
+      setSessionLoaded(true);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
@@ -13676,8 +13839,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         });
         return;
       }
+      if (!sessionLoaded) return;
+      if (!serverDay || !serverDay.from || !serverDay.to) {
+        setDayBook({
+          loading: false,
+          summary: null,
+          error: serverSession ? 'the till session did not name its trading day' : 'no till session'
+        });
+        return;
+      }
       let live = true;
-      window.CDOS.Backend.loadLedgerSummary(window.CDOS.businessDayWindow(1)).then(summary => {
+      window.CDOS.Backend.loadLedgerSummary({
+        from: serverDay.from,
+        to: serverDay.to
+      }).then(summary => {
         if (live) setDayBook({
           loading: false,
           summary,
@@ -13693,7 +13868,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       return () => {
         live = false;
       };
-    }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
+    }, [serverBacked, deskFacts, sessionLoaded, serverSession, serverDay && serverDay.from, serverDay && serverDay.to]);
     const applyBook = result => {
       setServerBalances(result && result.balances || {});
       /* A count in progress keeps the mark it started on. Adopting the
@@ -13715,6 +13890,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setServerBalances(null);
         setBalanceGeneration(null);
         setServerSession(null);
+        setServerDay(null);
+        setSessionLoaded(false);
         setServerBalanceError('');
         return;
       }
@@ -13728,6 +13905,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setServerBalances(null);
         setBalanceGeneration(null);
         setServerSession(null);
+        setServerDay(null);
+        setSessionLoaded(true);
         setServerBalanceError(error.message || 'Server balances unavailable');
       });
       return () => {
@@ -14283,6 +14462,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }
       persistLocalSnapshot();
+      if (returnAfterCount && onReturnFromCount) onReturnFromCount();
     };
 
     /* ---------------- RECONCILE / CLOSE TAB ----------------
@@ -22794,11 +22974,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
     const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
+    /* Has this document expired? The expiry and today are both
+       YYYY-MM-DD in the branch zone. The same calendar day is still
+       current. A UTC Date would call it yesterday. */
+    const on = window.CDOS.branchCalendarDate();
+    const expired = rec && rec.idExpiry && window.CDOS.calendarBefore(rec.idExpiry, on);
     // Returned only when an approved check of that tier is already on file.
     if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
     if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
@@ -22809,7 +22989,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
     if (warn && rec.idExpiry) {
-      const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
+      const days = window.CDOS.calendarDaysUntil(rec.idExpiry, on);
       if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
     }
     return ['ID on hand', CD.amber, CD.amberSoft];
@@ -40047,10 +40227,15 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
+  /* Calendar arithmetic on the year, month and day. Local midnight plus
+     toISOString moves a hold date back a day where the machine is ahead
+     of UTC. */
   const addDays = (date, n) => {
-    const d = new Date(date + 'T00:00:00');
-    d.setDate(d.getDate() + (+n || 0));
-    return d.toISOString().slice(0, 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''));
+    if (!match) return '';
+    const at = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    at.setUTCDate(at.getUTCDate() + (+n || 0));
+    return at.toISOString().slice(0, 10);
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 
@@ -49652,6 +49837,877 @@ ${snap}`;
   });
 })();
 
+/* ---- os-src/cdos-reports-phone.jsx ---- */
+/* ============================================================
+   Phone Reports. Mounted only at 430px and under.
+
+   The desk launcher stays the wide-window screen. The end-of-day
+   figures are the server's close-of-day snapshot. This file does
+   not add them up. Saving posts that snapshot; it is not kept
+   only in localStorage.
+
+   A figure the book did not answer is a word. A day with no deals
+   is a zero the book did answer: the money tiles show 0.00 in the
+   home currency, with "No deals yet" under the number. The drawer
+   stays "Not counted yet", because nobody has counted it.
+
+   TODO: switch the four tiles and the check rows to SummaryList
+   once #126 is green. It does not fit yet: the tiles need a
+   caption under the amount, and a check row needs its note under
+   the title with the count on the right. SummaryList is a label
+   and a value. Stack is the foundation, then #125, then #126.
+   This file does not declare that name.
+
+   Saved reports is written when the cashier taps save, not when
+   a report is opened. The print stays in this tab (window.print
+   on a node already on the page). A phone blocks window.open.
+   The sheet button says "Save end of day". It does not say PDF.
+   The file is the server's, fetched as a document, and the print
+   view in this tab is the same snapshot so an A4 page is not blank.
+
+   TODO: switch ReportRow to NavRow once Settings merges.
+   The not-counted choice is a bottom sheet. FullScreenSheet is
+   not in this foundation, and the shell's task and confirm
+   sheets are a different shape, so this one uses the phone
+   tokens. TODO: switch the saved note to Toast once Settings
+   merges. This file does not declare those names.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useLayoutEffect,
+    useRef
+  } = React;
+  const HKEY = 'cdos_report_history_v1';
+  const Ic = () => window.CDOS.Ic;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;'
+  })[c]);
+  /* The shell's formatter is the one phone amount. The code is split
+     off so the card can draw it smaller than the number. */
+  const phoneMoney = (n, ccy) => {
+    const format = window.CDOS.formatPhoneMoney;
+    if (!format) throw new Error('Phone money format did not load.');
+    const formatted = format(n, ccy);
+    if (!formatted) return null;
+    const cut = formatted.lastIndexOf(' ');
+    return {
+      text: formatted.slice(0, cut),
+      ccy: formatted.slice(cut + 1),
+      full: formatted
+    };
+  };
+  const shown = (n, ccy) => {
+    const m = phoneMoney(n, ccy);
+    return m ? m.full : '';
+  };
+  /* A reporting line is a whole amount. 10,000.00 CAD is 10,000 CAD. */
+  const wholeMoney = (n, ccy) => {
+    const raw = typeof n === 'number' ? n : Number(String(n == null ? '' : n).replace(/,/g, ''));
+    if (!Number.isFinite(raw)) return '';
+    const full = shown(Math.round(raw), ccy);
+    return full ? full.replace(/\.00(?=\s)/, '') : '';
+  };
+  /* The shared clock. 15:02 is 3:02 PM. A wall clock needs no zone.
+     An instant needs the branch zone; a blank is not Toronto, and
+     the formatter answers with an em dash, which this helper drops. */
+  const phoneClock = (format, value, zone) => {
+    const formatted = format(value, zone || undefined);
+    if (!formatted || formatted === '\u2014') return '';
+    return formatted;
+  };
+  const phoneTime = (value, zone) => {
+    const format = window.CDOS.formatPhoneTime;
+    if (typeof format !== 'function') throw new Error('Phone time format did not load.');
+    return phoneClock(format, value, zone);
+  };
+  const phoneDate = (value, zone) => {
+    const format = window.CDOS.formatPhoneDate;
+    if (typeof format !== 'function') throw new Error('Phone date format did not load.');
+    return phoneClock(format, value, zone);
+  };
+  const zoneOf = p => p.settings && p.settings.timezone || undefined;
+  const money = (n, ccy) => {
+    const m = phoneMoney(n, ccy);
+    return m ? {
+      text: m.text,
+      ccy: m.ccy
+    } : words('Not loaded');
+  };
+  const words = s => ({
+    words: s
+  });
+  const rowAmount = v => !v ? '' : v.words || v.text + (v.ccy ? ' ' + v.ccy : '');
+  /* The name the desk already shows for this drawer. b01t3 and
+     till-01 are ids. A missing name is left off the subtitle. */
+  function tillName(p) {
+    const station = p.station;
+    if (!station || !station.tillId) return '';
+    const branch = (p.branches || []).find(b => b && b.id === station.branchId);
+    const till = branch && (branch.tills || []).find(t => t && t.id === station.tillId);
+    const name = till && till.name ? String(till.name).replace(/\s+—.*/, '').trim() : '';
+    return name && name !== station.tillId ? name : '';
+  }
+  /* The entity's pack. getRegime() is not a source: it fills in
+     FINTRAC when the desk has not named a regulator. */
+  function regulatorOf() {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    return pack && pack.regulator ? String(pack.regulator).trim() : '';
+  }
+  const keptSentence = regulator => 'Kept in Saved reports. Not sent to ' + (regulator || 'the regulator') + '.';
+  const Caret = () => /*#__PURE__*/React.createElement("svg", {
+    width: "20",
+    height: "20",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "m9 6 6 6-6 6"
+  }));
+  function readHist() {
+    const raw = localStorage.getItem(HKEY);
+    if (!raw) return [];
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      throw new Error('Saved reports could not be read.');
+    }
+    return Array.isArray(parsed) ? parsed : [];
+  }
+  function writeHist(entry) {
+    const hist = readHist();
+    try {
+      localStorage.setItem(HKEY, JSON.stringify([entry, ...hist].slice(0, 500)));
+    } catch (e) {
+      throw new Error('Saved reports is full. The sheet was not kept.');
+    }
+  }
+
+  /* The close-of-day snapshot, signed or still a preview. The screen
+     does not add these figures up. A missing snapshot is not a zero. */
+  function snapshotOf(p) {
+    const close = p.closeDay || {};
+    return close.signoff && close.signoff.snapshot || close.preview || null;
+  }
+
+  /* One description of today's card, shared by the home, the sheet,
+     and the print view, so those three cannot disagree. */
+  function todayModel(p, last) {
+    const close = p.closeDay || {
+      loading: true
+    };
+    const snap = snapshotOf(p);
+    const home = snap && snap.homeCurrency || p.homeCcy || 'CAD';
+    const canClose = !!p.canClose && !close.forbidden;
+    const session = p.tillDay.session;
+    const noSession = !p.tillDay.loading && !session && (p.dayBook.error === 'no till session' || !p.tillDay.error);
+    const loadingDeals = !!(p.dayBook.loading || p.tillDay.loading || close.loading);
+    const loadingDrawer = loadingDeals;
+    const failed = !noSession && !!(p.dayBook.error || p.held.error || p.tillDay.error || close.error);
+    const stale = !loadingDeals && !snap && last.current;
+    const book = snap || (stale ? last.current.snap : null);
+    const zone = book && book.timeZone || zoneOf(p);
+    const sheetDate = book && book.businessDate || session && session.businessDate || '';
+    const branch = p.station && p.branches && (p.branches.find(b => b.id === p.station.branchId) || {}).name || p.settings && (p.settings.operatingName || p.settings.bizName) || '';
+    const till = tillName(p);
+    const regulator = regulatorOf();
+    const posted = book ? Number(book.posted) : null;
+    const empty = posted === 0;
+    let deals = null,
+      taken = null,
+      earned = null,
+      drawer = null;
+    if (!loadingDeals) {
+      if (noSession) {
+        deals = words('Open the till');
+        taken = words('Open the till');
+        earned = canClose ? words('Open the till') : null;
+        drawer = words('Open the till');
+      } else if (!book) {
+        deals = words('Not loaded');
+        taken = words('Not loaded');
+        earned = canClose ? words('Not loaded') : null;
+      } else {
+        const voided = Number(book.reversed) || 0;
+        deals = {
+          text: String(posted),
+          sub: voided ? voided + ' voided' : 'None voided'
+        };
+        const noDeals = () => Object.assign(money(0, home), {
+          sub: 'No deals yet'
+        });
+        if (empty) taken = noDeals();else if (book.volumeHome == null) taken = words('Not loaded');else {
+          const parts = (book.volumeByCurrency || []).map(row => shown(row.amount, row.currency)).filter(Boolean);
+          taken = Object.assign(money(book.volumeHome, home), {
+            sub: 'in ' + home + (parts.length ? ' · ' + parts.join(', ') : '')
+          });
+        }
+        if (canClose) {
+          if (empty) earned = noDeals();else if (book.earningsHome == null) earned = words('Not loaded');else earned = Object.assign(money(book.earningsHome, home), {
+            sub: book.realizedPnlHome != null ? 'Fees + margin' : 'Fees'
+          });
+        }
+        if (book.notCounted) drawer = words('Not counted yet');else if (book.drawerHome == null) drawer = words('Not loaded');else drawer = Object.assign(money(book.drawerHome, home), {
+          sub: 'Counted'
+        });
+      }
+    }
+    const currencies = (book && book.drawerCurrencies || []).map(row => {
+      const off = row.variance != null && Math.abs(Number(row.variance)) >= 0.005;
+      return {
+        ccy: row.currency,
+        amount: row.counted == null ? words('Not counted') : money(row.counted, row.currency),
+        badge: row.counted == null ? null : off ? 'Off' : 'Balanced',
+        tone: row.counted == null ? '' : off ? 'neg' : 'pos',
+        variance: row.counted != null && off ? (Number(row.variance) > 0 ? '+' : '') + shown(row.variance, row.currency) : '',
+        expected: row.expected != null ? 'Expected ' + shown(row.expected, row.currency) : ''
+      };
+    });
+    const line = book && book.reportingLine ? wholeMoney(book.reportingLine, book.reportingCurrency || home) : '';
+    const large = !book ? words('Not loaded') : line ? {
+      text: book.singleDeals == null ? '' : String(book.singleDeals),
+      sub: line + ' or more'
+    } : words('No reporting line');
+    const countedFull = !!(book && !book.notCounted);
+    return {
+      loadingDeals,
+      loadingDrawer,
+      failed,
+      stale,
+      staleAt: stale ? last.current.at : null,
+      date: phoneDate(sheetDate, zone),
+      branch,
+      till,
+      who: p.me && p.me.name || '',
+      shop: book && book.shopName || '',
+      kept: keptSentence(regulator),
+      deals,
+      taken,
+      earned,
+      drawer,
+      badge: loadingDrawer || !book ? null : book.notCounted ? 'Not counted yet' : 'Drawer counted',
+      countedFull,
+      notCounted: !!(book && book.notCounted),
+      currencies,
+      large,
+      largeMeta: line ? 'Deals of ' + line + ' or more' : 'You file',
+      singleTitle: line ? 'Single deals of ' + line + ' or more' : 'Single deals',
+      singleDeals: book && book.singleDeals != null ? String(book.singleDeals) : '',
+      lctr: book && book.lctrCustomers != null ? String(book.lctrCustomers) : '',
+      gaps: book ? String(book.clientsMissingId) : '',
+      requireCount: !!(p.settings && p.settings.requireCountOnClose),
+      canClose,
+      sessionOpen: !!session && !noSession,
+      alreadySigned: !!close.signoff,
+      home,
+      snap: book,
+      zone
+    };
+  }
+  function Val({
+    v
+  }) {
+    if (!v) return /*#__PURE__*/React.createElement("span", {
+      className: "sk sk-val"
+    });
+    if (v.words) return /*#__PURE__*/React.createElement("span", {
+      className: "words"
+    }, v.words);
+    if (v.ccy) return /*#__PURE__*/React.createElement("span", {
+      className: "num"
+    }, v.text, /*#__PURE__*/React.createElement("span", {
+      className: "ccy"
+    }, v.ccy));
+    return /*#__PURE__*/React.createElement("span", {
+      className: "num"
+    }, v.text);
+  }
+  function Stat({
+    label,
+    v
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "stat"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "lbl"
+    }, label), /*#__PURE__*/React.createElement("div", {
+      className: "val"
+    }, /*#__PURE__*/React.createElement(Val, {
+      v: v
+    })), v && v.sub ? /*#__PURE__*/React.createElement("div", {
+      className: "sub"
+    }, v.sub) : v ? null : /*#__PURE__*/React.createElement("span", {
+      className: "sk sk-sub"
+    }));
+  }
+  /* TODO: switch to NavRow once Settings merges. */
+  function ReportRow({
+    icon,
+    title,
+    meta,
+    value,
+    onClick
+  }) {
+    const Icon = Ic();
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "nrow",
+      onClick: onClick
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "ic",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement(Icon, {
+      n: icon,
+      s: 20
+    })), /*#__PURE__*/React.createElement("span", {
+      className: "tx"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "t"
+    }, title), /*#__PURE__*/React.createElement("span", {
+      className: "d"
+    }, meta)), value != null && value !== '' ? /*#__PURE__*/React.createElement("span", {
+      className: "v"
+    }, value) : /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("span", {
+      className: "cv"
+    }, /*#__PURE__*/React.createElement(Caret, null)));
+  }
+  const ROWS = [{
+    id: 'register',
+    title: 'All deals',
+    meta: 'Every deal, voided ones too',
+    icon: 'scroll'
+  }, {
+    id: 'summary',
+    title: 'Period summary',
+    meta: 'Volume, fees and earnings',
+    icon: 'bars'
+  }, {
+    id: 'fintrac',
+    title: 'Large cash report',
+    icon: 'shield'
+  }, {
+    id: 'pnl',
+    title: 'Profit and loss',
+    meta: 'Revenue and sales tax estimate',
+    icon: 'coins'
+  }, {
+    id: 'revenue',
+    title: 'Earnings by teller',
+    meta: 'Who earned what',
+    icon: 'coins'
+  }, {
+    id: 'kyc',
+    title: 'Clients and ID',
+    meta: 'Each client and their ID status',
+    icon: 'id'
+  }];
+  const RANGES = [['today', 'Today'], ['7d', 'Past 7 days'], ['30d', 'Past 30 days'], ['90d', 'This quarter'], ['365d', 'This year'], ['all', 'All time']];
+
+  /* The print view is the server snapshot, so a phone-width page and
+     the A4 page say the same thing. Teller and Owner are separate
+     blocks: one row clips the second name. */
+  function printSheet(m) {
+    const snap = m.snap || {};
+    const figure = v => !v ? '' : v.words || v.text + (v.ccy ? ' ' + v.ccy : '') + (v.sub ? ' · ' + v.sub : '');
+    const line = (label, v) => '<div class="ln"><b>' + esc(label) + '</b><span>' + esc(figure(v)) + '</span></div>';
+    const rows = m.currencies.map(c => '<div class="ln"><b>' + esc(c.ccy) + '</b><span>' + esc(c.amount.words || c.amount.text + ' ' + c.amount.ccy) + (c.badge ? ' · ' + esc(c.badge) : '') + (c.variance ? ' ' + esc(c.variance) : '') + (c.expected ? ' · ' + esc(c.expected) : '') + '</span></div>').join('');
+    const when = [m.date, snap.signedAt ? phoneTime(snap.signedAt, snap.timeZone || m.zone) : ''].filter(Boolean).join(', ');
+    const volumes = (snap.volumeByCurrency || []).map(row => '<div class="ln"><b>' + esc(row.currency) + '</b><span>' + esc(shown(row.amount, row.currency) || row.amount + ' ' + row.currency) + '</span></div>').join('');
+    return '<h1>' + esc(m.shop || 'End of day') + '</h1><p>End of day</p><p>' + esc([when, m.till, m.who].filter(Boolean).join(' · ')) + '</p>' + line('Deals', m.deals) + line('Taken in', m.taken) + volumes + (m.canClose ? line('Earned', m.earned) : '') + line('In the drawer', m.drawer) + '<h2>Drawer at close</h2>' + rows + '<h2>Checks at close</h2>' + '<div class="ln"><b>' + esc(m.singleTitle) + '</b><span>' + esc(m.singleDeals) + '</span></div>' + '<div class="ln"><b>LCTR, 24-hour total</b><span>' + esc(m.lctr) + '</span></div>' + '<div class="ln"><b>Clients missing ID</b><span>' + esc(m.gaps) + '</span></div>' + '<p class="fine">' + esc(m.kept) + '</p>' + '<div class="sign"><b>Teller</b><span>________________________________</span></div>' + '<div class="sign"><b>Owner</b><span>________________________________</span></div>';
+  }
+  function PhoneReports(p) {
+    const [view, setView] = useState('home');
+    const [docId, setDocId] = useState(null);
+    const [gate, setGate] = useState(false);
+    const [phase, setPhase] = useState('idle');
+    const [toast, setToast] = useState('');
+    const [saveError, setSaveError] = useState('');
+    const swiped = useRef(false);
+    const [slow, setSlow] = useState(false);
+    const [savedView, setSavedView] = useState(null);
+    const [histTick, setHistTick] = useState(0);
+    const last = useRef(null);
+    const lock = useRef(false);
+    const signKey = useRef('');
+    const scroll = useRef(0);
+    const sessionId = p.tillDay.session && p.tillDay.session.sessionId || '';
+    const m = todayModel(p, last);
+    if (!m.loadingDeals && !m.loadingDrawer && !m.failed && m.snap) {
+      last.current = {
+        snap: m.snap,
+        at: new Date()
+      };
+    }
+    const loading = m.loadingDeals || m.loadingDrawer;
+    useEffect(() => {
+      if (!loading) {
+        setSlow(false);
+        return;
+      }
+      const t = setTimeout(() => setSlow(true), 3000);
+      return () => clearTimeout(t);
+    }, [loading]);
+    useEffect(() => {
+      if (p.openSignal && p.openSignal.id === 'endofday' && (p.allowed || []).includes('endofday')) setView('sheet');
+    }, [p.openSignal && p.openSignal.n]);
+    useEffect(() => {
+      lock.current = false;
+      setPhase('idle');
+    }, [view]);
+    useEffect(() => {
+      signKey.current = '';
+    }, [sessionId]);
+    /* Other reports are built with 10px captions. The phone sweep
+       wants 12px. This runs before paint, on the document only. */
+    useLayoutEffect(() => {
+      if (view !== 'doc') return;
+      const root = document.getElementById('cdos-phone-doc');
+      if (!root) return;
+      root.querySelectorAll('*').forEach(el => {
+        const px = parseFloat(getComputedStyle(el).fontSize);
+        if (px > 0 && px < 12) el.style.fontSize = '12px';
+      });
+    }, [view, docId, p.range]);
+    useEffect(() => {
+      if (!toast) return;
+      const t = setTimeout(() => setToast(''), 4000);
+      return () => clearTimeout(t);
+    }, [toast]);
+    const body = () => {
+      const n = document.querySelector('#desktop .win.show.active .win-body');
+      return n || null;
+    };
+    const go = next => {
+      const b = body();
+      if (b && view === 'home') scroll.current = b.scrollTop;
+      setView(next);
+      if (next === 'home') requestAnimationFrame(() => {
+        const b2 = body();
+        if (b2) b2.scrollTop = scroll.current;
+      });
+    };
+    const openDoc = id => {
+      p.setRange('today');
+      setDocId(id);
+      go('doc');
+    };
+    const openCount = () => {
+      setGate(false);
+      if (p.onOpenTill) p.onOpenTill();
+    };
+    /* The grab is the only drag handle. A pointer capture on the
+       whole sheet steals the click from the buttons under it.
+       The release is heard on the window: once the pointer leaves
+       the handle, the handle itself never sees pointerup. */
+    const onSheetDown = e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const startY = e.clientY;
+      swiped.current = false;
+      const finish = ev => {
+        window.removeEventListener('pointerup', finish, true);
+        window.removeEventListener('mouseup', finish, true);
+        const y = ev.clientY;
+        if (typeof y === 'number' && y - startY > 48) {
+          swiped.current = true;
+          setGate(false);
+        }
+      };
+      window.addEventListener('pointerup', finish, true);
+      window.addEventListener('mouseup', finish, true);
+    };
+    function remember(kind, html) {
+      const now = Date.now();
+      writeHist({
+        key: 'R' + now.toString(36),
+        ms: now,
+        type: kind,
+        title: kind === 'endofday' ? 'End of day' : (ROWS.find(r => r.id === kind) || {}).title || kind,
+        icon: 'receipt',
+        tone: '#46506B',
+        range: p.range || 'today',
+        rangeLabel: 'Today',
+        at: phoneTime(new Date(), zoneOf(p)),
+        n: m.deals && m.deals.text ? Number(m.deals.text) : 0,
+        html
+      });
+      const node = document.getElementById('phone-rep-print');
+      if (!node) throw new Error('The print view is not on this screen.');
+      node.innerHTML = html;
+      setHistTick(t => t + 1);
+    }
+    function finishSave(kind) {
+      setPhase('saved');
+      setToast(kind === 'endofday' ? 'End of day saved. Find it in Saved reports.' : 'Saved. Find it in Saved reports.');
+      setGate(false);
+      try {
+        window.print();
+      } catch (err) {
+        setSaveError('Saved. The print view did not open. ' + (err && err.message ? err.message : ''));
+      }
+    }
+    /* lock is set before the first await. Two clicks in the same
+       turn both see it; taking it off sends the form twice. */
+    function save(kind) {
+      if (lock.current || loading || m.failed) return;
+      if (kind === 'endofday') {
+        if (!m.canClose || !m.sessionOpen || m.alreadySigned) return;
+        if (m.notCounted && !gate) {
+          setGate(true);
+          return;
+        }
+      }
+      lock.current = true;
+      setPhase('saving');
+      setSaveError('');
+      if (kind !== 'endofday') {
+        try {
+          const html = (document.getElementById('cdos-phone-doc') || {}).innerHTML || '';
+          if (!html) throw new Error('Nothing to save yet.');
+          remember(kind, html);
+          finishSave(kind);
+        } catch (err) {
+          lock.current = false;
+          setPhase('idle');
+          setSaveError(err && err.message ? err.message : 'Could not save.');
+        }
+        return;
+      }
+      const backend = window.CDOS.Backend;
+      if (!backend || !backend.saveCloseOfDay) {
+        lock.current = false;
+        setPhase('idle');
+        setSaveError('The desk is not signed in.');
+        return;
+      }
+      if (!signKey.current) signKey.current = window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'sign-' + Date.now();
+      backend.saveCloseOfDay({
+        idempotencyKey: signKey.current,
+        notCounted: !!m.notCounted
+      }).then(saved => {
+        if (p.onSigned) p.onSigned(saved);
+        const signed = saved && saved.snapshot ? Object.assign({}, m, {
+          snap: saved.snapshot,
+          shop: saved.snapshot.shopName || m.shop,
+          date: phoneDate(saved.snapshot.businessDate, saved.snapshot.timeZone),
+          notCounted: !!saved.snapshot.notCounted,
+          drawer: saved.snapshot.notCounted ? words('Not counted yet') : m.drawer
+        }) : m;
+        remember('endofday', printSheet(signed));
+        finishSave('endofday');
+      }).catch(err => {
+        lock.current = false;
+        setPhase('idle');
+        setSaveError(err && err.message ? err.message : 'Could not save.');
+      });
+    }
+    let hist = [],
+      histError = '';
+    try {
+      hist = readHist();
+    } catch (e) {
+      histError = e.message;
+    }
+    void histTick;
+    const allowed = p.allowed || [];
+    const visible = ROWS.filter(r => allowed.includes(r.id));
+    const hidden = ROWS.length - visible.length + (allowed.includes('endofday') ? 0 : 1);
+    const showSavedRow = allowed.length > 2;
+    const ready = !loading && !m.failed;
+    const uncounted = !!m.notCounted;
+    const endOfDay = view === 'home' || view === 'sheet';
+    const showSave = !endOfDay || p.tillDay.loading || p.closeDay && p.closeDay.loading || m.sessionOpen && m.canClose;
+    const signed = m.alreadySigned || phase === 'saved';
+    const buttonLabel = phase === 'saving' ? 'Saving...' : signed ? 'Saved' : view === 'sheet' ? 'Save end of day' : view === 'doc' ? 'Save and print' : "Save today's end of day";
+    const reason = loading ? "Ready once today's figures load." : m.failed ? 'Could not load today\'s figures.' : saveError || '';
+    const Phone = window.CDOS.Phone;
+    if (!Phone || !Phone.ListRow || !Phone.ListSection || !Phone.StickyAction) throw new Error('Phone shell did not load.');
+    const Row = Phone.ListRow;
+    const Section = Phone.ListSection;
+    const blocked = !ready || phase !== 'idle' || gate || endOfDay && m.alreadySigned;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "phone-reports",
+      "data-phone-reports": true,
+      "data-app": "reports",
+      "data-state": loading ? 'loading' : m.failed ? 'error' : 'ready',
+      "data-view": view
+    }, view !== 'home' && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "crumb",
+      onClick: () => {
+        setGate(false);
+        if (view === 'saved-one') {
+          setView('saved');
+          return;
+        }
+        setSavedView(null);
+        go('home');
+      }
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "16",
+      height: "16",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "m15 6-6 6 6 6"
+    })), "Reports"), view === 'home' && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "crumb",
+      onClick: () => p.onShowMore && p.onShowMore()
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "16",
+      height: "16",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "m15 6-6 6 6 6"
+    })), "More"), slow && loading && /*#__PURE__*/React.createElement("div", {
+      className: "banner info",
+      role: "status"
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Waking the server"), "This can take up to a minute. Keep this screen open.")), m.failed && /*#__PURE__*/React.createElement("div", {
+      className: "banner err",
+      role: "alert"
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, "Could not load today's figures. Check the connection and try again."), m.staleAt ? /*#__PURE__*/React.createElement("span", {
+      className: "sub"
+    }, "Last loaded ", phoneTime(m.staleAt, zoneOf(p))) : null)), saveError && /*#__PURE__*/React.createElement("div", {
+      className: "banner err",
+      role: "alert"
+    }, saveError), histError && /*#__PURE__*/React.createElement("div", {
+      className: "banner err",
+      role: "alert"
+    }, histError), view === 'home' && /*#__PURE__*/React.createElement("div", {
+      "data-reports-home": true
+    }, /*#__PURE__*/React.createElement("h1", null, "Reports"), /*#__PURE__*/React.createElement("p", {
+      className: "page-sub"
+    }, "Today, ", m.date, m.branch ? ' · ' + m.branch : ''), /*#__PURE__*/React.createElement("section", {
+      className: "card eod",
+      "aria-label": "Today's end of day"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "eod-h"
+    }, /*#__PURE__*/React.createElement("h2", null, "Today's end of day"), m.badge ? /*#__PURE__*/React.createElement("span", {
+      className: 'badge ' + (m.badge === 'Drawer counted' ? 'pos' : 'warn')
+    }, m.badge) : /*#__PURE__*/React.createElement("span", {
+      className: "sk sk-badge"
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "stats four"
+    }, /*#__PURE__*/React.createElement(Stat, {
+      label: "Deals",
+      v: m.deals
+    }), /*#__PURE__*/React.createElement(Stat, {
+      label: "Taken in",
+      v: m.taken
+    }), m.canClose || loading ? /*#__PURE__*/React.createElement(Stat, {
+      label: "Earned",
+      v: m.earned
+    }) : null, /*#__PURE__*/React.createElement(Stat, {
+      label: "In the drawer",
+      v: m.drawer
+    })), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "open",
+      onClick: () => go('sheet')
+    }, "See the full sheet", /*#__PURE__*/React.createElement(Caret, null))), /*#__PURE__*/React.createElement("div", {
+      className: "sec-label"
+    }, "Other reports"), /*#__PURE__*/React.createElement("section", {
+      className: "list"
+    }, visible.map(r => /*#__PURE__*/React.createElement(ReportRow, {
+      key: r.id,
+      icon: r.icon,
+      title: r.title,
+      meta: r.id === 'fintrac' ? m.largeMeta : r.meta,
+      onClick: () => openDoc(r.id)
+    })), showSavedRow && /*#__PURE__*/React.createElement(ReportRow, {
+      icon: "scroll",
+      title: "Saved reports",
+      meta: "Every report you saved",
+      value: histError ? '' : String(hist.length),
+      onClick: () => go('saved')
+    })), hidden > 0 && /*#__PURE__*/React.createElement("p", {
+      className: "ask"
+    }, "Ask an owner for other reports"), m.failed && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn btn-secondary",
+      onClick: () => p.onRetry && p.onRetry()
+    }, "Try again")), view === 'sheet' && /*#__PURE__*/React.createElement("div", {
+      "data-reports-sheet": true
+    }, /*#__PURE__*/React.createElement("h1", null, "End of day"), /*#__PURE__*/React.createElement("p", {
+      className: "page-sub"
+    }, "Today, ", m.date, m.till ? ' · ' + m.till : '', m.who ? ' · ' + m.who : ''), /*#__PURE__*/React.createElement("section", {
+      className: "stats four"
+    }, /*#__PURE__*/React.createElement(Stat, {
+      label: "Deals",
+      v: m.deals
+    }), /*#__PURE__*/React.createElement(Stat, {
+      label: "Taken in",
+      v: m.taken
+    }), m.canClose || loading ? /*#__PURE__*/React.createElement(Stat, {
+      label: "Earned",
+      v: m.earned
+    }) : null, /*#__PURE__*/React.createElement(Stat, {
+      label: "Large cash deals",
+      v: loading ? null : m.large
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "phone-shell"
+    }, /*#__PURE__*/React.createElement("section", {
+      className: "phone-section"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "phone-sec rep-drawer-sec"
+    }, /*#__PURE__*/React.createElement("span", null, uncounted ? 'Drawer at close · Not counted yet' : 'Drawer at close'), uncounted ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "rep-count-now",
+      onClick: openCount
+    }, "Count now") : m.drawer && m.drawer.sub ? /*#__PURE__*/React.createElement("span", {
+      className: "phone-sec-meta"
+    }, m.drawer.sub) : null), /*#__PURE__*/React.createElement("div", {
+      className: "phone-list"
+    }, m.currencies.length === 0 && /*#__PURE__*/React.createElement("p", {
+      className: "empty-line"
+    }, loading ? 'Reading the drawer…' : 'Not counted yet'), m.currencies.map(c => /*#__PURE__*/React.createElement(Row, {
+      key: c.ccy,
+      title: c.ccy,
+      subtitle: [c.variance, c.expected].filter(Boolean).join(' · ') || undefined,
+      amount: rowAmount(c.amount),
+      badge: c.badge ? {
+        label: c.badge,
+        tone: c.tone
+      } : undefined
+    })))), /*#__PURE__*/React.createElement(Section, {
+      title: "Checks at close",
+      meta: "This till"
+    }, /*#__PURE__*/React.createElement(Row, {
+      className: "rep-check",
+      title: m.singleTitle,
+      subtitle: "One deal, this till",
+      amount: loading ? '' : m.singleDeals
+    }), /*#__PURE__*/React.createElement(Row, {
+      className: "rep-check",
+      title: "LCTR, 24-hour total",
+      subtitle: "Same customer, same day",
+      amount: loading ? '' : m.lctr
+    }), /*#__PURE__*/React.createElement(Row, {
+      className: "rep-check",
+      title: "Clients missing ID",
+      subtitle: "Clients who dealt today",
+      amount: loading ? '' : m.gaps
+    })))), view === 'doc' && /*#__PURE__*/React.createElement("div", {
+      "data-reports-doc": true
+    }, /*#__PURE__*/React.createElement("h1", null, (ROWS.find(r => r.id === docId) || {}).title || 'Report'), /*#__PURE__*/React.createElement("div", {
+      className: "chips",
+      role: "tablist"
+    }, RANGES.map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      key: id,
+      className: 'chip' + (p.range === id ? ' on' : ''),
+      onClick: () => p.setRange(id)
+    }, label))), /*#__PURE__*/React.createElement("div", {
+      className: "phone-rep-doc",
+      id: "cdos-phone-doc"
+    }, p.renderDoc(docId))), view === 'saved' && /*#__PURE__*/React.createElement("div", {
+      "data-reports-saved": true
+    }, /*#__PURE__*/React.createElement("h1", null, "Saved reports"), hist.length === 0 && /*#__PURE__*/React.createElement("p", {
+      className: "empty-line"
+    }, "Nothing saved yet. A sheet is kept when you tap save."), /*#__PURE__*/React.createElement("section", {
+      className: "list"
+    }, hist.map(e => /*#__PURE__*/React.createElement(ReportRow, {
+      key: e.key,
+      icon: "receipt",
+      title: e.title || 'Report',
+      meta: e.at || '',
+      onClick: () => {
+        setSavedView(e);
+        go('saved-one');
+      }
+    })))), view === 'saved-one' && savedView && /*#__PURE__*/React.createElement("div", {
+      className: "phone-rep-doc",
+      dangerouslySetInnerHTML: {
+        __html: savedView.html || ''
+      }
+    }), gate && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "rep-scrim",
+      "data-reports-uncounted": true,
+      onPointerDown: e => e.stopPropagation(),
+      onMouseDown: e => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) setGate(false);
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "rep-sheet",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-labelledby": "rep-count-title",
+      onMouseDown: e => e.stopPropagation(),
+      onClickCapture: e => {
+        if (!swiped.current) return;
+        swiped.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "rep-grab-hit",
+      onPointerDown: onSheetDown
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "rep-grab",
+      "aria-hidden": "true"
+    })), /*#__PURE__*/React.createElement("h2", {
+      id: "rep-count-title"
+    }, "The drawer is not counted yet"), /*#__PURE__*/React.createElement("p", null, m.requireCount ? 'Count it first. This desk requires a count before closing the day.' : 'Count it first, or save without a count.'), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "phone-sticky-btn",
+      onClick: openCount
+    }, "Count the drawer"), !m.requireCount && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn btn-secondary",
+      onClick: () => save('endofday')
+    }, "Save without a count"))), document.body), view !== 'saved' && view !== 'saved-one' && /*#__PURE__*/React.createElement("div", {
+      className: "rep-cta"
+    }, toast &&
+    /*#__PURE__*/
+    /* TODO: switch this note to Toast once Settings merges. */
+    React.createElement("div", {
+      className: "rep-toast",
+      role: "status",
+      "data-reports-toast": true
+    }, /*#__PURE__*/React.createElement("span", null, toast), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        setToast('');
+        go('saved');
+      }
+    }, "View")), showSave ? /*#__PURE__*/React.createElement("div", {
+      "data-reports-save": true
+    }, /*#__PURE__*/React.createElement(Phone.StickyAction, {
+      label: buttonLabel,
+      disabled: blocked,
+      disabledReason: blocked && !signed ? reason : '',
+      onClick: () => save(view === 'doc' ? docId : 'endofday')
+    })) : endOfDay && !loading ? /*#__PURE__*/React.createElement("p", {
+      className: "note"
+    }, m.canClose ? 'Open the till before saving the day.' : 'Ask an owner to close the day.') : null, view === 'sheet' && ready && /*#__PURE__*/React.createElement("p", {
+      className: "note"
+    }, m.kept)), /*#__PURE__*/React.createElement("div", {
+      id: "phone-rep-print",
+      className: "phone-rep-print"
+    }));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    PhoneReports
+  });
+})();
+
 /* ---- os-src/cdos-reports.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Reports
@@ -49778,9 +50834,31 @@ ${snap}`;
   };
   // booked spread per deal — exact when two-side priced, else the live-mid estimate
   const spreadOf = r => dealMargin(r);
-  const stampNow = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  /* Phone documents say "Oct 12, 2026, 2:30 PM". The desk print keeps
+     the 24-hour stamp it already had. branchZone is the session's
+     zone once the till answers. Until then it is the zone the desk
+     is configured with. The formatter does not assume Toronto, so
+     an instant with no zone here would be an em dash. */
+  let phoneDocs = false;
+  let branchZone = '';
+  const stampNow = () => {
+    if (!phoneDocs) return new Date().toLocaleString('en-CA', {
+      hour12: false
+    }).replace(',', '');
+    const zone = branchZone || undefined;
+    const date = window.CDOS.formatPhoneDate(new Date(), zone);
+    const time = window.CDOS.formatPhoneTime(new Date(), zone);
+    if (!date || !time || date === '\u2014' || time === '\u2014') return '';
+    return date + ', ' + time;
+  };
+  /* Intl currency style prints "$". A phone document names the code. */
+  const moneyLabel = (n, c) => phoneDocs && window.CDOS.formatPhoneMoney ? window.CDOS.formatPhoneMoney(n, c) || '' : fmt(n, c);
+  const dealWhen = r => {
+    if (!phoneDocs) return null;
+    const date = window.CDOS.formatPhoneDate(r.date, branchZone || undefined) || '';
+    const time = window.CDOS.formatPhoneTime(r.time, branchZone || undefined) || '';
+    return [date, time].filter(Boolean).join(', ');
+  };
   /* The ledger records WHO posted a deal as a principal id, tenant-scoped
      ("tnt-yorkfx:a.singh"). Earnings by teller is the book's answer, so the
      id is the book's; turning it back into a person is presentation, and
@@ -49802,7 +50880,7 @@ ${snap}`;
     style: {
       color: CD.faint
     }
-  }, why ? '— ' + why : '—') : fmt(value, currency);
+  }, why ? '— ' + why : '—') : moneyLabel(value, currency);
   const RANGES = [['today', 'Today', 0], ['7d', 'Past 7 days', 7], ['30d', 'Past 30 days', 30], ['90d', 'This quarter', 90], ['365d', 'This year', 365], ['all', 'All time', null]];
   const REPORTS = [{
     id: 'endofday',
@@ -49901,10 +50979,14 @@ ${snap}`;
     line2: 'Registered Money Services Business'
   };
   let DOC_SCOPE = '';
+  /* `generated` is computed by the caller while phoneDocs is still set.
+     DocHead renders after that flag is cleared, so a stampNow() call
+     in here would be the desk's 24-hour clock. */
   function DocHead({
     title,
     subtitle,
-    rangeLabel
+    rangeLabel,
+    generated
   }) {
     const biz = DOC_BIZ;
     return /*#__PURE__*/React.createElement("div", {
@@ -49985,7 +51067,7 @@ ${snap}`;
         color: CD.ink,
         fontSize: 12
       }
-    }, rangeLabel), /*#__PURE__*/React.createElement("div", null, "Generated ", stampNow()), /*#__PURE__*/React.createElement("div", null, biz.line2)));
+    }, rangeLabel), /*#__PURE__*/React.createElement("div", null, "Generated ", generated), /*#__PURE__*/React.createElement("div", null, biz.line2)));
   }
   function DocFoot() {
     return /*#__PURE__*/React.createElement("div", {
@@ -50194,7 +51276,10 @@ ${snap}`;
     day,
     station,
     branches,
-    openSignal
+    openSignal,
+    onOpenTill,
+    onShowMore,
+    countReturn
   }) {
     const [range, setRange] = useState('today');
     /* The trading day and the jurisdiction pack, from the server. Reports
@@ -50203,6 +51288,9 @@ ${snap}`;
        threshold sentence quoting the wrong country's number is a document
        somebody keeps for five years. */
     const deskFacts = useDeskFacts();
+    /* The session overwrites this when it names a zone. A document
+       opened before that answer still has to name the shop's zone. */
+    if (!branchZone && settings && settings.timezone) branchZone = String(settings.timezone);
     const limit = useMemo(() => limitOf(settings), [settings, deskFacts]);
     const regime = useMemo(() => authorityOf(settings), [settings, deskFacts]);
     /* WHAT THE DESK IS HOLDING AT CLOSE — the ledger's figure.
@@ -50245,6 +51333,37 @@ ${snap}`;
       counts: {},
       error: ''
     });
+    /* Earnings and the signed sheet. A teller is refused, so this
+       stays empty for them instead of arriving with the numbers. */
+    const [closeDay, setCloseDay] = useState({
+      loading: true,
+      signoff: null,
+      preview: null,
+      forbidden: false,
+      error: ''
+    });
+    /* Phone is a different screen, chosen by width. The desk tree is
+       not mounted under 430px, and this tree is not mounted above it,
+       so the two cannot restyle each other. */
+    const [phone, setPhone] = useState(() => !!(window.matchMedia && window.matchMedia('(max-width: 430px)').matches));
+    const [reload, setReload] = useState(0);
+    const wasCounting = useRef(false);
+    /* Coming back from the count the phone just opened. The session
+       is read again so the drawer line is the count that was saved. */
+    useEffect(() => {
+      if (wasCounting.current && !countReturn) setReload(n => n + 1);
+      wasCounting.current = !!countReturn;
+    }, [countReturn]);
+    useEffect(() => {
+      if (!window.matchMedia) return;
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhone(mq.matches);
+      apply();
+      if (mq.addEventListener) mq.addEventListener('change', apply);else mq.addListener(apply);
+      return () => {
+        if (mq.removeEventListener) mq.removeEventListener('change', apply);else mq.removeListener(apply);
+      };
+    }, []);
     useEffect(() => {
       const backend = window.CDOS.Backend;
       if (!backend) {
@@ -50264,9 +51383,61 @@ ${snap}`;
           counts: {},
           error: 'not signed in to the ledger'
         });
+        setCloseDay({
+          loading: false,
+          signoff: null,
+          preview: null,
+          forbidden: false,
+          error: 'not signed in to the ledger'
+        });
         return;
       }
       let live = true;
+      /* A retry (the phone's Try again) asks again. The first load
+         already starts from loading: true, so a wide window does not
+         flash back to "reading the ledger" when the desk facts settle. */
+      if (reload) {
+        setHeld(h => ({
+          ...h,
+          loading: true,
+          error: ''
+        }));
+        setDayBook(b => ({
+          ...b,
+          loading: true,
+          error: ''
+        }));
+        setTillDay(t => ({
+          ...t,
+          loading: true,
+          error: ''
+        }));
+        setCloseDay(c => ({
+          ...c,
+          loading: true,
+          error: ''
+        }));
+      }
+      backend.loadCloseOfDay().then(answer => {
+        if (!live) return;
+        setCloseDay({
+          loading: false,
+          signoff: answer && answer.signoff || null,
+          preview: answer && answer.preview || null,
+          forbidden: false,
+          error: ''
+        });
+      }).catch(error => {
+        if (!live) return;
+        const forbidden = !!(error && (error.status === 403 || error.code === 'AUTHORIZATION_DENIED' || error.code === 'SCOPE_DENIED'));
+        setCloseDay({
+          loading: false,
+          signoff: null,
+          preview: null,
+          forbidden,
+          error: forbidden ? '' : error && error.message || 'the ledger could not be reached'
+        });
+      });
       backend.loadLedgerPosition().then(position => {
         if (live) setHeld({
           loading: false,
@@ -50280,38 +51451,63 @@ ${snap}`;
           error: error && error.message || 'the ledger could not be reached'
         });
       });
-      backend.loadLedgerSummary(window.CDOS.businessDayWindow(1)).then(summary => {
-        if (live) setDayBook({
+      /* The session first, then the book for the window the session
+         names. The two used to start together, and the book was asked
+         for a window this browser built from its own midnight. Just
+         after midnight, in a zone ahead of UTC, that window was
+         yesterday and the sheet printed 0. This file does not build
+         that window. */
+      backend.loadTillSession().then(answer => {
+        if (!live) return null;
+        const session = answer && answer.session || null;
+        const day = answer && answer.day || null;
+        setTillDay({
+          loading: false,
+          session,
+          day,
+          counts: answer && answer.latestCounts || {},
+          error: ''
+        });
+        if (day && day.timeZone) branchZone = day.timeZone;
+        if (day && day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(day.timeZone);
+        if (session && session.businessDate) window.CDOS.setBusinessDate(session.businessDate);
+        if (!day || !day.from || !day.to) {
+          setDayBook({
+            loading: false,
+            summary: null,
+            error: session ? 'the till session did not name its trading day' : 'no till session'
+          });
+          return null;
+        }
+        return backend.loadLedgerSummary({
+          from: day.from,
+          to: day.to
+        });
+      }).then(summary => {
+        if (live && summary) setDayBook({
           loading: false,
           summary,
           error: ''
         });
       }).catch(error => {
-        if (live) setDayBook({
+        if (!live) return;
+        const message = error && error.message || 'the ledger could not be reached';
+        setDayBook({
           loading: false,
           summary: null,
-          error: error && error.message || 'the ledger could not be reached'
+          error: message
         });
-      });
-      backend.loadTillSession().then(answer => {
-        if (live) setTillDay({
-          loading: false,
-          session: answer && answer.session || null,
-          counts: answer && answer.latestCounts || {},
-          error: ''
-        });
-      }).catch(error => {
-        if (live) setTillDay({
+        setTillDay(current => current.session || current.error ? current : {
           loading: false,
           session: null,
           counts: {},
-          error: error && error.message || 'the ledger could not be reached'
+          error: message
         });
       });
       return () => {
         live = false;
       };
-    }, [deskFacts]);
+    }, [deskFacts, reload]);
     const [active, setActive] = useState(null);
     /* THE PERIOD'S OWN BOOK.
         Volume, fees and earnings on every other report were summed here in
@@ -50347,6 +51543,10 @@ ${snap}`;
     const canGen = id => allowed.includes(id);
     // open a specific report on request (e.g. the Till's End-of-Day Sign-Off button)
     useEffect(() => {
+      /* On a phone the sheet opens inside PhoneReports. Setting
+         `active` here would also snapshot the report, which a phone
+         does only when the cashier taps save. */
+      if (phone) return;
       if (openSignal && openSignal.id && canGen(openSignal.id)) {
         if (openSignal.id === 'endofday') {
           setRange('today');
@@ -50360,7 +51560,7 @@ ${snap}`;
         }
         setActive(openSignal.id);
       }
-    }, [openSignal && openSignal.n]);
+    }, [openSignal && openSignal.n, phone]);
     // brand every report as the exchange house's own document
     DOC_BIZ = {
       name: settings && (settings.operatingName || settings.bizName) || 'York Currency Exchange',
@@ -50586,7 +51786,7 @@ ${snap}`;
     // Every freshly generated report is snapshotted (rendered HTML frozen) into an
     // immutable history log — surfaced in the Compliance ▸ History tab, never silently changing.
     useEffect(() => {
-      if (!active) return;
+      if (phone || !active) return;
       const t = setTimeout(() => {
         const node = document.getElementById('cdos-report-doc');
         if (!node) return;
@@ -50616,7 +51816,7 @@ ${snap}`;
         } catch (e) {}
       }, 140);
       return () => clearTimeout(t);
-    }, [active, range]);
+    }, [active, range, phone]);
 
     /* A CSV cell for a figure the ledger has no answer for. Blank, never
        "0.00" — a spreadsheet is where an absent figure most easily becomes
@@ -50653,7 +51853,25 @@ ${snap}`;
 
     /* ---------- the five documents ---------- */
     const renderDoc = id => {
+      phoneDocs = !!phone;
+      try {
+        return renderDocNow(id);
+      } finally {
+        phoneDocs = false;
+      }
+    };
+    const renderDocNow = id => {
       const book = periodBook.summary;
+      /* Taken while phoneDocs is set. DocHead is a child, so it
+         renders after renderDoc clears the flag. */
+      const generated = stampNow();
+      /* fmt() is Intl currency style and prints "$". A phone document
+         names the code: "10,000.00 CAD". */
+      const reportLine = () => {
+        if (limit.amount == null || !limit.currency) return limit.label;
+        if (!(phoneDocs && window.CDOS.formatPhoneMoney)) return limit.label;
+        return window.CDOS.formatPhoneMoney(limit.amount, limit.currency) || limit.label;
+      };
       /* Why a figure on this document is a dash, in one short line. The
          order matters: "we could not reach the book" and "the book has
          nothing for this period" are different answers and a reader acting
@@ -50688,9 +51906,13 @@ ${snap}`;
            replaces "Day 1", which was a counter kept in the browser. */
         const sheetDate = tillDay.session && tillDay.session.businessDate || businessDate();
         const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
+        /* Noon UTC, then formatted in UTC, so the heading is the calendar
+           date the server named. Local midnight would move it a day on a
+           browser whose zone is not the branch's. */
         const longDate = (() => {
           try {
-            return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', {
+            return new Date(sheetDate + 'T12:00:00Z').toLocaleDateString('en-CA', {
+              timeZone: 'UTC',
               weekday: 'long',
               month: 'long',
               day: 'numeric',
@@ -50704,7 +51926,8 @@ ${snap}`;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "End-of-Day Sign-Off",
           subtitle: `${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`,
-          rangeLabel: effRangeLabel
+          rangeLabel: effRangeLabel,
+          generated: generated
         }), /*#__PURE__*/React.createElement("div", {
           style: {
             display: 'flex',
@@ -50743,16 +51966,16 @@ ${snap}`;
             sub: d ? d.reversed ? `${d.reversed} voided` : 'none voided' : whyNoDay
           }, {
             label: 'Pay-in volume',
-            value: d && d.volumeHome != null ? fmt(d.volumeHome, homeCcy) : '—',
+            value: d && d.volumeHome != null ? moneyLabel(d.volumeHome, homeCcy) : '—',
             sub: d && d.volumeHome != null ? `in ${homeCcy}` : whyNoDay
           }, {
             label: 'Earned today',
-            value: d && d.earningsHome != null ? fmt(d.earningsHome, homeCcy) : '—',
+            value: d && d.earningsHome != null ? moneyLabel(d.earningsHome, homeCcy) : '—',
             accent: CD.green,
             sub: d && d.earningsHome != null ? 'commission + realized margin' : whyNoDay
           }, {
             label: 'In the drawer',
-            value: totalCashHome == null ? '—' : fmt(totalCashHome, homeCcy),
+            value: totalCashHome == null ? '—' : moneyLabel(totalCashHome, homeCcy),
             sub: totalCashHome == null ? held.error || (unvalued.length ? `no board rate for ${unvalued.join(', ')}` : 'no ledger balances for this drawer') : `the ledger’s ${homeCcy} value at close`
           }]
         }), /*#__PURE__*/React.createElement(Card, {
@@ -50816,7 +52039,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.home == null ? CD.faint : CD.ink
             }
-          }, x.home == null ? '— no board rate' : fmt(x.home, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, x.home == null ? '— no board rate' : moneyLabel(x.home, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -50865,14 +52088,14 @@ ${snap}`;
               fontWeight: 700,
               fontVariantNumeric: 'tabular-nums'
             }
-          }, totalCashHome == null ? '—' : fmt(totalCashHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, totalCashHome == null ? '—' : moneyLabel(totalCashHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontWeight: 700,
               fontVariantNumeric: 'tabular-nums'
             }
-          }, ctTot == null ? '—' : fmt(ctTot, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, ctTot == null ? '—' : moneyLabel(ctTot, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -50880,7 +52103,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: vTot == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, vTot == null ? '—' : Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, vTot == null ? '—' : Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + moneyLabel(vTot, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: tdS
           }));
         })())), /*#__PURE__*/React.createElement("div", {
@@ -50968,7 +52191,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${reportLine()}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`,
           tone: limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green
@@ -51053,7 +52276,8 @@ ${snap}`;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Profit & Loss",
           subtitle: `${branchName} · ${sub}`,
-          rangeLabel: effRangeLabel
+          rangeLabel: effRangeLabel,
+          generated: generated
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Gross revenue',
@@ -51230,7 +52454,8 @@ ${snap}`;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Period Summary",
           subtitle: sub,
-          rangeLabel: effRangeLabel
+          rangeLabel: effRangeLabel,
+          generated: generated
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Pay-in volume',
@@ -51305,10 +52530,10 @@ ${snap}`;
           }
         }, orDash(c.realizedPnlHome, homeCcy, c.pricedDeals ? 'partly priced' : 'no cost basis recorded'))))))), /*#__PURE__*/React.createElement(Cols, null, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Pay-in volume by currency"), /*#__PURE__*/React.createElement(Bars, {
           data: data.byCcy,
-          fmtV: v => fmt(v, homeCcy)
+          fmtV: v => moneyLabel(v, homeCcy)
         })), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Volume by transaction type"), /*#__PURE__*/React.createElement(Bars, {
           data: data.byType,
-          fmtV: v => fmt(v, homeCcy)
+          fmtV: v => moneyLabel(v, homeCcy)
         }))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
@@ -51366,7 +52591,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${reportLine()}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`,
           tone: limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green
@@ -51391,12 +52616,13 @@ ${snap}`;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: packTitle,
           subtitle: `${regime.largeLabel || 'Large-cash reports'}, structuring watch and KYC exceptions`,
-          rangeLabel: effRangeLabel
+          rangeLabel: effRangeLabel,
+          generated: generated
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Reportable deals',
             value: limit.amount == null ? '—' : data.reportable.length,
-            sub: limit.amount == null ? 'no reporting line set for this desk' : `≥ ${limit.label}`
+            sub: limit.amount == null ? 'no reporting line set for this desk' : `≥ ${reportLine()}`
           }, {
             label: `${regime.largeCode || 'Reports'} filed`,
             value: data.filed,
@@ -51418,7 +52644,7 @@ ${snap}`;
           }
         }, /*#__PURE__*/React.createElement(SecTitle, {
           n: `${data.reportable.length} record(s)`
-        }, "Reportable transactions \u2014 ", limit.code, " \u2265 ", limit.label)), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        }, "Reportable transactions \u2014 ", limit.code, " \u2265 ", reportLine())), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
         }, "Ref"), /*#__PURE__*/React.createElement("th", {
           style: thS
@@ -51568,7 +52794,7 @@ ${snap}`;
             lineHeight: 1.6,
             padding: '4px 2px'
           }
-        }, regime.windowKind === 'banking_day' ? null : regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : regime.windowKind === 'calendar_month' ? /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Cash reports', " flag a single cash amount more than ", limit.label, ". Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.") : regime.windowKind === 'banking_day' ? /*#__PURE__*/React.createElement(React.Fragment, null, "A single deal over ", limit.label, " is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", limit.label, " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(React.Fragment, null, " This pack is a working summary; verify each filing in the official portal.")), /*#__PURE__*/React.createElement(Attest, null));
+        }, regime.windowKind === 'banking_day' ? null : regime.authority ? /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for ", regime.authority, " record-keeping", regime.country ? ` (${regime.country})` : '', ".", ' ') : /*#__PURE__*/React.createElement(React.Fragment, null, "Prepared for record-keeping. This desk's regulator is not stated on its jurisdiction pack, so none is named here.", ' '), limit.amount == null ? /*#__PURE__*/React.createElement(React.Fragment, null, "No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.") : regime.windowKind === 'calendar_month' ? /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Cash reports', " flag a single cash amount more than ", reportLine(), ". Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.") : regime.windowKind === 'banking_day' ? /*#__PURE__*/React.createElement(React.Fragment, null, "A single deal over ", reportLine(), " is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.") : /*#__PURE__*/React.createElement(React.Fragment, null, regime.largeLabel || 'Large-cash reports', " are required for single cash amounts of ", reportLine(), " or more", regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : '', " \u2014 this desk's own line, from its jurisdiction pack."), regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(React.Fragment, null, " This pack is a working summary; verify each filing in the official portal.")), /*#__PURE__*/React.createElement(Attest, null));
       }
       if (id === 'revenue') {
         /* This document exists to answer "who earned what", and it used to
@@ -51585,7 +52811,8 @@ ${snap}`;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Revenue & Earnings",
           subtitle: `Commission plus the margin each disposal actually booked · ${homeCcy}`,
-          rangeLabel: effRangeLabel
+          rangeLabel: effRangeLabel,
+          generated: generated
         }), /*#__PURE__*/React.createElement(KpiRow, {
           items: [{
             label: 'Fees collected',
@@ -51754,7 +52981,8 @@ ${snap}`;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Transaction Register",
           subtitle: `${data.inP.length} record(s) including voided — the complete book`,
-          rangeLabel: effRangeLabel
+          rangeLabel: effRangeLabel,
+          generated: generated
         }), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
@@ -51808,11 +53036,11 @@ ${snap}`;
               ...tdS,
               whiteSpace: 'nowrap'
             }
-          }, r.date, " ", /*#__PURE__*/React.createElement("span", {
+          }, phoneDocs ? dealWhen(r) : /*#__PURE__*/React.createElement(React.Fragment, null, r.date, " ", /*#__PURE__*/React.createElement("span", {
             style: {
               color: CD.faint
             }
-          }, r.time)), /*#__PURE__*/React.createElement("td", {
+          }, r.time))), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               fontWeight: 500
@@ -51851,7 +53079,7 @@ ${snap}`;
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums'
             }
-          }, fmt(r.fee, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, moneyLabel(r.fee, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               color: CD.mute
@@ -51877,7 +53105,7 @@ ${snap}`;
             color: CD.faint,
             padding: '2px'
           }
-        }, limit.amount == null ? 'RPT = reportable — no reporting line is set for this desk, so nothing is flagged' : /*#__PURE__*/React.createElement(React.Fragment, null, "RPT = reportable \u2265 ", limit.label), " \xB7 STR = structuring watch \xB7 ID = KYC exception. Fees are shown in ", homeCcy, ". Voided records are retained, struck through, and never deleted."));
+        }, limit.amount == null ? 'RPT = reportable — no reporting line is set for this desk, so nothing is flagged' : /*#__PURE__*/React.createElement(React.Fragment, null, "RPT = reportable \u2265 ", reportLine()), " \xB7 STR = structuring watch \xB7 ID = KYC exception. Fees are shown in ", homeCcy, ". Voided records are retained, struck through, and never deleted."));
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
@@ -51890,7 +53118,8 @@ ${snap}`;
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Client & KYC Register",
           subtitle: `${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`,
-          rangeLabel: effRangeLabel
+          rangeLabel: effRangeLabel,
+          generated: generated
         }), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
@@ -52429,6 +53658,41 @@ ${snap}`;
         ...DEFAULT_ACCESS
       });
     };
+    if (phone) {
+      const View = window.CDOS.PhoneReports;
+      if (!View) throw new Error('Phone reports did not load.');
+      return /*#__PURE__*/React.createElement(View, {
+        rows: rows,
+        me: me,
+        settings: settings,
+        station: station,
+        branches: branches,
+        dayBook: dayBook,
+        held: held,
+        tillDay: tillDay,
+        closeDay: closeDay,
+        data: data,
+        homeCcy: homeCcy,
+        limit: limit,
+        allowed: allowed,
+        openSignal: openSignal,
+        range: range,
+        setRange: setRange,
+        canClose: !!(window.CDOS.ROLE_CAPS && window.CDOS.ROLE_CAPS[myRole] || {}).canCloseDay,
+        homeEquiv: homeEquiv,
+        renderDoc: renderDoc,
+        onRetry: () => setReload(n => n + 1),
+        onOpenTill: onOpenTill,
+        onShowMore: onShowMore,
+        onSigned: saved => setCloseDay({
+          loading: false,
+          signoff: saved,
+          preview: null,
+          forbidden: false,
+          error: ''
+        })
+      });
+    }
     if (manageAccess && canManage) {
       return /*#__PURE__*/React.createElement("div", {
         style: {
@@ -66259,6 +67523,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [ledgerClient, setLedgerClient] = useState(null);
     const [newDealSignal, setNewDealSignal] = useState(null); // {n} — request the Ledger to open a fresh New-Transaction modal
     const [reportOpen, setReportOpen] = useState(null); // {id, n} — open the Reports app focused on a specific report
+    const [countReturn, setCountReturn] = useState(false); // phone Reports opened the count and wants the desk back after Save count
     const openReport = id => {
       openApp('reports');
       setReportOpen({
@@ -66551,6 +67816,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           };
         });
       }
+      /* The sheet on screen belongs to the person who opened it.
+         Switching accounts closes Reports, even when the next person
+         could open it again. */
+      setWins(ws => ws.filter(w => String(w.id).split('~')[0] !== 'reports'));
       log('Signed in as', `${s.name} · ${s.role}`);
     };
     /* ---- transaction PIN gates (rules set in Settings › Employees) ---- */
@@ -66913,6 +68182,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }
     function openApp(id) {
       setPhoneMore(false);
+      if (id !== 'till') setCountReturn(false);
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) {
         openSettingsTab('billing');
         return;
@@ -68145,7 +69415,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             cashVersion: cashVersion,
             onSessionSync: onTillSession,
             ledgerScope: ledgerScope,
-            onSelectLedgerTill: selectLedgerTill
+            onSelectLedgerTill: selectLedgerTill,
+            returnAfterCount: countReturn,
+            onReturnFromCount: () => {
+              setCountReturn(false);
+              openApp('reports');
+            }
           });
         case 'vault':
           return /*#__PURE__*/React.createElement(Vault, {
@@ -68238,7 +69513,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             day: day,
             station: station,
             branches: branches,
-            openSignal: reportOpen
+            openSignal: reportOpen,
+            countReturn: countReturn,
+            onOpenTill: () => {
+              setCountReturn(true);
+              openApp('till');
+            },
+            onShowMore: () => setPhoneMore(true)
           });
         case 'pricing':
           return /*#__PURE__*/React.createElement(Pricing, {

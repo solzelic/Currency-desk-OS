@@ -35,8 +35,18 @@
    swallowing a 500, and the real assertion failed for a reason that had
    nothing to do with what was being tested.
    ============================================================ */
+import { createRequire } from "node:module";
+import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk, rendered } from "./fixtures";
 import type { Page } from "@playwright/test";
+
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as {
+  Pool: new (config: { connectionString: string }) => {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: { timezone: string }[] }>;
+    end: () => Promise<void>;
+  };
+};
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -57,14 +67,14 @@ function book(page: Page) {
 
 const bodyText = (page: Page) => page.locator("body").innerText();
 
-/* The window the desk asks the ledger for when it says "today" — built
-   from the till session's own business date, exactly as businessDayWindow()
-   does in cdos-base.jsx. Asked of the page so the test cannot drift from
-   the product's own idea of where a day starts. */
+/* The window the sign-off sheet asks the ledger for: the one the till
+   session names, computed in the branch zone. Not the browser's midnight. */
 async function todayWindow(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const w = window.CDOS.businessDayWindow(1);
-    return `?from=${encodeURIComponent(w.from)}&to=${encodeURIComponent(w.to)}`;
+  return page.evaluate(async () => {
+    const session = await fetch("/api/ledger/till-session").then((r) => r.json());
+    const day = session.day;
+    if (!day?.from || !day?.to) throw new Error("till session did not name its trading day");
+    return `?from=${encodeURIComponent(day.from)}&to=${encodeURIComponent(day.to)}`;
   });
 }
 
@@ -290,6 +300,12 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   await expect
     .poll(() => sheet(page), { timeout: 30_000 })
     .toContain(`Session #${till.session.sessionNumber}`);
+  /* The session number paints when the till session arrives. The
+     day's totals are the next read, so that same paint can still
+     say "reading the ledger…". Wait for the count this case exists for. */
+  await expect
+    .poll(() => sheet(page), { timeout: 30_000 })
+    .toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
   const doc = await sheet(page);
 
   // ---- the date and the day ----
@@ -530,3 +546,202 @@ test("every document is in the desk's currency and names the pack's regulator", 
     expect(compliance, "a non-Canadian desk must not cite the PCMLTFA").not.toContain("PCMLTFA");
   }
 });
+
+/* ------------------------------------------------------------------
+   4. JUST AFTER LOCAL MIDNIGHT
+
+   CI runs in UTC, and this case used to pass there and fail on a
+   machine whose zone was ahead of UTC. The server process stays on
+   the machine zone. The branch zone and the browser zone are the
+   ones under test, and the clock is 00:30 in that zone, in the
+   future, so a quote locked against the real clock has not expired.
+   ------------------------------------------------------------------ */
+function zoneParts(at: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(at);
+  const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  let hour = pick("hour");
+  if (hour === 24) hour = 0;
+  return { year: pick("year"), month: pick("month"), day: pick("day"), hour, minute: pick("minute"), second: pick("second") };
+}
+
+function zonedInstant(isoDate: string, hour: number, minute: number, timeZone: string): Date {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const guess = Date.UTC(year!, month! - 1, day!, hour, minute, 0);
+  const offsetAt = (utc: number) => {
+    const parts = zoneParts(new Date(utc), timeZone);
+    const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    return asUtc - utc;
+  };
+  const offset = offsetAt(guess);
+  let start = guess - offset;
+  const corrected = offsetAt(start);
+  if (corrected !== offset) start = guess - corrected;
+  return new Date(start);
+}
+
+function justAfterLocalMidnight(timeZone: string): Date {
+  const now = Date.now();
+  for (let step = 0; step < 4; step++) {
+    const parts = zoneParts(new Date(now + step * 86_400_000), timeZone);
+    const iso = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+    const at = zonedInstant(iso, 0, 30, timeZone);
+    if (at.getTime() > now + 120_000) return at;
+  }
+  throw new Error(`no future 00:30 in ${timeZone}`);
+}
+
+function calendarDate(at: Date, timeZone: string): string {
+  const parts = zoneParts(at, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function nextDate(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const utc = new Date(Date.UTC(year!, month! - 1, day!));
+  utc.setUTCDate(utc.getUTCDate() + 1);
+  return utc.toISOString().slice(0, 10);
+}
+
+async function setBranchZone(timeZone: string): Promise<string> {
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    const current = await pool.query("SELECT timezone FROM branches WHERE id = 'br-yorkville'");
+    const previous = current.rows[0]?.timezone;
+    if (!previous) throw new Error("br-yorkville has no timezone row");
+    await pool.query("UPDATE branches SET timezone = $1 WHERE id = 'br-yorkville'", [timeZone]);
+    return previous;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function restoreBranchZone(timeZone: string) {
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await pool.query("UPDATE branches SET timezone = $1 WHERE id = 'br-yorkville'", [timeZone]);
+  } finally {
+    await pool.end();
+  }
+}
+
+for (const timeZone of ["Asia/Jerusalem", "America/Toronto"] as const) {
+  test.describe(`sign-off just after midnight in ${timeZone}`, () => {
+    test.use({ timezoneId: timeZone });
+
+    test(`the sheet names ${timeZone}'s business date and includes the deal`, async ({ page }, testInfo) => {
+      const at = justAfterLocalMidnight(timeZone);
+      const atLocal = zoneParts(at, timeZone);
+      expect(atLocal.hour, `${timeZone} clock is just after midnight`).toBe(0);
+      expect(atLocal.minute).toBe(30);
+      const expected = calendarDate(at, timeZone);
+      let previous: string | null = null;
+      let needsClose = false;
+      let transactionId: string | null = null;
+      await page.route("**/*", async (route) => {
+        const headers = { ...route.request().headers(), "x-cd-now": at.toISOString() };
+        await route.continue({ headers });
+      });
+      try {
+        previous = await setBranchZone(timeZone);
+        await signInAtDesk(page);
+        const existing = await page.evaluate(async () => {
+          const current = await fetch("/api/ledger/till-session").then((r) => r.json());
+          return current.session?.status ?? "none";
+        });
+        if (existing === "open") {
+          const closed = await countExactlyAndClose(page, `midnight-close-${testInfo.retry}-${Date.now()}`);
+          expect(closed.ok, `the open session would not close: ${closed.why}`).toBe(true);
+        }
+        const opened = await ensureOpenSession(page);
+        expect(opened, `the till would not open: ${opened}`).toBe("open");
+        needsClose = true;
+        const topUp = await ensureDrawerHas(page, { CAD: 5000, USD: 2000 });
+        expect(topUp, `the drawer could not be topped up: ${topUp}`).not.toMatch(/\d{3}/);
+        const board = await ensureBoard(page);
+        expect(board, `no rate board: ${board}`).toMatch(/published/);
+        await signInAtDesk(page);
+
+        const key = `midnight-${timeZone}-${Date.now()}`;
+        const deal = await postOneDeal(page, key);
+        expect(deal.ok, `no deal could be posted: ${deal.why}`).toBe(true);
+        transactionId = deal.transactionId ?? null;
+
+        const till = await book(page).session();
+        expect(till.session.businessDate, "the session's business date").toBe(expected);
+        expect(till.day.timeZone).toBe(timeZone);
+        expect(till.day.from).toBe(zonedInstant(expected, 0, 0, timeZone).toISOString());
+        expect(new Date(till.day.to).getTime()).toBe(zonedInstant(nextDate(expected), 0, 0, timeZone).getTime());
+
+        const day = await book(page).summary(await todayWindow(page));
+        expect(day.posted, "the deal is inside the session's window").toBeGreaterThan(0);
+
+        await generate(page, /End-of-Day Sign-Off/);
+        /* The session number can paint before the day's totals arrive.
+           Wait for the count, which is the figure this case exists for. */
+        await expect
+          .poll(() => sheet(page), { timeout: 30_000 })
+          .toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
+        const doc = await sheet(page);
+        const heading = new Date(`${expected}T12:00:00Z`).toLocaleDateString("en-CA", {
+          timeZone: "UTC",
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        });
+        expect(doc).toContain(heading);
+        expect(doc).toContain(`Session #${till.session.sessionNumber}`);
+        const utcHeading = new Date(`${at.toISOString().slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-CA", {
+          timeZone: "UTC",
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        });
+        if (utcHeading !== heading) expect(doc).not.toContain(utcHeading);
+
+        const slug = timeZone === "Asia/Jerusalem" ? "jerusalem" : "toronto";
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.screenshot({ path: `/opt/cursor/artifacts/signoff-${slug}-1280.png` });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: `/opt/cursor/artifacts/signoff-${slug}-390.png` });
+        if (timeZone === "Asia/Jerusalem") {
+          await page.setViewportSize({ width: 1280, height: 900 });
+          await page.screenshot({ path: "/opt/cursor/artifacts/signoff-after-1280.png" });
+          await page.setViewportSize({ width: 390, height: 844 });
+          await page.screenshot({ path: "/opt/cursor/artifacts/signoff-after-390.png" });
+        }
+      } finally {
+        /* The deal is stamped at the test clock, which is in the future.
+           Left standing, it sits inside an unbounded summary and outside
+           every later test's "today", and those two stop agreeing. */
+        if (transactionId) {
+          const reversed = await page.evaluate(async (id) => {
+            const answer = await fetch(`/api/ledger/transactions/${id}/reversal`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ idempotencyKey: `midnight-rev-${id}`, reason: "Seam test" }),
+            });
+            return answer.ok ? "ok" : `${answer.status} ${await answer.text()}`;
+          }, transactionId);
+          if (reversed !== "ok") throw new Error(`the midnight deal was not reversed: ${reversed}`);
+        }
+        if (needsClose) {
+          const closed = await countExactlyAndClose(page, `midnight-done-${timeZone}-${Date.now()}`);
+          if (!closed.ok) throw new Error(`the midnight session stayed open: ${closed.why}`);
+        }
+        if (previous) await restoreBranchZone(previous);
+        await page.unroute("**/*");
+      }
+    });
+  });
+}

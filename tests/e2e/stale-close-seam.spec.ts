@@ -214,7 +214,7 @@ test("a refresh in the middle of a count still closes against the mark it starte
   /* The till is already open. While the session is still loading the
      screen briefly offers "Open the till", and clicking that races
      the session arriving. Wait until the open session is back. */
-  await page.getByText(/Cash Drawer/i).first().click();
+  await page.locator('#appbar [data-app="till"]').click();
   await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 20_000 });
   await settleCashDrawerChrome(page);
   await closeTheDay(page);

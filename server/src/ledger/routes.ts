@@ -9,6 +9,7 @@ import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/ses
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
+import { BranchTimeZoneUnset } from "./branch-zone.js";
 import { ensureLedgerPrincipal } from "./principal.js";
 import {
   LedgerProvisioningService,
@@ -31,7 +32,9 @@ import {
   type ChequeReturnInput,
 } from "./cheques.js";
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
+import { bindTestClock } from "./clock.js";
 import { LedgerReportingService } from "./reporting.js";
+import { CloseOfDayService } from "./close-of-day.js";
 import { ObligationService } from "./obligations.js";
 
 /* ============================================================
@@ -113,6 +116,10 @@ const tillCounts = byCurrency(monetary("0"), "count");
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
+}).strict();
+const closeOfDayBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  notCounted: z.boolean(),
 }).strict();
 const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -326,7 +333,9 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const reportFilings = new ReportFilingService(pool);
   const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
+  const closeOfDay = new CloseOfDayService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
+  bindTestClock(app);
 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
     const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);
@@ -359,6 +368,12 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
         message: "The ledger is handling another change to this till. Nothing was posted — try again.",
       });
     }
+    /* A missing or unreadable branch zone is a desk that cannot name its
+       day. Intl throws RangeError for a garbage zone; that is this same
+       refusal, not an unexpected fault. */
+    if (error instanceof BranchTimeZoneUnset) {
+      return reply.code(409).send({ code: error.code, message: error.message });
+    }
     if (!(error instanceof LedgerError)) {
       app.log.error(error, "ledger route failure");
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });
@@ -372,7 +387,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
               error.code === "FILING_NOT_FOUND" ||
               error.code === "CHEQUE_NOT_FOUND" ||
               error.code === "OBLIGATION_NOT_FOUND" ||
-              error.code === "TILL_SESSION_NOT_FOUND" ? 404
+              error.code === "TILL_SESSION_NOT_FOUND" ||
+              error.code === "TILL_SIGNOFF_NOT_FOUND" ? 404
               : error.code === "IDEMPOTENCY_IN_PROGRESS" ||
                 error.code === "IDEMPOTENCY_CONFLICT" ||
                 error.code === "TILL_ALREADY_ACTIVE" ||
@@ -393,7 +409,11 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "OBLIGATION_NOT_OPEN" ||
                 error.code === "OPENING_BALANCES_ALREADY_SET" ||
                 error.code === "PACK_OPT_IN_REFUSED" ||
-                error.code === "JURISDICTION_PACK_CONFLICT" ? 409
+                error.code === "JURISDICTION_PACK_CONFLICT" ||
+                error.code === "BRANCH_TIMEZONE_UNSET" ||
+                error.code === "TILL_ALREADY_SIGNED" ||
+                error.code === "DRAWER_NOT_COUNTED" ||
+                error.code === "DRAWER_ALREADY_COUNTED" ? 409
               : 422;
     return reply.code(status).send({ code: error.code, message: error.message });
   }
@@ -629,6 +649,45 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const actor = await actorOrReply(req, reply);
       return actor ? reply.send(await tillControl.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* The close of day. till:close, same as closing the till. A teller
+     is refused here, including the preview, so the earnings never
+     leave the server. The PDF is the snapshot stored at sign time. */
+  app.get("/api/ledger/close-of-day", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await closeOfDay.read(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/close-of-day", async (req, reply) => {
+    const parsed = closeOfDayBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const saved = await closeOfDay.sign(actor, parsed.data.idempotencyKey, parsed.data.notCounted);
+      return reply.code(saved.replayed ? 200 : 201).send(saved);
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/close-of-day/pdf", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const bytes = await closeOfDay.pdf(actor);
+      return reply
+        .header("content-type", "application/pdf")
+        .header("content-disposition", "inline; filename=\"end-of-day.pdf\"")
+        .send(bytes);
     } catch (error) {
       return failure(reply, error);
     }

@@ -113,7 +113,7 @@ test("a lost answer on Move cash does not float the drawer twice", async ({ page
   const before = held(await book.till(), "CAD");
   const posts = await loseFirstResponse(page, "/api/ledger/till-movements");
 
-  await page.getByText(/Cash Drawer/i).first().click();
+  await page.locator('#appbar [data-app="till"]').click();
   await page.getByRole("button", { name: /^Move cash$/i }).first().click();
   await page.locator('input[placeholder="0"]').last().fill(String(FLOAT));
   const submit = page.getByRole("button", { name: /Issue float/i }).last();
@@ -134,7 +134,7 @@ test("a lost answer then a changed amount does not replay the first float", asyn
   const before = held(await book.till(), "CAD");
   const posts = await loseFirstResponse(page, "/api/ledger/till-movements");
 
-  await page.getByText(/Cash Drawer/i).first().click();
+  await page.locator('#appbar [data-app="till"]').click();
   await page.getByRole("button", { name: /^Move cash$/i }).first().click();
   const amount = page.locator('input[placeholder="0"]').last();
   await amount.fill(String(FLOAT));

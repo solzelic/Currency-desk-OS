@@ -3089,3 +3089,345 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text-muted, #6B6760) !important;
   }
 }
+
+/* ============================================================
+   PHONE REPORTS
+   Only under 430px. A wide window does not mount this tree, and
+   these rules do not apply to it. Class names follow the phone
+   shell (.nrow, .stats.four, .eod-h, .cta, .sk).
+   ============================================================ */
+@media (max-width: 430px) {
+  #desktop .win:has(.phone-reports) > .win-body {
+    background: #F7F6F3;
+  }
+  .phone-reports {
+    --brand-primary: #46506B;
+    box-sizing: border-box;
+    min-height: 100%;
+    padding: 4px 16px 108px;
+    background: #F7F6F3;
+    color: #161513;
+    font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+  }
+  .phone-reports * { box-sizing: border-box; }
+  .phone-reports h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .phone-reports h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; }
+  .phone-reports .crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 44px;
+    margin: 0 0 2px -4px;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    color: var(--brand-primary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .phone-reports .page-sub { margin: 2px 0 12px; font-size: 14px; line-height: 20px; color: #6B6760; }
+  .phone-reports .card, .phone-reports .stats, .phone-reports .list {
+    background: #fff;
+    border: 1px solid #E2DFD8;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .phone-reports .eod { margin-bottom: 8px; }
+  .phone-reports .eod-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #E2DFD8;
+  }
+  .phone-reports .stats { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 16px; }
+  .phone-reports .eod .stats { margin: 0; border: 0; border-radius: 0; border-bottom: 1px solid #E2DFD8; }
+  .phone-reports .stats.four .stat:nth-child(odd) { border-right: 1px solid #E2DFD8; }
+  .phone-reports .stats.four .stat:nth-child(-n+2) { border-bottom: 1px solid #E2DFD8; }
+  .phone-reports .stat { padding: 12px 16px; min-height: 84px; }
+  .phone-reports .stat .lbl, .phone-reports .stat .sub, .phone-reports .fine, .phone-reports .note, .phone-reports .ask, .phone-reports .empty-line {
+    font-size: 12px;
+    line-height: 16px;
+    color: #6B6760;
+  }
+  .phone-reports .stat .val { font-size: 22px; line-height: 28px; font-weight: 700; color: #161513; }
+  .phone-reports .stat .val .ccy { margin-left: 3px; font-size: 12px; font-weight: 600; }
+  .phone-reports .words { font-size: 15px; line-height: 20px; font-weight: 600; }
+  .phone-reports .open {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 48px;
+    padding: 0 16px;
+    border: 0;
+    background: transparent;
+    color: var(--brand-primary);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .phone-reports .sec-label { margin: 20px 0 8px; font-size: 13px; line-height: 16px; font-weight: 600; color: #6B6760; }
+  .phone-reports .nrow {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 56px;
+    padding: 8px 16px;
+    border: 0;
+    border-bottom: 1px solid #E2DFD8;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .phone-reports .nrow:last-child { border-bottom: 0; }
+  .phone-reports .nrow .ic {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: #EFEDE8;
+    color: #3D3A35;
+    display: grid;
+    place-items: center;
+  }
+  .phone-reports .nrow .t { display: block; font-size: 16px; line-height: 24px; font-weight: 600; }
+  .phone-reports .nrow .d, .phone-reports .nrow .v { font-size: 12px; line-height: 16px; color: #6B6760; }
+  .phone-reports .nrow .cv { color: #6B6760; }
+  .phone-reports .ask { margin: 12px 0 0; }
+  /* Drawer rows are the shell's ListRow. The shell's row rule is
+     scoped to .phone-shell, so the sheet wraps them in one. Do not
+     restyle .phone-row. A check's note is that row's subtitle: it
+     wraps the text column, and the count stays the amount. */
+  .phone-reports .rep-check { align-items: flex-start; }
+  .phone-reports .rep-check .phone-row-sub {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+  .phone-reports .badge {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .phone-reports .badge.pos { background: #E7F4EC; color: #157A3E; }
+  .phone-reports .badge.warn { background: #FFF4DC; color: #8A5300; }
+  .phone-reports .badge.neg { background: #FDECEA; color: #B42318; }
+  .phone-reports .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 48px;
+    margin-top: 8px;
+    border-radius: 10px;
+    border: 0;
+    font: var(--text-body-strong);
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+  }
+  .phone-reports .btn-secondary { background: #fff; color: #161513; border: 1px solid #E2DFD8; }
+  /* The main button is StickyAction. This only pins it. The
+     button's type, case, and colour stay the shell's. */
+  .phone-reports .rep-cta {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--phone-bar-h);
+    z-index: 510;
+    background: #F7F6F3;
+  }
+  .phone-reports .rep-cta .note {
+    margin: 0 16px 12px;
+    font: var(--text-caption);
+    letter-spacing: 0;
+    text-transform: none;
+    text-align: center;
+  }
+  .phone-reports .phone-sticky-btn { letter-spacing: 0; text-transform: none; }
+  .phone-reports .sk {
+    display: block;
+    height: 16px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #EFEDE8, #F4F2EE, #EFEDE8);
+  }
+  .phone-reports .sk-val { width: 72%; height: 24px; margin: 6px 0; }
+  .phone-reports .sk-sub { width: 56%; height: 12px; }
+  .phone-reports .sk-badge { width: 96px; height: 20px; }
+  .phone-reports .banner {
+    display: flex;
+    gap: 12px;
+    margin: 0 0 12px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .phone-reports .banner b { display: block; font-weight: 600; }
+  .phone-reports .banner.info { background: #E8F0FB; border: 1px solid #C9DAF2; }
+  .phone-reports .banner.err { background: #FDECEA; border: 1px solid #F3B8B2; }
+  .phone-reports .chips { display: flex; gap: 8px; overflow-x: auto; margin: 0 0 12px; padding-bottom: 4px; }
+  .phone-reports .chip {
+    flex: none;
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid #E2DFD8;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    color: #6B6760;
+  }
+  .phone-reports .chip.on { background: #161513; border-color: #161513; color: #fff; }
+  .phone-reports .phone-rep-doc {
+    overflow-x: auto;
+    background: #fff;
+    border: 1px solid #E2DFD8;
+    border-radius: 14px;
+    padding: 12px;
+    /* The document atoms use these variables. 0.55 black is about
+       4.4:1 and #1f8a4c is about 4.38:1. Both are under 4.5:1.
+       #5C5852 is about 7:1. #1b7a44 is about 5.4:1. */
+    --cd-mute: #5C5852;
+    --cd-faint: #5C5852;
+    --cd-green: #1b7a44;
+  }
+  .phone-reports .rep-check .phone-row-title {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+  /* The choice sits over Reports and over the tab bar. A window's
+     z-index is under #phone-dock (520), so the scrim is portaled to
+     the body and paints above that bar. gray-900 at 40% is the scrim.
+     The sheet's top radius is --radius-lg (14px). */
+  .rep-scrim {
+    --brand-primary: #46506B;
+    position: fixed;
+    inset: 0;
+    z-index: 640;
+    display: flex;
+    align-items: flex-end;
+    background: color-mix(in srgb, var(--gray-900) 40%, transparent);
+  }
+  .rep-scrim .rep-sheet {
+    width: 100%;
+    /* The dock stays covered by the scrim, not by this sheet, so a
+       tap on the tab bar dismisses the choice and does not switch tabs. */
+    margin-bottom: var(--phone-dock-h);
+    background: var(--color-surface, #fff);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 0 var(--space-4) var(--space-4);
+  }
+  .rep-scrim .rep-grab-hit { padding: 16px 0 12px; touch-action: none; cursor: grab; }
+  .rep-scrim .rep-grab {
+    width: 36px;
+    height: 4px;
+    margin: 0 auto var(--space-4);
+    border-radius: var(--radius-pill);
+    background: var(--gray-300);
+  }
+  .rep-scrim .rep-sheet h2 { margin: 0; font: var(--text-title-3); color: var(--color-text); }
+  .rep-scrim .rep-sheet p { margin: var(--space-2) 0 var(--space-4); font: var(--text-body); color: var(--color-text); }
+  .rep-scrim .phone-sticky-btn { margin-top: var(--space-2); letter-spacing: 0; text-transform: none; }
+  .rep-scrim .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 48px;
+    margin-top: 8px;
+    border-radius: 10px;
+    border: 0;
+    font: var(--text-body-strong);
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+  }
+  .rep-scrim .btn-secondary { background: #fff; color: #161513; border: 1px solid #E2DFD8; }
+  .phone-reports .rep-drawer-sec { align-items: center; }
+  .phone-reports .rep-drawer-sec > span:first-child { min-width: 0; }
+  .phone-reports .rep-count-now {
+    flex: none;
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    margin: 0;
+    padding: 0 0 0 var(--space-2);
+    border: 0;
+    background: transparent;
+    color: var(--brand-primary);
+    font: 600 13px/16px var(--f-display, "Archivo", system-ui, sans-serif);
+    cursor: pointer;
+  }
+  /* 16px above the sticky action, inset 16px. The action is the
+     containing block, so the gap stays put when the footnote shows. */
+  .phone-reports .rep-toast {
+    position: absolute;
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: calc(100% + var(--space-4));
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 48px;
+    padding: 4px 14px;
+    border-radius: var(--radius-md);
+    background: var(--gray-900);
+    color: #fff;
+    font: var(--text-small);
+  }
+  .phone-reports .rep-toast button {
+    flex: none;
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    padding: 0 0 0 12px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .phone-reports .empty-line { margin: 0; padding: 16px; }
+  .phone-rep-print { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .phone-rep-print .sign { display: block; margin-top: 18px; }
+  .phone-rep-print .sign b,
+  .phone-rep-print .sign span { display: block; }
+}
+
+/* The print view is the same tab. It exists only while phone
+   Reports is mounted, so a wide window's print is unchanged. */
+@media print {
+  body:has(.phone-rep-print) * { visibility: hidden !important; }
+  body:has(.phone-rep-print) .phone-rep-print,
+  body:has(.phone-rep-print) .phone-rep-print * { visibility: visible !important; }
+  body:has(.phone-rep-print) .phone-rep-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    color: #000;
+    background: #fff;
+  }
+}

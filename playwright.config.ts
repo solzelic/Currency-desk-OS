@@ -72,6 +72,10 @@ export default defineConfig({
          and then ask the ledger whether it agrees. Left unset, everything
          below behaves exactly as before. */
       DATABASE_URL: process.env.SEAM_DATABASE_URL ?? "",
+      /* Test clock only. Production does not set this, so an `x-cd-now`
+         header on a real desk is ignored. The seam suite uses it to stand
+         just after local midnight. */
+      CD_TEST_CLOCK: "1",
       PGLITE_MEMORY: "1",
       SEED_PASSWORD: "yorkville",
       PLATFORM_ADMIN_EMAILS: "j.masri",

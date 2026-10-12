@@ -101,8 +101,12 @@
     var risk = riskText.indexOf("high") >= 0 ? "high"
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
+    /* Expired only when the expiry calendar date is before the branch's
+       calendar date. The same day is still current. The UTC date is
+       already tomorrow on a Toronto evening, which is how a valid ID
+       was refused on its last day. */
     var idStatus = !record.idType || !record.idNum ? "missing"
-      : record.idExpiry && record.idExpiry < new Date().toISOString().slice(0, 10) ? "expired"
+      : record.idExpiry && window.CDOS.calendarBefore(record.idExpiry, window.CDOS.branchCalendarDate()) ? "expired"
       : "verified";
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
     return { externalRef: externalRef, name: String(name).trim(), risk: risk, idStatus: idStatus };
@@ -140,7 +144,10 @@
       serverTransactionId: transaction.transactionId,
       serverQuoteId: transaction.quoteId || null,
       ref: transaction.transactionRef,
-      date: posted.toISOString().slice(0, 10),
+      /* The calendar date in the branch zone. toISOString is the UTC
+         date, which is still yesterday just after midnight in a zone
+         ahead of UTC. */
+      date: window.CDOS.branchCalendarDate(posted),
       time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
       customer: customerName || transaction.customerId,
       beneficiary: "",
@@ -267,6 +274,18 @@
       loadTillSession: function () {
         return request("/api/ledger/till-session");
       },
+      /* The close of day. The preview and the signed sheet are the
+         same route. A teller is refused; the screen does not get the
+         earnings with a flag it might ignore. */
+      loadCloseOfDay: function () {
+        return request("/api/ledger/close-of-day");
+      },
+      saveCloseOfDay: function (payload) {
+        return request("/api/ledger/close-of-day", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      },
       /* The drawer always wants both halves of the same picture — what the
          server says the till holds, and which session that holding sits in.
          Fetching them separately let one arrive without the other and the
@@ -282,6 +301,7 @@
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
+            day: results[1].day || null,
           };
         });
       },
@@ -447,9 +467,9 @@
       /* Totals over a window. `from` and `to` are ISO instants and BOTH
          are optional; omitting them means "everything this till has ever
          posted", which is the only window that needs no timezone to be
-         right. The server deliberately does not decide where a day starts
-         — see businessDayWindow() in cdos-base.jsx, which builds the
-         window from the till session's own business date. */
+         right. The sign-off sheet passes the window the till session
+         named. businessDayWindow() uses that same zone's midnight for
+         other screens once the session has named it. */
       loadLedgerSummary: function (window) {
         var query = [];
         if (window && window.from) query.push("from=" + encodeURIComponent(window.from));

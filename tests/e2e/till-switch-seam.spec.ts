@@ -139,7 +139,11 @@ async function openingBalances(page: Page, workspaceId: string, balances: Record
 }
 
 async function openCashDrawer(page: Page) {
-  await page.getByText(/Cash Drawer/i).first().click();
+  /* "Till & Cash Drawer" in the closed-day line matches the words
+     before the dock does, and it is not a way into the drawer. */
+  const tab = page.locator('#appbar [data-app="till"]');
+  await tab.scrollIntoViewIfNeeded();
+  await tab.click();
   await expect(page.getByText(/ledger till/i).first()).toBeVisible({ timeout: 45_000 });
 }
 

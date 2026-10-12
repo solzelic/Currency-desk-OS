@@ -5,6 +5,9 @@ import {
   hasBackendPermission,
   type BackendPermission,
 } from "../auth/permissions.js";
+import { readDateOnly, refDay } from "./business-date.js";
+import { branchCalendarDate } from "./branch-zone.js";
+import { now as clockNow } from "./clock.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   acquire,
@@ -177,9 +180,9 @@ const fixed = (value: Decimal, places = 2) =>
 export async function requireOpenTill(
   client: pg.PoolClient,
   actor: LedgerActor,
-) {
+): Promise<string> {
   const session = await client.query(
-    `SELECT status
+    `SELECT status, business_date
        FROM ledger_till_sessions
       WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
         AND workspace_id=$4 AND till_id=$5
@@ -194,7 +197,12 @@ export async function requireOpenTill(
       "Open the till before posting transactions.",
     );
   }
+  /* The trading day this drawer opened on. A reference minted while
+     the till is open carries this date, not the UTC date of the post. */
+  return readDateOnly(session.rows[0].business_date);
 }
+
+export { branchCalendarDate };
 
 /* ---- the identification gate ----
 
@@ -671,7 +679,7 @@ export class LedgerService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
-      await this.requireOpenTill(client, actor);
+      const tradingDay = await this.requireOpenTill(client, actor);
       const authoritativeQuote = await client.query(
         "SELECT * FROM quotes WHERE quote_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 FOR UPDATE",
         [quote.quoteId, ...scope(actor)],
@@ -935,7 +943,7 @@ export class LedgerService {
             quantity: basis.quantity,
             avgCost: null,
             actorId: actor.userId,
-            now: new Date(),
+            now: clockNow(),
             sourceKind: "quote",
             sourceId: quote.quoteId,
           },
@@ -958,7 +966,7 @@ export class LedgerService {
             quantity: acquiredBasis.quantity,
             avgCost: null,
             actorId: actor.userId,
-            now: new Date(),
+            now: clockNow(),
             sourceKind: "quote",
             sourceId: quote.quoteId,
           },
@@ -976,9 +984,9 @@ export class LedgerService {
       const proceedsHome = disposing ? inputHome : null;   // they paid us this
       const paidHome = acquiring ? outputCad : null;      // we paid them this
 
-      const now = new Date(),
+      const now = clockNow(),
         transactionId = `tx_${randomUUID()}`,
-        transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+        transactionRef = `CD-${refDay(tradingDay)}-${transactionId.slice(-6)}`;
 
       /* The stock leaves here, BEFORE the journal is written, because the
          journal has to carry the figure the disposal actually produced.
@@ -1259,7 +1267,7 @@ export class LedgerService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await this.principal(client, actor, "transaction:post");
-      await this.requireOpenTill(client, actor);
+      const tradingDay = await this.requireOpenTill(client, actor);
       /* Whether this pair may be traded is the jurisdiction's answer, not a
          constant. This used to demand CAD on one side, which is the pilot's
          limitation and not a rule anywhere. It has to be asked inside the
@@ -1470,9 +1478,9 @@ export class LedgerService {
           "JOURNAL_UNBALANCED",
           "Authoritative journal is unbalanced.",
         );
-      const now = new Date();
+      const now = clockNow();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${now.toISOString().slice(2, 10).replace(/-/g, "")}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${refDay(tradingDay)}-${transactionId.slice(-6)}`;
       const response = {
         transactionId,
         transactionRef,
@@ -1695,7 +1703,7 @@ export class LedgerService {
         [transactionId],
       );
       const reversalId = `rv_${randomUUID()}`;
-      const now = new Date();
+      const now = clockNow();
       for (const movement of movements.rows) {
         const value = new Decimal(movement.amount);
         const direction = movement.direction === "in" ? "out" : "in";

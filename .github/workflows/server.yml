@@ -25,3 +25,32 @@ jobs:
       # require.
       - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_ledger_test'
       - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_ledger_test npm run test:ledger:postgres
+
+  # The suite above runs in the runner's UTC zone. An ID expiry and a
+  # business date used to move a day when the process zone was not UTC,
+  # and a UTC-only run stayed green. These two zones are the ones that
+  # disagree with UTC in opposite directions: Toronto is behind, so a
+  # UTC date is already tomorrow in the evening; Jerusalem is ahead, so
+  # a DATE read through toISOString prints as yesterday.
+  server-validate-timezones:
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [America/Toronto, Asia/Jerusalem]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: currencydesk_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 5
+    defaults: { run: { working-directory: server } }
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
+      - run: npm ci
+      - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_test npm test

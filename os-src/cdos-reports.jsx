@@ -95,7 +95,31 @@
   };
   // booked spread per deal — exact when two-side priced, else the live-mid estimate
   const spreadOf = (r) => dealMargin(r);
-  const stampNow = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  /* Phone documents say "Oct 12, 2026, 2:30 PM". The desk print keeps
+     the 24-hour stamp it already had. branchZone is the session's
+     zone once the till answers. Until then it is the zone the desk
+     is configured with. The formatter does not assume Toronto, so
+     an instant with no zone here would be an em dash. */
+  let phoneDocs = false;
+  let branchZone = '';
+  const stampNow = () => {
+    if (!phoneDocs) return new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+    const zone = branchZone || undefined;
+    const date = window.CDOS.formatPhoneDate(new Date(), zone);
+    const time = window.CDOS.formatPhoneTime(new Date(), zone);
+    if (!date || !time || date === '\u2014' || time === '\u2014') return '';
+    return date + ', ' + time;
+  };
+  /* Intl currency style prints "$". A phone document names the code. */
+  const moneyLabel = (n, c) => phoneDocs && window.CDOS.formatPhoneMoney
+    ? (window.CDOS.formatPhoneMoney(n, c) || '')
+    : fmt(n, c);
+  const dealWhen = (r) => {
+    if (!phoneDocs) return null;
+    const date = window.CDOS.formatPhoneDate(r.date, branchZone || undefined) || '';
+    const time = window.CDOS.formatPhoneTime(r.time, branchZone || undefined) || '';
+    return [date, time].filter(Boolean).join(', ');
+  };
   /* The ledger records WHO posted a deal as a principal id, tenant-scoped
      ("tnt-yorkfx:a.singh"). Earnings by teller is the book's answer, so the
      id is the book's; turning it back into a person is presentation, and
@@ -116,7 +140,7 @@
      that are cloned into a print window — the printed page has no React. */
   const orDash = (value, currency, why) => value == null
     ? <span style={{ color: CD.faint }}>{why ? '— ' + why : '—'}</span>
-    : fmt(value, currency);
+    : moneyLabel(value, currency);
 
   const RANGES = [
     ['today', 'Today', 0],
@@ -181,7 +205,10 @@
      small credit in the footer only. DOC_BIZ is set by <Reports> each render. */
   let DOC_BIZ = { name: 'York Currency Exchange', logo: null, line2: 'Registered Money Services Business' };
   let DOC_SCOPE = '';
-  function DocHead({ title, subtitle, rangeLabel }) {
+  /* `generated` is computed by the caller while phoneDocs is still set.
+     DocHead renders after that flag is cleared, so a stampNow() call
+     in here would be the desk's 24-hour clock. */
+  function DocHead({ title, subtitle, rangeLabel, generated }) {
     const biz = DOC_BIZ;
     return (<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: 16, borderBottom: `2px solid ${CD.ink}`, marginBottom: 22 }}>
       <div>
@@ -197,7 +224,7 @@
       </div>
       <div style={{ textAlign: 'right', fontSize: 11, color: CD.mute, lineHeight: 1.7 }}>
         <div style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, color: CD.ink, fontSize: 12 }}>{rangeLabel}</div>
-        <div>Generated {stampNow()}</div>
+        <div>Generated {generated}</div>
         <div>{biz.line2}</div>
       </div>
     </div>);
@@ -239,7 +266,7 @@
   /* ============================================================
      The report builder
      ============================================================ */
-  function Reports({ rows, clients, settings, me, baseline, receipts, day, station, branches, openSignal }) {
+  function Reports({ rows, clients, settings, me, baseline, receipts, day, station, branches, openSignal, onOpenTill, onShowMore, countReturn }) {
     const [range, setRange] = useState('today');
     /* The trading day and the jurisdiction pack, from the server. Reports
        print, get signed and get filed, so both of these being right is not
@@ -247,6 +274,9 @@
        threshold sentence quoting the wrong country's number is a document
        somebody keeps for five years. */
     const deskFacts = useDeskFacts();
+    /* The session overwrites this when it names a zone. A document
+       opened before that answer still has to name the shop's zone. */
+    if (!branchZone && settings && settings.timezone) branchZone = String(settings.timezone);
     const limit = useMemo(() => limitOf(settings), [settings, deskFacts]);
     const regime = useMemo(() => authorityOf(settings), [settings, deskFacts]);
     /* WHAT THE DESK IS HOLDING AT CLOSE — the ledger's figure.
@@ -279,26 +309,111 @@
        computed from the two. That is the count that exists; a count taken
        on a machine and never sent is not one. */
     const [tillDay, setTillDay] = useState({ loading: true, session: null, counts: {}, error: '' });
+    /* Earnings and the signed sheet. A teller is refused, so this
+       stays empty for them instead of arriving with the numbers. */
+    const [closeDay, setCloseDay] = useState({ loading: true, signoff: null, preview: null, forbidden: false, error: '' });
+    /* Phone is a different screen, chosen by width. The desk tree is
+       not mounted under 430px, and this tree is not mounted above it,
+       so the two cannot restyle each other. */
+    const [phone, setPhone] = useState(() => !!(window.matchMedia && window.matchMedia('(max-width: 430px)').matches));
+    const [reload, setReload] = useState(0);
+    const wasCounting = useRef(false);
+    /* Coming back from the count the phone just opened. The session
+       is read again so the drawer line is the count that was saved. */
+    useEffect(() => {
+      if (wasCounting.current && !countReturn) setReload(n => n + 1);
+      wasCounting.current = !!countReturn;
+    }, [countReturn]);
+    useEffect(() => {
+      if (!window.matchMedia) return;
+      const mq = window.matchMedia('(max-width: 430px)');
+      const apply = () => setPhone(mq.matches);
+      apply();
+      if (mq.addEventListener) mq.addEventListener('change', apply);
+      else mq.addListener(apply);
+      return () => {
+        if (mq.removeEventListener) mq.removeEventListener('change', apply);
+        else mq.removeListener(apply);
+      };
+    }, []);
     useEffect(() => {
       const backend = window.CDOS.Backend;
       if (!backend) {
         setHeld({ loading: false, position: null, error: 'not signed in to the ledger' });
         setDayBook({ loading: false, summary: null, error: 'not signed in to the ledger' });
         setTillDay({ loading: false, session: null, counts: {}, error: 'not signed in to the ledger' });
+        setCloseDay({ loading: false, signoff: null, preview: null, forbidden: false, error: 'not signed in to the ledger' });
         return;
       }
       let live = true;
+      /* A retry (the phone's Try again) asks again. The first load
+         already starts from loading: true, so a wide window does not
+         flash back to "reading the ledger" when the desk facts settle. */
+      if (reload) {
+        setHeld(h => ({ ...h, loading: true, error: '' }));
+        setDayBook(b => ({ ...b, loading: true, error: '' }));
+        setTillDay(t => ({ ...t, loading: true, error: '' }));
+        setCloseDay(c => ({ ...c, loading: true, error: '' }));
+      }
+      backend.loadCloseOfDay()
+        .then(answer => {
+          if (!live) return;
+          setCloseDay({
+            loading: false,
+            signoff: (answer && answer.signoff) || null,
+            preview: (answer && answer.preview) || null,
+            forbidden: false,
+            error: '',
+          });
+        })
+        .catch(error => {
+          if (!live) return;
+          const forbidden = !!(error && (error.status === 403 || error.code === 'AUTHORIZATION_DENIED' || error.code === 'SCOPE_DENIED'));
+          setCloseDay({
+            loading: false,
+            signoff: null,
+            preview: null,
+            forbidden,
+            error: forbidden ? '' : ((error && error.message) || 'the ledger could not be reached'),
+          });
+        });
       backend.loadLedgerPosition()
         .then(position => { if (live) setHeld({ loading: false, position, error: '' }); })
         .catch(error => { if (live) setHeld({ loading: false, position: null, error: (error && error.message) || 'the ledger could not be reached' }); });
-      backend.loadLedgerSummary(window.CDOS.businessDayWindow(1))
-        .then(summary => { if (live) setDayBook({ loading: false, summary, error: '' }); })
-        .catch(error => { if (live) setDayBook({ loading: false, summary: null, error: (error && error.message) || 'the ledger could not be reached' }); });
+      /* The session first, then the book for the window the session
+         names. The two used to start together, and the book was asked
+         for a window this browser built from its own midnight. Just
+         after midnight, in a zone ahead of UTC, that window was
+         yesterday and the sheet printed 0. This file does not build
+         that window. */
       backend.loadTillSession()
-        .then(answer => { if (live) setTillDay({ loading: false, session: (answer && answer.session) || null, counts: (answer && answer.latestCounts) || {}, error: '' }); })
-        .catch(error => { if (live) setTillDay({ loading: false, session: null, counts: {}, error: (error && error.message) || 'the ledger could not be reached' }); });
+        .then(answer => {
+          if (!live) return null;
+          const session = (answer && answer.session) || null;
+          const day = (answer && answer.day) || null;
+          setTillDay({ loading: false, session, day, counts: (answer && answer.latestCounts) || {}, error: '' });
+          if (day && day.timeZone) branchZone = day.timeZone;
+          if (day && day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(day.timeZone);
+          if (session && session.businessDate) window.CDOS.setBusinessDate(session.businessDate);
+          if (!day || !day.from || !day.to) {
+            setDayBook({
+              loading: false,
+              summary: null,
+              error: session ? 'the till session did not name its trading day' : 'no till session',
+            });
+            return null;
+          }
+          return backend.loadLedgerSummary({ from: day.from, to: day.to });
+        })
+        .then(summary => { if (live && summary) setDayBook({ loading: false, summary, error: '' }); })
+        .catch(error => {
+          if (!live) return;
+          const message = (error && error.message) || 'the ledger could not be reached';
+          setDayBook({ loading: false, summary: null, error: message });
+          setTillDay(current => current.session || current.error ? current : { loading: false, session: null, counts: {}, error: message });
+        });
       return () => { live = false; };
-    }, [deskFacts]);
+    }, [deskFacts, reload]);
     const [active, setActive] = useState(null);
     /* THE PERIOD'S OWN BOOK.
 
@@ -326,8 +441,12 @@
     const canGen = (id) => allowed.includes(id);
     // open a specific report on request (e.g. the Till's End-of-Day Sign-Off button)
     useEffect(() => {
+      /* On a phone the sheet opens inside PhoneReports. Setting
+         `active` here would also snapshot the report, which a phone
+         does only when the cashier taps save. */
+      if (phone) return;
       if (openSignal && openSignal.id && canGen(openSignal.id)) { if (openSignal.id === 'endofday') { setRange('today'); setScope({ customers: [], tellers: [], types: [], from: '', to: '' }); } setActive(openSignal.id); }
-    }, [openSignal && openSignal.n]);
+    }, [openSignal && openSignal.n, phone]);
     // brand every report as the exchange house's own document
     DOC_BIZ = {
       name: (settings && (settings.operatingName || settings.bizName)) || 'York Currency Exchange',
@@ -476,7 +595,7 @@
     // Every freshly generated report is snapshotted (rendered HTML frozen) into an
     // immutable history log — surfaced in the Compliance ▸ History tab, never silently changing.
     useEffect(() => {
-      if (!active) return;
+      if (phone || !active) return;
       const t = setTimeout(() => {
         const node = document.getElementById('cdos-report-doc');
         if (!node) return;
@@ -489,7 +608,7 @@
         try { localStorage.setItem(HKEY, JSON.stringify([entry, ...hist].slice(0, 500))); } catch (e) {}
       }, 140);
       return () => clearTimeout(t);
-    }, [active, range]);
+    }, [active, range, phone]);
 
     /* A CSV cell for a figure the ledger has no answer for. Blank, never
        "0.00" — a spreadsheet is where an absent figure most easily becomes
@@ -531,7 +650,22 @@
 
     /* ---------- the five documents ---------- */
     const renderDoc = (id) => {
+      phoneDocs = !!phone;
+      try { return renderDocNow(id); }
+      finally { phoneDocs = false; }
+    };
+    const renderDocNow = (id) => {
       const book = periodBook.summary;
+      /* Taken while phoneDocs is set. DocHead is a child, so it
+         renders after renderDoc clears the flag. */
+      const generated = stampNow();
+      /* fmt() is Intl currency style and prints "$". A phone document
+         names the code: "10,000.00 CAD". */
+      const reportLine = () => {
+        if (limit.amount == null || !limit.currency) return limit.label;
+        if (!(phoneDocs && window.CDOS.formatPhoneMoney)) return limit.label;
+        return window.CDOS.formatPhoneMoney(limit.amount, limit.currency) || limit.label;
+      };
       /* Why a figure on this document is a dash, in one short line. The
          order matters: "we could not reach the book" and "the book has
          nothing for this period" are different answers and a reader acting
@@ -569,10 +703,13 @@
            replaces "Day 1", which was a counter kept in the browser. */
         const sheetDate = (tillDay.session && tillDay.session.businessDate) || businessDate();
         const dayLabel = tillDay.session ? `Session #${tillDay.session.sessionNumber}` : 'no till session';
-        const longDate = (() => { try { return new Date(sheetDate + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
+        /* Noon UTC, then formatted in UTC, so the heading is the calendar
+           date the server named. Local midnight would move it a day on a
+           browser whose zone is not the branch's. */
+        const longDate = (() => { try { return new Date(sheetDate + 'T12:00:00Z').toLocaleDateString('en-CA', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return (<div>
-          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} />
+          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} generated={generated} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, padding: '10px 14px', background: closed ? CD.greenSoft : 'var(--cd-chip)', border: `1px solid ${closed ? CD.green : CD.line}`, borderRadius: 9 }}>
             <span style={{ width: 26, height: 26, borderRadius: '50%', background: closed ? CD.green : CD.mute, display: 'grid', placeItems: 'center', flex: 'none' }}><span style={{ color: 'var(--cd-on-ink)', fontSize: 14 }}>{closed ? '✓' : '·'}</span></span>
             <div style={{ fontSize: 12.5, color: closed ? '#14543a' : CD.mute }}>
@@ -588,9 +725,9 @@
               number is not. */}
           <KpiRow items={[
             { label: 'Transactions', value: d ? d.posted : '—', sub: d ? (d.reversed ? `${d.reversed} voided` : 'none voided') : whyNoDay },
-            { label: 'Pay-in volume', value: d && d.volumeHome != null ? fmt(d.volumeHome, homeCcy) : '—', sub: d && d.volumeHome != null ? `in ${homeCcy}` : whyNoDay },
-            { label: 'Earned today', value: d && d.earningsHome != null ? fmt(d.earningsHome, homeCcy) : '—', accent: CD.green, sub: d && d.earningsHome != null ? 'commission + realized margin' : whyNoDay },
-            { label: 'In the drawer', value: totalCashHome == null ? '—' : fmt(totalCashHome, homeCcy), sub: totalCashHome == null ? (held.error || (unvalued.length ? `no board rate for ${unvalued.join(', ')}` : 'no ledger balances for this drawer')) : `the ledger’s ${homeCcy} value at close` }
+            { label: 'Pay-in volume', value: d && d.volumeHome != null ? moneyLabel(d.volumeHome, homeCcy) : '—', sub: d && d.volumeHome != null ? `in ${homeCcy}` : whyNoDay },
+            { label: 'Earned today', value: d && d.earningsHome != null ? moneyLabel(d.earningsHome, homeCcy) : '—', accent: CD.green, sub: d && d.earningsHome != null ? 'commission + realized margin' : whyNoDay },
+            { label: 'In the drawer', value: totalCashHome == null ? '—' : moneyLabel(totalCashHome, homeCcy), sub: totalCashHome == null ? (held.error || (unvalued.length ? `no board rate for ${unvalued.join(', ')}` : 'no ledger balances for this drawer')) : `the ledger’s ${homeCcy} value at close` }
           ]} />
           <Card pad={0}>
             <div style={{ padding: '14px 16px 4px' }}><SecTitle n={`${data.cash.length} currenc${data.cash.length === 1 ? 'y' : 'ies'}`}>This drawer at close — the ledger vs. the count</SecTitle></div>
@@ -601,7 +738,7 @@
               <tbody>{data.cash.map(x => { const off = x.variance != null && Math.abs(x.variance) > 0.005; return (<tr key={x.ccy}>
                 <td style={tdS}><b>{x.ccy}</b></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : num(x.units)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : fmt(x.home, homeCcy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : moneyLabel(x.home, homeCcy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : num(x.counted)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: x.variance != null ? 600 : 400, color: x.variance == null ? CD.faint : off ? CD.flag : CD.green }}>{x.variance == null ? '—' : (Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance))}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : num(x.vaultUnits)}</td>
@@ -621,9 +758,9 @@
                 const off = vTot != null && Math.abs(vTot) > 0.005;
                 return (
                 <tr><td style={{ ...tdS, fontWeight: 700 }} colSpan={2}>{`Total · ${homeCcy}`}</td>
-                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{totalCashHome == null ? '—' : fmt(totalCashHome, homeCcy)}</td>
-                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{ctTot == null ? '—' : fmt(ctTot, homeCcy)}</td>
-                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: vTot == null ? CD.faint : off ? CD.flag : CD.green }}>{vTot == null ? '—' : (Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, homeCcy))}</td>
+                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{totalCashHome == null ? '—' : moneyLabel(totalCashHome, homeCcy)}</td>
+                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{ctTot == null ? '—' : moneyLabel(ctTot, homeCcy)}</td>
+                  <td style={{ ...tdS, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: vTot == null ? CD.faint : off ? CD.flag : CD.green }}>{vTot == null ? '—' : (Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + moneyLabel(vTot, homeCcy))}</td>
                   <td style={tdS}></td></tr>
               ); })()}
               </tbody></table>
@@ -655,7 +792,7 @@
           <Card>
             <SecTitle>Compliance at close</SecTitle>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
-              <Mini label={limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`} tone={limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green} />
+              <Mini label={limit.amount == null ? 'Reportable' : `Reportable ≥ ${reportLine()}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`} tone={limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green} />
               <Mini label="Structuring watch" value={`${data.stru.length}`} sub="open patterns" tone={data.stru.length ? CD.amber : CD.green} />
               <Mini label="KYC / ID gaps" value={`${data.kycGaps.length}`} sub="clients to verify" tone={data.kycGaps.length ? CD.flag : CD.green} />
             </div>
@@ -692,7 +829,7 @@
         const margin = gross != null && volume != null && volume > 0 ? (gross / volume) * 100 : null;
         const taxAuthority = (settings && settings.taxAuthority) || null;
         return (<div>
-          <DocHead title="Profit & Loss" subtitle={`${branchName} · ${sub}`} rangeLabel={effRangeLabel} />
+          <DocHead title="Profit & Loss" subtitle={`${branchName} · ${sub}`} rangeLabel={effRangeLabel} generated={generated} />
           <KpiRow items={[
             { label: 'Gross revenue', value: orDash(gross, homeCcy, noBook), accent: CD.green, sub: 'commission + realized margin' },
             { label: 'Commission (fees)', value: orDash(fees, homeCcy, noBook) },
@@ -733,7 +870,7 @@
         const avg = volume != null && posted ? volume / posted : null;
         const revenue = book && book.earningsHome != null ? Number(book.earningsHome) : null;
         return (<div>
-          <DocHead title="Period Summary" subtitle={sub} rangeLabel={effRangeLabel} />
+          <DocHead title="Period Summary" subtitle={sub} rangeLabel={effRangeLabel} generated={generated} />
           <KpiRow items={[
             { label: 'Pay-in volume', value: orDash(volume, homeCcy, noBook), sub: book && book.unvaluedDeals ? `${book.unvaluedDeals} cross-currency deal(s) this book cannot value in ${homeCcy}` : null },
             { label: 'Transactions', value: posted == null ? '—' : posted, sub: posted == null ? noBook : (book.reversed ? `${book.reversed} voided` : null) },
@@ -753,8 +890,8 @@
                 </tr>))}</tbody></table>}
           </Card>
           <Cols>
-            <Card><SecTitle>Pay-in volume by currency</SecTitle><Bars data={data.byCcy} fmtV={v => fmt(v, homeCcy)} /></Card>
-            <Card><SecTitle>Volume by transaction type</SecTitle><Bars data={data.byType} fmtV={v => fmt(v, homeCcy)} /></Card>
+            <Card><SecTitle>Pay-in volume by currency</SecTitle><Bars data={data.byCcy} fmtV={v => moneyLabel(v, homeCcy)} /></Card>
+            <Card><SecTitle>Volume by transaction type</SecTitle><Bars data={data.byType} fmtV={v => moneyLabel(v, homeCcy)} /></Card>
           </Cols>
           <Card pad={0}>
             {/* Units in and units out, not a home valuation — these are
@@ -775,7 +912,7 @@
           <Card>
             <SecTitle>Compliance snapshot</SecTitle>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
-              <Mini label={limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`} tone={limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green} />
+              <Mini label={limit.amount == null ? 'Reportable' : `Reportable ≥ ${reportLine()}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`} tone={limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green} />
               <Mini label="Structuring watch" value={`${data.stru.length}`} sub="clients aggregating" tone={data.stru.length ? CD.amber : CD.green} />
               <Mini label="KYC / ID gaps" value={`${data.kycGaps.length}`} sub="clients to verify" tone={data.kycGaps.length ? CD.flag : CD.green} />
             </div>
@@ -791,15 +928,15 @@
           ? `${regime.authority} / ${regime.largeCode} Compliance Pack`
           : 'Large-Cash Compliance Pack';
         return (<div>
-          <DocHead title={packTitle} subtitle={`${regime.largeLabel || 'Large-cash reports'}, structuring watch and KYC exceptions`} rangeLabel={effRangeLabel} />
+          <DocHead title={packTitle} subtitle={`${regime.largeLabel || 'Large-cash reports'}, structuring watch and KYC exceptions`} rangeLabel={effRangeLabel} generated={generated} />
           <KpiRow items={[
-            { label: 'Reportable deals', value: limit.amount == null ? '—' : data.reportable.length, sub: limit.amount == null ? 'no reporting line set for this desk' : `≥ ${limit.label}` },
+            { label: 'Reportable deals', value: limit.amount == null ? '—' : data.reportable.length, sub: limit.amount == null ? 'no reporting line set for this desk' : `≥ ${reportLine()}` },
             { label: `${regime.largeCode || 'Reports'} filed`, value: data.filed, accent: CD.green },
             { label: 'Open / unfiled', value: data.reportable.length - data.filed, accent: data.reportable.length - data.filed ? CD.flag : CD.green },
             { label: 'Structuring watch', value: data.stru.length, accent: data.stru.length ? CD.amber : CD.ink }
           ]} />
           <Card pad={0}>
-            <div style={{ padding: '14px 16px 4px' }}><SecTitle n={`${data.reportable.length} record(s)`}>Reportable transactions — {limit.code} ≥ {limit.label}</SecTitle></div>
+            <div style={{ padding: '14px 16px 4px' }}><SecTitle n={`${data.reportable.length} record(s)`}>Reportable transactions — {limit.code} ≥ {reportLine()}</SecTitle></div>
             <table><thead><tr><th style={thS}>Ref</th><th style={thS}>Date</th><th style={thS}>Customer</th><th style={{ ...thS, textAlign: 'right' }}>Amount</th><th style={{ ...thS, textAlign: 'right' }}>{homeCcy} equiv</th><th style={{ ...thS, textAlign: 'center' }}>Status</th></tr></thead>
               <tbody>{data.reportable.map(r => (<tr key={r.id}>
                 <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{r.ref}</td>
@@ -845,10 +982,10 @@
             {limit.amount == null
               ? <>No reporting line has been established for this desk, so no deal on this pack is flagged as reportable. Set one in Settings, or install the jurisdiction pack for the country you operate in.</>
               : regime.windowKind === 'calendar_month'
-              ? <>{regime.largeLabel || 'Cash reports'} flag a single cash amount more than {limit.label}. Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.</>
+              ? <>{regime.largeLabel || 'Cash reports'} flag a single cash amount more than {reportLine()}. Connected deals in a calendar month (Asia/Kolkata) are not summed yet. The desk must check them. They are due by the 15th of the next month. The desk does not file them.</>
               : regime.windowKind === 'banking_day'
-              ? <>A single deal over {limit.label} is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.</>
-              : <>{regime.largeLabel || 'Large-cash reports'} are required for single cash amounts of {limit.label} or more{regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : ''} — this desk's own line, from its jurisdiction pack.</>}
+              ? <>A single deal over {reportLine()} is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file. The owner files in the AMLC portal.</>
+              : <>{regime.largeLabel || 'Large-cash reports'} are required for single cash amounts of {reportLine()} or more{regime.aggHours ? `, with ${regime.aggHours}-hour aggregation` : ''} — this desk's own line, from its jurisdiction pack.</>}
             {regime.windowKind === 'banking_day' ? null : <> This pack is a working summary; verify each filing in the official portal.</>}
           </div>
           <Attest />
@@ -867,7 +1004,7 @@
         const margin = total != null && volume != null && volume > 0 ? (total / volume) * 100 : null;
         const earners = (book && book.byActor) || [];
         return (<div>
-          <DocHead title="Revenue & Earnings" subtitle={`Commission plus the margin each disposal actually booked · ${homeCcy}`} rangeLabel={effRangeLabel} />
+          <DocHead title="Revenue & Earnings" subtitle={`Commission plus the margin each disposal actually booked · ${homeCcy}`} rangeLabel={effRangeLabel} generated={generated} />
           <KpiRow items={[
             { label: 'Fees collected', value: orDash(fees, homeCcy, noBook), accent: CD.green },
             { label: 'Realized FX margin', value: orDash(realized, homeCcy, book ? 'nothing sold in this period' : noBook), accent: CD.green, sub: 'against the stock’s own cost' },
@@ -909,7 +1046,7 @@
       }
       if (id === 'register') {
         return (<div>
-          <DocHead title="Transaction Register" subtitle={`${data.inP.length} record(s) including voided — the complete book`} rangeLabel={effRangeLabel} />
+          <DocHead title="Transaction Register" subtitle={`${data.inP.length} record(s) including voided — the complete book`} rangeLabel={effRangeLabel} generated={generated} />
           <Card pad={0}>
             <table><thead><tr>
               <th style={thS}>Ref</th><th style={thS}>Date / time</th><th style={thS}>Customer</th><th style={thS}>Type</th>
@@ -917,12 +1054,12 @@
             </tr></thead>
               <tbody>{data.inP.map(r => { const f = flags[r.id] || {}; const isVoid = r.status === 'void'; return (<tr key={r.id} style={{ opacity: isVoid ? 0.5 : 1 }}>
                 <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute, textDecoration: isVoid ? 'line-through' : 'none' }}>{r.ref}</td>
-                <td style={{ ...tdS, whiteSpace: 'nowrap' }}>{r.date} <span style={{ color: CD.faint }}>{r.time}</span></td>
+                <td style={{ ...tdS, whiteSpace: 'nowrap' }}>{phoneDocs ? dealWhen(r) : <>{r.date} <span style={{ color: CD.faint }}>{r.time}</span></>}</td>
                 <td style={{ ...tdS, fontWeight: 500 }}>{r.customer}</td>
                 <td style={{ ...tdS, color: CD.mute }}>{r.type}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{num(r.inAmt)} <span style={{ color: CD.faint }}>{r.inCcy}</span></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: CD.green }}>{r.outAmt === '' ? '—' : num(r.outAmt)} <span style={{ color: CD.faint }}>{r.outCcy}</span></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.fee, homeCcy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{moneyLabel(r.fee, homeCcy)}</td>
                 <td style={{ ...tdS, color: CD.mute }}>{tellerName(r.teller, settings)}</td>
                 <td style={{ ...tdS, textAlign: 'center', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>
                   {isVoid ? <span style={{ color: CD.mute }}>VOID</span> : <span>{[f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || '—'}</span>}
@@ -931,14 +1068,14 @@
               {data.inP.length === 0 && <tr><td style={tdS} colSpan={9}>No records in this period.</td></tr>}
               </tbody></table>
           </Card>
-          <div style={{ fontSize: 11, color: CD.faint, padding: '2px' }}>{limit.amount == null ? 'RPT = reportable — no reporting line is set for this desk, so nothing is flagged' : <>RPT = reportable ≥ {limit.label}</>} · STR = structuring watch · ID = KYC exception. Fees are shown in {homeCcy}. Voided records are retained, struck through, and never deleted.</div>
+          <div style={{ fontSize: 11, color: CD.faint, padding: '2px' }}>{limit.amount == null ? 'RPT = reportable — no reporting line is set for this desk, so nothing is flagged' : <>RPT = reportable ≥ {reportLine()}</>} · STR = structuring watch · ID = KYC exception. Fees are shown in {homeCcy}. Voided records are retained, struck through, and never deleted.</div>
         </div>);
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['verified', CD.green, CD.greenSoft]; };
         return (<div>
-          <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
+          <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} generated={generated} />
           <Card pad={0}>
             <table><thead><tr><th style={thS}>Client</th><th style={thS}>ID type</th><th style={thS}>ID number</th><th style={thS}>Expiry</th><th style={{ ...thS, textAlign: 'center' }}>Status</th><th style={{ ...thS, textAlign: 'right' }}>Tx</th><th style={{ ...thS, textAlign: 'right' }}>Volume</th></tr></thead>
               <tbody>{names.map(n => { const c = clients[n] || {}; const [st, col, bg] = stat(n); const tx = data.live.filter(r => r.customer === n);
@@ -1059,6 +1196,22 @@
       });
     };
     const resetAccess = () => { try { localStorage.removeItem(AKEY); } catch (e) {} setAccess({ ...DEFAULT_ACCESS }); };
+
+    if (phone) {
+      const View = window.CDOS.PhoneReports;
+      if (!View) throw new Error('Phone reports did not load.');
+      return (
+        <View
+          rows={rows} me={me} settings={settings} station={station} branches={branches}
+          dayBook={dayBook} held={held} tillDay={tillDay} closeDay={closeDay} data={data} homeCcy={homeCcy}
+          limit={limit} allowed={allowed} openSignal={openSignal} range={range} setRange={setRange}
+          canClose={!!((window.CDOS.ROLE_CAPS && window.CDOS.ROLE_CAPS[myRole] || {}).canCloseDay)}
+          homeEquiv={homeEquiv} renderDoc={renderDoc}
+          onRetry={() => setReload(n => n + 1)} onOpenTill={onOpenTill} onShowMore={onShowMore}
+          onSigned={(saved) => setCloseDay({ loading: false, signoff: saved, preview: null, forbidden: false, error: '' })}
+        />
+      );
+    }
 
     if (manageAccess && canManage) {
       return (<div style={{ height: '100%', overflow: 'auto', background: 'transparent' }}>

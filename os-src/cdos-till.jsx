@@ -210,9 +210,13 @@
       </div>, document.body);
   }
 
-  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope, onSelectLedgerTill }) {
+  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope, onSelectLedgerTill, returnAfterCount = false, onReturnFromCount }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
+    /* Reports asks for the count tab, then this screen hands the
+       desk back once that count is saved. A count started here
+       stays here. */
+    useEffect(() => { if (returnAfterCount) setTab('count'); }, [returnAfterCount]);
     const tillRootRef = useRef(null);
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
@@ -229,6 +233,8 @@
        matches and the close is refused. */
     const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
+    const [serverDay, setServerDay] = useState(null);
+    const [sessionLoaded, setSessionLoaded] = useState(false);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
 
@@ -299,6 +305,13 @@
     const applySession = (result) => {
       const session = (result && result.session) || null;
       setServerSession(session);
+      setServerDay((result && result.day) || null);
+      if (result && result.day && result.day.timeZone && window.CDOS.setBranchTimeZone) window.CDOS.setBranchTimeZone(result.day.timeZone);
+      /* The trading day is the one the server named for this session.
+         Opening the till after midnight has to move the desk onto that
+         date. The wall clock is only the stand-in before a session exists. */
+      if (session && session.businessDate && window.CDOS.setBusinessDate) window.CDOS.setBusinessDate(session.businessDate);
+      setSessionLoaded(true);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
@@ -308,12 +321,17 @@
        the one the ledger holds for the day that was just closed. */
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) { setDayBook({ loading: false, summary: null, error: 'this desk is not on the ledger' }); return; }
+      if (!sessionLoaded) return;
+      if (!serverDay || !serverDay.from || !serverDay.to) {
+        setDayBook({ loading: false, summary: null, error: serverSession ? 'the till session did not name its trading day' : 'no till session' });
+        return;
+      }
       let live = true;
-      window.CDOS.Backend.loadLedgerSummary(window.CDOS.businessDayWindow(1))
+      window.CDOS.Backend.loadLedgerSummary({ from: serverDay.from, to: serverDay.to })
         .then(summary => { if (live) setDayBook({ loading: false, summary, error: '' }); })
         .catch(error => { if (live) setDayBook({ loading: false, summary: null, error: (error && error.message) || 'the ledger could not be reached' }); });
       return () => { live = false; };
-    }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
+    }, [serverBacked, deskFacts, sessionLoaded, serverSession, serverDay && serverDay.from, serverDay && serverDay.to]);
     const applyBook = (result) => {
       setServerBalances((result && result.balances) || {});
       /* A count in progress keeps the mark it started on. Adopting the
@@ -337,6 +355,8 @@
         setServerBalances(null);
         setBalanceGeneration(null);
         setServerSession(null);
+        setServerDay(null);
+        setSessionLoaded(false);
         setServerBalanceError('');
         return;
       }
@@ -352,6 +372,8 @@
           setServerBalances(null);
           setBalanceGeneration(null);
           setServerSession(null);
+          setServerDay(null);
+          setSessionLoaded(true);
           setServerBalanceError(error.message || 'Server balances unavailable');
         });
       return () => { active = false; };
@@ -675,6 +697,7 @@
         }
       }
       persistLocalSnapshot();
+      if (returnAfterCount && onReturnFromCount) onReturnFromCount();
     };
 
     /* ---------------- RECONCILE / CLOSE TAB ----------------

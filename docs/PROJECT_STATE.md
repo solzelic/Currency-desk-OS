@@ -62,6 +62,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
+| Trading day on the sign-off sheet | The till session's `business_date`, named by `businessDate()` in the branch time zone when the session opens. The session keeps that date after midnight. The sheet asks the ledger for the window the session returns (`day.from`, `day.to`). The browser does not derive either from its own clock |
+| Till session date | The same calendar date, returned when the till is opened and on every later read. `business_date` is stored and read as YYYY-MM-DD. A process that is not on UTC does not move it back a day. A session that is already open keeps the date it stored. Deal references minted while the till is open use that session date. A clearance or settlement with no open till uses the branch calendar date of the posting instant. The date shown on a posted deal is the branch calendar date of `postedAt`. `branches.timezone` is NOT NULL and defaults to America/Toronto. A blank zone or a zone the server cannot read is refused as `BRANCH_TIMEZONE_UNSET` (409) |
+| Whether an identity document is still current | The expiry and today are calendar dates (YYYY-MM-DD) in the branch time zone. The document is current on its expiry date. The server names today with `businessDate(now, branches.timezone)` and compares the two strings. The browser uses the zone the till session names. A UTC `Date` conversion is not used |
 
 ## Production/build surfaces
 
@@ -198,6 +201,30 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   and stays disabled, and the ledger heading still shows. The ID
   row, the discard question, and the phone footer are not on that
   dialog.
+- **Phone Reports.** At 430px and under, Reports opens on today's
+  end of day. The figures are `GET /api/ledger/close-of-day`: the
+  till session's branch day, the drawer sum, the large-cash count,
+  the 24-hour LCTR total, clients missing ID, and volume per
+  currency. The browser does not add them up. A day with no deals
+  shows 0.00 and "No deals yet". An uncounted drawer says "Not
+  counted yet". A figure the book did not answer is a word.
+  Seeing Earned, and saving, require `till:close`. A teller is
+  refused by the API as well as the screen. Switching person
+  closes Reports. Save posts one row per till session, with an
+  idempotency key, the not-counted flag, the snapshot, an audit
+  event, and a PDF of that snapshot. The same key replays. A
+  second key is refused, and the button stays on Saved. Another
+  device sees the signed sheet. A till that was never opened has
+  no Save. The button says "Save end of day" and does not say
+  PDF. The print view in this tab is the same snapshot, so an A4
+  page is not blank. The PDF names the shop, the branch-zone
+  date, a 12-hour time, the large-cash line, and Teller and Owner
+  on separate lines. The check row is "Single deals of 10,000 CAD
+  or more". The LCTR row counts a customer's cash in the session
+  window, so 6,000 and 4,500 on the same day count. Other phone
+  reports say "Oct 12, 2026, 2:30 PM", name the currency code, and
+  use 44px chips. Wider than 430px, Reports is the desk launcher
+  it already was.
 - **Philippines pack `pack-ph-v1` (draft).** A new Philippines desk
   opens on this pack, in PHP. Existing desks do not move. Money
   changing and remittance are identified above 5,000 PHP. Other
@@ -571,6 +598,19 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone Reports sign-off. The close of day is one server
+row per till session (`ledger_till_signoffs`, migration 041). The
+phone posts an idempotency key and the not-counted flag, and the
+row stores the snapshot, the audit event, and the PDF. A teller
+cannot read or save it (`till:close`). Switching person closes
+Reports. The sheet's day is the session's branch day. A phone
+document stamps an instant in that zone, and uses the desk's
+configured zone until the session answers. The formatter does not
+fill in Toronto when the zone is missing. Drawer, large cash, LCTR,
+missing ID, and volume by currency are the server's figures.
+10,000.00 CAD counts. 6,000 plus 4,500 for one customer on that day
+counts as an LCTR. The desktop launcher is unchanged above 430px.
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
@@ -593,6 +633,9 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-11**, phone Reports. At 430px and under, Reports is the close-of-day
+screen. The later note above is the one that is true now.
 
 **2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
 the seam job's render of the commit in `tests/e2e/README.md`, checked
@@ -719,6 +762,35 @@ a session group, and search that matches what an app does.
 the phone list only when Twilio is set up. Branches and the AI
 Assistant are front-end mocks and stay off it. The ledger screen is unchanged.
 Contract: `docs/PHONE_SHELL.md`.
+
+**2026-10-11**, identity expiry. An ID is current through the end of its expiry
+date in the branch time zone. That date and today are compared as
+YYYY-MM-DD. A UTC conversion was marking the last valid day expired
+and, where the process zone is ahead of UTC, printing the expiry as
+the day before.
+
+**2026-10-12**, branch time zone. Signup, the demo seed, the platform
+admin, and a location opened from the desk write `America/Toronto` when
+they do not name a zone. The column has been `NOT NULL` with that
+default since the desk table was created. A blank value or a string
+that is not a time zone is `BRANCH_TIMEZONE_UNSET`, HTTP 409. The
+header `x-cd-now` is read only when `CD_TEST_CLOCK=1` and the process
+is not production. The hook that reads it is registered only in that
+case. `CD_TEST_CLOCK=1` with `NODE_ENV=production` refuses to boot
+(`CD_TEST_CLOCK must never be set in production`) before the database
+is opened.
+
+**2026-10-11**, till date. Opening a till just after midnight stores the
+branch calendar date, and a later read returns that same date. Deal
+references on an open till use it. The date on a posted deal is the
+branch calendar date of the posting instant. A dashboard or report
+window counted from that date uses the branch's midnight, so a deal
+posted after UTC midnight still sits inside a Toronto trading day.
+
+**2026-10-11**, sign-off business date. The sheet's trading day is the
+open till session's business date in the branch time zone, and the
+figures are the ledger totals for the window that session returns.
+A desk still open after midnight stays on the date it opened on.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

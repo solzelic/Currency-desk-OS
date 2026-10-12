@@ -1349,6 +1349,7 @@
     const [ledgerClient, setLedgerClient] = useState(null);
     const [newDealSignal, setNewDealSignal] = useState(null);   // {n} — request the Ledger to open a fresh New-Transaction modal
     const [reportOpen, setReportOpen] = useState(null);   // {id, n} — open the Reports app focused on a specific report
+    const [countReturn, setCountReturn] = useState(false);   // phone Reports opened the count and wants the desk back after Save count
     const openReport = (id) => { openApp('reports'); setReportOpen({ id, n: Date.now() }); };
     const [txToOpen, setTxToOpen] = useState(null);   // {id, n} — opens a record's detail in the Ledger
     const [ledgerView, setLedgerView] = useState(null);   // {view, n} — opens the Ledger pre-filtered (alerts jump)
@@ -1511,6 +1512,10 @@
           return { branchId: b.id, tillId: t && t.id };
         });
       }
+      /* The sheet on screen belongs to the person who opened it.
+         Switching accounts closes Reports, even when the next person
+         could open it again. */
+      setWins(ws => ws.filter(w => String(w.id).split('~')[0] !== 'reports'));
       log('Signed in as', `${s.name} · ${s.role}`);
     };
     /* ---- transaction PIN gates (rules set in Settings › Employees) ---- */
@@ -1724,6 +1729,7 @@
     function focusWin(id) { setWins(ws => ws.map(w => w.id === id ? { ...w, z: ++zTop.current, min: false } : w)); }
     function openApp(id) {
       setPhoneMore(false);
+      if (id !== 'till') setCountReturn(false);
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) { openSettingsTab('billing'); return; }
       setWins(ws => {
         const ex = ws.find(w => w.id === id);
@@ -2264,7 +2270,7 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} returnAfterCount={countReturn} onReturnFromCount={() => { setCountReturn(false); openApp('reports'); }} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
@@ -2272,7 +2278,7 @@
         case 'calc': return <Calc settings={settings} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;
-        case 'reports': return <Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} openSignal={reportOpen} />;
+        case 'reports': return <Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} openSignal={reportOpen} countReturn={countReturn} onOpenTill={() => { setCountReturn(true); openApp('till'); }} onShowMore={() => setPhoneMore(true)} />;
         case 'pricing': return <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />;
         case 'store': return <AppStore installed={storeInstalled} available={storeAvailable} locked={storeLocked} plan={activePlan} coming={COMING || []} onAdd={restoreApp} onRemove={removeApp} onOpen={openApp} onUpgrade={() => openSettingsTab('billing')} />;
         case 'tagged': return <Tagged {...{ rows, clients, settings, onOpen: openTransaction }} />;

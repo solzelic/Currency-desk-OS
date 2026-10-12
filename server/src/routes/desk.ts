@@ -41,6 +41,7 @@ import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessio
 import { publishStartingBoard } from "../rates/starting-board.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { audit } from "../audit.js";
+import { assertBranchTimeZone, BranchTimeZoneUnset, DEFAULT_BRANCH_TIMEZONE } from "../ledger/branch-zone.js";
 
 const branchBody = z.object({
   name: z.string().trim().min(1, "a location needs a name").max(120),
@@ -165,8 +166,19 @@ export function registerDeskRoutes(app: FastifyInstance, db: Db) {
 
     /* The clock the new location keeps. Copied from the location they
        already run unless they say otherwise — a second shop in the same
-       city on a different timezone is a mistake, not a feature. */
-    const timezone = parsed.data.timezone || existingBranches[0]?.timezone;
+       city on a different timezone is a mistake, not a feature. A desk
+       with no zone yet takes the column default, and the row stores it. */
+    let timezone: string;
+    try {
+      timezone = assertBranchTimeZone(
+        parsed.data.timezone || existingBranches[0]?.timezone || DEFAULT_BRANCH_TIMEZONE,
+      );
+    } catch (error) {
+      if (error instanceof BranchTimeZoneUnset) {
+        return reply.code(409).send({ code: error.code, message: error.message });
+      }
+      throw error;
+    }
     const tillId = parsed.data.tillId?.trim() || tillNumber(1);
     if (!TILL_ID.test(tillId)) return reply.code(400).send({ error: "invalid_request", detail: "till id: lowercase letters, digits, hyphens" });
 
@@ -175,7 +187,7 @@ export function registerDeskRoutes(app: FastifyInstance, db: Db) {
       tenantId: who.tenantId,
       legalEntityId: who.legalEntityId,
       name,
-      ...(timezone ? { timezone } : {}),
+      timezone,
     }).onConflictDoNothing();
 
     const workspaceId = `ws-${branchId.replace(/^br-/, "")}-${tillId}`;
@@ -239,7 +251,7 @@ export function registerDeskRoutes(app: FastifyInstance, db: Db) {
 
     return reply.code(201).send({
       created: true,
-      branch: { id: branchId, name, timezone: timezone ?? null },
+      branch: { id: branchId, name, timezone },
       tills: [{ workspaceId, tillId }],
       board: { published: board.published, currencies: board.currencies },
       billing,

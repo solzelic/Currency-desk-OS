@@ -77,8 +77,13 @@ async function saveDrawerCount(page: Page) {
 }
 
 async function openCashDrawer(page: Page) {
-  await page.getByText(/Cash Drawer/i).first().click();
-  await expect(page.getByText(/Cash drawer/i).first()).toBeVisible();
+  /* The ledger's closed-day line says "Till & Cash Drawer". That is
+     the first match for those words, and clicking it leaves the
+     drawer shut. The dock tab is the control that opens it. */
+  const tab = page.locator('#appbar [data-app="till"]');
+  await tab.scrollIntoViewIfNeeded();
+  await tab.click();
+  await expect(page.locator(".win.show.active .win-title", { hasText: /Cash drawer/i })).toBeVisible();
   await settleCashDrawerChrome(page);
 }
 

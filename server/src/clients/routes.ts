@@ -25,6 +25,7 @@ import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { ensureLedgerPrincipal } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
+import { BranchTimeZoneUnset } from "../ledger/branch-zone.js";
 import { isRetryable } from "../ledger/retry.js";
 import { ClientRecordService } from "./records.js";
 
@@ -183,12 +184,16 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
         message: "Another change to this customer is being recorded. Nothing was saved — try again.",
       });
     }
+    if (error instanceof BranchTimeZoneUnset) {
+      return reply.code(409).send({ code: error.code, message: error.message });
+    }
     if (!(error instanceof LedgerError)) {
       app.log.error(error, "client records route failure");
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });
     }
     const status =
       error.code === "AUTHENTICATION_REQUIRED" ? 401
+        : error.code === "BRANCH_TIMEZONE_UNSET" ? 409
         : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
           : error.code === "CLIENT_NOT_FOUND" ||
               error.code === "CLIENT_DOCUMENT_NOT_FOUND" ||
