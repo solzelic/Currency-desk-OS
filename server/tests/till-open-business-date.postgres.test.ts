@@ -318,6 +318,18 @@ postgres("a till opened after midnight takes the branch calendar date", () => {
       DEMO.branchId,
       "Asia/Jerusalem",
     ]);
+    /* A file that ran earlier may have left this entity on another
+       pack. The quote direction is derived from that pack's home
+       currency, so a CAD to USD buy is refused when the home currency
+       is no longer CAD. This desk is the Canadian demo. */
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency='CAD',
+              jurisdiction_pack_id='pack-ca-v1',
+              jurisdiction_pack_version=1
+        WHERE id=$1`,
+      [DEMO.legalEntityId],
+    );
     const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
     await pool.query(
       `INSERT INTO ledger_customers
