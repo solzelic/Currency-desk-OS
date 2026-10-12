@@ -51,7 +51,13 @@
 
   function clock12(ms) {
     if (!ms) return '';
-    return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return '';
+    let h = d.getHours();
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const m = String(d.getMinutes()).padStart(2, '0');
+    return h + ':' + m + ' ' + ap;
   }
 
   /* The ledger stores a staff id. The roster is how that id is spelled
