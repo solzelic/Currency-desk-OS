@@ -33,6 +33,8 @@
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
+import { loadBranchTimeZone } from "./branch-zone.js";
+import { now as clockNow } from "./clock.js";
 import { euAmlrNotice, loadEuAppliesFrom } from "./eu-amlr.js";
 import {
   BASELINE_NOTICE,
@@ -782,6 +784,17 @@ export class LedgerReportingService {
         branchId: actor.branchId,
         homeCurrency: pack.homeCurrency,
       });
+      /* Article 90's date is a calendar date. "Today" is the branch's
+         calendar date, not the UTC day. A missing zone refuses the
+         read rather than comparing against UTC. */
+      const euNotice =
+        pack.available && pack.packId === EU_AMLR_PACK_ID
+          ? euAmlrNotice(
+              await loadEuAppliesFrom(client, pack.packId),
+              clockNow(),
+              await loadBranchTimeZone(client, actor),
+            )
+          : null;
       await client.query("COMMIT");
       return {
         pack,
@@ -808,9 +821,7 @@ export class LedgerReportingService {
         notice: pack.baseline
           ? BASELINE_NOTICE
           : pack.available
-            ? pack.packId === EU_AMLR_PACK_ID
-              ? euAmlrNotice(await loadEuAppliesFrom(client, pack.packId))
-              : null
+            ? euNotice
             : RULES_UNAVAILABLE_NOTICE,
         idThresholds: idLines.rows.map((row) =>
           idLineFromRow(row as Record<string, unknown>),

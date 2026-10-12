@@ -427,23 +427,86 @@
     if (Number.isNaN(asUtc)) throw new Error('The branch time zone could not be read.');
     return asUtc - at.getTime();
   }
-  function zonedMidnight(isoDate, timeZone) {
+  function zonedWallTime(isoDate, time, timeZone) {
     const match = CALENDAR_DATE.exec(isoDate);
-    if (!match) throw new Error('The business day is not a date.');
-    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3]);
+    const clock = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time || '');
+    if (!match || !clock) throw new Error('The wall time is not a branch time.');
+    const hour = +clock[1], minute = +clock[2], second = +(clock[3] || 0);
+    if (hour > 23 || minute > 59 || second > 59) throw new Error('The wall time is not a branch time.');
+    const guess = Date.UTC(+match[1], +match[2] - 1, +match[3], hour, minute, second);
     const offset = zoneOffsetMs(new Date(guess), timeZone);
     let start = guess - offset;
     const corrected = zoneOffsetMs(new Date(start), timeZone);
     if (corrected !== offset) start = guess - corrected;
     const result = new Date(start);
-    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no midnight on ' + isoDate + '.');
+    if (calendarDate(result, timeZone) !== isoDate) throw new Error('The branch time zone has no ' + time + ' on ' + isoDate + '.');
+    const shown = new Intl.DateTimeFormat('en-US', {
+      timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    }).formatToParts(result);
+    const shownPart = (type) => {
+      const found = shown.find(part => part.type === type);
+      return found ? Number(found.value) : NaN;
+    };
+    let gotHour = shownPart('hour');
+    if (gotHour === 24) gotHour = 0;
+    if (gotHour !== hour || shownPart('minute') !== minute || shownPart('second') !== second) {
+      throw new Error('The branch time zone has no ' + time + ' on ' + isoDate + '.');
+    }
     return result;
   }
+  function zonedMidnight(isoDate, timeZone) {
+    return zonedWallTime(isoDate, '00:00:00', timeZone);
+  }
+  function zonedClock(at, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(at);
+    const pick = (type) => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '';
+    };
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    return {
+      isoDate: pick('year') + '-' + pick('month') + '-' + pick('day'),
+      minutes: (+hour) * 60 + (+pick('minute')),
+    };
+  }
+  const branchTimeZone = () => _branchTimeZone;
   const branchCalendarDate = (at) => {
     const when = at instanceof Date ? at : new Date();
     if (Number.isNaN(when.getTime())) throw new Error('branchCalendarDate needs a real instant');
     if (_branchTimeZone) return calendarDate(when, _branchTimeZone);
     return when.toLocaleDateString('en-CA');
+  };
+  /* HH:MM in the branch zone. The machine's clock is the stand-in only
+     until the till session has named the zone. */
+  const branchTimeOf = (at) => {
+    const when = at instanceof Date ? at : new Date(at);
+    if (Number.isNaN(when.getTime())) throw new Error('branchTimeOf needs a real instant');
+    const options = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+    if (_branchTimeZone) options.timeZone = _branchTimeZone;
+    const parts = new Intl.DateTimeFormat('en-CA', options).formatToParts(when);
+    const pick = (type) => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '00';
+    };
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    return hour + ':' + pick('minute');
+  };
+  const branchWallTime = (isoDate, time) => {
+    if (!_branchTimeZone) return new Date(String(isoDate) + 'T' + (time || '00:00'));
+    return zonedWallTime(isoDate, time || '00:00', _branchTimeZone);
+  };
+  /* The structuring watch counts calendar dates in the branch zone.
+     The screen's "rolling" label is a separate question; this is the
+     cutoff the date comparison already used, read on the right clock. */
+  const structuringWatchStart = (days) => {
+    const n = Number(days);
+    if (!Number.isInteger(n) || n < 0) throw new Error('The structuring watch needs a whole number of days.');
+    return addCalendarDays(branchCalendarDate(), -n);
   };
   const readCalendarDate = (value) => {
     if (value instanceof Date) {
@@ -983,7 +1046,7 @@
 
   /* human-readable, sortable reference: LT-YYMMDD-NNN */
   const mkRef = (date, seq) => 'LT-' + String(date).slice(2).replace(/-/g, '') + '-' + String(seq).padStart(3, '0');
-  const nowTime = () => new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const nowTime = () => branchTimeOf(new Date());
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
@@ -1402,7 +1465,8 @@
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */
     wallClock, businessDate, setBusinessDate, refreshBusinessDate, businessDayWindow,
-    setBranchTimeZone, branchCalendarDate, calendarBefore, calendarDaysUntil,
+    setBranchTimeZone, branchTimeZone, branchCalendarDate, branchTimeOf, branchWallTime,
+    addCalendarDays, zonedClock, zonedWallTime, structuringWatchStart, calendarBefore, calendarDaysUntil,
     /* the one reporting line, and the pack it comes from */
     reportingLimit, overReportingLimit, identificationLimit,
     deskPack, deskReports, deskIdLines, deskIdThresholds, setDeskIdThresholds, setDeskPack, refreshJurisdiction, useDeskFacts,

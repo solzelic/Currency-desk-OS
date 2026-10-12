@@ -6,7 +6,7 @@
    linked transactions is not applied. Article 80's cash payment limit
    is not a block. pack-eu-v1 is a different row and is not read here. */
 import Decimal from "decimal.js";
-import { civilDate } from "../civil-date.js";
+import { businessDate, readDateOnly } from "./business-date.js";
 import { idKindForDeal } from "./compliance-gate.js";
 import { EU_AMLR_PACK_ID } from "./jurisdiction.js";
 
@@ -49,19 +49,36 @@ function pgCode(error: unknown): string | undefined {
   return undefined;
 }
 
-function dateOnly(value: unknown): string | null {
+/** The stored applies-from date. A Postgres DATE comes back as local
+    midnight; reading it through toISOString moves the day in a zone
+    ahead of UTC. Null means the column is not there. A value that is
+    present and not a date is refused. */
+function appliesFromDate(value: unknown): string | null {
   if (value == null || value === "") return null;
-  if (value instanceof Date) return civilDate(value);
-  const text = String(value).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+  return readDateOnly(value);
 }
 
-/** The disclaimer while today is before the date the regulation applies.
-    On that date, and after it, there is nothing extra to say. */
-export function euAmlrNotice(appliesFrom: unknown, today = new Date()): string | null {
-  const from = dateOnly(appliesFrom);
+function todayInBranch(today: Date | string, timeZone: string | undefined): string {
+  if (typeof today === "string") return readDateOnly(today);
+  if (!(today instanceof Date) || Number.isNaN(today.getTime())) {
+    throw new Error("The EU notice needs a real instant.");
+  }
+  if (!timeZone) throw new Error("The EU notice needs the branch time zone.");
+  return businessDate(today, timeZone);
+}
+
+/** The disclaimer while the branch's calendar date is before the date
+    the regulation applies. On that date, and after it, there is nothing
+    extra to say. `today` as an instant is read in `timeZone`, not as a
+    UTC date. */
+export function euAmlrNotice(
+  appliesFrom: unknown,
+  today: Date | string = new Date(),
+  timeZone?: string,
+): string | null {
+  const from = appliesFromDate(appliesFrom);
   if (!from) return null;
-  const now = today.toISOString().slice(0, 10);
+  const now = todayInBranch(today, timeZone);
   return now < from ? EU_AMLR_NOTICE : null;
 }
 

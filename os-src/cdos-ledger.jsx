@@ -121,7 +121,7 @@
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const winDays = (settings && settings.structuringDays) || 30;
-      const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
+      const cutoff = window.CDOS.structuringWatchStart(winDays);
       const ccyCount = {};
       const home = homeCcy();
       h.forEach(r => {

@@ -88,8 +88,20 @@
   function fmtWindowEdge(iso, tz) {
     const d = new Date(iso);
     if (isNaN(d)) return '—';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${tzOffset(d, tz)}`;
+    const zone = (window.CDOS.branchTimeZone && window.CDOS.branchTimeZone()) || tz || undefined;
+    const options = {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    };
+    if (zone) options.timeZone = zone;
+    const parts = new Intl.DateTimeFormat('en-CA', options).formatToParts(d);
+    const pick = (type) => {
+      const found = parts.find(part => part.type === type);
+      return found ? found.value : '00';
+    };
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    return `${pick('year')}-${pick('month')}-${pick('day')} ${hour}:${pick('minute')}:${pick('second')}${tzOffset(d, zone)}`;
   }
   // surname / given / other from a single stored name
   function nameParts(full) {

@@ -28,7 +28,10 @@
    ============================================================ */
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { assertBranchTimeZone, BranchTimeZoneUnset } from "./branch-zone.js";
+import { now as clockNow } from "./clock.js";
 import { idKindForDeal } from "./compliance-gate.js";
+import { staticAggregationWindow } from "./compliance-windows.js";
 import type { JurisdictionPack } from "./jurisdiction.js";
 
 export type IdentificationDeal = {
@@ -228,7 +231,8 @@ async function largeCashRule(
 /* Midnight in the branch's zone, then 24 consecutive hours. The law
    is 24 consecutive hours, so the end is that instant plus 24 hours
    and not "the same clock time tomorrow", which is 23 or 25 hours
-   across a daylight-saving change.
+   across a daylight-saving change. The instant is named by
+   `staticAggregationWindow`, which uses the shared branch midnight.
 
    The browser lets an owner move the anchor off midnight
    (settings.aggWindowStart). That choice is not on the server. The
@@ -238,53 +242,17 @@ export function staticWindow(
   at: Date,
   timeZone: string,
 ): { start: Date; end: Date } {
-  const start = zonedMidnight(at, timeZone);
-  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+  return staticAggregationWindow(at, timeZone);
 }
 
-function zoneOffsetMs(at: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(at);
-  const pick = (type: string) =>
-    Number(parts.find((part) => part.type === type)?.value ?? "0");
-  let hour = pick("hour");
-  /* A few engines report midnight as hour 24. */
-  if (hour === 24) hour = 0;
-  const asUtc = Date.UTC(
-    pick("year"),
-    pick("month") - 1,
-    pick("day"),
-    hour,
-    pick("minute"),
-    pick("second"),
-  );
-  return asUtc - at.getTime();
-}
-
-function zonedMidnight(at: Date, timeZone: string): Date {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(at);
-  const pick = (type: string) =>
-    Number(parts.find((part) => part.type === type)?.value ?? "0");
-  const guess = Date.UTC(pick("year"), pick("month") - 1, pick("day"), 0, 0, 0);
-  const offset = zoneOffsetMs(new Date(guess), timeZone);
-  let start = guess - offset;
-  const corrected = zoneOffsetMs(new Date(start), timeZone);
-  if (corrected !== offset) start = guess - corrected;
-  return new Date(start);
+/** The static window for a branch, using the zone stored on that branch. */
+export async function branchStaticWindow(
+  client: pg.PoolClient,
+  branchId: string,
+  at: Date,
+): Promise<{ timeZone: string; start: Date; end: Date }> {
+  const timeZone = await branchZone(client, branchId);
+  return { timeZone, ...staticWindow(at, timeZone) };
 }
 
 async function branchZone(client: pg.PoolClient, branchId: string): Promise<string> {
@@ -293,9 +261,13 @@ async function branchZone(client: pg.PoolClient, branchId: string): Promise<stri
       "SELECT timezone FROM branches WHERE id = $1",
       [branchId],
     );
-    const zone = String(found.rows[0]?.timezone ?? "").trim();
-    if (zone) return zone;
+    /* No branch row: the embedded tests that never insert one, and the
+       gap in docs/CANADA_PACK.md. A row that is present with a blank
+       or unreadable zone is refused. It is not quietly Toronto. */
+    if (!found.rowCount) return "America/Toronto";
+    return assertBranchTimeZone(found.rows[0]?.timezone);
   } catch (error) {
+    if (error instanceof BranchTimeZoneUnset) throw error;
     if ((error as { code?: string }).code !== "42P01") throw error;
   }
   return "America/Toronto";
@@ -425,7 +397,7 @@ export async function countryIdentification(
         const trigger =
           deskReport && deskReport.lt(rule.trigger) ? deskReport : rule.trigger;
         const zone = await branchZone(client, args.branchId);
-        const window = staticWindow(new Date(), zone);
+        const window = staticWindow(clockNow(), zone);
         const keys: Partial<Record<Axis, string | null>> = {
           conductor: args.deal.customerId?.trim() || null,
           on_behalf_of: personKey(args.deal.onBehalfOf),

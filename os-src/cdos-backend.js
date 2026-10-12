@@ -148,7 +148,7 @@
          date, which is still yesterday just after midnight in a zone
          ahead of UTC. */
       date: window.CDOS.branchCalendarDate(posted),
-      time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      time: window.CDOS.branchTimeOf(posted),
       customer: customerName || transaction.customerId,
       beneficiary: "",
       type: DEAL_TYPE_LABEL[transaction.dealKind] || "Currency Exchange",

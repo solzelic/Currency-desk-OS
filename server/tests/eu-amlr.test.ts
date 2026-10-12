@@ -62,12 +62,20 @@ describe("EU AMLR 2027 lines", () => {
     expect(derive({ country: "CA" }).reportThreshold).toBe(10000);
   });
 
-  it("shows the disclaimer only before 10 July 2027", () => {
+  it("shows the disclaimer only before 10 July 2027 in the branch zone", () => {
     expect(EU_AMLR_APPLIES_FROM).toBe("2027-07-10");
-    expect(euAmlrNotice("2027-07-10", new Date("2026-10-07T12:00:00Z"))).toBe(EU_AMLR_NOTICE);
-    expect(euAmlrNotice("2027-07-10", new Date("2027-07-09T23:00:00Z"))).toBe(EU_AMLR_NOTICE);
-    expect(euAmlrNotice("2027-07-10", new Date("2027-07-10T00:00:00Z"))).toBeNull();
-    expect(euAmlrNotice("2027-07-10", new Date("2027-07-11T00:00:00Z"))).toBeNull();
+    expect(euAmlrNotice("2027-07-10", new Date("2026-10-07T12:00:00Z"), "America/Toronto")).toBe(EU_AMLR_NOTICE);
+    /* 03:30Z on 10 July is still 9 July in Toronto (EDT, UTC-4).
+       A UTC date would already have dropped the notice. */
+    expect(euAmlrNotice("2027-07-10", new Date("2027-07-10T03:30:00Z"), "America/Toronto")).toBe(EU_AMLR_NOTICE);
+    expect(euAmlrNotice("2027-07-10", new Date("2027-07-10T04:30:00Z"), "America/Toronto")).toBeNull();
+    /* 21:30Z on 9 July is already 10 July in Jerusalem (IDT, UTC+3).
+       A UTC date would still be showing the notice. */
+    expect(euAmlrNotice("2027-07-10", new Date("2027-07-09T20:30:00Z"), "Asia/Jerusalem")).toBe(EU_AMLR_NOTICE);
+    expect(euAmlrNotice("2027-07-10", new Date("2027-07-09T21:30:00Z"), "Asia/Jerusalem")).toBeNull();
+    expect(euAmlrNotice("2027-07-10", "2027-07-09")).toBe(EU_AMLR_NOTICE);
+    expect(euAmlrNotice("2027-07-10", "2027-07-10")).toBeNull();
+    expect(() => euAmlrNotice("2027-07-10", new Date("2027-07-09T12:00:00Z"))).toThrow(/time zone/);
     expect(EU_AMLR_NOTICE).not.toMatch(/[—–]/);
   });
 
