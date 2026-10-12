@@ -3109,6 +3109,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     padding-left: 0;
     padding-right: 20px;
   }
+  /* The shell spacer is 16px because the shared row bleeds 16px past
+     the gutter. This row does not bleed, so the spacer would sit the
+     first chip 16px past the search. Drop it here only. */
+  .ph-xfer .phone-chips::before {
+    content: none;
+  }
   /* Foundation ListRow. Line 1 is the name and the amount. Line 2 is
      the country and method, and the status badge. The shell's flex
      rule is the same specificity and loads later, so this one names
@@ -3184,6 +3190,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .ph-sheet {
     position: fixed; inset: 0; z-index: 640; background: #F7F6F3;
     display: flex; flex-direction: column;
+    /* The desk sets --color-text to window ink (#111). Phone figures
+       use the text token, #161513. */
+    --color-text: var(--gray-900, #161513);
     font-family: var(--font-ui), "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
     letter-spacing: normal;
     word-spacing: normal;
