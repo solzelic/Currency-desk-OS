@@ -30,7 +30,10 @@ const SCREENS: Record<string, { label: string; text: RegExp }> = {
   loan: { label: "Loan Centre", text: /Loan terms/ },
   pricing: { label: "Pricing & Rates", text: /Default spread|Publish to Rate Board/ },
   store: { label: "Store", text: /On your dock/ },
-  settings: { label: "Settings", text: /Business profile/ },
+  /* An owner's desktop rail says "Business profile". A teller never
+     gets that rail. The phone list says "PIN and sign-in" for every
+     staff member, owner included. */
+  settings: { label: "Settings", text: /Business profile|PIN and sign-in/ },
 };
 
 export async function expectPhoneMore(page: Page): Promise<void> {
