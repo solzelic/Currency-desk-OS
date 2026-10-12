@@ -22,7 +22,16 @@ customer rate is not rounded before that multiply, and the published mid is
 not rounded to four places before the margin. `os-src/quote-terms.js` is
 that function. The New transaction sheet previews with it, and once a quote
 is frozen the sheet shows the frozen input, output, and rate rather than a
-second product. The rate stored on the quote is still 12 decimal places.
+second product. The You give / You receive line is the cash the till moves:
+input plus the fee when the customer pays home currency, output less the
+fee when they receive it. Those three frozen figures stay authoritative.
+The rate stored on the quote is still 12 decimal places. A quote whose
+payout is zero, including a fee that consumes a home-currency payout, is
+refused with `422 ZERO_PAYOUT`.
+
+The desk page carries the build id from `web/app/build-id.txt` and sends
+it as `x-currencydesk-build` on quote create and post. A different id is
+`409 RELOAD_REQUIRED`. A request with no id is still accepted.
 
 Endpoints: `POST /api/quotes`, `GET /api/quotes/:quoteId`,
 `POST /api/quotes/:quoteId/cancel`, `POST /api/quotes/:quoteId/override`, and
@@ -54,7 +63,8 @@ ID; later board publications cannot alter that history.
 Stable failures include `AUTHENTICATION_REQUIRED`, `SCOPE_DENIED`,
 `AUTHORIZATION_DENIED`, `INVALID_REQUEST`, `RATE_NOT_AVAILABLE`,
 `RATE_PUBLICATION_STALE`, `QUOTE_NOT_FOUND`, `QUOTE_NOT_ACTIVE`,
-`QUOTE_EXPIRED`, `QUOTE_MISMATCH`, `OVERRIDE_LIMIT_EXCEEDED`, and the ledger
+`QUOTE_EXPIRED`, `QUOTE_MISMATCH`, `ZERO_PAYOUT`, `RELOAD_REQUIRED`,
+`OVERRIDE_LIMIT_EXCEEDED`, and the ledger
 posting failures documented in `LEDGER_POSTING_API.md`.
 
 The API is intentionally fail-closed until a workspace has relational ledger

@@ -19,6 +19,25 @@ import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
 import { calculateQuoteTerms, minorUnits, roundOutput, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+/* quote-terms throws plain Error. A zero payout is 422. Everything else
+   the arithmetic refuses is a 400 whose words a teller can read. */
+function refuseTerms(error: unknown): never {
+  if (error instanceof LedgerError) throw error;
+  const message = error instanceof Error ? error.message : "";
+  if (message === "This quote pays out nothing.") throw new LedgerError("ZERO_PAYOUT", message);
+  const plain: Record<string, string> = {
+    "Yen has no decimals.": "Yen has no decimals.",
+    "This currency has no decimals.": "This currency has no decimals.",
+    "invalid money": "Enter a valid amount.",
+    "out of range": "That amount is outside what this desk can quote.",
+    "unsupported currency scale": "That currency is not available on this desk.",
+    "negative spread": "This rate cannot be quoted.",
+    "direction and currencies disagree": "Choose one currency to pay and a different one to receive.",
+  };
+  if (plain[message]) throw new LedgerError("INVALID_REQUEST", plain[message]);
+  if (message.startsWith("invalid ")) throw new LedgerError("INVALID_REQUEST", "The rate board cannot price this.");
+  throw new LedgerError("INVALID_REQUEST", "The quote could not be priced.");
+}
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
    — which is what a `char(3)` column had been narrowed to by hand. It
    was the type-level half of the ceiling described in migration 020: a
@@ -325,8 +344,7 @@ export class QuoteService {
           });
         }
       } catch (error) {
-        if (error instanceof LedgerError) throw error;
-        throw new LedgerError("INVALID_REQUEST", "Invalid commercial terms.");
+        refuseTerms(error);
       }
       const {
         input,

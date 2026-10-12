@@ -16,6 +16,14 @@
   var activeWorkspaceId = null;
   function setWorkspace(id) { activeWorkspaceId = id || null; }
   function getWorkspace() { return activeWorkspaceId; }
+  /* The build stamped into this page. A tab left open across a deploy
+     sends the id it was built with; the server refuses it. A page with
+     no stamp (the uncompiled shell) sends nothing. */
+  function buildHeader() {
+    var meta = typeof document !== "undefined" && document.querySelector('meta[name="currencydesk-build"]');
+    var id = meta && meta.getAttribute("content");
+    return id ? { "x-currencydesk-build": id } : {};
+  }
 
   async function request(path, options) {
     var response;
@@ -52,7 +60,9 @@
         PLAN_NOT_ENTITLED: "This workspace plan does not include server ledger posting.",
         SCOPE_DENIED: "The active workspace is not authorized for this account.",
         UNSUPPORTED_CURRENCY_PAIR: "Server posting currently supports CAD exchanges with USD, EUR, or GBP.",
-        QUOTE_EXPIRED: "The frozen quote expired. Request a new quote and confirm it again.",
+        QUOTE_EXPIRED: "Quote expired. Get a new rate.",
+        RELOAD_REQUIRED: "This screen is out of date. Reload to continue.",
+        ZERO_PAYOUT: "This quote pays out nothing.",
         INSUFFICIENT_TILL_LIQUIDITY: "The till does not have enough currency to complete this exchange.",
         TILL_NOT_OPEN: "Open the till before posting or recording cash activity.",
         TILL_ALREADY_CLOSED: "This till session is already closed.",
@@ -248,13 +258,13 @@
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       createQuote: function (payload) {
-        return request("/api/quotes", { method: "POST", body: JSON.stringify(payload) });
+        return request("/api/quotes", { method: "POST", headers: buildHeader(), body: JSON.stringify(payload) });
       },
       overrideQuote: function (quoteId, payload) {
         return request("/api/quotes/" + encodeURIComponent(quoteId) + "/override", { method: "POST", body: JSON.stringify(payload) });
       },
       postQuote: function (quoteId, payload) {
-        return request("/api/quotes/" + encodeURIComponent(quoteId) + "/post", { method: "POST", body: JSON.stringify(payload) });
+        return request("/api/quotes/" + encodeURIComponent(quoteId) + "/post", { method: "POST", headers: buildHeader(), body: JSON.stringify(payload) });
       },
       reverseTransaction: function (transactionId, payload) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/reversal", { method: "POST", body: JSON.stringify(payload) });

@@ -42,7 +42,7 @@ say.
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
-| `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` (concatenates the desk the way it always has, and writes `web/app/quote-terms.min.js` from `server/node_modules/decimal.js` plus `os-src/quote-terms.js`) | `web/app/index.html`, `web/app/os.js`, `web/app/quote-terms.min.js`, `web/app/tw.css` |
+| `CurrencyDesk OS.html` + `os-src/` | `npm run build:os` (concatenates the desk the way it always has, writes `web/app/quote-terms.min.js` from `server/node_modules/decimal.js` plus `os-src/quote-terms.js`, and stamps `web/app/build-id.txt` plus `?v=` on both desk scripts) | `web/app/index.html`, `web/app/os.js`, `web/app/quote-terms.min.js`, `web/app/build-id.txt`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
 

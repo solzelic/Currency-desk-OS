@@ -203,8 +203,15 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   await page.getByRole("button", { name: "Get server quote" }).click();
   await expect(page.getByTestId("tx-frozen")).toContainText("4,702.63");
   const frozen = await page.getByTestId("tx-frozen").innerText();
-  expect(frozen, "frozen expiry").toMatch(/Expires \d{1,2}:\d{2} [AP]M$/);
-  expect(frozen).not.toMatch(/a\.m\.|p\.m\.|\d:\d{2}:\d{2}/);
+  expect(frozen, "frozen expiry").toMatch(/Expires in \d+:\d{2}$/);
+  expect(frozen).not.toMatch(/[AP]M|a\.m\.|p\.m\./);
+  await expect(page.locator(".cd-tx-rail")).toContainText("71.62");
+  if (width <= 360) {
+    const kicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
+    await expect(kicker).toContainText("CAD");
+    const overflow = await kicker.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow, "the rate line clips CAD").toBeLessThanOrEqual(1);
+  }
   await expect(page.getByTestId("tx-receives")).toHaveText("4,702.63");
   await expect(page.getByTestId("tx-ticket-pays")).toContainText("3,500.00");
   const shot = process.env.SHOT_DIR;
@@ -293,6 +300,37 @@ async function asManager(request: APIRequestContext): Promise<void> {
     data: { staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" },
   });
   expect(login.ok(), await login.text()).toBeTruthy();
+}
+
+function centsOf(value: string | undefined): number {
+  const cleaned = String(value ?? "0").trim().replace(/,/g, "");
+  const negative = cleaned.startsWith("-");
+  const [whole, frac = ""] = cleaned.replace("-", "").split(".");
+  const n = Number(whole) * 100 + Number((frac + "00").slice(0, 2));
+  return negative ? -n : n;
+}
+
+function leadingCents(text: string): number {
+  const match = text.replace(/,/g, "").match(/-?\d+\.\d{2}/);
+  if (!match) throw new Error(`no amount in ${text}`);
+  return centsOf(match[0]);
+}
+
+async function sharedBalances(request: APIRequestContext): Promise<Record<string, string>> {
+  await asManager(request);
+  const held = await request.get("/api/ledger/till-balances", {
+    headers: { "x-workspace-id": SHARED_WORKSPACE },
+  });
+  expect(held.ok(), await held.text()).toBeTruthy();
+  return ((await held.json()).balances || {}) as Record<string, string>;
+}
+
+async function ledgerCount(page: Page): Promise<number> {
+  const listed = await page.evaluate(async () => {
+    const res = await fetch("/api/ledger/transactions?limit=50");
+    return res.json();
+  });
+  return ((listed.transactions || []) as unknown[]).length;
 }
 
 async function tillCurrencies(request: APIRequestContext, workspaceId: string): Promise<string[]> {
@@ -426,7 +464,7 @@ test("whole yen Customer receives is the posted amount", async ({ page, request 
   }
 });
 
-test("a we-sell fee stays off the amount the customer receives", async ({ page, request }) => {
+test("a we-sell fee is cash the till takes, and the headline says so", async ({ page, request }) => {
   try {
     await quoteUsdToCad(page, 1280);
     await openNewTransaction(page);
@@ -435,13 +473,57 @@ test("a we-sell fee stays off the amount the customer receives", async ({ page, 
     await page.locator(".cd-tx-fee").fill("1.50");
     await expect(page.locator(".cd-tx-side")).toContainText("We sell USD");
     await expect(page.getByTestId("tx-receives")).toHaveText("72.21");
+    await expect(page.getByTestId("tx-ticket-pays")).toContainText("101.50 CAD (100.00 + 1.50 fee)");
     await expect(page.getByTestId("tx-ticket-receives")).toContainText("72.21");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
     await page.getByRole("button", { name: "Get server quote" }).click();
     await expect(page.getByTestId("tx-frozen")).toContainText("72.21");
-    await expect(page.getByTestId("tx-receives")).toHaveText("72.21");
+    await expect(page.getByTestId("tx-ticket-pays")).toContainText("101.50 CAD (100.00 + 1.50 fee)");
+    await page.getByRole("button", { name: "Show customer the quote" }).click();
+    const presented = page.locator("div.fixed.inset-0").last();
+    await expect(presented).toContainText("You give");
+    await expect(presented).toContainText("101.50 CAD (100.00 + 1.50 fee)");
+    await expect(presented).toContainText("You receive");
+    await presented.getByRole("button", { name: "Back to desk" }).click();
+    const before = await sharedBalances(request);
+    const headline = (await page.getByTestId("tx-ticket-pays").innerText()).replace(/\s+/g, " ");
     await postFrozen(page, "72.21", "1.50");
+    const after = await sharedBalances(request);
+    expect(centsOf(after.CAD) - centsOf(before.CAD), "till CAD movement").toBe(leadingCents(headline));
+    expect(centsOf(after.USD) - centsOf(before.USD), "till USD movement").toBe(-7221);
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
+test("a we-buy fee is cash the till pays out, and the headline says so", async ({ page, request }) => {
+  try {
+    await quoteUsdToCad(page, 1280);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().click();
+    await page.locator(".cd-tx-swap").click();
+    await expect(page.locator(".cd-tx-side")).toContainText("We buy USD");
+    await page.locator(".cd-money input").first().fill("100");
+    await page.locator(".cd-tx-fee").fill("1.50");
+    await expect(page.getByTestId("tx-receives")).toHaveText("132.86");
+    await expect(page.getByTestId("tx-ticket-receives")).toContainText("132.86 CAD (134.36 less 1.50 fee)");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-ticket-receives")).toContainText("132.86 CAD (134.36 less 1.50 fee)");
+    await page.getByRole("button", { name: "Show customer the quote" }).click();
+    const presented = page.locator("div.fixed.inset-0").last();
+    await expect(presented).toContainText("You receive");
+    await expect(presented).toContainText("132.86 CAD (134.36 less 1.50 fee)");
+    await presented.getByRole("button", { name: "Back to desk" }).click();
+    const before = await sharedBalances(request);
+    const headline = (await page.getByTestId("tx-ticket-receives").innerText()).replace(/\s+/g, " ");
+    await postFrozen(page, "134.36", "1.50");
+    const after = await sharedBalances(request);
+    expect(centsOf(before.CAD) - centsOf(after.CAD), "till CAD movement").toBe(leadingCents(headline));
+    expect(centsOf(after.USD) - centsOf(before.USD), "till USD movement").toBe(10000);
   } finally {
     await restoreBoard(request);
   }
@@ -495,4 +577,104 @@ test("half-up Customer receives is the posted amount, not banker's rounding", as
   } finally {
     await restoreBoard(request);
   }
+});
+
+test("an old build id is refused and nothing posts", async ({ page, request }) => {
+  try {
+    await quoteUsdToCad(page, 1280);
+    const sources = await page.locator("script[src]").evaluateAll((els) => els.map((el) => el.getAttribute("src") || ""));
+    expect(sources.some((src) => /\/web\/app\/quote-terms\.min\.js\?v=[0-9a-f]+/.test(src)), sources.join(" ")).toBeTruthy();
+    expect(sources.some((src) => /\/web\/app\/os\.js\?v=[0-9a-f]+/.test(src)), sources.join(" ")).toBeTruthy();
+    const before = await ledgerCount(page);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().fill("80");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    const build = await page.locator('meta[name="currencydesk-build"]').getAttribute("content");
+    expect(build).toBeTruthy();
+    await page.evaluate(() => document.querySelector('meta[name="currencydesk-build"]')?.setAttribute("content", "stale-build"));
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-reload")).toContainText("This screen is out of date. Reload to continue.");
+    await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+    await expect(page.getByTestId("tx-frozen")).toHaveCount(0);
+    expect(await ledgerCount(page), "a refused quote posts nothing").toBe(before);
+    await page.locator(".cd-tx-cancel").click();
+    await page.evaluate((id) => document.querySelector('meta[name="currencydesk-build"]')?.setAttribute("content", id || ""), build);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().fill("80");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toBeVisible();
+    await page.evaluate(() => document.querySelector('meta[name="currencydesk-build"]')?.setAttribute("content", "stale-build"));
+    await page.getByRole("button", { name: "Post frozen quote" }).click();
+    await expect(page.getByTestId("tx-reload")).toContainText("This screen is out of date. Reload to continue.");
+    expect(await ledgerCount(page), "a refused post writes nothing").toBe(before);
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
+test("the picker hides three-decimal currencies and a yen fraction is not READY", async ({ page, request }) => {
+  try {
+    await quoteUsdToCad(page, 1280);
+    await page.evaluate(() => {
+      const cfg = JSON.parse(localStorage.getItem("yorkfx_rates_v1") || "{}");
+      cfg.rows = cfg.rows || {};
+      cfg.rows.KWD = { mid: 0.44, show: true, spread: 0.015 };
+      cfg.rows.BHD = { mid: 3.6, show: true, spread: 0.015 };
+      localStorage.setItem("yorkfx_rates_v1", JSON.stringify(cfg));
+    });
+    await openNewTransaction(page);
+    await page.locator(".cd-money input").first().fill("1");
+    const trigger = page.locator(".cd-money").first().locator("button");
+    await trigger.click();
+    await expect(page.getByRole("button", { name: /^KWD\b/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^BHD\b/ })).toHaveCount(0);
+    await page.getByRole("button", { name: /^JPY\b/ }).last().evaluate((el: HTMLButtonElement) => el.click());
+    await expect(trigger).toContainText("JPY");
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().fill("1000.5");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await expect(page.getByText("Yen has no decimals.")).toBeVisible();
+    await expect(page.getByTestId("tx-checklist")).toHaveText("NOT PRICED");
+    await expect(page.getByTestId("tx-checklist")).not.toHaveText(/READY/);
+    await expect(page.locator(".cd-tx")).not.toContainText("invalid money");
+    await chooseCurrency(page, 0, "EUR");
+    await chooseCurrency(page, 1, "GBP");
+    await expect(page.locator(".cd-tx-side")).toHaveText("Exchange EUR for GBP");
+    await expect(page.locator(".cd-tx-side")).not.toContainText(/cross/i);
+  } finally {
+    await restoreBoard(request);
+  }
+});
+
+test.describe("a frozen quote counts down outside Toronto", () => {
+  test.use({ timezoneId: "Pacific/Kiritimati" });
+  test("shows the time left, then disables Post", async ({ page, request }) => {
+    try {
+      await quoteUsdToCad(page, 1280);
+      expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe("Pacific/Kiritimati");
+      await page.clock.install();
+      await openNewTransaction(page);
+      await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+      await page.locator(".cd-money input").first().fill("40");
+      await page.locator(".cd-tx-purpose").fill("Personal travel");
+      await page.locator(".cd-tx-source").fill("Employment income");
+      const before = await ledgerCount(page);
+      await page.getByRole("button", { name: "Get server quote" }).click();
+      const frozen = page.getByTestId("tx-frozen");
+      await expect(frozen).toHaveText(/Expires in \d+:\d{2}$/);
+      await expect(frozen).not.toContainText(/[AP]M|a\.m\.|p\.m\./);
+      await page.clock.fastForward(180_000);
+      await expect(frozen).toHaveText("Quote expired. Get a new rate.");
+      await expect(page.getByRole("button", { name: "Post frozen quote" })).toBeDisabled();
+      expect(await ledgerCount(page), "an expired quote posts nothing").toBe(before);
+    } finally {
+      await restoreBoard(request);
+    }
+  });
 });

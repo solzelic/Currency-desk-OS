@@ -42,11 +42,15 @@
       if (places > 2) throw new Error("unsupported currency scale");
       return places;
     }
-    function money(value, min, places) {
+    function money(value, min, places, code) {
       if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(String(value))) throw new Error("invalid money");
       var out = new Decimal(value);
       if (out.lt(min) || out.gt("1000000000")) throw new Error("out of range");
-      if (!out.eq(out.toDecimalPlaces(places))) throw new Error("invalid money");
+      if (!out.eq(out.toDecimalPlaces(places))) {
+        if (places === 0 && String(code || "").toUpperCase() === "JPY") throw new Error("Yen has no decimals.");
+        if (places === 0) throw new Error("This currency has no decimals.");
+        throw new Error("invalid money");
+      }
       return out.toDecimalPlaces(places);
     }
     function rateOf(value, what) {
@@ -60,7 +64,72 @@
       return out;
     }
     function roundOutput(amount, rate, currency) {
-      return new Decimal(amount).mul(rate).toDecimalPlaces(placesOf(currency));
+      return new Decimal(amount).mul(rate).toDecimalPlaces(placesOf(currency), Decimal.ROUND_HALF_UP);
+    }
+    /* The customer receives nothing, or the fee would take the whole
+       home payout. That is a refused quote, not a zero on the ticket. */
+    function assertPayout(output, fee, to, home) {
+      var homeCode = String(home || "CAD").toUpperCase();
+      if (output.lte(0) || (String(to || "").toUpperCase() === homeCode && output.lte(fee))) {
+        throw new Error("This quote pays out nothing.");
+      }
+    }
+    /* Cash that changes hands. The fee is home-currency tender on top of
+       the exchange: added when the customer pays home, subtracted when
+       they receive it. The exchange output itself is unchanged. */
+    function cashHands(inputAmount, outputAmount, feeAmount, from, to, home) {
+      var input = new Decimal(inputAmount);
+      var output = new Decimal(outputAmount);
+      var fee = new Decimal(feeAmount || 0);
+      var homeCode = String(home || "CAD").toUpperCase();
+      from = String(from || "").toUpperCase();
+      to = String(to || "").toUpperCase();
+      function amountOf(value, currency) {
+        return formatAmount(value, currency);
+      }
+      function side(net, currency, detail) {
+        var amount = amountOf(net, currency);
+        return {
+          sentence: amount + " " + currency + (detail ? " (" + detail + ")" : ""),
+          amount: amount,
+          currency: currency,
+          detail: detail,
+        };
+      }
+      var give, receive;
+      if (from === homeCode) {
+        var paid = fee.gt(0) ? amountOf(input, from) + " + " + amountOf(fee, homeCode) + " fee" : null;
+        give = side(input.plus(fee), from, paid);
+        receive = side(output, to, null);
+      } else if (to === homeCode) {
+        var kept = fee.gt(0) ? amountOf(output, to) + " less " + amountOf(fee, homeCode) + " fee" : null;
+        give = side(input, from, null);
+        receive = side(output.minus(fee), to, kept);
+      } else {
+        give = side(input, from, null);
+        receive = side(output, to, null);
+      }
+      return {
+        give: give.sentence,
+        giveAmount: give.amount,
+        giveCurrency: give.currency,
+        giveDetail: give.detail,
+        receive: receive.sentence,
+        receiveAmount: receive.amount,
+        receiveCurrency: receive.currency,
+        receiveDetail: receive.detail,
+      };
+    }
+    function plainQuoteError(error) {
+      var message = error && error.message ? String(error.message) : "";
+      if (message === "Yen has no decimals." || message === "This currency has no decimals." || message === "This quote pays out nothing.") return message;
+      if (message === "invalid money") return "Enter a valid amount.";
+      if (message === "out of range") return "That amount is outside what this desk can quote.";
+      if (message === "unsupported currency scale") return "That currency is not available on this desk.";
+      if (message === "negative spread") return "This rate cannot be quoted.";
+      if (message === "direction and currencies disagree") return "Choose one currency to pay and a different one to receive.";
+      if (message.indexOf("invalid ") === 0) return "The rate board cannot price this.";
+      return "The quote could not be priced.";
     }
     function formatRate(value) {
       return new Decimal(value).toDecimalPlaces(12).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
@@ -95,8 +164,8 @@
       var from = String(input.from || "").toUpperCase();
       var to = String(input.to || "").toUpperCase();
       var homePlaces = placesOf(home);
-      var amount = money(input.inputAmount, "0.01", placesOf(from));
-      var fee = money(input.feeCad, "0", homePlaces);
+      var amount = money(input.inputAmount, "0.01", placesOf(from), from);
+      var fee = money(input.feeCad, "0", homePlaces, home);
       var margin = marginOf(input.margin);
       if (from === to) throw new Error("direction and currencies disagree");
       var shape = from === home && to !== home
@@ -117,6 +186,7 @@
         var outputHome = crossOut.mul(toMid).toDecimalPlaces(homePlaces);
         var crossSpread = inputHome.minus(outputHome).toDecimalPlaces(homePlaces);
         if (crossSpread.lt(0)) throw new Error("negative spread");
+        assertPayout(crossOut, fee, to, home);
         return {
           input: amount, fee: fee, mid: fromMid, fromMid: fromMid, toMid: toMid,
           customerRate: crossRate, outputAmount: crossOut, inputCad: inputHome,
@@ -136,6 +206,7 @@
       var outputCad = to === home ? outputAmount : outputAmount.mul(mid).toDecimalPlaces(homePlaces);
       var spreadCad = inputCad.minus(outputCad).toDecimalPlaces(homePlaces);
       if (spreadCad.lt(0)) throw new Error("negative spread");
+      assertPayout(outputAmount, fee, to, home);
       return {
         input: amount, fee: fee, mid: mid,
         fromMid: from === home ? new Decimal(1) : mid,
@@ -151,7 +222,8 @@
       if (typeof value === "number" && isFinite(value)) return String(value);
       return null;
     }
-    function packed(terms, from, to, direction) {
+    function packed(terms, from, to, direction, home) {
+      var hands = cashHands(terms.input, terms.outputAmount, terms.fee, from, to, home);
       return {
         state: "ok",
         direction: direction,
@@ -168,6 +240,14 @@
         rateLabel: formatRate(terms.customerRate),
         spreadCad: terms.spreadCad.toFixed(2),
         inputCad: terms.inputCad.toFixed(2),
+        give: hands.give,
+        giveAmount: hands.giveAmount,
+        giveCurrency: hands.giveCurrency,
+        giveDetail: hands.giveDetail,
+        receive: hands.receive,
+        receiveAmount: hands.receiveAmount,
+        receiveCurrency: hands.receiveCurrency,
+        receiveDetail: hands.receiveDetail,
       };
     }
     function directionOf(from, to, home) {
@@ -180,9 +260,9 @@
     }
     function priceAtRate(board, spec, from, to, home, raw) {
       var direction = directionOf(from, to, home);
-      var amount = money(raw, "0.01", placesOf(from));
+      var amount = money(raw, "0.01", placesOf(from), from);
       var feeText = spec.feeCad == null || String(spec.feeCad).trim() === "" ? "0" : String(spec.feeCad).trim();
-      var fee = money(feeText, "0", placesOf(home));
+      var fee = money(feeText, "0", placesOf(home), home);
       var rate = rateOf(spec.overrideRate, "rate");
       var output = roundOutput(amount, rate, to);
       var homePlaces = placesOf(home);
@@ -197,11 +277,12 @@
       var outputCad = toMid ? output.mul(toMid).toDecimalPlaces(homePlaces) : output;
       var spread = fromMid && toMid ? inputCad.minus(outputCad).toDecimalPlaces(homePlaces) : new Decimal(0);
       if (spread.lt(0)) throw new Error("negative spread");
+      assertPayout(output, fee, to, home);
       return packed({
         input: amount, fee: fee, customerRate: rate, outputAmount: output,
         spreadCad: spread, inputCad: inputCad,
         buyOrSellSide: direction === "customer_buy_foreign" ? "we_sell" : direction === "customer_sell_foreign" ? "we_buy" : "we_cross",
-      }, from, to, direction);
+      }, from, to, direction, home);
     }
     function preview(board, spec) {
       var from = String(spec.from || "").toUpperCase();
@@ -242,15 +323,16 @@
           input.marketMid = mid;
           input.margin = margin;
         }
-        return packed(calculateQuoteTerms(input), from, to, direction);
+        return packed(calculateQuoteTerms(input), from, to, direction, home);
       } catch (error) {
-        return { state: "bad", message: error && error.message ? error.message : "The quote could not be priced." };
+        return { state: "bad", message: plainQuoteError(error) };
       }
     }
 
     return {
       calculateQuoteTerms: calculateQuoteTerms,
       roundOutput: roundOutput,
+      cashHands: cashHands,
       preview: preview,
       minorUnits: minorUnits,
       formatAmount: formatAmount,

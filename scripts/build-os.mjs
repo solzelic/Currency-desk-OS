@@ -29,11 +29,15 @@
    WHAT THIS DOES NOT CHANGE
 
    The sources stay exactly as they were — os-src/*.jsx and admin.html are
-   still hand-written JSX and still the thing you edit. This reads them,
-   compiles them in the order the page declared, and writes the result
-   beside the other built pages in web/. Same arrangement the design pages
-   already use, and CI already fails when web/ is stale.
+   still hand-written JSX and still the thing you edit. os.js and admin.js
+   are still the unminified concatenation, in the order the page declared.
+   Minifying those two is a separate job. esbuild is used for one file
+   only: web/app/quote-terms.min.js, decimal.js plus os-src/quote-terms.js.
+   The same run hashes that file and os.js into web/app/build-id.txt and
+   stamps ?v=<hash> on both script tags, plus a meta tag the desk sends
+   with a quote. CI already fails when web/ is stale.
    ============================================================ */
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import esbuild from "esbuild";
 import { execFileSync } from "node:child_process";
@@ -213,10 +217,32 @@ const localTailwind = (html) =>
   if (html.includes("cdn.tailwindcss.com")) throw new Error("the built OS shell still points at the Tailwind CDN");
   for (const s of ours) html = html.replace(s.whole, s.whole === first ? " BUNDLE " : "");
   html = html.replace(" BUNDLE ", '<script src="/web/app/os.js"></script>');
+  const buildId = createHash("sha256")
+    .update(readFileSync(path.join(OUT, "quote-terms.min.js")))
+    .update(readFileSync(path.join(OUT, "os.js")))
+    .digest("hex")
+    .slice(0, 20);
+  writeFileSync(path.join(OUT, "build-id.txt"), buildId + "\n");
+  html = html.replace(
+    '<script defer src="/web/app/quote-terms.min.js"></script>',
+    `<script defer src="/web/app/quote-terms.min.js?v=${buildId}"></script>`,
+  );
+  html = html.replace(
+    '<script src="/web/app/os.js"></script>',
+    `<script src="/web/app/os.js?v=${buildId}"></script>`,
+  );
+  if (!html.includes("quote-terms.min.js?v=") || !html.includes("os.js?v=")) {
+    throw new Error("the built OS shell did not stamp its build id on both scripts");
+  }
+  html = html.replace(
+    "<head>",
+    `<head>\n<meta name="currencydesk-build" content="${buildId}" />`,
+  );
   // tidy the blank lines the removals left behind
   html = html.replace(/\n{3,}/g, "\n\n");
   writeFileSync(path.join(OUT, "index.html"), html);
   console.log(`  web/app/os.js         ${ours.length} scripts, ${Math.round(readFileSync(path.join(OUT, "os.js")).length / 1024)} KB`);
+  console.log(`  web/app/build-id.txt  ${buildId}`);
   built++;
 }
 

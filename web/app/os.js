@@ -1957,6 +1957,14 @@
   var activeWorkspaceId = null;
   function setWorkspace(id) { activeWorkspaceId = id || null; }
   function getWorkspace() { return activeWorkspaceId; }
+  /* The build stamped into this page. A tab left open across a deploy
+     sends the id it was built with; the server refuses it. A page with
+     no stamp (the uncompiled shell) sends nothing. */
+  function buildHeader() {
+    var meta = typeof document !== "undefined" && document.querySelector('meta[name="currencydesk-build"]');
+    var id = meta && meta.getAttribute("content");
+    return id ? { "x-currencydesk-build": id } : {};
+  }
 
   async function request(path, options) {
     var response;
@@ -1993,7 +2001,9 @@
         PLAN_NOT_ENTITLED: "This workspace plan does not include server ledger posting.",
         SCOPE_DENIED: "The active workspace is not authorized for this account.",
         UNSUPPORTED_CURRENCY_PAIR: "Server posting currently supports CAD exchanges with USD, EUR, or GBP.",
-        QUOTE_EXPIRED: "The frozen quote expired. Request a new quote and confirm it again.",
+        QUOTE_EXPIRED: "Quote expired. Get a new rate.",
+        RELOAD_REQUIRED: "This screen is out of date. Reload to continue.",
+        ZERO_PAYOUT: "This quote pays out nothing.",
         INSUFFICIENT_TILL_LIQUIDITY: "The till does not have enough currency to complete this exchange.",
         TILL_NOT_OPEN: "Open the till before posting or recording cash activity.",
         TILL_ALREADY_CLOSED: "This till session is already closed.",
@@ -2185,13 +2195,13 @@
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       createQuote: function (payload) {
-        return request("/api/quotes", { method: "POST", body: JSON.stringify(payload) });
+        return request("/api/quotes", { method: "POST", headers: buildHeader(), body: JSON.stringify(payload) });
       },
       overrideQuote: function (quoteId, payload) {
         return request("/api/quotes/" + encodeURIComponent(quoteId) + "/override", { method: "POST", body: JSON.stringify(payload) });
       },
       postQuote: function (quoteId, payload) {
-        return request("/api/quotes/" + encodeURIComponent(quoteId) + "/post", { method: "POST", body: JSON.stringify(payload) });
+        return request("/api/quotes/" + encodeURIComponent(quoteId) + "/post", { method: "POST", headers: buildHeader(), body: JSON.stringify(payload) });
       },
       reverseTransaction: function (transactionId, payload) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/reversal", { method: "POST", body: JSON.stringify(payload) });
@@ -32431,18 +32441,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const parts = String(iso).split('-');
     return months[Number(parts[1]) - 1] + ' ' + Number(parts[2]) + ', ' + parts[0];
   };
-  /* The same 12-hour clock the audit trail uses: hour, minute, AM/PM.
-     No seconds, and the marker is uppercase. A desk on 24-hour time
-     still reads the freeze this way — the line is a quote, not the clock. */
-  function quoteExpiry(iso) {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    const h = d.getHours();
-    const m = d.getMinutes();
-    const ap = h < 12 ? 'AM' : 'PM';
-    let hh = h % 12;
-    if (hh === 0) hh = 12;
-    return hh + ':' + String(m).padStart(2, '0') + ' ' + ap;
+  /* Seconds left on a frozen quote. The line is a countdown, so a
+     browser set to another zone still reads the same "4:12". */
+  function quoteLeftSeconds(iso, now) {
+    const end = new Date(iso).getTime();
+    if (!Number.isFinite(end)) return 0;
+    return Math.max(0, Math.round((end - now) / 1000));
+  }
+  function quoteClock(seconds) {
+    const whole = Math.max(0, seconds | 0);
+    return Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
   }
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
@@ -32555,6 +32563,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           const row = rows[code];
           if (!row || row.show === false) return;
           const c = String(code || '').toUpperCase();
+          /* Three-decimal currencies are not quoted end to end. Till
+             counts for them are a separate change. */
+          if (c === 'KWD' || c === 'BHD') return;
           if (/^[A-Z]{3}$/.test(c) && base.indexOf(c) < 0) base.push(c);
         });
       }
@@ -32564,10 +32575,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         order.forEach((c, i) => {
           rank[c] = i;
         });
-        return [...base].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
+        return [...base].filter(c => c !== 'KWD' && c !== 'BHD').sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
       }
     } catch (e) {}
-    return base;
+    return base.filter(c => c !== 'KWD' && c !== 'BHD');
   }
   // remittance destinations → payout currency
   const DEST = [{
@@ -33803,6 +33814,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [serverQuote, setServerQuote] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+    const [reloadRequired, setReloadRequired] = useState(false);
 
     /* Anything the teller put on this ticket. Closing from the phone is
        the X alone, so that gesture asks before it throws the ticket away.
@@ -33872,10 +33884,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
     }, [phoneSheet, type]);
     useEffect(() => {
-      if (!lock) return;
+      if (!lock && !serverQuote) return;
+      setNowMs(Date.now());
       const t = setInterval(() => setNowMs(Date.now()), 1000);
       return () => clearInterval(t);
-    }, [lock]);
+    }, [lock, serverQuote]);
     const amtN = parseFloat(inAmt) || 0;
     const isExchange = type === 'Currency Exchange';
     const isSend = type === 'Remittance — Send';
@@ -33942,6 +33955,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         overrideRate: hand || held
       });
     }, [isExchange, inCcy, outCcy, inAmt, fee, override, manualRate, lockLive && lockLive.rate, home, rateVersion, quoteApi]);
+    const frozenHands = serverQuote && quoteApi ? quoteApi.cashHands(serverQuote.inputAmount, serverQuote.outputAmount, serverQuote.feeCad, serverQuote.from, serverQuote.to, home) : null;
     const fx = !isExchange ? null : serverQuote && quoteApi ? {
       state: 'ok',
       side: serverQuote.buyOrSellSide === 'we_buy' ? 'buy' : serverQuote.buyOrSellSide === 'we_sell' ? 'sell' : 'cross',
@@ -33955,7 +33969,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       inputWire: serverQuote.inputAmount,
       feeWire: serverQuote.feeCad,
       outputWire: serverQuote.outputAmount,
-      direction: exchangeQuote && exchangeQuote.direction
+      direction: exchangeQuote && exchangeQuote.direction,
+      give: frozenHands.give,
+      giveAmount: frozenHands.giveAmount,
+      giveCurrency: frozenHands.giveCurrency,
+      giveDetail: frozenHands.giveDetail,
+      receive: frozenHands.receive,
+      receiveAmount: frozenHands.receiveAmount,
+      receiveCurrency: frozenHands.receiveCurrency,
+      receiveDetail: frozenHands.receiveDetail
     } : exchangeQuote || {
       state: 'bad',
       message: 'Quote pricing did not load.'
@@ -33965,6 +33987,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     useEffect(() => {
       setServerQuote(null);
       setServerError('');
+      setReloadRequired(false);
     }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
 
     // cheque fee/hold from shared schedule
@@ -34214,7 +34237,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       sub: marginAck && marginReason.trim() ? null : 'Acknowledge & give a reason below'
     });
     const hardReqs = reqs.filter(r => !r.soft);
-    const allGreen = hardReqs.every(r => r.ok);
+    const quoteFailed = !!(isExchange && fx && fx.state === 'bad');
+    const allGreen = hardReqs.every(r => r.ok) && !quoteFailed;
     const canSave = amtN > 0 && allGreen && (!isExchange || exchangeReady);
     const remaining = hardReqs.filter(r => !r.ok).length;
     const stepsLabel = `${remaining} ${remaining === 1 ? 'step' : 'steps'} left`;
@@ -34267,6 +34291,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     const lockSecs = lockLive ? Math.max(0, Math.round((lockLive.until - nowMs) / 1000)) : 0;
     const lockClock = `${Math.floor(lockSecs / 60)}:${String(lockSecs % 60).padStart(2, '0')}`;
+    const quoteLeft = serverQuote && serverQuote.expiresAt ? quoteLeftSeconds(serverQuote.expiresAt, nowMs) : null;
+    const quoteDead = quoteLeft === 0;
     const onPick = n => {
       setCustomer(n);
       setQuery(n);
@@ -34393,15 +34419,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : lockLive ? `Rate lock ${lockLive.ref || ''}`.trim() : 'Manual counter rate')
           });
         }
+        setNowMs(Date.now());
         setServerQuote(quote);
       } catch (error) {
-        setServerError(error.message || 'The server quote could not be created.');
+        if (error && error.code === 'RELOAD_REQUIRED') {
+          setReloadRequired(true);
+          setServerError('This screen is out of date. Reload to continue.');
+        } else setServerError(error.message || 'The server quote could not be created.');
       } finally {
         setServerBusy(false);
       }
     };
     const postServerQuote = async () => {
-      if (!serverQuote || serverBusy || !window.CDOS.Backend) return;
+      if (!serverQuote || serverBusy || !window.CDOS.Backend || quoteDead || reloadRequired) return;
       setServerBusy(true);
       setServerError('');
       try {
@@ -34443,8 +34473,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
         onDone && onDone(row.id);
       } catch (error) {
-        if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
-        setServerError(error.message || 'The transaction was not posted.');
+        if (error && error.code === 'RELOAD_REQUIRED') {
+          setReloadRequired(true);
+          setServerError('This screen is out of date. Reload to continue.');
+        } else {
+          if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
+          setServerError(error.message || 'The transaction was not posted.');
+        }
       } finally {
         setServerBusy(false);
       }
@@ -34813,13 +34848,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     } : {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Your quote',
-      tag: fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
+      tag: fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `Exchange ${inCcy} for ${outCcy}`,
       giveLbl: 'You give',
-      give: `${exchangeReady ? fx.paysLabel : num(amtN)} ${inCcy}`,
+      give: exchangeReady && fx.give ? fx.give : `${num(amtN)} ${inCcy}`,
       rateLine: `1 ${inCcy} = ${exchangeReady ? fx.rateLabel : '—'} ${outCcy}`,
       getLbl: 'You receive',
-      get: `${exchangeReady ? fx.receivesLabel : '—'} ${outCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
+      get: exchangeReady && fx.receive ? fx.receive : `— ${outCcy}`,
+      foot: fx && (fx.giveDetail || fx.receiveDetail) ? lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now' : feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
     /* ---------------- render ---------------- */
@@ -35084,7 +35119,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: fx && fx.side === 'buy' ? CD.flag : fx && fx.side === 'sell' ? CD.green : CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : 'Cross'), /*#__PURE__*/React.createElement("span", {
+    }, fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `Exchange ${inCcy} for ${outCcy}`), /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker cd-tx-quiet text-[11px]",
       style: {
         color: CD.mute,
@@ -35105,7 +35140,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       testId: "tx-receives",
-      value: exchangeReady ? fx.receivesLabel : '—',
+      value: exchangeReady ? fx.receiveDetail ? fx.receiveAmount : fx.receivesLabel : '—',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);
@@ -35891,7 +35926,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, isExchange ? 'Customer gives' : isCheque ? 'Cheque face' : isReceive ? 'Pay out' : 'Customer pays'), /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? 'You give' : isCheque ? 'Cheque face' : isReceive ? 'Pay out' : 'Customer pays'), /*#__PURE__*/React.createElement("div", {
       "data-testid": "tx-ticket-pays",
       style: {
         fontWeight: 800,
@@ -35900,7 +35935,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1
       }
-    }, isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.paysLabel : amtN > 0 ? num(amtN) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange ? exchangeReady && fx.giveDetail ? /*#__PURE__*/React.createElement(React.Fragment, null, fx.giveAmount, " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 500,
+        fontSize: 15,
+        color: 'var(--cd-on-ink-soft)'
+      }
+    }, fx.giveCurrency), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 500,
+        fontSize: 13,
+        color: 'var(--cd-on-ink-soft)',
+        marginTop: 4
+      }
+    }, "(", fx.giveDetail, ")")) : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.paysLabel : amtN > 0 ? num(amtN) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -35940,7 +35988,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
-    }, isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'), /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? 'You receive' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'), /*#__PURE__*/React.createElement("div", {
       "data-testid": "tx-ticket-receives",
       className: "cd-tx-ticket-get",
       style: {
@@ -35951,7 +35999,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: '#7fd1a3',
         lineHeight: 1.1
       }
-    }, isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.receivesLabel : '—', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange ? exchangeReady && fx.receiveDetail ? /*#__PURE__*/React.createElement(React.Fragment, null, fx.receiveAmount, " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 500,
+        fontSize: 15,
+        color: 'rgba(127,209,163,0.7)'
+      }
+    }, fx.receiveCurrency), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 500,
+        fontSize: 13,
+        color: 'rgba(127,209,163,0.7)',
+        marginTop: 4
+      }
+    }, "(", fx.receiveDetail, ")")) : /*#__PURE__*/React.createElement(React.Fragment, null, exchangeReady ? fx.receivesLabel : '—', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -36013,6 +36074,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontFamily: 'Space Mono, monospace'
       }
     }, "Before you post"), /*#__PURE__*/React.createElement("span", {
+      "data-testid": "tx-checklist",
       className: "cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5",
       style: {
         borderRadius: 999,
@@ -36020,7 +36082,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: allGreen ? CD.green : CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, allGreen ? phoneSheet ? 'Ready' : 'READY' : phoneSheet ? `${remaining} left` : `${remaining} LEFT`)), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
+    }, quoteFailed ? phoneSheet ? 'Not priced' : 'NOT PRICED' : allGreen ? phoneSheet ? 'Ready' : 'READY' : phoneSheet ? `${remaining} left` : `${remaining} LEFT`)), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
       key: r.key,
       ok: r.ok,
       warn: r.warn && !r.ok,
@@ -36070,7 +36132,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && !quoteDead && /*#__PURE__*/React.createElement("div", {
       "data-testid": "tx-frozen",
       className: "px-3 py-2 text-[11px]",
       style: {
@@ -36078,7 +36140,33 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.green
       }
-    }, "Frozen quote \xB7 ", quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount, " ", serverQuote.from, " \u2192 ", quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount, " ", serverQuote.to, " \xB7 Expires ", quoteExpiry(serverQuote.expiresAt)), serverError && /*#__PURE__*/React.createElement("div", {
+    }, "Frozen quote \xB7 ", quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount, " ", serverQuote.from, " \u2192 ", quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount, " ", serverQuote.to, " \xB7 Expires in ", quoteClock(quoteLeft)), serverQuote && quoteDead && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "tx-frozen",
+      className: "px-3 py-2 text-[11px]",
+      style: {
+        background: CD.flagSoft,
+        borderRadius: 9,
+        color: CD.flag
+      }
+    }, "Quote expired. Get a new rate."), reloadRequired && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-testid": "tx-reload",
+      className: "px-3 py-2 text-[11px]",
+      style: {
+        background: CD.flagSoft,
+        borderRadius: 9,
+        color: CD.flag
+      }
+    }, /*#__PURE__*/React.createElement("div", null, "This screen is out of date. Reload to continue."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => window.location.reload(),
+      className: "mt-2 px-3 py-1.5 text-[12px] font-semibold",
+      style: {
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        borderRadius: 8
+      }
+    }, "Reload")), serverError && !reloadRequired && /*#__PURE__*/React.createElement("div", {
       role: "alert",
       className: "px-3 py-2 text-[11px]",
       style: {
@@ -36101,18 +36189,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: "currentColor"
     }), " ", stepsLabel) : /*#__PURE__*/React.createElement("button", {
       onClick: serverQuote ? postServerQuote : getServerQuote,
-      disabled: !canSave || serverBusy,
+      disabled: !canSave || serverBusy || reloadRequired || quoteDead,
       className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
-        background: !canSave || serverBusy ? CD.line : CD.ink,
-        color: !canSave || serverBusy ? CD.faint : 'var(--cd-on-ink)'
+        background: !canSave || serverBusy || reloadRequired || quoteDead ? CD.line : CD.ink,
+        color: !canSave || serverBusy || reloadRequired || quoteDead ? CD.faint : 'var(--cd-on-ink)'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: serverQuote ? 'check' : 'lock',
       s: 15,
       c: "currentColor"
-    }), " ", serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`)) : phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
+    }), " ", serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : quoteFailed ? 'Quote unavailable' : allGreen ? 'Get server quote' : `${remaining} to complete`)) : phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: showMissing,
       className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",

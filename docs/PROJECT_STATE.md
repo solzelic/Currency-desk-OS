@@ -77,11 +77,18 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   customer are the quote the server will post, to the currency's minor
   unit. Before the quote is frozen the preview is that same function
   (`os-src/quote-terms.js`). A frozen quote is shown from the server's
-  amounts, and its expiry reads `Expires 12:58 AM` — 12-hour, uppercase,
-  no seconds. Yen rounds to a whole yen. `decimal.js` and the quote
-  arithmetic ship as `web/app/quote-terms.min.js`, loaded ahead of the
-  desk script. `os.js` and `admin.js` are still the unminified
-  concatenation; minifying those is a separate change.
+  amounts. Its expiry is a countdown, `Expires in 4:12`, and at zero
+  the post is refused on the sheet with `Quote expired. Get a new rate.`
+  A fee is in the headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
+  and buying shows `132.86 CAD (134.36 less 1.50 fee)`. That net is the
+  cash the till moves. Yen rounds to a whole yen, and `1000.5` yen reads
+  `Yen has no decimals.` KWD and BHD stay out of the picker until
+  three-decimal currencies are quoted end to end. The page carries a
+  build id; a tab from another build gets `409 RELOAD_REQUIRED`.
+  `decimal.js` and the quote arithmetic ship as
+  `web/app/quote-terms.min.js`, loaded ahead of the desk script. `os.js`
+  and `admin.js` are still the unminified concatenation; minifying those
+  is a separate change.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
@@ -591,9 +598,14 @@ and the ledger posted CAD 4,702.63. The sheet now uses the server's
 quote function for the preview and, once the quote is frozen, the
 server's input, output, and rate. The amount is rounded half-up to the
 output currency's minor units. The rate is not rounded before the
-multiply. A frozen quote expires as `Expires 12:58 AM`. `decimal.js`
-and the quote arithmetic ship as `web/app/quote-terms.min.js`. The
-desk script and the panel script are not minified here.
+multiply. A frozen quote counts down (`Expires in 4:12`) and does not
+show a wall-clock time. The You give / You receive headline adds the
+fee to home currency paid in, and subtracts it from home currency paid
+out; the frozen input, output, and fee remain the posted figures.
+`decimal.js` and the quote arithmetic ship as
+`web/app/quote-terms.min.js`. The desk script and the panel script are
+not minified here. The build stamps `web/app/build-id.txt` and the
+desk sends it with quote create and post.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

@@ -38,7 +38,9 @@ the daily close overwrites the evidence that they did.
   see two figures for the same money, one of them should not exist. A quote
   preview on the counter is the quote function the server uses, not a second
   book of what the drawer holds. Once the quote is frozen, the sheet shows
-  the frozen amounts.
+  the frozen amounts. The headline that adds or subtracts the fee is that
+  same frozen input, output, and fee, added with the shared decimal
+  arithmetic. It is not a second price. The seam compares it to the till.
 
 - **Every movement of money is a server call that returns the new state.** A
   movement that succeeded on the server and failed to reach the browser is a

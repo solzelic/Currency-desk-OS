@@ -2968,22 +2968,24 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     letter-spacing: 0 !important;
     text-transform: none !important;
   }
-  /* The customer rate is the full unrounded figure. On a phone that
-     string is wider than the row, and a wrap drops the swap off the
-     line it is supposed to sit on. The rate field below still shows
-     every place. */
+  /* The customer rate is the full unrounded figure, and it ends in the
+     currency. Wrapping keeps that unit on the screen. The side chip and
+     the swap stay their own size so the swap does not get clipped with
+     the rate. */
   .cd-tx-rate-line {
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
+    row-gap: 4px;
   }
   .cd-tx-rate-line > .cd-tx-side,
   .cd-tx-rate-line > .cd-tx-swap {
     flex: none;
   }
   .cd-tx-rate-line > .cd-tx-kicker {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    flex: 1 1 8rem;
+    min-width: 8rem;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
   .cd-tx-check-go {
     display: flex;

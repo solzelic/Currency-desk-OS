@@ -180,6 +180,55 @@ postgres("quote service against real PostgreSQL", () => {
     expect(refused.json().code).toBe("UNSUPPORTED_CURRENCY");
     expect(refused.json().message).toMatch(/three decimal places/i);
   });
+  it("refuses a quote that pays the customer nothing, with 422", async () => {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: {
+        ...body,
+        from: "USD",
+        to: "CAD",
+        inputAmount: "0.01",
+        feeCad: "1.50",
+        direction: "customer_sell_foreign",
+      },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("ZERO_PAYOUT");
+    const quotes = await pool.query("SELECT count(*)::int AS n FROM quotes");
+    expect(quotes.rows[0].n).toBe(0);
+  });
+  it("refuses a quote from an older build and does not post it", async () => {
+    const stale = { "x-currencydesk-build": "not-this-build" };
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      headers: stale,
+      payload: body,
+    });
+    expect(created.statusCode).toBe(409);
+    expect(created.json().code).toBe("RELOAD_REQUIRED");
+    expect((await pool.query("SELECT count(*)::int AS n FROM quotes")).rows[0].n).toBe(0);
+    const made = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: body,
+    });
+    expect(made.statusCode).toBe(201);
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/quotes/${made.json().quoteId}/post`,
+      cookies: await cookie(),
+      headers: stale,
+      payload: postBody("stale-build"),
+    });
+    expect(posted.statusCode).toBe(409);
+    expect(posted.json().code).toBe("RELOAD_REQUIRED");
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_transactions")).rows[0].n).toBe(0);
+  });
   it("creates a customer-buy quote using We Sell with board and snapshot lineage", async () => {
     const res = await app.inject({
       method: "POST",
