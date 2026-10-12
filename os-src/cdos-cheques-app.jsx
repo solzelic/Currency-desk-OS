@@ -26,6 +26,7 @@
     const FILTERS = [['held', 'On hold', stats.held], ['cleared', 'Cleared', stats.cleared], ['returned', 'Returned', stats.lossN], ['all', 'All', cheques.length]];
 
     return (<div className="p-4">
+      {!K.ledger() && <div role="status" data-cheque-sample="1" className="mb-3 px-3 py-2 text-sm" style={{ background: CD.amberSoft, color: CD.ink, borderRadius: 8 }}>Sample cheques. This is not the desk's book.</div>}
       <div className="flex items-center justify-between mb-3">
         <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Cheque clearing</div><div className="text-[11px]" style={{ color: CD.mute }}>Cash you've fronted, tracked until it clears — or bounces.</div></div>
         <button onClick={onNew} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="receipt" s={15} c="var(--cd-on-ink)" /> Cash a cheque</button>
@@ -100,7 +101,11 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Cheques({ rows, setRows, clients, settings, me, log, cheques: pChq, setCheques: pSetChq, schedule: pSched, setSchedule: pSetSched, captureSignal, serverBacked, onTillChanged, onRefreshCheques }) {
+  function Cheques({ rows, setRows, clients, setClients, settings, me, log, cheques: pChq, setCheques: pSetChq, schedule: pSched, setSchedule: pSetSched, captureSignal, serverBacked, onTillChanged, onRefreshCheques }) {
+    /* Phone is a different screen. The hook stays above the desktop
+       hooks so a wide window still runs the same ones and returns the
+       same tree it always has. */
+    const phone = window.CDOS.usePhoneLayout();
     const [tab, setTab] = useState('clearing');
     // cheques + schedule are lifted to the OS shell so the Ledger shares them;
     // fall back to local stores if mounted standalone.
@@ -117,6 +122,9 @@
     useEffect(() => { if (captureSignal && captureSignal !== lastSig.current) { lastSig.current = captureSignal; setTab('clearing'); setModal(true); } }, [captureSignal]);
 
     const detail = detailId ? cheques.find(c => c.id === detailId) : null;
+    if (phone) return (
+      <window.CDOS.PhoneCheques rows={rows} setRows={setRows} clients={clients} setClients={setClients} settings={settings} me={me} log={log} cheques={cheques} setCheques={setCheques} schedule={schedule} captureSignal={captureSignal} onTillChanged={onTillChanged} />
+    );
     const exposure = cheques.filter(c => c.status === 'held').reduce((s, c) => s + c.netCad, 0);
     const overdue = cheques.filter(c => c.status === 'held' && c.holdUntil < TODAY).length;
     const TABS = [['clearing', 'Clearing', 'receipt'], ['schedule', 'Fee schedule', 'percent']];

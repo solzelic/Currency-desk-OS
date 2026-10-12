@@ -119,7 +119,7 @@
     const mk = (o) => { const t = T(o.typeId); const fee = +feeFor(o.amount, t).toFixed(2); return Object.assign({
       id: 'c' + Math.random().toString(36).slice(2, 8), ccy: 'CAD', feeCad: fee, netCad: +(o.amount - fee).toFixed(2),
       typeId: o.typeId, typeLabel: t.label, holdDays: t.holdDays, endorsed: true, image: null, nsf: false, fraud: false,
-      timeline: [], createdBy: 'A. Singh', txId: null,
+      demo: true, timeline: [], createdBy: 'A. Singh', txId: null,
     }, o); };
     return [
       mk({ ref: 'CHQ-260618-002', chequeNumber: '004821', maker: 'Northbridge Imports Ltd.', draweeBank: 'RBC Royal Bank', customer: 'Jakob Miller', typeId: 'business', amount: 4200, receivedDate: '2026-06-18', status: 'held', holdUntil: '2026-06-23',

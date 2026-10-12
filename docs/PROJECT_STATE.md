@@ -603,6 +603,14 @@ a render of main `5216ef4` with that measurement, taken twice at 0
 pixels. The sign-in shot still turns the card blur off, because two
 renders of main with the blur on did not match.
 
+**2026-10-12**, phone cheque list. The phone register shows the hold
+date on a held row. Sample cheques are labelled and only appear when
+the desk has no ledger. A cashier is not offered Reverse. The detail
+sheet is portaled onto the body, so dark mode pins its title and
+values to `--gray-900` on the light surface (rgb(22, 21, 19) on
+`#F7F6F3` / `#FFFFFF`, above 4.5:1). The same figures in the light
+theme use those tokens. The cash-flow sheet is the next slice.
+
 **2026-10-12**, cheque fee. The server computes the fee from the desk's
 rule for that type, half up to the cent (1,000.25 at 2% is 20.01),
 and refuses a client fee that does not match, including 0 unless the

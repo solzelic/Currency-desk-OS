@@ -1859,7 +1859,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-family: var(--f-display);
     font-size: 12px;
     font-weight: 600;
-    color: var(--color-text-muted, #6B6760);
+    color: var(--gray-500);
     line-height: 16px;
   }
   /* One line. The desk name (first segment) is cut first. The till
@@ -1930,7 +1930,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: 44px;
     border-radius: 50%;
     background: #161513;
-    color: #fff;
+    color: var(--gray-0);
     font-size: 13px;
     font-weight: 600;
   }
@@ -2024,8 +2024,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     height: var(--phone-dock-h);
     box-sizing: border-box;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: #fff;
-    border-top: 1px solid #E2DFD8;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
     box-shadow: none;
   }
   #phonebar {
@@ -3088,4 +3088,242 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-tx-record-sub {
     color: var(--color-text-muted, #6B6760) !important;
   }
+}
+
+/* Phone Cheques. Cards, chips, the list and Cash a cheque are the
+   shared phone shell. These rules are the cashing sheet and the four
+   fields that screen shares with Transfers. Nothing here applies above
+   430px, and the phone screen is not mounted any wider. */
+@media (max-width: 430px) {
+  #desktop .win:has(.phone-shell[data-app="cheques"]) > .win-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+    padding-bottom: var(--phone-bar-h) !important;
+  }
+  .phone-shell[data-app="cheques"] {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: var(--color-bg, #F7F6F3);
+  }
+  .phone-shell[data-app="cheques"] > .phone-title { padding: 8px 16px 0; }
+  .phone-shell[data-app="cheques"] > .phone-scroll { min-width: 0; }
+  .phone-shell[data-app="cheques"] .phone-chips {
+    min-width: 0;
+    max-width: calc(100% + 32px);
+  }
+  .phq-row .phone-row-note {
+    font-family: var(--font-ui), "Archivo", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 16px;
+    font-weight: 400;
+  }
+
+  .phq-note { margin: 8px 0 0; font-size: 14px; line-height: 20px; color: var(--gray-500); }
+  .phq-demo {
+    margin: 0 0 12px;
+    padding: 12px;
+    border-radius: 10px;
+    background: var(--color-warning-bg);
+    color: var(--gray-900);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .phq-warn {
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px solid var(--color-warning-border);
+    border-radius: 10px;
+    background: var(--color-warning-bg);
+    color: var(--gray-900);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  /* The sheet is portaled onto the body, outside the phone shell.
+     Dark mode turns --color-text into light ink. Pin the sheet to the
+     same dark text the light surface uses, or the title and the
+     detail values fail 4.5:1. */
+  .phq-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 8000;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg);
+    color: var(--gray-900);
+    --color-text: var(--gray-900);
+    --ink: var(--gray-900);
+    font-family: var(--font-ui);
+  }
+  html[data-cdtheme="dark"] .phq-sheet {
+    background: var(--color-bg);
+    color: var(--gray-900);
+    --color-text: var(--gray-900);
+    --ink: var(--gray-900);
+  }
+  html[data-cdtheme="dark"] .phq-sheet h2,
+  html[data-cdtheme="dark"] .phq-sheet .phone-summary,
+  html[data-cdtheme="dark"] .phq-sheet .phone-summary dt,
+  html[data-cdtheme="dark"] .phq-sheet .phone-summary dd {
+    color: var(--gray-900);
+  }
+  .phq-sheet-h {
+    display: grid;
+    grid-template-columns: 72px 1fr 72px;
+    align-items: center;
+    height: 56px;
+    flex: none;
+    padding: 0 8px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .phq-sheet-h h2 {
+    margin: 0;
+    text-align: center;
+    font: var(--text-title-3);
+    letter-spacing: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .phq-sheet-h button {
+    height: 44px;
+    border: 0;
+    background: none;
+    color: var(--brand-primary, var(--brand-green));
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .phq-sheet-b { flex: 1; overflow: auto; padding: 16px; }
+  .phq-sheet-f {
+    flex: none;
+    padding: 12px 16px 16px;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+  }
+  .phq-cust {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+  }
+  .phq-av {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--brand-primary-soft);
+    color: var(--brand-primary, var(--brand-green));
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .phq-cust b { display: block; font-size: 15px; }
+  .phq-cust > span:nth-child(2) > span { font-size: 12px; color: var(--gray-500); }
+  .phq-cust button {
+    margin-left: auto;
+    height: 44px;
+    border: 0;
+    background: none;
+    color: var(--brand-primary, var(--brand-green));
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .phq-field { display: block; margin-bottom: 12px; }
+  .phq-field > span, .phq-sheet h3 { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+  .phq-field input {
+    width: 100%;
+    height: 48px;
+    padding: 0 12px;
+    border: 1px solid var(--gray-300);
+    border-radius: 10px;
+    background: var(--color-surface);
+    color: var(--gray-900);
+    font: 16px/24px inherit;
+  }
+  .phq-help {
+    margin: -6px 0 12px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--gray-500);
+  }
+  .phq-sign {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    height: 56px;
+    margin: 0 0 4px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--color-surface);
+    color: var(--gray-900);
+    font: 600 16px/24px var(--font-ui), "Archivo", system-ui, sans-serif;
+    text-align: left;
+    cursor: pointer;
+  }
+  .phq-sign + .phq-help { margin: 0; }
+  .phq-photo {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px dashed var(--gray-300);
+    border-radius: 10px;
+    color: var(--gray-500);
+    text-align: center;
+  }
+  .phq-photo input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .phq-pick {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 4px;
+    border: 0;
+    border-bottom: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--gray-900);
+    text-align: left;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .phq-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 48px;
+    margin-top: 8px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--brand-primary, var(--brand-green));
+    color: var(--gray-0);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .phq-btn:disabled { opacity: 0.45; cursor: default; }
+  .phq-btn:active { transform: none; }
+  .phq-btn-ghost { background: var(--color-surface); color: var(--gray-900); border: 1px solid var(--color-border); }
+  .phq-err { margin-top: 8px; color: var(--color-negative); font-size: 14px; line-height: 20px; }
+  .phq-err p { margin: 0 0 4px; }
+  .phq-time { list-style: none; margin: 0 0 16px; padding: 0; }
+  .phq-time li { padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+  .phq-time b { display: block; }
+  .phq-time span { font-size: 12px; line-height: 16px; color: var(--gray-500); }
+  .phq-sheet .phq-label { margin-top: 16px; }
+  .phq-row .phone-row-end { max-width: 64%; }
+  .phq-row .phone-row-amt { white-space: nowrap; font-size: 14px; line-height: 18px; }
 }

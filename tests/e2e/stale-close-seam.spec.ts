@@ -22,6 +22,8 @@ async function settleCashDrawerChrome(page: Page) {
       el.scrollTop = 0;
     });
   }
+  /* Inactive phone windows are not shown, and they still hold a bar.
+     The bar the cashier can see is the one in the active window. */
   const tabBar = page.locator(".win.show.active .win-body .fld-bar").first();
   await expect(tabBar).toBeVisible();
   await expect(tabBar).not.toHaveClass(/fld-hidden/);

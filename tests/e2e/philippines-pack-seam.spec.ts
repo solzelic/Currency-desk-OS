@@ -108,6 +108,7 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   expect(words).not.toMatch(/Not on this desk/);
   expect(bannedNameHits(words)).toEqual([]);
 
+  /* The open window also carries data-app, so the click is the dock button. */
   await page.locator('#appbar [data-app="compliance"]').click();
   const screening = page.getByTestId("sanctions-not-connected");
   await expect(screening).toBeVisible();
