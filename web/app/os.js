@@ -38380,26 +38380,26 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), " Cancel") : /*#__PURE__*/React.createElement("p", {
       "data-transfer-cancel": "teller",
       role: "status",
-      className: "w-full text-[13px] px-3 py-2 flex items-start gap-2",
+      className: "w-full text-[13px] px-3 py-2",
       style: {
+        display: 'block',
+        boxSizing: 'border-box',
+        flex: '1 1 100%',
         background: CD.lineSoft,
         color: CD.ink,
         border: `1px solid ${CD.line}`,
         borderRadius: 9,
         minWidth: 0,
         maxWidth: '100%',
-        overflowWrap: 'break-word',
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word',
         whiteSpace: 'normal'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "info",
       s: 15,
       c: CD.ink
-    }), /*#__PURE__*/React.createElement("span", {
-      style: {
-        minWidth: 0
-      }
-    }, Cancel.TELLER_MESSAGE))), cancelError && !ask && /*#__PURE__*/React.createElement("p", {
+    }), " ", Cancel.TELLER_MESSAGE)), cancelError && !ask && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       className: "text-[13px]",
       style: {

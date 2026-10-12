@@ -808,7 +808,7 @@
                 : <button onClick={() => advance('hold', 'Placed on hold')} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, color: CD.amber, borderRadius: 8 }}><Ic n="alert" s={15} c={CD.amber} /> Hold</button>}
               {canPost
                 ? <button type="button" data-transfer-cancel="open" onClick={openCancel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> Cancel</button>
-                : <p data-transfer-cancel="teller" role="status" className="w-full text-[13px] px-3 py-2 flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9, minWidth: 0, maxWidth: '100%', overflowWrap: 'break-word', whiteSpace: 'normal' }}><Ic n="info" s={15} c={CD.ink} /><span style={{ minWidth: 0 }}>{Cancel.TELLER_MESSAGE}</span></p>}
+                : <p data-transfer-cancel="teller" role="status" className="w-full text-[13px] px-3 py-2" style={{ display: 'block', boxSizing: 'border-box', flex: '1 1 100%', background: CD.lineSoft, color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9, minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'normal' }}><Ic n="info" s={15} c={CD.ink} /> {Cancel.TELLER_MESSAGE}</p>}
             </div>
           )}
           {cancelError && !ask && <p role="alert" className="text-[13px]" style={{ color: CD.flag }}>{cancelError}</p>}
