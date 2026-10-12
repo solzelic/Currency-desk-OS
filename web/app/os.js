@@ -63279,16 +63279,29 @@ window.CDOS_PERSIST = (function () {
     return fn ? fn(d, timeZone) || '' : '';
   }
 
-  /* The book stores a staff id (a.singh). The phone card says that
-     id. A roster display name is a different spelling of the same
-     person, and this line does not substitute it. */
+  /* "A. Singh" from a roster name, or from a staff id "a.singh".
+     The same shape the close panel uses: an initial, then the surname. */
+  function initialSurname(name) {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+    const shape = (first, last) => first.charAt(0).toUpperCase() + '. ' + last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
+    const words = raw.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      const first = words[0].replace(/\./g, '');
+      const last = words[words.length - 1].replace(/\./g, '');
+      if (first && last) return shape(first, last);
+    }
+    const bits = raw.split('.').filter(Boolean);
+    if (bits.length >= 2) return shape(bits[0], bits[bits.length - 1]);
+    return raw;
+  }
   function operatorOf(current, roster) {
     if (!current || !current.operator || current.operator === '—') return null;
     const id = String(current.operator).toLowerCase();
     const hit = (roster || []).find(s => String(s.staffId || '').toLowerCase() === id || String(s.name || '').toLowerCase() === id);
-    const name = hit && hit.staffId ? hit.staffId : current.operator;
+    const source = hit && hit.name || current.operator;
     return {
-      name: name,
+      name: initialSurname(source),
       since: current.since || null
     };
   }
@@ -63422,6 +63435,7 @@ window.CDOS_PERSIST = (function () {
   function PhoneTill(p) {
     const [sheet, setSheet] = useState(false);
     const [aside, setAside] = useState(null);
+    const [diffSheet, setDiffSheet] = useState(false);
     const loading = !!(p.serverBacked && p.balances == null && !p.error);
     const failed = !!(p.error && p.balances == null);
     const wait = useWait(loading);
@@ -63460,11 +63474,27 @@ window.CDOS_PERSIST = (function () {
        count does not see it: expected is hidden, and this total is
        the expected drawer. */
     const showDrawer = p.drawerTotal != null && !!p.homeCcy && !(p.blind && tellerRole(p.role));
+    const offLines = (p.recon || []).map(r => {
+      const parts = diffParts(r.c, r.counted, r.expected);
+      if (!parts || parts.tone === 'match') return null;
+      const suffix = ' ' + r.c;
+      const number = parts.amount.endsWith(suffix) ? parts.amount.slice(0, -suffix.length) : parts.amount;
+      return {
+        ccy: r.c,
+        text: r.c + ' is ' + number + parts.tail + '.'
+      };
+    }).filter(Boolean);
     const footLabel = p.tab === 'reconcile' ? p.closing ? 'Closing…' : 'Close the till' : p.saved ? 'Saved' : p.busy === 'count' ? 'Saving…' : 'Save count';
     const footDisabled = p.tab === 'reconcile' ? !p.canClose || p.closing || p.closeBlocked : !open || !counted || p.saved || p.busy === 'count';
     const onFoot = () => {
       if (footDisabled) return;
-      if (p.tab === 'reconcile') p.onClose();else p.onSave();
+      if (p.tab !== 'reconcile') {
+        p.onSave();
+        return;
+      }
+      /* A match keeps the review that is already there. A short or an
+         over has to be named first. The first tap never posts. */
+      if (offLines.length) setDiffSheet(true);else p.onClose();
     };
     const saveWhy = p.tab === 'reconcile' ? p.closeBlocked ? p.closeReason : '' : !open ? 'Open the till before saving a count' : !counted ? 'Enter a count first' : '';
     let sticky = null;
@@ -63603,20 +63633,22 @@ window.CDOS_PERSIST = (function () {
     }), showWork && p.tab !== 'history' && /*#__PURE__*/React.createElement("section", {
       className: "till-phone-card"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "till-phone-top"
+      className: "till-phone-head"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-id"
     }, tillLabel ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "till-phone-till",
       onClick: () => setSheet(true)
-    }, tillLabel) : null, showDrawer ? /*#__PURE__*/React.createElement("div", {
+    }, tillLabel) : null, /*#__PURE__*/React.createElement("div", {
+      className: "till-phone-meta"
+    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ', ' + p.countedN + ' of ' + p.reconCount + ' counted'))), showDrawer ? /*#__PURE__*/React.createElement("div", {
       className: "till-phone-drawer"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-phone-k"
     }, "Drawer value, all currencies in ", p.homeCcy), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-amount"
     }, amount(p.drawerTotal, p.homeCcy))) : null), /*#__PURE__*/React.createElement("div", {
-      className: "till-phone-meta"
-    }, /*#__PURE__*/React.createElement("div", null, who ? who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '') : 'Nobody on this till'), /*#__PURE__*/React.createElement("div", null, p.sessionNumber != null ? 'Session #' + p.sessionNumber + ' open' : 'No open session', ', ' + p.countedN + ' of ' + p.reconCount + ' counted')), /*#__PURE__*/React.createElement("div", {
       className: "till-phone-actions"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -63751,7 +63783,39 @@ window.CDOS_PERSIST = (function () {
       s: 16
     }) : null) : /*#__PURE__*/React.createElement("span", {
       className: "till-sheet-status"
-    }, o.occupant || statusLine(o.note)))))), p.confirmClose && /*#__PURE__*/React.createElement("div", {
+    }, o.occupant || statusLine(o.note)))))), diffSheet && /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet",
+      role: "dialog",
+      "aria-label": "Close anyway"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-sheet-scrim",
+      "aria-label": "Back to reconcile",
+      onClick: () => setDiffSheet(false)
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-panel"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-sheet-title"
+    }, "Close anyway?"), offLines.map(line => /*#__PURE__*/React.createElement("p", {
+      key: line.ccy,
+      className: "till-diff-line"
+    }, line.text)), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-save",
+      onClick: () => {
+        const first = offLines[0];
+        setDiffSheet(false);
+        if (first) p.setCcy(first.ccy);
+        p.setTab('count');
+      }
+    }, "Count again"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "till-sheet-quiet",
+      onClick: () => {
+        setDiffSheet(false);
+        p.onConfirmClose();
+      }
+    }, "Close with difference"))), p.confirmClose && /*#__PURE__*/React.createElement("div", {
       className: "till-sheet",
       role: "dialog",
       "aria-label": "Close the till"

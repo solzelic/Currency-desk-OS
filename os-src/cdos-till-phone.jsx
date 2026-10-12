@@ -61,15 +61,29 @@
     return fn ? (fn(d, timeZone) || '') : '';
   }
 
-  /* The book stores a staff id (a.singh). The phone card says that
-     id. A roster display name is a different spelling of the same
-     person, and this line does not substitute it. */
+  /* "A. Singh" from a roster name, or from a staff id "a.singh".
+     The same shape the close panel uses: an initial, then the surname. */
+  function initialSurname(name) {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+    const shape = (first, last) => first.charAt(0).toUpperCase() + '. ' + last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
+    const words = raw.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      const first = words[0].replace(/\./g, '');
+      const last = words[words.length - 1].replace(/\./g, '');
+      if (first && last) return shape(first, last);
+    }
+    const bits = raw.split('.').filter(Boolean);
+    if (bits.length >= 2) return shape(bits[0], bits[bits.length - 1]);
+    return raw;
+  }
+
   function operatorOf(current, roster) {
     if (!current || !current.operator || current.operator === '—') return null;
     const id = String(current.operator).toLowerCase();
     const hit = (roster || []).find(s => String(s.staffId || '').toLowerCase() === id || String(s.name || '').toLowerCase() === id);
-    const name = hit && hit.staffId ? hit.staffId : current.operator;
-    return { name: name, since: current.since || null };
+    const source = (hit && hit.name) || current.operator;
+    return { name: initialSurname(source), since: current.since || null };
   }
 
   function faceOf(v, ccy) {
@@ -173,6 +187,7 @@
   function PhoneTill(p) {
     const [sheet, setSheet] = useState(false);
     const [aside, setAside] = useState(null);
+    const [diffSheet, setDiffSheet] = useState(false);
     const loading = !!(p.serverBacked && p.balances == null && !p.error);
     const failed = !!(p.error && p.balances == null);
     const wait = useWait(loading);
@@ -212,6 +227,13 @@
        the expected drawer. */
     const showDrawer = p.drawerTotal != null && !!p.homeCcy && !(p.blind && tellerRole(p.role));
 
+    const offLines = (p.recon || []).map(r => {
+      const parts = diffParts(r.c, r.counted, r.expected);
+      if (!parts || parts.tone === 'match') return null;
+      const suffix = ' ' + r.c;
+      const number = parts.amount.endsWith(suffix) ? parts.amount.slice(0, -suffix.length) : parts.amount;
+      return { ccy: r.c, text: r.c + ' is ' + number + parts.tail + '.' };
+    }).filter(Boolean);
     const footLabel = p.tab === 'reconcile' ? (p.closing ? 'Closing…' : 'Close the till') : (p.saved ? 'Saved' : (p.busy === 'count' ? 'Saving…' : 'Save count'));
     const footDisabled = p.tab === 'reconcile'
       ? (!p.canClose || p.closing || p.closeBlocked)
@@ -219,8 +241,11 @@
 
     const onFoot = () => {
       if (footDisabled) return;
-      if (p.tab === 'reconcile') p.onClose();
-      else p.onSave();
+      if (p.tab !== 'reconcile') { p.onSave(); return; }
+      /* A match keeps the review that is already there. A short or an
+         over has to be named first. The first tap never posts. */
+      if (offLines.length) setDiffSheet(true);
+      else p.onClose();
     };
 
     const saveWhy = p.tab === 'reconcile'
@@ -329,21 +354,23 @@
 
           {showWork && p.tab !== 'history' && (
             <section className="till-phone-card">
-              <div className="till-phone-top">
-                {tillLabel ? <button type="button" className="till-phone-till" onClick={() => setSheet(true)}>{tillLabel}</button> : null}
+              <div className="till-phone-head">
+                <div className="till-phone-id">
+                  {tillLabel ? <button type="button" className="till-phone-till" onClick={() => setSheet(true)}>{tillLabel}</button> : null}
+                  <div className="till-phone-meta">
+                    <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '')) : 'Nobody on this till'}</div>
+                    <div>
+                      {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open') : 'No open session'}
+                      {', ' + p.countedN + ' of ' + p.reconCount + ' counted'}
+                    </div>
+                  </div>
+                </div>
                 {showDrawer ? (
                   <div className="till-phone-drawer">
                     <div className="till-phone-k">Drawer value, all currencies in {p.homeCcy}</div>
                     <div className="till-phone-amount">{amount(p.drawerTotal, p.homeCcy)}</div>
                   </div>
                 ) : null}
-              </div>
-              <div className="till-phone-meta">
-                <div>{who ? (who.name + (who.since ? ', since ' + clock12(who.since, p.timeZone) : '')) : 'Nobody on this till'}</div>
-                <div>
-                  {p.sessionNumber != null ? ('Session #' + p.sessionNumber + ' open') : 'No open session'}
-                  {', ' + p.countedN + ' of ' + p.reconCount + ' counted'}
-                </div>
               </div>
               {/* Hand off is a desktop dialog and a dead end on a phone.
                   Put the button back beside these two when a phone hand-off exists. */}
@@ -436,6 +463,23 @@
                     : <span className="till-sheet-status">{o.occupant || statusLine(o.note)}</span>}
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {diffSheet && (
+          <div className="till-sheet" role="dialog" aria-label="Close anyway">
+            <button type="button" className="till-sheet-scrim" aria-label="Back to reconcile" onClick={() => setDiffSheet(false)} />
+            <div className="till-sheet-panel">
+              <div className="till-sheet-title">Close anyway?</div>
+              {offLines.map(line => <p key={line.ccy} className="till-diff-line">{line.text}</p>)}
+              <button type="button" className="till-save" onClick={() => {
+                const first = offLines[0];
+                setDiffSheet(false);
+                if (first) p.setCcy(first.ccy);
+                p.setTab('count');
+              }}>Count again</button>
+              <button type="button" className="till-sheet-quiet" onClick={() => { setDiffSheet(false); p.onConfirmClose(); }}>Close with difference</button>
             </div>
           </div>
         )}

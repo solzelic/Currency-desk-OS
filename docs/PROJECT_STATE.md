@@ -614,17 +614,25 @@ columns: a fixed-width label, a 44px minus, a centred numeric field
 subtotal. An empty row subtotal is `0.00 CAD`, and the footer total
 is the sum of those subtotals. Enter total instead replaces the
 rows, and the footer labels that figure as the entered total. Coins
-are further down the notes list. The till card is left-aligned:
-the till name (`Till 1`) at 17px weight 600, then the staff id
-and the time (`a.singh, since 12:08 AM`), then the session and
+are further down the notes list. The till card is left-aligned. `Till 1` is the card title at
+17px weight 600, above the session line. The session line is the
+staff display name as an initial and a surname, then the time in
+the shop zone (`A. Singh, since 12:08 AM`), then the session and
 the count (`Session #3 open, 1 of 2 counted`) at 13px muted.
 Reconcile and close is a list of currencies — expected, counted,
 and the difference in words with the code. The short or over
 amount, and a match, are weight 600. A shortfall is the danger
 colour; a match is the success colour. An over amount stays the
 body colour.
-Close opens a sheet that states each currency's difference, then
-a second tap posts. The server does not require a manager or a
+When every currency matches, Close the till opens the review
+sheet, and a second tap posts. When any currency is short or over,
+Close the till first opens a sheet that names each one (`CAD is
+64,254.52 short. Close anyway?`). Count again returns to the count
+and posts nothing. Close with difference posts. A difference never
+closes on the first tap. On the desktop, Close day & lock book
+opens the same review for a match and a difference, and a second
+tap on that same button posts either one. The phone does not
+change that dialog. The server does not require a manager or a
 typed reason: it requires `till:close`, a count of every
 authoritative currency, and the balance generation the count was
 taken against. A shortfall is stored as variance. The note stored

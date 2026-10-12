@@ -274,12 +274,15 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
       el.appendChild(probe);
       const muted = getComputedStyle(probe).color;
       probe.remove();
+      const metaRect = meta.getBoundingClientRect();
       return {
         size: nameStyle.fontSize,
         weight: nameStyle.fontWeight,
         align: nameStyle.textAlign,
         nameLeft: name.left - cardRect.left,
         nameRightGap: cardRect.right - name.right,
+        above: name.bottom <= metaRect.top + 1,
+        metaLeft: Math.abs(metaRect.left - name.left),
         metaSize: metaStyle.fontSize,
         metaColor: metaStyle.color,
         muted,
@@ -292,9 +295,12 @@ test("a phone shows the count, with no spinner and no plus", async ({ page }) =>
     expect(cardBox!.align === "left" || cardBox!.align === "start").toBe(true);
     expect(cardBox!.nameLeft).toBeLessThanOrEqual(16);
     expect(cardBox!.nameRightGap).toBeLessThanOrEqual(16);
+    expect(cardBox!.above).toBe(true);
+    expect(cardBox!.metaLeft).toBeLessThanOrEqual(1);
     expect(cardBox!.metaSize).toBe("13px");
     expect(cardBox!.metaColor).toBe(cardBox!.muted);
-    expect(cardBox!.meta).toMatch(/since \d{1,2}:\d{2} [AP]M/);
+    expect(cardBox!.meta).toMatch(/A\. Singh, since \d{1,2}:\d{2} [AP]M/);
+    expect(cardBox!.meta).not.toMatch(/a\.singh/);
     expect(cardBox!.meta).toMatch(hasLedger
       ? /Session #\d+ open, \d+ of \d+ counted/
       : /, \d+ of \d+ counted/);
@@ -633,12 +639,19 @@ test("a short till does not close until the sheet is confirmed", async ({ page }
   };
   page.on("request", onClose);
   await sticky.click();
-  const sheet = page.locator(".till-sheet").last();
+  const sheet = page.getByRole("dialog", { name: "Close anyway" });
   await expect(sheet).toBeVisible();
-  await expect(sheet).toContainText(/CAD short/);
+  await expect(sheet).toContainText(/CAD is [\d,]+\.\d{2} short\./);
+  await expect(sheet).toContainText("Close anyway?");
+  await expect(sheet.getByRole("button", { name: "Close the till" })).toHaveCount(0);
   expect(posts).toBe(0);
-  const confirm = page.locator(".till-sheet .till-save");
-  const confirmAccent = await confirm.evaluate((btn) => {
+  fs.mkdirSync(SHOTS, { recursive: true });
+  for (const size of PHONE) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await page.screenshot({ path: `${SHOTS}/diff_${size.width}.png` });
+  }
+  const again = sheet.getByRole("button", { name: "Count again" });
+  const againAccent = await again.evaluate((btn) => {
     const root = btn.closest("[data-app='till']") || document.body;
     const probe = document.createElement("span");
     probe.style.background = "var(--brand-primary)";
@@ -647,14 +660,69 @@ test("a short till does not close until the sheet is confirmed", async ({ page }
     probe.remove();
     return { bg: getComputedStyle(btn).backgroundColor, expected };
   });
-  expect(confirmAccent.bg).toBe(confirmAccent.expected);
+  expect(againAccent.bg).toBe(againAccent.expected);
+  try {
+    await again.click({ timeout: 3_000 });
+  } catch {
+    await again.evaluate((el: HTMLButtonElement) => el.click());
+  }
+  await expect(sheet).toHaveCount(0);
+  await expect(page.locator(".till-phone .phone-seg-btn", { hasText: "Count" })).toHaveAttribute("aria-selected", "true");
+  expect(posts).toBe(0);
+  await page.getByRole("tab", { name: "Reconcile and close" }).click();
+  await sticky.click();
+  await expect(sheet).toBeVisible();
+  const commit = sheet.getByRole("button", { name: "Close with difference" });
+  try {
+    await commit.click({ timeout: 3_000 });
+  } catch {
+    await commit.evaluate((el: HTMLButtonElement) => el.click());
+  }
+  await expect.poll(() => posts, { timeout: 10_000 }).toBe(1);
+  page.off("request", onClose);
+});
+
+test("a match closes without asking about a difference", async ({ page }) => {
+  test.skip(!hasLedger, "needs the ledger");
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await atDesk(page);
+  await tillOpen(page);
+  await openPhoneTill(page);
+  const balances: Record<string, string> = await page.evaluate(async () => {
+    const res = await fetch("/api/ledger/till-balances", { credentials: "same-origin" });
+    if (!res.ok) return {};
+    const body = await res.json();
+    return (body && body.balances) || {};
+  });
+  const currencies = Object.keys(balances);
+  expect(currencies.length).toBeGreaterThan(0);
+  for (const ccy of currencies) {
+    await page.locator(".till-phone").getByRole("tab", { name: new RegExp("^" + ccy + "\\b") }).first().click();
+    const enter = page.getByRole("button", { name: "Enter total instead" });
+    if (await enter.isVisible()) await enter.click();
+    await page.locator(".till-phone").getByRole("textbox", { name: ccy + " total" }).fill(String(balances[ccy]));
+  }
+  await page.getByRole("tab", { name: "Reconcile and close" }).click();
+  await expect(page.locator(".till-recon-row.is-short")).toHaveCount(0);
+  await expect(page.locator(".till-recon-row.is-over")).toHaveCount(0);
+  let posts = 0;
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().includes("/close")) posts += 1;
+  });
+  await page.locator(".till-phone .phone-sticky-btn", { hasText: "Close the till" }).click();
+  await expect(page.getByRole("dialog", { name: "Close anyway" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Close with difference" })).toHaveCount(0);
+  const review = page.getByRole("dialog", { name: "Close the till" });
+  await expect(review).toBeVisible();
+  expect(posts).toBe(0);
+  const confirm = review.locator(".till-save");
   try {
     await confirm.click({ timeout: 3_000 });
   } catch {
     await confirm.evaluate((el: HTMLButtonElement) => el.click());
   }
   await expect.poll(() => posts, { timeout: 10_000 }).toBe(1);
-  page.off("request", onClose);
 });
 
 test("desktop till is the desktop till at 1280", async ({ page }) => {

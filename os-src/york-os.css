@@ -3140,19 +3140,19 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     font-weight: 600; font-size: 13px; padding: 0 4px; color: var(--gray-900, #161513);
   }
   .till-phone-actions button:disabled { color: var(--gray-500, #6B6760); }
-  .till-phone-card .till-phone-top {
-    display: flex; align-items: flex-end; justify-content: flex-start;
-    gap: 8px; min-height: 44px;
+  .till-phone-card .till-phone-head {
+    display: flex; align-items: flex-start; justify-content: flex-start;
+    gap: 8px;
   }
+  .till-phone-card .till-phone-id { flex: 1 1 auto; min-width: 0; }
   .till-phone-card .till-phone-till {
-    display: flex; align-items: flex-end; justify-content: flex-start;
-    flex: 1 1 auto; width: auto; min-width: 44px; box-sizing: border-box;
+    display: block; width: 100%; box-sizing: border-box;
     margin: 0; min-height: 44px; padding: 8px 0 0;
     border: 0; background: transparent; text-align: left;
     font-size: 17px; line-height: 22px; font-weight: 600;
     color: var(--gray-900, #161513);
   }
-  .till-phone-card .till-phone-drawer { flex: 0 1 auto; min-width: 0; margin: 0; text-align: right; }
+  .till-phone-card .till-phone-drawer { flex: 0 1 auto; min-width: 0; margin: 8px 0 0; text-align: right; align-self: flex-start; }
   .till-phone-card .till-phone-k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .till-phone-card .till-phone-amount { font-size: 17px; line-height: 22px; font-weight: 600; }
   .till-phone-card .till-phone-meta {
@@ -3353,6 +3353,17 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-sheet-check { display: inline-flex; flex: none; color: var(--gray-900, #161513); }
   .till-sheet .till-save { width: 100%; margin-top: 12px; }
+  .till-diff-line {
+    margin: 0 0 8px; font-size: 16px; line-height: 22px; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: var(--gray-900, #161513);
+  }
+  .till-sheet-quiet {
+    display: block; width: 100%; box-sizing: border-box;
+    margin-top: 8px; min-height: 48px; padding: 0 16px;
+    border: 1px solid var(--color-border, #E2DFD8); border-radius: 12px;
+    background: var(--color-surface, #fff); color: var(--gray-900, #161513);
+    font-weight: 600; font-size: 16px;
+  }
   /* The footer is fixed over the column, and the column runs under
      the bar. The pad is that covered band, so the last note can
      scroll clear of the footer. */
