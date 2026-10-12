@@ -110,24 +110,14 @@
     return on;
   }
   function phoneClock(value) {
-    const text = String(value || '').trim();
-    if (!text) return '';
-    if (/\b(am|pm)\b/i.test(text)) return text;
-    const m = text.match(/^(\d{1,2}):(\d{2})/);
-    if (!m) return '';
-    let h = Number(m[1]);
-    if (h > 23) return '';
-    const ap = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return h + ':' + m[2] + ' ' + ap;
+    const fn = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof fn !== 'function') return '';
+    return fn(value) || '';
   }
   function phoneDay(iso) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
-    if (!m) return 'Records';
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const label = months[Number(m[2]) - 1] + ' ' + Number(m[3]);
-    if (iso === businessDate()) return 'Today, ' + label;
-    return label + ', ' + m[1];
+    const fn = window.CDOS && window.CDOS.formatPhoneListGroup;
+    if (typeof fn !== 'function') return 'Records';
+    return fn(iso, businessDate()) || 'Records';
   }
   function FlagTag({ kind, filed, ack, onClick, title }) {
     const map = {

@@ -6,41 +6,41 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { formatPhoneTime, formatPhoneDate, formatPhoneMoney } = require("../os-src/phone/format.js");
+const { formatPhoneTime, formatPhoneDate, formatPhoneListGroup, formatPhoneMoney } = require("../os-src/phone/format.js");
 
 const TORONTO = "America/Toronto";
 const KIRITIMATI = "Pacific/Kiritimati";
 const HONOLULU = "Pacific/Honolulu";
 
-test("3:02 pm is twelve-hour with lowercase am and pm", () => {
-  assert.equal(formatPhoneTime("15:02"), "3:02 pm");
-  assert.equal(formatPhoneTime("15:02", KIRITIMATI), "3:02 pm");
-  assert.equal(formatPhoneTime("3:02 PM"), "3:02 pm");
-  assert.equal(formatPhoneTime("3:02 am"), "3:02 am");
-  assert.equal(formatPhoneTime("00:00"), "12:00 am");
-  assert.equal(formatPhoneTime("12:00"), "12:00 pm");
-  assert.equal(formatPhoneTime("12:00 am"), "12:00 am");
-  assert.equal(formatPhoneTime("12:00 pm"), "12:00 pm");
+test("3:02 PM is twelve-hour with uppercase AM and PM", () => {
+  assert.equal(formatPhoneTime("15:02"), "3:02 PM");
+  assert.equal(formatPhoneTime("15:02", KIRITIMATI), "3:02 PM");
+  assert.equal(formatPhoneTime("3:02 PM"), "3:02 PM");
+  assert.equal(formatPhoneTime("3:02 am"), "3:02 AM");
+  assert.equal(formatPhoneTime("00:00"), "12:00 AM");
+  assert.equal(formatPhoneTime("12:00"), "12:00 PM");
+  assert.equal(formatPhoneTime("12:00 am"), "12:00 AM");
+  assert.equal(formatPhoneTime("12:00 pm"), "12:00 PM");
 });
 
 test("a wall clock does not move when the branch zone changes", () => {
-  assert.equal(formatPhoneTime("2026-06-18 15:02", KIRITIMATI), "3:02 pm");
-  assert.equal(formatPhoneTime("2026-06-18T15:02:00", HONOLULU), "3:02 pm");
+  assert.equal(formatPhoneTime("2026-06-18 15:02", KIRITIMATI), "3:02 PM");
+  assert.equal(formatPhoneTime("2026-06-18T15:02:00", HONOLULU), "3:02 PM");
   assert.equal(formatPhoneDate("2026-06-18 15:02", KIRITIMATI), "Jun 18, 2026");
 });
 
 test("an instant is shown in the branch time zone", () => {
   const instant = "2026-06-18T19:02:00Z";
   const date = new Date(instant);
-  assert.equal(formatPhoneTime(instant), "3:02 pm");
-  assert.equal(formatPhoneTime(instant, TORONTO), "3:02 pm");
-  assert.equal(formatPhoneTime(date, TORONTO), "3:02 pm");
+  assert.equal(formatPhoneTime(instant), "3:02 PM");
+  assert.equal(formatPhoneTime(instant, TORONTO), "3:02 PM");
+  assert.equal(formatPhoneTime(date, TORONTO), "3:02 PM");
   assert.equal(formatPhoneDate(instant, TORONTO), "Jun 18, 2026");
-  assert.equal(formatPhoneTime(instant, "UTC"), "7:02 pm");
+  assert.equal(formatPhoneTime(instant, "UTC"), "7:02 PM");
   assert.equal(formatPhoneDate(instant, "UTC"), "Jun 18, 2026");
-  assert.equal(formatPhoneTime("2026-06-18T03:30:00Z", TORONTO), "11:30 pm");
+  assert.equal(formatPhoneTime("2026-06-18T03:30:00Z", TORONTO), "11:30 PM");
   assert.equal(formatPhoneDate("2026-06-18T03:30:00Z", TORONTO), "Jun 17, 2026");
-  assert.equal(formatPhoneTime(instant, KIRITIMATI), "9:02 am");
+  assert.equal(formatPhoneTime(instant, KIRITIMATI), "9:02 AM");
   assert.equal(formatPhoneDate(instant, KIRITIMATI), "Jun 19, 2026");
 });
 
@@ -64,6 +64,15 @@ test("blank, bad, and zoneless values stay absent", () => {
   assert.equal(formatPhoneDate("2026-06-18", "Not/AZone"), "");
   assert.equal(formatPhoneDate("2026-06-18T19:02:00Z", "Not/AZone"), "");
   assert.equal(formatPhoneTime("25:00"), "");
+});
+
+test("a list group for the business day is Today, Oct 11", () => {
+  assert.equal(formatPhoneListGroup("2026-10-11", "2026-10-11"), "Today, Oct 11");
+  assert.equal(formatPhoneListGroup("2026-06-18", "2026-10-11"), "Jun 18, 2026");
+  assert.equal(formatPhoneListGroup("2026-10-08", "2026-10-11"), "Oct 8, 2026");
+  assert.equal(formatPhoneDate("2026-06-18"), "Jun 18, 2026");
+  assert.equal(formatPhoneListGroup("", "2026-10-11"), "");
+  assert.equal(formatPhoneListGroup("2026-10-11", ""), "Oct 11, 2026");
 });
 
 test("money prints the code after grouped digits", () => {

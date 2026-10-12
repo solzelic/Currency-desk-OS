@@ -1,6 +1,7 @@
 /* Phone time, date, and money.
    The long-tail screens import this file. Exact outputs:
-   "3:02 pm", "Jun 18, 2026", "1,765.05 CAD".
+   "3:02 PM", "Jun 18, 2026", "1,765.05 CAD".
+   A list group for the business day is "Today, Oct 11".
    A YYYY-MM-DD string is a calendar day. It is not parsed as a Date,
    so it cannot move to the previous day through UTC midnight.
    A Date, or a string with Z or a numeric offset, is an instant and
@@ -82,7 +83,7 @@
 
   function clockLabel(hour, minute) {
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
-    const suffix = hour >= 12 ? 'pm' : 'am';
+    const suffix = hour >= 12 ? 'PM' : 'AM';
     let h = hour % 12;
     if (h === 0) h = 12;
     return h + ':' + String(minute).padStart(2, '0') + ' ' + suffix;
@@ -155,6 +156,19 @@
     return clockLabel(readValue.clock.hour, readValue.clock.minute);
   }
 
+  /* A list heading. Today is "Today, Oct 11". Any other calendar day
+     is "Oct 11, 2026". `today` is the business date, YYYY-MM-DD.
+     The day is read off the string, the same way formatPhoneDate is. */
+  function formatPhoneListGroup(value, today) {
+    const text = String(value || '').trim();
+    const cal = calendarParts(text);
+    if (!cal) return '';
+    const monthDay = MONTHS[cal.month - 1] + ' ' + cal.day;
+    const todayText = String(today || '').trim().slice(0, 10);
+    if (todayText && text.slice(0, 10) === todayText) return 'Today, ' + monthDay;
+    return monthDay + ', ' + cal.year;
+  }
+
   function formatPhoneDate(value, timeZone) {
     if (!zoneOf(timeZone)) return '';
     const readValue = read(value, timeZone);
@@ -167,6 +181,7 @@
   const api = {
     formatPhoneTime: formatPhoneTime,
     formatPhoneDate: formatPhoneDate,
+    formatPhoneListGroup: formatPhoneListGroup,
     formatPhoneMoney: formatPhoneMoney,
   };
 
@@ -177,6 +192,7 @@
     if (Phone) {
       Phone.formatTime = formatPhoneTime;
       Phone.formatDate = formatPhoneDate;
+      Phone.formatListGroup = formatPhoneListGroup;
       Phone.formatMoney = formatPhoneMoney;
     }
     window.CDOS = Object.assign(window.CDOS || {}, api);

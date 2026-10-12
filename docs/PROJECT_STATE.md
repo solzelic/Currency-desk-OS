@@ -94,8 +94,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   front-end mocks, so they stay off the phone list. Your session holds Lock the desk, Hand over the desk, and
   Sign out, and Sign out asks before it runs. Search matches the job
   as well as the name. Amounts, clocks, and calendar days on a phone
-  go through `os-src/phone/format.js`: `1,765.05 CAD`, `3:02 pm`,
-  `Jun 18, 2026`. A `YYYY-MM-DD` string stays on that calendar day
+  go through `os-src/phone/format.js`: `1,765.05 CAD`, `3:02 PM`,
+  `Jun 18, 2026`. A list group for the business day is `Today, Oct 11`. A `YYYY-MM-DD` string stays on that calendar day
   (`docs/PHONE_SHELL.md`). Each phone window
   sets `data-app`. On a phone a legacy primary button uses that app's
   accent. A selected filter chip, legacy or new, is gray-900 with white
@@ -570,6 +570,10 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, phone time. `formatPhoneTime` is 12-hour with an
+uppercase suffix (`3:02 PM`). A form date stays `Jun 18, 2026`.
+A list group for the business day is `Today, Oct 11`.
 
 **2026-10-12**, phone top bar. A closed till and an open teller till
 join the station, the till, and the status with ` · `. A flex item

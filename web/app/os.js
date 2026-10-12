@@ -27085,24 +27085,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return on;
   }
   function phoneClock(value) {
-    const text = String(value || '').trim();
-    if (!text) return '';
-    if (/\b(am|pm)\b/i.test(text)) return text;
-    const m = text.match(/^(\d{1,2}):(\d{2})/);
-    if (!m) return '';
-    let h = Number(m[1]);
-    if (h > 23) return '';
-    const ap = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return h + ':' + m[2] + ' ' + ap;
+    const fn = window.CDOS && window.CDOS.formatPhoneTime;
+    if (typeof fn !== 'function') return '';
+    return fn(value) || '';
   }
   function phoneDay(iso) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
-    if (!m) return 'Records';
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const label = months[Number(m[2]) - 1] + ' ' + Number(m[3]);
-    if (iso === businessDate()) return 'Today, ' + label;
-    return label + ', ' + m[1];
+    const fn = window.CDOS && window.CDOS.formatPhoneListGroup;
+    if (typeof fn !== 'function') return 'Records';
+    return fn(iso, businessDate()) || 'Records';
   }
   function FlagTag({
     kind,
@@ -61978,7 +61968,8 @@ window.CDOS_PERSIST = (function () {
 /* ---- os-src/phone/format.js ---- */
 /* Phone time, date, and money.
    The long-tail screens import this file. Exact outputs:
-   "3:02 pm", "Jun 18, 2026", "1,765.05 CAD".
+   "3:02 PM", "Jun 18, 2026", "1,765.05 CAD".
+   A list group for the business day is "Today, Oct 11".
    A YYYY-MM-DD string is a calendar day. It is not parsed as a Date,
    so it cannot move to the previous day through UTC midnight.
    A Date, or a string with Z or a numeric offset, is an instant and
@@ -62060,7 +62051,7 @@ window.CDOS_PERSIST = (function () {
 
   function clockLabel(hour, minute) {
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
-    const suffix = hour >= 12 ? 'pm' : 'am';
+    const suffix = hour >= 12 ? 'PM' : 'AM';
     let h = hour % 12;
     if (h === 0) h = 12;
     return h + ':' + String(minute).padStart(2, '0') + ' ' + suffix;
@@ -62133,6 +62124,19 @@ window.CDOS_PERSIST = (function () {
     return clockLabel(readValue.clock.hour, readValue.clock.minute);
   }
 
+  /* A list heading. Today is "Today, Oct 11". Any other calendar day
+     is "Oct 11, 2026". `today` is the business date, YYYY-MM-DD.
+     The day is read off the string, the same way formatPhoneDate is. */
+  function formatPhoneListGroup(value, today) {
+    const text = String(value || '').trim();
+    const cal = calendarParts(text);
+    if (!cal) return '';
+    const monthDay = MONTHS[cal.month - 1] + ' ' + cal.day;
+    const todayText = String(today || '').trim().slice(0, 10);
+    if (todayText && text.slice(0, 10) === todayText) return 'Today, ' + monthDay;
+    return monthDay + ', ' + cal.year;
+  }
+
   function formatPhoneDate(value, timeZone) {
     if (!zoneOf(timeZone)) return '';
     const readValue = read(value, timeZone);
@@ -62145,6 +62149,7 @@ window.CDOS_PERSIST = (function () {
   const api = {
     formatPhoneTime: formatPhoneTime,
     formatPhoneDate: formatPhoneDate,
+    formatPhoneListGroup: formatPhoneListGroup,
     formatPhoneMoney: formatPhoneMoney,
   };
 
@@ -62155,6 +62160,7 @@ window.CDOS_PERSIST = (function () {
     if (Phone) {
       Phone.formatTime = formatPhoneTime;
       Phone.formatDate = formatPhoneDate;
+      Phone.formatListGroup = formatPhoneListGroup;
       Phone.formatMoney = formatPhoneMoney;
     }
     window.CDOS = Object.assign(window.CDOS || {}, api);
@@ -62175,7 +62181,8 @@ window.CDOS_PERSIST = (function () {
   const formatPhoneMoney = window.CDOS && window.CDOS.formatPhoneMoney;
   const formatPhoneTime = window.CDOS && window.CDOS.formatPhoneTime;
   const formatPhoneDate = window.CDOS && window.CDOS.formatPhoneDate;
-  if (typeof formatPhoneMoney !== 'function' || typeof formatPhoneTime !== 'function' || typeof formatPhoneDate !== 'function') {
+  const formatPhoneListGroup = window.CDOS && window.CDOS.formatPhoneListGroup;
+  if (typeof formatPhoneMoney !== 'function' || typeof formatPhoneTime !== 'function' || typeof formatPhoneDate !== 'function' || typeof formatPhoneListGroup !== 'function') {
     throw new Error('Phone shell: formatters did not load.');
   }
   function svg(path) {
@@ -62899,12 +62906,14 @@ window.CDOS_PERSIST = (function () {
     TabIcon,
     formatMoney: formatPhoneMoney,
     formatTime: formatPhoneTime,
-    formatDate: formatPhoneDate
+    formatDate: formatPhoneDate,
+    formatListGroup: formatPhoneListGroup
   };
   window.CDOS = Object.assign(window.CDOS || {}, {
     formatPhoneMoney,
     formatPhoneTime,
     formatPhoneDate,
+    formatPhoneListGroup,
     Phone
   });
 })();

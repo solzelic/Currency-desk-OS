@@ -17,7 +17,7 @@ the same layout on every screen, in plain words.
   absent, never zero (`docs/ABSENT_FIGURES.md`).
 - Amounts always show the currency code (`1,765.05 CAD`), never a bare `$`.
   Every amount goes through `formatPhoneMoney`. A clock goes through
-  `formatPhoneTime` (`3:02 pm`). A calendar day goes through
+  `formatPhoneTime` (`3:02 PM`). A calendar day goes through
   `formatPhoneDate` (`Jun 18, 2026`). Pass a `YYYY-MM-DD` string for a
   calendar day. Do not pass that day through `new Date`.
 - The tab bar is five tabs: Rates, Ledger, Clients, Till, More. No centre
@@ -66,9 +66,10 @@ window.CDOS.formatPhoneTime(value, timeZone)
 window.CDOS.Phone.formatTime(value, timeZone)   // the same function
 ```
 
-`formatPhoneTime('15:02')` is `3:02 pm`. `formatPhoneTime('00:00')` is
-`12:00 am`. `formatPhoneTime('12:00')` is `12:00 pm`. The suffix is
-lowercase. The phone does not follow the desktop 24-hour setting.
+`formatPhoneTime('15:02')` is `3:02 PM`. `formatPhoneTime('00:00')` is
+`12:00 AM`. `formatPhoneTime('12:00')` is `12:00 PM`. The suffix is
+uppercase, as in `10:16 AM`. The phone does not follow the desktop
+24-hour setting.
 
 `timeZone` is the branch zone (`settings.timezone`). Omit it and the
 formatter uses `America/Toronto`, the desk default.
@@ -78,8 +79,8 @@ A wall clock (`15:02`, `2026-06-18 15:02`, `2026-06-18T15:02:00` with no
 move it.
 
 A `Date`, or a string that ends in `Z` or a numeric offset, is an
-instant. `2026-06-18T19:02:00Z` is `3:02 pm` in `America/Toronto` and
-`7:02 pm` in `UTC`.
+instant. `2026-06-18T19:02:00Z` is `3:02 PM` in `America/Toronto` and
+`7:02 PM` in `UTC`.
 
 A bad zone, a blank, or a value with no clock returns `''`.
 
@@ -102,6 +103,20 @@ A `Date` built from `2026-06-18` alone is that UTC midnight instant,
 and it does move. Callers pass the `YYYY-MM-DD` string.
 
 A blank or a value with no calendar day returns `''`.
+
+## List groups
+
+```js
+window.CDOS.formatPhoneListGroup(value, today)
+window.CDOS.Phone.formatListGroup(value, today)   // the same function
+```
+
+`formatPhoneListGroup('2026-10-11', '2026-10-11')` is `Today, Oct 11`.
+`today` is the business date, `YYYY-MM-DD`.
+`formatPhoneListGroup('2026-10-08', '2026-10-11')` is `Oct 8, 2026`.
+A date on a form stays `formatPhoneDate`
+(`Jun 18, 2026`). The group reads the day off the string. It does
+not pass that string to `Date`.
 
 ## Where the chrome lives
 
@@ -411,9 +426,11 @@ pixels alone.
    screen without it.
 2. Pass real ledger and server data. Do not invent ids. Do not invent figures.
 3. Format every amount with `formatPhoneMoney` before it reaches a card,
-   a row, or a button. Format a clock with `formatPhoneTime` and a
-   calendar day with `formatPhoneDate`. Pass `YYYY-MM-DD` for a calendar
-   day. All three live in `os-src/phone/format.js`.
+   a row, or a button. Format a clock with `formatPhoneTime` (`3:02 PM`)
+   and a calendar day with `formatPhoneDate` (`Jun 18, 2026`). A list
+   heading for the business day uses `formatPhoneListGroup`
+   (`Today, Oct 11`). Pass `YYYY-MM-DD` for a calendar day. All four
+   live in `os-src/phone/format.js`.
 4. One `StickyAction` for the screen's main button. Pass `disabledReason`
    whenever it is disabled. Do not add a floating New transaction button
    on that screen.

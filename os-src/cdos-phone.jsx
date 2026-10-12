@@ -8,7 +8,8 @@
   const formatPhoneMoney = window.CDOS && window.CDOS.formatPhoneMoney;
   const formatPhoneTime = window.CDOS && window.CDOS.formatPhoneTime;
   const formatPhoneDate = window.CDOS && window.CDOS.formatPhoneDate;
-  if (typeof formatPhoneMoney !== 'function' || typeof formatPhoneTime !== 'function' || typeof formatPhoneDate !== 'function') {
+  const formatPhoneListGroup = window.CDOS && window.CDOS.formatPhoneListGroup;
+  if (typeof formatPhoneMoney !== 'function' || typeof formatPhoneTime !== 'function' || typeof formatPhoneDate !== 'function' || typeof formatPhoneListGroup !== 'function') {
     throw new Error('Phone shell: formatters did not load.');
   }
 
@@ -398,6 +399,7 @@
     formatMoney: formatPhoneMoney,
     formatTime: formatPhoneTime,
     formatDate: formatPhoneDate,
+    formatListGroup: formatPhoneListGroup,
   };
-  window.CDOS = Object.assign(window.CDOS || {}, { formatPhoneMoney, formatPhoneTime, formatPhoneDate, Phone });
+  window.CDOS = Object.assign(window.CDOS || {}, { formatPhoneMoney, formatPhoneTime, formatPhoneDate, formatPhoneListGroup, Phone });
 })();
