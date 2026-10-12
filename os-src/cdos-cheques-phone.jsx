@@ -338,6 +338,91 @@
     const AmountField = window.CDOS.AmountField;
     const SummaryList = window.CDOS.SummaryList;
 
+    const save = async function () {
+      if (posting.current || busy || !canStep1 || !canStep2) return;
+      posting.current = true;
+      setBusy(true);
+      setErr('');
+      setErrDetail('');
+      const live = K().ledger();
+      if (!live) {
+        posting.current = false;
+        setBusy(false);
+        setErr('The cheque was not cashed. Nothing was saved. Try again.');
+        setErrDetail('This desk has no ledger to post to.');
+        return;
+      }
+      try {
+        if (!attempt.current) attempt.current = newKey();
+        const synced = await live.syncCustomer(customer.trim(), (clients || {})[customer.trim()]);
+        const posted = await live.cashCheque({
+          idempotencyKey: 'web-chq:' + attempt.current,
+          customerId: synced.customerId,
+          chequeNumber: chequeNumber.trim(),
+          maker: maker.trim(),
+          draweeBank: bank.trim() || undefined,
+          chequeType: type.id,
+          typeLabel: type.label,
+          currency: ccy,
+          faceAmount: live.asMoney(amtN),
+          feeAmount: live.asMoney(fee),
+          holdDays: holdDays,
+          endorsed: endorsed,
+        });
+        let photoNote = '';
+        if (image) {
+          try { keepImage(posted.cheque.chequeId, image); }
+          catch (error) {
+            photoNote = ' The photo did not save on this phone.';
+            log && log('Cheque photo not saved', error && error.message ? error.message : 'the phone could not store the photo');
+          }
+        }
+        const cashed = K().fromServer(Object.assign({ customerName: customer.trim() }, posted.cheque));
+        namesByCheque.current[cashed.chequeId] = customer.trim();
+        gen.current += 1;
+        setCheques(function (list) { return [cashed].concat((list || []).filter(function (c) { return c.chequeId !== cashed.chequeId; })); });
+        if (live.loadLedger && setRows) {
+          try {
+            const serverRows = await live.loadLedger();
+            setRows(function (current) { return live.mergeRows(current, serverRows); });
+          } catch (refreshError) {
+            log && log('Ledger refresh failed', refreshError.message || 'The cashed cheque will appear on the next ledger open');
+          }
+        }
+        if (posted.balances) onTillChanged && onTillChanged(posted.balances);
+        const handed = money(posted.cheque.netAmount, posted.cheque.currency || ccy);
+        const who = customer.trim().split(/\s+/)[0] || 'the customer';
+        log && log('Cheque cashed', posted.cheque.ref + ' · give ' + who + ' ' + handed);
+        setFlow(false);
+        setFilter('all');
+        setToast('Cheque cashed. Give ' + who + ' ' + handed + '.' + photoNote);
+      } catch (error) {
+        setErr('The cheque was not cashed. Nothing was saved. Try again.');
+        setErrDetail(error && error.message ? K().deskSentence(error.message) : '');
+      } finally {
+        posting.current = false;
+        setBusy(false);
+      }
+    };
+
+    const onPhoto = async function (event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      try {
+        const taken = await window.CDOS.intakeIdImage(file);
+        if (!taken || !taken.ok) {
+          setImage(null);
+          setImgErr((taken && taken.why) || 'That photo was not saved.');
+          return;
+        }
+        setImgErr('');
+        setImage(taken.dataUrl);
+      } catch (error) {
+        setImage(null);
+        setImgErr(error && error.message ? error.message : 'That photo was not saved.');
+      }
+    };
+
     const detail = detailId ? listAll.find(function (c) { return c.id === detailId || c.chequeId === detailId; }) : null;
     const act = async function (kind, call, done) {
       if (posting.current || !detail) return;
@@ -458,6 +543,90 @@
           )}
         </P.Screen>
         <Toast text={toast} onDone={function () { setToast(''); }} />
+        {flow && ReactDOM.createPortal(
+          <div className="phq-sheet" role="dialog" aria-label="Cash a cheque" data-app="cheques">
+            <div className="phq-sheet-h">
+              {step > 1 ? <button type="button" onClick={function () { setStep(step - 1); setErr(''); }}>Back</button> : <span />}
+              <h2>Cash a cheque</h2>
+              <button type="button" onClick={function () { setFlow(false); }}>Cancel</button>
+            </div>
+            <div className="phq-sheet-b">
+              <StepHeader step={step} total={3} label={step === 1 ? 'type and amount' : (step === 2 ? 'cheque details' : 'check and pay out')} />
+              {step === 1 && (
+                <>
+                  {customer ? (
+                    <div className="phq-cust">
+                      <span className="phq-av">{initials(customer)}</span>
+                      <span><b>{customer}</b><span>{idLine(clients, customer)}</span></span>
+                      <button type="button" onClick={function () { setCustomer(''); }}>Change</button>
+                    </div>
+                  ) : (
+                    <div className="phq-field">
+                      <span>Customer</span>
+                      <input value={custQ} onChange={function (e) { setCustQ(e.target.value); }} placeholder="Type a name" aria-label="Customer" />
+                      <div className="phq-picks">
+                        {matches.map(function (name) {
+                          return <button key={name} type="button" className="phq-pick" onClick={function () { setCustomer(name); }}>{name}</button>;
+                        })}
+                        {typed && !exact && <button type="button" className="phq-pick" onClick={function () { setCustomer(typed); }}>Use “{typed}”</button>}
+                      </div>
+                    </div>
+                  )}
+                  <div className="phq-label">What kind of cheque?</div>
+                  <ChoiceTiles options={tiles} value={typeId} onChange={function (id) { setTypeId(id); }} label="What kind of cheque?" />
+                  {type && type.id === 'personal' && <p className="phq-warn">Personal cheques can bounce. Check ID and keep the photo.</p>}
+                  {type && type.risk === 'high' && type.id !== 'personal' && <p className="phq-warn">This kind of cheque can bounce. Check ID and keep the photo.</p>}
+                  {minHold > 0 && <p className="phq-note">This desk holds every cheque at least {minHold} {minHold === 1 ? 'day' : 'days'}.</p>}
+                  <AmountField label="Cheque amount" value={amount} onChange={setAmount} currency={ccy} />
+                  {amtOk && type && (
+                    <SummaryList rows={[
+                      { label: feeLabel, value: money(fee, ccy) },
+                      { label: 'Give the customer', value: give, big: true, mark: 'give' },
+                    ]} />
+                  )}
+                </>
+              )}
+              {step === 2 && (
+                <>
+                  <label className="phq-photo">{image ? 'Photo added' : (photoRequired ? 'Add a photo of the cheque' : 'Add a photo of the cheque (optional)')}
+                    <input type="file" accept="image/*" capture="environment" onChange={onPhoto} aria-label="Cheque photo" />
+                  </label>
+                  {imgErr && <p className="phq-err" role="alert">{imgErr}</p>}
+                  <label className="phq-field"><span>Cheque number</span><input value={chequeNumber} onChange={function (e) { setChequeNumber(e.target.value); }} aria-label="Cheque number" /></label>
+                  <label className="phq-field"><span>Who wrote the cheque</span><input value={maker} onChange={function (e) { setMaker(e.target.value); }} aria-label="Who wrote the cheque" /></label>
+                  <label className="phq-field"><span>Bank</span><input value={bank} onChange={function (e) { setBank(e.target.value); }} aria-label="Bank" placeholder="If it is printed on the cheque" /></label>
+                  <p className="phq-help">The bank can be left blank.</p>
+                  <button type="button" className="phq-sign" role="switch" aria-checked={endorsed} onClick={function () { setEndorsed(function (v) { return !v; }); }}>
+                    <span>Signed on the back</span>
+                    <Toggle on={endorsed} />
+                  </button>
+                  <p className="phq-help">Turn this on once you have seen the signature.</p>
+                </>
+              )}
+              {step === 3 && (
+                <SummaryList rows={[
+                  { label: 'Customer', value: customer },
+                  { label: 'Kind', value: type ? type.label : '' },
+                  { label: 'Cheque amount', value: money(amtN, ccy) },
+                  { label: feeLabel, value: money(fee, ccy) },
+                  { label: 'Give the customer', value: give, big: true, mark: 'give' },
+                  { label: 'Cheque number', value: chequeNumber.trim() },
+                  { label: 'Who wrote it', value: maker.trim() },
+                  bank.trim() ? { label: 'Bank', value: bank.trim() } : null,
+                  { label: 'Hold', value: holdDays === 0 ? 'No hold' : ('Held to ' + shortDay(K().addDays(window.CDOS.TODAY, holdDays))) },
+                  { label: 'Signed on the back', value: 'Yes' },
+                ].filter(Boolean)} />
+              )}
+              {(err || errDetail) && <div className="phq-err" role="alert"><p>{err}</p>{errDetail && errDetail !== err && <p>{errDetail}</p>}</div>}
+            </div>
+            <div className="phq-sheet-f">
+              {step === 1 && <button type="button" className="phq-btn" disabled={!canStep1} onClick={function () { setStep(2); }}>Next: cheque details</button>}
+              {step === 2 && <button type="button" className="phq-btn" disabled={!canStep2} onClick={function () { setStep(3); }}>Next: check and pay</button>}
+              {step === 3 && <button type="button" className="phq-btn" data-phone-cheque="pay" disabled={busy || !canStep1 || !canStep2} onClick={save}>{busy ? 'Paying out…' : ('Pay out ' + give)}</button>}
+              {step === 1 && !canStep1 && <p className="phq-note">Choose the customer, the kind of cheque, and the amount.</p>}
+              {step === 2 && !canStep2 && <p className="phq-note">Add the cheque number, who wrote it, and confirm the signature.{photoRequired ? ' A photo is required.' : ''}</p>}
+            </div>
+          </div>, document.body)}
         {detail && ReactDOM.createPortal(
           <div className="phq-sheet" role="dialog" aria-label={chequeNo(detail)} data-app="cheques">
             <div className="phq-sheet-h">

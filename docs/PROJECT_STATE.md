@@ -612,7 +612,8 @@ values use the phone ink `#F6F3EC` on `#14130F`, above 4.5:1. In the
 light theme those figures are `--gray-900` on the light surface. The
 bottom bar stays white, and the till line uses the muted token, so
 both clear 4.5:1 in the dark theme. A history time on the phone is the branch
-zone, 12-hour, with a lowercase suffix. The cash-flow sheet is the next slice.
+zone, 12-hour, with a lowercase suffix. The cash sheet sends the signature switch, shows the hold as a
+calendar day, and does not keep a row when the save is refused.
 
 **2026-10-12**, cheque fee. The server computes the fee from the desk's
 rule for that type, half up to the cent (1,000.25 at 2% is 20.01),
