@@ -49,6 +49,10 @@ window.CDOS_PERSIST = (function () {
      losing everything. */
   var version = 0;
   var baseline = {};
+  /* False until the signed-in person is the owner. A teller must not
+     upload the two keys the shell derives on the way in. */
+  var savesOwnerSettings = false;
+  var reloaded = null;
 
   var SAVE_EVERY_MS = 4000;
   /* Back off rather than hammer a server that is already unhappy, but never
@@ -70,6 +74,28 @@ window.CDOS_PERSIST = (function () {
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
+  }
+  /* What actually goes to the server. Owners send the desk as it stands.
+     Everyone else leaves out cdos_perms and billingPlan. Those two are
+     rewritten on sign-in from the role and the plan the server already
+     has. Sending them looked like a change and the save was refused. */
+  function outgoing() {
+    var snap = snapshot();
+    if (savesOwnerSettings) return snap;
+    delete snap.cdos_perms;
+    if (typeof snap.cdos_settings === 'string') {
+      try {
+        var parsed = JSON.parse(snap.cdos_settings);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          delete parsed.billingPlan;
+          snap.cdos_settings = JSON.stringify(parsed);
+        }
+      } catch (e) {
+        /* Not JSON. Send the string as stored so a real change is still
+           refused, instead of pretending the parse never happened. */
+      }
+    }
+    return snap;
   }
   function clearKeys() { keys().forEach(function (k) { localStorage.removeItem(k); }); }
   function applyState(obj) {
@@ -195,7 +221,7 @@ window.CDOS_PERSIST = (function () {
     if (!tenantId) return;
     if (health === 'stopped') return;           // a person has to clear this
     if (Date.now() < nextAttemptAt) return;     // backing off
-    var snap = snapshot();
+    var snap = outgoing();
     var sig = JSON.stringify(snap);
     if (sig === lastSig) return; // unchanged since the last successful save
 
@@ -258,17 +284,32 @@ window.CDOS_PERSIST = (function () {
       });
     }
 
-    /* The owner-only settings guard. Retrying sends the same document.
-       Say what the server said and stop, so the refusal is not swallowed
-       into a silent loop. */
+    /* A real change to an owner-only setting. Say so, put the stored
+       document back, and keep saving. Stopping here used to freeze every
+       later customer and day-state write for the rest of the session. */
     if (r.status === 403) {
       var denied = null;
       try { denied = await r.json(); } catch (e) {}
-      health = 'stopped';
-      return announce({
-        level: 'stopped', code: 'settings_forbidden',
-        detail: (denied && denied.detail) || 'Only the owner can change that setting. Nothing was saved.',
+      announce({
+        level: 'retrying', code: 'settings_forbidden',
+        detail: (denied && (denied.detail || denied.message)) || 'Only the owner can change that setting. Nothing was saved.',
       });
+      try {
+        var again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
+        if (again.ok) {
+          var fresh = await again.json();
+          if (fresh && fresh.state) {
+            applyState(fresh.state);
+            if (typeof reloaded === 'function') reloaded();
+            version = typeof fresh.version === 'number' ? fresh.version : version;
+            baseline = snapshot();
+            lastSig = JSON.stringify(outgoing());
+          }
+        }
+      } catch (e) {
+        return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      }
+      return;
     }
 
     /* Session gone. Retrying cannot fix it either; the OS handles the
@@ -293,7 +334,7 @@ window.CDOS_PERSIST = (function () {
     timer = setInterval(save, SAVE_EVERY_MS);
     window.addEventListener('beforeunload', function () {
       if (!tenantId || health === 'stopped') return;
-      var snap = snapshot();
+      var snap = outgoing();
       if (JSON.stringify(snap) === lastSig) return;
       try {
         /* Carries the version like any other save. There is no chance to
@@ -322,10 +363,14 @@ window.CDOS_PERSIST = (function () {
   // (after seeding a fresh desk we save() explicitly, which sets this)
   function markClean() { baseline = snapshot(); lastSig = JSON.stringify(baseline); }
 
+  function setOwner(isOwner) { savesOwnerSettings = !!isOwner; }
+  function onReloaded(fn) { reloaded = typeof fn === 'function' ? fn : null; return function () { if (reloaded === fn) reloaded = null; }; }
+
   return {
     begin: begin, save: save, end: end, startAutosave: startAutosave,
     snapshot: snapshot, applyState: applyState, clearKeys: clearKeys,
     markClean: markClean, tenant: function () { return tenantId; },
+    setOwner: setOwner, onReloaded: onReloaded,
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
     /* Exposed because it is the one piece of logic in this file worth

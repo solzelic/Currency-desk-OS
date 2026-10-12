@@ -71,6 +71,7 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
            saw was a branch named after the demo tenant. Their own data,
            asked for by a signed-in member of their own desk. */
         setup: t.setup ?? null,
+        siteConfig: t.siteConfig ?? null,
       },
     };
   });

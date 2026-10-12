@@ -1498,7 +1498,9 @@
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null);   // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null);   // { title, sub, name, expected, onOk } when a PIN is being asked
+    const markPersistRole = (role) => { try { window.CDOS_PERSIST.setOwner(role === 'Owner'); } catch (e) {} };
     const applyRole = (s) => {
+      markPersistRole(s.role);
       setMe({ name: s.name, role: s.role });
       if (s.role === 'Owner') { setMeApps(null); }
       else { const caps = s.caps || ROLE_CAPS[s.role] || {}; setPerms(p => ({ ...p, Teller: { ...caps } })); setMeApps(Array.isArray(s.apps) ? s.apps : null); }
@@ -1670,7 +1672,8 @@
             const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
             const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
             if (!known) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-            if (u.plan) setSettings(s => ({ ...s, billingPlan: u.plan }));
+            if (u.plan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: u.plan }));
+            markPersistRole(rec.role);
             srvUserRef.current = u; setSrvUser(u);
             setUser(rec.code || rec.name); setAuthRec(rec);
             await hydrateTenant();
@@ -2081,6 +2084,10 @@
       setSubs(rd('cdos_submissions_v1', {}));
       setTimeout(() => { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1' })); } catch (e) {} }, 0);
     };
+    useEffect(() => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.onReloaded) return;
+      return window.CDOS_PERSIST.onReloaded(function () { reseatFromStorage(); });
+    }, []);
     // A brand-new desk starts CLEAN (no demo transactions/clients), seeded from
     // the onboarding answers: business identity, home currency, ID threshold,
     // one branch named for the business, the owner as the sole employee.
@@ -2248,13 +2255,15 @@
       onSignup={() => setStage('signup')}
       onMustChange={(rec, temp, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-        if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
         setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage('setpass');
       }}
       onComplete={async (rec, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-        if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
         setUser(rec.code || rec.name); setAuthRec(rec);
         await hydrateTenant(); routeAfterAuth(rec);
@@ -2268,10 +2277,11 @@
       const u = (newDesk && newDesk.user) || {};
       const rec = { id: 'e_owner_' + Date.now(), code: u.id, name: u.name || 'Owner', role: 'Owner', active: true, branches: '*', home: null };
       setSettings(s => ({ ...s, employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec] }));
+      markPersistRole('Owner');
       srvUserRef.current = (u && u.tenantId) ? u : null; setSrvUser(u && u.tenantId ? u : null); setUser(rec.code); setAuthRec(rec);
       await hydrateTenant(); routeAfterAuth(rec);
     }} />;
-    if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={async () => { setPwTemp(null); await hydrateTenant(); routeAfterAuth(authRec); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
+    if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={async () => { setPwTemp(null); markPersistRole(authRec && authRec.role); await hydrateTenant(); routeAfterAuth(authRec); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
     if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }
     if (stage === 'station') return <StationPicker branches={branches} station={station} rec={authRec} onBack={() => setStage('lock')} onPick={(st) => { setStation(st); enterDesktop(); }} />;
 

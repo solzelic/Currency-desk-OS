@@ -1,17 +1,17 @@
 /* A teller session must not be able to move owner-only settings.
 
    The live failure: a teller cookie PUT the desk snapshot and the
-   large-cash threshold went from 10000 to 999999. The ledger route
-   already refused that write. The snapshot did not. These tests cover
-   the snapshot, the public-site patch, and the catalogue a settings
-   search is allowed to offer. */
+   large-cash threshold went from 10000 to 999999. A later failure: every
+   teller sign-in was refused, because the shell rewrites role presets
+   and copies the plan into billingPlan. Omitting those is not a change.
+   Sending a different owner-only value still refuses the whole save. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { OWNER_ONLY_REFUSAL, ownsSettings } from "../src/state/owner-settings.js";
+import { OWNER_ONLY_FIELDS, OWNER_ONLY_REFUSAL, NON_OWNER_MAY_CHANGE, ownsSettings } from "../src/state/owner-settings.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -24,27 +24,29 @@ const cookieOf = (res: { cookies: { name: string; value: string }[] }): Record<s
   return c ? { cdos_session: c.value } : {};
 };
 
-const settings = {
-  threshold: 10000,
-  idRequiredOver: 3000,
-  retentionYears: 5,
-  aggHours: 24,
-  aggWindowStart: "00:00",
-  regime: "CA",
-  bizName: "York Foreign Exchange Inc.",
-  baseCurrency: "CAD",
-  dateFormat: "YYYY-MM-DD",
-  timeFormat: "12h",
-  bizCountry: "Canada",
-  billingPlan: "premium",
-  billingCycle: "monthly",
-  timezone: "America/Toronto",
-  hours: [{ days: "Mon–Fri", hours: "9:30am–6:00pm" }],
+const seedValue = (field: string): unknown => {
+  if (field === "hours") return [{ days: "Mon–Fri", hours: "9:30am–6:00pm" }];
+  if (field === "threshold" || field === "idRequiredOver") return 10000;
+  if (field === "aggHours") return 24;
+  if (field === "structuringDays" || field === "reverifyDays" || field === "recheckDays" || field === "retentionYears") return 5;
+  if (field === "defaultSpread") return 1.5;
+  if (field === "requireIdPhoto" || field === "escalateHighRisk" || field === "screenSanctions" || field === "requireCountOnHandoff") return false;
+  if (field === "largeTxCheck") return "off";
+  return `seed-${field}`;
 };
+
+const changedValue = (field: string, current: unknown): unknown => {
+  if (field === "hours") return [{ days: "Never", hours: "closed" }];
+  if (typeof current === "number") return current + 7;
+  if (typeof current === "boolean") return !current;
+  return `changed-${field}`;
+};
+
+const settings = Object.fromEntries(OWNER_ONLY_FIELDS.map((field) => [field, seedValue(field)]));
 
 const baseline = {
   cdos_rows_v1: [{ id: "kept" }],
-  cdos_settings: settings,
+  cdos_settings: { ...settings, staff: { "M. Costa": { email: "costa@yorkfx.ca" } } },
   cdos_perms: { Teller: { canSettings: false, canDelete: true } },
 };
 
@@ -82,13 +84,16 @@ beforeEach(async () => {
 
 const read = () => app.inject({ method: "GET", url: "/api/tenant/state", cookies: teller });
 
-const put = (cookies: Record<string, string>, state: Record<string, unknown>) =>
+const put = (cookies: Record<string, string>, state: Record<string, unknown>, version = 1) =>
   app.inject({
     method: "PUT",
     url: "/api/tenant/state",
     cookies,
-    payload: { state, version: 1 },
+    payload: { state, version },
   });
+
+const refusalAudits = () =>
+  handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.owner_only_refused"));
 
 describe("owner-only settings", () => {
   it("is the owner's permission and nobody else's", () => {
@@ -96,33 +101,32 @@ describe("owner-only settings", () => {
     for (const role of ["teller", "supervisor", "compliance_officer", "branch_manager", "auditor"]) {
       expect(ownsSettings(role)).toBe(false);
     }
+    expect(NON_OWNER_MAY_CHANGE).not.toContain("threshold");
+    expect(NON_OWNER_MAY_CHANGE).not.toContain("defaultSpread");
+    expect(NON_OWNER_MAY_CHANGE).not.toContain("requireCountOnHandoff");
   });
 
-  it.each([
-    ["the large-cash threshold", { threshold: 999999 }, "threshold"],
-    ["shop settings", { bizName: "Not York" }, "bizName"],
-    ["localization", { baseCurrency: "USD" }, "baseCurrency"],
-    ["billing", { billingPlan: "basic" }, "billingPlan"],
-    ["hours", { hours: [{ days: "Never", hours: "closed" }] }, "hours"],
-    ["timezone", { timezone: "Pacific/Auckland" }, "timezone"],
-  ])("a teller PUT of %s is refused and nothing is written", async (_name, patch, field) => {
+  it.each(OWNER_ONLY_FIELDS)("a teller cannot change %s, and the owner can", async (field) => {
+    const next = changedValue(field, settings[field]);
     const attack = {
       ...baseline,
       cdos_rows_v1: [{ id: "smuggled" }],
-      cdos_settings: { ...settings, ...patch },
+      cdos_settings: { ...baseline.cdos_settings, [field]: next },
     };
     const denied = await put(teller, attack);
     expect(denied.statusCode).toBe(403);
     expect(denied.json().detail).toBe(OWNER_ONLY_REFUSAL);
-
-    const back = await read();
-    expect(back.json().state).toEqual(baseline);
-    expect(back.json().version).toBe(1);
-    expect(back.json().state.cdos_settings[field]).toEqual(settings[field as keyof typeof settings]);
-
-    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.owner_only_refused"));
+    expect((await read()).json().state).toEqual(baseline);
+    const audits = await refusalAudits();
     expect(audits).toHaveLength(1);
     expect(audits[0]?.detail).toMatchObject({ fields: [field] });
+
+    const moved = await put(owner, {
+      ...baseline,
+      cdos_settings: { ...baseline.cdos_settings, [field]: next },
+    });
+    expect(moved.statusCode).toBe(200);
+    expect((await read()).json().state.cdos_settings[field]).toEqual(next);
   });
 
   it("a teller PUT of role presets is refused and nothing is written", async () => {
@@ -134,18 +138,60 @@ describe("owner-only settings", () => {
     expect(denied.statusCode).toBe(403);
     expect(denied.json().detail).toBe(OWNER_ONLY_REFUSAL);
     expect((await read()).json().state).toEqual(baseline);
-    const audits = await handle.db.select().from(schema.auditEvents);
-    expect(audits.map((row) => row.action)).toEqual(["settings.owner_only_refused"]);
+    const audits = await refusalAudits();
+    expect(audits).toHaveLength(1);
     expect(audits[0]?.detail).toMatchObject({ groups: ["rolePresets"], fields: ["cdos_perms"] });
+  });
+
+  it("refuses a settings field that is not on the allowlist", async () => {
+    const denied = await put(teller, {
+      ...baseline,
+      cdos_settings: { ...baseline.cdos_settings, surprisePolicy: "yes" },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect((await read()).json().state).toEqual(baseline);
+    expect(await refusalAudits()).toHaveLength(1);
   });
 
   it("refuses the threshold when it arrives as the browser's JSON string", async () => {
     const denied = await put(teller, {
       ...baseline,
-      cdos_settings: JSON.stringify({ ...settings, threshold: 999999 }),
+      cdos_settings: JSON.stringify({ ...baseline.cdos_settings, threshold: 999999 }),
     });
     expect(denied.statusCode).toBe(403);
     expect((await read()).json().state.cdos_settings.threshold).toBe(10000);
+  });
+
+  it("omitting the derived keys saves the rest and keeps the stored values", async () => {
+    const withoutPlan = { ...baseline.cdos_settings } as Record<string, unknown>;
+    delete withoutPlan.billingPlan;
+    const { cdos_perms: _perms, ...withoutPerms } = baseline;
+    const saved = await put(teller, {
+      ...withoutPerms,
+      cdos_settings: { ...withoutPlan, staff: { "M. Costa": { email: "m@yorkfx.ca" } } },
+      cdos_clients_v1: { "Ada": { name: "Ada" } },
+      cdos_day: { closed: false, num: 2 },
+    });
+    expect(saved.statusCode).toBe(200);
+    const back = (await read()).json().state;
+    expect(back.cdos_settings.billingPlan).toBe(settings.billingPlan);
+    expect(back.cdos_settings.threshold).toBe(10000);
+    expect(back.cdos_perms).toEqual(baseline.cdos_perms);
+    expect(back.cdos_clients_v1).toEqual({ Ada: { name: "Ada" } });
+    expect(back.cdos_day).toEqual({ closed: false, num: 2 });
+    expect(back.cdos_settings.staff).toEqual({ "M. Costa": { email: "m@yorkfx.ca" } });
+    expect(await refusalAudits()).toHaveLength(0);
+  });
+
+  it("an echoed owner-only field is not a change", async () => {
+    const echoed = await put(teller, {
+      ...baseline,
+      cdos_theme: "dark",
+    });
+    expect(echoed.statusCode).toBe(200);
+    expect((await read()).json().state.cdos_theme).toBe("dark");
+    expect((await read()).json().state.cdos_settings.threshold).toBe(10000);
+    expect(await refusalAudits()).toHaveLength(0);
   });
 
   it("a teller PATCH of the threshold does not change it", async () => {
@@ -170,45 +216,28 @@ describe("owner-only settings", () => {
     expect(denied.json().detail).toBe("You can't change the public site. Nothing was saved.");
     const row = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, DEMO.tenantId)))[0];
     expect(row?.siteConfig).toBeNull();
-    const audits = await handle.db.select().from(schema.auditEvents);
+    const audits = await refusalAudits();
     expect(audits[0]?.detail).toMatchObject({ groups: ["hours"], fields: ["phone", "hours"] });
   });
 
-  it("a manager is refused the threshold too", async () => {
+  it("a manager publishes public contact and hours, and cannot move the threshold", async () => {
+    const published = await app.inject({
+      method: "PATCH",
+      url: "/api/tenant",
+      cookies: manager,
+      payload: { siteConfig: { phone: "416-555-0199", hours: [{ days: "Mon–Fri", hours: "9–5" }] } },
+    });
+    expect(published.statusCode).toBe(200);
+    expect(published.json().tenant.siteConfig.phone).toBe("416-555-0199");
+    const row = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, DEMO.tenantId)))[0];
+    expect(row?.siteConfig).toMatchObject({ phone: "416-555-0199" });
+
     const denied = await put(manager, {
       ...baseline,
-      cdos_settings: { ...settings, threshold: 999999 },
+      cdos_settings: { ...baseline.cdos_settings, threshold: 999999 },
     });
     expect(denied.statusCode).toBe(403);
     expect((await read()).json().state.cdos_settings.threshold).toBe(10000);
-  });
-
-  it("the owner can move the threshold, and a teller can save other work", async () => {
-    const moved = await put(owner, {
-      ...baseline,
-      cdos_settings: { ...settings, threshold: 8000 },
-    });
-    expect(moved.statusCode).toBe(200);
-
-    const echoed = await app.inject({
-      method: "PUT",
-      url: "/api/tenant/state",
-      cookies: teller,
-      payload: {
-        state: {
-          ...baseline,
-          cdos_settings: { ...settings, threshold: 8000 },
-          cdos_theme: "dark",
-        },
-        version: 2,
-      },
-    });
-    expect(echoed.statusCode).toBe(200);
-    const back = (await read()).json();
-    expect(back.state.cdos_settings.threshold).toBe(8000);
-    expect(back.state.cdos_theme).toBe("dark");
-    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.owner_only_refused"));
-    expect(audits).toHaveLength(0);
   });
 
   it("does not offer owner-only rows to a teller", async () => {

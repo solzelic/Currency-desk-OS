@@ -150,10 +150,12 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       });
     }
 
-    /* Owner-only fields are refused whole. Checked after the version
-       conflict so a stale save still merges, and before any write so a
-       teller cannot move the large-cash line by sending it beside an
-       ordinary key. The field is not removed and the rest saved. */
+    /* A real change to an owner-only field refuses the whole save.
+       Checked after the version conflict so a stale save still merges,
+       and before any write so a teller cannot move the large-cash line
+       by sending it beside an ordinary key. An echo, or a key the client
+       left out, is not a change: the stored value stays and the rest
+       saves. The field is not dropped to hide a change. */
     const storedState = (current?.state ?? null) as Record<string, unknown> | null;
     if (!ownsSettings(who.role)) {
       const edits = ownerOnlyEdits(storedState, state);

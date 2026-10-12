@@ -2,19 +2,42 @@
 
    A teller session called PUT /api/tenant/state and moved the shop's
    large-cash threshold from 10000 to 999999. The ledger route already
-   refuses that (`compliance:thresholds`, administrator only). The desk
-   snapshot does not: it is one document, saved whole, by whoever is
-   signed in. The number the counter reads lives in that document until
-   the ledger answers, and a direct call never has to open Settings.
+   refuses that. The desk snapshot is one document, saved whole.
 
-   The same permission covers every owner-only group. A branch manager
-   does not hold it. Sending one of these fields with a different value
-   refuses the whole save. Dropping the field and keeping the rest
-   would hide the attempt, so the document is left exactly as it was. */
+   Non-owners may change an allowlist: the keys their own screens write
+   (a customer is not in here — that is a different snapshot key — these
+   are fields inside cdos_settings). Everything else in that object is
+   the owner's. Sending one of those with a different value refuses the
+   whole save. An equal value is the desk echoing its copy. A missing
+   value was not sent, including the two keys the client derives on
+   sign-in (cdos_perms, billingPlan) and must not upload. Those are
+   copied back from what is stored, and the rest of the document saves. */
 import { hasBackendPermission } from "../auth/permissions.js";
 
 export const OWNER_ONLY_REFUSAL =
   "Only the owner can change that setting. Nothing was saved.";
+
+/* What a teller or a manager screen actually writes into cdos_settings.
+   My account, the people a sign-in adopts, and the app-settings tabs a
+   manager is allowed to open. Shop, compliance, billing, hours, and the
+   two keys called out as the owner's (the handoff count, the default
+   spread) are not on this list. */
+export const NON_OWNER_MAY_CHANGE = [
+  "staff", "employees",
+  "defaultClientRisk", "idExpiryWarnDays", "riskTierNotes", "escalateMediumRisk",
+  "requireClientEmail", "requireClientPhone",
+  "vaultLowAlert", "vaultBasis", "vaultFloors", "floatCcys",
+  "tillCountMode", "tillBlindCount", "tillVarianceTol", "requireCountOnClose",
+  "pinOnSwitch", "pinOnTill", "pinOnVoid",
+  "transferRequirePurpose", "chequeMinHoldDays",
+  "autoTagRisk", "autoTagNew",
+  "spreads", "marginTargetPct", "marginFloorPct", "marginEnforce",
+  "rateProvider", "defaultFee", "rateRounding", "rateLockMins",
+  "payoutRoundTo", "payoutRoundMode", "spotOverride",
+  "receiptHeader", "receiptFooter", "receiptDisclaimer", "showLogoOnReceipt", "showMsbOnReceipt",
+] as const;
+
+const ALLOWED = new Set<string>(NON_OWNER_MAY_CHANGE);
 
 export const OWNER_ONLY_GROUPS = {
   shop: [
@@ -24,20 +47,27 @@ export const OWNER_ONLY_GROUPS = {
   ],
   compliance: [
     "threshold", "idRequiredOver", "retentionYears", "aggHours", "aggWindowStart", "regime",
+    "largeTxCheck", "structuringDays", "escalateHighRisk", "requireIdPhoto",
+    "reverifyDays", "recheckDays", "kycProvider", "screenSanctions",
   ],
   localization: ["baseCurrency", "dateFormat", "timeFormat", "bizCountry"],
-  billing: ["billingPlan", "billingCycle"],
+  billing: ["billingPlan", "billingCycle", "billingEmail"],
   hours: ["hours", "timezone"],
+  rates: ["defaultSpread"],
+  till: ["requireCountOnHandoff"],
 } as const;
 
-export type OwnerGroup = keyof typeof OWNER_ONLY_GROUPS | "rolePresets";
+export type OwnerGroup = keyof typeof OWNER_ONLY_GROUPS | "rolePresets" | "settings";
 
 const FIELD_GROUP = new Map<string, OwnerGroup>();
 for (const [group, fields] of Object.entries(OWNER_ONLY_GROUPS)) {
   for (const field of fields) FIELD_GROUP.set(field, group as OwnerGroup);
 }
 
-const ROW_LABEL: Record<OwnerGroup, string> = {
+/** Every named owner-only field. Anything not on the allowlist is too. */
+export const OWNER_ONLY_FIELDS = Object.values(OWNER_ONLY_GROUPS).flat();
+
+const ROW_LABEL: Record<string, string> = {
   shop: "Shop settings",
   compliance: "Compliance thresholds",
   localization: "Localization",
@@ -56,9 +86,9 @@ export function ownsSettings(role: string): boolean {
 }
 
 /** Rows the settings screen may offer for editing. Tellers get none of these. */
-export function editableOwnerRows(role: string): { id: OwnerGroup; label: string }[] {
+export function editableOwnerRows(role: string): { id: string; label: string }[] {
   if (!ownsSettings(role)) return [];
-  return (Object.keys(ROW_LABEL) as OwnerGroup[]).map((id) => ({ id, label: ROW_LABEL[id] }));
+  return Object.keys(ROW_LABEL).map((id) => ({ id, label: ROW_LABEL[id]! }));
 }
 
 type SettingsRead =
@@ -113,10 +143,14 @@ function has(record: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
+function groupOf(field: string): OwnerGroup {
+  return FIELD_GROUP.get(field) ?? "settings";
+}
+
 /**
  * Owner-only fields the incoming document would change.
- * A field that is absent was not sent. A field that is present and
- * equal to what is stored is the desk echoing its own copy.
+ * Absent is not a change. Equal is the desk echoing its copy, or the
+ * client omitting a key it only derived. A different value is a change.
  */
 export function ownerOnlyEdits(
   stored: Record<string, unknown> | null | undefined,
@@ -129,18 +163,18 @@ export function ownerOnlyEdits(
 
   if (sentSettings && (after.kind === "opaque" || before.kind === "opaque")) {
     if (stable(stored?.cdos_settings) !== stable(incoming.cdos_settings)) {
-      hits.push({ group: "compliance", field: "cdos_settings" });
+      hits.push({ group: "settings", field: "cdos_settings" });
     }
   } else if (sentSettings && after.kind === "none" && before.kind === "record") {
-    for (const [field, group] of FIELD_GROUP) {
-      if (has(before.record, field)) hits.push({ group, field });
+    for (const field of Object.keys(before.record)) {
+      if (!ALLOWED.has(field)) hits.push({ group: groupOf(field), field });
     }
   } else if (after.kind === "record") {
     const prior = before.kind === "record" ? before.record : {};
-    for (const [field, group] of FIELD_GROUP) {
-      if (!has(after.record, field)) continue;
+    for (const field of Object.keys(after.record)) {
+      if (ALLOWED.has(field)) continue;
       const previous = has(prior, field) ? prior[field] : undefined;
-      if (stable(previous) !== stable(after.record[field])) hits.push({ group, field });
+      if (stable(previous) !== stable(after.record[field])) hits.push({ group: groupOf(field), field });
     }
   }
 
@@ -154,9 +188,9 @@ export function ownerOnlyEdits(
 }
 
 /**
- * A partial snapshot that simply does not mention an owner-only field
- * must not erase it. This copies stored fields back. It is not used
- * when the caller sent a different value — that save is refused whole.
+ * Copy stored owner-only fields the document did not mention, so leaving
+ * one out cannot erase it. Not used when the caller sent a different
+ * value — that save is refused whole.
  */
 export function keepOwnerFields(
   stored: Record<string, unknown> | null | undefined,
@@ -173,8 +207,9 @@ export function keepOwnerFields(
   } else if (before.kind === "record" && after.kind === "record") {
     let copied = false;
     const merged: Record<string, unknown> = { ...after.record };
-    for (const field of FIELD_GROUP.keys()) {
-      if (!has(after.record, field) && has(before.record, field)) {
+    for (const field of Object.keys(before.record)) {
+      if (ALLOWED.has(field)) continue;
+      if (!has(after.record, field)) {
         merged[field] = before.record[field];
         copied = true;
       }
