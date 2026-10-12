@@ -571,6 +571,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone Rates change lines. The publish page lists the
+prices that moved, up to three lines such as "USD sell 1.3845 to
+1.3850", then "and N more". The public preview footer says how many
+more are on the rate board page, without listing those codes.
+Figures stay CAD per 1 through `boardQuote`.
+
 **2026-10-12**, phone Rates publish. One sticky button posts
 `POST /api/rates/publish`. With nothing to send it reads "Nothing
 to publish" and has no helper line under it. A teller or a

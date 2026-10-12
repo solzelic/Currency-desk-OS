@@ -66,6 +66,11 @@ test("public preview lists the homepage six through boardQuote", async ({ page }
   await expect(usd).toContainText(expected.sell);
   expect(expected.per).toBe(1);
   await expect(screen).toContainText("MXN is hidden.");
+  const note = await screen.locator(".phone-rate-board p").innerText();
+  expect(note).toMatch(/\d+ more on the rate board page/);
+  expect(note).not.toMatch(/\([A-Z]{3}/);
+  expect(note).not.toContain("\u2014");
+  expect(note).not.toContain("\u2013");
   const text = await screen.innerText();
   expect(text).not.toContain("\u2014");
   expect(text).not.toContain("\u2013");

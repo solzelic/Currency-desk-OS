@@ -335,14 +335,17 @@ no steppers, no drag, and no board switch. Buy and sell are CAD per
 
 A manager or an admin can switch to Public preview. That board is
 the first six currencies still on the board, with the same
-`boardQuote` figures. The line under it names anything hidden and
-anything past those six. It is not live.
+`boardQuote` figures. The line under it says how many more are on
+the rate board page, and names a currency that is hidden. It is
+not live.
 
 Publish is one sticky button. With nothing to send it reads
 "Nothing to publish" and there is no second line under it. A change
 reads "Publish 1 change" (or "Publish N changes") and opens a padded
 page: Back at the top left, the change list in a card, and Publish
-now full width. The post is `POST /api/rates/publish`. A teller or a
+now full width. The list names the prices that moved, such as
+"USD sell 1.3845 to 1.3850", up to three lines, then "and N more".
+The post is `POST /api/rates/publish`. A teller or a
 supervisor is refused with "Only a manager or an admin can publish
 rates." and an audit row `rates.publish_denied`. The phone shows
 that sentence alone. It does not show a status code, and it does

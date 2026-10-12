@@ -122,11 +122,10 @@
     const rest = on.slice(6);
     const hidden = order.filter((code) => rows[code] && rows[code].show === false);
     const parts = [];
-    if (rest.length === 1) parts.push("1 more on the rate board page (" + rest[0] + ").");
-    else if (rest.length > 1) parts.push(rest.length + " more on the rate board page (" + rest.join(", ") + ").");
+    if (rest.length > 0) parts.push(rest.length + " more on the rate board page");
     if (hidden.length === 1) parts.push(hidden[0] + " is hidden.");
     else if (hidden.length > 1) parts.push(hidden.join(", ") + " are hidden.");
-    return parts.join(" ");
+    return parts.join(". ");
   }
 
   function nearly(left, right) {
@@ -192,7 +191,41 @@
     } else {
       lines.push({ label: "Buy and sell margin", detail: formatPercent(draft.buyMargin) + " each, no change", quiet: true });
     }
-    return { count: count, lines: lines };
+    return { count: count, lines: lines, moves: priceMoves(published, draft) };
+  }
+
+  function sideMove(code, side, before, after) {
+    if (!before || !after || before === after) return "";
+    return code + " " + side + " " + before + " to " + after;
+  }
+
+  function priceMoves(published, draft) {
+    const moves = [];
+    draft.order.forEach((code) => {
+      const now = draft.rows[code];
+      if (!now) return;
+      const was = published && published.rows[code];
+      if (!was) {
+        const fresh = boardQuote(code, now.mid, now.spread, draft.buyMargin, draft.sellMargin);
+        if (fresh.buy) moves.push(code + " buy " + fresh.buy);
+        if (fresh.sell) moves.push(code + " sell " + fresh.sell);
+        return;
+      }
+      const before = boardQuote(code, was.mid, was.spread, published.buyMargin, published.sellMargin);
+      const after = boardQuote(code, now.mid, now.spread, draft.buyMargin, draft.sellMargin);
+      const buy = sideMove(code, "buy", before.buy, after.buy);
+      const sell = sideMove(code, "sell", before.sell, after.sell);
+      if (buy) moves.push(buy);
+      if (sell) moves.push(sell);
+      if (!buy && !sell && (was.show !== false) !== (now.show !== false)) {
+        moves.push(code + (now.show === false ? " hidden from the board" : " on the board"));
+      }
+    });
+    if (published && published.order.join(",") !== draft.order.join(",")) {
+      const pricesMoved = moves.some((line) => line.indexOf(" to ") >= 0);
+      if (!pricesMoved) moves.push("Homepage order changed");
+    }
+    return moves;
   }
 
   function publishBody(draft) {

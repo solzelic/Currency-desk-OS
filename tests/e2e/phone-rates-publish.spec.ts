@@ -52,6 +52,34 @@ test("nothing to publish has no helper line", async ({ page }) => {
   await expect(screen.locator(".phone-sticky-why")).toHaveCount(0);
 });
 
+test("the publish sheet lists up to three price changes", async ({ page }) => {
+  await atDesk(page, "r.haddad");
+  await openRates(page);
+  const expected = await page.evaluate(() => {
+    const rates = window.CDOS.phoneRates;
+    return fetch("/api/rates", { credentials: "same-origin" })
+      .then((response) => response.json())
+      .then((data) => {
+        const published = rates.copyBoard(data.board);
+        const draft = rates.copyBoard(data.board);
+        draft.sellMargin = rates.stepMargin(published.sellMargin, 1);
+        const moves = rates.changes(published, draft).moves;
+        return { moves: moves.slice(0, 3), extra: moves.length - 3 };
+      });
+  });
+  expect(expected.extra).toBeGreaterThan(0);
+  expect(expected.moves).toHaveLength(3);
+  for (const line of expected.moves) expect(line).toMatch(/^[A-Z]{3} sell \d+\.\d+ to \d+\.\d+$/);
+  expect(expected.moves[0].startsWith("USD sell ")).toBe(true);
+  await page.locator(".phone-rates").getByRole("button", { name: "Raise Sell margin, over spot" }).click();
+  await page.getByRole("button", { name: "Publish 1 change" }).click();
+  await expect(page.locator(".phone-rate-chg li")).toHaveText([...expected.moves, "and " + expected.extra + " more"]);
+  const sheet = await page.getByRole("dialog", { name: "Publish rates?" }).innerText();
+  expect(sheet).not.toContain("\u2014");
+  expect(sheet).not.toContain("\u2013");
+  expect(sheet).not.toMatch(/\d\s-\s\d/);
+});
+
 test("publish posts the board and a refused post says 403", async ({ page }) => {
   await atDesk(page, "r.haddad");
   await openRates(page);
@@ -89,7 +117,8 @@ test("publish posts the board and a refused post says 403", async ({ page }) => 
     expect(shape.backLeft).toBeLessThanOrEqual(16);
     await expect(sheet).toContainText("These go to your website and rate board. Customers see them within about a minute.");
     await expect(sheet).toContainText("Publishing is saved with your name and the time. Only managers and admins can publish.");
-    await expect(sheet).toContainText("Buy and sell margin");
+    await expect(sheet.locator(".phone-rate-chg li").first()).toContainText(/USD buy .+ to /);
+    await expect(sheet).toContainText(/and \d+ more/);
     await sheet.getByRole("button", { name: "Publish now" }).click();
     await expect(page.locator(".phone-rates")).toContainText(/Published /);
     const after = await page.evaluate(async () => {

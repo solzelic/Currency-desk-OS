@@ -353,7 +353,8 @@
               <div className="phone-task-body">
                 <p>These go to your website and rate board. Customers see them within about a minute.</p>
                 <ul className="phone-rate-chg">
-                  {diff.lines.map((line) => <li key={line.label}><span>{line.label}</span><b>{line.detail}</b></li>)}
+                  {diff.moves.slice(0, 3).map((text) => <li key={text}><b>{text}</b></li>)}
+                  {diff.moves.length > 3 ? <li><b>{"and " + (diff.moves.length - 3) + " more"}</b></li> : null}
                 </ul>
                 <p className="phone-rate-hint">Publishing is saved with your name and the time. Only managers and admins can publish.</p>
                 {publishError ? <p className="phone-rate-banner" role="alert">{publishError}</p> : null}
