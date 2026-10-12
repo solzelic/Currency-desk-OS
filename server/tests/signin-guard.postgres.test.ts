@@ -78,9 +78,40 @@ describe("production does not log a sign-in code", () => {
       expect(dumped).not.toContain(code);
       expect(dumped).not.toContain("sam@shop.example");
       expect(warnings.join("\n")).toContain("RESEND_API_KEY and EMAIL_FROM are not set");
+      expect(warnings.join("\n")).toContain("EMAIL_FROM is not set");
+      expect(warnings.join("\n")).toContain("RESEND_API_KEY is not set");
     } finally {
       warn.mockRestore();
       log.mockRestore();
+      if (prev === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev;
+      if (key === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = key;
+      if (from === undefined) delete process.env.EMAIL_FROM;
+      else process.env.EMAIL_FROM = from;
+    }
+  });
+
+  it("still records the provider status when the error body cannot be read", async () => {
+    const errors: string[] = [];
+    const err = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { errors.push(args.map(String).join(" ")); });
+    const prev = process.env.NODE_ENV;
+    const key = process.env.RESEND_API_KEY;
+    const from = process.env.EMAIL_FROM;
+    const code = "918273";
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.RESEND_API_KEY = "re_test_present";
+      process.env.EMAIL_FROM = "CurrencyDesk <noreply@mail.currencydesk.com>";
+      vi.stubGlobal("fetch", async () => ({ ok: false, status: 422, text: () => Promise.reject(new Error("body exploded")) }));
+      expect(await sendEmail("sam@shop.example", `${code} is your CurrencyDesk sign-in code`, { text: `Your code is ${code}` })).toBe("failed");
+      const dumped = errors.join("\n");
+      expect(dumped).toContain("422");
+      expect(dumped).not.toContain("body exploded");
+      expect(dumped).not.toContain(code);
+    } finally {
+      err.mockRestore();
+      vi.unstubAllGlobals();
       if (prev === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = prev;
       if (key === undefined) delete process.env.RESEND_API_KEY;

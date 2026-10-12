@@ -1,29 +1,35 @@
 /* Which address a sign-in guess is counted against.
 
-   Live desks are Cloudflare, then Render. The rightmost X-Forwarded-For
-   hop on that path is a Cloudflare edge address: one address for every
-   customer at a location, and a guesser who rotates the header walks
-   out from under the limit.
+   A valid IPv6 CF-Connecting-IP is the client. IPv6 /64 rotation is
+   accepted for now and is a follow-up.
 
-   CF-Connecting-IP is the client only when the hop that delivered the
-   request is in Cloudflare's published ranges. Otherwise the Render hop
-   (the rightmost forwarded address, and only when our socket is the
-   platform proxy) is the client. With no proxy in front, the socket is
-   the client. A header the caller typed does not open a new bucket.
+   Order:
+   1. The socket is a published Cloudflare address, or the socket is a
+      private address and the rightmost X-Forwarded-For hop is a
+      published Cloudflare address. Then CF-Connecting-IP is the client
+      when it is an IP, IPv4 or IPv6. A missing or invalid header counts
+      the socket and warns, without the header value.
+   2. Otherwise a private socket with an X-Forwarded-For hop counts the
+      rightmost hop.
+   3. Otherwise the socket is the client.
 
-   Nothing here reads an environment variable. Render's proxy is the
-   private address that connects to the process, which is already how
-   the platform is wired.
+   Render's docs say the app sees the proxy IP, and that the first
+   X-Forwarded-For entry is the client. This code does not use that
+   first entry. The fallbacks stay safe whatever the header shape:
+   CF-Connecting-IP is trusted only when the hop is actually Cloudflare,
+   a caller-supplied header cannot open a new bucket unless that hop is
+   Cloudflare, and a leftmost forged X-Forwarded-For entry is never the
+   bucket. The first request logs the header names present, with no
+   values and no IPs. Reading those names in the live log, right after
+   merge, is how the header shape gets checked.
 
-   A Cloudflare hop with a missing or unusable CF-Connecting-IP does
-   not fail the request. The socket address is the bucket, and a
-   warning names the problem without the header value. */
+   Nothing here reads an environment variable. Loopback is not treated
+   as a platform proxy. */
 import { isIP } from "node:net";
 import { isCloudflareIp } from "./cloudflare-ips.js";
 
-/** Render connects to the process from a private address. Loopback is
-    not that proxy: a test, and a process with nothing in front, is its
-    own client. */
+/** A private (RFC1918) socket address. Loopback is not included:
+    a test, and a process with nothing in front, is its own client. */
 export function isPlatformProxy(ip: string): boolean {
   const parts = ip.split(".").map((part) => Number(part));
   if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
@@ -69,7 +75,18 @@ function connectingIp(headers: { [name: string]: unknown }): string | undefined 
   return ip;
 }
 
+let notedHeaderNames = false;
+
+/** Once, on the first counted request. Names only: no values, no addresses. */
+function noteHeaderNames(headers: { [name: string]: unknown }): void {
+  if (notedHeaderNames) return;
+  notedHeaderNames = true;
+  const names = Object.keys(headers).filter((name) => name !== "").sort();
+  console.warn(`[signin] first request headers: ${names.length ? names.join(", ") : "(none)"}`);
+}
+
 export function clientIp(req: { ip?: string; headers: { [name: string]: unknown } }): string {
+  noteHeaderNames(req.headers);
   const socket = req.ip ? normalizeIp(req.ip) : undefined;
   if (!socket) throw new Error("Sign-in has no client address to count.");
   const hops = forwardedHops(req.headers);
