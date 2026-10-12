@@ -144,6 +144,7 @@ test("desktop sign-in at 1280 is the wide screen", async ({ page }) => {
   await expect(page.getByText("CURRENCYDESK ID")).toBeVisible();
   await expect(page.getByRole("button", { name: /Continue/ })).toBeVisible();
   await expect(page.locator("[data-phone-signin]")).toHaveCount(0);
+  await expect(page.locator("#phone-inter"), "inter stays off a desk load").toHaveCount(0);
   await expect(page.getByText("Staff ID", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Brand mark is a placeholder")).toHaveCount(0);
   const h1 = await page.locator("#lock h1").evaluate((el) => {
@@ -376,10 +377,13 @@ test("phone sweep of sign-in and a wrong password", async ({ page }) => {
   expect(paint.font.toLowerCase()).toContain("inter");
   expect(paint.bg).toBe("rgb(247, 246, 243)");
   expect(paint.link).toBe("rgb(31, 107, 71)");
-  /* Inter is the phone face. The media attribute keeps that file off the 1280 desk. */
-  const inter = await page.locator("link[rel='stylesheet'][href*='family=Inter']");
+  /* Inter is injected only while the phone query matches. A media
+     attribute on the link still downloads the file on the desk, so
+     the link is absent there instead of hidden. */
+  const inter = page.locator("#phone-inter");
   await expect(inter).toHaveCount(1);
-  await expect(inter).toHaveAttribute("media", "(max-width: 430px)");
+  await expect(inter).toHaveAttribute("href", /family=Inter/);
+  await expect(inter).not.toHaveAttribute("media");
   await phoneSweep(page, { roots: [PHONE_ROOT] });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -641,9 +645,11 @@ test("resize and landscape keep the phone code step", async ({ page }) => {
      missing listener would stay green. */
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator("[data-phone-signin]"), "resize listener").toHaveCount(0);
+  await expect(page.locator("#phone-inter"), "inter listener").toHaveCount(0);
   await expect(page.getByText("A fresh 6-digit code just went to")).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator("[data-phone-signin]")).toHaveCount(1);
+  await expect(page.locator("#phone-inter")).toHaveCount(1);
   await expect(page.locator(".si-code i")).toHaveCount(6);
   expect(await storedText(page), "password kept").not.toContain(password);
   await shot(page, "signin_code_landscape");
