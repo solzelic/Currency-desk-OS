@@ -77,7 +77,7 @@ describe("production does not log a sign-in code", () => {
       const dumped = `${warnings.join("\n")}\n${logs.join("\n")}`;
       expect(dumped).not.toContain(code);
       expect(dumped).not.toContain("sam@shop.example");
-      expect(warnings.join("\n")).toContain("RESEND_API_KEY and EMAIL_FROM is not set");
+      expect(warnings.join("\n")).toContain("RESEND_API_KEY and EMAIL_FROM are not set");
     } finally {
       warn.mockRestore();
       log.mockRestore();
@@ -372,7 +372,7 @@ postgres("shop sign-in against Postgres", () => {
       expect(res.body).not.toMatch(/\d{6}/);
       const dumped = `${warnings.join("\n")}\n${logs.join("\n")}`;
       expect(dumped).not.toMatch(/\d{6}/);
-      expect(dumped).toContain("RESEND_API_KEY and EMAIL_FROM is not set");
+      expect(dumped).toContain("RESEND_API_KEY and EMAIL_FROM are not set");
       const left = await handle.db.select().from(schema.loginChallenges).where(eq(schema.loginChallenges.userId, emailId));
       expect(left).toHaveLength(0);
     } finally {

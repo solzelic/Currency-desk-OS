@@ -7,6 +7,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { resetSignupThrottle, signupIpMax } from "../src/routes/signup.js";
+import { sendEmail } from "../src/email.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -294,6 +295,34 @@ describe("signup", () => {
       expect(res.body).not.toMatch(/\d{6}/);
       expect((await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-quietfx"))).length).toBe(0);
     } finally {
+      if (prev === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev;
+      if (key === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = key;
+      if (from === undefined) delete process.env.EMAIL_FROM;
+      else process.env.EMAIL_FROM = from;
+    }
+  });
+
+  it("still logs the provider status when the error body cannot be read", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { errors.push(args.map(String).join(" ")); });
+    const prev = process.env.NODE_ENV;
+    const key = process.env.RESEND_API_KEY;
+    const from = process.env.EMAIL_FROM;
+    process.env.NODE_ENV = "production";
+    process.env.RESEND_API_KEY = "re_test_present";
+    process.env.EMAIL_FROM = "CurrencyDesk <noreply@mail.currencydesk.com>";
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 422, text: () => Promise.reject(new Error("body exploded")) }));
+    try {
+      expect(await sendEmail("sam@shop.example", "918273 is your CurrencyDesk sign-in code", { text: "Your code is 918273" })).toBe("failed");
+      const dumped = errors.join("\n");
+      expect(dumped).toContain("422");
+      expect(dumped).not.toContain("918273");
+      expect(dumped).not.toContain("body exploded");
+    } finally {
+      spy.mockRestore();
+      vi.unstubAllGlobals();
       if (prev === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = prev;
       if (key === undefined) delete process.env.RESEND_API_KEY;
