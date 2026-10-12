@@ -184,6 +184,13 @@ JWT stays valid until it expires no matter what happened in between, and at a
 cash desk the interesting event is somebody being let go at 4pm. Every
 credential change revokes every other session.
 
+**Taking the desk is a new session.** `POST /api/auth/switch` proves the next
+person's PIN, revokes the live cookie, and issues one for them. The avatar
+menu used to change only the name on screen, so the book kept stamping
+whoever had typed the password. A missing PIN is refused. `0000` is not
+accepted in its place. The workspace stays only when that person may use it;
+otherwise they pick a till. The audit row is `auth.switch` with `{from, to}`.
+
 **Nothing enumerable.** Whether an account exists is not public. The reset
 route answers identically for a stranger and a customer, in the same words —
 and the rate limit answers identically too, because a throttle that only

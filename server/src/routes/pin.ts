@@ -46,14 +46,14 @@ const MAX_TRIES = 5;
 const LOCK_MS = 5 * 60 * 1000;
 const tries = new Map<string, { count: number; until: number }>();
 
-function lockState(userId: string): { locked: boolean; remaining: number } {
+export function lockState(userId: string): { locked: boolean; remaining: number } {
   const t = tries.get(userId);
   if (!t) return { locked: false, remaining: MAX_TRIES };
   if (t.until > Date.now()) return { locked: true, remaining: 0 };
   if (t.until) { tries.delete(userId); return { locked: false, remaining: MAX_TRIES }; }
   return { locked: false, remaining: Math.max(0, MAX_TRIES - t.count) };
 }
-function recordFailure(userId: string): { locked: boolean; remaining: number } {
+export function recordFailure(userId: string): { locked: boolean; remaining: number } {
   const t = tries.get(userId) ?? { count: 0, until: 0 };
   t.count += 1;
   if (t.count >= MAX_TRIES) { t.until = Date.now() + LOCK_MS; t.count = 0; }

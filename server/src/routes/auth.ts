@@ -1,6 +1,7 @@
 /* ============================================================
    Auth routes
      POST /api/auth/login            { staffId, password } → session cookie + user
+     POST /api/auth/switch           { staffId, pin } → revoke this session, cookie for them
      POST /api/auth/logout           → revokes the session
      GET  /api/auth/me               → current user + scope (or 401)
      POST /api/auth/change-password  { currentPassword, newPassword }
@@ -18,6 +19,7 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { createSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { clearPinAttempts, lockState, recordFailure } from "./pin.js";
 import { audit } from "../audit.js";
 import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
@@ -33,6 +35,10 @@ const loginBody = z.object({
   tenantId: z.string().min(1).max(120).default("tnt-yorkfx"),
 });
 
+const switchBody = z.object({
+  staffId: z.string().min(1).max(120),
+  pin: z.string().regex(/^\d{4}$/, "pin: four digits"),
+});
 const changePasswordBody = z.object({
   currentPassword: z.string().min(1).max(512),
   newPassword: z.string().min(8, "password: at least 8 characters").max(512),
@@ -366,6 +372,80 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       actorId: user.id, action: "auth.reset_completed",
     });
     return { ok: true, signInAs: user.staffId };
+  });
+
+  /* Taking over the desk is a new sign-in. The screen used to rename
+     itself and leave this cookie alone, so the book kept stamping the
+     person who had typed the password. The PIN has to be one this
+     server stored. 0000 is the old browser fallback and is never a
+     yes, even if that is what the hash would have said. */
+  app.post("/api/auth/switch", async (req, reply) => {
+    const token = req.cookies[SESSION_COOKIE];
+    const who = await resolveSession(db, token);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const parsed = switchBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    }
+    const { staffId, pin } = parsed.data;
+    const matches = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, staffId));
+    const target = matches.find((row) => row.tenantId === who.tenantId);
+    if (!target) {
+      if (matches.some((row) => row.tenantId !== who.tenantId)) {
+        return reply.code(403).send({ error: "cross_tenant", detail: "That person is not on this desk." });
+      }
+      return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
+    }
+    if (!target.active) {
+      return reply.code(403).send({ error: "inactive", detail: "That account is not active." });
+    }
+    if (!target.authorizedBranchIds.includes(who.branchId)) {
+      return reply.code(403).send({ error: "branch_denied", detail: "That person is not on this branch." });
+    }
+    if (!target.pinHash) {
+      return reply.code(409).send({ error: "no_pin", detail: "No PIN is set for this person." });
+    }
+    const locked = lockState(target.id);
+    if (locked.locked) {
+      return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
+    }
+    const pinOk = pin !== "0000" && await verifyPassword(pin, target.pinHash);
+    if (!pinOk) {
+      const after = recordFailure(target.id);
+      await audit(db, {
+        tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
+        actorId: who.id, action: "pin.failed", detail: { of: target.staffId, via: "auth.switch" },
+      });
+      return reply.code(401).send({ error: "wrong_pin", remaining: after.remaining, locked: after.locked });
+    }
+    clearPinAttempts(target.id);
+
+    let kept: string | null = null;
+    if (who.workspaceId) {
+      const workspace = (await db.select({
+        id: schema.workspaces.id,
+        branchId: schema.workspaces.branchId,
+      }).from(schema.workspaces).where(eq(schema.workspaces.id, who.workspaceId)).limit(1))[0];
+      if (workspace && target.authorizedBranchIds.includes(workspace.branchId)) kept = workspace.id;
+    }
+
+    await revokeSession(db, token);
+    const { token: next, expiresAt } = await createSession(db, target.id, { workspaceId: kept });
+    await audit(db, {
+      tenantId: target.tenantId,
+      legalEntityId: target.legalEntityId,
+      branchId: who.branchId,
+      actorId: target.id,
+      action: "auth.switch",
+      detail: { from: who.id, to: target.id },
+    });
+    reply.setCookie(SESSION_COOKIE, next, { ...cookieOpts, expires: expiresAt });
+    return {
+      ok: true,
+      pickTill: kept == null,
+      workspaceId: kept,
+      user: { id: target.staffId, name: target.name, role: target.role },
+    };
   });
 
   app.post("/api/auth/logout", async (req, reply) => {

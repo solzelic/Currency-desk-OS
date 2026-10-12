@@ -1493,9 +1493,8 @@
 
     const log = (action, detail) => { setAudit(a => [{ ts: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), user: me.name, action, detail }, ...a].slice(0, 300)); try { window.CDOS.auditFx && window.CDOS.auditFx.fire(); } catch (e) {} };
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
-    // switching account previews a role: it sets that person AND applies their
-    // role preset to the shared (all-tellers) permission set, so the whole UI
-    // reflects exactly what that role is allowed to do. Owner = all access.
+    const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
+    // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null);   // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null);   // { title, sub, name, expected, onOk } when a PIN is being asked
     const applyRole = (s) => {
@@ -1522,7 +1521,78 @@
     const pinOf = () => '0000';
     const reqPin = (nm) => { const e = (settings.employees || []).find(x => x.name === nm); return e ? e.requirePin !== false : true; };
     const askPin = (opts) => setPinGate(opts);
-    const switchTo = (s) => { setAcctMenu(false); if (s.name === me.name) return; const need = settings.pinOnSwitch !== false && s.requirePin !== false; if (need) askPin({ title: 'Switch account', sub: 'Enter ' + s.name + '’s PIN to continue', name: s.name, staffId: s.code, expected: s.pin || '0000', onOk: () => applyRole(s) }); else applyRole(s); };
+    /* The menu used to call applyRole and stop. The cookie, and therefore
+       every deal, stayed with whoever had signed in. Switching now asks
+       the server to revoke that session and open one for this person.
+       There is no path that skips the PIN: a local "0000" is not a session. */
+    const finishSwitch = async (switched) => {
+      let res;
+      try {
+        res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      } catch (e) {
+        log('Account switch failed', (e && e.message) || 'The desk could not be reached after the switch.');
+        setStage('lock');
+        return;
+      }
+      if (!res.ok) {
+        log('Account switch failed', 'The session did not come back as the person who just took the desk.');
+        setStage('lock');
+        return;
+      }
+      let data;
+      try { data = await res.json(); }
+      catch (e) {
+        log('Account switch failed', 'The desk did not say who is signed in.');
+        setStage('lock');
+        return;
+      }
+      const u = data && data.user;
+      if (!u || !u.id) {
+        log('Account switch failed', 'The desk did not name who is signed in.');
+        setStage('lock');
+        return;
+      }
+      srvUserRef.current = u;
+      setSrvUser(u);
+      setUser(u.id);
+      const pickTill = !!(switched && switched.pickTill);
+      if (window.CDOS.Backend) {
+        try {
+          if (pickTill) window.CDOS.Backend.setWorkspace(null);
+          else if (switched && switched.workspaceId) window.CDOS.Backend.setWorkspace(switched.workspaceId);
+          const tills = await window.CDOS.Backend.loadWorkspaces();
+          const list = (tills && tills.workspaces) || [];
+          const wanted = !pickTill && switched && switched.workspaceId;
+          const active = wanted ? (list.find(w => w.workspaceId === switched.workspaceId) || null) : (list[0] || null);
+          if (!pickTill && active) {
+            window.CDOS.Backend.setWorkspace(active.workspaceId);
+            await window.CDOS.Backend.loadTillSession();
+          }
+        } catch (e) {
+          log('Ledger tills unavailable', (e && e.message) || 'Could not read this branch’s tills after the switch.');
+        }
+      }
+      const local = (settings.employees || []).find(e => e.code === u.id);
+      applyRole({
+        name: u.name || (local && local.name) || u.id,
+        role: SRV2OS[u.role] || 'Cashier',
+        apps: local && Array.isArray(local.apps) ? local.apps : null,
+      });
+      if (pickTill) { setStage('station'); return; }
+      setCashVersion(v => v + 1);
+    };
+    const switchTo = (s) => {
+      setAcctMenu(false);
+      if (s.name === me.name) return;
+      askPin({
+        title: 'Switch account',
+        sub: 'Enter ' + s.name + '’s PIN to continue',
+        name: s.name,
+        staffId: s.code,
+        purpose: 'switch',
+        onOk: (switched) => { finishSwitch(switched); },
+      });
+    };
     const tillGate = (fn) => { const need = settings.pinOnTill !== false && reqPin(me.name); if (need) askPin({ title: 'Confirm it’s you', sub: 'Enter your PIN to take this drawer', name: me.name, expected: pinOf(me.name), onOk: fn }); else fn(); };
 
     /* Routing per §04 of the Branch & Access Model spec — a pure function of
@@ -1594,7 +1664,6 @@
             if (stageRef.current !== 'lock') return;
             const u = d.user;
             if (u.mustChangePassword) return;   // that has its own screen, and a password we do not have
-            const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
             const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
             const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
             if (!known) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
@@ -2342,7 +2411,7 @@
       {/* C · operator handover — pass the desk to a colleague, on the record */}
       {handover && ReactDOM.createPortal(<Handover operators={(settings.employees && settings.employees.length ? settings.employees : STAFF)} current={me}
         onCancel={() => setHandover(false)}
-        onConfirm={(op) => { setHandover(false); applyRole(op); log && log('operator.handover', { to: op.name }); }} />, document.body)}
+        onConfirm={(op, switched) => { setHandover(false); finishSwitch(switched); log && log('operator.handover', { to: op.name }); }} />, document.body)}
       {/* MENU BAR */}
       <div id="menubar">
         <div className="mb-brand" title={chromeCollapsed ? 'Show the app row' : 'Hide the bars for more room'} style={{ cursor: 'pointer' }} onClick={() => setChromeCollapsed(c => !c)}>
@@ -2575,7 +2644,7 @@
       </div>
 
       {receipt && <ReceiptModal row={receipt} settings={settings} onClose={() => setReceipt(null)} />}
-      {pinGate && window.CDOS.PinPrompt && <window.CDOS.PinPrompt {...pinGate} onOk={() => { const f = pinGate.onOk; setPinGate(null); f && f(); }} onCancel={() => setPinGate(null)} />}
+      {pinGate && window.CDOS.PinPrompt && <window.CDOS.PinPrompt {...pinGate} onOk={(result) => { const f = pinGate.onOk; setPinGate(null); if (f) f(result); }} onCancel={() => setPinGate(null)} />}
       {moveCash && _ST.MoveModal && React.createElement(_ST.MoveModal, { branches, station, preset: moveCash, onClose: () => setMoveCash(null), onMove: doOsMove })}
       {addContactOpen && window.CDOS.KYC && window.CDOS.KYC.NewContactFlow &&
         <window.CDOS.KYC.NewContactFlow by={me.name} setClients={setClients} onClose={() => setAddContactOpen(false)} onDone={() => setAddContactOpen(false)} />}
