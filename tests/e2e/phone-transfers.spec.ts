@@ -149,6 +149,7 @@ test("the record list names who sent to whom", async ({ page }) => {
 test("the list groups records from three different days", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
+  await openTransfers(page);
   await page.evaluate(() => {
     const book = window.CDOS.businessDate();
     const y = Number(book.slice(0, 4));
