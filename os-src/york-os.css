@@ -2593,7 +2593,6 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     /* The window runs under the bar. This keeps New deal above it. */
     padding-bottom: var(--phone-bar-h);
   }
-  .phone-rates .phone-title { padding-left: 16px; padding-right: 16px; }
   .phone-rates-edit {
     min-height: 44px;
     padding: 0 4px;

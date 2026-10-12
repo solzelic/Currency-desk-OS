@@ -1,8 +1,7 @@
 /* Phone Rates. At 360 and 390 the cashier gets the list, the
-   quote, and a prefilled New transaction. At 1280 the Rate Board
-   is the iframe it already was: no phone screen, 14px window,
-   not full-bleed. Phone CSS is not allowed to escape the 430px
-   query, which is what keeps that desktop a 0-pixel change. */
+   quote, and a prefilled New transaction. The 1280 Rate Board
+   is proved by tests/e2e/desktop-unchanged.spec.ts. This file
+   does not keep a second desktop picture. */
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 import { phoneSweep } from "./helpers/phone-sweep";
@@ -49,42 +48,13 @@ async function ensureTillOpen(page: Page): Promise<void> {
   await expect(line).toContainText("Till open");
 }
 
-function phoneRatesRulesOutside430(): string[] {
-  const bad: string[] = [];
-  const walk = (list: CSSRuleList, inPhone: boolean) => {
-    for (const rule of list) {
-      if (rule.type === CSSRule.MEDIA_RULE) {
-        const media = rule as CSSMediaRule;
-        walk(media.cssRules, inPhone || /max-width:\s*430px/.test(media.conditionText));
-      } else if (!inPhone && rule.cssText && /phone-rates|phone-quote/.test(rule.cssText)) {
-        bad.push(rule.cssText.slice(0, 120));
-      }
-    }
-  };
-  for (const sheet of document.styleSheets) {
-    let rules: CSSRuleList;
-    try { rules = sheet.cssRules; } catch { continue; }
-    walk(rules, false);
-  }
-  return bad;
+function clock12(ms: number): string {
+  const d = new Date(ms);
+  let h = d.getHours();
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return h + ":" + String(d.getMinutes()).padStart(2, "0") + " " + ap;
 }
-
-test("desktop Rates is the Rate Board, unchanged", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await atDesk(page);
-  await page.locator('#appbar [data-app="rates"]').click();
-  const win = page.locator(".win.show.active").first();
-  await expect(win.locator('iframe[title="Rate Board"]')).toBeVisible();
-  await expect(win.locator(".phone-rates")).toHaveCount(0);
-  await expect(page.locator(".phone-rates")).toHaveCount(0);
-  await expect(win).toHaveCSS("border-radius", "14px");
-  await page.screenshot({ path: `${SHOTS}/rates_desktop_1280.png` });
-  const box = await win.boundingBox();
-  expect(box).toBeTruthy();
-  expect(box!.width).toBeLessThan(1200);
-  expect(box!.width).toBeGreaterThan(900);
-  expect(await page.evaluate(phoneRatesRulesOutside430)).toEqual([]);
-});
 
 for (const width of [360, 390]) {
   test(`cashier rates at ${width}`, async ({ page }) => {
@@ -184,8 +154,7 @@ test("a fresh provider snapshot is the only Live line", async ({ page }) => {
   }));
   await atDesk(page);
   await openRates(page);
-  const expected = await page.evaluate((ms) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }), fetchedAt);
-  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Live, updated " + expected);
+  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Live, updated " + clock12(fetchedAt));
 });
 
 test("a stale snapshot does not say Live", async ({ page }) => {
@@ -216,8 +185,7 @@ test("a lock says Rates locked, with its time when we have one", async ({ page }
   await landOnDesktop(page);
   await dismissTour(page);
   await openRates(page);
-  const expected = await page.evaluate((ms) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }), at);
-  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Rates locked at " + expected);
+  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Rates locked at " + clock12(at));
 });
 
 test("rates that fail to load say so, and do not keep old prices", async ({ page }) => {
@@ -229,6 +197,10 @@ test("rates that fail to load say so, and do not keep old prices", async ({ page
   await openRates(page);
   await expect(page.getByText("Rates did not load. Try again.")).toBeVisible();
   await expect(page.locator(".phone-rate")).toHaveCount(0);
+  for (const width of [360, 390]) {
+    await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
+    await page.screenshot({ path: `${SHOTS}/rates_error_${width}.png` });
+  }
   await expect.poll(() => errors.some((t) => t.includes("Rates did not load"))).toBe(true);
   await page.unroute("**/api/rates/market");
   await page.getByRole("button", { name: "Try again" }).click();

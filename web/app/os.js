@@ -62994,12 +62994,18 @@ window.CDOS_PERSIST = (function () {
     });
     return text + ' ' + (code || HOME_FALLBACK);
   }
+
+  /* 12-hour, uppercase, one space: "3:02 PM". A locale string can
+     use a narrow space or "p.m.", and the sweep treats that as a
+     different time. This screen does not print a calendar date.
+     One would read "Oct 11, 2026". */
   function clock12(ms) {
-    return new Date(ms).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
+    const d = new Date(ms);
+    if (isNaN(+d)) return '';
+    let h = d.getHours();
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + ap;
   }
 
   /* Live only when a real provider snapshot is fresh. A locked board,
