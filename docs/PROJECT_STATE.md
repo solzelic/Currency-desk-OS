@@ -548,6 +548,14 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, PIN guesses. A wrong PIN, and a wrong sign-in password on the
+forgot-PIN door, is counted before the slow check. That guess is given
+back as soon as the current PIN or password checks out, so a later
+refusal does not count. Only a wrong current PIN, or a wrong password
+on that door, counts. A right PIN on the keypad gives the run back.
+A burst of wrong guesses still stops at five. The lock still lives in
+memory on this process.
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
