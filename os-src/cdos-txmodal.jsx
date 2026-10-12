@@ -344,7 +344,9 @@
   function PresentQuote({ q, onClose }) {
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
     return ReactDOM.createPortal(
-      <div className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column' }}>
+      /* The quote is a portal, so a press still bubbles through the React
+         tree to the sheet scrim, which would throw the deal away. */
+      <div className="fixed inset-0" onMouseDown={(e) => e.stopPropagation()} style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-10 pt-8 pb-4" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
           <div><div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{q.biz}</div><div style={{ fontWeight: 800, fontSize: 30, color: 'var(--cd-on-ink)', letterSpacing: '-0.02em', marginTop: 4 }}>{q.title}</div></div>
           <span className="px-3 py-1.5" style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: 'var(--cd-on-ink)', background: 'var(--cd-on-ink-faint)', borderRadius: 999 }}>{q.tag}</span>

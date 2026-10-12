@@ -33500,8 +33500,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
     }, [onClose]);
-    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+    return ReactDOM.createPortal(
+    /*#__PURE__*/
+    /* The quote is a portal, so a press still bubbles through the React
+       tree to the sheet scrim, which would throw the deal away. */
+    React.createElement("div", {
       className: "fixed inset-0",
+      onMouseDown: e => e.stopPropagation(),
       style: {
         zIndex: 99999,
         background: CD.ink,
