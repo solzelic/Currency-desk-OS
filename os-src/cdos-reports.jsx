@@ -24,6 +24,15 @@
      while the rest of the product honoured the owner's setting. */
   const limitOf = (settings) => reportingLimit(settings);
 
+  /* The register's ID columns are the document that qualified.
+     An expired primary is not that document when another paper is current. */
+  function registerId(client) {
+    const standing = window.CDOS.displayIdStanding(client || {}, businessDate());
+    const paper = standing.document || standing.expiredDocument || null;
+    if (!paper) return { type: '', num: '', exp: '' };
+    return { type: paper.docType || '', num: paper.docNumber || '', exp: paper.expiresOn || '' };
+  }
+
   /* WHO REGULATES THIS DESK, AND WHAT THE FORM IS CALLED.
 
      This file printed "Prepared for FINTRAC record-keeping under the
@@ -523,8 +532,9 @@
           ...names.map(n => { const c = clients[n] || {}; const tx = data.live.filter(r => r.customer === n);
             const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
             const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-            const st = (!c.idType || !c.idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified');
-            return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
+            const st = window.CDOS.displayIdStanding(c, businessDate()).label;
+            const id = registerId(c);
+            return [n, id.type, id.num, id.exp, st, tx.length, csvMoney(v)]; })];
       }
       return [];
     };
@@ -822,7 +832,7 @@
                 </div>))}
             </Card>
             <Card><SecTitle n={`${data.kycGaps.length}`}>KYC / ID exceptions</SecTitle>
-              {data.kycGaps.length === 0 ? <div style={{ fontSize: 12, color: CD.faint }}>All active clients verified.</div>
+              {data.kycGaps.length === 0 ? <div style={{ fontSize: 12, color: CD.faint }}>All active clients have an ID on file.</div>
                 : data.kycGaps.map(k => (<div key={k.customer} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div style={{ fontSize: 13, color: CD.ink, fontWeight: 500 }}>{k.customer}</div>
                   <span style={{ fontSize: 10, fontWeight: 700, color: CD.flag, background: CD.flagSoft, padding: '2px 7px', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{k.issue.toUpperCase()}</span>
@@ -936,7 +946,7 @@
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
-        const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['verified', CD.green, CD.greenSoft]; };
+        const stat = (n) => { const standing = window.CDOS.displayIdStanding(clients[n] || {}, businessDate()); return standing.tone === 'warning' ? [standing.label, CD.flag, CD.flagSoft] : [standing.label, CD.green, CD.greenSoft]; };
         return (<div>
           <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
           <Card pad={0}>
@@ -948,11 +958,12 @@
                    because it looks complete. */
                 const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
                 const v = !parts.length || parts.some(p => p == null) ? null : parts.reduce((s, p) => s + p, 0);
+                const id = registerId(c);
                 return (<tr key={n}>
                 <td style={{ ...tdS, fontWeight: 500 }}>{n}</td>
-                <td style={{ ...tdS, color: CD.mute }}>{c.idType || '—'}</td>
-                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{c.idNum || '—'}</td>
-                <td style={{ ...tdS, color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute }}>{c.idExpiry || '—'}</td>
+                <td style={{ ...tdS, color: CD.mute }}>{id.type || '—'}</td>
+                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{id.num || '—'}</td>
+                <td style={{ ...tdS, color: st === 'Expired' ? CD.flag : CD.mute }}>{id.exp || '—'}</td>
                 <td style={{ ...tdS, textAlign: 'center' }}><span style={{ fontSize: 10, fontWeight: 700, color: col, background: bg, padding: '2px 7px', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{st.toUpperCase()}</span></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tx.length}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{orDash(v, homeCcy, tx.length ? `no ${homeCcy} rate` : 'nothing in this period')}</td>

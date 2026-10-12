@@ -335,7 +335,8 @@
       ? priceDeal({ inCcy: home, outCcy: recvCcy, inAmt: amtN, settings })
       : priceDeal({ inCcy: recvCcy, outCcy: home, inAmt: amtN, settings }), [direction, recvCcy, amtN, settings, home]);
     const recvAmt = pricing.outAmt;
-    const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
+    const standing = window.CDOS.displayIdStanding((clients && clients[senderName]) || {}, window.CDOS.businessDate());
+    const idOk = standing.tone !== 'warning';
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
     const idRows = window.CDOS.deskIdThresholds ? (window.CDOS.deskIdThresholds() || []) : [];
@@ -363,7 +364,7 @@
     const reportable = ruling.reportable;
     const idRequired = ruling.idRequired;
     const needBen = direction === 'send';
-    const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && kyc !== 'ok') && (!requirePurpose || purpose);
+    const canSave = amtN > 0 && partner && (!needBen || benId) && senderName && !(idRequired && !idOk) && (!requirePurpose || purpose);
 
     const pickSender = (n) => { setSenderName(n); setSenderOpen(false); setBenId(''); };
     useEffect(() => { const h = (e) => { if (senderWrap.current && !senderWrap.current.contains(e.target)) setSenderOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, []);
@@ -654,7 +655,7 @@
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
               {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
-              {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
+              {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: idOk ? CD.green : CD.flag }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={13} /> {idOk ? 'Sender ID on file — OK.' : `ID required — ${standing.reason || standing.label}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>
           )}

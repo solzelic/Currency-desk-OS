@@ -30,6 +30,42 @@
   --color-buy: #1E5AA8;
   --color-buy-bg: #E8F0FB;
   --color-text: var(--ink);
+  /* tokens.css is not on this base. These stand in for its standing
+     colours. Text on the soft fill is at least 4.5:1 in the light theme. */
+  --color-identified: #0c5a30;
+  --color-identified-bg: #dcefe4;
+  --color-missing: #8d1e16;
+  --color-missing-bg: #f7e1dd;
+}
+
+.client-file-label {
+  font-family: var(--f-display, "Archivo", system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+.client-standing { min-width: 0; max-width: 100%; }
+.client-standing-copy {
+  display: block;
+  flex: 1 1 12rem;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.client-file-hit {
+  min-width: 44px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.client-file-field {
+  min-height: 44px;
+  box-sizing: border-box;
 }
 
 * { box-sizing: border-box; }
@@ -2151,7 +2187,24 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      name, and the name collapsed to a word a line. */
   .client-file-head { flex-wrap: wrap; row-gap: 10px; }
   .client-file-head > .flex-1 { flex: 1 1 calc(100% - 88px); }
-  .client-file-name { white-space: nowrap; }
+  .client-file-title { min-width: 0; max-width: 100%; }
+  .client-file-name {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* City, province, and postal are one row of two nested halves
+     on a desk. On a phone that cuts the postal field off. */
+  .client-contact,
+  .client-contact-place {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .client-contact > .col-span-2 {
+    grid-column: auto !important;
+  }
   .client-file-actions {
     flex: 1 1 100%;
     width: 100%;
@@ -2507,6 +2560,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .cd-tx-scroll { display: contents; }
 .cd-tx-customer-icon { display: contents; }
 .cd-tx-id-need { display: none; }
+.cd-tx-id-expired { display: none; }
 .cd-tx-record-sub-short { display: none; }
 
 /* New transaction is a 940px dialog with a 320px ticket beside the
@@ -2731,6 +2785,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     background: var(--cd-panel);
     border: 1px solid var(--color-border, var(--line));
     border-radius: 12px;
+    /* The post bar covers the bottom of the sheet. A scroll that only
+       brings the row onto the screen leaves Record the ID under that bar. */
+    scroll-margin-bottom: calc(var(--cd-tx-footer, 160px) + 12px);
+  }
+  .cd-tx-id-need-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
   .cd-tx-id-need-label {
     flex: 1 1 auto;
@@ -2740,17 +2804,46 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--cd-ink, #0a0a0a);
     line-height: 1.3;
   }
+  .cd-tx-id-need-copy .cd-tx-id-need-label {
+    flex: none;
+  }
+  .cd-tx-id-need-reason {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--cd-mute, #6b6560);
+  }
   .cd-tx-id-need-go {
     flex: none;
     min-height: 44px;
     min-width: 44px;
     padding: 0 14px;
+    scroll-margin-bottom: calc(var(--cd-tx-footer, 160px) + 12px);
     border-radius: 9px;
     border: none;
     background: var(--gray-900, #1A1917);
     color: #fff;
     font-size: 14px;
     font-weight: 600;
+  }
+  /* An expired paper on a file that already qualified. Warning tone.
+     It is not the green row, and it has no check. */
+  .cd-tx-id-expired {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 44px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border, var(--line));
+    scroll-margin-bottom: calc(var(--cd-tx-footer, 160px) + 12px);
+  }
+  .cd-tx-id-expired-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
   }
   .cd-tx-hit {
     position: relative;

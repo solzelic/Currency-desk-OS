@@ -15,7 +15,7 @@
    up here automatically (records are merged with the contact store).
    ============================================================ */
 (function () {
-  const { useState, useMemo, useRef, useEffect } = React;
+  const { useState, useMemo, useRef, useEffect, useSyncExternalStore } = React;
   const { CD, Ic, fmt, num, crossRate, businessDate, deskPack, reportingLimit } = window.CDOS;
   /* THE DESK'S OWN MONEY.
 
@@ -127,14 +127,22 @@
     async function applyDocument(clientId, rec) {
       const client = api();
       if (!client || !clientId) return;
-      if (!rec || (!rec.idType && !rec.idNum && !rec.photo)) return;
+      const docType = String((rec && rec.idType) || '').trim();
+      const docNumber = String((rec && rec.idNum) || '').trim();
+      /* A photo is not an ID, and a generated value is not staff entry.
+         The server refuses anything else; this does not send it. */
+      if (!docType || docType === 'Not stated' || !docNumber || !rec || rec.source !== 'staff') return;
+      /* A refused type stays the row already stored. Filing it again
+         would record a new one, and the pickers do not offer that. */
+      if (window.CDOS.idTypeRefused && window.CDOS.idTypeRefused(docType)) return;
       await client.addDocument(clientId, {
-        docType: rec.idType || 'Not stated',
-        docNumber: rec.idNum || null,
+        docType,
+        docNumber,
         issuedOn: rec.idIssued || null,
         expiresOn: rec.idExpiry || null,
         isPrimary: true,
         scanDataUrl: rec.photo || null,
+        source: 'staff',
       });
     }
 
@@ -192,7 +200,15 @@
         const created = await client.create(Object.assign(
           { legalName: String(name).trim(), kind: rec.kind === 'corporate' ? 'business' : 'individual' },
           client.fromDeskFields(rec)));
-        await applyDocument(created.clientId, rec);
+        try {
+          await applyDocument(created.clientId, rec);
+        } catch (err) {
+          /* The person is already on file. Stamp the id onto the error
+             so Save retries the ID instead of opening a second client. */
+          if (err && typeof err === 'object') err.clientId = created.clientId;
+          await load(true);
+          throw err;
+        }
         await load(true);
         return created;
       },
@@ -257,18 +273,33 @@
 
     const extraDoc = (i) => (rec.ids || [])[i] || {};
 
-    function field(k, v) {
+    const STAFF_ID = "Type the ID type and number yourself. ID scanning is not connected, so a record with no staff entry is refused.";
+    function field(k, v, opts) {
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
-        const patch = {}; patch[DOC[k]] = v || null;
-        if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, patch));
-        /* Typing a document's details when the file has none is how a
-           document gets created — the same gesture the old flat editor
-           made, landing in the right table. */
-        return send(() => api.addDocument(clientId, Object.assign(
-          { docType: k === 'idType' ? (v || 'Not stated') : (rec.idType || 'Not stated'), isPrimary: true },
-          k === 'idType' ? {} : patch)));
+        /* The number is typed a character at a time. Hold it on the
+           screen until blur, then send the whole value once. */
+        if (opts && opts.commit === false) return localSet(k, v);
+        const next = Object.assign({}, rec, { [k]: v });
+        const docType = String(next.idType || '').trim();
+        const docNumber = String(next.idNum || '').trim();
+        if (idTypeRefused(docType)) { onError(REFUSED_ID_SENTENCE); return; }
+        if (rec.primaryDocumentId) {
+          if ((k === 'idNum' && !docNumber) || (k === 'idType' && (!docType || docType === 'Not stated'))) {
+            onError(STAFF_ID);
+            return;
+          }
+          const patch = {}; patch[DOC[k]] = v || null;
+          if (k === 'idType' || k === 'idNum') patch.source = 'staff';
+          return send(() => api.updateDocument(clientId, rec.primaryDocumentId, patch));
+        }
+        localSet(k, v);
+        if (!docType || docType === 'Not stated' || !docNumber) return;
+        return send(() => api.addDocument(clientId, {
+          docType, docNumber, issuedOn: next.idIssued || null, expiresOn: next.idExpiry || null,
+          isPrimary: true, source: 'staff',
+        }));
       }
       if (k === 'photo') {
         if (!v) return rec.primaryDocumentId && rec.primaryHasScan
@@ -350,19 +381,32 @@
 
     function scan(dataUrl) {
       if (!onServer) return localSet('photo', dataUrl);
-      if (rec.primaryDocumentId)
-        return send(() => api.updateDocument(clientId, rec.primaryDocumentId, { scanDataUrl: dataUrl }));
-      return send(() => api.addDocument(clientId, {
-        docType: rec.idType || 'Not stated', isPrimary: true, scanDataUrl: dataUrl,
-      }));
+      /* A photo does not create an ID. Attach it only once staff have
+         typed the number the server already holds. */
+      if (!rec.primaryDocumentId || !String(rec.idNum || '').trim()) {
+        onError("ID scanning isn't connected yet. Type the ID type and number first. A photo does not fill the record.");
+        return;
+      }
+      return send(() => api.updateDocument(clientId, rec.primaryDocumentId, { scanDataUrl: dataUrl }));
     }
 
-    function addId() {
-      if (!onServer) return setClients(c => { const cur = c[name] || {}; return { ...c, [name]: { ...cur, ids: (cur.ids || []).concat({ type: '', num: '', issued: '', expiry: '', photo: null }), updatedAt: stampToday() } }; });
-      /* 'Not stated' rather than a guessed type. A document this desk
-         has asserted is a passport, because the form needed a default,
-         is a worse record than one that says nobody has said yet. */
-      return send(() => api.addDocument(clientId, { docType: 'Not stated', isPrimary: false }));
+    function addId(draft) {
+      const type = String((draft && draft.type) || '').trim();
+      const num = String((draft && draft.num) || '').trim();
+      if (!type || !num) {
+        onError(STAFF_ID);
+        return false;
+      }
+      if (idTypeRefused(type)) { onError(REFUSED_ID_SENTENCE); return false; }
+      if (!onServer) {
+        setClients(c => { const cur = c[name] || {}; return { ...c, [name]: { ...cur, ids: (cur.ids || []).concat({ type, num, issued: (draft && draft.issued) || '', expiry: (draft && draft.expiry) || '', photo: null }), updatedAt: stampToday() } }; });
+        return true;
+      }
+      send(() => api.addDocument(clientId, {
+        docType: type, docNumber: num, issuedOn: (draft && draft.issued) || null, expiresOn: (draft && draft.expiry) || null,
+        isPrimary: false, source: 'staff',
+      }));
+      return true;
     }
 
     function setId(i, k, v) {
@@ -376,7 +420,12 @@
           : send(() => api.removeDocumentScan(clientId, document.documentId));
       }
       if (!columns[k]) return;
+      if ((k === 'num' || k === 'type') && !String(v || '').trim()) {
+        onError(STAFF_ID);
+        return;
+      }
       const patch = {}; patch[columns[k]] = v || null;
+      if (k === 'num' || k === 'type') patch.source = 'staff';
       return send(() => api.updateDocument(clientId, document.documentId, patch));
     }
 
@@ -460,7 +509,36 @@
   }
 
 
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
+  const ID_TYPES_IND = ['Passport', "Driver's Licence", "Driver's License", 'Provincial ID', 'Permanent Resident Card', 'Citizenship certificate (2012 or later, no photo)', 'Canadian citizenship card (pre-2012)', 'Secure Certificate of Indian Status', 'Birth certificate'];
+  const displayIdType = (type) => window.CDOS.displayIdType(type);
+  const idTypeRule = (type) => (window.CDOS.idTypeRule ? window.CDOS.idTypeRule(type) : null);
+  const idTypeRefused = (type) => !!(window.CDOS.idTypeRefused && window.CDOS.idTypeRefused(type));
+  const REFUSED_ID_SENTENCE = "Health cards can't be used as ID";
+  /* The same lookup standing uses. Accepted false, a health-card
+     alias, or a type the catalogue does not list. */
+  function parkedAside(type) {
+    return !!(window.CDOS.idTypeNotAccepted && window.CDOS.idTypeNotAccepted(type));
+  }
+  function acceptedPhotoOffered(type) {
+    const rule = idTypeRule(type);
+    return !!(rule && rule.photo === true && rule.accepted === true);
+  }
+  function subscribePhoneSheet(onChange) {
+    const query = window.matchMedia('(max-width: 599px)');
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }
+  function phoneSheetNow() {
+    return window.matchMedia('(max-width: 599px)').matches;
+  }
+  function usePhoneSheet() {
+    return useSyncExternalStore(subscribePhoneSheet, phoneSheetNow, () => false);
+  }
+  function shownExpiry(iso, phone) {
+    const day = iso ? String(iso).slice(0, 10) : '';
+    if (!day) return '';
+    return (window.CDOS.displayIdDate && window.CDOS.displayIdDate(day, !!phone)) || day;
+  }
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
@@ -487,7 +565,11 @@
   //   quick  → Screened
   function kycTier(name) {
     if (!name) return null;
+    /* Persona is not connected. A check sitting in this browser was
+       finished by a timer, and reading it here is what painted
+       "Verified" on the file. Until a provider is connected, no tier. */
     try {
+      if (!(window.CDOS.KYC && window.CDOS.KYC.checksConnected && window.CDOS.KYC.checksConnected())) return null;
       const checks = (window.CDOS.KYC && window.CDOS.KYC.checksFor(name)) || [];
       const ok = (t) => checks.some(c => c.template === t && c.status === 'completed' && c.result && c.result.decision === 'approved');
       if (ok('plus')) return 'plus';
@@ -496,31 +578,21 @@
     } catch (e) {}
     return null;
   }
-  // Badge ladder: Missing ID → ID on hand → Screened → Verified → Verified Plus.
-  // With no approved check, the badge is the ID the desk is holding
-  // (Missing ID, ID expired, ID expiring, or ID on hand).
-  // Screened, Verified, and Verified Plus are returned only when kycTier
-  // finds a completed approved check. Nothing writes one now.
+  // The badge is displayIdStanding. Screened, Verified, and Verified Plus
+  // are returned only when checks are connected and kycTier finds a
+  // completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
+    const standing = window.CDOS.displayIdStanding(rec);
+    const colors = standing.tone === "warning" ? [standing.label, CD.flag, CD.flagSoft] : [standing.label, CD.green, CD.greenSoft];
+    let connected = false;
+    try { connected = !!(window.CDOS.KYC && window.CDOS.KYC.checksConnected && window.CDOS.KYC.checksConnected()); } catch (e) {}
+    if (!connected || standing.tone === "warning") return colors;
     const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // Returned only when an approved check of that tier is already on file.
-    if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
-    if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // An approved quick check on file. Nothing writes one now.
+    if (tier === 'plus') return ['Verified Plus', CD.green, CD.greenSoft];
+    if (tier === 'verify') return ['Verified', CD.green, CD.greenSoft];
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
-    // no provider check on file — judge by the ID the desk is holding
-    if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
-    if (expired) return ['ID expired', CD.flag, CD.flagSoft];
-    const warn = settings && +settings.idExpiryWarnDays;
-    if (warn && rec.idExpiry) { const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
-    return ['ID on hand', CD.amber, CD.amberSoft];
+    return colors;
   }
-  const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
     const mine = rows.filter(r => r.customer === name && r.status !== 'void');
     let fees = 0, last = '';
@@ -563,18 +635,18 @@
       {corp ? <Ic n="building" s={size * 0.42} c="var(--cd-on-ink)" /> : <span style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, fontSize: size * 0.34 }}>{initials(name)}</span>}
     </div>);
   }
-  function Pill({ text, c, bg }) { return <span className="text-[11px] px-2 py-0.5 font-medium" style={{ background: bg, color: c, borderRadius: 999, whiteSpace: 'nowrap' }}>{text}</span>; }
+  function Pill({ text, c, bg, testId }) { return <span data-testid={testId || undefined} className="text-[11px] px-2 py-0.5 font-medium" style={{ background: bg, color: c, borderRadius: 999, whiteSpace: 'nowrap' }}>{text}</span>; }
   function KV({ icon, label, value, mono }) {
     return (<div className="flex items-start gap-2.5 py-1.5">
       {icon && <span className="grid place-items-center flex-none mt-0.5" style={{ width: 24, height: 24, borderRadius: 7, background: CD.lineSoft }}><Ic n={icon} s={13} c={CD.mute} /></span>}
       <div className="min-w-0 flex-1">
-        <div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{label}</div>
+        <div className="client-file-label">{label}</div>
         <div className="text-[13px] break-words" style={{ color: value ? CD.ink : CD.faint, fontVariantNumeric: mono ? 'tabular-nums' : 'normal' }}>{value || '—'}</div>
       </div>
     </div>);
   }
   function EditField({ label, children, full }) { return (<label className={'block' + (full ? ' col-span-2' : '')}><div className="text-[11px] mb-1" style={{ color: CD.mute }}>{label}</div>{children}</label>); }
-  const inCls = "w-full text-sm px-2.5 py-2 outline-none";
+  const inCls = "client-file-field w-full text-sm px-2.5 py-2 outline-none";
   const inSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8 };
 
   /* ---------- shared editors ---------- */
@@ -584,7 +656,7 @@
     const isCA = country === 'Canada', isUS = country === 'United States';
     const regionLabel = isUS ? 'State' : isCA ? 'Province' : 'State / Region';
     const postalLabel = isUS ? 'ZIP code' : 'Postal code';
-    return (<div className="grid grid-cols-2 gap-3">
+    return (<div className="client-contact grid grid-cols-2 gap-3">
       <EditField label="Email"><input value={rec.email || ''} onChange={e => set('email', e.target.value)} className={inCls} style={inSty} placeholder="name@email.com" /></EditField>
       <EditField label="Phone"><input value={rec.phone || ''} onChange={e => set('phone', e.target.value)} className={inCls} style={inSty} placeholder="(416) 555-0100" /></EditField>
       {corp ? (<>
@@ -600,7 +672,7 @@
       <EditField label="Country"><select value={country} onChange={e => set('country', e.target.value)} className={inCls} style={inSty}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></EditField>
       <EditField label="Street address" full><input value={rec.address || ''} onChange={e => set('address', e.target.value)} className={inCls} style={inSty} placeholder="123 Main St" autoComplete="street-address" /></EditField>
       <EditField label="City"><input value={rec.city || ''} onChange={e => set('city', e.target.value)} className={inCls} style={inSty} autoComplete="address-level2" /></EditField>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="client-contact-place grid grid-cols-2 gap-3">
         <EditField label={regionLabel}>{isCA || isUS
           ? <select value={rec.province || ''} onChange={e => set('province', e.target.value)} className={inCls} style={inSty} autoComplete="address-level1">{(isUS ? US_STATES : PROVINCES).map(p => <option key={p} value={p}>{p || '—'}</option>)}</select>
           : <input value={rec.province || ''} onChange={e => set('province', e.target.value)} className={inCls} style={inSty} autoComplete="address-level1" placeholder="State / region" />}</EditField>
@@ -613,17 +685,88 @@
      to `window.name` — the empty string) and a bare `log` (which was not
      defined at all, so rendering a client who had a scan on file threw).
      A covered ID that crashes the profile is the worst of both. */
+  /* A stored alias that is not a label on today's list stays off the
+     select. The row still says the name the file holds. */
+  function pickerType(type, types) {
+    const shown = displayIdType(type || '');
+    return types.indexOf(shown) >= 0 ? shown : '';
+  }
+
+  function refusedPaper(type, number, expiry, primary) {
+    return {
+      docType: displayIdType(type || ''),
+      docNumber: number || '',
+      expiresOn: expiry ? String(expiry).slice(0, 10) : '',
+      isPrimary: !!primary,
+    };
+  }
+
+  function refusedDocuments(rec) {
+    rec = rec || {};
+    if (Array.isArray(rec.documents)) {
+      return rec.documents.filter(d => idTypeRefused(d.docType)).map(d => refusedPaper(d.docType, d.docNumber, d.expiresOn, d.isPrimary));
+    }
+    const out = [];
+    if (idTypeRefused(rec.idType)) out.push(refusedPaper(rec.idType, rec.idNum, rec.idExpiry, true));
+    (rec.ids || []).forEach(d => { if (idTypeRefused(d.type)) out.push(refusedPaper(d.type, d.num, d.expiry, false)); });
+    return out;
+  }
+
+  function asideDocuments(rec) {
+    rec = rec || {};
+    const out = [];
+    const push = (type, number, expiry, primary) => {
+      if (!parkedAside(type)) return;
+      out.push(refusedPaper(type, number, expiry, primary));
+    };
+    if (Array.isArray(rec.documents) && rec.documents.length) {
+      rec.documents.forEach(d => push(d.docType, d.docNumber, d.expiresOn, d.isPrimary));
+      return out;
+    }
+    push(rec.idType, rec.idNum, rec.idExpiry, true);
+    (rec.ids || []).forEach(d => push(d.type, d.num, d.expiry, false));
+    return out;
+  }
+
+  function shownIdNumber(type, number) {
+    return window.CDOS.maskStoredIdNumber ? window.CDOS.maskStoredIdNumber(type, number) : (number || '');
+  }
+
+  function RefusedIdRow({ doc }) {
+    const phone = usePhoneSheet();
+    const number = shownIdNumber(doc.docType, doc.docNumber);
+    const expiry = shownExpiry(doc.expiresOn, phone);
+    return (<div data-testid="refused-id-row" className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
+      <div className="text-[12.5px] font-medium" style={{ color: CD.ink }}>{doc.docType}</div>
+      <div data-testid="refused-id-number" className="text-[12px] mt-0.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{number || "Number not shown"}</div>
+      {expiry ? <div className="text-[12px]" style={{ color: CD.mute }}>Expires {expiry}</div> : null}
+      <div className="text-[12.5px] mt-1.5" style={{ color: CD.flag }}>{REFUSED_ID_SENTENCE}</div>
+    </div>);
+  }
+
+  function StoredOnlyIdRow({ doc }) {
+    const phone = usePhoneSheet();
+    const expiry = shownExpiry(doc.expiresOn, phone);
+    return (<div data-testid="stored-only-id-row" className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
+      <div className="text-[12.5px] font-medium" style={{ color: CD.ink }}>{doc.docType}</div>
+      <div data-testid="stored-only-id-number" className="text-[12px] mt-0.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{shownIdNumber(doc.docType, doc.docNumber) || "Number not shown"}</div>
+      {expiry ? <div className="text-[12px]" style={{ color: CD.mute }}>Expires {expiry}</div> : null}
+    </div>);
+  }
+
   function KycEditor({ rec, set, kind, onUpload, canEdit, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    const shownType = displayIdType(rec.idType || '');
+    const selectValue = pickerType(rec.idType, types);
     return (<div className="grid grid-cols-2 gap-3">
-      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
-      <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
+      {shownType && !selectValue && !idTypeRefused(shownType) && <div className="col-span-2 text-[12px]" style={{ color: CD.mute }}>On file: {shownType}</div>}
+      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={selectValue} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
+      <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value, { commit: false })} onBlur={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Issued"><input disabled={!canEdit} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="ID document scan" full>
         {(rec.photo || rec.primaryHasScan)
-          ? <div className="flex items-center gap-3"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={64} who={who} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+          ? <div className="flex items-center gap-3"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={64} who={who} what={shownType || 'primary ID'} log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
           : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload ID document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}
       </EditField>
     </div>);
@@ -631,18 +774,21 @@
 
   // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
   function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
+    if (idTypeRefused(doc.type)) return <RefusedIdRow doc={refusedPaper(doc.type, doc.num, doc.expiry, false)} />;
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    const shownType = displayIdType(doc.type || '');
+    const selectValue = pickerType(doc.type, types);
     return (<div className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
-      <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>{canEdit && <button type="button" onClick={() => rmId(i)} className="text-[11px] font-medium" style={{ color: CD.flag }}>Remove</button>}</div>
+      <div className="flex items-center justify-between mb-2"><div className="client-file-label">Additional ID {i + 1}</div>{canEdit && <button type="button" onClick={() => rmId(i)} className="client-file-hit text-[12px] font-medium px-3" style={{ color: CD.flag }}>Remove</button>}</div>
       <div className="grid grid-cols-2 gap-3">
-        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
+        {shownType && !selectValue && <div className="col-span-2 text-[12px]" style={{ color: CD.mute }}>On file: {shownType}</div>}
+        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={selectValue} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
         <EditField label={kind === 'corporate' ? 'Document #' : 'ID number'}><input disabled={!canEdit} value={doc.num || ''} onChange={e => setId(i, 'num', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Issued"><input disabled={!canEdit} type="date" value={doc.issued || ''} onChange={e => setId(i, 'issued', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Expiry"><input disabled={!canEdit} type="date" value={doc.expiry || ''} onChange={e => setId(i, 'expiry', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Document scan" full>
           {(doc.photo || doc.hasScan)
-            ? <div className="flex items-center gap-3"><IdScan src={doc.photo} clientId={clientId} documentId={doc.documentId} hasScan={doc.hasScan} height={64} who={who} what={doc.type || "additional ID"} log={log} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+            ? <div className="flex items-center gap-3"><IdScan src={doc.photo} clientId={clientId} documentId={doc.documentId} hasScan={doc.hasScan} height={64} who={who} what={shownType || "additional ID"} log={log} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
             : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && uploadId(i, e.target.files[0])} /></label>}
         </EditField>
       </div>
@@ -703,6 +849,9 @@
     const row = (l, v) => v ? `<tr><td class="k">${esc(l)}</td><td>${esc(v)}</td></tr>` : '';
     const body = mine.map(r => { const f = flags[r.id] || {}; const v = r.status === 'void'; return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} ${esc(r.inCcy)}</td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} ${esc(r.outCcy)}</td><td class="r">${esc(fmtHome(r.fee))}</td><td class="c mono">${v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || '—')}</td></tr>`; }).join('');
     const addr = fullAddr(rec);
+    const printPapers = window.CDOS.displayIdStanding(rec);
+    const printId = printPapers.document || null;
+    const printExpired = printPapers.expiredDocument || null;
     const w = window.open('', '_blank', 'width=920,height=1100');
     if (!w) return;
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(name)} — client report</title>
@@ -728,7 +877,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
-<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
+<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${printId ? row(corp ? 'Document' : 'ID type', printId.docType) + row('Number', printId.docNumber) + row('Issued', printId.issuedOn ? window.CDOS.displayIdDate(printId.issuedOn, true) : '') + row('Expiry', printId.expiresOn ? window.CDOS.displayIdDate(printId.expiresOn, true) : '') : ''}${printExpired ? row('Expired document', printExpired.docType + ' expired ' + (window.CDOS.displayIdDate(printExpired.expiresOn, true) || '')) : ''}${!printId && !printExpired ? row('ID', printPapers.reason || printPapers.label) : ''}${row('Risk rating', rec.risk)}</table></div>
 <div class="card"><div class="ct">Activity</div><table class="kv">${row('First seen', mine.length ? mine[mine.length - 1].date : '')}${row('Last seen', st.last)}${row('Status', stat)}</table>${rec.notes ? `<div style="margin-top:8px;font-size:11.5px;color:#555;"><b>Notes:</b> ${esc(rec.notes)}</div>` : ''}</div>
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
@@ -775,13 +924,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             {rec.email && <span className="flex items-center gap-1.5 text-[12.5px]" style={{ color: CD.text }}><Ic n="mail" s={13} c={CD.mute} /> {rec.email}</span>}
             {rec.phone && <span className="flex items-center gap-1.5 text-[12.5px]" style={{ color: CD.text }}><Ic n="phone" s={13} c={CD.mute} /> {rec.phone}</span>}
           </div>}
-          <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{corp ? 'Document' : 'Identification'}</div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select></EditField>
+          <div className="client-file-label mb-1.5">{corp ? 'Document' : 'Identification'}</div>
+          {parkedAside(rec.idType) ? (idTypeRefused(rec.idType) ? <RefusedIdRow doc={refusedPaper(rec.idType, rec.idNum, rec.idExpiry, true)} /> : <StoredOnlyIdRow doc={refusedPaper(rec.idType, rec.idNum, rec.idExpiry, true)} />) : <div className="grid grid-cols-2 gap-2.5">
+            <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={pickerType(rec.idType, corp ? ID_TYPES_CORP : ID_TYPES_IND)} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select></EditField>
             <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
             <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => setField('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
-            <EditField label="ID scan">{(rec.photo || rec.primaryHasScan) ? <div className="flex items-center gap-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={36} who={name} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
-          </div>
+            <EditField label="ID scan">{(rec.photo || rec.primaryHasScan) ? <div className="flex items-center gap-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={36} who={name} what={displayIdType(rec.idType) || 'primary ID'} log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
+          </div>}
           <div className="flex items-center gap-2 mt-4">
             <button onClick={() => onOpenLedger(name)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="scroll" s={15} c="var(--cd-on-ink)" /> View {st.n} transactions</button>
             <button onClick={onExpand} title="Open full profile (or double-click the card)" className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink }}><Ic n="userplus" s={15} /> Full profile</button>
@@ -851,7 +1000,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const rpt = live.filter(r => { const f = flags[r.id] || {}; return (f.single || f.agg24) && !r.filed; });
     const strRows = live.filter(r => { const f = flags[r.id] || {}; return f.str && !r.ackStr; });
     const kycRow = live.find(r => { const f = flags[r.id] || {}; return f.kyc && f.kyc !== 'ok'; });
-    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : ((!rec || !rec.idType || !rec.idNum) ? 'missing ID' : null);
+    const fileStanding = window.CDOS.displayIdStanding(rec);
+    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : (fileStanding.tone === 'warning' ? (fileStanding.reason || fileStanding.label) : null);
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = (settings && +settings.structuringDays) || 7;
     const open = rpt.length + (strRows.length ? 1 : 0) + (kycReason ? 1 : 0);
@@ -1031,10 +1181,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               hasScan
               height={height || (compact ? 72 : 110)}
               who={entry.client.legalName}
-              what={document.docType}
+              what={displayIdType(document.docType)}
               log={log} />
             <span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>
-              {document.docType}{document.expiresOn ? ` · exp ${document.expiresOn}` : ''}
+              {displayIdType(document.docType)}{document.expiresOn ? ` · exp ${shownExpiry(document.expiresOn, true)}` : ''}
             </span>
           </div>
         )))}
@@ -1047,30 +1197,24 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      set — never a figure typed into this screen. A utility bill in the
      folder below does not move this. */
   function ProcessStanding({ rec, settings }) {
-    const status = rec && rec.verificationStatus;
-    if (!status) return null;
+    const standing = window.CDOS.displayIdStanding(rec);
+    if (!standing) return null;
     const idLine = window.CDOS.identificationLimit(settings);
     const reportLine = window.CDOS.reportingLimit(settings);
-    const standing = {
-      unverified: ['Not identified', 'No identity-document number is on this file yet.'],
-      identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
-      expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
-      verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.'],
-    }[status];
-    if (!standing) return null;
     const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
     const rule = stated
       ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
       : 'This desk has no identification or reporting line stated, so neither number is shown here.';
-    const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
-    const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
-    return (<div data-tour="identification" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-      <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Pill text={standing[0]} c={tone} bg={soft} />
-        <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing[1]}</span>
+    const identified = standing.tone !== 'warning';
+    const tone = identified ? 'var(--color-identified)' : 'var(--color-missing)';
+    const soft = identified ? 'var(--color-identified-bg)' : 'var(--color-missing-bg)';
+    return (<div data-tour="identification" data-testid="client-standing" className="client-standing mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+      <div className="client-file-label mb-1.5">Where they are</div>
+      <div className="client-standing-row flex items-start gap-2 flex-wrap">
+        <Pill text={standing.label} c={tone} bg={soft} testId="standing-pill" />
+        <span className="client-standing-copy text-[12.5px]" style={{ color: CD.ink }}>{standing.detail}</span>
       </div>
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+      <div data-testid="client-standing-rule" className="client-standing-copy text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
     </div>);
   }
 
@@ -1142,7 +1286,23 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
        person, an identity document, or a picture of one — is decided in
        one place rather than in each control. See clientWriter. */
     const writer = clientWriter({ name, rec, setClients, reload, onError: setIntakeErr });
-    const set = (k, v) => writer.field(k, v);
+    const set = (k, v, opts) => writer.field(k, v, opts);
+    const [idDraft, setIdDraft] = useState(null);
+    const idSection = useRef(null);
+    const [openId, setOpenId] = useState(false);
+    /* Record the ID opens the editor on the identity fields. The nudge
+       sits above this section, so the click has to scroll them into view
+       after that editor has rendered. */
+    const recordId = () => { setEdit(true); setOpenId(true); };
+    useEffect(() => {
+      if (!openId || !edit) return;
+      const node = idSection.current;
+      if (!node) return;
+      node.scrollIntoView({ block: 'start' });
+      const field = node.querySelector('select');
+      if (field) field.focus();
+      setOpenId(false);
+    }, [openId, edit]);
     const upload = async (k, file) => {
       const taken = await window.CDOS.intakeIdImage(file);
       if (!taken.ok) { setIntakeErr(taken.why); return; }
@@ -1161,7 +1321,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
        old shape had a "primary" ID as loose fields and the rest in an
        array, so the first one was structurally different from every
        other and every screen had to special-case it. */
-    const addId = () => writer.addId();
+    const addId = () => {
+      if (!idDraft) { setIdDraft({ type: '', num: '', issued: '', expiry: '' }); return; }
+      if (writer.addId(idDraft) !== false) setIdDraft(null);
+    };
     const setId = (i, k, v) => writer.setId(i, k, v);
     const rmId = (i) => writer.rmId(i);
     const uploadId = async (i, file) => {
@@ -1177,6 +1340,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
+    const phone = usePhoneSheet();
+    const filePapers = window.CDOS.displayIdStanding(rec);
+    const qualifiedId = filePapers.document || null;
+    const expiredId = filePapers.expiredDocument || null;
+    const samePaper = (doc, paper) => paper && displayIdType(doc.type) === paper.docType && String(doc.expiry || '').slice(0, 10) === paper.expiresOn && !paper.isPrimary;
+    const slotOpen = !!(qualifiedId && qualifiedId.isPrimary && displayIdType(rec.idType || '') === qualifiedId.docType && acceptedPhotoOffered(rec.idType));
+    const asidePapers = asideDocuments(rec);
 
     return (<div className="fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ background: 'var(--cd-scrim)', zIndex: 8000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="client-file w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
@@ -1187,7 +1357,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><Pill text={stat} c={col} bg={bg} />{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
+            <div className="client-file-title flex items-center gap-2 flex-wrap min-w-0"><span className="client-file-name text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><Pill text={stat} c={col} bg={bg} />{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Identified',v:'one current government photo ID, and it is the primary'},{k:'Expired',v:'the only photo ID is past expiry'},{k:'Missing ID',v:'no current primary photo ID'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[12.5px]" style={{ color: CD.mute }}>
               {rec.email && <span className="flex items-center gap-1.5"><Ic n="mail" s={12} c={CD.faint} /> {rec.email}</span>}
               {rec.phone && <span className="flex items-center gap-1.5"><Ic n="phone" s={12} c={CD.faint} /> {rec.phone}</span>}
@@ -1199,12 +1369,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           <div className="client-file-actions flex items-center gap-2 flex-none">
             {canEdit && <button onClick={() => setEdit(e => !e)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium" style={{ border: `1px solid ${edit ? CD.ink : CD.line}`, background: edit ? CD.ink : 'transparent', color: edit ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 8 }}><Ic n={edit ? 'check' : 'pencil'} s={14} c={edit ? 'var(--cd-on-ink)' : CD.ink} /> {edit ? 'Done' : 'Edit'}</button>}
             {canExport && <button onClick={() => exportClientReport(name, rec, rows, flags, settings)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="filetext" s={14} c="var(--cd-on-ink)" /> Export report</button>}
-            <button onClick={onClose} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>
+            <button type="button" onClick={onClose} aria-label="Close" className="client-file-hit grid place-items-center" style={{ borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>
           </div>
         </div>
 
         {/* body */}
-        <div className="flex-1 overflow-auto px-6 py-5">
+        <div className="flex-1 overflow-auto px-4 py-4">
           {/* THE COLLISION, SAID OUT LOUD.
 
               The old store keyed customers by name, so two people called
@@ -1253,10 +1423,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           )}
           <div className="mb-5">
-            {window.CDOS.KYC ? <window.CDOS.KYC.SubjectPanel name={name} kind={rec.kind || 'individual'} rec={rec} by={me && me.name} setClients={setClients} settings={settings} /> : null}
+            {window.CDOS.KYC ? <window.CDOS.KYC.SubjectPanel name={name} kind={rec.kind || 'individual'} rec={rec} by={me && me.name} setClients={setClients} settings={settings} onRecordId={canEdit ? recordId : undefined} /> : null}
           </div>
           {/* KPI strip */}
-          <div className="grid grid-cols-4 gap-px mb-5" style={{ background: CD.line, border: `1px solid ${CD.line}`, borderRadius: 10, overflow: 'hidden' }}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-px mb-5" style={{ background: CD.line, border: `1px solid ${CD.line}`, borderRadius: 10, overflow: 'hidden' }}>
             {[['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable', String(reportable)]].map(([l, v], i) => (
               <div key={i} className="px-4 py-3" style={{ background: CD.panel }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[18px] font-semibold mt-0.5" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>
             ))}
@@ -1270,11 +1440,25 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 </div>
                 <ContactEditor rec={rec} set={set} kind={rec.kind || 'individual'} />
               </div>
-              <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Identity documents</div>{canEdit && <button type="button" onClick={addId} className="flex items-center gap-1 text-[12px] font-medium" style={{ color: CD.ink }}><Ic n="plus" s={13} c={CD.ink} /> Add ID</button>}</div>
-                <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Primary ID · drives KYC status</div>
-                <KycEditor rec={rec} set={set} kind={rec.kind || 'individual'} onUpload={upload} canEdit={canEdit} who={name} log={log} />
-                {(rec.ids || []).length > 0 && <div className="mt-3 space-y-3">{(rec.ids || []).map((d, i) => <IdEditorRow key={d.documentId || i} doc={d} i={i} kind={rec.kind || 'individual'} setId={setId} rmId={rmId} uploadId={uploadId} canEdit={canEdit} clientId={rec.clientId} who={name} log={log} />)}</div>}
+              <div ref={idSection} data-testid="identity-documents" className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+                <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Identity documents</div>{canEdit && <button type="button" onClick={addId} className="client-file-hit flex items-center gap-1 text-[12px] font-medium px-3" style={{ color: CD.ink }}><Ic n="plus" s={13} c={CD.ink} /> {idDraft ? 'Save this ID' : 'Add ID'}</button>}</div>
+                <div className="text-[11px] mb-2" style={{ color: CD.mute }}>ID scanning isn't connected yet. Type the type and the number.</div>
+                <div data-testid="primary-id-slot">
+                  <div className="client-file-label mb-2">Primary ID</div>
+                  {slotOpen
+                    ? <KycEditor rec={rec} set={set} kind={rec.kind || 'individual'} onUpload={upload} canEdit={canEdit} who={name} log={log} />
+                    : <div className="text-[12.5px]" style={{ color: CD.mute }}>No current photo ID</div>}
+                </div>
+                {!slotOpen && rec.idType && !parkedAside(rec.idType) && <div className="mt-3"><KycEditor rec={rec} set={set} kind={rec.kind || 'individual'} onUpload={upload} canEdit={canEdit} who={name} log={log} /></div>}
+                {idDraft && <div className="mt-3 flex flex-col gap-2">
+                  <select value={idDraft.type} onChange={e => setIdDraft(d => ({ ...d, type: e.target.value }))} className={inCls} style={inSty}><option value="">ID type…</option>{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select>
+                  <input value={idDraft.num} onChange={e => setIdDraft(d => ({ ...d, num: e.target.value }))} placeholder="ID number" className={inCls} style={inSty} />
+                </div>}
+                {asidePapers.length > 0 && <div data-testid="not-accepted-id" className="mt-3">
+                  <div className="client-file-label mb-2">Not accepted as ID</div>
+                  <div className="space-y-3">{asidePapers.map((doc, i) => <div key={i}>{idTypeRefused(doc.docType) ? <RefusedIdRow doc={doc} /> : <StoredOnlyIdRow doc={doc} />}</div>)}</div>
+                </div>}
+                {(rec.ids || []).some(d => !parkedAside(d.type)) && <div className="mt-3 space-y-3">{(rec.ids || []).map((d, i) => parkedAside(d.type) ? null : <IdEditorRow key={d.documentId || i} doc={d} i={i} kind={rec.kind || 'individual'} setId={setId} rmId={rmId} uploadId={uploadId} canEdit={canEdit} clientId={rec.clientId} who={name} log={log} />)}</div>}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="text-sm font-semibold mb-2" style={{ color: CD.ink }}>Notes</div>
@@ -1284,7 +1468,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           ) : (
             <div className="grid md:grid-cols-2 gap-4">
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{corp ? 'Corporate details' : 'Identity'}</div>
+                <div className="client-file-label mb-1">{corp ? 'Corporate details' : 'Identity'}</div>
                 {corp ? (<>
                   <KV icon="building" label="Legal name" value={name} />
                   <KV icon="calendar" label="Incorporated" value={rec.incorpDate} />
@@ -1297,27 +1481,32 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 </>)}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Contact</div>
+                <div className="client-file-label mb-1">Contact</div>
                 <KV icon="mail" label="Email" value={rec.email} />
                 <KV icon="phone" label="Phone" value={rec.phone} />
                 <KV icon="mappin" label="Address" value={addr} />
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identification (KYC){(rec.ids || []).length > 0 && <span style={{ color: CD.mute }}> · {1 + (rec.ids || []).length} on file</span>}</div>
-                <KV icon="id" label={corp ? 'Document' : 'ID type'} value={rec.idType} />
-                <KV icon="scroll" label="Number" value={rec.idNum} mono />
-                <KV icon="calendar" label="Expiry" value={rec.idExpiry} />
-                {(rec.photo || rec.primaryHasScan) && <div className="mt-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={120} who={name} what={rec.idType || 'primary ID'} log={log} /></div>}
-                {(rec.ids || []).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                  <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>
-                  <KV icon="id" label="Type" value={d.type} />
-                  <KV icon="scroll" label="Number" value={d.num} mono />
-                  <KV icon="calendar" label="Expiry" value={d.expiry} />
+                <div className="client-file-label mb-1">Identification (KYC){(rec.ids || []).length > 0 && <span style={{ color: CD.mute }}> · {1 + (rec.ids || []).length} on file</span>}</div>
+                {qualifiedId ? (<>
+                  <KV icon="id" label={corp ? 'Document' : 'ID type'} value={qualifiedId.docType} />
+                  <KV icon="scroll" label="Number" value={qualifiedId.docNumber} mono />
+                  <KV icon="calendar" label="Expiry" value={shownExpiry(qualifiedId.expiresOn, phone)} />
+                  {qualifiedId.isPrimary && (rec.photo || rec.primaryHasScan) && <div className="mt-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={120} who={name} what={qualifiedId.docType || 'primary ID'} log={log} /></div>}
+                </>) : <div className="text-[12.5px]" style={{ color: filePapers.tone === 'warning' ? CD.flag : CD.ink }}>{filePapers.reason || filePapers.label}</div>}
+                {!qualifiedId && rec.idType && !idTypeRefused(rec.idType) && <KV icon="id" label={corp ? 'Document' : 'ID type'} value={displayIdType(rec.idType)} />}
+                {expiredId && <div className="mt-2 flex items-center gap-1.5 text-[12px]" style={{ color: CD.flag }}><Ic n="alert" s={12} c={CD.flag} />{expiredId.docType} expired {shownExpiry(expiredId.expiresOn, phone)}</div>}
+                {refusedDocuments(rec).map((doc, i) => <div key={'refused-' + i} className="mt-3"><RefusedIdRow doc={doc} /></div>)}
+                {(rec.ids || []).filter(d => !idTypeRefused(d.type) && !samePaper(d, qualifiedId) && !samePaper(d, expiredId)).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+                  <div className="client-file-label mb-1">Additional ID {i + 1}</div>
+                  <KV icon="id" label="Type" value={displayIdType(d.type)} />
+                  <KV icon="scroll" label="Number" value={parkedAside(d.type) ? (shownIdNumber(d.type, d.num) || "Number not shown") : d.num} mono />
+                  <KV icon="calendar" label="Expiry" value={shownExpiry(d.expiry, phone)} />
                   {(d.photo || d.hasScan) && <div className="mt-2"><IdScan src={d.photo} clientId={rec.clientId} documentId={d.documentId} hasScan={d.hasScan} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
                 </div>))}
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-                <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Photos</div>
+                <div className="flex items-center justify-between mb-2"><div className="client-file-label">Photos</div>
                   {canEdit && <label className="flex items-center gap-1 text-[11px] cursor-pointer" style={{ color: CD.mute }}><Ic n="camera" s={12} /> Add<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && addGallery(e.target.files[0])} /></label>}
                 </div>
                 {(rec.gallery && rec.gallery.length) ? <div className="flex flex-wrap gap-2">{rec.gallery.map((g, i) => (<div key={i} className="relative group"><img src={g} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: `1px solid ${CD.line}` }} />{canEdit && <button onClick={() => rmGallery(i)} className="absolute -top-1.5 -right-1.5 grid place-items-center" style={{ width: 18, height: 18, borderRadius: '50%', background: CD.flag, color: 'var(--cd-on-ink)' }}><Ic n="x" s={10} c="var(--cd-on-ink)" /></button>}</div>))}</div>
@@ -1392,7 +1581,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     useEffect(() => { reload(true); }, [reload]);
 
     const [q, setQ] = useState('');
-    const [filter, setFilter] = useState('all');   // all | individual | corporate | verified | attention
+    const [filter, setFilter] = useState('all');   // all | individual | corporate | identified | attention
     const [quick, setQuick] = useState(null);
     const [profile, setProfile] = useState(null);
     const [highlightTx, setHighlightTx] = useState(null);
@@ -1412,7 +1601,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
     const counts = useMemo(() => {
       let ind = 0, corp = 0, ver = 0, att = 0;
-      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; const [s] = kycStatus(c.rec, settings, c.name); if (isVerified(s)) ver++; else att++; });
+      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; if (window.CDOS.displayIdStanding(c.rec).label === 'Identified') ver++; else att++; });
       return { all: list.length, individual: ind, corporate: corp, verified: ver, attention: att };
     }, [list, settings]);
 
@@ -1420,9 +1609,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const r = c.rec;
       if (filter === 'individual' && (r.kind || 'individual') !== 'individual') return false;
       if (filter === 'corporate' && r.kind !== 'corporate') return false;
-      const [s] = kycStatus(r, settings, c.name);
-      if (filter === 'verified' && !isVerified(s)) return false;
-      if (filter === 'attention' && isVerified(s)) return false;
+      const identified = window.CDOS.displayIdStanding(r).label === 'Identified';
+      if (filter === 'identified' && !identified) return false;
+      if (filter === 'attention' && identified) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
       const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
@@ -1469,7 +1658,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
     const quickRec = quick ? (clients[quick] || {}) : null;
     const profileRec = profile ? (clients[profile] || {}) : null;
-    const FILTERS = [['all', 'All', counts.all], ['individual', 'People', counts.individual], ['corporate', 'Businesses', counts.corporate], ['verified', 'Verified', counts.verified], ['attention', 'Needs attention', counts.attention]];
+    const FILTERS = [['all', 'All', counts.all], ['individual', 'People', counts.individual], ['corporate', 'Businesses', counts.corporate], ['identified', 'Identified', counts.verified], ['attention', 'Needs attention', counts.attention]];
 
     return (<div className="flex flex-col" style={{ height: '100%' }}>
       {/* toolbar */}
@@ -1506,7 +1695,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>
         ) : (
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(268px, 1fr))' }}>
-            {shown.map(c => { const [st, col, bg] = kycStatus(c.rec, settings, c.name); const corp = c.rec.kind === 'corporate'; const verified = isVerified(st); const risk = normalizeRisk ? normalizeRisk(c.rec.risk) : (c.rec.risk || 'Normal'); const rt = riskTone ? riskTone(risk) : { c: CD.mute, bg: CD.lineSoft }; const attention = /expir|no id|missing/i.test(st); const accent = attention ? CD.flag : verified ? CD.green : CD.line; return (
+            {shown.map(c => { const standing = window.CDOS.displayIdStanding(c.rec); const st = standing.label; const col = standing.tone === 'warning' ? CD.flag : CD.green; const bg = standing.tone === 'warning' ? CD.flagSoft : CD.greenSoft; const corp = c.rec.kind === 'corporate'; const identified = standing.label === 'Identified'; const risk = normalizeRisk ? normalizeRisk(c.rec.risk) : (c.rec.risk || 'Normal'); const rt = riskTone ? riskTone(risk) : { c: CD.mute, bg: CD.lineSoft }; const attention = standing.tone === 'warning'; const accent = attention ? CD.flag : CD.green; return (
               <div key={c.name} onClick={() => onClick(c.name)} onDoubleClick={() => onDbl(c.name)} role="button" tabIndex={0}
                 className="cursor-pointer select-none" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 13, overflow: 'hidden', transition: 'border-color .12s, box-shadow .12s, transform .08s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = CD.ink; e.currentTarget.style.boxShadow = '0 8px 22px -12px var(--cd-shade)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
@@ -1517,7 +1706,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="font-semibold truncate" style={{ color: CD.ink, fontSize: 14 }}>{c.name}</span>
-                      {verified && <Ic n="checkcircle" s={13} c={CD.green} />}
+                      {identified && <Ic n="checkcircle" s={13} c={CD.green} />}
                     </div>
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 5, fontFamily: 'Space Mono, monospace', letterSpacing: '.03em' }}><Ic n={corp ? 'building' : 'users'} s={10} c={CD.mute} />{corp ? 'BUSINESS' : 'INDIVIDUAL'}</span>
@@ -1565,9 +1754,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   function RecordIdSheet({ name, rec, setClients, log, onClose, onDone }) {
     const [phase, setPhase] = useState('loading');
     const [file, setFile] = useState(rec || {});
+    const openedType = (rec && rec.idType) || '';
+    const openedAside = parkedAside(openedType);
     const [draft, setDraft] = useState({
-      idType: (rec && rec.idType) || '',
-      idNum: (rec && rec.idNum) || '',
+      idType: openedAside ? '' : openedType,
+      idNum: openedAside ? '' : ((rec && rec.idNum) || ''),
       idIssued: (rec && rec.idIssued) || '',
       idExpiry: (rec && rec.idExpiry) || '',
       photo: (rec && rec.photo) || null,
@@ -1622,8 +1813,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             setClients(prev => shared.project(prev));
             setFile(desk);
             setDraft({
-              idType: desk.idType || '',
-              idNum: desk.idNum || '',
+              idType: parkedAside(desk.idType) ? '' : (desk.idType || ''),
+              idNum: parkedAside(desk.idType) ? '' : (desk.idNum || ''),
               idIssued: desk.idIssued || '',
               idExpiry: desk.idExpiry || '',
               photo: desk.photo || null,
@@ -1644,6 +1835,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const save = async () => {
       if (leaving || phase !== 'edit') return;
       if (!ready) { setErr('Type, number, and expiry are required.'); return; }
+      if (idTypeRefused(draft.idType)) { setErr(REFUSED_ID_SENTENCE); return; }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -1653,6 +1845,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         idExpiry: draft.idExpiry,
         photo: draft.photo || null,
         kind: (file && file.kind) || (rec && rec.kind) || 'individual',
+        /* The teller typed these. applyDocument files the document only
+           when the source is staff. */
+        source: 'staff',
       };
       try {
         const shared = window.CDOS.ClientRecords;
@@ -1664,7 +1859,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             const created = await shared.open(name, payload);
             if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
             clientId = created.clientId;
-          } else if (file.primaryDocumentId && api) {
+          } else if (file.primaryDocumentId && api && !idTypeRefused(file.idType)) {
             await api.updateDocument(clientId, file.primaryDocumentId, {
               docType: payload.idType,
               docNumber: payload.idNum,
@@ -1707,6 +1902,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <div className="flex-1 overflow-auto px-5 py-4">
               {phase === 'loading' && <div className="text-[13px] py-6 text-center" style={{ color: CD.mute }}>Opening the customer file…</div>}
               {phase === 'error' && <div className="text-[13px] py-4" style={{ color: CD.flag }}>{err}</div>}
+              {phase === 'edit' && asideDocuments(file).map((doc, i) => <div key={i} className="mb-3">{idTypeRefused(doc.docType) ? <RefusedIdRow doc={doc} /> : <StoredOnlyIdRow doc={doc} />}</div>)}
               {phase === 'edit' && (
                 <KycEditor rec={shown} set={set} kind={(file && file.kind) || 'individual'} onUpload={upload} canEdit={!leaving} who={name} log={log} />
               )}

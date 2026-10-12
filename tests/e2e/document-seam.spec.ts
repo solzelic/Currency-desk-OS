@@ -290,6 +290,27 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   await expect
     .poll(() => sheet(page), { timeout: 30_000 })
     .toContain(`Session #${till.session.sessionNumber}`);
+  /* The session number can print while the summary figures are still
+     "reading the ledger…". The count below is the ledger's own number,
+     so wait until that number is on the sheet, then read it once. */
+  expect(day.posted).toBeGreaterThan(0);
+  await expect
+    .poll(() => sheet(page), { timeout: 30_000 })
+    .toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
+  /* The transaction count can print while the drawer table is still
+     "Reading the ledger…". The currencies below are the close's own
+     counts. Wait until those codes are on the sheet and that loading
+     line is gone, then read the sheet once. */
+  const counts = till.latestCounts ?? {};
+  expect(Object.keys(counts).length, "the close recorded counts on the ledger").toBeGreaterThan(0);
+  await expect
+    .poll(async () => {
+      const text = await sheet(page);
+      if (/Reading the ledger/i.test(text)) return "loading";
+      const missing = Object.keys(counts).filter((currency) => !text.includes(currency));
+      return missing.join(",");
+    }, { timeout: 30_000 })
+    .toBe("");
   const doc = await sheet(page);
 
   // ---- the date and the day ----
@@ -301,9 +322,8 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   expect(doc).not.toContain("June 18, 2026");
 
   // ---- the counts ----
-  /* The sheet said TRANSACTIONS 10 for a till that had posted one. */
-  expect(day.posted).toBeGreaterThan(0);
-  /* Case-insensitive: these labels are uppercased by CSS, and innerText
+  /* The sheet said TRANSACTIONS 10 for a till that had posted one.
+     Case-insensitive: these labels are uppercased by CSS, and innerText
      returns the transformed text. */
   expect(doc).toMatch(new RegExp(`Transactions\\s*\\n?\\s*${day.posted}\\b`, "i"));
 
@@ -324,8 +344,6 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
      variance on this sheet is zero and it says "balanced". The old sheet
      compared a count of the DRAWER against the drawer PLUS THE SAFE and
      printed a six-figure discrepancy above the signature lines. */
-  const counts = till.latestCounts ?? {};
-  expect(Object.keys(counts).length, "the close recorded counts on the ledger").toBeGreaterThan(0);
   for (const [currency, record] of Object.entries<any>(counts)) {
     expect(doc).toContain(currency);
     expect(
