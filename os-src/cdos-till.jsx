@@ -156,7 +156,7 @@
         <input type="number" value={(counts[ccy] || {})[d.i] ?? ''} onChange={e => setCount(ccy, d.i, e.target.value)} placeholder="0" className="text-center outline-none" style={{ width: 52, height: 28, border: `1px solid ${CD.line}`, borderLeft: 0, borderRight: 0, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', fontSize: 13 }} />
         <button onClick={() => setCount(ccy, d.i, String(cnt + 1))} className="till-step grid place-items-center" style={{ width: 26, height: 28, border: `1px solid ${CD.line}`, borderRadius: '0 7px 7px 0', color: CD.mute }}>+</button>
       </div>
-      <span style={{ width: 92, textAlign: 'right', fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: sub ? CD.ink : CD.faint, fontVariantNumeric: 'tabular-nums', fontWeight: sub ? 600 : 400 }}>{sub ? num(sub) : '—'}</span>
+      <span style={{ width: 92, textAlign: 'right', fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: sub ? CD.ink : CD.faint, fontVariantNumeric: 'tabular-nums', fontWeight: sub ? 600 : 400 }}>{sub ? num(sub, ccy) : '—'}</span>
     </div>);
   }
 
@@ -240,8 +240,8 @@
                   const off = Math.abs(dv) > 0.005; return (
                   <div key={x.ccy} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
                     <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{x.ccy}</span>
-                    <span className="flex-1 text-[11px]" style={{ color: CD.mute }}>expected <b style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(x.units)}</b></span>
-                    <input value={val} onChange={e => setCounts(o => ({ ...o, [x.ccy]: e.target.value }))} inputMode="decimal" placeholder={num(x.units)} className="text-right outline-none text-[13px] px-2 py-1.5" style={{ width: 96, border: `1px solid ${off ? CD.flag : CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: off ? CD.flag : CD.ink }} />
+                    <span className="flex-1 text-[11px]" style={{ color: CD.mute }}>expected <b style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(x.units, x.ccy)}</b></span>
+                    <input value={val} onChange={e => setCounts(o => ({ ...o, [x.ccy]: e.target.value }))} inputMode="decimal" placeholder={num(x.units, x.ccy)} className="text-right outline-none text-[13px] px-2 py-1.5" style={{ width: 96, border: `1px solid ${off ? CD.flag : CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: off ? CD.flag : CD.ink }} />
                   </div>); })}
               </div>
 
@@ -787,6 +787,14 @@
     const offOf = (r) => { if (r.variance == null) return false; const home = homeOf(r.variance, r.c); return Math.abs(home == null ? r.variance : home) > tolHome + 0.005; };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
+    /* Drawers, not currencies. Two currencies in one drawer is still one
+       drawer: "Count the drawer", and "0 of 1 counted". "Count all N
+       drawers" is only when this branch actually has several. */
+    const drawerTotal = Math.max(1, (ledgerScope && ledgerScope.workspaces && ledgerScope.workspaces.length) || 0);
+    const drawersCounted = recon.length > 0 && countedN >= recon.length ? 1 : 0;
+    const countBeforeClose = drawerTotal === 1
+      ? 'Count the drawer before closing. The close writes your count back as the balance'
+      : `Count all ${drawerTotal} drawers before closing. The close writes your count back as the balance`;
     const closeBlocked = serverBacked
       ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length)
       : (!!(settings && settings.requireCountOnClose) && countedN < recon.length);
@@ -969,7 +977,7 @@
               </div>)}
             </span>) : (stationTill ? <b className="till-pick" style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span className="till-statusline">
-            <span>{serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length} drawer(s) counted</span>
+            <span>{serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {drawersCounted} of {drawerTotal} counted</span>
             {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute }}>· {serverBalanceError ? 'figures unavailable' : serverBalancesReady ? 'figures are in' : 'loading figures'}</span>}
             {/* the ledger's own name for the drawer these figures belong to —
                 the picker to the left names a local till, which is a different
@@ -1150,14 +1158,14 @@
               <div className="till-count-main min-w-0">
                 <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
                 <div className="till-counted flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
-                  <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : num(ccyTotal(ccy))} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
+                  <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : num(ccyTotal(ccy), ccy)} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
                   <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
                 </div>
                 <div className="text-[11px] mt-1.5 flex items-center gap-2 flex-wrap" style={{ color: CD.faint }}>
                   <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected. Keep the count blind' : 'Reveal and read out the expected float'} className="inline-flex items-center gap-1.5" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     <span>Expected</span>
-                    <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy))} {ccy}</b>
-                    {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
+                    <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{num(expectedOf(ccy), ccy)} {ccy}</b>
+                    {isCounted(ccy) && (() => { const v = ccyTotal(ccy) - expectedOf(ccy); const off = Math.abs(v) > 0.005; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${num(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
                     <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
                   </button>
                   {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
@@ -1238,22 +1246,22 @@
               <tbody>{recon.map(r => { const ls = lastSaved[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
                 <td className="px-3 py-2 text-right" title={serverBacked ? 'What the system says should be in the drawer' : 'What the vault issued to this drawer. Change it with Issue float or Return at the vault, never by typing'} style={{ fontVariantNumeric: 'tabular-nums', color: serverBacked ? CD.green : CD.mute }}>{serverBacked ? 'The system' : '—'}</td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.expected == null ? CD.faint : CD.ink }}>{r.expected == null ? '—' : num(r.expected)}</td>
-                <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : 'Never'}</td>
-                <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted)}</span>}</td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)}</td>
-              </tr>); })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{totalExpHome == null ? '—' : num(totalExpHome)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{totalCountHome == null ? '—' : num(totalCountHome)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)}</td></tr></tfoot></table>
+                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.expected == null ? CD.faint : CD.ink }}>{r.expected == null ? '—' : num(r.expected, r.c)}</td>
+                <td className="px-3 py-2 text-right" style={{ color: ls ? CD.mute : CD.faint }}>{ls ? <span title={`${num(ls.amt, r.c)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`} style={{ cursor: 'help', borderBottom: `1px dotted ${CD.line}`, fontVariantNumeric: 'tabular-nums' }}>{sinceLabel(ls.ts)}</span> : 'Never'}</td>
+                <td className="px-3 py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontWeight: r.counted == null ? 400 : 700 }}>{r.counted == null ? <button onClick={() => { setCcy(r.c); setTab('count'); }} className="text-[11px] underline" style={{ color: CD.mute }}>count →</button> : <span title={countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : ''} style={{ cursor: countedAt[r.c] ? 'help' : 'default' }}>{num(r.counted, r.c)}</span>}</td>
+                <td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)}</td>
+              </tr>); })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{totalExpHome == null ? '—' : num(totalExpHome, homeCcy)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{totalCountHome == null ? '—' : num(totalCountHome, homeCcy)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy)}</td></tr></tfoot></table>
           </div>
           <div className="flex items-center gap-3 mt-3">
             {canCloseDay
-              ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for the drawer figures') : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every currency before closing' : 'Count every drawer first. Required in Settings, Cash drawer') : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day & lock book'}</button>
+              ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for the drawer figures') : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every currency before closing' : 'Count every drawer first. Required in Settings, Cash drawer') : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close the day'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px]" style={{ background: 'var(--cd-chip)', borderRadius: 9, color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Closing the day isn’t in your role. The owner enables it in Settings, Permissions.</span>}
-            {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: serverBalanceError ? CD.flag : CD.mute }}>{!serverBalancesReady ? (serverBalanceError || 'Waiting for the drawer figures') : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This drawer has no figures yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance`}</span>}
+            {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: serverBalanceError ? CD.flag : CD.mute }}>{!serverBalancesReady ? (serverBalanceError || 'Waiting for the drawer figures') : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This drawer has no figures yet' : countBeforeClose}</span>}
             {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length} drawer(s) off</span>}
             {canCloseDay && offRows.length === 0 && countedN > 0 && <span className="text-[11px]" style={{ color: CD.green }}>All counted drawers balanced</span>}
           </div>
           {offLedgerCcys.length > 0 && <div className="mt-2 text-[11px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Counted, but not in the system: <b style={{ color: CD.ink }}>{offLedgerCcys.join(', ')}</b>. These stay in your own history and are left out of the close, so they cannot change a real balance.</div>}
-          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>{serverBacked ? <>The system is the source of <b>expected</b> cash, including posted exchanges, reversals and vault movements. Closing writes each <b>counted</b> figure back as the drawer balance.</> : <>The vault issues your <b>opening</b> and the day's deals produce <b>expected</b>.</>} Your physical count is <b>counted</b>, and <b>variance</b> = counted − expected. It lands on the operator. Closing locks the drawer until the next day is opened.</p>
+          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Closing saves your count. Any difference is recorded under your name.</p>
         </div>))}
 
         {/* ===== HISTORY ===== */}
@@ -1278,7 +1286,7 @@
                           <div className="text-[12.5px]" style={{ color: CD.ink }}><b>{out ? 'Returned to vault' : 'Float issued'}</b> <span style={{ color: CD.faint }}>{out ? '→' : '←'}</span> {out ? m.to : m.from}</div>
                           <div className="text-[10.5px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{m.ref} · {m.date} · {m.by}</div>
                         </div>
-                        <span className="text-[12px] font-bold flex-none" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: out ? CD.mute : CD.green }}>{out ? '−' : '+'}{num(m.amount)} {m.ccy}</span>
+                        <span className="text-[12px] font-bold flex-none" style={{ fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums', color: out ? CD.mute : CD.green }}>{out ? '−' : '+'}{num(m.amount, m.ccy)} {m.ccy}</span>
                       </div>); })}
                   </div>}
             </div>);
@@ -1311,7 +1319,7 @@
               {Object.entries(history[viewDay].byCcy).sort((a, b) => (homeOf(b[1], b[0]) || 0) - (homeOf(a[1], a[0]) || 0)).map(([c, amt]) => (
                 <div key={c} className="flex items-center justify-between px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 9 }}>
                   <span className="flex items-center gap-2 text-sm" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(c)}</span> {c}</span>
-                  <span className="text-right"><span style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(amt)}</span> {c !== homeCcy && homeOf(amt, c) != null && <span className="text-[11px]" style={{ color: CD.mute }}> · {fmt(homeOf(amt, c), homeCcy)}</span>}</span>
+                  <span className="text-right"><span style={{ fontFamily: 'Space Mono, monospace', fontWeight: 700, color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{num(amt, c)}</span> {c !== homeCcy && homeOf(amt, c) != null && <span className="text-[11px]" style={{ color: CD.mute }}> · {fmt(homeOf(amt, c), homeCcy)}</span>}</span>
                 </div>))}
             </div>
           </div>) : (<div>
@@ -1348,18 +1356,18 @@
               <thead><tr className="text-[10px] uppercase tracking-wide text-left" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><th className="py-1.5">Drawer</th><th className="py-1.5 text-right">Expected</th><th className="py-1.5 text-right">Counted</th><th className="py-1.5 text-right">Last counted</th><th className="py-1.5 text-right">Variance</th></tr></thead>
               <tbody>{recon.map(r => { const ts = countedAt[r.c]; return (<tr key={r.c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                 <td className="py-1.5 font-medium" style={{ color: CD.ink }}><span style={{ fontFamily: 'system-ui' }}>{flagOf(r.c)}</span> {r.c}</td>
-                <td className="py-1.5 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{num(r.expected)}</td>
-                <td className="py-1.5 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontFamily: 'Space Mono, monospace' }}>{r.counted == null ? 'Not counted' : num(r.counted)}</td>
+                <td className="py-1.5 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{num(r.expected, r.c)}</td>
+                <td className="py-1.5 text-right" style={{ fontVariantNumeric: 'tabular-nums', color: r.counted == null ? CD.faint : CD.ink, fontFamily: 'Space Mono, monospace' }}>{r.counted == null ? 'Not counted' : num(r.counted, r.c)}</td>
                 <td className="py-1.5 text-right text-[11px]" style={{ color: ts ? CD.mute : CD.faint }}>{ts ? `${sinceLabel(ts)} · ${atLabel(ts)}` : '—'}</td>
-                <td className="py-1.5 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)}</td>
+                <td className="py-1.5 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)}</td>
               </tr>); })}</tbody>
-              <tfoot><tr style={{ borderTop: `2px solid ${CD.line}` }}><td className="py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td className="py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{totalExpHome == null ? '—' : num(totalExpHome)}</td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{totalCountHome == null ? '—' : num(totalCountHome)}</td><td></td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)}</td></tr></tfoot>
+              <tfoot><tr style={{ borderTop: `2px solid ${CD.line}` }}><td className="py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td className="py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{totalExpHome == null ? '—' : num(totalExpHome, homeCcy)}</td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{totalCountHome == null ? '—' : num(totalCountHome, homeCcy)}</td><td></td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy)}</td></tr></tfoot>
             </table>
             {countedN < recon.length && <div className="mt-3 text-[11.5px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>{recon.length - countedN} drawer(s) not counted yet. They will lock at expected with no variance. Go back and count them first if you want a true close.</div>}
           </div>
           <div className="px-5 py-3 flex items-center justify-between gap-3 flex-none" style={{ borderTop: `1px solid ${CD.line}` }}>
             <button onClick={() => { setConfirmClose(false); setTab('count'); }} className="text-sm font-medium px-3.5 py-2" style={{ color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9, background: 'transparent' }}>← Back to count</button>
-            <button onClick={confirmAndClose} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }} onMouseEnter={e => e.currentTarget.style.background = CD.flag} onMouseLeave={e => e.currentTarget.style.background = CD.ink}><Ic n="lock" s={14} c="var(--cd-on-ink)" /> Close day & lock book</button>
+            <button onClick={confirmAndClose} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }} onMouseEnter={e => e.currentTarget.style.background = CD.flag} onMouseLeave={e => e.currentTarget.style.background = CD.ink}><Ic n="lock" s={14} c="var(--cd-on-ink)" /> Close the day</button>
           </div>
         </div>
       </div>)}

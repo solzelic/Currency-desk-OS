@@ -390,13 +390,13 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
   const drawer = await server.balances();
   const drawerNames = Object.keys(drawer);
   expect(drawerNames.length).toBeGreaterThan(0);
-  /* Formatted the way the product formats a quantity — `num()` in
-     cdos-base.jsx, which is en-CA with at most two decimals and no
-     minimum. Matching it here rather than picking our own rendering is
-     what keeps this an assertion about the FIGURE rather than about the
-     formatter. */
+  /* Formatted the way the product formats money — `num()` in
+     cdos-base.jsx. A two-place currency (CAD, USD) always shows both
+     places, so 25000 is 25,000.00. Matching that here keeps this an
+     assertion about the FIGURE. A formatter that only sets a maximum
+     prints 25,000, and this does not contain 25,000.00. */
   const units = (v: unknown) =>
-    Number(v).toLocaleString("en-CA", { maximumFractionDigits: 2 });
+    Number(v).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   for (const currency of drawerNames) {
     expect(doc, `the drawer's ${currency} balance is on the sheet`).toContain(units(drawer[currency]));
   }

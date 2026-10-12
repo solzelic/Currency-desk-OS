@@ -1040,21 +1040,33 @@
     if (!book) return '';
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
-  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency: c || 'CAD',
-    maximumFractionDigits: 2
-  }).format(Number(n));
-  const num = n => new Intl.NumberFormat('en-CA', {
-    maximumFractionDigits: 2
-  }).format(Number(n) || 0);
-  /* Phone ticket amounts: grouped digits, two places, then the code.
+
+  /* How many places this money shows. The pack's minorUnits win; otherwise
+     two, which is CAD, USD, EUR and GBP. Both bounds are set, so 23640.7
+     CAD is 23,640.70 and never 23,640.7, and yen stays a whole number. */
+  const moneyDigits = code => {
+    const places = currencyPlaces(code);
+    return {
+      minimumFractionDigits: places,
+      maximumFractionDigits: places
+    };
+  };
+  const fmt = (n, c) => {
+    if (n == null || n === '' || isNaN(n)) return '';
+    const code = c || 'CAD';
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: code,
+      ...moneyDigits(code)
+    }).format(Number(n));
+  };
+  /* Plain money. Pass the currency. With none, the desk default is two
+     places — the same default currencyPlaces uses. */
+  const num = (n, c) => new Intl.NumberFormat('en-CA', moneyDigits(c)).format(Number(n) || 0);
+  /* Phone ticket amounts: grouped digits, the currency's places, then the code.
      '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
   const formatPhoneMoney = (n, ccy) => {
-    const body = new Intl.NumberFormat('en-CA', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(n) || 0);
+    const body = new Intl.NumberFormat('en-CA', moneyDigits(ccy)).format(Number(n) || 0);
     return ccy ? body + ' ' + ccy : body;
   };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
@@ -13410,7 +13422,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         fontWeight: sub ? 600 : 400
       }
-    }, sub ? num(sub) : '—'));
+    }, sub ? num(sub, ccy) : '—'));
   }
 
   /* =====================================================================
@@ -13651,14 +13663,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, num(x.units))), /*#__PURE__*/React.createElement("input", {
+      }, num(x.units, x.ccy))), /*#__PURE__*/React.createElement("input", {
         value: val,
         onChange: e => setCounts(o => ({
           ...o,
           [x.ccy]: e.target.value
         })),
         inputMode: "decimal",
-        placeholder: num(x.units),
+        placeholder: num(x.units, x.ccy),
         className: "text-right outline-none text-[13px] px-2 py-1.5",
         style: {
           width: 96,
@@ -14555,6 +14567,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
+    /* Drawers, not currencies. Two currencies in one drawer is still one
+       drawer: "Count the drawer", and "0 of 1 counted". "Count all N
+       drawers" is only when this branch actually has several. */
+    const drawerTotal = Math.max(1, ledgerScope && ledgerScope.workspaces && ledgerScope.workspaces.length || 0);
+    const drawersCounted = recon.length > 0 && countedN >= recon.length ? 1 : 0;
+    const countBeforeClose = drawerTotal === 1 ? 'Count the drawer before closing. The close writes your count back as the balance' : `Count all ${drawerTotal} drawers before closing. The close writes your count back as the balance`;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     /* Cross-currency totals for the reconcile footer. Null where any row
@@ -14879,7 +14897,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
       className: "till-statusline"
-    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", drawersCounted, " of ", drawerTotal, " counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
       }
@@ -15403,7 +15421,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("input", {
       type: "text",
       inputMode: "decimal",
-      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : num(ccyTotal(ccy)),
+      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : num(ccyTotal(ccy), ccy),
       readOnly: ccyMode(ccy) !== 'total',
       onFocus: () => {
         if (ccyMode(ccy) !== 'total') {
@@ -15463,7 +15481,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         transition: 'filter .15s',
         userSelect: 'none'
       }
-    }, num(expectedOf(ccy)), " ", ccy), isCounted(ccy) && (() => {
+    }, num(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
       const v = ccyTotal(ccy) - expectedOf(ccy);
       const off = Math.abs(v) > 0.005;
       return /*#__PURE__*/React.createElement("b", {
@@ -15474,7 +15492,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           transition: 'filter .15s',
           userSelect: 'none'
         }
-      }, off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
+      }, off ? `${v > 0 ? '+' : ''}${num(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
     })(), /*#__PURE__*/React.createElement(Ic, {
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
@@ -15802,13 +15820,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.expected == null ? CD.faint : CD.ink
         }
-      }, r.expected == null ? '—' : num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? '—' : num(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           color: ls ? CD.mute : CD.faint
         }
       }, ls ? /*#__PURE__*/React.createElement("span", {
-        title: `${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`,
+        title: `${num(ls.amt, r.c)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`,
         style: {
           cursor: 'help',
           borderBottom: `1px dotted ${CD.line}`,
@@ -15835,13 +15853,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           cursor: countedAt[r.c] ? 'help' : 'default'
         }
-      }, num(r.counted))), /*#__PURE__*/React.createElement("td", {
+      }, num(r.counted, r.c))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
@@ -15858,19 +15876,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? '—' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)))))), /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy)))))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3 mt-3"
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
@@ -15892,7 +15910,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: closing ? 'checkcircle' : 'lock',
       s: 14,
       c: "var(--cd-on-ink)"
-    }), " ", closing ? 'Closing…' : 'Close day & lock book') : /*#__PURE__*/React.createElement("span", {
+    }), " ", closing ? 'Closing…' : 'Close the day') : /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-2 px-3 py-2 text-[12px]",
       style: {
         background: 'var(--cd-chip)',
@@ -15908,7 +15926,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: serverBalanceError ? CD.flag : CD.mute
       }
-    }, !serverBalancesReady ? serverBalanceError || 'Waiting for the drawer figures' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This drawer has no figures yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
+    }, !serverBalancesReady ? serverBalanceError || 'Waiting for the drawer figures' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This drawer has no figures yet' : countBeforeClose), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.flag
@@ -15934,7 +15952,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.faint
       }
-    }, serverBacked ? /*#__PURE__*/React.createElement(React.Fragment, null, "The system is the source of ", /*#__PURE__*/React.createElement("b", null, "expected"), " cash, including posted exchanges, reversals and vault movements. Closing writes each ", /*#__PURE__*/React.createElement("b", null, "counted"), " figure back as the drawer balance.") : /*#__PURE__*/React.createElement(React.Fragment, null, "The vault issues your ", /*#__PURE__*/React.createElement("b", null, "opening"), " and the day's deals produce ", /*#__PURE__*/React.createElement("b", null, "expected"), "."), " Your physical count is ", /*#__PURE__*/React.createElement("b", null, "counted"), ", and ", /*#__PURE__*/React.createElement("b", null, "variance"), " = counted \u2212 expected. It lands on the operator. Closing locks the drawer until the next day is opened."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
+    }, "Closing saves your count. Any difference is recorded under your name."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, (() => {
       const _tRec = (_ab && _ab.tills || []).find(t => t.id === (station && station.tillId));
@@ -16018,7 +16036,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontVariantNumeric: 'tabular-nums',
             color: out ? CD.mute : CD.green
           }
-        }, out ? '−' : '+', num(m.amount), " ", m.ccy));
+        }, out ? '−' : '+', num(m.amount, m.ccy), " ", m.ccy));
       })));
     })(), /*#__PURE__*/React.createElement("div", {
       className: "mb-4"
@@ -16146,7 +16164,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, num(amt)), " ", c !== homeCcy && homeOf(amt, c) != null && /*#__PURE__*/React.createElement("span", {
+    }, num(amt, c)), " ", c !== homeCcy && homeOf(amt, c) != null && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.mute
@@ -16343,14 +16361,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, num(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.counted == null ? CD.faint : CD.ink,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.counted == null ? 'Not counted' : num(r.counted)), /*#__PURE__*/React.createElement("td", {
+      }, r.counted == null ? 'Not counted' : num(r.counted, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right text-[11px]",
         style: {
           color: ts ? CD.mute : CD.faint
@@ -16362,7 +16380,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`
@@ -16379,21 +16397,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? '—' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[11.5px] px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
@@ -16430,7 +16448,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "lock",
       s: 14,
       c: "var(--cd-on-ink)"
-    }), " Close day & lock book")))), handoffOpen && /*#__PURE__*/React.createElement(HandoffModal, {
+    }), " Close the day")))), handoffOpen && /*#__PURE__*/React.createElement(HandoffModal, {
       tillId: tillId,
       tillName: tillNm,
       current: current,
@@ -50770,7 +50788,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null ? CD.faint : CD.ink
             }
-          }, x.units == null ? '— not in this drawer' : num(x.units)), /*#__PURE__*/React.createElement("td", {
+          }, x.units == null ? '— not in this drawer' : num(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -50784,7 +50802,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.counted == null ? CD.faint : CD.ink
             }
-          }, x.counted == null ? '— not counted' : num(x.counted)), /*#__PURE__*/React.createElement("td", {
+          }, x.counted == null ? '— not counted' : num(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -50792,14 +50810,14 @@ ${snap}`;
               fontWeight: x.variance != null ? 600 : 400,
               color: x.variance == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance)), /*#__PURE__*/React.createElement("td", {
+          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
               color: CD.mute
             }
-          }, x.vaultUnits == null ? '—' : num(x.vaultUnits)));
+          }, x.vaultUnits == null ? '—' : num(x.vaultUnits, x.ccy)));
         }), (() => {
           /* The counted and variance totals are only offered in the
              desk's own money when every counted line can BE valued in

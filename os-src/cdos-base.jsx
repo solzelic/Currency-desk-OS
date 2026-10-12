@@ -826,12 +826,25 @@
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
 
-  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
-  const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
-  /* Phone ticket amounts: grouped digits, two places, then the code.
+  /* How many places this money shows. The pack's minorUnits win; otherwise
+     two, which is CAD, USD, EUR and GBP. Both bounds are set, so 23640.7
+     CAD is 23,640.70 and never 23,640.7, and yen stays a whole number. */
+  const moneyDigits = (code) => {
+    const places = currencyPlaces(code);
+    return { minimumFractionDigits: places, maximumFractionDigits: places };
+  };
+  const fmt = (n, c) => {
+    if (n == null || n === '' || isNaN(n)) return '';
+    const code = c || 'CAD';
+    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: code, ...moneyDigits(code) }).format(Number(n));
+  };
+  /* Plain money. Pass the currency. With none, the desk default is two
+     places — the same default currencyPlaces uses. */
+  const num = (n, c) => new Intl.NumberFormat('en-CA', moneyDigits(c)).format(Number(n) || 0);
+  /* Phone ticket amounts: grouped digits, the currency's places, then the code.
      '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
   const formatPhoneMoney = (n, ccy) => {
-    const body = new Intl.NumberFormat('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+    const body = new Intl.NumberFormat('en-CA', moneyDigits(ccy)).format(Number(n) || 0);
     return ccy ? body + ' ' + ccy : body;
   };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;

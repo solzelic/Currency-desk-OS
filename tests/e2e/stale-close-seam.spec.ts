@@ -153,8 +153,8 @@ async function postFortyCad(page: Page, key: string) {
 
 async function closeTheDay(page: Page) {
   await clickDrawerTab(page, /Reconcile & close/i);
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).first());
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).last());
+  await press(page.getByRole("button", { name: "Close the day", exact: true }).first());
+  await press(page.getByRole("button", { name: "Close the day", exact: true }).last());
 }
 
 test("a close after money moved is refused, on screen and in the book", async ({ page }, testInfo) => {

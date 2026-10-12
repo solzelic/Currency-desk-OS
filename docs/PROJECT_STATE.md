@@ -605,7 +605,13 @@ figures are the ledger totals for the window that session returns.
 A desk still open after midnight stays on the date it opened on.
 The close panel is headed "Close the day" and that calendar date
 (Mon Oct 12). Its subtitle is "Expected is what the system says
-should be in the drawer. Counted is what you count." The drawer bar
+should be in the drawer. Counted is what you count." The close
+button says "Close the day". One drawer reads "Count the drawer"
+and "0 of 1 counted"; "Count all 2 drawers" is only when the branch
+has several drawers. The grey line under the table is "Closing
+saves your count. Any difference is recorded under your name."
+Money shows its currency's decimal places: CAD is two, so a total
+is 23,640.70 and never 23,640.7. The drawer bar
 reads "On the drawer: A. Singh, Senior teller": initial and surname,
 a comma, then the role. The session line and the closed banner say
 the trading day as Oct 12 (the banner says "trading day Oct 12"),

@@ -179,6 +179,25 @@ test("the desk opens a till session, and the ledger is the one that says so", as
   expect(opened).toMatch(/^[1-9]\d?:\d{2} (AM|PM)$/);
 
   await expect(page.locator(".till-operator")).toHaveText("On the drawer: A. Singh, Senior teller");
+
+  /* One drawer, nothing counted yet. Currencies are not drawers. */
+  await expect(page.locator(".till-statusline")).toContainText("0 of 1 counted");
+  await expect(page.getByRole("button", { name: "Close the day", exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Count the drawer before closing. The close writes your count back as the balance")).toBeVisible();
+  await expect(
+    page.getByText("Closing saves your count. Any difference is recorded under your name.", { exact: true }),
+  ).toBeVisible();
+
+  /* CAD is two decimal places. 25000 must read 25,000.00. A formatter
+     that only sets a maximum prints 25,000, and a one-place total such
+     as 23,640.7 fails the single-decimal check below. */
+  const money = (v: number) =>
+    v.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const reconcile = page.locator("[data-tour='till-reconcile']");
+  await expect(reconcile).toContainText(money(Number(balances.CAD)));
+  await expect(reconcile).toContainText(money(Number(balances.USD)));
+  const reconcileText = await reconcile.innerText();
+  expect(reconcileText, "money keeps every decimal place its currency has").not.toMatch(/\d\.\d(?!\d)/);
 });
 
 test("a float moves the vault and the till together, or not at all", async ({ page }) => {
@@ -223,9 +242,9 @@ test("closing writes the counted figure back, and refuses to guess one", async (
   await saveDrawerCount(page);
 
   await clickDrawerTab(page, /Reconcile & close/i);
-  const closeButton = page.getByRole("button", { name: /Close day & lock book/i }).first();
+  const closeButton = page.getByRole("button", { name: "Close the day", exact: true }).first();
   await expect(closeButton).toBeDisabled();
-  await expect(page.getByText(/Count all \d+ drawers? before closing/)).toBeVisible();
+  await expect(page.getByText(/Count the drawer before closing|Count all \d+ drawers before closing/)).toBeVisible();
 
   // now count the rest honestly, and close
   await clickDrawerTab(page, /Cash drawer/i);
@@ -236,8 +255,8 @@ test("closing writes the counted figure back, and refuses to guess one", async (
   }
   await saveDrawerCount(page);
   await clickDrawerTab(page, /Reconcile & close/i);
-  await page.getByRole("button", { name: /Close day & lock book/i }).first().click();
-  await page.getByRole("button", { name: /Close day & lock book/i }).last().click();
+  await page.getByRole("button", { name: "Close the day", exact: true }).first().click();
+  await page.getByRole("button", { name: "Close the day", exact: true }).last().click();
 
   await expect
     .poll(async () => (await book.session())?.status, { timeout: 20_000 })
