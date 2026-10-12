@@ -331,6 +331,56 @@ The **client photograph is not audited this way**. Treating a face the
 desk photographed itself as equivalent to a government document would
 fill the trail with noise and make the rows that matter harder to find.
 
+## Redacting a stored health number
+
+A health card is not valid ID. Ontario's Health Cards and Numbers
+Control Act, 1991 bars a business outside health care from collecting
+or using a health number, and FINTRAC says not to use a health card
+where provincial law prohibits it.
+
+`GET /api/clients/health-card-review` is a read-only list for one shop
+(the session's legal entity). It names every client with a health card
+number still stored, and every posted deal that relied on one: the
+primary document is a health card, or a health card is the only
+numbered document on the file. A reversed deal is not on the list. A
+client whose primary document is a passport is on the client list when
+a health card is also stored, and their deals are not, because the
+book does not record which document a deal used. The number is not in
+the response. The route is the owner (`administrator`) and the
+compliance officer only. A branch manager is not given it.
+
+Replacing the stored number is not a migration and does not run on
+deploy. `server/src/index.ts` does not import it. The owner runs it:
+
+```
+DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --actor j.masri
+DATABASE_URL=postgres://… npx tsx src/clients/redact-health-numbers-cli.ts --apply --actor j.masri
+```
+
+The first command is a dry-run. It prints counts for that actor's shop
+and changes nothing. `--apply` requires `--actor`. The actor must be
+the owner or the compliance officer. The command rewrites
+`doc_number` to `[redacted]` and leaves the type, issuing province,
+expiry, the date recorded, and who recorded it. It sets `updated_by`
+to the actor. It writes one `ledger_audit_events` row per number,
+action `client.health_number.redact`, reason "number redacted for
+privacy" and "health number not lawful to keep, not valid ID". The
+original number is not in the audit row. A second `--apply` matches
+the marker and writes nothing.
+
+Until the read-side change lands, a client export returns `docNumber`,
+so after redaction the export shows `[redacted]`. The review route
+says `numberStatus: "redacted"` and still does not return the old number.
+
+The production database is Neon (`render.yaml`, `DATABASE_URL`,
+`sync: false`). This repository does not record how long Neon keeps a
+backup or a point-in-time history. A number replaced by `[redacted]`
+remains in any backup taken while it was stored, until that history
+ages out of the provider's window. Do not restore a pre-redaction
+backup over the live book. If a restore happens, run the command with
+`--apply` again immediately. Do not copy a health number out of a
+backup back into the live book.
+
 ## What retention obliges
 
 The desk's retention period is its jurisdiction pack's, tightened by the
@@ -454,6 +504,7 @@ be read as more than it is:
 | papers filed for them (label only) | `POST|PATCH|DELETE /api/clients/:clientId/files[/:fileId]` |
 | open one of those papers (audited) | `POST /api/clients/:clientId/files/:fileId/reveal` |
 | this person, as the till's counter record | `POST /api/clients/:clientId/counter-record` |
+| who has a stored health card, and which posted deals relied on one | `GET /api/clients/health-card-review` (owner and compliance officer) |
 
 ## Testing
 
@@ -479,6 +530,14 @@ every time.
   the file, and leaves the identifier blank — with the notice, and
   without blocking the filing — when the file has only a health card
   or only an expired document.
+- `server/tests/health-number-redaction.postgres.test.ts` — the review
+  lists the health-card clients and the posted deal that relied on one,
+  and not a reversed deal or a deal whose primary ID is a passport.
+  The number is not in the JSON. A teller and a branch manager are
+  refused; the owner and a compliance officer are not. Dry-run changes
+  nothing. `--apply` replaces the number, keeps the row, writes the
+  audit entry, shows `[redacted]` on the client read, and a second run
+  writes nothing. The server entrypoint does not import the command.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted
   deal, with the deal still resolving and the old name still finding

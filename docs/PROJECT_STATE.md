@@ -108,6 +108,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   that file is not on this branch, and its health-card row should
   import this list. PR #100 owns `displayIdStanding`, which is the
   one label for the header and the card; it has not landed.
+- **A stored health number can be listed and, only when an owner asks,
+  replaced.** `GET /api/clients/health-card-review` names every client
+  in the shop with a health card number stored, and every posted deal
+  that relied on a health card (primary document, or the only numbered
+  document). Reversed deals are not listed. The number is not in the
+  response. The owner and the compliance officer can open it. A branch
+  manager cannot. Replacing the number is
+  `npx tsx src/clients/redact-health-numbers-cli.ts`. Dry-run prints
+  counts and changes nothing. `--apply --actor` writes `[redacted]`,
+  keeps the row, and appends an audit entry. It is not a migration and
+  the server does not run it on deploy. A redacted number remains in
+  backups until the provider's window ages it out, and a pre-redaction
+  backup must not be restored over the live book. See
+  `docs/CLIENT_RECORDS.md`.
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
