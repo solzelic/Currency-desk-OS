@@ -379,14 +379,20 @@ the GitHub Actions render of the foundation head. A laptop and Actions
 do not paint the fallback font the same way. The difference is thousands
 of pixels, with no layout change. Those files are downloaded from the
 `desktop-unchanged-baselines` artifact and committed. They are not
-generated on a laptop.
+generated on a laptop. The pictures in the tree were written by Actions
+run 38187138637.
 
 The capture replaces a transaction ref (`CD-` plus a random suffix),
 a six-character seam-run token, and a UUID with fixed text of the
 same length before it takes the picture. Those values change every
 suite run. The first committed pictures did not do that replacement,
 so the next Actions run of the same desk differed by the ref column.
-Those pictures were removed so the next run can write the frozen ones.
+Those pictures were removed, and the run above wrote the frozen ones.
+
+Inter is loaded only at `max-width: 430px` (`media` on the stylesheet
+link, and `--font-ui` in `os-src/tokens.css`). Wider than that the desk
+uses Archivo, the same face as main. A desktop picture that names Inter
+does not match main.
 
 A screen PR must never update these baselines. Do not run
 `--update-snapshots` on this spec. Do not replace a PNG to make the

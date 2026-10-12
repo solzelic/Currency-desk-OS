@@ -2,7 +2,8 @@
    The mockup stylesheet resets the page. This file does not.
    Desktop pixels stay on york-os.css. */
 @media (max-width: 430px) {
-  :root { --font-ui: "Archivo", system-ui, sans-serif; }
+  /* --font-ui is Inter at this width (tokens.css). Do not reset it
+     to a desktop face, and do not set Inter outside this query. */
 
   .phone-shell {
     display: flex;

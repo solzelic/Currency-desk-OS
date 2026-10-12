@@ -10,7 +10,9 @@
   --brand-accent: #7FD6A8;         /* [BRAND PLACEHOLDER] accent on dark surfaces only */
   --brand-on-primary: #FFFFFF;     /* text on brand-primary, keep 4.5:1 */
   --font-display: "Instrument Serif", Georgia, serif;          /* [BRAND PLACEHOLDER] marketing headlines only */
-  --font-ui: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif; /* [BRAND PLACEHOLDER] all app text */
+  /* Desktop stays on Archivo, the face main already loads. Naming Inter
+     here changed the 1280 fallback. Inter is the phone face, below. */
+  --font-ui: "Archivo", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;      /* [BRAND PLACEHOLDER] refs and IDs only */
 
   /* ---------- PER-APP ACCENTS (LOCKED by Sol, 10 Oct 2026) ----------
@@ -128,4 +130,12 @@
 /* Numbers: always tabular so columns line up */
 .num { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1, "lnum" 1; }
 .ccy { font: var(--text-caption); font-weight: 500; color: var(--color-text-muted); letter-spacing: 0.02em; }
+
+/* The Inter file is linked with this same media query. Wider than
+   430px the desk never names Inter, so the 1280 pictures match main.
+   Archivo stays in the stack for a phone that has not loaded Inter. */
+@media (max-width: 430px) {
+  :root { --font-ui: "Inter", "Archivo", system-ui, sans-serif; }
+}
+
 @media (prefers-reduced-motion: reduce) { :root { --dur-fast: 0ms; --dur: 0ms; } }
