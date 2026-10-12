@@ -3,10 +3,20 @@ export type IdDocumentType = {
   photo: boolean;
   noExpiryAllowed: boolean;
   accepted: boolean;
+  aliases?: readonly string[];
+};
+
+export type ResolvedIdType = {
+  known: boolean;
+  refused: boolean;
+  stored: string;
+  canonical: string | null;
 };
 
 export const ID_DOCUMENT_TYPES: IdDocumentType[];
 
+export function typeKey(value: unknown): string;
+export function resolveIncomingType(value: unknown): ResolvedIdType;
 export function idDocumentTypeJoinSql(): string;
 export function currentPhotoSql(dateExpr: string): string;
 export function expiredPhotoSql(dateExpr: string): string;

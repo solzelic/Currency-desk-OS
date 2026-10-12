@@ -1312,8 +1312,8 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       reason: ID_PHOTO_NEEDED_REASON,
       tone: "warning",
     });
-    /* The row keeps the name it was filed under. The label the desk
-       is given is the paper certificate. */
+    /* A new filing of the old name is stored as the paper certificate.
+       The label the desk is given is that same name. */
     const shown = filed as typeof filed & { documents: { docType: string }[] };
     expect(shown.documents.map((document) => document.docType)).toEqual([
       "Citizenship certificate (2012 or later, no photo)",
@@ -1323,10 +1323,148 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       "SELECT doc_type FROM desk_client_identity_documents WHERE client_id=$1",
       [client.clientId],
     );
-    expect(stored.rows.map((row) => row.doc_type)).toEqual(["Citizenship Card"]);
+    expect(stored.rows.map((row) => row.doc_type)).toEqual([
+      "Citizenship certificate (2012 or later, no photo)",
+    ]);
     const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "citizenship-card-generic");
     expect(posted.statusCode, posted.body).toBe(422);
     expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("shows a citizenship card already stored under the certificate label", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Citizenship already filed");
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+       SELECT $2, client_id, tenant_id, legal_entity_id, 'Citizenship Card', 'CIT-OLD-NAME', '2031-05-01', true
+         FROM desk_clients WHERE client_id = $1`,
+      [client.clientId, `doc_cit_${client.clientId}`],
+    );
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/clients/${client.clientId}`,
+      cookies,
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().documents).toEqual([
+      expect.objectContaining({
+        docType: "Citizenship certificate (2012 or later, no photo)",
+        docNumber: "CIT-OLD-NAME",
+      }),
+    ]);
+    expect(read.json().displayedDocument.docType).toBe("Citizenship certificate (2012 or later, no photo)");
+    const stored = await pool.query(
+      "SELECT doc_type FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(stored.rows.map((row) => row.doc_type)).toEqual(["Citizenship Card"]);
+  });
+
+  it("refuses a health card filed under a provincial name", async () => {
+    const cookies = await cookie();
+    const HEALTH_CARD = "Health cards can't be used as ID. Record a current photo ID.";
+    for (const [docType, slug] of [
+      ["OHIP card", "ohip-card"],
+      ["ohip  Card", "ohip-card-spaced"],
+    ] as const) {
+      const client = await openClient(cookies, `Health alias ${slug}`);
+      const created = await app.inject({
+        method: "POST",
+        url: `/api/clients/${client.clientId}/documents`,
+        cookies,
+        payload: { docType, docNumber: "OHIP-1", expiresOn: "2031-05-01" },
+      });
+      expect(created.statusCode, created.body).toBe(422);
+      expect(created.json().message).toBe(HEALTH_CARD);
+      const none = await pool.query(
+        "SELECT count(*)::int AS n FROM desk_client_identity_documents WHERE client_id=$1",
+        [client.clientId],
+      );
+      expect(none.rows[0]!.n).toBe(0);
+    }
+  });
+
+  it("stores an unknown ID type as given and does not treat it as ID on file", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Library card");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Library card",
+      docNumber: "LIB-1",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "missing",
+      label: "Missing ID",
+      detail: ID_PHOTO_NEEDED_REASON,
+      reason: ID_PHOTO_NEEDED_REASON,
+      tone: "warning",
+    });
+    expect(filed.displayedDocument?.docType).toBe("Library card");
+    const stored = await pool.query(
+      "SELECT doc_type FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(stored.rows.map((row) => row.doc_type)).toEqual(["Library card"]);
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "library-card");
+    expect(posted.statusCode, posted.body).toBe(422);
+    expect(posted.json().message).toBe(ID_NEEDED_MESSAGE);
+  });
+
+  it("accepts a current driver licence alias and treats it as ID on file", async () => {
+    const cookies = await cookie();
+    const client = await openClient(cookies, "Driver licence alias");
+    const filed = await fileDocument(cookies, client.clientId, {
+      docType: "Driver licence",
+      docNumber: "DL-ALIAS",
+      expiresOn: "2031-05-01",
+    });
+    expect(filed.idStanding).toEqual({
+      status: "identified",
+      label: "Identified",
+      detail: ID_IDENTIFIED_REASON,
+      reason: ID_IDENTIFIED_REASON,
+      tone: "ok",
+    });
+    expect(filed.displayedDocument?.docType).toBe("Driver's Licence");
+    const stored = await pool.query(
+      "SELECT doc_type FROM desk_client_identity_documents WHERE client_id=$1",
+      [client.clientId],
+    );
+    expect(stored.rows.map((row) => row.doc_type)).toEqual(["Driver's Licence"]);
+    const posted = await exchange(cookies, await counterId(client.clientId), "3000.00", "driver-licence-alias");
+    expect(posted.statusCode, posted.body).toBe(201);
+
+    /* A row already stored under the alias is not rewritten, and it
+       still counts. The join, not a second save, is what recognises it. */
+    const older = await openClient(cookies, "Driver licence already filed");
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+       SELECT $2, client_id, tenant_id, legal_entity_id, 'Driver licence', 'DL-OLD', '2031-05-01', true
+         FROM desk_clients WHERE client_id = $1`,
+      [older.clientId, `doc_dl_${older.clientId}`],
+    );
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/clients/${older.clientId}`,
+      cookies,
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().idStanding).toEqual({
+      status: "identified",
+      label: "Identified",
+      detail: ID_IDENTIFIED_REASON,
+      reason: ID_IDENTIFIED_REASON,
+      tone: "ok",
+    });
+    const kept = await pool.query(
+      "SELECT doc_type FROM desk_client_identity_documents WHERE client_id=$1",
+      [older.clientId],
+    );
+    expect(kept.rows.map((row) => row.doc_type)).toEqual(["Driver licence"]);
+    const again = await exchange(cookies, await counterId(older.clientId), "3000.00", "driver-licence-stored");
+    expect(again.statusCode, again.body).toBe(201);
   });
 
   it("treats a current Secure Certificate of Indian Status as ID on file, and an expired one as not", async () => {

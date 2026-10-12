@@ -101,13 +101,21 @@ not count, on that type or any other. `Citizenship Card` and
 `Citizenship certificate (2012 or later, no photo)` are not photo
 ID. A Secure Certificate of Indian Status is a photo ID and needs
 an expiry. The laminated Certificate of Indian Status is not in
-the catalogue. `Driver's License` is the US spelling of a driver's
-licence and needs an expiry. A health card is never
+the catalogue. `Driver's License` and `Driver licence` are
+spellings of `Driver's Licence` and need an expiry. `PR Card` is
+`Permanent Resident Card`. A new save stores the catalogue name.
+A health card is never
 accepted. Creating one, or changing a document's type to one, is
 422 "Health cards can't be used as ID. Record a current photo ID."
-A health card already stored is left as it is and is still
-returned. A stored `Citizenship Card` is returned as `Citizenship
-certificate (2012 or later, no photo)`. A non-photo document, including a birth certificate, is
+The same refusal covers OHIP, OHIP card, RAMQ, RAMQ card, MSP,
+MSP card, Alberta Health, Alberta Health Card, and Care Card, in
+any case, spacing, or punctuation. A health card already stored is left as it is and is still
+returned. A type that is not in the catalogue is stored as given
+and is not accepted, so the client is not Identified. A stored
+`Citizenship Card` is returned as `Citizenship
+certificate (2012 or later, no photo)`, and a new filing of that
+old name is stored as the certificate label. A row already stored
+is not rewritten. A non-photo document, including a birth certificate, is
 not ID on file. An expired photo ID beside a current non-photo
 document is Missing ID, reason "A current photo ID is needed".
 The primary flag only chooses which document is shown. A current

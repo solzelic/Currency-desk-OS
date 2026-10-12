@@ -65,7 +65,7 @@ import {
 import {
   displayDocumentType,
   HEALTH_CARD_REFUSAL,
-  isHealthCardType,
+  resolveIncomingType,
 } from "../ledger/id-document-types.mjs";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
@@ -553,12 +553,12 @@ export class ClientRecordService {
         [clientId, ...entityScope(actor)],
       );
       if (!owned.rowCount) throw notFound();
-      /* A health card is not an identity document. Refuse the write
-         before any row changes. A card already stored is not touched
-         by this check. */
-      if (isHealthCardType(input.docType)) {
-        throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
-      }
+      /* A health card is not an identity document, including a
+         provincial name for the same card. Refuse the write before
+         any row changes. A card already stored is not touched by
+         this check. A known alias is stored as the catalogue name.
+         Anything else is stored as given. */
+      const docType = documentTypeToStore(input.docType);
       const documentId = `doc_${randomUUID()}`;
       /* Exactly one document drives the desk's KYC standing. The old
          shape let a top-level "primary" ID and an array entry both claim
@@ -578,7 +578,7 @@ export class ClientRecordService {
           documentId,
           clientId,
           ...entityScope(actor),
-          input.docType.trim(),
+          docType,
           blank(input.docNumber),
           blank(input.issuingJurisdiction),
           blank(input.issuedOn),
@@ -588,7 +588,7 @@ export class ClientRecordService {
         ],
       );
       if (input.scanDataUrl)
-        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, input.docType.trim());
+        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, docType);
       /* The audit row names the TYPE and never the number. An audit log
          that quotes passport numbers is a second copy of the thing being
          protected, in a table designed to be read widely and kept
@@ -598,7 +598,7 @@ export class ClientRecordService {
         actor,
         "client.document.add",
         clientId,
-        `${input.docType.trim()}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
+        `${docType}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
       );
       await this.refreshVerification(client, actor, clientId);
       await this.syncCounterRecord(client, actor, clientId);
@@ -622,12 +622,12 @@ export class ClientRecordService {
       );
       if (!found.rowCount) throw documentNotFound();
       /* Changing a document into a health card is the same refusal as
-         filing a new one. The row stays as it was. */
-      if (input.docType !== undefined && isHealthCardType(input.docType)) {
-        throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
-      }
+         filing a new one, including a provincial name for that card.
+         The row stays as it was. A known alias is stored as the
+         catalogue name. */
+      const docType = input.docType === undefined ? undefined : documentTypeToStore(input.docType);
       const columns: Record<string, unknown> = {};
-      if (input.docType !== undefined) columns.doc_type = input.docType.trim();
+      if (docType !== undefined) columns.doc_type = docType;
       if (input.docNumber !== undefined) columns.doc_number = blank(input.docNumber);
       if (input.issuingJurisdiction !== undefined)
         columns.issuing_jurisdiction = blank(input.issuingJurisdiction);
@@ -650,7 +650,7 @@ export class ClientRecordService {
           [documentId, actor.userId, ...names.map((name) => columns[name])],
         );
       if (input.scanDataUrl)
-        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, input.docType?.trim() ?? null);
+        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, docType ?? null);
       await this.audit(
         client,
         actor,
@@ -1261,6 +1261,15 @@ const fileNotFound = () =>
     "FILE_NOT_ON_FILE",
     "That file is not in this customer's folder.",
   );
+
+/* Catalogue name for a known type. The health-card refusal is the
+   same sentence for "Health Card", "OHIP card", and "ohip  Card".
+   An unknown type is stored trimmed, as the caller wrote it. */
+function documentTypeToStore(value: string): string {
+  const resolved = resolveIncomingType(value);
+  if (resolved.refused) throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
+  return resolved.stored;
+}
 
 /* An empty string is a field somebody cleared, and a cleared field is
    NULL. Storing "" would make "no date of birth recorded" and "date of

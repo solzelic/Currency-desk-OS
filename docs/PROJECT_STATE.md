@@ -455,7 +455,7 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-11**, ledger customer ID status. `POST` and `PUT
+**2026-10-12**, ledger customer ID status. `POST` and `PUT
 /api/ledger/customers` do not take an ID standing from the body. A
 request that carries `idStatus`, `id_status`, `kycStatus`, a verified
 flag, or the same claim nested under identity or KYC is refused with
@@ -478,8 +478,18 @@ A Secure Certificate of Indian
 Status is a photo ID and needs an expiry. The laminated Certificate
 of Indian Status is not listed, so it is not a photo ID. Health
 cards are never accepted, and a new document cannot be filed
-or changed to that type. A health card already stored stays
-readable and is not rewritten. A non-photo document does not identify
+or changed to that type. The same refusal covers a provincial
+name (OHIP, OHIP card, RAMQ, RAMQ card, MSP, MSP card, Alberta
+Health, Alberta Health Card, Care Card) in any case, spacing, or
+punctuation. A health card already stored stays
+readable and is not rewritten. An incoming type is matched to
+this catalogue. A known alias is stored as the catalogue name
+(`Driver licence` and `Driver's License` as `Driver's Licence`,
+`PR Card` as `Permanent Resident Card`, `Citizenship Card` as the
+certificate label). A type that is not listed is stored as given
+and is not accepted, so it does not make the client Identified.
+A row already stored under an old spelling is not rewritten; the
+catalogue still classifies that spelling. A non-photo document does not identify
 the client. An
 expired photo ID beside a current non-photo document is Missing
 ID, reason "A current photo ID is needed". The primary document is

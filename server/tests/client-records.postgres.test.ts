@@ -389,7 +389,7 @@ postgres("the desk's customer file, on the server", () => {
       "SELECT doc_type, is_primary FROM desk_client_identity_documents WHERE client_id=$1 ORDER BY is_primary DESC",
       [clientId],
     );
-    expect(stored.rows.map((r) => r.doc_type)).toEqual(["Passport", "PR Card"]);
+    expect(stored.rows.map((r) => r.doc_type)).toEqual(["Passport", "Permanent Resident Card"]);
     /* Exactly one drives the desk's KYC standing. The old shape let a
        top-level ID and an array entry both claim to be it. */
     expect(stored.rows.filter((r) => r.is_primary)).toHaveLength(1);
