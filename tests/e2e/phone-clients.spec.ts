@@ -244,7 +244,9 @@ test.describe("phone clients", () => {
       await expect(page.locator(".phone-client-row")).toHaveCount(3);
       const noneLine = page.locator(".phone-client-row", { hasText: names.none }).locator(".phone-row-sub");
       await expect(noneLine).toHaveText("No deals yet");
-      await expect(page.locator(".phone-client-row .phone-row-sub")).not.toContainText("Individual");
+      const lines = await page.locator(".phone-client-row .phone-row-sub").allTextContents();
+      expect(lines).toHaveLength(3);
+      for (const line of lines) expect(line).not.toContain("Individual");
       await expect(root).not.toContainText("$");
       await expect(root).not.toContainText("Verified");
       await expect(root.getByRole("button", { name: "New transaction" })).toHaveCount(0);
