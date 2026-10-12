@@ -39,6 +39,9 @@ async function partnerAgrees(sheet: Locator): Promise<void> {
   if (!value && shown !== "Choose a partner") {
     throw new Error("the partner select shows " + shown + " while the form has no partner");
   }
+  if (value && shown !== value) {
+    throw new Error("the partner select shows " + shown + " while the form has " + value);
+  }
 }
 
 async function dismissTour(page: Page): Promise<void> {
@@ -659,5 +662,84 @@ test("saved beneficiaries stay on the sender file", async ({ page }) => {
 
   await phoneSweep(page, {
     roots: [".phone-transfers", ".phone-head", "#phone-dock"],
+  });
+});
+
+test("a chosen partner leaves the banner on the filled sheet", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 360, height: 780 });
+  await atDesk(page);
+  await openTransfers(page);
+  const list = page.locator(".phone-transfers");
+  await list.getByRole("tab", { name: "Saved beneficiaries" }).click();
+  await list.getByText("Maria Carter").click();
+  await list.getByRole("button", { name: "Add a beneficiary" }).click();
+  const sheet = page.locator(".phone-ben-sheet");
+  const addressRequired = await page.evaluate(() => {
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    const rule = window.CDOS._transfers && window.CDOS._transfers.addressRequiredOverIdLine;
+    if (typeof rule !== "function") throw new Error("the address rule did not load");
+    return !!rule(pack);
+  });
+  const address = sheet.locator(".phone-flabel").filter({ hasText: "Address" });
+  await expect(address).toContainText("Needed for large transfers");
+  await expect(address).not.toContainText("Optional");
+  const partner = sheet.getByRole("combobox", { name: /Payout partner/ });
+  await expect(partner).toHaveValue("");
+  await expect(partner).toHaveClass(/is-err/);
+  await expect(sheet.getByRole("alert")).toContainText("Payout partner");
+  await partnerAgrees(sheet);
+  await partner.selectOption("Palawan Express");
+  await expect(partner).toHaveValue("Palawan Express");
+  await expect(partner).not.toHaveClass(/is-err/);
+  await expect(sheet.getByRole("alert")).not.toContainText("Payout partner");
+  await partnerAgrees(sheet);
+  await sheet.getByPlaceholder("Receiver's name").fill("Ada Carter");
+  if (addressRequired) {
+    await sheet.getByPlaceholder("Street, city, country").fill("1 King Street, Toronto");
+  }
+  await expect(sheet.getByRole("alert")).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: "Save beneficiary" })).toBeEnabled();
+
+  const phones = [
+    { width: 360, height: 780, file: "ben-form-360.png" },
+    { width: 390, height: 844, file: "ben-form-390.png" },
+    { width: 430, height: 844, file: "ben-form-430.png" },
+  ];
+  for (const size of phones) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await expect(address).toContainText("Needed for large transfers");
+    await expect(partner).toHaveValue("Palawan Express");
+    await expect(sheet.getByRole("alert")).toHaveCount(0);
+    await partnerAgrees(sheet);
+    await sheet.locator(".phone-task-body").evaluate((el) => { el.scrollTop = 0; });
+    await page.screenshot({
+      path: testInfo.outputPath(size.file),
+      animations: "disabled",
+      caret: "hide",
+    });
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.context().clearCookies();
+  await page.goto("/app");
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  await signInAtDesk(page, "a.singh");
+  await dismissTour(page);
+  const dock = page.locator('#appbar [data-app="transfers"]');
+  await dock.scrollIntoViewIfNeeded();
+  await dock.click();
+  const win = page.locator('.win.show.active[data-app="transfers"]');
+  await expect(win).toBeVisible();
+  await expect(page.locator(".phone-ben-sheet")).toHaveCount(0);
+  await expect(page.locator(".phone-transfers")).toHaveCount(0);
+  await expect(win.getByRole("button", { name: "Beneficiaries" })).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("transfers-desktop-1280.png"),
+    animations: "disabled",
+    caret: "hide",
   });
 });
