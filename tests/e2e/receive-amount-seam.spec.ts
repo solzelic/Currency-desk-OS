@@ -214,6 +214,11 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   expect(frozen, "frozen expiry").toMatch(/Expires in \d+:\d{2}$/);
   expect(frozen).not.toMatch(/[AP]M|a\.m\.|p\.m\./);
   await expect(page.locator(".cd-tx-rail")).toContainText("71.62");
+  if (width < 600) {
+    await expect(page.locator(".cd-tx-rate")).toHaveValue(/^\d+\.\d{4}$/);
+  } else {
+    expect(await page.locator(".cd-tx-rate").inputValue(), "the desk rate keeps the full rate").toMatch(/\.\d{5,}/);
+  }
   if (width <= 360) {
     const kicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
     await expect(kicker).toContainText("CAD");
@@ -491,7 +496,11 @@ test("a we-sell fee is cash the till takes, and the headline says so", async ({ 
     await page.getByRole("button", { name: "Show customer the quote" }).click();
     const presented = page.locator("div.fixed.inset-0").last();
     await expect(presented).toContainText("You give");
-    await expect(presented).toContainText("101.50 CAD (100.00 + 1.50 fee)");
+    await expect(presented).toContainText("101.50 CAD");
+    await expect(presented).toContainText("100.00 CAD + 1.50 CAD service fee");
+    await expect(presented).toContainText("Rate as quoted now");
+    await expect(presented).not.toContainText("(100.00 + 1.50 fee)");
+    await expect(presented.getByText(/^1 CAD = \d+\.\d{4} USD$/)).toBeVisible();
     await expect(presented).toContainText("You receive");
     await presented.getByRole("button", { name: "Back to desk" }).click();
     const before = await sharedBalances(request);
@@ -645,14 +654,16 @@ test("the picker hides three-decimal currencies and a yen fraction is not READY"
     for (const code of three) {
       await expect(page.getByRole("button", { name: new RegExp("^" + code + "\\b") })).toHaveCount(0);
     }
-    await expect(page.getByRole("button", { name: /^AUD\b/ }).first()).toBeAttached();
+    await expect(page.getByRole("button", { name: /^AUD\b/ }).first()).toContainText("Australian Dollar");
+    await expect(page.getByRole("button", { name: /^JPY\b/ }).last()).toContainText("Japanese Yen");
+    await expect(page.getByRole("button", { name: /^CHF\b/ }).last()).toContainText("Swiss Franc");
     await page.getByRole("button", { name: /^JPY\b/ }).last().evaluate((el: HTMLButtonElement) => el.click());
     await expect(trigger).toContainText("JPY");
     await page.locator(".cd-tx-customer input").fill("Amina Diallo");
     await page.locator(".cd-money input").first().fill("1000.5");
     await page.locator(".cd-tx-purpose").fill("Personal travel");
     await page.locator(".cd-tx-source").fill("Employment income");
-    await expect(page.getByText("Yen has no decimals.")).toBeVisible();
+    await expect(page.getByText("JPY uses 0 decimals. Try 1001.")).toBeVisible();
     await expect(page.getByTestId("tx-checklist")).toHaveText("NOT PRICED");
     await expect(page.getByTestId("tx-checklist")).not.toHaveText(/READY/);
     await expect(page.locator(".cd-tx")).not.toContainText("invalid money");
@@ -730,10 +741,15 @@ test("a malformed amount does not show invalid money", async ({ page, request })
   try {
     await prepareDesk(page, 1280);
     await openNewTransaction(page);
-    await page.locator(".cd-money input").first().fill("12.345");
+    const amount = page.locator(".cd-money input").first();
+    await amount.fill("12.34");
+    await amount.press("5");
+    await expect(amount).toHaveValue("12.34");
+    await amount.fill("");
+    await amount.fill("12.345");
     const alert = page.locator(".cd-tx").getByRole("alert");
-    await expect(alert).toHaveText("Enter a valid amount.");
-    expect("Enter a valid amount.").not.toMatch(/[-\u2013\u2014]/);
+    await expect(alert).toHaveText("CAD uses 2 decimals. Try 12.35.");
+    expect("CAD uses 2 decimals. Try 12.35.").not.toMatch(/[-\u2013\u2014]/);
     await expect(page.locator(".cd-tx")).not.toContainText("invalid money");
   } finally {
     await restoreBoard(request);

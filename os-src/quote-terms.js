@@ -138,6 +138,9 @@
     if (text.indexOf(" is written to ") !== -1) return DESK["That currency is not available on this desk."];
     if (text.indexOf(" is required and must be at most 500 characters.") !== -1) return DESK["Fill in the required field and try again."];
     if (text.indexOf(" is not an amount in ") !== -1 || text.indexOf(" is not a whole number of ") !== -1) return DESK["Enter a valid amount."];
+    /* "CAD uses 2 decimals. Try 12.35." is already the desk sentence.
+       A second pass returns it unchanged. */
+    if (/^[A-Z]{3} uses \d+ decimals\. Try [0-9]+(?:\.[0-9]+)?\.$/.test(text)) return text;
     return null;
   }
 
@@ -153,15 +156,19 @@
       return places;
     }
     function money(value, min, places, code) {
-      if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(String(value))) throw new Error("invalid money");
-      var out = new Decimal(value);
+      var text = String(value);
+      if (!/^(?:0|[1-9]\d{0,11})(?:\.\d+)?$/.test(text)) throw new Error("invalid money");
+      var out = new Decimal(text);
       if (out.lt(min) || out.gt("1000000000")) throw new Error("out of range");
-      if (!out.eq(out.toDecimalPlaces(places))) {
-        if (places === 0 && String(code || "").toUpperCase() === "JPY") throw new Error("Yen has no decimals.");
-        if (places === 0) throw new Error("This currency has no decimals.");
-        throw new Error("invalid money");
+      /* A whole yen written 1000.00 still fits. 1000.50 does not, and
+         neither does 12.345 dollars. The suggestion is the same half-up
+         the till would have paid. */
+      var fitted = out.toDecimalPlaces(places);
+      if (!out.eq(fitted)) {
+        var suggestion = out.toDecimalPlaces(places, Decimal.ROUND_HALF_UP).toFixed(places);
+        throw new Error(String(code || "").toUpperCase() + " uses " + places + " decimals. Try " + suggestion + ".");
       }
-      return out.toDecimalPlaces(places);
+      return fitted;
     }
     function rateOf(value, what) {
       var out = new Decimal(value == null || value === "" ? NaN : value);
@@ -210,24 +217,32 @@
           detail: detail,
         };
       }
-      var give, receive;
+      var give, receive, giveNote;
       if (from === homeCode) {
         var paid = fee.gt(0) ? amountOf(input, from) + " + " + amountOf(fee, homeCode) + " fee" : null;
         give = side(input.plus(fee), from, paid);
         receive = side(output, to, null);
+        /* The customer screen keeps the total big and the fee on the
+           next line, so "101.50 CAD (100.00 + 1.50 fee)" does not wrap. */
+        giveNote = fee.gt(0)
+          ? amountOf(input, from) + " " + from + " + " + amountOf(fee, homeCode) + " " + homeCode + " service fee"
+          : null;
       } else if (to === homeCode) {
         var kept = fee.gt(0) ? amountOf(output, to) + " less " + amountOf(fee, homeCode) + " fee" : null;
         give = side(input, from, null);
         receive = side(output.minus(fee), to, kept);
+        giveNote = null;
       } else {
         give = side(input, from, null);
         receive = side(output, to, null);
+        giveNote = null;
       }
       return {
         give: give.sentence,
         giveAmount: give.amount,
         giveCurrency: give.currency,
         giveDetail: give.detail,
+        giveNote: giveNote,
         receive: receive.sentence,
         receiveAmount: receive.amount,
         receiveCurrency: receive.currency,
@@ -241,6 +256,11 @@
     }
     function formatRate(value) {
       return new Decimal(value).toDecimalPlaces(12).toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+    }
+    /* Four places on the customer screen and the phone rate field.
+       formatRate stays the full rate the multiply uses. */
+    function displayRate(value) {
+      return new Decimal(value).toDecimalPlaces(4, Decimal.ROUND_HALF_UP).toFixed(4);
     }
     function formatAmount(value, currency) {
       var places = placesOf(currency);
@@ -352,6 +372,7 @@
         giveAmount: hands.giveAmount,
         giveCurrency: hands.giveCurrency,
         giveDetail: hands.giveDetail,
+        giveNote: hands.giveNote,
         receive: hands.receive,
         receiveAmount: hands.receiveAmount,
         receiveCurrency: hands.receiveCurrency,
@@ -446,6 +467,7 @@
       minorUnits: minorUnits,
       formatAmount: formatAmount,
       formatRate: formatRate,
+      displayRate: displayRate,
       sameRate: sameRate,
       lessThan: lessThan,
       profitShare: profitShare,

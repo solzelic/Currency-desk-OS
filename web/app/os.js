@@ -32570,17 +32570,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     AED: '🇦🇪'
   };
   const ccyLabel = c => (FLAG[c] ? FLAG[c] + ' ' : '') + c;
-  const CCY_NAME = {
-    CAD: 'Canadian Dollar',
-    USD: 'US Dollar',
-    EUR: 'Euro',
-    GBP: 'British Pound',
-    INR: 'Indian Rupee',
-    PHP: 'Philippine Peso',
-    CNY: 'Chinese Yuan',
-    MXN: 'Mexican Peso',
-    AED: 'UAE Dirham'
-  };
+  /* Names live on the shared catalog (yorkfx-converter.js). A code
+     the catalog does not know stays a code, with no second table here. */
+  function catalogName(code) {
+    const row = typeof BY !== 'undefined' && BY[code] || (typeof CUR !== 'undefined' && CUR.find ? CUR.find(c => c.code === code) : null);
+    return row && row.name ? row.name : '';
+  }
+  /* One extra keystroke past this currency's places is refused.
+     A paste, or any value that is not a single added character,
+     still arrives so the quote can say how many places it uses. */
+  function clampTypedAmount(previous, next, currency) {
+    const api = window.CDOS && window.CDOS.quoteTerms;
+    const places = api && typeof api.minorUnits === 'function' ? api.minorUnits(currency) : 2;
+    const prev = String(previous == null ? '' : previous);
+    const incoming = String(next == null ? '' : next);
+    if (incoming.length !== prev.length + 1) return incoming;
+    const dot = incoming.indexOf('.');
+    const frac = dot < 0 ? '' : incoming.slice(dot + 1);
+    if (places === 0 && dot >= 0) return prev;
+    if (frac.length > places) return prev;
+    return incoming;
+  }
   // mirror the staff-published rate-board order so this picker matches the board
   // (reorder currencies on the Rate Board and they reorder here too).
   /* Currencies the money columns cannot hold. The scale table is
@@ -32820,7 +32830,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         style: {
           color: CD.mute
         }
-      }, CCY_NAME[c] || '')), on && /*#__PURE__*/React.createElement(Ic, {
+      }, catalogName(c))), on && /*#__PURE__*/React.createElement(Ic, {
         n: "check",
         s: 14,
         c: CD.green
@@ -33185,7 +33195,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, value) : /*#__PURE__*/React.createElement("input", {
       value: value,
-      onChange: e => onChange(e.target.value),
+      onChange: e => {
+        const next = clampTypedAmount(value, e.target.value, ccy);
+        if (next === value) {
+          e.target.value = value;
+          return;
+        }
+        onChange(next);
+      },
       inputMode: "decimal",
       autoFocus: autoFocus,
       placeholder: "0.00",
@@ -33608,7 +33625,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.02
       }
-    }, q.give)), q.rateLine && /*#__PURE__*/React.createElement("div", {
+    }, q.give), q.giveNote ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8,
+        fontSize: 20,
+        lineHeight: 1.3,
+        color: 'var(--cd-on-ink-soft)',
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }, q.giveNote) : null), q.rateLine && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-4",
       style: {
         color: 'var(--cd-on-ink-soft)'
@@ -34031,6 +34056,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       giveAmount: frozenHands.giveAmount,
       giveCurrency: frozenHands.giveCurrency,
       giveDetail: frozenHands.giveDetail,
+      giveNote: frozenHands.giveNote,
       receive: frozenHands.receive,
       receiveAmount: frozenHands.receiveAmount,
       receiveCurrency: frozenHands.receiveCurrency,
@@ -34893,6 +34919,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onDone && onDone(tx.id);
     };
 
+    /* The phone rate field and the customer screen show four decimals.
+       The desktop field keeps formatRate, which is the full rate. */
+    const exactRate = exchangeReady ? String(fx.rateWire || fx.customerRate || '') : '';
+    const fourRate = exchangeReady && quoteApi && exactRate !== '' ? quoteApi.displayRate(exactRate) : '';
+    const sheetRate = !exchangeReady ? '—' : phoneSheet && fourRate ? fourRate : fx.rateLabel;
     // present-quote payload (exchange + send)
     const presentQ = isSend ? {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
@@ -34909,8 +34940,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       title: 'Your quote',
       tag: fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `Exchange ${inCcy} for ${outCcy}`,
       giveLbl: 'You give',
-      give: exchangeReady && fx.give ? fx.give : `${num(amtN)} ${inCcy}`,
-      rateLine: `1 ${inCcy} = ${exchangeReady ? fx.rateLabel : '—'} ${outCcy}`,
+      give: exchangeReady && fx.giveNote ? `${fx.giveAmount} ${fx.giveCurrency}` : exchangeReady && fx.give ? fx.give : `${num(amtN)} ${inCcy}`,
+      giveNote: exchangeReady && fx.giveNote ? fx.giveNote : '',
+      rateLine: `1 ${inCcy} = ${fourRate || '—'} ${outCcy}`,
       getLbl: 'You receive',
       get: exchangeReady && fx.receive ? fx.receive : `— ${outCcy}`,
       foot: fx && (fx.giveDetail || fx.receiveDetail) ? lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now' : feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
@@ -35184,7 +35216,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", inCcy, " = ", exchangeReady ? fx.rateLabel : '—', " ", outCcy), /*#__PURE__*/React.createElement("button", {
+    }, "1 ", inCcy, " = ", sheetRate, " ", outCcy), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       "aria-label": "Swap",
@@ -35228,10 +35260,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : exchangeReady ? fx.rateLabel : '',
+      value: override ? manualRate : exchangeReady ? sheetRate : '',
       onFocus: () => {
         if (!override && !lockLive) {
-          setManualRate(exchangeReady ? fx.customerRate : '');
+          setManualRate(exchangeReady ? fx.rateWire || fx.customerRate : '');
           setOverride(true);
         }
       },
@@ -35260,7 +35292,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.amber
     }), lockClock))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
-      onChange: e => setFee(e.target.value),
+      onChange: e => {
+        const next = clampTypedAmount(fee, e.target.value, home);
+        if (next === fee) {
+          e.target.value = fee;
+          return;
+        }
+        setFee(next);
+      },
       inputMode: "decimal",
       placeholder: "0.00",
       className: "cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right",
@@ -36068,7 +36107,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker"
-    }, isExchange ? `1 ${inCcy} = ${exchangeReady ? fx.rateLabel : '—'} ${out.ccy}` : isSend ? `1 ${home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange && exchangeShare || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? `1 ${inCcy} = ${sheetRate} ${out.ccy}` : isSend ? `1 ${home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange && exchangeShare || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',

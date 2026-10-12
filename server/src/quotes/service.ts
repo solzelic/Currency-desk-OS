@@ -35,6 +35,9 @@ function refuseTerms(error: unknown): never {
     "direction and currencies disagree": "Choose one currency to pay and a different one to receive.",
   };
   if (plain[message]) throw new LedgerError("INVALID_REQUEST", plain[message]);
+  if (/^[A-Z]{3} uses \d+ decimals\. Try [0-9]+(?:\.[0-9]+)?\.$/.test(message)) {
+    throw new LedgerError("INVALID_REQUEST", message);
+  }
   if (message.startsWith("invalid ")) throw new LedgerError("INVALID_REQUEST", "The rate board cannot price this.");
   throw new LedgerError("INVALID_REQUEST", "The quote could not be priced.");
 }

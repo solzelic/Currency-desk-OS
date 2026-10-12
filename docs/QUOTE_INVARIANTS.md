@@ -7,9 +7,12 @@
 - The exchange output on the sheet is that frozen output. A fee is separate
   home-currency tender: the customer hands over input plus the fee when they
   pay home currency, and takes output less the fee when they receive it. The
-  You give / You receive headline is that net. The frozen input, output, and
-  fee stay the figures the ledger posts. Before the quote exists, the preview
-  is the same function (`os-src/quote-terms.js`), not a second rounding.
+  teller's You give / You receive headline is that net. The customer screen
+  shows the net on its own line and the fee under it. The frozen input,
+  output, and fee stay the figures the ledger posts. The rate drawn for the
+  customer, and on the phone rate field, is 4 decimal places. The posted
+  amount is still `input ×` the full rate. Before the quote exists, the
+  preview is the same function (`os-src/quote-terms.js`), not a second rounding.
 - Activated quote terms are immutable in PostgreSQL. Status may progress from
   active to expired, cancelled, or posted; posted and cancelled quotes cannot
   be posted.

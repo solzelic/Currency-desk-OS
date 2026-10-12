@@ -83,10 +83,18 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `os-src/quote-terms.js`. An unknown one reads `Couldn't get a price.
   Reload and try again.` Prices that do not load read `Prices didn't
   load. Reload the page.`
-  A fee is in the headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
+  A fee is in the teller headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
   and buying shows `132.86 CAD (134.36 less 1.50 fee)`. That net is the
-  cash the till moves. Yen rounds to a whole yen, and `1000.5` yen reads
-  `Yen has no decimals.` Every currency whose scale is three minor
+  cash the till moves. On the customer screen the same sale reads
+  `101.50 CAD`, with `100.00 CAD + 1.50 CAD service fee` in 20px under
+  it, and the footer stays `Rate as quoted now`. The customer screen
+  and the phone rate field show the rate to 4 decimals (`1 CAD = 0.7221 USD`).
+  The multiply still uses the full rate, and the posted amount does not
+  change. An amount with too many decimals reads `CAD uses 2 decimals. Try 12.35.`
+  A yen fraction reads `JPY uses 0 decimals. Try 1001.` Typing one more
+  place than the currency has is blocked. The currency picker reads
+  names from the shared catalog (`Swiss Franc`, `Australian Dollar`,
+  `Japanese Yen`). Every currency whose scale is three minor
   units (JOD, OMR, TND, IQD, LYD, KWD, BHD) stays out of the picker.
   That filter reads the scale table in `os-src/quote-terms.js`, the
   same list the ledger uses. The page carries a build id; a tab from

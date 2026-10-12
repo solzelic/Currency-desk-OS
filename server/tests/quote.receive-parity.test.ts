@@ -120,7 +120,7 @@ describe("receive amount parity", () => {
     expect(() => calculateQuoteTerms({
       direction: "customer_sell_foreign", from: "JPY", to: "CAD",
       inputAmount: "1000.50", feeCad: "0", marketMid: "0.00909918", margin: "0.015",
-    })).toThrow("Yen has no decimals.");
+    })).toThrow("JPY uses 0 decimals. Try 1001.");
     const whole = calculateQuoteTerms({
       direction: "customer_sell_foreign", from: "JPY", to: "CAD",
       inputAmount: "1000.00", feeCad: "0", marketMid: "0.00909918", margin: "0.015",

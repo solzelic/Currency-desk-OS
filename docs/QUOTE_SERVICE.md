@@ -22,10 +22,15 @@ customer rate is not rounded before that multiply, and the published mid is
 not rounded to four places before the margin. `os-src/quote-terms.js` is
 that function. The New transaction sheet previews with it, and once a quote
 is frozen the sheet shows the frozen input, output, and rate rather than a
-second product. The You give / You receive line is the cash the till moves:
-input plus the fee when the customer pays home currency, output less the
-fee when they receive it. Those three frozen figures stay authoritative.
-The rate stored on the quote is still 12 decimal places. A quote whose
+second product. The teller's You give / You receive line is the cash the
+till moves: input plus the fee when the customer pays home currency, output
+less the fee when they receive it. The customer screen shows that total
+on its own (`101.50 CAD`) and the fee under it (`100.00 CAD + 1.50 CAD service fee`).
+The footer stays `Rate as quoted now`. Those three frozen figures stay
+authoritative. The customer screen and the phone rate field print the
+rate to 4 decimals. The rate stored on the quote is still 12 decimal
+places, and that full rate is what the posted amount is multiplied by.
+A quote whose
 payout is zero, including a fee that consumes a home-currency payout, is
 refused with `422 ZERO_PAYOUT`.
 
