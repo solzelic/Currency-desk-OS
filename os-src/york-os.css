@@ -2384,7 +2384,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   /* The role sits on this line (Senior teller). Ellipsis was cutting
      it off once the name and the hand-off buttons took the row. */
-  .till-screen > .flex.justify-between .leading-tight > .till-operator {
+  .till-screen > .flex.justify-between .leading-tight > .till-operator,
+  .till-screen > .flex.justify-between .leading-tight > .till-drawer-note {
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
@@ -3061,4 +3062,49 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .win-body .till-close-table td:nth-child(5) { width: 32%; }
   .win-body .till-close-table th:nth-child(6),
   .win-body .till-close-table td:nth-child(6) { width: 20%; }
+  /* "Not counted" is wider than a dash. The figure cells wrap inside
+     the column. The headers stay one line. */
+  .win-body .till-close-table tbody td,
+  .win-body .till-close-table tfoot td {
+    white-space: normal !important;
+    overflow: visible;
+  }
+}
+
+/* The till folder bar faded the last 28px, so History read "Hist…".
+   The three labels share the row and the fade is off, so the word
+   is whole. The sign-off's four figures were one row; at 390
+   "Earned today" and its amount ran past the sheet. Two columns
+   keep each figure inside the paper. */
+@media (max-width: 430px) {
+  [data-tour="till"] .till-tabwrap::after {
+    content: none;
+  }
+  [data-tour="till"] .fld-bar {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    overflow-x: hidden;
+  }
+  [data-tour="till"] .fld-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    margin-right: 0;
+    padding: 8px 12px 8px 6px;
+    gap: 4px;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+  [data-tour="till"] .fld-tab:last-child {
+    clip-path: none;
+    padding-right: 8px;
+  }
+  .signoff-kpis {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .signoff-kpis > div {
+    min-width: 0;
+  }
 }

@@ -128,6 +128,125 @@ async function openCashDrawer(page: Page) {
   await settleCashDrawerChrome(page);
 }
 
+/* A cell that is only a dash, or that contains an em or en dash.
+   A negative amount uses a hyphen and is a figure, so it stays. */
+function dashFault(text: string): string | null {
+  if (/[—–]/.test(text)) return `dash in ${JSON.stringify(text)}`;
+  if (text.trim() && /^[\s\-−]+$/.test(text)) return `lone dash ${JSON.stringify(text)}`;
+  return null;
+}
+
+async function inside(locator: Locator, label: string): Promise<void> {
+  const faults = await locator.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    if (box.width < 1 || box.height < 1) return ["not on screen"];
+    const faults: string[] = [];
+    const view = window.innerWidth;
+    if (el.scrollWidth > el.clientWidth + 1) faults.push(`scroll ${el.scrollWidth} > ${el.clientWidth}`);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const text = range.getBoundingClientRect();
+    if (text.width > 0) {
+      if (text.right > view + 1) faults.push(`past the viewport ${Math.round(text.right)} > ${view}`);
+      if (text.left < -1) faults.push("past the left edge");
+      let node: HTMLElement | null = el;
+      while (node) {
+        const overflow = getComputedStyle(node).overflowX;
+        if (overflow === "hidden" || overflow === "clip") {
+          const parent = node.getBoundingClientRect();
+          if (text.right > parent.right + 1.5) faults.push(`clipped by ${node.className || node.tagName}`);
+        }
+        node = node.parentElement;
+      }
+    }
+    return faults;
+  });
+  expect(faults, label).toEqual([]);
+}
+
+test("the phone close and the sign-off stay whole at 360, 390 and 430", async ({ page }) => {
+  test.setTimeout(150_000);
+  const widths = [
+    { width: 360, height: 780 },
+    { width: 390, height: 844 },
+    { width: 430, height: 844 },
+  ] as const;
+  await page.setViewportSize(widths[0]);
+  await signInAtDesk(page);
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+
+  for (const size of widths) {
+    await page.setViewportSize(size);
+    await page.locator('#phonebar [data-phone-app="till"]').click();
+    await expect(page.locator(".till-screen")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(".till-drawer-note")).toBeVisible();
+    const note = page.locator(".till-drawer-note");
+    await expect(note).toHaveText(/^No open session/);
+    expect(await note.innerText()).not.toMatch(/sessi…|nobody on this till/);
+    await inside(note, `${size.width} drawer note`);
+    const strip = page.locator(".till-screen > .flex.justify-between").filter({ has: note });
+    expect(dashFault(await strip.innerText()), `${size.width} drawer bar`).toBeNull();
+
+    const history = page.locator('[data-tour="till"] .fld-tab', { hasText: "History" });
+    await expect(history).toBeVisible();
+    expect(await history.innerText()).toContain("History");
+    expect(await history.innerText()).not.toMatch(/Hist…|Hist\.\.\./);
+    await inside(history, `${size.width} History tab`);
+    const fade = await page.locator('[data-tour="till"] .fld-bar').evaluate((el) => {
+      const mask = getComputedStyle(el).maskImage;
+      const after = getComputedStyle(el.parentElement!, "::after").content;
+      return { mask, after };
+    });
+    expect(fade.mask, `${size.width} History fade`).toBe("none");
+    expect(fade.after, `${size.width} History edge`).toBe("none");
+
+    await clickWhenStable(page.getByRole("button", { name: "Count & close", exact: true }));
+    const table = page.locator(".till-close-table");
+    await expect(table).toBeVisible();
+    const figure = table.locator("tbody td:last-child, tfoot td");
+    const count = await figure.count();
+    for (let i = 0; i < count; i++) {
+      const cell = figure.nth(i);
+      const text = (await cell.innerText()).trim();
+      expect(dashFault(text), `${size.width} ${text}`).toBeNull();
+      if (text) await inside(cell, `${size.width} ${text}`);
+    }
+    for (const header of ["Counted now", "Variance"]) {
+      const th = table.locator("th", { hasText: header });
+      await inside(th, `${size.width} ${header}`);
+    }
+
+    await page.evaluate(() => window.CDOS.openApp("reports"));
+    const reports = page.locator(".win.show.active");
+    await reports.getByRole("button", { name: /End-of-Day Sign-Off/ }).click();
+    const doc = page.locator("#cdos-report-doc");
+    await expect(doc).toBeVisible({ timeout: 30_000 });
+    await expect(doc).toContainText("Till 1, Main counter");
+    expect(await doc.innerText()).not.toMatch(/Till 1\s*[—–-]\s*Main counter/);
+    const earned = doc.locator('.signoff-kpi[data-kpi="Earned today"]');
+    await expect(earned).toBeVisible();
+    await inside(earned, `${size.width} Earned today`);
+    const money = await earned.locator(".signoff-kpi-value").evaluate((el) => {
+      const doc = document.getElementById("cdos-report-doc");
+      if (!doc) return { ok: false, why: "no sheet" };
+      const probe = el.cloneNode(true) as HTMLElement;
+      probe.textContent = "$22.51";
+      probe.style.visibility = "hidden";
+      probe.style.position = "absolute";
+      el.parentElement?.appendChild(probe);
+      const width = probe.getBoundingClientRect().width;
+      const left = el.getBoundingClientRect().left;
+      probe.remove();
+      const edge = doc.getBoundingClientRect().right;
+      const view = window.innerWidth;
+      const end = left + width;
+      return { ok: end <= edge + 1 && end <= view + 1, end, edge, view, width };
+    });
+    expect(money.ok, `${size.width} Earned today $22.51 ${JSON.stringify(money)}`).toBe(true);
+  }
+});
+
 test("the desk opens a till session, and the ledger is the one that says so", async ({ page }) => {
   await signInAtDesk(page);
   const book = ledger(page);

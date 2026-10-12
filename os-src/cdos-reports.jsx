@@ -209,10 +209,10 @@
     </div>);
   }
   function KpiRow({ items }) {
-    return (<div style={{ display: 'grid', gridTemplateColumns: `repeat(${items.length}, 1fr)`, gap: 1, background: CD.line, border: `1px solid ${CD.line}`, marginBottom: 22 }}>
-      {items.map((k, i) => (<div key={i} style={{ background: 'var(--cd-panel)', padding: '13px 15px' }}>
+    return (<div className="signoff-kpis" style={{ display: 'grid', gridTemplateColumns: `repeat(${items.length}, 1fr)`, gap: 1, background: CD.line, border: `1px solid ${CD.line}`, marginBottom: 22 }}>
+      {items.map((k, i) => (<div key={i} className="signoff-kpi" data-kpi={k.label} style={{ background: 'var(--cd-panel)', padding: '13px 15px', minWidth: 0 }}>
         <div style={{ fontSize: 10.5, color: CD.mute, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k.label}</div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: k.accent || CD.ink, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{k.value}</div>
+        <div className="signoff-kpi-value" style={{ fontSize: 20, fontWeight: 700, color: k.accent || CD.ink, fontVariantNumeric: 'tabular-nums', marginTop: 3 }}>{k.value}</div>
         {k.sub && <div style={{ fontSize: 10, color: CD.faint, marginTop: 1 }}>{k.sub}</div>}
       </div>))}
     </div>);
@@ -566,6 +566,10 @@
         : `the ledger has no figures for this period — ${noBook}`;
       const branchName = (station && branches && (branches.find(b => b.id === station.branchId) || {}).name) || (settings && (settings.operatingName || settings.bizName)) || 'York Currency Exchange';
       const tillName = (station && station.tillId) ? (((branches || []).find(b => b.id === station.branchId) || {}).tills || []).find(t => t.id === station.tillId)?.name : null;
+      /* The stored name is "Till 1 — Main counter". The sheet says it
+         with a comma. A dash in that name is the cutoff the close review
+         rejected. */
+      const sheetTill = tillName ? String(tillName).replace(/\s*[—–]\s*/g, ', ') : null;
 
       if (id === 'endofday') {
         const d = dayBook.summary;
@@ -599,7 +603,7 @@
         const longDate = (() => { try { return new Date(sheetDate + 'T12:00:00Z').toLocaleDateString('en-CA', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return sheetDate; } })();
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return (<div>
-          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} />
+          <DocHead title="End-of-Day Sign-Off" subtitle={`${branchName}${sheetTill ? ' · ' + sheetTill : ''} · ${longDate} · ${dayLabel}`} rangeLabel={effRangeLabel} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, padding: '10px 14px', background: closed ? CD.greenSoft : 'var(--cd-chip)', border: `1px solid ${closed ? CD.green : CD.line}`, borderRadius: 9 }}>
             <span style={{ width: 26, height: 26, borderRadius: '50%', background: closed ? CD.green : CD.mute, display: 'grid', placeItems: 'center', flex: 'none' }}><span style={{ color: 'var(--cd-on-ink)', fontSize: 14 }}>{closed ? '✓' : '·'}</span></span>
             <div style={{ fontSize: 12.5, color: closed ? '#14543a' : CD.mute }}>

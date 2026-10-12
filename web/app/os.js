@@ -15180,7 +15180,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 10.5
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), /*#__PURE__*/React.createElement("div", {
+    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : ''), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0 leading-tight"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-operator text-[12.5px]",
@@ -15192,11 +15192,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.role ? `${current.operator}, ${current.role}` : current.operator : 'nobody')), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px]",
+      className: "till-drawer-note text-[10.5px]",
       style: {
         color: CD.faint
       }
-    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till. No open session.' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
+    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'No open session' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
@@ -15254,7 +15254,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 8
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
+    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : ''), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
       className: "till-count-sheet p-4 pb-0"
@@ -15864,7 +15864,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
+      }, r.variance == null ? 'Not counted' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
@@ -15881,19 +15881,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? 'Not counted' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? 'Not counted' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy)))))), /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? 'Not counted' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy)))))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3 mt-3"
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
@@ -16385,7 +16385,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
+      }, r.variance == null ? 'Not counted' : (r.variance > 0 ? '+' : '') + num(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`
@@ -16402,21 +16402,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? 'Not counted' : num(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? 'Not counted' : num(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? 'Not counted' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome, homeCcy))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[11.5px] px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
@@ -49981,6 +49981,7 @@ ${snap}`;
     items
   }) {
     return /*#__PURE__*/React.createElement("div", {
+      className: "signoff-kpis",
       style: {
         display: 'grid',
         gridTemplateColumns: `repeat(${items.length}, 1fr)`,
@@ -49991,9 +49992,12 @@ ${snap}`;
       }
     }, items.map((k, i) => /*#__PURE__*/React.createElement("div", {
       key: i,
+      className: "signoff-kpi",
+      "data-kpi": k.label,
       style: {
         background: 'var(--cd-panel)',
-        padding: '13px 15px'
+        padding: '13px 15px',
+        minWidth: 0
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -50003,6 +50007,7 @@ ${snap}`;
         letterSpacing: '0.06em'
       }
     }, k.label), /*#__PURE__*/React.createElement("div", {
+      className: "signoff-kpi-value",
       style: {
         fontSize: 20,
         fontWeight: 700,
@@ -50642,6 +50647,10 @@ ${snap}`;
       const sub = book ? `${book.posted} posted transaction${book.posted === 1 ? '' : 's'}${book.reversed ? ` · ${book.reversed} voided` : ''} · valued in ${homeCcy}` : `the ledger has no figures for this period — ${noBook}`;
       const branchName = station && branches && (branches.find(b => b.id === station.branchId) || {}).name || settings && (settings.operatingName || settings.bizName) || 'York Currency Exchange';
       const tillName = station && station.tillId ? (((branches || []).find(b => b.id === station.branchId) || {}).tills || []).find(t => t.id === station.tillId)?.name : null;
+      /* The stored name is "Till 1 — Main counter". The sheet says it
+         with a comma. A dash in that name is the cutoff the close review
+         rejected. */
+      const sheetTill = tillName ? String(tillName).replace(/\s*[—–]\s*/g, ', ') : null;
       if (id === 'endofday') {
         const d = dayBook.summary;
         /* Why the day's money reads "—", said once and reused. "Nothing was
@@ -50687,7 +50696,7 @@ ${snap}`;
         const closed = tillDay.session && tillDay.session.status === 'closed';
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "End-of-Day Sign-Off",
-          subtitle: `${branchName}${tillName ? ' · ' + tillName : ''} · ${longDate} · ${dayLabel}`,
+          subtitle: `${branchName}${sheetTill ? ' · ' + sheetTill : ''} · ${longDate} · ${dayLabel}`,
           rangeLabel: effRangeLabel
         }), /*#__PURE__*/React.createElement("div", {
           style: {

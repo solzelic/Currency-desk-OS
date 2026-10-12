@@ -617,6 +617,12 @@ the table is "Closing saves your count. Any difference is
 recorded under your name." At 430 and under that line clears
 the phone bar. Those widths drop Source and Last count so
 Counted now and Variance stay on the screen.
+An empty Total or Variance cell says "Not counted". The drawer
+bar has no lone dash. With no session its second line is
+"No open session", and it wraps instead of ending in
+"No open sessi…". The History tab shows the whole word. The
+sign-off sheet names the drawer "Till 1, Main counter". At 430
+and under, Earned today and its amount stay inside the sheet.
 Money shows its currency's decimal places: CAD is two, so a total
 is 23,640.70 and never 23,640.7. The drawer bar
 reads "On the drawer: A. Singh, Senior teller": initial and surname,
