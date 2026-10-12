@@ -856,6 +856,9 @@
   // exact booked margin for a posted row: prefer the stored figure, else the
   // legacy live-mid estimate (so historical rows still show a spread)
   function dealMargin(r) {
+    /* A server row with no stored spread had it withheld. Estimating one
+       from the live mid would put the earnings back on the screen. */
+    if (r && r.serverTransactionId && r.spreadCad == null) return null;
     if (r && r.spreadCad != null && !isNaN(r.spreadCad)) return Math.max(0, +r.spreadCad);
     const mid = (+r.inAmt || 0) * crossRate(r.inCcy, r.outCcy);
     const d = mid - (+r.outAmt || 0);

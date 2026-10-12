@@ -56,7 +56,16 @@ export type BackendPermission =
      the standing policy of the registered business, and the registered
      business is one person. A compliance officer or a manager who wants it
      moved asks the owner, which is a conversation worth having out loud. */
-  | "compliance:thresholds";
+  | "compliance:thresholds"
+  /* Shop earnings, P&L, cost of sale, the booked spread, unrealized
+     P&L, cost basis, market value, the market mid, and the per-teller
+     money split. Closing the day (`till:close`) is what opens these
+     reads today. This permission is the other door, for someone who
+     reads the book's take without closing the drawer. No role holds
+     it. Granting it is a separate decision. The customer-facing fee
+     is not one of these. A teller, an auditor, and a compliance
+     officer have neither, which is the same as on main. */
+  | "report:earnings";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {
   teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view", "till:count", "vault:view", "compliance:file"],
@@ -66,6 +75,11 @@ export const backendRolePermissions: Readonly<Record<string, readonly BackendPer
   administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "compliance:thresholds"],
   auditor: ["quote:view", "customer:view", "ledger:view", "vault:view"],
 };
+
+/** Close-day is `till:close`. The earnings report is `report:earnings`. */
+export function canReadDeskEarnings(role: string) {
+  return hasBackendPermission(role, "till:close") || hasBackendPermission(role, "report:earnings");
+}
 
 export function hasBackendPermission(role: string, permission: BackendPermission) {
   return backendRolePermissions[role]?.includes(permission) ?? false;

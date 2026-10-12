@@ -61,4 +61,5 @@ export async function authorizeLedgerActor(
   ) {
     throw new LedgerError("AUTHORIZATION_DENIED", `Missing ${permission}.`);
   }
+  return principal.role as string;
 }
