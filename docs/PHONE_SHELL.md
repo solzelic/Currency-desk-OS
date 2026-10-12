@@ -16,7 +16,10 @@ the same layout on every screen, in plain words.
 - Honest loading, empty, and error. A figure the ledger cannot answer is
   absent, never zero (`docs/ABSENT_FIGURES.md`).
 - Amounts always show the currency code (`1,765.05 CAD`), never a bare `$`.
-  Every amount goes through `formatPhoneMoney`.
+  Every amount goes through `formatPhoneMoney`. A clock goes through
+  `formatPhoneTime` (`3:02 pm`). A calendar day goes through
+  `formatPhoneDate` (`Jun 18, 2026`). Pass a `YYYY-MM-DD` string for a
+  calendar day. Do not pass that day through `new Date`.
 - The tab bar is five tabs: Rates, Ledger, Clients, Till, More. No centre
   plus. A screen that has a `StickyAction` does not also float a
   New transaction button.
@@ -42,7 +45,7 @@ Grouping is `Intl` `en-CA` with fraction digits set by hand. It is not
 
 Minor units match `EXCEPTIONS` in `server/src/ledger/currencies.ts`.
 The browser cannot import that file. The lists live in
-`os-src/cdos-phone.jsx` and the comment there says to change both together.
+`os-src/phone/format.js` and the comment there says to change both together.
 
 - 0 places: BIF CLP DJF GNF ISK JPY KMF KRW PYG RWF UGX UYI VND VUV XAF XOF XPF
 - 3 places: BHD IQD JOD KWD LYD OMR TND
@@ -51,6 +54,54 @@ The browser cannot import that file. The lists live in
 `null`, `undefined`, `''`, a non-finite number, or a code that is not three
 letters returns `''`. A real zero is `0.00 CAD` (or `0 JPY`). Absent stays
 absent.
+
+`os-src/cdos-base.jsx` still has an earlier helper of the same name. The
+script in `os-src/phone/format.js` loads later and is the one the phone
+uses. `Phone.formatMoney` is that function.
+
+## Time
+
+```js
+window.CDOS.formatPhoneTime(value, timeZone)
+window.CDOS.Phone.formatTime(value, timeZone)   // the same function
+```
+
+`formatPhoneTime('15:02')` is `3:02 pm`. `formatPhoneTime('00:00')` is
+`12:00 am`. `formatPhoneTime('12:00')` is `12:00 pm`. The suffix is
+lowercase. The phone does not follow the desktop 24-hour setting.
+
+`timeZone` is the branch zone (`settings.timezone`). Omit it and the
+formatter uses `America/Toronto`, the desk default.
+
+A wall clock (`15:02`, `2026-06-18 15:02`, `2026-06-18T15:02:00` with no
+`Z` and no numeric offset) is already a local time. The zone does not
+move it.
+
+A `Date`, or a string that ends in `Z` or a numeric offset, is an
+instant. `2026-06-18T19:02:00Z` is `3:02 pm` in `America/Toronto` and
+`7:02 pm` in `UTC`.
+
+A bad zone, a blank, or a value with no clock returns `''`.
+
+## Date
+
+```js
+window.CDOS.formatPhoneDate(value, timeZone)
+window.CDOS.Phone.formatDate(value, timeZone)   // the same function
+```
+
+`formatPhoneDate('2026-06-18')` is `Jun 18, 2026`. The same string is
+`Jun 18, 2026` in `America/Toronto`, `UTC`, `Pacific/Honolulu`, and
+`Pacific/Kiritimati`. The formatter reads the year, month, and day off
+the string. It does not pass that string to `Date`, so UTC midnight
+cannot move the day.
+
+An instant uses the calendar day in the branch zone.
+`2026-06-18T03:30:00Z` is `Jun 17, 2026` in `America/Toronto`.
+A `Date` built from `2026-06-18` alone is that UTC midnight instant,
+and it does move. Callers pass the `YYYY-MM-DD` string.
+
+A blank or a value with no calendar day returns `''`.
 
 ## Where the chrome lives
 
@@ -343,7 +394,9 @@ pixels alone.
    screen without it.
 2. Pass real ledger and server data. Do not invent ids. Do not invent figures.
 3. Format every amount with `formatPhoneMoney` before it reaches a card,
-   a row, or a button.
+   a row, or a button. Format a clock with `formatPhoneTime` and a
+   calendar day with `formatPhoneDate`. Pass `YYYY-MM-DD` for a calendar
+   day. All three live in `os-src/phone/format.js`.
 4. One `StickyAction` for the screen's main button. Pass `disabledReason`
    whenever it is disabled. Do not add a floating New transaction button
    on that screen.

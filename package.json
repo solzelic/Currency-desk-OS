@@ -10,6 +10,7 @@
     "unbundle": "node scripts/unbundle-design.mjs",
     "check:parse": "node scripts/check-browser-parses.mjs && node scripts/check-public-claims.mjs",
     "check:sanctions": "node --test tests/sanctions-phrases.test.mjs && node scripts/check-sanctions-bundle.mjs",
+    "test:phone-format": "node --test tests/phone-format.test.mjs",
     "test:e2e": "playwright test",
     "build": "npm run build:onboarding && npm run build:site && npm run build:os",
     "check": "npm run build && npm run check:parse && npm run test:e2e"

@@ -93,8 +93,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   the server says Twilio is set up. Branches and the AI Assistant are
   front-end mocks, so they stay off the phone list. Your session holds Lock the desk, Hand over the desk, and
   Sign out, and Sign out asks before it runs. Search matches the job
-  as well as the name. Amounts on a phone go through one formatter
-  and show the currency code (`docs/PHONE_SHELL.md`). Each phone window
+  as well as the name. Amounts, clocks, and calendar days on a phone
+  go through `os-src/phone/format.js`: `1,765.05 CAD`, `3:02 pm`,
+  `Jun 18, 2026`. A `YYYY-MM-DD` string stays on that calendar day
+  (`docs/PHONE_SHELL.md`). Each phone window
   sets `data-app`. On a phone a legacy primary button uses that app's
   accent. A selected filter chip, legacy or new, is gray-900 with white
   text. The phone screen paints the flat surface token. The big title
@@ -568,6 +570,13 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-11**, phone formatters. `formatPhoneTime`, `formatPhoneDate`,
+and `formatPhoneMoney` live in `os-src/phone/format.js`. A clock is
+12-hour with a lowercase suffix (`3:02 pm`). A calendar day is
+`Jun 18, 2026` and is read from the `YYYY-MM-DD` string, so it does
+not move through UTC. An instant is shown in the branch time zone.
+The default zone is `America/Toronto`.
 
 **2026-10-11**, phone title. The title starts 16px under the top bar
 (`padding-top: var(--space-4)`). It keeps 12px before the next

@@ -1,40 +1,15 @@
 /* Phone shell. Shared layout for every phone screen.
-   Props and names are the contract in docs/PHONE_SHELL.md. */
+   Props and names are the contract in docs/PHONE_SHELL.md.
+   Time, date, and money come from os-src/phone/format.js. */
 (function () {
   const { useState } = React;
   const Ic = window.CDOS && window.CDOS.Ic;
   if (!Ic) throw new Error('Phone shell: icons did not load.');
-
-  /* Minor units. Mirrors EXCEPTIONS in server/src/ledger/currencies.ts.
-     The browser cannot import that module. Change both together. */
-  const ZERO_MINOR = {
-    BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
-    PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
-  };
-  const THREE_MINOR = { BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3 };
-
-  function minorUnits(code) {
-    const c = String(code || '').trim().toUpperCase();
-    if (Object.prototype.hasOwnProperty.call(ZERO_MINOR, c)) return 0;
-    if (Object.prototype.hasOwnProperty.call(THREE_MINOR, c)) return 3;
-    return 2;
-  }
-
-  /* Code after the number. Never Intl currency style — that prints "$".
-     Absent (null, blank, not a number, bad code) is an empty string. */
-  function formatPhoneMoney(amount, code) {
-    if (amount == null || amount === '') return '';
-    const raw = typeof amount === 'number' ? amount : Number(String(amount).replace(/,/g, '').trim());
-    if (!Number.isFinite(raw)) return '';
-    const ccy = String(code || '').trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(ccy)) return '';
-    const digits = minorUnits(ccy);
-    const body = new Intl.NumberFormat('en-CA', {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-      useGrouping: true,
-    }).format(Math.abs(raw));
-    return (raw < 0 ? '\u2212' : '') + body + ' ' + ccy;
+  const formatPhoneMoney = window.CDOS && window.CDOS.formatPhoneMoney;
+  const formatPhoneTime = window.CDOS && window.CDOS.formatPhoneTime;
+  const formatPhoneDate = window.CDOS && window.CDOS.formatPhoneDate;
+  if (typeof formatPhoneMoney !== 'function' || typeof formatPhoneTime !== 'function' || typeof formatPhoneDate !== 'function') {
+    throw new Error('Phone shell: formatters did not load.');
   }
 
   function svg(path) {
@@ -413,6 +388,8 @@
     More: PhoneMore,
     TabIcon,
     formatMoney: formatPhoneMoney,
+    formatTime: formatPhoneTime,
+    formatDate: formatPhoneDate,
   };
-  window.CDOS = Object.assign(window.CDOS || {}, { formatPhoneMoney, Phone });
+  window.CDOS = Object.assign(window.CDOS || {}, { formatPhoneMoney, formatPhoneTime, formatPhoneDate, Phone });
 })();

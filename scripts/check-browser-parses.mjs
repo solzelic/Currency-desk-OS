@@ -21,7 +21,7 @@
 
    WHAT IT COVERS
 
-     os-src/*.jsx, *.js   the OS itself
+     os-src, every .js and .jsx, including os-src/phone/
      admin.html           the platform panel, JSX inside a script tag
      web/*.html           the built public pages, including the two
                           compiled from designs
@@ -74,12 +74,14 @@ function parse(code, label, jsx, lineOffset = 0) {
 
 // ---- the OS -----------------------------------------------------------
 const osDir = path.join(ROOT, "os-src");
-if (existsSync(osDir)) {
-  for (const f of readdirSync(osDir).filter((f) => /\.jsx?$/.test(f)).sort()) {
-    const p = path.join(osDir, f);
-    parse(readFileSync(p, "utf8"), rel(p), f.endsWith(".jsx"));
+function walkOs(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkOs(p);
+    else if (/\.jsx?$/.test(entry.name)) parse(readFileSync(p, "utf8"), rel(p), entry.name.endsWith(".jsx"));
   }
 }
+if (existsSync(osDir)) walkOs(osDir);
 
 // ---- standalone browser scripts ---------------------------------------
 for (const f of ["yorkfx-converter.js"]) {

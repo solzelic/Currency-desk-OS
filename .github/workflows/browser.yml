@@ -40,6 +40,9 @@ jobs:
       - name: Every browser script parses
         run: npm run check:parse
 
+      - name: Phone time, date, and money formatters
+        run: npm run test:phone-format
+
       # The served pages are generated from the designs and committed. If a
       # re-export landed without a rebuild, what we ship is not the design
       # that was approved — so say so here rather than letting it reach a
