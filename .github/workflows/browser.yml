@@ -144,7 +144,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tz: [America/Toronto, Asia/Jerusalem]
+        include:
+          - tz: America/Toronto
+            slug: America-Toronto
+          - tz: Asia/Jerusalem
+            slug: Asia-Jerusalem
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -204,7 +208,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report-${{ replace(matrix.tz, '/', '-') }}
+          name: playwright-report-${{ matrix.slug }}
           path: |
             playwright-report/
             test-results/
