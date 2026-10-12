@@ -3085,3 +3085,229 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--tab-inactive, #6B6760) !important;
   }
 }
+
+/* ============================================================
+   PHONE TRANSFERS
+   Drawn only at 430px. The classes are not used on the desktop
+   tree. The query is the second lock, so a wide window that
+   somehow carried one of these nodes would not restyle.
+   ============================================================ */
+@media (max-width: 430px) {
+  #desktop .win:has(.ph-xfer) > .win-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #F7F6F3;
+    padding-bottom: 0;
+  }
+  /* Chips were pulled to the window edge. The search field sits in the
+     banner gutter. The same left inset, 20px, keeps "All" on the screen. */
+  .ph-xfer .phone-banner { padding-left: 20px; padding-right: 20px; }
+  .ph-xfer .phone-chips {
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 20px;
+  }
+  /* Foundation ListRow. Line 1 is the name and the amount. Line 2 is
+     the country and method, and the status badge. The shell's flex
+     rule is the same specificity and loads later, so this one names
+     the shell. The name keeps the free space. min-width: 0 lets a
+     long amount sit beside it without crushing the name to "R...". */
+  .ph-xfer .phone-shell .ph-xfer-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 2px;
+    min-height: 72px;
+    height: auto;
+    padding: 8px 12px;
+  }
+  .ph-xfer .phone-shell .ph-xfer-row .phone-row-main,
+  .ph-xfer .phone-shell .ph-xfer-row .phone-row-end { display: contents; }
+  .ph-xfer .phone-shell .ph-xfer-row .phone-row-title {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .ph-xfer .phone-shell .ph-xfer-row .phone-row-amt {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    white-space: nowrap;
+  }
+  .ph-xfer .phone-shell .ph-xfer-row .phone-row-sub {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+  }
+  .ph-xfer .phone-shell .ph-xfer-row .phone-badge {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .ph-xfer .phone-shell .ph-xfer-row .phone-row-meta { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    #desktop .win { transition: none; }
+  }
+  .ph-xfer {
+    --brand-primary: #1F7269;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #F7F6F3;
+    color: #161513;
+    font-family: var(--font-ui), "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+    box-sizing: border-box;
+    padding-bottom: var(--phone-dock-h, 64px);
+  }
+  .ph-info { margin: 4px 0 12px; font-size: 12px; line-height: 16px; color: #6B6760; }
+  .ph-btn {
+    width: 100%; min-height: 48px; border: 0; border-radius: 12px;
+    background: var(--brand-primary, #1F7269); color: #fff;
+    font: inherit; font-size: 16px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .ph-btn:disabled { opacity: 0.45; }
+  .ph-btn.danger { background: var(--color-negative, #B42318); color: #fff; }
+  .ph-btn.quiet { background: #fff; color: #161513; border: 1px solid #C9C5BC; }
+  .ph-state, .ph-fault { margin: 12px 0; padding: 12px; border-radius: 12px; background: #fff; font-size: 14px; line-height: 20px; }
+  .ph-fault { background: #FDECEA; color: #B42318; }
+  .ph-warn { margin: 12px 0; padding: 10px 12px; border-radius: 10px; background: #FFF4DC; color: #8A5300; font-size: 13px; line-height: 18px; }
+  .ph-ok { margin: 12px 0; font-size: 13px; color: #157A3E; }
+  .ph-text { min-height: 44px; margin-right: 8px; border: 0; background: transparent; color: #1F7269; font: inherit; font-weight: 600; }
+  /* Portalled to document.body. z-index sits above the phone bar
+     (520) and the phone header (540), and under the desk lock (1000). */
+  .ph-sheet {
+    position: fixed; inset: 0; z-index: 640; background: #F7F6F3;
+    display: flex; flex-direction: column;
+    font-family: var(--font-ui), "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: normal;
+    word-spacing: normal;
+  }
+  .ph-sheet button, .ph-sheet input, .ph-sheet select, .ph-sheet textarea {
+    font-family: inherit;
+    letter-spacing: normal;
+    word-spacing: normal;
+  }
+  /* The shared amount field focuses in the desk blue. On this sheet
+     the focus is the app accent. The widget file stays shared. */
+  .ph-sheet .phq-amt:focus-within { border-color: var(--brand-primary, #1F7269); }
+  .ph-sheet-h {
+    flex: none; min-height: 56px; display: grid; grid-template-columns: 64px minmax(0, 1fr) 64px;
+    align-items: center; padding: 6px 8px; background: #fff; border-bottom: 1px solid #E2DFD8;
+  }
+  .ph-sheet-title { min-width: 0; text-align: center; }
+  .ph-sheet-h h2 {
+    margin: 0; text-align: center; font-size: 17px; font-weight: 600; line-height: 22px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ph-sheet-title p { margin: 0; font-size: 12px; line-height: 16px; font-weight: 400; color: #6B6760; }
+  .ph-sheet-h .lnk, .ph-who .lnk {
+    min-width: 44px; min-height: 44px; height: 44px; border: 0; background: transparent; color: #1F7269;
+    font: inherit; font-size: 15px; font-weight: 600;
+  }
+  .ph-sheet-h .ph-back {
+    width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0;
+    display: grid; place-items: center; justify-self: start;
+    border: 0; background: transparent; color: var(--color-text, #161513);
+  }
+  .ph-sheet-h .ph-back svg { width: 24px; height: 24px; display: block; }
+  .ph-sheet-b { flex: 1; overflow: auto; padding: 16px; }
+  /* The shared amount field leaves the empty placeholder at the browser
+     grey. On a 30px number that grey is under 3:1. This sheet darkens
+     it. The widget file stays the shared one. */
+  .ph-sheet .phq-amt-n::placeholder { color: var(--color-text-muted, #6B6760); opacity: 1; }
+  .ph-sheet-f { flex: none; padding: 12px 16px 16px; background: #fff; border-top: 1px solid #E2DFD8; }
+  .ph-who {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid #E2DFD8; border-radius: 12px; padding: 8px 12px; margin-bottom: 12px; font-size: 14px;
+  }
+  .ph-who b { display: block; font-size: 15px; }
+  .ph-who .muted { color: #6B6760; }
+  .ph-field { display: block; margin: 12px 0; font-size: 13px; font-weight: 600; }
+  .ph-field input, .ph-field select {
+    display: block; width: 100%; height: 48px; margin-top: 6px; padding: 0 12px;
+    border: 1px solid #C9C5BC; border-radius: 12px; background: #fff; font: inherit; font-size: 16px; font-weight: 400;
+  }
+  .ph-label { margin: 16px 0 8px; font-size: 13px; font-weight: 600; }
+  .ph-hist { margin: 0 0 8px; font: var(--text-caption); color: var(--color-text-muted, #6B6760); }
+  /* Hand to customer is the cash result. Shared summary values are
+     already 600, so this row is 700. It stays the text colour. */
+  .ph-sheet .phone-summary div:has(dd[data-phone-cheque="transfer-hand"]) dt,
+  .ph-sheet .phone-summary dd[data-phone-cheque="transfer-hand"] {
+    font-weight: 700;
+  }
+  .ph-hint { margin: 4px 0; color: #6B6760; font-size: 13px; font-weight: 400; }
+  .ph-picks { display: flex; flex-direction: column; gap: 8px; }
+  .ph-pick {
+    min-height: 48px; text-align: left; padding: 8px 12px; border-radius: 12px;
+    border: 1px solid #C9C5BC; background: #fff; font: inherit; color: inherit;
+  }
+  .ph-pick b { display: block; font-size: 15px; }
+  .ph-pick small { color: #6B6760; font-size: 12px; }
+  .ph-pick.on { border: 2px solid #1F7269; background: color-mix(in srgb, #1F7269 11%, #fff); }
+  .ph-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ph-pills button {
+    min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid #C9C5BC;
+    background: #fff; font: inherit; font-size: 14px; font-weight: 500;
+  }
+  .ph-pills button.on { border: 2px solid #1F7269; background: color-mix(in srgb, #1F7269 11%, #fff); color: #14574f; font-weight: 600; }
+  .ph-toast {
+    position: absolute; left: 16px; right: 16px; top: 64px; z-index: 5;
+    display: flex; align-items: center; gap: 8px; background: #161513; color: #fff;
+    border-radius: 12px; padding: 12px 16px; font-size: 14px;
+  }
+  .ph-toast .ok {
+    width: 24px; height: 24px; border-radius: 50%; background: #157A3E; color: #fff;
+    display: grid; place-items: center; flex: none;
+  }
+  .ph-ref {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin: 0 0 4px; font-size: 16px; line-height: 22px; color: var(--color-text, #161513);
+  }
+  .ph-ref button {
+    min-width: 44px; min-height: 44px; padding: 0 12px; border-radius: 12px;
+    border: 1px solid #C9C5BC; background: #fff; color: var(--color-text, #161513);
+    font: inherit; font-size: 16px; font-weight: 600;
+  }
+  .ph-cancel-note {
+    margin: 8px 0 0; font-size: 13px; line-height: 18px;
+    color: var(--color-text-muted, #6B6760);
+  }
+  .ph-time { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 20px; color: #3D3A35; }
+  .ph-time li { padding: 6px 0; border-bottom: 1px solid #E2DFD8; white-space: nowrap; }
+  .ph-secondary { display: flex; gap: 8px; margin-top: 8px; }
+  .ph-secondary button {
+    flex: 1; min-height: 44px; border-radius: 12px; border: 1px solid #C9C5BC; background: #fff;
+    color: var(--color-text, #161513);
+    font: inherit; font-weight: 600;
+  }
+  .ph-secondary button.is-cancel {
+    color: var(--color-text-muted, #6B6760);
+    border-color: #C9C5BC;
+    background: #fff;
+  }
+  .ph-secondary button:disabled { opacity: 0.7; }
+  .ph-sum-who {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+    margin: 0 0 12px; font-size: 16px; line-height: 22px;
+  }
+  .ph-sum-who b { font-weight: 600; }
+  .ph-confirm {
+    position: fixed; inset: 0; z-index: 720;
+    display: flex; align-items: flex-end; justify-content: center;
+    background: rgba(22, 21, 19, 0.45);
+    font-family: var(--font-ui), "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: normal; word-spacing: normal;
+  }
+  .ph-confirm-card {
+    width: 100%; background: #fff; border-radius: 16px 16px 0 0; padding: 20px 16px 24px;
+  }
+  .ph-confirm h2 { margin: 0 0 8px; font-size: 20px; line-height: 28px; font-weight: 600; }
+  .ph-confirm p { margin: 0 0 16px; font-size: 16px; line-height: 24px; }
+  .ph-confirm .ph-btn { margin-top: 8px; }
+}

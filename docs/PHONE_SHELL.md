@@ -576,11 +576,39 @@ A screen uses them. It does not ship a second copy. Amounts are still
 `os-src/phone-shell.css`, inside `max-width: 430px`. Selected colour is
 `--brand-primary`, whose default is `--brand-green`.
 
-Transfers (#113, `feat/phone-transfers`) still defines the same four
-names with different props (`title` not `label`, `amount` not `value`,
-a fee control on the amount, and `tone` as a CSS colour) and assigns
-over `window.CDOS`. That screen adopts this API. A second definition
-cannot merge.
+Transfers uses these four. It does not define them again. ChoiceTiles
+options use `label`. StepHeader takes `label`. SummaryList can take
+`tone: "pos"` and `mark` (`data-phone-cheque`). A receive amount stays
+the text colour, at the large size on the new-transfer steps. Green is
+only a real positive. AmountField takes
+`value`, `onChange`, and the optional `feeLabel`, `onFee`, and
+`autoFocus`. The new-transfer sheet is `os-src/phone/transfers-new.jsx`.
+The list and the detail sheet are `os-src/phone/transfers.jsx`. A row
+is the sender's name and the amount, then the country and the method,
+and the status badge. The TR number is not on the row. Mark paid out
+is the filled button on the detail. Hold is a neutral outline. Cancel
+does not run. A teller sees "Only the owner can cancel a transfer
+that took cash. Ask the owner to cancel." The owner sees Cancel
+disabled, labelled "Cancel is being fixed", until the reversal
+contract is wired. A send detail shows Amount sent, Fee, and Total paid together, then
+Rate, Method, and Partner. The rate multiplies Amount sent back to
+the foreign payout, to the cent, using at most 12 places. A receive
+detail shows Amount received, Rate, Gross (the payout plus the fee
+the partner owes), the fee kept from the proceeds, and Hand to
+customer. Hand to customer is bold and is the last money row. Method
+and Partner follow it. The rate multiplies the amount to Gross. That
+last money row is the cash the ledger takes out of the drawer. A receive's
+button uses the receive status words: Mark funded, Mark ready for
+pickup, Mark paid to customer. The reference is "Desk reference", in normal text, with
+"Our own reference. Not a partner pickup code." The phone does not
+call it a PIN. A history line is the
+status, the person, and the time, as in
+`Sent · M. Costa · Jun 18, 2026, 10:14 AM`. Under History, one muted
+line reads "Updated by staff, not by the partner." The back chevron is 24px
+inside a 44px control, in `--color-text`. Both sheets are portalled to `document.body`
+so they cover the tab bar. That sheet is local to Transfers. It is
+not FullScreenSheet. On the sheet, the amount focus border is
+`--brand-primary` and the type is `--font-ui`.
 
 Phone text uses `--font-ui` from `os-src/tokens.css`. The desk loads
 that face (Inter) with Archivo and Space Mono. The phone query does not

@@ -47,9 +47,16 @@ async function press(locator: Locator) {
   }
 }
 
+function activeWindow(page: Page) {
+  /* Inactive phone windows are display:none. The first button in the
+     document can be one of those, and a press on it never becomes
+     visible. The drawer on screen is the active window. */
+  return page.locator(".win.show.active");
+}
+
 async function clickDrawerTab(page: Page, name: RegExp) {
   await settleCashDrawerChrome(page);
-  const tab = page.locator(".win.show.active").getByRole("button", { name }).first();
+  const tab = activeWindow(page).getByRole("button", { name }).first();
   try {
     await clickWhenStable(tab);
   } catch {
@@ -61,8 +68,9 @@ async function clickDrawerTab(page: Page, name: RegExp) {
 }
 
 async function saveDrawerCount(page: Page) {
-  await press(page.locator(".win.show.active").getByRole("button", { name: /Save count/i }).first());
-  await expect(page.locator(".win.show.active").getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
+  const drawer = activeWindow(page);
+  await press(drawer.getByRole("button", { name: /Save count/i }).first());
+  await expect(drawer.getByRole("button", { name: /^Saved$/i }).first()).toBeVisible({
     timeout: 15_000,
   });
   await settleCashDrawerChrome(page);
@@ -157,7 +165,7 @@ async function postFortyCad(page: Page, key: string) {
 
 async function closeTheDay(page: Page) {
   await clickDrawerTab(page, /Reconcile & close/i);
-  const drawer = page.locator(".win.show.active");
+  const drawer = activeWindow(page);
   await press(drawer.getByRole("button", { name: /Close day & lock book/i }).first());
   await press(drawer.getByRole("button", { name: /Close day & lock book/i }).last());
 }

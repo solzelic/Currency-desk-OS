@@ -38910,6 +38910,283 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, "Ledger ", t.txRef))))));
   }
+
+  /* What step 2 of a transfer is allowed to show, and what Create is
+     allowed to post. This is the desktop modal's ruling, as a function,
+     so the phone cannot grow a second one. `homeAmount` on the ruling
+     is the cash that changes hands: the amount typed plus the fee. */
+  function quoteTransfer({
+    direction,
+    payAmt,
+    fee,
+    recvCcy,
+    settings,
+    senderName,
+    clients
+  }) {
+    const amtN = parseFloat(payAmt) || 0;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const limit = reportingLimit(settings);
+    const thresholds = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = packNow && packNow.homeCurrency || thresholds && thresholds.currency || limit.currency || 'CAD';
+    const baseline = !!(packNow && (packNow.baseline === true || packNow.kind === 'baseline') || settings && settings.baselineRules && !(packNow && packNow.packId));
+    const pricing = direction === 'send' ? priceDeal({
+      inCcy: home,
+      outCcy: recvCcy,
+      inAmt: amtN,
+      settings
+    }) : priceDeal({
+      inCcy: recvCcy,
+      outCcy: home,
+      inAmt: amtN,
+      settings
+    });
+    const recvAmt = pricing.outAmt;
+    const client = clients && clients[senderName];
+    const kyc = !client || !client.idType || !client.idNum ? 'missing ID' : client.idExpiry && client.idExpiry < TODAY ? 'ID expired' : 'ok';
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
+    const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() || [] : [];
+    const remittanceRow = idRows.find(function (r) {
+      return r && r.dealKind === 'remittance';
+    });
+    const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
+    const ruling = transferRuling({
+      direction: direction,
+      principal: payAmt,
+      fee: fee,
+      payout: direction === 'receive' && recvAmt ? recvAmt.toFixed(2) : '',
+      baseline: baseline,
+      remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
+      deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
+      idLine: ph && remittanceRow && remittanceRow.threshold != null ? remittanceRow.threshold : idAnswered ? thresholds.idThreshold.effective : regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null,
+      reportLine: limit.amount,
+      euLines: packNow && packNow.packId === 'pack-eu-v2' ? packNow.idThresholds || [] : null,
+      ukTransfer: packNow && packNow.packId === 'pack-gb-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
+      aeTransfer: packNow && packNow.packId === 'pack-ae-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
+      reportComparator: regimeNow && regimeNow.comparator === 'gt' ? 'gt' : 'gte',
+      idComparator: ph && remittanceRow && remittanceRow.comparator === 'gt' ? 'gt' : 'gte'
+    });
+    const requirePurpose = !(settings && settings.transferRequirePurpose === false);
+    return {
+      amtN: amtN,
+      packNow: packNow,
+      limit: limit,
+      thresholds: thresholds,
+      home: home,
+      pricing: pricing,
+      recvAmt: recvAmt,
+      kyc: kyc,
+      ruling: ruling,
+      requirePurpose: requirePurpose
+    };
+  }
+
+  /* Plain reason the cashier cannot press Create yet. Empty means ready. */
+  function transferBlock(quote, fields) {
+    if (!(quote.amtN > 0)) return 'Enter the amount.';
+    if (!fields.partner) return 'Choose how they get it.';
+    if (fields.direction === 'send' && !fields.ben) return 'Choose who receives the money.';
+    if (!String(fields.senderName || '').trim()) return 'Choose the customer.';
+    if (quote.ruling.idRequired && quote.kyc !== 'ok') return "ID required — the customer's ID is " + quote.kyc + '.';
+    if (quote.requirePurpose && !fields.purpose) return 'Choose why it is being sent.';
+    if (quote.ruling.reportable === true && !String(fields.sourceOfFunds || '').trim()) return 'Enter where the money comes from.';
+    return '';
+  }
+
+  /* Post one transfer. The ledger goes first. A second call while the
+     first is in flight returns ignored and does not post again — the
+     lock is synchronous, because the button's disabled state is not.
+     The idempotency key stays for the whole ticket, including a retry
+     after a refusal. A refusal writes nothing here. */
+  async function submitTransfer(fields) {
+    if (!fields.lock || fields.lock.current) return {
+      ok: false,
+      ignored: true
+    };
+    fields.lock.current = true;
+    const quote = quoteTransfer(fields);
+    const blocked = transferBlock(quote, fields);
+    if (blocked) {
+      fields.lock.current = false;
+      return {
+        ok: false,
+        error: new Error(blocked)
+      };
+    }
+    const direction = fields.direction;
+    const senderName = fields.senderName;
+    const ben = fields.ben;
+    const corridors = fields.corridors || [];
+    const cor = corridors.find(function (c) {
+      return c.id === fields.corridorId;
+    }) || {};
+    const recvCcy = fields.recvCcy || cor.ccy;
+    const transfers = fields.transfers || [];
+    const rows = fields.rows || [];
+    const me = fields.me || {
+      name: ''
+    };
+    const clients = fields.clients || {};
+    const feeN = parseFloat(fields.fee) || 0;
+    const amtN = quote.amtN;
+    const home = quote.home;
+    const pricing = quote.pricing;
+    const recvAmt = quote.recvAmt;
+    const B = fields.serverBacked && window.CDOS.Backend ? window.CDOS.Backend : null;
+    const seqT = transfers.filter(function (t) {
+      return t.date === TODAY;
+    }).length + 1;
+    const ref = 'TR-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqT).padStart(3, '0');
+    const pin = Math.floor(10 + Math.random() * 89) + ' ' + Math.floor(100 + Math.random() * 899) + ' ' + Math.floor(100 + Math.random() * 899);
+    const seqL = rows.filter(function (r) {
+      return r.date === TODAY && r.status !== 'void';
+    }).length + 1;
+    const lref = mkRef(TODAY, seqL);
+    const lin = direction === 'send' ? home : recvCcy;
+    const lout = direction === 'send' ? recvCcy : home;
+    let posted = null;
+    if (B) {
+      const packId = quote.packNow && quote.packNow.packId;
+      const remLine = quote.thresholds && quote.thresholds.remittanceIdThreshold && quote.thresholds.remittanceIdThreshold.effective != null ? Number(quote.thresholds.remittanceIdThreshold.effective) : null;
+      const cashHome = direction === 'send' ? amtN + feeN : Number(recvAmt) || 0;
+      if (packId === 'pack-ca-v2' && remLine != null && cashHome >= remLine) {
+        const name = direction === 'send' ? ben && ben.name : fields.receiveBeneficiaryName;
+        const address = direction === 'send' ? ben && ben.address : fields.receiveBeneficiaryAddress;
+        if (!String(name || '').trim() || !String(address || '').trim()) {
+          fields.lock.current = false;
+          return {
+            ok: false,
+            error: new Error('This transfer needs the beneficiary name and address on the record.')
+          };
+        }
+      }
+      try {
+        const synced = await B.syncCustomer(senderName, clients[senderName]);
+        fields.setClients && fields.setClients(function (list) {
+          return Object.assign({}, list, {
+            [senderName]: Object.assign({}, list[senderName] || {}, {
+              ledgerCustomerId: synced.customerId,
+              ledgerExternalRef: synced.externalRef
+            })
+          });
+        });
+        const capture = {
+          purpose: (fields.purpose || '').trim(),
+          sourceOfFunds: (fields.sourceOfFunds || '').trim()
+        };
+        const key = 'web:transfer:' + fields.attemptKey();
+        posted = direction === 'send' ? await B.postRemittanceSend({
+          idempotencyKey: key,
+          customerId: synced.customerId,
+          reference: ref,
+          principalAmount: B.asMoney(amtN),
+          feeAmount: B.asMoney(feeN),
+          payoutCurrency: recvCcy,
+          payoutAmount: B.asMoney(recvAmt),
+          corridor: fields.corridorId,
+          partner: fields.partner,
+          beneficiaryName: ben ? ben.name : senderName,
+          beneficiaryAddress: ben && ben.address ? ben.address : '',
+          purpose: capture.purpose,
+          sourceOfFunds: capture.sourceOfFunds
+        }) : await B.postRemittanceReceive({
+          idempotencyKey: key,
+          customerId: synced.customerId,
+          reference: ref,
+          sentCurrency: recvCcy,
+          sentAmount: B.asMoney(amtN),
+          payoutAmount: B.asMoney(recvAmt),
+          feeAmount: B.asMoney(feeN),
+          corridor: fields.corridorId,
+          partner: fields.partner,
+          beneficiaryName: fields.receiveBeneficiaryName || '',
+          beneficiaryAddress: fields.receiveBeneficiaryAddress || '',
+          purpose: capture.purpose,
+          sourceOfFunds: capture.sourceOfFunds
+        });
+      } catch (error) {
+        fields.lock.current = false;
+        return {
+          ok: false,
+          error: error instanceof Error ? error : new Error(String(error))
+        };
+      }
+    }
+    const oref = posted ? posted.obligationRef : ref;
+    const tx = newTx({
+      ref: posted ? posted.transactionRef : lref,
+      type: direction === 'send' ? 'Remittance — Send' : 'Remittance — Receive',
+      customer: senderName,
+      inCcy: lin,
+      inAmt: amtN,
+      rate: pricing.rate,
+      outCcy: lout,
+      outAmt: recvAmt,
+      fee: feeN,
+      midRate: pricing.midRate,
+      spreadCad: posted ? null : pricing.marginCad,
+      side: pricing.side,
+      teller: me.name,
+      notes: oref + ' · ' + (direction === 'send' ? 'to ' + (ben ? ben.name : '') : 'from ' + senderName) + ' (' + (cor.country || '') + ') · ' + fields.partner,
+      transferRef: oref,
+      createdBy: me.name,
+      createdAt: stamp(),
+      serverTransactionId: posted ? posted.transactionId : null,
+      serverObligationId: posted ? posted.obligationId : null
+    });
+    fields.setRows && fields.setRows(function (r) {
+      return [tx].concat(r);
+    });
+    const transfer = {
+      id: 't' + Date.now(),
+      ref: oref,
+      pin: pin,
+      direction: direction,
+      senderName: senderName,
+      beneficiaryId: fields.benId || null,
+      corridor: fields.corridorId,
+      ccy: recvCcy,
+      method: fields.method,
+      partner: fields.partner,
+      payAmt: amtN,
+      recvAmt: recvAmt,
+      rate: pricing.rate,
+      midRate: pricing.midRate,
+      spreadCad: posted ? null : pricing.marginCad,
+      fee: feeN,
+      purpose: fields.purpose,
+      sourceOfFunds: fields.sourceOfFunds,
+      date: TODAY,
+      status: 'created',
+      txId: tx.id,
+      txRef: posted ? posted.transactionRef : lref,
+      serverTransactionId: posted ? posted.transactionId : null,
+      serverObligationId: posted ? posted.obligationId : null,
+      timeline: [{
+        status: 'created',
+        ts: stamp(),
+        by: me.name
+      }],
+      createdBy: me.name
+    };
+    fields.setTransfers && fields.setTransfers(function (t) {
+      return [transfer].concat(t);
+    });
+    fields.log && fields.log('Transfer created', oref + ' · ' + num(amtN) + ' ' + (direction === 'send' ? home + ' → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' ' + home) + ' · ' + (cor.country || '') + (posted ? ' · server ledger' : '') + (quote.ruling.reportable ? ' · EFT REPORTABLE' : ''));
+    if (posted && fields.onServerPosted) {
+      try {
+        await fields.onServerPosted();
+      } catch (refreshError) {
+        fields.log && fields.log('Ledger refresh failed', refreshError && refreshError.message || 'The drawer will refresh on the next ledger open');
+      }
+    }
+    return {
+      ok: true,
+      transfer: transfer,
+      quote: quote
+    };
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     _transfers: {
       defaultCorridors,
@@ -38930,6 +39207,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       flagOf,
       cadOf,
       transferRuling,
+      quoteTransfer,
+      transferBlock,
+      submitTransfer,
+      PURPOSES,
       BeneficiaryModal,
       TransferModal,
       TransferDetail
@@ -40176,7 +40457,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   }
 
   /* ===================== ROOT ===================== */
-  function Transfers({
+  function TransfersDesk({
     rows,
     setRows,
     clients,
@@ -40409,6 +40690,27 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       onClose: () => setDetailId(null),
       onReceipt: t => printReceipt(t, beneficiaries, corridors, settings, log)
     }));
+  }
+
+  /* Phone layout is a different tree. At 1280 this returns the desk
+     the window already had, so a wide screen does not redraw. */
+  function usePhoneLayout() {
+    const query = "(max-width: 430px)";
+    const [on, setOn] = React.useState(() => window.matchMedia(query).matches);
+    React.useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }, []);
+    return on;
+  }
+  function Transfers(props) {
+    const phone = usePhoneLayout();
+    const Phone = window.CDOS.PhoneTransfers;
+    if (phone && Phone) return /*#__PURE__*/React.createElement(Phone, props);
+    return /*#__PURE__*/React.createElement(TransfersDesk, props);
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Transfers
@@ -63415,6 +63717,1014 @@ window.CDOS_PERSIST = (function () {
     formatPhoneDate,
     formatPhoneListGroup,
     Phone
+  });
+})();
+
+/* ---- os-src/phone/transfers-new.jsx ---- */
+/* New transfer, phone only. The list stays in transfers.jsx.
+   This sheet is the three steps. It uses the shared ChoiceTiles,
+   AmountField, SummaryList, and StepHeader. It does not copy them. */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useMemo,
+    useRef
+  } = React;
+  const money = (amount, currency) => {
+    const format = window.CDOS.formatPhoneMoney;
+    if (typeof format !== "function") throw new Error("formatPhoneMoney is not loaded.");
+    return format(amount, currency);
+  };
+  const T = () => window.CDOS._transfers;
+  function rateLine(quote, direction, recvCcy) {
+    const rate = quote.pricing && quote.pricing.rate;
+    if (!rate) return "Rate unavailable";
+    const shown = Number(rate).toFixed(4);
+    return direction === "send" ? "1 " + quote.home + " = " + shown + " " + recvCcy : "1 " + recvCcy + " = " + shown + " " + quote.home;
+  }
+  function reportSentence(quote) {
+    if (!quote || quote.ruling.reportable !== true) return "";
+    const who = quote.packNow && quote.packNow.regulator || "the regulator";
+    const line = money(quote.limit.amount, quote.limit.currency);
+    const head = line ? line + " or more: " : "";
+    return head + "this needs an EFT report to " + who + ". You file it from Compliance.";
+  }
+  function Wizard(p) {
+    const {
+      ChoiceTiles,
+      AmountField,
+      SummaryList,
+      StepHeader
+    } = window.CDOS;
+    const BenModal = T().BeneficiaryModal;
+    const [step, setStep] = useState(1);
+    const [direction, setDirection] = useState("send");
+    const [senderName, setSenderName] = useState("");
+    const [benId, setBenId] = useState("");
+    const [addBen, setAddBen] = useState(false);
+    const [corridorId, setCorridorId] = useState("PH");
+    const [method, setMethod] = useState("cash");
+    const [partner, setPartner] = useState("");
+    const [payAmt, setPayAmt] = useState("");
+    const [fee, setFee] = useState(p.settings && p.settings.defaultFee ? String(p.settings.defaultFee) : "9.99");
+    const [feeOpen, setFeeOpen] = useState(false);
+    const [purpose, setPurpose] = useState("");
+    const [sourceOfFunds, setSourceOfFunds] = useState("");
+    const [receiveName, setReceiveName] = useState("");
+    const [receiveAddress, setReceiveAddress] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [postError, setPostError] = useState(null);
+    const lock = useRef(false);
+    const attempt = useRef("");
+    const attemptKey = () => {
+      if (!attempt.current) attempt.current = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : "k" + Date.now().toString(36);
+      return attempt.current;
+    };
+    const ben = (p.beneficiaries || []).find(b => b.id === benId) || null;
+    const cor = (p.corridors || []).find(c => c.id === corridorId) || (p.corridors || [])[0] || {
+      ccy: "",
+      country: "",
+      partners: []
+    };
+    useEffect(() => {
+      if (!ben) return;
+      setCorridorId(ben.corridor);
+      setMethod(ben.method);
+      setPartner(ben.partner);
+    }, [benId]);
+    useEffect(() => {
+      if (ben) return;
+      const list = [];
+      (cor.partners || []).forEach(partnerRow => {
+        (partnerRow.methods || []).forEach(m => list.push({
+          method: m,
+          partner: partnerRow.name
+        }));
+      });
+      if (!list.some(pill => pill.method === method && pill.partner === partner) && list[0]) {
+        setMethod(list[0].method);
+        setPartner(list[0].partner);
+      }
+    }, [corridorId, benId]);
+    const recvCcy = cor.ccy;
+    const names = useMemo(() => {
+      const set = new Set(Object.keys(p.clients || {}));
+      (p.rows || []).forEach(r => {
+        if (r.customer) set.add(r.customer);
+      });
+      return Array.from(set).sort();
+    }, [p.clients, p.rows]);
+    const matches = names.filter(n => !senderName || n.toLowerCase().indexOf(senderName.toLowerCase()) >= 0).slice(0, 8);
+    const mine = (p.beneficiaries || []).filter(b => direction === "send" && senderName && b.sender === senderName);
+    const pills = [];
+    (cor.partners || []).forEach(partnerRow => {
+      (partnerRow.methods || []).forEach(m => pills.push({
+        method: m,
+        partner: partnerRow.name,
+        label: T().methodLabel(m) + ", " + partnerRow.name
+      }));
+    });
+    const quote = T().quoteTransfer({
+      direction,
+      payAmt,
+      fee,
+      recvCcy,
+      settings: p.settings,
+      senderName,
+      clients: p.clients
+    });
+    const blocked = T().transferBlock(quote, {
+      direction,
+      partner,
+      ben,
+      senderName,
+      purpose,
+      sourceOfFunds
+    });
+    const hands = quote.ruling.homeAmount;
+    const first = ben && ben.name.split(/\s+/)[0] || "They";
+    const report = reportSentence(quote);
+    const stepTitle = step === 1 ? "who" : step === 2 ? "amount and payout" : "check and create";
+    const create = async () => {
+      setPostError(null);
+      setBusy(true);
+      const result = await T().submitTransfer({
+        // The lock inside submitTransfer is what makes a double tap one post.
+        direction,
+        senderName,
+        ben,
+        benId,
+        corridorId,
+        partner,
+        method,
+        payAmt,
+        fee,
+        purpose,
+        sourceOfFunds,
+        recvCcy,
+        receiveBeneficiaryName: receiveName,
+        receiveBeneficiaryAddress: receiveAddress,
+        corridors: p.corridors,
+        clients: p.clients,
+        setClients: p.setClients,
+        settings: p.settings,
+        me: p.me,
+        log: p.log,
+        rows: p.rows,
+        setRows: p.setRows,
+        transfers: p.transfers,
+        setTransfers: p.setTransfers,
+        serverBacked: p.serverBacked,
+        onServerPosted: p.onTillChanged,
+        lock,
+        attemptKey
+      });
+      if (result.ignored) return;
+      setBusy(false);
+      if (!result.ok) {
+        setPostError(result.error || new Error("The transfer was not created."));
+        return;
+      }
+      p.onCreated(result.transfer);
+    };
+    const saveBen = b => {
+      p.setBeneficiaries(list => {
+        const ex = list.find(x => x.id === b.id);
+        return ex ? list.map(x => x.id === b.id ? b : x) : [b].concat(list);
+      });
+      setBenId(b.id);
+      setAddBen(false);
+      p.log && p.log("Beneficiary saved", b.name + " · " + b.partner);
+    };
+    const who = direction === "send" ? (senderName || "The customer") + " sends to" : (senderName || "The customer") + " receives";
+    const whoName = direction === "send" ? (ben && ben.name || "Choose a receiver") + (cor.country ? ", " + cor.country : "") : cor.country || "Choose a country";
+
+    /* The window sits under the phone bar. A sheet drawn inside it
+       cannot cover that bar, so Next lands under the More icon.
+       The body portal is the same escape the desk lock uses. */
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet",
+      "data-app": "transfers",
+      role: "dialog",
+      "aria-label": "New transfer"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet-h"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-back",
+      "aria-label": step === 1 ? "Close" : "Back",
+      onClick: () => step === 1 ? p.onClose() : setStep(step - 1)
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "24",
+      height: "24",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M16 2 6 12 16 22"
+    }))), /*#__PURE__*/React.createElement("h2", null, "New transfer"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "lnk",
+      onClick: p.onClose
+    }, "Cancel")), /*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet-b"
+    }, /*#__PURE__*/React.createElement(StepHeader, {
+      step: step,
+      total: 3,
+      label: stepTitle
+    }), step > 1 && /*#__PURE__*/React.createElement("div", {
+      className: "ph-who"
+    }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+      className: "muted"
+    }, who), /*#__PURE__*/React.createElement("b", null, whoName)), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "lnk",
+      onClick: () => setStep(1)
+    }, "Change")), step === 1 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(ChoiceTiles, {
+      label: "Direction",
+      value: direction,
+      onChange: id => {
+        setDirection(id);
+        setBenId("");
+      },
+      options: [{
+        id: "send",
+        label: "Send out"
+      }, {
+        id: "receive",
+        label: "Receive in"
+      }]
+    }), /*#__PURE__*/React.createElement("label", {
+      className: "ph-field"
+    }, "Customer", /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Customer",
+      placeholder: "Find a customer",
+      value: senderName,
+      onChange: e => {
+        setSenderName(e.target.value);
+        setBenId("");
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "ph-picks"
+    }, matches.map(n => /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      key: n,
+      className: "ph-pick" + (senderName === n ? " on" : ""),
+      onClick: () => {
+        setSenderName(n);
+        setBenId("");
+      }
+    }, n))), direction === "send" && senderName && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "ph-label"
+    }, "Receivers on file"), /*#__PURE__*/React.createElement("div", {
+      className: "ph-picks"
+    }, mine.map(b => {
+      const bc = (p.corridors || []).find(c => c.id === b.corridor);
+      return /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        key: b.id,
+        className: "ph-pick" + (benId === b.id ? " on" : ""),
+        onClick: () => setBenId(b.id)
+      }, /*#__PURE__*/React.createElement("b", null, b.name), /*#__PURE__*/React.createElement("small", null, bc && bc.country || "", " \xB7 ", T().methodLabel(b.method), " \xB7 ", b.partner));
+    }), !mine.length && /*#__PURE__*/React.createElement("p", {
+      className: "ph-hint"
+    }, "No receiver saved for ", senderName, " yet."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-pick",
+      onClick: () => setAddBen(true)
+    }, "Add a new receiver"))), direction === "receive" && /*#__PURE__*/React.createElement("label", {
+      className: "ph-field"
+    }, "Country", /*#__PURE__*/React.createElement("select", {
+      "aria-label": "Country",
+      value: corridorId,
+      onChange: e => setCorridorId(e.target.value)
+    }, (p.corridors || []).filter(c => c.active !== false).map(c => /*#__PURE__*/React.createElement("option", {
+      key: c.id,
+      value: c.id
+    }, c.country))))), step === 2 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(AmountField, {
+      label: direction === "send" ? "Customer pays" : "Amount received",
+      value: payAmt,
+      currency: direction === "send" ? quote.home : recvCcy,
+      autoFocus: true,
+      feeLabel: "Fee " + money(fee || "0", quote.home) + ". Tap to change the fee.",
+      onFee: () => setFeeOpen(v => !v),
+      onChange: setPayAmt
+    }), feeOpen && /*#__PURE__*/React.createElement("label", {
+      className: "ph-field"
+    }, "Fee (", quote.home, ")", /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Fee",
+      inputMode: "decimal",
+      value: fee,
+      onChange: e => setFee(e.target.value)
+    })), /*#__PURE__*/React.createElement(SummaryList, {
+      rows: [{
+        label: direction === "send" ? first + " gets" : "Customer gets",
+        value: quote.recvAmt ? money(quote.recvAmt, direction === "send" ? recvCcy : quote.home) : "",
+        big: true,
+        mark: "transfer-gets"
+      }, {
+        label: "Rate",
+        value: rateLine(quote, direction, recvCcy),
+        mark: "transfer-rate"
+      }, {
+        label: direction === "send" ? "Customer hands you" : "You pay out",
+        value: hands ? money(hands, quote.home) : "",
+        mark: "transfer-hands"
+      }]
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "ph-label"
+    }, direction === "send" ? "How " + first + " gets it" : "How they get it"), /*#__PURE__*/React.createElement("div", {
+      className: "ph-pills",
+      role: "group",
+      "aria-label": "Payout"
+    }, pills.map(pill => {
+      const on = pill.method === method && pill.partner === partner;
+      return /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        key: pill.method + pill.partner,
+        className: on ? "on" : "",
+        "aria-pressed": on,
+        onClick: () => {
+          setMethod(pill.method);
+          setPartner(pill.partner);
+        }
+      }, pill.label);
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "ph-field"
+    }, "Why is it being sent?", /*#__PURE__*/React.createElement("select", {
+      "aria-label": "Why is it being sent?",
+      value: purpose,
+      onChange: e => setPurpose(e.target.value)
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, quote.requirePurpose ? "Choose a purpose" : "Purpose"), T().PURPOSES.map(item => /*#__PURE__*/React.createElement("option", {
+      key: item
+    }, item)))), report && /*#__PURE__*/React.createElement("p", {
+      className: "ph-warn",
+      role: "status"
+    }, report), quote.ruling.reportable === true && /*#__PURE__*/React.createElement("label", {
+      className: "ph-field"
+    }, "Source of funds", /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Source of funds",
+      value: sourceOfFunds,
+      placeholder: "Salary, savings, property sale",
+      onChange: e => setSourceOfFunds(e.target.value)
+    })), quote.ruling.idRequired && /*#__PURE__*/React.createElement("p", {
+      className: quote.kyc === "ok" ? "ph-ok" : "ph-warn",
+      role: "status"
+    }, quote.kyc === "ok" ? "ID is on file for this customer." : "This transfer needs ID on file. The customer's ID is " + quote.kyc + "."), direction === "receive" && quote.packNow && quote.packNow.packId === "pack-ca-v2" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("label", {
+      className: "ph-field"
+    }, "Beneficiary name", /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Beneficiary name",
+      value: receiveName,
+      onChange: e => setReceiveName(e.target.value)
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "ph-field"
+    }, "Beneficiary address", /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Beneficiary address",
+      value: receiveAddress,
+      onChange: e => setReceiveAddress(e.target.value)
+    })))), step === 3 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(SummaryList, {
+      rows: [{
+        label: "Customer",
+        value: senderName
+      }, {
+        label: direction === "send" ? "Receiver" : "Country",
+        value: direction === "send" ? ben && ben.name : cor.country
+      }, {
+        label: "To",
+        value: cor.country
+      }, {
+        label: "How",
+        value: T().methodLabel(method) + ", " + partner
+      }, {
+        label: "Customer pays",
+        value: money(payAmt, direction === "send" ? quote.home : recvCcy)
+      }, {
+        label: "Fee",
+        value: money(fee || "0", quote.home)
+      }, {
+        label: direction === "send" ? first + " gets" : "Customer gets",
+        value: quote.recvAmt ? money(quote.recvAmt, direction === "send" ? recvCcy : quote.home) : "",
+        big: true,
+        mark: "transfer-gets"
+      }, {
+        label: direction === "send" ? "Customer hands you" : "You pay out",
+        value: hands ? money(hands, quote.home) : ""
+      }, {
+        label: "Purpose",
+        value: purpose
+      }, report ? {
+        label: "Report",
+        value: report
+      } : null, sourceOfFunds ? {
+        label: "Source of funds",
+        value: sourceOfFunds
+      } : null].filter(Boolean)
+    }), /*#__PURE__*/React.createElement("p", {
+      className: "ph-info"
+    }, /*#__PURE__*/React.createElement("span", null, "Creating this records the cash. It does not send the money to the partner. You update the status by hand.")), postError && /*#__PURE__*/React.createElement("div", {
+      className: "ph-fault",
+      role: "alert"
+    }, /*#__PURE__*/React.createElement("b", null, "The transfer was not created. Nothing was charged."), /*#__PURE__*/React.createElement("p", null, postError.message), /*#__PURE__*/React.createElement("p", null, "Try again.")))), /*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet-f"
+    }, step < 3 ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-btn",
+      disabled: step === 1 ? !(senderName && (direction === "receive" || benId)) : !!blocked,
+      onClick: () => setStep(step + 1)
+    }, step === 2 ? "Next: check and create" : "Next") : /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-btn",
+      "data-testid": "transfer-create",
+      disabled: !!blocked || busy,
+      onClick: create
+    }, busy ? "Creating…" : "Create transfer")), addBen && /*#__PURE__*/React.createElement(BenModal, {
+      sender: senderName,
+      lockSender: true,
+      corridors: p.corridors,
+      onClose: () => setAddBen(false),
+      onSave: saveBen
+    })), document.body);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    PhoneTransferWizard: Wizard
+  });
+})();
+
+/* ---- os-src/phone/transfers.jsx ---- */
+/* Phone Transfers. Only mounted at 430px and under.
+   The desktop pipeline is a different function and is not restyled.
+
+   Partners are not connected. The cashier writes a status on the
+   transfer's detail, when the partner confirms. Creating a transfer
+   records the cash on the ledger. It does not send anything to the partner. */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useMemo,
+    useRef
+  } = React;
+  /* The foundation formatter. A missing one is a broken shell, not a
+     second formatter invented here. */
+  const money = (amount, currency) => {
+    const format = window.CDOS.formatPhoneMoney;
+    if (typeof format !== "function") throw new Error("formatPhoneMoney is not loaded.");
+    return format(amount, currency);
+  };
+  const T = () => window.CDOS._transfers;
+  const stamp = () => new Date().toLocaleString("en-CA", {
+    hour12: false
+  }).replace(",", "");
+  function readTransfers() {
+    const key = T().TKEY;
+    let raw;
+    try {
+      raw = localStorage.getItem(key);
+    } catch (error) {
+      return {
+        ok: false,
+        error
+      };
+    }
+    if (raw == null) return {
+      ok: true,
+      list: T().defaultTransfers()
+    };
+    try {
+      const list = JSON.parse(raw);
+      if (!Array.isArray(list)) return {
+        ok: false,
+        error: new Error("The saved transfer list is not a list.")
+      };
+      return {
+        ok: true,
+        list
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error : new Error("The saved transfer list could not be read.")
+      };
+    }
+  }
+
+  /* Stored stamps are "2026-06-18 10:12". The phone reads
+     "Jun 18, 2026, 10:12 AM". A stamp this cannot read is left off
+     the line, so an ISO date never reaches the screen. */
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function historyWhen(ts) {
+    const match = String(ts || "").match(/(\d{4})-(\d{2})-(\d{2})(?:[ T,]+)(\d{1,2}):(\d{2})/);
+    if (!match) return "";
+    let hour = Number(match[4]);
+    const ap = hour >= 12 ? "PM" : "AM";
+    hour = hour % 12 || 12;
+    return MONTHS[Number(match[2]) - 1] + " " + Number(match[3]) + ", " + match[1] + ", " + hour + ":" + match[5] + " " + ap;
+  }
+  const PROGRESS = {
+    created: 1,
+    sent: 1,
+    transit: 1
+  };
+  function inProgress(t) {
+    return !!PROGRESS[t.status];
+  }
+
+  /* Release goes back to the status before the hold. A fresh hold
+     remembers that status. An older hold, with nothing remembered,
+     uses the last history line that is not itself a hold. */
+  function priorStatus(t) {
+    const held = t.heldFrom;
+    if (held && held !== "hold" && held !== "cancelled") return held;
+    const line = t.timeline || [];
+    for (let i = line.length - 1; i >= 0; i--) {
+      const status = line[i] && line[i].status;
+      if (status && status !== "hold" && status !== "cancelled") return status;
+    }
+    return "created";
+  }
+  function nextStatus(t) {
+    if (!t) return null;
+    if (t.status === "hold") return priorStatus(t);
+    const flow = T().FLOW;
+    const at = flow.indexOf(t.status);
+    return at >= 0 && at < flow.length - 1 ? flow[at + 1] : null;
+  }
+
+  /* Receive words are the desktop labels: Funded, Ready for pickup,
+     Paid to customer. A receive is not "sent". */
+  function actionLabel(t) {
+    const next = nextStatus(t);
+    if (!next) return "";
+    if (t.status === "hold") return "Release";
+    if (t.direction === "receive") {
+      if (next === "sent") return "Mark funded";
+      if (next === "transit") return "Mark ready for pickup";
+      if (next === "paid") return "Mark paid to customer";
+      return "Mark " + T().statusLabel(next, "receive").toLowerCase();
+    }
+    if (next === "sent") return "Mark as sent";
+    if (next === "transit") return "Mark in transit";
+    if (next === "paid") return "Mark paid out";
+    return "Mark as " + T().statusLabel(next, t.direction);
+  }
+
+  /* The total is the stored amount plus the stored fee, in cents,
+     then formatted. It is not priced again from the board. */
+  function homeTotal(pay, fee) {
+    const amount = Number(pay);
+    const extra = Number(fee);
+    if (!Number.isFinite(amount) || !Number.isFinite(extra)) return "";
+    return (Math.round(amount * 100) + Math.round(extra * 100)) / 100;
+  }
+
+  /* The rate on the sheet is the one that multiplies back to the
+     gross, to the cent. The server keeps rates at 12 places. Show
+     the shortest of those that still hits, so a rounded rate never
+     makes Amount × Rate miss the row beside it. A receive's target
+     is the gross the book stored: payout plus the fee the partner
+     owes. A send's target is the foreign payout. */
+  function rateShown(amount, targetCents) {
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt === 0 || !Number.isFinite(targetCents)) return "";
+    const exact = targetCents / (amt * 100);
+    for (let digits = 0; digits <= 12; digits++) {
+      const shown = exact.toFixed(digits);
+      if (Math.round(amt * Number(shown) * 100) === targetCents) return shown;
+    }
+    return exact.toFixed(12);
+  }
+  function detailRows(t, home) {
+    const send = t.direction === "send";
+    const method = T().methodLabel(t.method) || "";
+    const tail = [{
+      label: "Method",
+      value: method
+    }, {
+      label: "Partner",
+      value: t.partner || ""
+    }];
+    if (send) {
+      const total = homeTotal(t.payAmt, t.fee);
+      const foreign = Math.round(Number(t.recvAmt) * 100);
+      const rate = rateShown(t.payAmt, foreign);
+      return [{
+        label: "Amount sent",
+        value: money(t.payAmt, home)
+      }, {
+        label: "Fee",
+        value: money(t.fee, home)
+      }, {
+        label: "Total paid",
+        value: total === "" ? "" : money(total, home)
+      }, {
+        label: "Rate",
+        value: rate ? rate + " " + t.ccy + "/" + home : ""
+      }].concat(tail);
+    }
+    /* The ledger pays `recvAmt` out of the drawer and keeps the fee
+       from the proceeds. The partner owes both. Gross is that sum,
+       in cents. Hand to customer is the cash that leaves, last. */
+    const payout = Math.round(Number(t.recvAmt) * 100);
+    const fee = Math.round(Number(t.fee) * 100);
+    const grossCents = Number.isFinite(payout) && Number.isFinite(fee) ? payout + fee : NaN;
+    const rate = rateShown(t.payAmt, grossCents);
+    return [{
+      label: "Amount received",
+      value: money(t.payAmt, t.ccy)
+    }, {
+      label: "Rate",
+      value: rate ? rate + " " + home + "/" + t.ccy : ""
+    }, {
+      label: "Gross",
+      value: Number.isFinite(grossCents) ? money(grossCents / 100, home) : ""
+    }, {
+      label: "Fee",
+      value: Number.isFinite(fee) ? money(-fee / 100, home) : ""
+    }, {
+      label: "Hand to customer",
+      value: money(t.recvAmt, home),
+      mark: "transfer-hand"
+    }].concat(tail);
+  }
+  function toneOf(status) {
+    if (status === "transit") return "buy";
+    if (status === "hold") return "warn";
+    if (status === "paid") return "pos";
+    if (status === "cancelled") return "neg";
+    return "neutral";
+  }
+  function PhoneTransfers(props) {
+    const Wizard = window.CDOS.PhoneTransferWizard;
+    const {
+      rows,
+      setRows,
+      clients,
+      setClients,
+      settings,
+      me,
+      log,
+      beneficiaries,
+      setBeneficiaries,
+      corridors,
+      serverBacked,
+      onTillChanged
+    } = props;
+    const [phase, setPhase] = useState("loading");
+    const [loadError, setLoadError] = useState(null);
+    const [saveError, setSaveError] = useState(null);
+    const [transfers, setTransfers] = useState([]);
+    const [q, setQ] = useState("");
+    const [filter, setFilter] = useState("all");
+    const [view, setView] = useState("list");
+    const [detailId, setDetailId] = useState(null);
+    const [toast, setToast] = useState("");
+    const reload = () => {
+      const read = readTransfers();
+      if (!read.ok) {
+        setLoadError(read.error);
+        setPhase("error");
+        return;
+      }
+      setTransfers(read.list);
+      setLoadError(null);
+      setPhase("ready");
+    };
+    useEffect(() => {
+      reload();
+    }, []);
+    useEffect(() => {
+      if (phase !== "ready") return;
+      try {
+        localStorage.setItem(T().TKEY, JSON.stringify(transfers));
+        setSaveError(null);
+      } catch (error) {
+        setSaveError(error instanceof Error ? error : new Error("The transfer list could not be saved on this till."));
+      }
+    }, [transfers, phase]);
+    const advance = (t, to, note) => {
+      setTransfers(list => list.map(x => {
+        if (x.id !== t.id) return x;
+        const heldFrom = to === "hold" ? x.status === "hold" ? x.heldFrom : x.status : undefined;
+        return {
+          ...x,
+          status: to,
+          heldFrom,
+          timeline: (x.timeline || []).concat([{
+            status: to,
+            ts: stamp(),
+            by: me.name,
+            note: note || ""
+          }])
+        };
+      }));
+      log && log("Transfer " + T().statusLabel(to, t.direction).toLowerCase(), t.ref + " · updated by hand");
+    };
+    const openNew = () => {
+      setToast("");
+      setView("new");
+    };
+    const detail = detailId ? transfers.find(t => t.id === detailId) : null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ph-xfer",
+      "data-phone": "transfers",
+      style: {
+        "--brand-primary": "#1F7269"
+      }
+    }, view === "new" && (Wizard ? /*#__PURE__*/React.createElement(Wizard, {
+      rows,
+      setRows,
+      clients,
+      setClients,
+      settings,
+      me,
+      log,
+      beneficiaries,
+      setBeneficiaries,
+      corridors,
+      transfers,
+      setTransfers,
+      serverBacked,
+      onTillChanged,
+      onClose: () => setView("list"),
+      onCreated: transfer => {
+        setDetailId(transfer.id);
+        setToast("Transfer created. " + transfer.ref + ".");
+        setView("detail");
+      }
+    }) : /*#__PURE__*/React.createElement("p", {
+      className: "ph-fault",
+      role: "alert"
+    }, "The new-transfer sheet did not load.")), view === "detail" && detail && /*#__PURE__*/React.createElement(Detail, {
+      t: detail,
+      me: me,
+      beneficiaries: beneficiaries,
+      corridors: corridors,
+      toast: toast,
+      onAdvance: advance,
+      onClose: () => {
+        setView("list");
+        setToast("");
+      }
+    }), view === "list" && /*#__PURE__*/React.createElement(List, {
+      phase: phase,
+      loadError: loadError,
+      saveError: saveError,
+      onRetry: reload,
+      transfers: transfers,
+      beneficiaries: beneficiaries,
+      corridors: corridors,
+      q: q,
+      setQ: setQ,
+      filter: filter,
+      setFilter: setFilter,
+      onOpen: t => {
+        setDetailId(t.id);
+        setToast("");
+        setView("detail");
+      },
+      onNew: openNew
+    }));
+  }
+  function List(p) {
+    const Phone = window.CDOS.Phone;
+    if (!Phone || !Phone.Screen) {
+      return /*#__PURE__*/React.createElement("p", {
+        className: "ph-fault",
+        role: "alert"
+      }, "The phone shell did not load. Transfers cannot be shown.");
+    }
+    const {
+      Screen,
+      Search,
+      FilterChips,
+      ListRow,
+      StickyAction,
+      EmptyState,
+      LoadingState,
+      ErrorState
+    } = Phone;
+    const benName = id => {
+      const b = (p.beneficiaries || []).find(x => x.id === id);
+      return b ? b.name : "";
+    };
+    const country = id => {
+      const c = (p.corridors || []).find(x => x.id === id);
+      return c ? c.country : "";
+    };
+    const home = () => {
+      const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+      return pack && pack.homeCurrency || "CAD";
+    };
+    const searched = (p.transfers || []).filter(t => {
+      const needle = p.q.trim().toLowerCase();
+      if (!needle) return true;
+      const hay = [t.senderName, benName(t.beneficiaryId), t.ref, t.pin].join(" ").toLowerCase();
+      return hay.indexOf(needle) >= 0;
+    });
+    const counts = {
+      all: searched.length,
+      progress: searched.filter(inProgress).length,
+      hold: searched.filter(t => t.status === "hold").length,
+      paid: searched.filter(t => t.status === "paid").length
+    };
+    const shown = searched.filter(t => {
+      if (p.filter === "progress") return inProgress(t);
+      if (p.filter === "hold") return t.status === "hold";
+      if (p.filter === "paid") return t.status === "paid";
+      return true;
+    });
+    const chips = [{
+      id: "all",
+      label: "All",
+      count: counts.all
+    }, {
+      id: "progress",
+      label: "In progress",
+      count: counts.progress
+    }, {
+      id: "hold",
+      label: "On hold",
+      count: counts.hold
+    }, {
+      id: "paid",
+      label: "Paid out",
+      count: counts.paid
+    }];
+    const empty = p.phase === "ready" && !shown.length && !p.transfers.length && !p.q;
+    const none = p.phase === "ready" && !shown.length && (p.q || p.transfers.length > 0);
+    return /*#__PURE__*/React.createElement(Screen, {
+      app: "transfers",
+      title: "Transfers",
+      banner: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Search, {
+        value: p.q,
+        onChange: p.setQ,
+        placeholder: "Find a name or TR number",
+        label: "Find a name or TR number"
+      }), /*#__PURE__*/React.createElement(FilterChips, {
+        chips: chips,
+        value: p.filter,
+        onChange: p.setFilter
+      }), /*#__PURE__*/React.createElement("p", {
+        className: "ph-info"
+      }, "Payout partners are not connected. You change the status by hand when the partner confirms.")),
+      sticky: /*#__PURE__*/React.createElement(StickyAction, {
+        label: "New transfer",
+        onClick: p.onNew
+      })
+    }, p.saveError && /*#__PURE__*/React.createElement("p", {
+      className: "ph-fault",
+      role: "alert"
+    }, p.saveError.message), p.phase === "loading" && /*#__PURE__*/React.createElement(LoadingState, {
+      label: "Loading transfers"
+    }), p.phase === "error" && /*#__PURE__*/React.createElement(ErrorState, {
+      message: p.loadError && p.loadError.message || "The transfer list could not be read.",
+      onRetry: p.onRetry
+    }), empty && /*#__PURE__*/React.createElement(EmptyState, {
+      title: "No transfers yet.",
+      message: "Tap New transfer to send money for a customer."
+    }), none && /*#__PURE__*/React.createElement("p", {
+      className: "ph-state"
+    }, p.q ? "No transfer matches \"" + p.q + "\"." : "Nothing in this filter."), p.phase === "ready" && shown.length > 0 && /*#__PURE__*/React.createElement("div", {
+      className: "phone-list"
+    }, shown.map(t => {
+      const amount = t.direction === "send" ? t.payAmt : t.recvAmt;
+      const place = country(t.corridor);
+      const method = T().methodLabel(t.method) || "";
+      return /*#__PURE__*/React.createElement(ListRow, {
+        key: t.id,
+        className: "ph-xfer-row",
+        title: t.senderName,
+        subtitle: [place, method].filter(Boolean).join(" · "),
+        amount: money(amount, home()),
+        badge: {
+          label: T().statusLabel(t.status, t.direction),
+          tone: toneOf(t.status)
+        },
+        onClick: () => p.onOpen(t)
+      });
+    })));
+  }
+  function Detail({
+    t,
+    me,
+    beneficiaries,
+    corridors,
+    toast,
+    onAdvance,
+    onClose
+  }) {
+    const ben = (beneficiaries || []).find(b => b.id === t.beneficiaryId);
+    const who = ben && ben.name ? ben.name : t.senderName;
+    const label = actionLabel(t);
+    const SummaryList = window.CDOS.SummaryList;
+    const pack = window.CDOS.deskPack && window.CDOS.deskPack();
+    const home = pack && pack.homeCurrency || "CAD";
+    const owner = !!(me && me.role === "Owner");
+    const open = t.status !== "paid" && t.status !== "cancelled";
+    const [copyError, setCopyError] = useState(null);
+    const [copied, setCopied] = useState(false);
+    const copy = async () => {
+      try {
+        await navigator.clipboard.writeText(t.pin || "");
+        setCopied(true);
+        setCopyError(null);
+      } catch (error) {
+        setCopyError(error instanceof Error ? error : new Error("The reference could not be copied."));
+      }
+    };
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet",
+      "data-app": "transfers",
+      role: "dialog",
+      "aria-label": who
+    }, toast && /*#__PURE__*/React.createElement("div", {
+      className: "ph-toast",
+      role: "status"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "ok",
+      "aria-hidden": "true"
+    }, "\u2713"), /*#__PURE__*/React.createElement("b", null, toast)), /*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet-h"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-back",
+      "aria-label": "Back",
+      onClick: onClose
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "24",
+      height: "24",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M16 2 6 12 16 22"
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet-title"
+    }, /*#__PURE__*/React.createElement("h2", null, who), /*#__PURE__*/React.createElement("p", null, t.ref)), /*#__PURE__*/React.createElement("span", null)), /*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet-b"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "ph-sum-who"
+    }, /*#__PURE__*/React.createElement("b", null, t.senderName, " to ", ben && ben.name ? ben.name : "the receiver"), /*#__PURE__*/React.createElement("span", {
+      className: "phone-badge tone-" + toneOf(t.status)
+    }, T().statusLabel(t.status, t.direction))), SummaryList && /*#__PURE__*/React.createElement(SummaryList, {
+      rows: detailRows(t, home)
+    }), t.direction !== "send" && /*#__PURE__*/React.createElement("p", {
+      className: "ph-hist"
+    }, "The fee is kept from the proceeds. It does not leave the drawer."), /*#__PURE__*/React.createElement("div", {
+      className: "ph-label"
+    }, "Desk reference"), /*#__PURE__*/React.createElement("p", {
+      className: "ph-hist"
+    }, "Our own reference. Not a partner pickup code."), /*#__PURE__*/React.createElement("div", {
+      className: "ph-ref"
+    }, /*#__PURE__*/React.createElement("span", null, t.pin), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: copy
+    }, copied ? "Copied" : "Copy")), copyError && /*#__PURE__*/React.createElement("p", {
+      className: "ph-fault",
+      role: "alert"
+    }, copyError.message), /*#__PURE__*/React.createElement("div", {
+      className: "ph-label"
+    }, "History"), /*#__PURE__*/React.createElement("p", {
+      className: "ph-hist"
+    }, "Updated by staff, not by the partner."), /*#__PURE__*/React.createElement("ul", {
+      className: "ph-time"
+    }, (t.timeline || []).map((event, i) => {
+      const line = [T().statusLabel(event.status, t.direction), event.by, historyWhen(event.ts)].filter(Boolean).join(" · ");
+      return /*#__PURE__*/React.createElement("li", {
+        key: i
+      }, line);
+    }))), open && /*#__PURE__*/React.createElement("div", {
+      className: "ph-sheet-f"
+    }, label && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "ph-btn",
+      onClick: () => onAdvance(t, nextStatus(t), "marked by hand")
+    }, label), (t.status !== "hold" || owner) && /*#__PURE__*/React.createElement("div", {
+      className: "ph-secondary"
+    }, t.status !== "hold" && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => onAdvance(t, "hold", "marked by hand")
+    }, "Hold"), owner && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "is-cancel",
+      disabled: true
+    }, "Cancel is being fixed")), !owner && /*#__PURE__*/React.createElement("p", {
+      className: "ph-cancel-note"
+    }, "Only the owner can cancel a transfer that took cash. Ask the owner to cancel."))), document.body);
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    PhoneTransfers
   });
 })();
 

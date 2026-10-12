@@ -112,7 +112,14 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   search, filter chips, list rows, and a sticky New transaction. The
   desktop ledger is unchanged. ChoiceTiles, AmountField, SummaryList,
   and StepHeader are on `window.CDOS`. The props are in
-  `docs/PHONE_SHELL.md`. The bar is five
+  `docs/PHONE_SHELL.md`. Phone Transfers
+  is that shell: the list, the chips with counts, and New transfer.
+  Partners are not connected. A cashier changes a status by hand
+  from the transfer's detail.
+  Creating a transfer posts the existing remittance. It does not
+  send money to a partner. Cancel does not run on the phone: a
+  teller is told to ask the owner, and the owner's Cancel stays
+  disabled until the reversal is wired. The bar is five
   tabs and has no centre plus. There is no
   floating + on a phone. New transaction stays on the ledger until
   that screen takes a StickyAction, and
@@ -577,6 +584,51 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-12**, phone Transfers QA. Cancel does not run, on either
+role. A teller is told: "Only the owner can cancel a transfer that
+took cash. Ask the owner to cancel." The owner sees Cancel disabled,
+labelled "Cancel is being fixed", until the reversal contract lands.
+A send detail shows Amount sent, Fee, and Total paid, then the rate,
+the method, and the partner (a 600 CAD send with the 9.99 fee is
+609.99 CAD). The rate is the one that multiplies Amount sent back to
+the foreign payout, to the cent, at up to 12 places. A receive shows
+Amount received, that same kind of rate, Gross, the fee kept from the
+proceeds, and Hand to customer, then the method and the partner. The
+rate multiplies the amount to Gross (10,000 PHP at 0.024935 is 249.35
+CAD). Hand to customer is bold and is the cash the ledger takes out
+of the drawer. The fee is not subtracted from it, and the customer
+does not pay it on the side. A receive is marked Funded,
+Ready for pickup, then Paid to customer. The reference is "Desk reference", ordinary text,
+with "Our own reference. Not a partner pickup code." Release returns
+a held transfer to the status it had before the hold. The desktop
+pipeline, including its sample history wording, is unchanged.
+
+**2026-10-11**, phone Transfers design. A receive amount on the
+new-transfer steps uses `--color-text`. The large size stays.
+Green is only a real positive. On the detail, Mark paid out is the
+only filled button. Hold is a neutral outline. The back chevron is
+24px in a 44px hit, in `--color-text`. A history line is the status,
+the person, and the time: `Sent · M. Costa · Jun 18, 2026, 10:14 AM`.
+Under History, one muted line reads "Updated by staff, not by the
+partner." The title starts 16px under the top bar
+(`padding-top: var(--space-4)`) and keeps 12px before the next element.
+
+**2026-10-11**, phone Transfers. At 430px and under, Transfers is the phone
+shell: search, chips with real counts, a list, and one New transfer
+button above the bar. A new transfer is three steps. Step 2 shows
+what the receiver gets and what the customer hands over, from the
+same ruling the desktop modal uses. Create posts once, through the
+existing remittance endpoint. A second tap in the same tick does not
+post again. A row is the shell row: the sender's name and the
+amount, then the country and the method, and the status. The TR
+number stays in search and on the detail. The detail names the
+receiver. A history line is the status, the
+person, and a 12-hour time. The screen says payout partners are not connected.
+The list is `os-src/phone/transfers.jsx`. The new-transfer sheet is
+`os-src/phone/transfers-new.jsx`. Wider than 430px, Transfers is the
+desktop pipeline. The screen uses the shared ChoiceTiles, AmountField,
+SummaryList, and StepHeader. It does not keep a second copy.
 
 **2026-10-12**, phone toast. The shared toast sits at the bottom, 16px
 above the sticky action, inset 16px, `--radius-md`, `--gray-900`

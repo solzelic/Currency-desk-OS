@@ -754,7 +754,182 @@
     </div></Portal>);
   }
 
+  /* What step 2 of a transfer is allowed to show, and what Create is
+     allowed to post. This is the desktop modal's ruling, as a function,
+     so the phone cannot grow a second one. `homeAmount` on the ruling
+     is the cash that changes hands: the amount typed plus the fee. */
+  function quoteTransfer({ direction, payAmt, fee, recvCcy, settings, senderName, clients }) {
+    const amtN = parseFloat(payAmt) || 0;
+    const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
+    const limit = reportingLimit(settings);
+    const thresholds = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const home = (packNow && packNow.homeCurrency) || (thresholds && thresholds.currency) || limit.currency || 'CAD';
+    const baseline = !!((packNow && (packNow.baseline === true || packNow.kind === 'baseline')) || (settings && settings.baselineRules && !(packNow && packNow.packId)));
+    const pricing = direction === 'send'
+      ? priceDeal({ inCcy: home, outCcy: recvCcy, inAmt: amtN, settings })
+      : priceDeal({ inCcy: recvCcy, outCcy: home, inAmt: amtN, settings });
+    const recvAmt = pricing.outAmt;
+    const client = clients && clients[senderName];
+    const kyc = !client || !client.idType || !client.idNum ? 'missing ID' : (client.idExpiry && client.idExpiry < TODAY ? 'ID expired' : 'ok');
+    const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
+    const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
+    const idRows = window.CDOS.deskIdThresholds ? (window.CDOS.deskIdThresholds() || []) : [];
+    const remittanceRow = idRows.find(function (r) { return r && r.dealKind === 'remittance'; });
+    const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
+    const ruling = transferRuling({
+      direction: direction,
+      principal: payAmt,
+      fee: fee,
+      payout: direction === 'receive' && recvAmt ? recvAmt.toFixed(2) : '',
+      baseline: baseline,
+      remittanceLine: thresholds && thresholds.remittanceIdThreshold ? thresholds.remittanceIdThreshold.effective : null,
+      deskLine: thresholds && thresholds.idThreshold ? thresholds.idThreshold.deskChoice : null,
+      idLine: ph && remittanceRow && remittanceRow.threshold != null
+        ? remittanceRow.threshold
+        : (idAnswered ? thresholds.idThreshold.effective : (regimeNow && regimeNow.idAt != null ? regimeNow.idAt : null)),
+      reportLine: limit.amount,
+      euLines: packNow && packNow.packId === 'pack-eu-v2' ? (packNow.idThresholds || []) : null,
+      ukTransfer: packNow && packNow.packId === 'pack-gb-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
+      aeTransfer: packNow && packNow.packId === 'pack-ae-v2' && thresholds && thresholds.transferDueDiligence ? thresholds.transferDueDiligence : null,
+      reportComparator: regimeNow && regimeNow.comparator === 'gt' ? 'gt' : 'gte',
+      idComparator: ph && remittanceRow && remittanceRow.comparator === 'gt' ? 'gt' : 'gte',
+    });
+    const requirePurpose = !(settings && settings.transferRequirePurpose === false);
+    return { amtN: amtN, packNow: packNow, limit: limit, thresholds: thresholds, home: home, pricing: pricing, recvAmt: recvAmt, kyc: kyc, ruling: ruling, requirePurpose: requirePurpose };
+  }
+
+  /* Plain reason the cashier cannot press Create yet. Empty means ready. */
+  function transferBlock(quote, fields) {
+    if (!(quote.amtN > 0)) return 'Enter the amount.';
+    if (!fields.partner) return 'Choose how they get it.';
+    if (fields.direction === 'send' && !fields.ben) return 'Choose who receives the money.';
+    if (!String(fields.senderName || '').trim()) return 'Choose the customer.';
+    if (quote.ruling.idRequired && quote.kyc !== 'ok') return "ID required — the customer's ID is " + quote.kyc + '.';
+    if (quote.requirePurpose && !fields.purpose) return 'Choose why it is being sent.';
+    if (quote.ruling.reportable === true && !String(fields.sourceOfFunds || '').trim()) return 'Enter where the money comes from.';
+    return '';
+  }
+
+  /* Post one transfer. The ledger goes first. A second call while the
+     first is in flight returns ignored and does not post again — the
+     lock is synchronous, because the button's disabled state is not.
+     The idempotency key stays for the whole ticket, including a retry
+     after a refusal. A refusal writes nothing here. */
+  async function submitTransfer(fields) {
+    if (!fields.lock || fields.lock.current) return { ok: false, ignored: true };
+    fields.lock.current = true;
+    const quote = quoteTransfer(fields);
+    const blocked = transferBlock(quote, fields);
+    if (blocked) {
+      fields.lock.current = false;
+      return { ok: false, error: new Error(blocked) };
+    }
+    const direction = fields.direction;
+    const senderName = fields.senderName;
+    const ben = fields.ben;
+    const corridors = fields.corridors || [];
+    const cor = corridors.find(function (c) { return c.id === fields.corridorId; }) || {};
+    const recvCcy = fields.recvCcy || cor.ccy;
+    const transfers = fields.transfers || [];
+    const rows = fields.rows || [];
+    const me = fields.me || { name: '' };
+    const clients = fields.clients || {};
+    const feeN = parseFloat(fields.fee) || 0;
+    const amtN = quote.amtN;
+    const home = quote.home;
+    const pricing = quote.pricing;
+    const recvAmt = quote.recvAmt;
+    const B = fields.serverBacked && window.CDOS.Backend ? window.CDOS.Backend : null;
+    const seqT = transfers.filter(function (t) { return t.date === TODAY; }).length + 1;
+    const ref = 'TR-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(seqT).padStart(3, '0');
+    const pin = (Math.floor(10 + Math.random() * 89) + ' ' + Math.floor(100 + Math.random() * 899) + ' ' + Math.floor(100 + Math.random() * 899));
+    const seqL = rows.filter(function (r) { return r.date === TODAY && r.status !== 'void'; }).length + 1;
+    const lref = mkRef(TODAY, seqL);
+    const lin = direction === 'send' ? home : recvCcy;
+    const lout = direction === 'send' ? recvCcy : home;
+    let posted = null;
+    if (B) {
+      const packId = quote.packNow && quote.packNow.packId;
+      const remLine = quote.thresholds && quote.thresholds.remittanceIdThreshold && quote.thresholds.remittanceIdThreshold.effective != null
+        ? Number(quote.thresholds.remittanceIdThreshold.effective) : null;
+      const cashHome = direction === 'send' ? (amtN + feeN) : (Number(recvAmt) || 0);
+      if (packId === 'pack-ca-v2' && remLine != null && cashHome >= remLine) {
+        const name = direction === 'send' ? (ben && ben.name) : fields.receiveBeneficiaryName;
+        const address = direction === 'send' ? (ben && ben.address) : fields.receiveBeneficiaryAddress;
+        if (!String(name || '').trim() || !String(address || '').trim()) {
+          fields.lock.current = false;
+          return { ok: false, error: new Error('This transfer needs the beneficiary name and address on the record.') };
+        }
+      }
+      try {
+        const synced = await B.syncCustomer(senderName, clients[senderName]);
+        fields.setClients && fields.setClients(function (list) {
+          return Object.assign({}, list, { [senderName]: Object.assign({}, list[senderName] || {}, { ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef }) });
+        });
+        const capture = { purpose: (fields.purpose || '').trim(), sourceOfFunds: (fields.sourceOfFunds || '').trim() };
+        const key = 'web:transfer:' + fields.attemptKey();
+        posted = direction === 'send'
+          ? await B.postRemittanceSend({
+              idempotencyKey: key, customerId: synced.customerId, reference: ref,
+              principalAmount: B.asMoney(amtN), feeAmount: B.asMoney(feeN),
+              payoutCurrency: recvCcy, payoutAmount: B.asMoney(recvAmt),
+              corridor: fields.corridorId, partner: fields.partner,
+              beneficiaryName: ben ? ben.name : senderName,
+              beneficiaryAddress: ben && ben.address ? ben.address : '',
+              purpose: capture.purpose, sourceOfFunds: capture.sourceOfFunds,
+            })
+          : await B.postRemittanceReceive({
+              idempotencyKey: key, customerId: synced.customerId, reference: ref,
+              sentCurrency: recvCcy, sentAmount: B.asMoney(amtN),
+              payoutAmount: B.asMoney(recvAmt), feeAmount: B.asMoney(feeN),
+              corridor: fields.corridorId, partner: fields.partner,
+              beneficiaryName: fields.receiveBeneficiaryName || '',
+              beneficiaryAddress: fields.receiveBeneficiaryAddress || '',
+              purpose: capture.purpose, sourceOfFunds: capture.sourceOfFunds,
+            });
+      } catch (error) {
+        fields.lock.current = false;
+        return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
+      }
+    }
+    const oref = posted ? posted.obligationRef : ref;
+    const tx = newTx({
+      ref: posted ? posted.transactionRef : lref,
+      type: direction === 'send' ? 'Remittance — Send' : 'Remittance — Receive',
+      customer: senderName, inCcy: lin, inAmt: amtN, rate: pricing.rate, outCcy: lout, outAmt: recvAmt,
+      fee: feeN, midRate: pricing.midRate,
+      spreadCad: posted ? null : pricing.marginCad, side: pricing.side,
+      teller: me.name,
+      notes: oref + ' · ' + (direction === 'send' ? 'to ' + (ben ? ben.name : '') : 'from ' + senderName) + ' (' + (cor.country || '') + ') · ' + fields.partner,
+      transferRef: oref, createdBy: me.name, createdAt: stamp(),
+      serverTransactionId: posted ? posted.transactionId : null,
+      serverObligationId: posted ? posted.obligationId : null,
+    });
+    fields.setRows && fields.setRows(function (r) { return [tx].concat(r); });
+    const transfer = {
+      id: 't' + Date.now(), ref: oref, pin: pin, direction: direction, senderName: senderName,
+      beneficiaryId: fields.benId || null, corridor: fields.corridorId, ccy: recvCcy,
+      method: fields.method, partner: fields.partner, payAmt: amtN, recvAmt: recvAmt,
+      rate: pricing.rate, midRate: pricing.midRate, spreadCad: posted ? null : pricing.marginCad,
+      fee: feeN, purpose: fields.purpose, sourceOfFunds: fields.sourceOfFunds,
+      date: TODAY, status: 'created', txId: tx.id,
+      txRef: posted ? posted.transactionRef : lref,
+      serverTransactionId: posted ? posted.transactionId : null,
+      serverObligationId: posted ? posted.obligationId : null,
+      timeline: [{ status: 'created', ts: stamp(), by: me.name }], createdBy: me.name,
+    };
+    fields.setTransfers && fields.setTransfers(function (t) { return [transfer].concat(t); });
+    fields.log && fields.log('Transfer created', oref + ' · ' + num(amtN) + ' ' + (direction === 'send' ? home + ' → ' + num(recvAmt) + ' ' + recvCcy : recvCcy + ' → ' + num(recvAmt) + ' ' + home) + ' · ' + (cor.country || '') + (posted ? ' · server ledger' : '') + (quote.ruling.reportable ? ' · EFT REPORTABLE' : ''));
+    if (posted && fields.onServerPosted) {
+      try { await fields.onServerPosted(); }
+      catch (refreshError) {
+        fields.log && fields.log('Ledger refresh failed', (refreshError && refreshError.message) || 'The drawer will refresh on the next ledger open');
+      }
+    }
+    return { ok: true, transfer: transfer, quote: quote };
+  }
+
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, bookTransfers, bookBeneficiaries, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, transferRuling, BeneficiaryModal, TransferModal, TransferDetail }
+    _transfers: { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load, bookTransfers, bookBeneficiaries, FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, flagOf, cadOf, transferRuling, quoteTransfer, transferBlock, submitTransfer, PURPOSES, BeneficiaryModal, TransferModal, TransferDetail }
   });
 })();

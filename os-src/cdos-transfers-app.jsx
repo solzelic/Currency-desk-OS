@@ -387,7 +387,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   }
 
   /* ===================== ROOT ===================== */
-  function Transfers({ rows, setRows, clients, setClients, settings, me, log, beneficiaries: pBen, setBeneficiaries: pSetBen, corridors: pCor, setCorridors: pSetCor, serverBacked, onTillChanged }) {
+  function TransfersDesk({ rows, setRows, clients, setClients, settings, me, log, beneficiaries: pBen, setBeneficiaries: pSetBen, corridors: pCor, setCorridors: pSetCor, serverBacked, onTillChanged }) {
     const [tab, setTab] = useState('pipeline');
     // beneficiaries + corridors are lifted to the OS shell so Clients shares them;
     // fall back to local stores if mounted standalone.
@@ -453,6 +453,27 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('pipeline'); setDetailId(id); }} />}
       {detail && <TransferDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} me={me} log={log} setTransfers={setTransfers} onClose={() => setDetailId(null)} onReceipt={(t) => printReceipt(t, beneficiaries, corridors, settings, log)} />}
     </div>);
+  }
+
+  /* Phone layout is a different tree. At 1280 this returns the desk
+     the window already had, so a wide screen does not redraw. */
+  function usePhoneLayout() {
+    const query = "(max-width: 430px)";
+    const [on, setOn] = React.useState(() => window.matchMedia(query).matches);
+    React.useEffect(() => {
+      const mq = window.matchMedia(query);
+      const apply = () => setOn(mq.matches);
+      apply();
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }, []);
+    return on;
+  }
+  function Transfers(props) {
+    const phone = usePhoneLayout();
+    const Phone = window.CDOS.PhoneTransfers;
+    if (phone && Phone) return <Phone {...props} />;
+    return <TransfersDesk {...props} />;
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, { Transfers });
