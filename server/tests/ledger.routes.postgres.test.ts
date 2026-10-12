@@ -811,7 +811,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(denied.statusCode).toBe(403);
     expect(denied.json()).toMatchObject({
       code: "AUTHORIZATION_DENIED",
-      message: "Only the owner can cancel a transfer that took cash. Ask the owner to cancel.",
+      message: "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.",
     });
     expect(await cad()).toBe("25609.99");
 

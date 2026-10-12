@@ -18,7 +18,10 @@ const SHOTS = "/opt/cursor/artifacts/screenshots";
 function obligations(page: Page) {
   return page.evaluate(() =>
     fetch("/api/ledger/obligations?limit=50").then((r) => r.json()),
-  ) as Promise<{ obligations: Array<Record<string, string | null>> }>;
+  ) as Promise<{
+    obligations: Array<Record<string, string | null>>;
+    outstanding: { payable: string | null; receivable: string | null };
+  }>;
 }
 
 function grouped(amount: string) {
@@ -28,6 +31,12 @@ function grouped(amount: string) {
   while (frac.length < 2) frac += "0";
   const whole = match![2]!.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${match![1]}${whole}.${frac}`;
+}
+
+/* Two decimals, no thousands separators. The sheet prints grouped
+   digits; the ledger stores the plain amount. */
+function plain(amount: string) {
+  return grouped(amount).replace(/,/g, "");
 }
 
 async function openDeskAndTill(page: Page, staffId = "a.singh") {
@@ -82,6 +91,7 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
   await page.setViewportSize({ width: 1280, height: 800 });
   const book = await openDeskAndTill(page);
   const before = Number((await book.till()).CAD);
+  const payableBefore = (await obligations(page)).outstanding.payable;
   await sendSixHundred(page);
 
   await expect
@@ -100,13 +110,26 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
     homeCurrency: "CAD",
     faceCurrency: "PHP",
   });
-  const sentence =
-    `This gives the customer back ${grouped(row!.cashInHome!)} ${row!.homeCurrency} from your drawer ` +
-    `and cancels the ${grouped(row!.faceAmount!)} ${row!.faceCurrency} owed to ${row!.counterparty}.`;
-
   await page.locator("[data-transfer-cancel='open']").click();
   const effect = page.locator("[data-transfer-cancel='effect']");
-  await expect(effect).toHaveText(sentence, { timeout: 15_000 });
+  await expect(effect).toBeVisible({ timeout: 15_000 });
+  const shown = (await effect.innerText()).replace(/\s+/g, " ").trim();
+  const parsed = shown.match(
+    /^This gives the customer back ([\d,]+\.\d{2}) ([A-Z]{3}) from your drawer and cancels the ([\d,]+\.\d{2}) ([A-Z]{3}) owed to (.+)\.$/,
+  );
+  expect(parsed, shown).not.toBeNull();
+  /* The digits on the sheet are the stored till movement and the stored
+     partner face. A browser price that is not what the ledger kept fails
+     here, even when the sentence is otherwise well formed. */
+  expect(parsed![1]!.replace(/,/g, "")).toBe(plain(row!.cashInHome!));
+  expect(parsed![2]).toBe(row!.homeCurrency);
+  expect(parsed![3]!.replace(/,/g, "")).toBe(plain(row!.faceAmount!));
+  expect(parsed![4]).toBe(row!.faceCurrency);
+  expect(parsed![5]).toBe(row!.counterparty);
+  expect(shown).toBe(
+    `This gives the customer back ${grouped(row!.cashInHome!)} ${row!.homeCurrency} from your drawer ` +
+    `and cancels the ${grouped(row!.faceAmount!)} ${row!.faceCurrency} owed to ${row!.counterparty}.`,
+  );
   await page.screenshot({ path: `${SHOTS}/transfer-cancel-confirm-1280.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(effect).toBeVisible();
@@ -120,11 +143,14 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
     .toBeCloseTo(0, 2);
   await expect.poll(async () => {
     const bookNow = await obligations(page);
-    return bookNow.obligations.find((o) => o.transactionId === row!.transactionId)?.status;
-  }).toBe("reversed");
+    return {
+      status: bookNow.obligations.find((o) => o.transactionId === row!.transactionId)?.status,
+      payable: bookNow.outstanding.payable,
+    };
+  }).toEqual({ status: "reversed", payable: payableBefore });
 });
 
-test("a teller is told to ask the owner, and Cancel is not offered", async ({ page }) => {
+test("a cashier is told to ask a manager, and Cancel is not offered", async ({ page }) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 800 });
   /* A cashier cannot set opening balances. The test above already opened
@@ -140,7 +166,7 @@ test("a teller is told to ask the owner, and Cancel is not offered", async ({ pa
 
   const teller = page.locator("[data-transfer-cancel='teller']");
   await expect(teller).toHaveText(
-    "Only the owner can cancel a transfer that took cash. Ask the owner to cancel.",
+    "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.",
   );
   await expect(page.locator("[data-transfer-cancel='open']")).toHaveCount(0);
   await teller.scrollIntoViewIfNeeded();

@@ -651,7 +651,7 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
 
   /* ---------------- cancelling a transfer that took cash ---------------- */
 
-  it("puts the send back once, refunds the fee, and tells a teller to ask the owner", async () => {
+  it("puts the send back once, refunds the fee, and tells a teller to ask a manager", async () => {
     const posted = (await service.remittanceSend(teller, {
       ...send,
       idempotencyKey: "send-cancel",

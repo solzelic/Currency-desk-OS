@@ -36153,7 +36153,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 (function () {
   "use strict";
 
-  var TELLER_MESSAGE = "Only the owner can cancel a transfer that took cash. Ask the owner to cancel.";
+  var TELLER_MESSAGE = "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
   var PAID_OUT_MESSAGE = "This transfer was already paid out. It cannot be cancelled.";
 
   /* OS names of the roles that already hold transaction:reverse.
@@ -38327,13 +38327,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), " Cancel") : /*#__PURE__*/React.createElement("p", {
       "data-transfer-cancel": "teller",
       role: "status",
-      className: "w-full text-[13px] px-3 py-2",
+      className: "w-full text-[13px] px-3 py-2 flex items-start gap-2",
       style: {
-        background: CD.flagSoft,
-        color: CD.flag,
+        background: CD.lineSoft,
+        color: CD.ink,
+        border: `1px solid ${CD.line}`,
         borderRadius: 9
       }
-    }, Cancel.TELLER_MESSAGE)), cancelError && !ask && /*#__PURE__*/React.createElement("p", {
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "info",
+      s: 15,
+      c: CD.ink
+    }), /*#__PURE__*/React.createElement("span", null, Cancel.TELLER_MESSAGE))), cancelError && !ask && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       className: "text-[13px]",
       style: {

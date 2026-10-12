@@ -247,8 +247,8 @@ idempotency key is `web:transfer-cancel:<transactionId>`, so a second tap
 replays and does not reverse twice. The contract is `docs/TRANSFER_CANCEL.md`.
 
 `transaction:reverse` stays with supervisor, branch manager, and administrator.
-A teller receives 403 `AUTHORIZATION_DENIED` with "Only the owner can cancel a
-transfer that took cash. Ask the owner to cancel." The desktop does not offer
+A teller receives 403 `AUTHORIZATION_DENIED` with "Only a manager can cancel a
+transfer that took cash. Ask a manager to cancel." The desktop does not offer
 that person a Cancel button.
 
 The reversal is refused if the drawer can no longer fund the cash going back

@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  var TELLER_MESSAGE = "Only the owner can cancel a transfer that took cash. Ask the owner to cancel.";
+  var TELLER_MESSAGE = "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
   var PAID_OUT_MESSAGE = "This transfer was already paid out. It cannot be cancelled.";
 
   /* OS names of the roles that already hold transaction:reverse.

@@ -794,7 +794,7 @@
                 : <button onClick={() => advance('hold', 'Placed on hold')} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, color: CD.amber, borderRadius: 8 }}><Ic n="alert" s={15} c={CD.amber} /> Hold</button>}
               {canPost
                 ? <button type="button" data-transfer-cancel="open" onClick={openCancel} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> Cancel</button>
-                : <p data-transfer-cancel="teller" role="status" className="w-full text-[13px] px-3 py-2" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}>{Cancel.TELLER_MESSAGE}</p>}
+                : <p data-transfer-cancel="teller" role="status" className="w-full text-[13px] px-3 py-2 flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9 }}><Ic n="info" s={15} c={CD.ink} /><span>{Cancel.TELLER_MESSAGE}</span></p>}
             </div>
           )}
           {cancelError && !ask && <p role="alert" className="text-[13px]" style={{ color: CD.flag }}>{cancelError}</p>}

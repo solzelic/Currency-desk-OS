@@ -94,7 +94,7 @@ import {
    transaction:reverse stays with supervisor, branch manager, and
    administrator. The sentence is the one the desk says out loud. */
 export const TRANSFER_CANCEL_TELLER_MESSAGE =
-  "Only the owner can cancel a transfer that took cash. Ask the owner to cancel.";
+  "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
 export const TRANSFER_PAID_OUT_MESSAGE =
   "This transfer was already paid out. It cannot be cancelled.";
 

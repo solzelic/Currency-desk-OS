@@ -12,7 +12,7 @@ transfer screens. It publishes `window.CDOS.transferCancel`.
 
 | member | what it does |
 |---|---|
-| `TELLER_MESSAGE` | `Only the owner can cancel a transfer that took cash. Ask the owner to cancel.` |
+| `TELLER_MESSAGE` | `Only a manager can cancel a transfer that took cash. Ask a manager to cancel.` |
 | `PAID_OUT_MESSAGE` | `This transfer was already paid out. It cannot be cancelled.` |
 | `canPost(role)` | true for Owner, Manager, and Senior teller. Those OS roles already map to `transaction:reverse`. Cashier and Trainee are false. This grants nothing. |
 | `review(obligation)` | `{ kind: "confirm", sentence }` or `{ kind, message }`. The sentence is built from the obligation row. It does not add the fee and it does not price the corridor. |
@@ -37,6 +37,11 @@ does not add an approval workflow.
 - `paidOutAt` — set once the partner has paid the beneficiary, otherwise null.
 - `status` — `open`, `settled`, `written_off`, or `reversed`.
 
+Those fields are the stored deal. `cashInHome` is the till movement the
+reversal will undo. `faceAmount` is the partner face the post stored on
+`ledger_obligations`, not a price the confirm sheet computes. The browser
+does not multiply the principal by a board rate when it draws this sheet.
+
 Send confirm, when `cashInHome` is greater than zero:
 
 > This gives the customer back 609.99 CAD from your drawer and cancels the 20,272.05 PHP owed to Cebuana Lhuillier.
@@ -58,9 +63,10 @@ POST /api/ledger/obligation-deals/:transactionId/payout
 
 Reversal requires `transaction:reverse` (supervisor, branch manager,
 administrator). A teller receives **403** `AUTHORIZATION_DENIED` with
-`TELLER_MESSAGE`. The same key returns the stored reversal and does not move
-cash again. A different key after a successful reversal is
-`REVERSAL_ALREADY_EXISTS` and moves nothing.
+`TELLER_MESSAGE`. The same key, `web:transfer-cancel:<transactionId>`,
+returns the stored reversal and posts nothing again. A different key after
+a successful reversal finds the obligation already reversed and is
+**422** `REVERSAL_NOT_ALLOWED`. It moves nothing.
 
 Payout requires `transaction:post`. It writes `ledger_obligations.paid_out_at`
 and moves no cash. A later reversal is **422** `REVERSAL_NOT_ALLOWED` with
