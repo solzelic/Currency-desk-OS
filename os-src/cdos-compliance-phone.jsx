@@ -93,10 +93,9 @@
 
   /* A row date is "Today", "Yesterday", or "Oct 9" in the current
      year. A deal heading keeps the calendar day: "Today, Oct 11".
-     formatPhoneDate always prints the year ("Oct 11, 2026"), so a
-     row does not use it. Times are 12-hour, with AM or PM: "10:15 AM".
-     formatPhoneTime is used when the shell provides it, and its
-     suffix is shown in capitals. */
+     formatPhoneDate always prints the year ("Oct 11, 2026"), and
+     formatPhoneListGroup is only Today or that full date, so a row
+     does not use either. Times use formatPhoneTime: "10:15 AM". */
   function asDate(value) {
     if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
     const text = String(value || '');
