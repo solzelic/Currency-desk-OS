@@ -609,12 +609,6 @@ export class ClientRecordService {
         [clientId, ...entityScope(actor)],
       );
       if (!owned.rowCount) throw notFound();
-      /* A health card is not an identity document. Refuse the write
-         before any row changes. A card already stored is not touched
-         by this check. */
-      if (isHealthCardType(input.docType)) {
-        throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
-      }
       const documentId = `doc_${randomUUID()}`;
       /* Exactly one document drives the desk's KYC standing. The old
          shape let a top-level "primary" ID and an array entry both claim
@@ -1349,11 +1343,6 @@ function refuseSwitchedOff(shop: AcceptedIdTypes, code: string, label: string) {
 
 const healthCardNotId = () => new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
 
-/* `d.doc_type` is not a health card. `param` is the query parameter
-   that carries HEALTH_CARD_KEYS as text[]. */
-const NOT_HEALTH_CARD_SQL = (param: string) =>
-  `NOT (${typeKeySql("d.doc_type")} = ANY(${param}::text[]))`;
-
 const notFound = () =>
   new LedgerError("CLIENT_NOT_FOUND", "That customer is not on this desk's records.");
 
@@ -1368,6 +1357,15 @@ const fileNotFound = () =>
     "FILE_NOT_ON_FILE",
     "That file is not in this customer's folder.",
   );
+
+/* Catalogue name for a known type. The health-card refusal is the
+   same sentence for "Health Card", "OHIP card", and "ohip  Card".
+   An unknown type is stored trimmed, as the caller wrote it. */
+function documentTypeToStore(value: string): string {
+  const resolved = resolveIncomingType(value);
+  if (resolved.refused) throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
+  return resolved.stored;
+}
 
 /* An empty string is a field somebody cleared, and a cleared field is
    NULL. Storing "" would make "no date of birth recorded" and "date of

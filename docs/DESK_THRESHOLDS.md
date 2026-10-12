@@ -211,8 +211,9 @@ country pack does not land here: it trades under the baseline, as above.
   branch's time zone. A blank expiry is Identified only for
   `Canadian citizenship card (pre-2012)`. Any other blank expiry on a
   photo ID is Missing ID, reason "ID has no expiry date". A health card
-  or a non-photo document is Missing ID, reason "A current photo ID is
-  needed". It is not
+  (including OHIP, RAMQ, MSP, Alberta Health, and Care Card), a
+  non-photo document, or a type that is not in the catalogue is
+  Missing ID, reason "A current photo ID is needed". It is not
   the word stored in `ledger_customers.id_status`, and it is not
   decided by which document is primary. There is nothing to be
   unsure about, and a misconfigured pack does not close the shop.

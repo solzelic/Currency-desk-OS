@@ -73,7 +73,10 @@ is one rule, computed on the server from
 ID, with a number that survives stripping whitespace and invisible
 characters, and an expiry on or after the branch's business date. A
 blank expiry counts only for `Canadian citizenship card (pre-2012)`.
-A health card is never accepted. A non-photo document is not ID on
+A health card is never accepted, including a provincial name such
+as OHIP or RAMQ. A new document is stored under the catalogue name
+when the type is known, and as given when it is not. A type that
+is not in the catalogue is not ID on file. A non-photo document is not ID on
 file. The primary document is what the desk shows
 (`displayedDocument`); it is not what decides the standing. The client
 response carries `idStanding` as `{ status, label, detail, reason,
