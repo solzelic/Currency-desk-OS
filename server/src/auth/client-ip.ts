@@ -13,7 +13,12 @@
 
    Nothing here reads an environment variable. Render's proxy is the
    private address that connects to the process, which is already how
-   the platform is wired. */
+   the platform is wired.
+
+   A Cloudflare hop with a missing or unusable CF-Connecting-IP does
+   not fail the request. The socket address is the bucket, and a
+   warning names the problem without the header value. */
+import { isIP } from "node:net";
 import { isCloudflareIp } from "./cloudflare-ips.js";
 
 /** Render connects to the process from a private address. Loopback is
@@ -59,7 +64,9 @@ function forwardedHops(headers: { [name: string]: unknown }): string[] {
 
 function connectingIp(headers: { [name: string]: unknown }): string | undefined {
   const first = headerValue(headers, "cf-connecting-ip").split(",")[0];
-  return first ? normalizeIp(first) : undefined;
+  const ip = first ? normalizeIp(first) : undefined;
+  if (!ip || isIP(ip) === 0) return undefined;
+  return ip;
 }
 
 export function clientIp(req: { ip?: string; headers: { [name: string]: unknown } }): string {
@@ -71,8 +78,9 @@ export function clientIp(req: { ip?: string; headers: { [name: string]: unknown 
     || (!!renderHop && isPlatformProxy(socket) && isCloudflareIp(renderHop));
   if (cloudflareHop) {
     const client = connectingIp(req.headers);
-    if (!client) throw new Error("Cloudflare hop did not name a client address.");
-    return client;
+    if (client) return client;
+    console.warn("[signin] CF-Connecting-IP is missing or not an IP. Counting the peer address.");
+    return socket;
   }
   if (renderHop && isPlatformProxy(socket)) return renderHop;
   return socket;

@@ -193,9 +193,11 @@ one answer, and the code is not compared unless this browser already proved
 the password. Shop sign-in counts five wrong passwords per account and
 twenty per address, in Postgres (`server/src/auth/signin-guard.ts`), and
 locks both the real id and the unknown one with the same sentence. The
-address is the Cloudflare client only when the delivering hop is in
-Cloudflare's published ranges; otherwise it is the Render hop, or the
-socket when nothing is in front. The count is the number the insert
+address is the Cloudflare client when the delivering hop is in
+Cloudflare's published ranges and `CF-Connecting-IP` is an IP. A
+missing or invalid header counts the socket and logs a warning.
+Otherwise the address is the Render hop, or the socket when nothing
+is in front. The count is the number the insert
 returned, so a correct password past that count is still refused. An
 owner or a manager can clear the account counter.
 
