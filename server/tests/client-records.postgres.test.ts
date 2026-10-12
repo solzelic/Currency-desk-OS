@@ -32,6 +32,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { civilDate } from "../src/civil-date.js";
 import { ClientRecordService } from "../src/clients/records.js";
 import { CLASSIFICATION, IDENTIFYING_FIELDS, signalView } from "../src/clients/classification.js";
 import type { LedgerActor } from "../src/ledger/service.js";
@@ -777,7 +778,11 @@ postgres("migration 019, over a desk's existing blob", () => {
 
   it("carries the fields the browser held, on the right side of the line", async () => {
     const jonh = await clientNamed("Jonh Smith");
-    expect(jonh.date_of_birth.toISOString().slice(0, 10)).toBe("1979-03-04");
+    /* The row is a Postgres date. node-pg hands it back as local midnight.
+       toISOString() is 1979-03-03 under Asia/Jerusalem. civilDate is the
+       calendar day. Reverting that helper to toISOString().slice(0, 10)
+       makes this assertion fail in any zone east of UTC. */
+    expect(civilDate(jonh.date_of_birth)).toBe("1979-03-04");
     expect(jonh.address_line).toBe("14 Elm Street");
     expect(jonh.city).toBe("Toronto");
     expect(jonh.region).toBe("ON");
@@ -794,7 +799,7 @@ postgres("migration 019, over a desk's existing blob", () => {
 
     const acme = await clientNamed("Acme Imports Ltd.");
     expect(acme.kind).toBe("business");
-    expect(acme.incorporation_date.toISOString().slice(0, 10)).toBe("2011-09-15");
+    expect(civilDate(acme.incorporation_date)).toBe("2011-09-15");
     expect(acme.nature_of_business).toBe("Import / export of goods");
     expect(acme.contact_name).toBe("Rita Alvarez");
     expect(acme.risk_rating).toBe("high");

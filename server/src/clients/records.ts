@@ -53,6 +53,7 @@
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
+import { civilDate, civilToday } from "../civil-date.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 
@@ -1061,8 +1062,8 @@ export class ClientRecordService {
        expiry is "expired" — the two states the posting gate actually
        acts on, computed from the documents rather than from a field
        somebody forgot to update. */
-    const expired =
-      row.primary_expiry != null && new Date(row.primary_expiry) < new Date(new Date().toDateString());
+    const expiry = civilDate(row.primary_expiry);
+    const expired = expiry != null && expiry < civilToday();
     const status: VerificationStatus =
       row.numbered === 0
         ? "unverified"
@@ -1275,8 +1276,7 @@ const blank = (value: string | null | undefined) => {
   return trimmed === "" ? null : trimmed;
 };
 
-const isoDate = (value: unknown) =>
-  value == null ? null : new Date(value as string | Date).toISOString().slice(0, 10);
+const isoDate = (value: unknown) => civilDate(value);
 
 function clientJson(
   row: Record<string, unknown>,
