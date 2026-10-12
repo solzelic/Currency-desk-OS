@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
-import { seed } from "../src/seed.js";
+import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { hashPassword } from "../src/auth/password.js";
 import { sendEmail } from "../src/email.js";
@@ -144,6 +144,7 @@ postgres("shop sign-in against Postgres", () => {
     });
 
   const staffIds = [accountId, emailId, burstId, resetId];
+  let passwordHash = "";
 
   async function wipe(): Promise<void> {
     await pool.query("DELETE FROM login_challenges WHERE user_id = ANY($1::text[])", [staffIds]);
@@ -179,14 +180,26 @@ postgres("shop sign-in against Postgres", () => {
     app = await buildApp(handle.db);
     pool = new pg.Pool({ connectionString: url });
     await wipe();
-    const base = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, TENANT)).limit(1))[0];
-    if (!base) throw new Error("seed did not create a staff user to copy");
-    const passwordHash = await hashPassword(PASS);
+    passwordHash = await hashPassword(PASS);
+    const person = (id: string, staffId: string, name: string) => ({
+      id,
+      tenantId: DEMO.tenantId,
+      legalEntityId: DEMO.legalEntityId,
+      branchId: DEMO.branchId,
+      staffId,
+      name,
+      role: "teller" as const,
+      authorizedBranchIds: [DEMO.branchId],
+      cdId: null,
+      passwordHash,
+      mustChangePassword: false,
+      active: true,
+    });
     await handle.db.insert(schema.staffUsers).values([
-      { ...base, id: accountId, staffId: "r.limit", name: "Rate Limit", cdId: null, passwordHash, mustChangePassword: false, active: true },
-      { ...base, id: emailId, staffId: "rate-limit@example.com", name: "Rate Limit", cdId: null, passwordHash, mustChangePassword: false, active: true },
-      { ...base, id: burstId, staffId: "r.burst", name: "Burst", cdId: null, passwordHash, mustChangePassword: false, active: true },
-      { ...base, id: resetId, staffId: "r.reset", name: "Reset", cdId: null, passwordHash, mustChangePassword: false, active: true },
+      person(accountId, "r.limit", "Rate Limit"),
+      person(emailId, "rate-limit@example.com", "Rate Limit"),
+      person(burstId, "r.burst", "Burst"),
+      person(resetId, "r.reset", "Reset"),
     ]);
   });
 
@@ -607,13 +620,10 @@ postgres("shop sign-in against Postgres", () => {
 
   it("refuses a manager unlocking a person on another desk", async () => {
     await wipeOtherDesk();
-    const base = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, accountId)))[0];
-    if (!base) throw new Error("r.limit was not seeded");
     await handle.db.insert(schema.tenants).values({ id: otherTenant, name: "Other Desk" });
     await handle.db.insert(schema.legalEntities).values({ id: "le-signin-other", tenantId: otherTenant, name: "Other Entity" });
     await handle.db.insert(schema.branches).values({ id: "br-signin-other", tenantId: otherTenant, legalEntityId: "le-signin-other", name: "Other Branch" });
     await handle.db.insert(schema.staffUsers).values({
-      ...base,
       id: otherUser,
       tenantId: otherTenant,
       legalEntityId: "le-signin-other",
@@ -621,8 +631,11 @@ postgres("shop sign-in against Postgres", () => {
       staffId: "desk-b-lock@example.com",
       name: "Desk B",
       role: "teller",
-      cdId: null,
       authorizedBranchIds: [],
+      cdId: null,
+      passwordHash,
+      mustChangePassword: false,
+      active: true,
     });
     await pool.query(
       "INSERT INTO signin_failures (bucket, failures, window_started_at) VALUES ($1, 5, now())",
