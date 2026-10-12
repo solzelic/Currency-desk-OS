@@ -651,7 +651,11 @@ test.describe("desk ledger counter, Jerusalem browser", () => {
   test("an ID that expired yesterday is sent as expired just after midnight", async ({ page }) => {
     const seen: string[] = [];
     let previous: string | null = null;
-    const at = "2026-10-12T00:01:00+03:00";
+    /* 17 October is not the day this suite runs. An ID that expired
+       the day before 12 October is already before today's UTC date,
+       so the old comparison stays green when the test is run that day. */
+    const at = "2026-10-17T00:01:00+03:00";
+    expect(new Date().toISOString().slice(0, 10)).not.toBe("2026-10-17");
     const name = `Gap counter Jerusalem ${Date.now()}`;
     try {
       await arm(page, at, seen, true);
@@ -662,8 +666,8 @@ test.describe("desk ledger counter, Jerusalem browser", () => {
       expect(closed.ok, closed.why).toBe(true);
       const opened = await openSession(page);
       expect(opened.error).toBeUndefined();
-      expect(opened.session.day.businessDate).toBe("2026-10-12");
-      const filed = await fileIdentity(page, name, "2026-10-11", `jlem-send-${Date.now()}`);
+      expect(opened.session.day.businessDate).toBe("2026-10-17");
+      const filed = await fileIdentity(page, name, "2026-10-16", `jlem-send-${Date.now()}`);
       expect(filed.ok, filed.why).toBe(true);
       await page.reload();
       await landOnDesktop(page);
@@ -672,8 +676,8 @@ test.describe("desk ledger counter, Jerusalem browser", () => {
       expect(sent.prepared.ok, sent.prepared.ok ? "" : sent.prepared.why).toBe(true);
       if (!sent.prepared.ok) return;
       expect(sent.prepared.browserZone).toBe("Asia/Jerusalem");
-      expect(sent.prepared.idExpiry).toBe("2026-10-11");
-      expect(sent.prepared.on).toBe("2026-10-12");
+      expect(sent.prepared.idExpiry).toBe("2026-10-16");
+      expect(sent.prepared.on).toBe("2026-10-17");
       expect(sent.sent?.idStatus).toBe("expired");
       expect(sent.saved).toBe("expired");
     } finally {
