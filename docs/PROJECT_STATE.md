@@ -573,10 +573,16 @@ authenticated narrative dashboard.
 
 **2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
 the seam job's render of the commit in `tests/e2e/README.md`, checked
-out and captured twice in that job. A picture matches when every
-channel is within 1 and the number of differing pixels is within the
-cap in `tests/e2e/desktop-unchanged.spec.ts`. A picture with no cap
-is exact. A channel that moves by 2 or more fails.
+out and captured twice in that job. The sign-in card in that render
+keeps its glass blur and shadow. The menu-bar dot stays a circle.
+A picture matches when every channel is within 1 and the number of
+differing pixels is within the cap in
+`tests/e2e/desktop-unchanged.spec.ts`. A picture with no cap is exact.
+A channel that moves by 2 or more fails. The 34,080-pixel Ledger gap
+was not a phone rule at 1280. The committed picture and the Actions
+runner substituted different faces for weight 600 and for the Records
+tab. Shop name and the menu bar, which both machines resolved the same
+way, matched.
 
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the

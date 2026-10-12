@@ -3,8 +3,8 @@
    Run inside the browser-seam job, after Chromium is installed the way
    that job installs it. The product files come from that commit. The
    measurement (this branch's desktop-unchanged spec) is what takes the
-   picture, so the branch is later compared with the same clock, stubs,
-   and held-still styles.
+   picture, so the branch is later compared with the same clock and stubs.
+   The card keeps its glass blur and shadow. The menu-bar dot stays a circle.
 
    The commit is rendered twice. The pictures are kept only when those
    two renders match at every pixel. A laptop render is not a substitute.

@@ -296,12 +296,7 @@ async function fontsReady(page: Page): Promise<void> {
   const still = () => {
     const style = document.getElementById("shot-still") || document.createElement("style");
     style.id = "shot-still";
-    style.textContent = [
-      "*, *::before, *::after { animation: none !important; transition: none !important; }",
-      /* A 7px circle with a soft ring antialiases one edge pixel differently
-         from one run to the next. The picture uses a hard square. */
-      "#menubar .mb-brand .dot { border-radius: 0 !important; box-shadow: none !important; }",
-    ].join("\n");
+    style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
     (document.head || document.documentElement).appendChild(style);
   };
   await page.evaluate(still);
@@ -427,23 +422,6 @@ test("sign-in is unchanged at 1280", async ({ page }, testInfo) => {
   await expect(lock).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await fontsReady(page);
-  /* The glass blur and the soft shadow on this card rasterize a few
-     corners differently from one browser launch to the next. The
-     picture is the same screen with those two effects held still, so
-     the compare can stay at zero pixels. */
-  await page.addStyleTag({
-    content: [
-      "#lock .lock-card {",
-      "  backdrop-filter: none !important;",
-      "  -webkit-backdrop-filter: none !important;",
-      "  box-shadow: none !important;",
-      "}",
-      "#lock, #lock * {",
-      "  -webkit-font-smoothing: antialiased !important;",
-      "  text-rendering: geometricPrecision !important;",
-      "}",
-    ].join("\n"),
-  });
   await page.evaluate(() => window.scrollTo(0, 0));
   await shoot(page, testInfo, "sign-in-1280.png");
 });

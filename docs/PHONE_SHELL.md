@@ -402,11 +402,11 @@ the sign-in screen (`#lock`). The PNGs are a render of the main commit
 named in `tests/e2e/README.md`, taken in the browser-seam job, not a
 render of a feature branch and not a laptop. The same job renders that
 commit twice and keeps the pictures only when they match. Animations
-and the caret are off. The sign-in card is captured with its glass blur
-and soft shadow held still — those two effects rasterize a few corner
-pixels differently from one launch to the next, and the rest of the
-screen is unchanged. The menu bar's brand dot is a hard square in these
-pictures; the live desk still draws the circle. A pixel may differ by
+and the caret are off. The sign-in card is the glass card, blur and
+shadow included. Turning those off and swapping the PNG hid the desktop:
+the old picture was not a mid-animation frame, and the replacement did
+not match main. The menu bar's brand dot stays the circle the desk
+draws. A pixel may differ by
 at most 1 in each channel, and only up to the cap named for that
 picture in the spec. A picture with no cap is exact. A channel that
 moves by 2 or more fails. A one-character change in a rate, a code, an
