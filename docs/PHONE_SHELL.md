@@ -402,7 +402,10 @@ the sign-in screen (`#lock`). The comparison is `maxDiffPixels: 0` and
 `threshold: 0`. Animations and the caret are off. The sign-in card is
 captured with its glass blur and soft shadow held still — those two
 effects rasterize a few corner pixels differently from one launch to
-the next, and the rest of the screen is unchanged. A one-character
+the next, and the rest of the screen is unchanged. The menu bar's
+brand dot is a hard square in these pictures; the live desk still
+draws the circle. The PNGs are this repository's CI runner, not a
+laptop. A one-character
 change in a rate, a code, an amount, a fee, a hold date, or a cheque
 number fails the picture.
 

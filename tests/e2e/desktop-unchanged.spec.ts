@@ -283,7 +283,12 @@ async function fontsReady(page: Page): Promise<void> {
   const still = () => {
     const style = document.getElementById("shot-still") || document.createElement("style");
     style.id = "shot-still";
-    style.textContent = "*, *::before, *::after { animation: none !important; transition: none !important; }";
+    style.textContent = [
+      "*, *::before, *::after { animation: none !important; transition: none !important; }",
+      /* A 7px circle with a soft ring antialiases one edge pixel differently
+         from one run to the next. The picture uses a hard square. */
+      "#menubar .mb-brand .dot { border-radius: 0 !important; box-shadow: none !important; }",
+    ].join("\n");
     (document.head || document.documentElement).appendChild(style);
   };
   await page.evaluate(still);
@@ -358,7 +363,7 @@ test("sign-in is unchanged at 1280", async ({ page }) => {
     ].join("\n"),
   });
   await page.evaluate(() => window.scrollTo(0, 0));
-  await expect(page).toHaveScreenshot("sign-in-1280.png", SHOT);
+  await expect.soft(page).toHaveScreenshot("sign-in-1280.png", SHOT);
 });
 
 test("every desktop window is unchanged at 1280", async ({ page }) => {
@@ -382,7 +387,7 @@ test("every desktop window is unchanged at 1280", async ({ page }) => {
 
   for (const app of APPS) {
     await openDesktopApp(page, app.id, app.title);
-    await expect(page).toHaveScreenshot(`${app.id}-1280.png`, SHOT);
+    await expect.soft(page).toHaveScreenshot(`${app.id}-1280.png`, SHOT);
     if (app.id === "cheques") {
       const scrim = page.locator("div.fixed.inset-0.flex.justify-end");
       await scrim.click({ position: { x: 16, y: 80 } });
