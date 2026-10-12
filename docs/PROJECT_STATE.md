@@ -576,8 +576,13 @@ header cannot open a new bucket unless the hop is Cloudflare.
 Production mail uses `is not set` for one missing name and `are not
 set` for both, and a provider error body that cannot be read still
 logs the status. An owner or a
-manager can clear the account
-counter, and `RESET_STAFF_PASSWORD` clears it too. The emailed-code
+manager can clear a colleague's account
+counter from Unlock on that person's row. The row says "Locked until
+10:42 AM" in the warning colour. Unlock is an outline button, and it
+is not on an unlocked row or on your own row. After it goes through,
+the row says they can sign in again and the tag is gone, without a
+reload. A problem says it in the shop's words. A teller does not see
+Unlock. `RESET_STAFF_PASSWORD` clears the counter too. The emailed-code
 step gives one answer, in the same time, for an unknown id and a
 wrong code, and it checks a code only after the password step has
 left a server-side marker. A wrong code says "That code isn't right.

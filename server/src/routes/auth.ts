@@ -224,14 +224,14 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   const unlockBody = z.object({ staffId: z.string().min(1).max(120) });
   app.post("/api/auth/login/unlock", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
-    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (!who) return reply.code(401).send({ error: "unauthenticated", detail: "Sign in again, then try the unlock." });
     if (who.role !== "administrator" && who.role !== "branch_manager") {
-      return reply.code(403).send({ error: "forbidden", detail: "Only an owner or a manager can unlock a sign-in." });
+      return reply.code(403).send({ error: "forbidden", detail: "You cannot unlock sign-ins." });
     }
     const parsed = unlockBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "Unlock did not go through. Try again in a moment." });
     const target = await findStaffForLogin(db, parsed.data.staffId, who.tenantId);
-    if (!target || target.tenantId !== who.tenantId) return reply.code(404).send({ error: "not_found" });
+    if (!target || target.tenantId !== who.tenantId) return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
     await clearSignInLock(db, target.id);
     await audit(db, {
       tenantId: who.tenantId,

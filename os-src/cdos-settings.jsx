@@ -701,6 +701,9 @@
     const [srvState, setSrvState] = useState('loading');  // loading | ok | offline | forbidden
     const [srvPw, setSrvPw] = useState('');               // temp-password draft in the open profile
     const [srvMsg, setSrvMsg] = useState('');
+    const [unlockAsk, setUnlockAsk] = useState(null);    // { sid, name } while the confirm sheet is up
+    const [unlockLine, setUnlockLine] = useState('');
+    const [unlockBad, setUnlockBad] = useState(false);
     const [srvBusy, setSrvBusy] = useState(false);
     const [pwForm, setPwForm] = useState(null);           // my own password change {cur,a,b,msg,busy}
     const [airside, setAirside] = useState(false);
@@ -744,6 +747,15 @@
       const d = await res.json().catch(() => null);
       if (!res.ok) throw new Error((d && (d.detail || d.error)) || ('HTTP ' + res.status));
       return d;
+    };
+    const unlockNotice = (err) => {
+      const msg = String((err && err.message) || err || '');
+      if (!msg || msg === 'Failed to fetch' || msg === 'Load failed' || msg === 'NetworkError when attempting to fetch resource.') return 'The desk could not be reached. Try again in a moment.';
+      if (msg === 'unauthenticated' || msg === 'HTTP 401') return 'Sign in again, then try the unlock.';
+      if (msg === 'not_found' || msg === 'HTTP 404') return 'That person is not on this desk.';
+      if (msg === 'forbidden' || msg === 'HTTP 403') return 'You cannot unlock sign-ins.';
+      if (/^HTTP /.test(msg)) return 'Unlock did not go through. Try again in a moment.';
+      return msg;
     };
     // blocking or removing a person locally also shuts their server sign-in
     const srvSetActive = (code, active) => {
@@ -1421,15 +1433,47 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const toggleBranch = (e, bId) => { const cur = Array.isArray(e.branches) ? e.branches : []; const next = cur.includes(bId) ? cur.filter(x => x !== bId) : [...cur, bId]; const home = next.includes(e.home) ? e.home : (next[0] || null); setEmp(e.id, { branches: next, home }, `${e.name} · ${next.length} branch(es)`); const a = assignmentOf(e.name); if (a && !next.includes(a.bId)) assignEmp(e.name, null, null); };
           const isCustom = (e) => { const rc = ROLE_CAPS[e.role] || {}; const capsMatch = CAPS.every(([k]) => !!(e.caps || {})[k] === !!rc[k]); const ra = ROLE_APPS[e.role] || DEF_APPS; const apps = Array.isArray(e.apps) ? e.apps : DEF_APPS; const appsMatch = apps.length === ra.length && ra.every(a => apps.includes(a)); return !(capsMatch && appsMatch); };
 
-          // ---- roster row: click to open the account ----
+          /* The account counter is cleared through the existing unlock
+             route. Unlock is only on a locked colleague, never on your
+             own row. A teller does not see the button. The confirm is
+             a sheet in this desk, and the audit row is the route's. */
+          const askUnlock = (e) => {
+            const sid = (e.code || '').trim();
+            if (!sid) return;
+            setUnlockAsk({ sid, name: e.name || sid });
+          };
+          const confirmUnlock = () => {
+            const ask = unlockAsk;
+            if (!ask) return;
+            setUnlockAsk(null);
+            srvCall('POST', '/api/auth/login/unlock', { staffId: ask.sid })
+              .then(() => {
+                log('Sign-in unlocked', ask.name + '. ' + ask.sid);
+                setUnlockBad(false);
+                setUnlockLine(ask.name + ' can sign in again.');
+                setSrvStaff((cur) => {
+                  if (!cur || !cur[ask.sid]) return cur;
+                  return { ...cur, [ask.sid]: { ...cur[ask.sid], lockedUntil: null } };
+                });
+              })
+              .catch((err) => { setUnlockBad(true); setUnlockLine(unlockNotice(err)); });
+          };
           const empRow = (e) => {
             const asg = assignmentOf(e.name); const blocked = e.active === false;
-            return (<button key={e.id} onClick={() => setEmpSel(e.id)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: CD.panel, marginBottom: 8, opacity: blocked ? 0.62 : 1 }}>
-              <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: blocked ? CD.lineSoft : CD.ink, color: blocked ? CD.mute : 'var(--cd-on-ink)', fontSize: 11.5, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(e.name)}</span>
-              <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-semibold truncate" style={{ color: CD.ink }}>{e.name}</span><span className="block text-[11px] truncate" style={{ color: CD.faint }}>{e.role}{e.email ? ' · ' + e.email : ''}</span></span>
-              {blocked ? <span className="text-[9px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BLOCKED</span> : asg ? <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 6 }}>{asg.t.name.replace(/\s+—.*/, '')}</span> : <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ color: CD.faint }}>unposted</span>}
-              <Ic n="chev" s={15} c={CD.faint} />
-            </button>);
+            const sid = (e.code || '').trim();
+            const mine = e.name === me.name || (!!me.code && !!sid && me.code === sid);
+            const lockedUntil = srvStaff && sid && srvStaff[sid] ? srvStaff[sid].lockedUntil : '';
+            const canUnlock = (me.role === 'Owner' || me.role === 'Manager') && !mine && srvState === 'ok' && !!lockedUntil;
+            return (<div key={e.id} className="w-full flex items-center gap-3 px-3 py-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: CD.panel, marginBottom: 8, opacity: blocked ? 0.62 : 1 }}>
+              <button type="button" onClick={() => setEmpSel(e.id)} className="flex-1 min-w-0 flex items-center gap-3 text-left" style={{ background: 'transparent', minHeight: 44 }}>
+                <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: blocked ? CD.lineSoft : CD.ink, color: blocked ? CD.mute : 'var(--cd-on-ink)', fontSize: 11.5, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(e.name)}</span>
+                <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-semibold truncate" style={{ color: CD.ink }}>{e.name}</span><span className="block text-[11px] truncate" style={{ color: CD.faint }}>{e.role}{e.email ? ' · ' + e.email : ''}</span></span>
+                {lockedUntil ? <span className="text-[10px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 999 }}>Locked until {lockedUntil}</span> : null}
+                {blocked ? <span className="text-[9px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BLOCKED</span> : asg ? <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 6 }}>{asg.t.name.replace(/\s+—.*/, '')}</span> : <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ color: CD.faint }}>unposted</span>}
+                <Ic n="chev" s={15} c={CD.faint} />
+              </button>
+              {canUnlock && <button type="button" onClick={() => askUnlock(e)} className="flex-none text-[13px] font-semibold" style={{ minHeight: 44, padding: '0 16px', borderRadius: 8, background: 'transparent', color: CD.ink, border: '1px solid ' + CD.ink }}>Unlock</button>}
+            </div>);
           };
 
           // ---- full account / profile editor ----
@@ -1600,8 +1644,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               {React.createElement(window.CDOS.TeamBoard, { me, log, branches, setBranches, settings, setSettings })}
             </div>)}
             <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Accounts · {emps.length}</div>
+            {unlockLine && <div className="text-[13px] font-semibold mb-3" style={{ color: unlockBad ? CD.flag : CD.ink }}>{unlockLine}</div>}
             {emps.map(empRow)}
             <button onClick={() => setEmpSel(addEmp())} className="flex items-center gap-1.5 px-3 py-2 mt-1 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}><Ic n="plus" s={15} c="var(--cd-on-ink)" /> Add employee</button>
+            {unlockAsk && (
+              <div onMouseDown={() => setUnlockAsk(null)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: CD.scrim, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                <div role="dialog" aria-labelledby="unlock-ask-title" onMouseDown={(ev) => ev.stopPropagation()} style={{ width: 'min(420px, 100%)', background: CD.panel, color: CD.ink, border: '1px solid ' + CD.line, borderRadius: 16, padding: 20 }}>
+                  <div id="unlock-ask-title" className="text-[15px] font-semibold" style={{ color: CD.ink }}>Unlock {unlockAsk.name}?</div>
+                  <div className="text-[13px] mt-1" style={{ color: CD.mute }}>They can sign in again.</div>
+                  <div className="flex flex-col gap-2 mt-4">
+                    <button type="button" onClick={confirmUnlock} className="text-[13px] font-semibold" style={{ minHeight: 44, borderRadius: 8, background: 'transparent', color: CD.ink, border: '1px solid ' + CD.ink }}>Unlock</button>
+                    <button type="button" onClick={() => setUnlockAsk(null)} className="text-[13px] font-medium" style={{ minHeight: 44, borderRadius: 8, background: CD.panel, color: CD.ink, border: '1px solid ' + CD.line }}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>);
         })()}
 

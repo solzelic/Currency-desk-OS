@@ -43,6 +43,7 @@ import { resolveSession, revokeAllSessions, SESSION_COOKIE, type SessionUser } f
 import { audit } from "../audit.js";
 import { sendEmail, type EmailStatus } from "../email.js";
 import { clearPinAttempts, generatePin, hashPin } from "./pin.js";
+import { accountLockClocks } from "../auth/signin-guard.js";
 
 export const ROLE_RANK: Record<SessionUser["role"], number> = {
   teller: 1,
@@ -236,11 +237,24 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     return rows[0];
   };
 
+  async function deskZone(tenantId: string, branchId: string | null): Promise<string> {
+    if (branchId) {
+      const own = await db.select({ timezone: schema.branches.timezone }).from(schema.branches).where(eq(schema.branches.id, branchId)).limit(1);
+      const zone = own[0]?.timezone?.trim();
+      if (zone) return zone;
+    }
+    const desk = await db.select({ timezone: schema.branches.timezone }).from(schema.branches).where(eq(schema.branches.tenantId, tenantId)).limit(1);
+    const zone = desk[0]?.timezone?.trim();
+    if (!zone) throw new Error("Sign-in lock has no branch time zone.");
+    return zone;
+  }
+
   app.get("/api/staff", async (req, reply) => {
     const who = await requireManager(req, reply);
     if (!who) return;
     const rows = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, who.tenantId));
-    return { staff: rows.map(publicUser) };
+    const clocks = await accountLockClocks(db, rows.map((row) => row.id), await deskZone(who.tenantId, who.branchId));
+    return { staff: rows.map((row) => ({ ...publicUser(row), lockedUntil: clocks.get(row.id) ?? null })) };
   });
 
   app.post("/api/staff", async (req, reply) => {

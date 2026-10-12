@@ -11,7 +11,7 @@
    the password: the proof is a random cookie, and the row stores only
    its hash. */
 import { createHash, randomBytes } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 import { verifyPassword } from "./password.js";
 import { looksLikeCdId, normalizeCdId } from "./cdid.js";
@@ -174,6 +174,32 @@ async function releaseSuccess(db: Db, accountKey: string, accountCount: number, 
     No row is a finished clear, not a failure: they were not locked. */
 export async function clearSignInLock(db: Db, userId: string): Promise<void> {
   await db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, `acct:${userId}`));
+}
+
+/** Clock strings for accounts that are locked right now. Four failures
+    is not a lock, an expired window is not a lock, and an address-only
+    bucket is not this map. An empty list does not query. */
+export async function accountLockClocks(
+  db: Db,
+  userIds: string[],
+  timeZone: string,
+  now = Date.now(),
+): Promise<Map<string, string>> {
+  const clocks = new Map<string, string>();
+  if (userIds.length === 0) return clocks;
+  const rows = await db
+    .select()
+    .from(schema.signinFailures)
+    .where(inArray(schema.signinFailures.bucket, userIds.map((id) => `acct:${id}`)));
+  for (const row of rows) {
+    if (row.failures < SIGNIN_ACCOUNT_MAX) continue;
+    const started = row.windowStartedAt instanceof Date ? row.windowStartedAt : new Date(row.windowStartedAt);
+    const until = started.getTime() + SIGNIN_WINDOW_MS;
+    if (Number.isNaN(until) || until <= now) continue;
+    if (!row.bucket.startsWith("acct:")) continue;
+    clocks.set(row.bucket.slice("acct:".length), formatLockClock(new Date(until), timeZone));
+  }
+  return clocks;
 }
 
 /**
