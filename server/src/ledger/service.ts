@@ -1699,6 +1699,23 @@ export class LedgerService {
           "REVERSAL_NOT_ALLOWED",
           "This deal left an obligation on the book, so it is reversed through the obligation path — see docs/OBLIGATION_LINES.md.",
         );
+      /* A cheque is the same kind of hole. This path would mirror the
+         journal and the till, write ledger_reversals, and leave
+         ledger_cheques.status and ledger_cheque_events untouched. The
+         cashing then cannot be reversed on its own route: that route
+         sees the reversal and refuses forever with
+         REVERSAL_ALREADY_EXISTS, while the cheque stays held. A
+         clearance and a return are the same mistake on their own rows.
+         All three go to the cheque reversal route. */
+      if (
+        ["cheque_cashing", "cheque_clearing", "cheque_return"].includes(
+          transaction.rows[0].deal_kind,
+        )
+      )
+        throw new LedgerError(
+          "REVERSAL_NOT_ALLOWED",
+          "Reverse this cheque through POST /api/ledger/cheques/:chequeId/reversal.",
+        );
       const existing = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",
         [transactionId],

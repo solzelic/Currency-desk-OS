@@ -98,6 +98,15 @@ mirrored from what was actually posted rather than composed a second
 time. That is what makes the fee come back *without anybody having to
 remember that it should*.
 
+That write happens on `POST /api/ledger/cheques/:chequeId/reversal`.
+The deal reversal route, `POST /api/ledger/transactions/:transactionId/reversal`,
+refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return`
+(`REVERSAL_NOT_ALLOWED`). The message names the cheque reversal route.
+The deal route mirrors the journal and the till and inserts
+`ledger_reversals`, and it does not update `ledger_cheques` or append
+a cheque event. Once it has reversed a cashing, the cheque route
+answers `REVERSAL_ALREADY_EXISTS` and the cheque stays `held`.
+
 Only a cheque the desk is still carrying can be cleared, returned or
 reversed. A cheque that has already cleared cannot be reversed: the bank
 has paid, and unwinding the cashing now would take cash into the drawer

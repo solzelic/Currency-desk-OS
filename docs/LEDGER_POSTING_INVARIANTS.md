@@ -16,3 +16,8 @@
   `movement_kind = 'reversal'`, while original movements are marked
   `movement_kind = 'original'`.
 - The unique reversal link prevents an original transaction from being reversed twice.
+- `POST /api/ledger/transactions/:transactionId/reversal` refuses
+  `cheque_cashing`, `cheque_clearing`, and `cheque_return`
+  (`REVERSAL_NOT_ALLOWED`) and names
+  `POST /api/ledger/cheques/:chequeId/reversal`. The cheque row and its
+  events stay as they were. A cashing is reversed on that cheque route.
