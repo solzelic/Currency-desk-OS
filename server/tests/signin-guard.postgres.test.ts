@@ -179,7 +179,7 @@ postgres("shop sign-in against Postgres", () => {
     app = await buildApp(handle.db);
     pool = new pg.Pool({ connectionString: url });
     await wipe();
-    const base = (await handle.db.select().from(schema.staffUsers).limit(1))[0];
+    const base = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, TENANT)).limit(1))[0];
     if (!base) throw new Error("seed did not create a staff user to copy");
     const passwordHash = await hashPassword(PASS);
     await handle.db.insert(schema.staffUsers).values([
