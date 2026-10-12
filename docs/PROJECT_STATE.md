@@ -60,7 +60,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Financial ledger — every balance, movement, P&L | Server Postgres ledger (`server/src/ledger/`). One book. The browser renders cash, never computes it |
 | Customers / KYC files | Server: `desk_clients` (+ documents/images tables). `ledger_customers` is the ledger-side counterparty record — deliberately distinct |
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
-| Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
+| Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers. Switching staff replaces the session. The name on a deal is that session |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
 | Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
 
@@ -555,6 +555,37 @@ refusal does not count. Only a wrong current PIN, or a wrong password
 on that door, counts. A right PIN on the keypad gives the run back.
 A burst of wrong guesses still stops at five. The lock still lives in
 memory on this process.
+
+**2026-10-12**, staff switch. Taking the desk from the avatar menu is a new
+session. `POST /api/auth/switch` checks the next person's server-held
+PIN. A missing PIN, a manager-issued PIN they have not replaced, the
+guess `0000`, and a locked keypad are said inside the PIN dialog. The
+name is an initial and a surname, and the space between them does not
+break. `0000` and the other easy PINs are refused when someone sets a
+PIN, not only when they switch. `0000` on a switch does not count as a
+wrong try. Five wrong tries lock the keypad, and the lock clears on
+its own in 5 minutes. The dialog's Cancel key uses the desk font at
+15px. The route revokes the cookie that was live and issues one for
+them. Two switches from the same cookie cannot both win. The till
+session belongs to whoever counted it. A switch does not hand it over.
+A teller or a supervisor keeps that workspace only when they counted
+it, or when nobody has. A manager, an auditor, or compliance can stay
+on it to look or to approve, and they do not become the person who
+counted it. Anyone else is asked to pick a till. A deal, and cash in
+or out, on a till somebody else counted is refused until the new
+person does a handover count. A manager may approve. They may not
+move the cash. A mid-day count is only for the person who holds the
+till, and a count reply to anyone else carries no expected amount.
+The handover is a blind count. It closes the old session, writes the
+variance on that session, and records the person who counted as the
+closer and the counter. It opens a session they counted. The screen applies the role
+`/api/auth/me` returns after the switch. The Settings toggle that used
+to skip the PIN does not skip the server. A deal, a till open, and an
+audit row carry the new session. The first-run tour is once per person,
+on sign-in. A switch or a handover does not open it and does not mark
+it done. Before this, a successful switch wrote nothing, so a deal
+whose screen said one person and whose `actor_id` is another cannot
+be found with a query.
 
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the

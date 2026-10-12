@@ -1,6 +1,7 @@
 /* ============================================================
    Auth routes
      POST /api/auth/login            { staffId, password } → session cookie + user
+     POST /api/auth/switch           { staffId, pin } → revoke this session, cookie for them
      POST /api/auth/logout           → revokes the session
      GET  /api/auth/me               → current user + scope (or 401)
      POST /api/auth/change-password  { currentPassword, newPassword }
@@ -12,16 +13,19 @@
    file stays the desk: a staff id that is not an email is password-only.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
-import { createSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
+import { pinDeskName } from "../auth/desk-name.js";
+import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
 import { audit } from "../audit.js";
 import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
+import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 
@@ -31,6 +35,11 @@ const loginBody = z.object({
   // multi-tenant login: which house. Defaults to the demo tenant for now;
   // production resolves this from the subdomain / device enrolment.
   tenantId: z.string().min(1).max(120).default("tnt-yorkfx"),
+});
+
+const switchBody = z.object({
+  staffId: z.string().min(1).max(120),
+  pin: z.string().regex(/^\d{4}$/, "pin: four digits"),
 });
 
 const changePasswordBody = z.object({
@@ -79,7 +88,25 @@ const CHALLENGE_MAX_ATTEMPTS = 5;
 const maskEmail = (e: string) => { const [u, d] = e.split("@"); return ((u && u[0]) || "") + "••••@" + (d || ""); };
 const DUMMY_HASH = "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
 
+/* A manager, an auditor, or compliance may sit on a till they did not
+   count, to look or to approve. They do not become its owner. */
+const TILL_VIEWER = new Set(["branch_manager", "administrator", "auditor", "compliance_officer"]);
+
 export function registerAuthRoutes(app: FastifyInstance, db: Db) {
+  const ledgerUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
+  const ledger = ledgerUrl ? new pg.Pool({ connectionString: ledgerUrl, max: 2 }) : null;
+  if (ledger) app.addHook("onClose", async () => { await ledger.end(); });
+  /* Who counted the till on this workspace. No open session means nobody.
+     The ledger pool is the book when the app database is not. */
+  const tillOpener = async (workspaceId: string): Promise<string | null> => {
+    const text = `SELECT opened_by FROM ledger_till_sessions WHERE workspace_id = $1 AND status = 'open' ORDER BY session_number DESC LIMIT 1`;
+    if (ledger) {
+      const found = await ledger.query(text, [workspaceId]);
+      return (found.rows[0]?.opened_by as string | undefined) ?? null;
+    }
+    const found = await db.execute(sql`SELECT opened_by FROM ledger_till_sessions WHERE workspace_id = ${workspaceId} AND status = 'open' ORDER BY session_number DESC LIMIT 1`);
+    return (found.rows[0] as { opened_by?: string } | undefined)?.opened_by ?? null;
+  };
   const cookieOpts = {
     httpOnly: true,
     sameSite: "lax" as const,
@@ -366,6 +393,129 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       actorId: user.id, action: "auth.reset_completed",
     });
     return { ok: true, signInAs: user.staffId };
+  });
+
+  /* Taking over the desk is a new sign-in. The screen used to rename
+     itself and leave this cookie alone, so the book kept stamping the
+     person who had typed the password. The PIN has to be one this
+     server stored. 0000 is the old browser fallback and is never a
+     yes, even if that is what the hash would have said. */
+  app.post("/api/auth/switch", async (req, reply) => {
+    const token = req.cookies[SESSION_COOKIE];
+    const who = await resolveSession(db, token);
+    if (!who) {
+      /* The other switch from this cookie already revoked it. Say so,
+         rather than pretending the cookie was never a sign-in. */
+      if (token && await sessionIsRevoked(db, token)) {
+        return reply.code(409).send({ error: "session_replaced", detail: "This sign-in was already switched." });
+      }
+      return reply.code(401).send({ error: "unauthenticated" });
+    }
+    const parsed = switchBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    }
+    const { staffId, pin } = parsed.data;
+    const matches = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, staffId));
+    const target = matches.find((row) => row.tenantId === who.tenantId);
+    /* Same answer for a stranger and for somebody on another desk.
+       Which of the two it is must not be readable from the status. */
+    if (!target) {
+      return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
+    }
+    if (!target.active) {
+      return reply.code(403).send({ error: "inactive", detail: "That account is not active." });
+    }
+    if (!target.authorizedBranchIds.includes(who.branchId)) {
+      return reply.code(403).send({ error: "branch_denied", detail: "That person is not on this branch." });
+    }
+    const deskName = pinDeskName(target.name);
+    const lockedDetail = "Too many wrong tries. This clears on its own in 5 minutes.";
+    if (!target.pinHash) {
+      return reply.code(409).send({
+        error: "no_pin",
+        detail: `${deskName} has no PIN yet. They need to choose their own PIN before switching in.`,
+      });
+    }
+    if (target.pinMustChange) {
+      return reply.code(409).send({
+        error: "must_change",
+        detail: `${deskName} needs to choose their own PIN before switching in.`,
+      });
+    }
+    /* 0000 is the old browser fallback. It is refused before the hash is
+       read, and it is not a wrong try, so it does not walk the keypad
+       toward the lock. A locked keypad still says locked. */
+    if (pin === "0000") {
+      if (lockState(target.id).locked) {
+        return reply.code(429).send({ error: "locked", detail: lockedDetail });
+      }
+      return reply.code(422).send({
+        error: "weak_pin",
+        detail: "0000 is too easy to guess. Pick a different PIN.",
+      });
+    }
+    if (!reservePinAttempt(target.id)) {
+      return reply.code(429).send({ error: "locked", detail: lockedDetail });
+    }
+    const pinOk = await verifyPassword(pin, target.pinHash);
+    if (!pinOk) {
+      const after = lockState(target.id);
+      await audit(db, {
+        tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
+        actorId: who.id, action: "pin.failed", detail: { of: target.staffId, via: "auth.switch" },
+      });
+      return reply.code(401).send({
+        error: "wrong_pin",
+        remaining: after.remaining,
+        locked: after.locked,
+        ...(after.locked ? { detail: lockedDetail } : {}),
+      });
+    }
+    clearPinAttempts(target.id);
+
+    /* Branch membership is not ownership. The session stays on this till
+       when they counted it, when nobody has, or when their role is only
+       here to look. A teller taking over someone else's count picks a till
+       and then counts it. */
+    let kept: string | null = null;
+    if (who.workspaceId) {
+      const workspace = (await db.select({
+        id: schema.workspaces.id,
+        branchId: schema.workspaces.branchId,
+      }).from(schema.workspaces).where(eq(schema.workspaces.id, who.workspaceId)).limit(1))[0];
+      if (workspace && target.authorizedBranchIds.includes(workspace.branchId)) {
+        const opener = await tillOpener(workspace.id);
+        const owns = opener == null || opener === target.id;
+        if (owns || TILL_VIEWER.has(target.role)) kept = workspace.id;
+      }
+    }
+
+    if (!token) return reply.code(401).send({ error: "unauthenticated" });
+    let next: { token: string; expiresAt: Date };
+    try {
+      next = await replaceSession(db, token, target.id, kept);
+    } catch (error) {
+      if (error instanceof SessionReplacedError) {
+        return reply.code(409).send({ error: "session_replaced", detail: "This sign-in was already switched." });
+      }
+      throw error;
+    }
+    await audit(db, {
+      tenantId: target.tenantId,
+      legalEntityId: target.legalEntityId,
+      branchId: who.branchId,
+      actorId: target.id,
+      action: "auth.switch",
+      detail: { from: who.id, to: target.id },
+    });
+    reply.setCookie(SESSION_COOKIE, next.token, { ...cookieOpts, expires: next.expiresAt });
+    return {
+      ok: true,
+      pickTill: kept == null,
+      workspaceId: kept,
+      user: { id: target.staffId, name: target.name, role: target.role },
+    };
   });
 
   app.post("/api/auth/logout", async (req, reply) => {

@@ -53,7 +53,6 @@ export function lockState(userId: string): { locked: boolean; remaining: number 
   if (t.until) { tries.delete(userId); return { locked: false, remaining: MAX_TRIES }; }
   return { locked: false, remaining: Math.max(0, MAX_TRIES - t.count) };
 }
-
 /* Take the guess before the slow check. A check that runs first, then waits
    on the hash, lets every request in that wait through: they all read
    "four left" and all go on to be counted afterwards. The count moves

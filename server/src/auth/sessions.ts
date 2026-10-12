@@ -18,11 +18,15 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export async function createSession(
   db: Db,
   userId: string,
-  opts?: { platformMfa?: boolean },
+  opts?: { platformMfa?: boolean; workspaceId?: string | null },
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  const workspaceId = await homeWorkspaceId(db, userId);
+  /* A switch names the workspace, including "none" when the next person
+     has to pick a till. Login omits it and keeps the home till. */
+  const workspaceId = opts && "workspaceId" in opts
+    ? opts.workspaceId || undefined
+    : await homeWorkspaceId(db, userId);
   await db.insert(schema.sessions).values({
     tokenHash: sha256(token),
     userId,
@@ -165,6 +169,60 @@ export async function resolveSessionState(db: Db, token: string | undefined): Pr
 export async function resolveSession(db: Db, token: string | undefined): Promise<SessionUser | null> {
   const resolved = await resolveSessionState(db, token);
   return resolved.state === "active" ? resolved.user : null;
+}
+
+/* The cookie was a real session, and it has been revoked. Switch uses
+   this so the loser of two switches is a conflict, not a stranger. */
+export async function sessionIsRevoked(db: Db, token: string): Promise<boolean> {
+  const rows = await db
+    .select({ at: schema.sessions.revokedAt })
+    .from(schema.sessions)
+    .where(eq(schema.sessions.tokenHash, sha256(token)))
+    .limit(1);
+  return rows[0]?.at != null;
+}
+
+export class SessionReplacedError extends Error {
+  constructor() {
+    super("session_replaced");
+    this.name = "SessionReplacedError";
+  }
+}
+
+/* Revoke this cookie and issue the next one in the same transaction.
+   Two switches that share a cookie cannot both commit. */
+export async function replaceSession(
+  db: Db,
+  token: string,
+  userId: string,
+  workspaceId: string | null,
+): Promise<{ token: string; expiresAt: Date }> {
+  const next = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const hash = sha256(token);
+  let claimed = false;
+  /* The two drivers' transaction callbacks are not one TypeScript type.
+     Both still take a query runner with update and insert. */
+  const book = db as unknown as {
+    transaction(fn: (tx: Db) => Promise<void>): Promise<void>;
+  };
+  await book.transaction(async (tx) => {
+    const rows = await tx
+      .update(schema.sessions)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(schema.sessions.tokenHash, hash), isNull(schema.sessions.revokedAt)))
+      .returning();
+    if (!rows.length) return;
+    claimed = true;
+    await tx.insert(schema.sessions).values({
+      tokenHash: sha256(next),
+      userId,
+      expiresAt,
+      ...(workspaceId ? { workspaceId } : {}),
+    });
+  });
+  if (!claimed) throw new SessionReplacedError();
+  return { token: next, expiresAt };
 }
 
 export async function revokeSession(db: Db, token: string | undefined): Promise<void> {

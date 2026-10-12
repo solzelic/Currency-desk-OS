@@ -1206,22 +1206,66 @@
   /* ---- shared 4-digit PIN gate: reused at account switch, till switch, void.
      A proper mandatory-PIN screen — dot indicators + on-screen keypad, and the
      physical keyboard works too. ---- */
-  function PinPrompt({ title, sub, name, staffId, expected, onOk, onCancel }) {
+  function PinPrompt({ title, sub, name, staffId, expected, purpose, onOk, onCancel }) {
     const [pin, setPin] = React.useState('');
     const [err, setErr] = React.useState('');
     const [shake, setShake] = React.useState(false);
+    const [lockedOut, setLockedOut] = React.useState(false);
+    const lockedRef = React.useRef(false);
     const exp = String(expected == null ? '0000' : expected);
     const ini = (nm) => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     React.useEffect(() => {
       if (!document.getElementById('cdos-pin-kf')) { const s = document.createElement('style'); s.id = 'cdos-pin-kf'; s.textContent = '@keyframes cdosPinShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}'; document.head.appendChild(s); }
     }, []);
     const fail = (msg) => { setErr(msg || 'Incorrect PIN'); setShake(true); setTimeout(() => setShake(false), 420); setTimeout(() => { setPin(''); }, 260); };
+    const lockOut = (msg) => {
+      lockedRef.current = true;
+      setLockedOut(true);
+      setErr(msg || 'Too many wrong tries.');
+      setShake(true);
+      setTimeout(() => setShake(false), 420);
+      setPin('');
+    };
     /* The server decides. Holding the expected PIN in the browser and
        comparing it here made this gate decorative — it could be read out of
        devtools, or stepped over entirely. A desk whose PINs have not been set
        on the server yet answers 409, and only then do we fall back to the old
        local check so nothing breaks mid-migration. */
+    const readBody = async (res) => {
+      try { return await res.json(); }
+      catch (e) { return null; }
+    };
+    /* Account switch is a new sign-in. A 409 used to fall through to
+       comparing 0000 in this browser, which made the keypad optional.
+       A missing PIN is said in words. It is not treated as 0000. */
+    const submitSwitch = async (val) => {
+      if (!staffId) { fail('This account has no staff id.'); return; }
+      let res;
+      try {
+        res = await fetch('/api/auth/switch', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ staffId: staffId, pin: val }),
+        });
+      } catch (e) {
+        fail('Could not reach the desk to switch accounts.');
+        return;
+      }
+      const data = await readBody(res);
+      if (data == null) { fail('The desk answered, but not in a way this screen could read.'); return; }
+      if (res.ok) { onOk && onOk(data); return; }
+      if (res.status === 429 || (res.status === 401 && data.locked)) {
+        lockOut(data.detail);
+        return;
+      }
+      if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+        fail(data.detail);
+        return;
+      }
+      if (res.status === 401) { fail(); return; }
+      fail(data.detail || 'Could not switch to that account.');
+    };
     const submit = async (val) => {
+      if (purpose === 'switch') { await submitSwitch(val); return; }
       try {
         const res = await fetch('/api/staff/pin/verify', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
@@ -1234,25 +1278,28 @@
       } catch (e) { /* offline: the local check is all there is */ }
       if (val === exp) { onOk && onOk(); } else { fail(); }
     };
-    const press = (dgt) => { setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
-    const back = () => { setErr(''); setPin(p => p.slice(0, -1)); };
+    const press = (dgt) => { if (lockedRef.current) return; setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
+    const back = () => { if (lockedRef.current) return; setErr(''); setPin(p => p.slice(0, -1)); };
     React.useEffect(() => {
       const h = (e) => {
         if (e.key === 'Escape') { onCancel && onCancel(); return; }
+        if (lockedRef.current) return;
         if (e.key === 'Backspace') { e.preventDefault(); back(); return; }
         if (/^[0-9]$/.test(e.key)) { e.preventDefault(); press(e.key); }
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
     }, []);
-    const keyBtn = (label, onClick, kind) => (
-      <button key={label + kind} onClick={onClick} style={{ height: 56, borderRadius: 13, border: kind === 'ghost' ? '0' : `1px solid ${CD.line}`, background: kind === 'ghost' ? 'transparent' : 'var(--cd-panel)', fontSize: 22, fontWeight: 600, fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', transition: 'background .1s, transform .05s', WebkitTapHighlightColor: 'transparent' }}
+    const keyBtn = (label, onClick, kind, face) => {
+      const word = face === 'word';
+      return (
+      <button key={String(label) + kind} onClick={onClick} style={{ height: 56, borderRadius: 13, border: kind === 'ghost' ? '0' : `1px solid ${CD.line}`, background: kind === 'ghost' ? 'transparent' : 'var(--cd-panel)', fontSize: word ? 15 : 22, fontWeight: 600, fontFamily: word ? 'var(--f-display, Archivo, system-ui, sans-serif)' : 'Space Mono, monospace', color: CD.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', transition: 'background .1s, transform .05s', WebkitTapHighlightColor: 'transparent' }}
         onMouseDown={e => { e.currentTarget.style.background = CD.hover; e.currentTarget.style.transform = 'scale(0.97)'; }}
         onMouseUp={e => { e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)'; e.currentTarget.style.transform = 'none'; }}
         onMouseLeave={e => { e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)'; e.currentTarget.style.transform = 'none'; }}>
         {label}
       </button>
-    );
+    ); };
     return ReactDOM.createPortal(
       <div style={{ position: 'fixed', inset: 0, background: 'var(--cd-scrim)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onMouseDown={() => onCancel && onCancel()}>
         <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 18, boxShadow: '0 30px 70px var(--cd-scrim)', padding: '24px 22px 18px', textAlign: 'center', animation: shake ? 'cdosPinShake .42s' : 'none' }}>
@@ -1263,13 +1310,17 @@
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', margin: '18px 0 6px' }}>
             {[0, 1, 2, 3].map(i => { const filled = i < pin.length; return <span key={i} style={{ width: 14, height: 14, borderRadius: '50%', background: filled ? (err ? CD.flag : CD.ink) : 'transparent', border: `2px solid ${err ? CD.flag : (filled ? CD.ink : CD.line)}`, transition: 'background .12s, border-color .12s' }} />; })}
           </div>
-          <div style={{ fontSize: 11.5, color: CD.flag, minHeight: 18, marginBottom: 8 }}>{err}</div>
+          <div style={{ fontSize: 11.5, color: CD.flag, minHeight: 18, marginBottom: 8, lineHeight: 1.35 }}>{err}</div>
+          {lockedOut ? (
+            <button type="button" onClick={() => onCancel && onCancel()} style={{ height: 44, width: '100%', borderRadius: 12, border: `1px solid ${CD.ink}`, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 15, fontWeight: 600, fontFamily: 'var(--f-display, Archivo, system-ui, sans-serif)', cursor: 'pointer' }}>OK</button>
+          ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => keyBtn(k, () => press(k)))}
-            {keyBtn('Cancel', () => onCancel && onCancel(), 'ghost')}
+            {keyBtn('Cancel', () => onCancel && onCancel(), 'ghost', 'word')}
             {keyBtn('0', () => press('0'))}
             {keyBtn(<Ic n="arrowleft" s={20} c={CD.mute} />, back, 'ghost')}
           </div>
+          )}
         </div>
       </div>, document.body);
   }

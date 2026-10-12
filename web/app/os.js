@@ -1605,12 +1605,15 @@
     name,
     staffId,
     expected,
+    purpose,
     onOk,
     onCancel
   }) {
     const [pin, setPin] = React.useState('');
     const [err, setErr] = React.useState('');
     const [shake, setShake] = React.useState(false);
+    const [lockedOut, setLockedOut] = React.useState(false);
+    const lockedRef = React.useRef(false);
     const exp = String(expected == null ? '0000' : expected);
     const ini = nm => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     React.useEffect(() => {
@@ -1629,12 +1632,79 @@
         setPin('');
       }, 260);
     };
+    const lockOut = msg => {
+      lockedRef.current = true;
+      setLockedOut(true);
+      setErr(msg || 'Too many wrong tries.');
+      setShake(true);
+      setTimeout(() => setShake(false), 420);
+      setPin('');
+    };
     /* The server decides. Holding the expected PIN in the browser and
        comparing it here made this gate decorative — it could be read out of
        devtools, or stepped over entirely. A desk whose PINs have not been set
        on the server yet answers 409, and only then do we fall back to the old
        local check so nothing breaks mid-migration. */
+    const readBody = async res => {
+      try {
+        return await res.json();
+      } catch (e) {
+        return null;
+      }
+    };
+    /* Account switch is a new sign-in. A 409 used to fall through to
+       comparing 0000 in this browser, which made the keypad optional.
+       A missing PIN is said in words. It is not treated as 0000. */
+    const submitSwitch = async val => {
+      if (!staffId) {
+        fail('This account has no staff id.');
+        return;
+      }
+      let res;
+      try {
+        res = await fetch('/api/auth/switch', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            staffId: staffId,
+            pin: val
+          })
+        });
+      } catch (e) {
+        fail('Could not reach the desk to switch accounts.');
+        return;
+      }
+      const data = await readBody(res);
+      if (data == null) {
+        fail('The desk answered, but not in a way this screen could read.');
+        return;
+      }
+      if (res.ok) {
+        onOk && onOk(data);
+        return;
+      }
+      if (res.status === 429 || res.status === 401 && data.locked) {
+        lockOut(data.detail);
+        return;
+      }
+      if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+        fail(data.detail);
+        return;
+      }
+      if (res.status === 401) {
+        fail();
+        return;
+      }
+      fail(data.detail || 'Could not switch to that account.');
+    };
     const submit = async val => {
+      if (purpose === 'switch') {
+        await submitSwitch(val);
+        return;
+      }
       try {
         const res = await fetch('/api/staff/pin/verify', {
           method: 'POST',
@@ -1673,6 +1743,7 @@
       }
     };
     const press = dgt => {
+      if (lockedRef.current) return;
       setErr('');
       setPin(p => {
         if (p.length >= 4) return p;
@@ -1682,6 +1753,7 @@
       });
     };
     const back = () => {
+      if (lockedRef.current) return;
       setErr('');
       setPin(p => p.slice(0, -1));
     };
@@ -1691,6 +1763,7 @@
           onCancel && onCancel();
           return;
         }
+        if (lockedRef.current) return;
         if (e.key === 'Backspace') {
           e.preventDefault();
           back();
@@ -1704,37 +1777,40 @@
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
     }, []);
-    const keyBtn = (label, onClick, kind) => /*#__PURE__*/React.createElement("button", {
-      key: label + kind,
-      onClick: onClick,
-      style: {
-        height: 56,
-        borderRadius: 13,
-        border: kind === 'ghost' ? '0' : `1px solid ${CD.line}`,
-        background: kind === 'ghost' ? 'transparent' : 'var(--cd-panel)',
-        fontSize: 22,
-        fontWeight: 600,
-        fontFamily: 'Space Mono, monospace',
-        color: CD.ink,
-        cursor: 'pointer',
-        display: 'grid',
-        placeItems: 'center',
-        transition: 'background .1s, transform .05s',
-        WebkitTapHighlightColor: 'transparent'
-      },
-      onMouseDown: e => {
-        e.currentTarget.style.background = CD.hover;
-        e.currentTarget.style.transform = 'scale(0.97)';
-      },
-      onMouseUp: e => {
-        e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)';
-        e.currentTarget.style.transform = 'none';
-      },
-      onMouseLeave: e => {
-        e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)';
-        e.currentTarget.style.transform = 'none';
-      }
-    }, label);
+    const keyBtn = (label, onClick, kind, face) => {
+      const word = face === 'word';
+      return /*#__PURE__*/React.createElement("button", {
+        key: String(label) + kind,
+        onClick: onClick,
+        style: {
+          height: 56,
+          borderRadius: 13,
+          border: kind === 'ghost' ? '0' : `1px solid ${CD.line}`,
+          background: kind === 'ghost' ? 'transparent' : 'var(--cd-panel)',
+          fontSize: word ? 15 : 22,
+          fontWeight: 600,
+          fontFamily: word ? 'var(--f-display, Archivo, system-ui, sans-serif)' : 'Space Mono, monospace',
+          color: CD.ink,
+          cursor: 'pointer',
+          display: 'grid',
+          placeItems: 'center',
+          transition: 'background .1s, transform .05s',
+          WebkitTapHighlightColor: 'transparent'
+        },
+        onMouseDown: e => {
+          e.currentTarget.style.background = CD.hover;
+          e.currentTarget.style.transform = 'scale(0.97)';
+        },
+        onMouseUp: e => {
+          e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)';
+          e.currentTarget.style.transform = 'none';
+        },
+        onMouseLeave: e => {
+          e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)';
+          e.currentTarget.style.transform = 'none';
+        }
+      }, label);
+    };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       style: {
         position: 'fixed',
@@ -1833,15 +1909,31 @@
         fontSize: 11.5,
         color: CD.flag,
         minHeight: 18,
-        marginBottom: 8
+        marginBottom: 8,
+        lineHeight: 1.35
       }
-    }, err), /*#__PURE__*/React.createElement("div", {
+    }, err), lockedOut ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => onCancel && onCancel(),
+      style: {
+        height: 44,
+        width: '100%',
+        borderRadius: 12,
+        border: `1px solid ${CD.ink}`,
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        fontSize: 15,
+        fontWeight: 600,
+        fontFamily: 'var(--f-display, Archivo, system-ui, sans-serif)',
+        cursor: 'pointer'
+      }
+    }, "OK") : /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
         gap: 8
       }
-    }, ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => keyBtn(k, () => press(k))), keyBtn('Cancel', () => onCancel && onCancel(), 'ghost'), keyBtn('0', () => press('0')), keyBtn(/*#__PURE__*/React.createElement(Ic, {
+    }, ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => keyBtn(k, () => press(k))), keyBtn('Cancel', () => onCancel && onCancel(), 'ghost', 'word'), keyBtn('0', () => press('0')), keyBtn(/*#__PURE__*/React.createElement(Ic, {
       n: "arrowleft",
       s: 20,
       c: CD.mute
@@ -60156,6 +60248,8 @@ ${snap}`;
     const [pick, setPick] = useState(null);
     const [pin, setPin] = useState('');
     const [verifying, setVerifying] = useState(false);
+    const [err, setErr] = useState('');
+    const [lockedOut, setLockedOut] = useState(false);
     const others = (operators || []).filter(o => o.active !== false);
     if (!pick) {
       return /*#__PURE__*/React.createElement("div", {
@@ -60190,7 +60284,7 @@ ${snap}`;
           marginBottom: 16,
           lineHeight: 1.6
         }
-      }, "The live session and the open drawer pass to the next operator. Every handover is logged with who, when, and which till."), /*#__PURE__*/React.createElement("div", {
+      }, "The next person signs in here. The till stays with whoever counted it until they count it to take it over. The switch is logged."), /*#__PURE__*/React.createElement("div", {
         style: {
           display: 'grid',
           gap: 8,
@@ -60243,6 +60337,8 @@ ${snap}`;
           onClick: () => {
             setPick(o);
             setPin('');
+            setErr('');
+            setLockedOut(false);
           },
           style: {
             fontFamily: MONO,
@@ -60275,13 +60371,66 @@ ${snap}`;
       }, "\u2190 Keep the desk with me"))));
     }
     const push = d => {
-      if (verifying || pin.length >= 4) return;
+      if (lockedOut || verifying || pin.length >= 4) return;
       const n = (pin + d).slice(0, 4);
       setPin(n);
-      if (n.length === 4) {
-        setVerifying(true);
-        setTimeout(() => onConfirm(pick), 850);
+      if (n.length !== 4) return;
+      setVerifying(true);
+      setErr('');
+      if (!pick.code) {
+        setVerifying(false);
+        setPin('');
+        setErr('This account has no staff id.');
+        return;
       }
+      fetch('/api/auth/switch', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          staffId: pick.code,
+          pin: n
+        })
+      }).then(async res => {
+        let data = null;
+        try {
+          data = await res.json();
+        } catch (e) {
+          data = null;
+        }
+        if (data == null) {
+          setVerifying(false);
+          setPin('');
+          setErr('The desk answered, but not in a way this screen could read.');
+          return;
+        }
+        if (res.ok) {
+          onConfirm(pick, data);
+          return;
+        }
+        setVerifying(false);
+        setPin('');
+        if (res.status === 429 || res.status === 401 && data.locked) {
+          setLockedOut(true);
+          setErr(data.detail || 'Too many wrong tries.');
+          return;
+        }
+        if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+          setErr(data.detail);
+          return;
+        }
+        if (res.status === 401) {
+          setErr('Incorrect PIN');
+          return;
+        }
+        setErr(data.detail || 'Could not switch to that account.');
+      }).catch(() => {
+        setVerifying(false);
+        setPin('');
+        setErr('Could not reach the desk to switch accounts.');
+      });
     };
     return /*#__PURE__*/React.createElement("div", {
       style: Scrim
@@ -60302,10 +60451,32 @@ ${snap}`;
         color: 'var(--si-mute)',
         marginBottom: 4
       }
-    }, firstOf(pick.name), ", enter your PIN to take this drawer."), /*#__PURE__*/React.createElement(Dots, {
+    }, firstOf(pick.name), ", enter your PIN to take this drawer."), err ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: 'var(--si-flag)',
+        margin: '8px 0',
+        lineHeight: 1.35
+      }
+    }, err) : null, /*#__PURE__*/React.createElement(Dots, {
       n: 4,
       filled: pin.length
-    }), /*#__PURE__*/React.createElement(Keypad, {
+    }), lockedOut ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onCancel,
+      style: {
+        height: 44,
+        width: '100%',
+        borderRadius: 12,
+        border: 'none',
+        background: 'var(--si-ink)',
+        color: '#fff',
+        fontFamily: 'Archivo, system-ui, sans-serif',
+        fontSize: 15,
+        fontWeight: 600,
+        cursor: 'pointer'
+      }
+    }, "OK") : /*#__PURE__*/React.createElement(Keypad, {
       value: pin,
       max: 4,
       onDigit: push,
@@ -60316,6 +60487,8 @@ ${snap}`;
       onLeft: () => {
         setPick(null);
         setPin('');
+        setErr('');
+        setLockedOut(false);
       },
       verifying: verifying
     })));
@@ -60885,6 +61058,15 @@ window.CDOS_PERSIST = (function () {
     return outcome(book, id) == null;
   }
 
+  /* Once per person, and only when they sign in. A switch or a handover
+     is somebody else taking a desk that is already open. That arrival
+     does not open the tour, and it does not write skipped or finished,
+     so the person still sees it the next time they sign in themselves. */
+  function shouldOpen(book, id, arrival) {
+    if (arrival === 'switch' || arrival === 'handover') return false;
+    return shouldShow(book, id);
+  }
+
   /* Writes this person's row and leaves every other person alone.
      `now` is injectable so a test does not depend on the clock. */
   function record(storage, id, status, tour, now) {
@@ -60913,6 +61095,7 @@ window.CDOS_PERSIST = (function () {
     read: read,
     outcome: outcome,
     shouldShow: shouldShow,
+    shouldOpen: shouldOpen,
     record: record,
   };
 })();
@@ -61311,7 +61494,8 @@ window.CDOS_PERSIST = (function () {
     clients,
     openApp,
     openClient,
-    paused
+    paused,
+    arrival
   }) {
     const tour = api();
     const [run, setRun] = useState(null); // null until read; false once declined or empty
@@ -61344,7 +61528,13 @@ window.CDOS_PERSIST = (function () {
         sawRef.current = false;
         setBox(null);
       }
-      if (!tour || !tour.shouldShow(tour.read(window.localStorage), staffId)) {
+      if (!tour) {
+        setRun(false);
+        return;
+      }
+      var book = tour.read(window.localStorage);
+      var open = tour.shouldOpen ? tour.shouldOpen(book, staffId, arrival) : tour.shouldShow(book, staffId);
+      if (!open) {
         setRun(false);
         return;
       }
@@ -61380,7 +61570,7 @@ window.CDOS_PERSIST = (function () {
           index: 0
         };
       });
-    }, [staffId, role, appsKey, clientReady]);
+    }, [staffId, role, appsKey, clientReady, arrival]);
     const step = run && run.steps ? run.steps[run.index] : null;
 
     /* The anchor, but only when its window is the one in front.
@@ -63927,6 +64117,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [signup, setSignup] = useState(null); // { email } while verifying a new-desk signup
     const [newDesk, setNewDesk] = useState(null); // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null); // server user (carries tenantId) — drives per-tenant persistence
+    const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null); // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
        from inside an effect that only runs once. A setState callback looks
@@ -65199,9 +65390,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       } catch (e) {}
     };
     const can = k => me.role === 'Owner' ? true : !!perms.Teller[k];
-    // switching account previews a role: it sets that person AND applies their
-    // role preset to the shared (all-tellers) permission set, so the whole UI
-    // reflects exactly what that role is allowed to do. Owner = all access.
+    const SRV2OS = {
+      administrator: 'Owner',
+      branch_manager: 'Manager',
+      supervisor: 'Senior teller',
+      compliance_officer: 'Manager',
+      teller: 'Cashier',
+      auditor: 'Trainee'
+    };
+    // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null); // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null); // { title, sub, name, expected, onOk } when a PIN is being asked
     const applyRole = s => {
@@ -65247,18 +65444,86 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return e ? e.requirePin !== false : true;
     };
     const askPin = opts => setPinGate(opts);
+    /* The menu used to call applyRole and stop. The cookie, and therefore
+       every deal, stayed with whoever had signed in. Switching now asks
+       the server to revoke that session and open one for this person.
+       There is no path that skips the PIN: a local "0000" is not a session. */
+    const finishSwitch = async (switched, arrival) => {
+      let res;
+      try {
+        res = await fetch('/api/auth/me', {
+          credentials: 'same-origin'
+        });
+      } catch (e) {
+        log('Account switch failed', 'The desk could not be reached after the switch.');
+        setStage('lock');
+        return;
+      }
+      if (!res.ok) {
+        log('Account switch failed', 'The session did not come back as the person who just took the desk.');
+        setStage('lock');
+        return;
+      }
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        log('Account switch failed', 'The desk did not say who is signed in.');
+        setStage('lock');
+        return;
+      }
+      const u = data && data.user;
+      if (!u || !u.id) {
+        log('Account switch failed', 'The desk did not name who is signed in.');
+        setStage('lock');
+        return;
+      }
+      const how = arrival === 'handover' ? 'handover' : 'switch';
+      setTourArrival(how);
+      srvUserRef.current = u;
+      setSrvUser(u);
+      setUser(u.id);
+      const pickTill = !!(switched && switched.pickTill);
+      if (window.CDOS.Backend) {
+        try {
+          if (pickTill) window.CDOS.Backend.setWorkspace(null);else if (switched && switched.workspaceId) window.CDOS.Backend.setWorkspace(switched.workspaceId);
+          const tills = await window.CDOS.Backend.loadWorkspaces();
+          const list = tills && tills.workspaces || [];
+          const wanted = !pickTill && switched && switched.workspaceId;
+          const active = wanted ? list.find(w => w.workspaceId === switched.workspaceId) || null : list[0] || null;
+          if (!pickTill && active) {
+            window.CDOS.Backend.setWorkspace(active.workspaceId);
+            await window.CDOS.Backend.loadTillSession();
+          }
+        } catch (e) {
+          log('Ledger tills unavailable', e && e.message || 'Could not read this branch’s tills after the switch.');
+        }
+      }
+      const local = (settings.employees || []).find(e => e.code === u.id);
+      applyRole({
+        name: u.name || local && local.name || u.id,
+        role: SRV2OS[u.role] || 'Cashier',
+        apps: local && Array.isArray(local.apps) ? local.apps : null
+      });
+      if (pickTill) {
+        setStage('station');
+        return;
+      }
+      setCashVersion(v => v + 1);
+    };
     const switchTo = s => {
       setAcctMenu(false);
       if (s.name === me.name) return;
-      const need = settings.pinOnSwitch !== false && s.requirePin !== false;
-      if (need) askPin({
+      askPin({
         title: 'Switch account',
         sub: 'Enter ' + s.name + '’s PIN to continue',
         name: s.name,
         staffId: s.code,
-        expected: s.pin || '0000',
-        onOk: () => applyRole(s)
-      });else applyRole(s);
+        purpose: 'switch',
+        onOk: switched => {
+          finishSwitch(switched, 'switch');
+        }
+      });
     };
     const tillGate = fn => {
       const need = settings.pinOnTill !== false && reqPin(me.name);
@@ -65360,14 +65625,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           if (stageRef.current !== 'lock') return;
           const u = d.user;
           if (u.mustChangePassword) return; // that has its own screen, and a password we do not have
-          const SRV2OS = {
-            administrator: 'Owner',
-            branch_manager: 'Manager',
-            supervisor: 'Senior teller',
-            compliance_officer: 'Manager',
-            teller: 'Cashier',
-            auditor: 'Trainee'
-          };
           const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
           const rec = known || {
             id: 'e_' + Date.now(),
@@ -67056,9 +67313,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       operators: settings.employees && settings.employees.length ? settings.employees : STAFF,
       current: me,
       onCancel: () => setHandover(false),
-      onConfirm: op => {
+      onConfirm: (op, switched) => {
         setHandover(false);
-        applyRole(op);
+        finishSwitch(switched, 'handover');
         log && log('operator.handover', {
           to: op.name
         });
@@ -67684,10 +67941,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       settings: settings,
       onClose: () => setReceipt(null)
     }), pinGate && window.CDOS.PinPrompt && /*#__PURE__*/React.createElement(window.CDOS.PinPrompt, _extends({}, pinGate, {
-      onOk: () => {
+      onOk: result => {
         const f = pinGate.onOk;
         setPinGate(null);
-        f && f();
+        if (f) f(result);
       },
       onCancel: () => setPinGate(null)
     })), moveCash && _ST.MoveModal && React.createElement(_ST.MoveModal, {
@@ -67708,7 +67965,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       clients: clients,
       openApp: openApp,
       openClient: openClientProfile,
-      paused: !!(deskLocked || handover || pinGate)
+      paused: !!(deskLocked || handover || pinGate),
+      arrival: tourArrival
     }));
   }
   window.CDOS_App = App;

@@ -36,6 +36,7 @@ interface TourApi {
   hasClient: (clients: Record<string, unknown> | null) => boolean;
   dropUnplaced: (steps: Step[], missing: string[]) => Step[];
   shouldShow: (book: Record<string, { status?: string }>, id: string | null) => boolean;
+  shouldOpen: (book: Record<string, { status?: string }>, id: string | null, arrival?: string) => boolean;
   record: (storage: Memory, id: string, status: string, tour: string, now?: string) => Record<string, { status: string; tour: string }>;
   read: (storage: Memory) => Record<string, { status?: string; tour?: string }>;
 }
@@ -174,6 +175,17 @@ describe("skip and finish are remembered", () => {
     expect(tour.shouldShow(tour.read(store), "a.singh")).toBe(true);
     store.setItem(tour.KEY, JSON.stringify({ "a.singh": { status: "later" } }));
     expect(tour.shouldShow(tour.read(store), "a.singh")).toBe(true);
+  });
+
+  it("a switch or a handover does not open the tour and does not use it up", () => {
+    const book = {};
+    expect(tour.shouldOpen(book, "a.singh", "signin")).toBe(true);
+    expect(tour.shouldOpen(book, "a.singh", "switch")).toBe(false);
+    expect(tour.shouldOpen(book, "a.singh", "handover")).toBe(false);
+    expect(tour.shouldShow(book, "a.singh")).toBe(true);
+    const store = memory();
+    tour.record(store, "a.singh", "finished", "employee");
+    expect(tour.shouldOpen(tour.read(store), "a.singh", "signin")).toBe(false);
   });
 
   it("is the preference key the desk document already saves", () => {

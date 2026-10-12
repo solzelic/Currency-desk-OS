@@ -188,6 +188,27 @@ JWT stays valid until it expires no matter what happened in between, and at a
 cash desk the interesting event is somebody being let go at 4pm. Every
 credential change revokes every other session.
 
+**Taking the desk is a new session.** `POST /api/auth/switch` proves the next
+person's PIN, revokes the live cookie, and issues one for them. Only one of
+two switches from that cookie succeeds. The avatar menu used to change only
+the name on screen, so the book kept stamping whoever had typed the password.
+A missing PIN, and a PIN a manager issued that its owner has not replaced,
+are refused in that person's name (initial and surname). `0000` is refused
+as too easy to guess, and it does not count as a wrong try. The same easy
+PINs are refused when a person sets their own. Too many wrong tries locks
+the keypad for 5 minutes, then it clears on its own. The till belongs to
+whoever counted it. Switching in does not take it. A manager, an auditor,
+or compliance may keep the workspace to look or to approve. A teller or a
+supervisor keeps it only when they are the one who counted it. A deal
+and a cash movement on someone else's count are refused until a handover
+count. A manager may approve, not move cash. A mid-day count is only for
+the holder, and the reply to anyone else carries no expected amount. The
+handover closes that session, writes the variance on it, records the
+person who counted as the closer and the counter, and opens one they
+counted. The
+audit row is `auth.switch` with `{from, to}`. The first-run tour stays
+closed on a switch and on a handover.
+
 **Nothing enumerable.** Whether an account exists is not public. The reset
 route answers identically for a stranger and a customer, in the same words —
 and the rate limit answers identically too, because a throttle that only

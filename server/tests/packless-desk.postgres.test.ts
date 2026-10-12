@@ -596,6 +596,11 @@ postgres("a desk with no country pack uses the baseline", () => {
 
   it("still moves till cash and vault cash", async () => {
     const owner = await cookie("j.masri");
+    /* The till belongs to whoever counted it. This movement is the owner's. */
+    await pool.query(
+      "UPDATE ledger_till_sessions SET opened_by=$1 WHERE session_id='session-packless'",
+      [`${DEMO.tenantId}:j.masri`],
+    );
     const till = await app.inject({
       method: "POST",
       url: "/api/ledger/till-movements",
