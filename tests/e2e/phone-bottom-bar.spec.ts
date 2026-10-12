@@ -274,9 +274,9 @@ test("a phone has no floating plus", async ({ page }) => {
 
 /* The cash drawer is one scrolling column. On first load at least
    three denomination rows sit fully above the count panel, and
-   those rows are the thing under the pointer between Count
-   denominations and CAD counted. After scrolling, every row from
-   $100 down to the coins can sit fully above that panel. */
+   those rows are the thing under the pointer between the Count
+   heading and the counted figure. After scrolling, every row from
+   100 CAD down to the coins can sit fully above that panel. */
 async function countGeometry(page: Page): Promise<{
   rowCount: number;
   fullyVisible: number;
@@ -347,17 +347,19 @@ async function placeEveryRow(page: Page): Promise<{ placed: number; blocked: num
   });
 }
 
-/* The labels are the ones a person reads. A row counts only when
-   it sits between them and the pointer lands on the row, not on
-   the count panel painted over it. */
+/* The labels are the ones a person reads on the phone count: the
+   Count heading, and the counted figure in the footer. A row counts
+   only when it sits between them and the pointer lands on the row,
+   not on the count panel painted over it. */
 async function rowsBetweenLabels(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const heading = [...document.querySelectorAll("button")].find((el) => (el.textContent || "").trim() === "Count denominations");
-    const counted = [...document.querySelectorAll("div")].find((el) => el.childElementCount === 0 && (el.textContent || "").trim() === "CAD counted");
+    const root = document.querySelector(".till-phone");
+    const heading = root && root.querySelector(".till-phone-sec h2");
+    const counted = root && root.querySelector(".till-phone-counted");
     if (!heading || !counted) return -1;
     const top = heading.getBoundingClientRect().bottom;
     const bottom = counted.getBoundingClientRect().top;
-    return [...document.querySelectorAll(".till-den-row")].filter((row) => {
+    return [...root.querySelectorAll(".till-den-row")].filter((row) => {
       const box = row.getBoundingClientRect();
       if (box.height < 8 || box.top < top - 1 || box.bottom > bottom + 1) return false;
       const hit = document.elementFromPoint(box.left + 20, box.top + box.height / 2);
