@@ -19,7 +19,7 @@ created by the Quote Service and posted through frozen quote terms.
 | `POST` | `/api/ledger/opening-balances` | manager/supervisor + `till:initialize` | Sets opening balances exactly once, before ledger activity. |
 | `GET` | `/api/ledger/transactions?limit=100` | session cookie + `ledger:view` | Returns newest authoritative transactions and reversal state. |
 | `POST` | `/api/ledger/exchanges` | session cookie | Legacy/demo posting only; production returns `410 QUOTE_REQUIRED`. |
-| `POST` | `/api/ledger/transactions/:transactionId/reversal` | session cookie + `transaction:reverse` | Creates an explicit reversal with a required reason. |
+| `POST` | `/api/ledger/transactions/:transactionId/reversal` | session cookie + `transaction:reverse` | Creates an explicit reversal with a required reason. Refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return` with `REVERSAL_NOT_ALLOWED`. The message names `POST /api/ledger/cheques/:chequeId/reversal`. |
 
 The authenticated actor is resolved from the server session. Tenant, legal entity, branch, workspace, user, till, and authorized branches are not accepted from request JSON.
 

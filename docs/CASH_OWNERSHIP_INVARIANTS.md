@@ -148,7 +148,10 @@ coverage:
   clearance, a return and a reversal are each a server call that returns
   the drawer's new state, the cheque register lives in `ledger_cheques`
   and the browser keeps a cache, and the cheque IMAGE is deliberately
-  still local while intake is dealt with separately. The other four are
+  still local while intake is dealt with separately. The generic deal
+  reversal refuses a cheque cashing, a clearance, and a return, and
+  names the cheque reversal route. Only a cheque the desk is still
+  carrying is reversed there. The other four are
   cash on one side and a promise on the other, and their promises live in
   `ledger_obligations` — OBLIGATION_LINES.md.
 - The Ledger's own New Transaction ticket had a cheque path of its own,

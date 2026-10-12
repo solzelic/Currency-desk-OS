@@ -548,6 +548,15 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, cheque reversal door. `POST /api/ledger/transactions/:transactionId/reversal`
+refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return` with
+`REVERSAL_NOT_ALLOWED`. The message names
+`POST /api/ledger/cheques/:chequeId/reversal`. A generic reversal of a
+cashing used to put the cash back, leave `ledger_cheques.status` as
+held, write no cheque event, and then refuse the cheque route forever
+with `REVERSAL_ALREADY_EXISTS`. A clearance and a return were the same
+hole on their own transaction rows. The cheque route itself is unchanged.
+
 **2026-10-12**, PIN guesses. A wrong PIN, and a wrong sign-in password on the
 forgot-PIN door, is counted before the slow check. That guess is given
 back as soon as the current PIN or password checks out, so a later
