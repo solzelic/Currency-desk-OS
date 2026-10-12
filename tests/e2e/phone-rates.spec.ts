@@ -64,9 +64,14 @@ for (const width of [360, 390]) {
     await expect(page.getByText("Example data")).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/rates_teller_${width}.png` });
     const status = page.locator("[data-phone-rates-status]");
-    await expect(status).not.toContainText("Live, updated");
     await expect(status).not.toContainText("Example");
-    expect(await status.innerText()).toMatch(/Last updated|Rates locked|Rates not updated/);
+    await expect(status).not.toContainText("Last updated");
+    await expect(status).not.toContainText("—");
+    const statusText = await status.innerText();
+    expect(statusText === "Rates may be out of date" || /^Updated .+ · refreshes hourly$/.test(statusText), statusText).toBe(true);
+    const dot = await status.locator("i").evaluate((el) => getComputedStyle(el).backgroundColor);
+    if (statusText === "Rates may be out of date") expect(dot).toBe("rgb(232, 176, 74)");
+    else expect(dot).not.toBe("rgb(232, 176, 74)");
 
     const usd = page.locator(".code-USD");
     await expect(usd).toBeVisible();
@@ -92,16 +97,19 @@ for (const width of [360, 390]) {
     await usd.click();
     const sheet = page.locator(".phone-quote");
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("heading", { name: /Quote US Dollar/ })).toBeVisible();
+    await expect(sheet.getByRole("heading", { name: /Quote US dollar/ })).toBeVisible();
     const amount = sheet.getByLabel("Customer gives");
     await expect(amount).toBeFocused();
     await amount.fill("500");
     const gets = sheet.locator(".phone-quote-gets b");
     await expect(gets).toHaveText(/\d[\d,]*\.\d{2} CAD/);
-    await expect(sheet.locator(".phone-quote-kv")).toContainText(/\d+\.\d{4} CAD/);
+    const serverRate = await sheet.locator("[data-server-rate]").getAttribute("data-server-rate");
+    expect(serverRate).toMatch(/^\d+\.\d+$/);
+    await expect(sheet.locator(".phone-quote-kv")).toContainText(`${serverRate} CAD`);
     await expect(sheet.locator(".phone-quote-kv")).toContainText(/0\.00 CAD/);
     await page.screenshot({ path: `${SHOTS}/rates_quote_${width}.png` });
     const quoted = (await gets.innerText()).replace(/\s*CAD\s*$/, "");
+    const quoteId = await gets.getAttribute("data-server-quote");
 
     const sells = sheet.getByRole("tab", { name: "Customer sells" });
     expect(await sells.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(22, 21, 19)");
@@ -116,6 +124,33 @@ for (const width of [360, 390]) {
     await expect(page.locator('.fixed.inset-0 input[inputmode="decimal"]').first()).toHaveValue("500");
     await expect(page.locator(".fixed.inset-0")).toContainText(quoted);
     await page.screenshot({ path: `${SHOTS}/rates_deal_${width}.png` });
+
+    /* Customer gets is the quote this screen asked the server for.
+       Posting that quote is the deal, and the book must show the
+       same amount. One width is enough: the second would post again. */
+    if (width === 390) {
+      expect(quoteId).toBeTruthy();
+      const posted = await page.evaluate(async (id) => {
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        const ws = window.CDOS.Backend && window.CDOS.Backend.getWorkspace && window.CDOS.Backend.getWorkspace();
+        if (ws) headers["x-workspace-id"] = ws;
+        const r = await fetch("/api/quotes/" + encodeURIComponent(id) + "/post", {
+          method: "POST",
+          credentials: "same-origin",
+          headers,
+          body: JSON.stringify({
+            idempotencyKey: "phone-rates-" + id,
+            purpose: "Personal travel",
+            sourceOfFunds: "Employment income",
+          }),
+        });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      }, quoteId);
+      expect(posted.status, JSON.stringify(posted.body)).toBe(201);
+      expect(posted.body.outputAmount).toBe(quoted.replace(/,/g, ""));
+      const postedRate = String(posted.body.rate).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+      expect(postedRate).toBe(serverRate);
+    }
   });
 
   test(`rates loading at ${width}`, async ({ page }) => {
@@ -150,7 +185,10 @@ test("a fresh provider snapshot is the only Live line", async ({ page }) => {
   }));
   await atDesk(page);
   await openRates(page);
-  await expect(page.locator("[data-phone-rates-status]")).toHaveText("Live, updated " + await clock12(page, fetchedAt));
+  const line = "Updated " + await clock12(page, fetchedAt) + " · refreshes hourly";
+  const status = page.locator("[data-phone-rates-status]");
+  await expect(status).toHaveText(line);
+  expect(await status.locator("i").evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgb(232, 176, 74)");
 });
 
 test("a stale snapshot does not say Live", async ({ page }) => {
@@ -164,9 +202,8 @@ test("a stale snapshot does not say Live", async ({ page }) => {
   await atDesk(page);
   await openRates(page);
   const status = page.locator("[data-phone-rates-status]");
-  await expect(status).toContainText("Rates not updated since");
-  await expect(status).toContainText("Ask the owner.");
-  await expect(status).not.toContainText("Live, updated");
+  await expect(status).toHaveText("Rates may be out of date");
+  expect(await status.locator("i").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(232, 176, 74)");
 });
 
 test("a lock says Rates locked, with its time when we have one", async ({ page }) => {
@@ -217,6 +254,7 @@ test("the rate list and the quote pass the phone sweep", async ({ page }) => {
   const sheet = page.locator(".phone-quote");
   await expect(sheet).toBeVisible();
   await sheet.getByLabel("Customer gives").fill("500");
+  await expect(sheet.locator(".phone-quote-gets b")).toHaveText(/\d[\d,]*\.\d{2}/);
   await phoneSweep(page, { roots: [".phone-quote"] });
 });
 
@@ -255,8 +293,13 @@ test("a desk prices the list in its own currency", async ({ page }) => {
   await page.locator(".code-USD").click();
   const sheet = page.locator(".phone-quote");
   await sheet.getByLabel("Customer gives").fill("500");
-  await expect(sheet.locator(".phone-quote-gets b")).toContainText("PHP");
-  await expect(sheet.locator(".phone-quote-kv")).toContainText(/\d+\.\d{4} PHP/);
+  /* The list is priced in the desk currency the screen was given.
+     Customer gets is not. It comes from the server quote, and this
+     Canada desk will not quote a PHP payout from a browser-only
+     home switch. The figure stays absent. */
+  await expect(sheet.locator(".phone-quote-note")).toContainText("The server did not quote this amount.");
+  await expect(sheet.locator(".phone-quote-gets b")).toHaveText("—");
+  await expect(sheet.locator("[data-server-rate]")).toHaveText("—");
 });
 
 test("an owner reaches Pricing from Edit", async ({ page }) => {

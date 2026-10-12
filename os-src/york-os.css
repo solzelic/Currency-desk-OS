@@ -2619,8 +2619,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     background: #6B6760;
   }
   .phone-rates-status.is-live i { background: var(--color-positive, #157A3E); }
-  .phone-rates-status.is-locked i,
-  .phone-rates-status.is-saved i { background: var(--color-warning-border, #E8B04A); }
+  .phone-rates-status.is-locked i { background: var(--color-warning-border, #E8B04A); }
+  /* Amber only once the snapshot is older than the hourly refresh. */
+  .phone-rates-status.is-aged i { background: var(--color-warning-border, #E8B04A); }
   .phone-rates-status.is-stale i { background: var(--color-negative, #B42318); }
   .phone-rates-explain {
     margin: 4px 0 8px;

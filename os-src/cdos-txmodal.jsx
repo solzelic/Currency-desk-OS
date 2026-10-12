@@ -45,7 +45,12 @@
     return per == null ? null : n * per;
   }
   const shownRate = (r) => (r > 0 && isFinite(r)) ? num(r) : 'Rate unavailable';
-  const formatPhoneRate = (r) => (r > 0 && isFinite(r)) ? Number(r).toFixed(4) : 'Rate unavailable';
+    const formatPhoneRate = (r) => (r > 0 && isFinite(r)) ? Number(r).toFixed(4) : 'Rate unavailable';
+    const stripServerRate = (raw) => {
+      const text = String(raw == null ? '' : raw).trim();
+      if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return '';
+      return text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+    };
   const phoneMoney = (n, ccy) => {
     const fn = window.CDOS.formatPhoneMoney;
     return typeof fn === 'function' ? fn(n, ccy) : (num(n) + (ccy ? ' ' + ccy : ''));
@@ -386,7 +391,14 @@
     const [touched, setTouched] = useState({});
     const markTouched = (k) => setTouched(t => (t[k] ? t : { ...t, [k]: true }));
     const openBorder = (k, filled) => (!phoneSheet || touched[k]) && !filled ? CD.flag : CD.line;
-    const rateShown = (r) => phoneSheet ? formatPhoneRate(r) : shownRate(r);
+    const rateShown = (r) => {
+      const seed = dealSeed.current;
+      if (phoneSheet && seed && seed.customerRate && String(seed.amount) === String(inAmt)) {
+        const shown = stripServerRate(seed.customerRate);
+        if (shown) return shown;
+      }
+      return phoneSheet ? formatPhoneRate(r) : shownRate(r);
+    };
     const selectedChip = useRef(null);
     useEffect(() => {
       if (!phoneSheet || !selectedChip.current) return;
@@ -435,10 +447,11 @@
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
 
-    /* A phone quote hands this ticket its currency, side, and amount.
-       Read once, then drop it, so the next New transaction starts blank.
-       The rate is not applied as a hand price: this modal prices with
-       priceDeal, the same function the quote just showed. */
+    /* A phone quote hands this ticket its currency, side, amount, and
+       the server quote it already fetched. Read once, then drop it, so
+       the next New transaction starts blank. Customer receives stays
+       that server output while the ticket still matches it. The rate
+       is not applied as a hand price. */
     const dealSeed = useRef(window.__cdosDealPrefill || null);
     useEffect(() => { window.__cdosDealPrefill = null; }, []);
     // exchange
@@ -604,7 +617,16 @@
 
     // what the customer receives / what we collect, per type
     const feeN = parseFloat(fee) || 0;
-    const out = isExchange ? { amt: pricing.outAmt, ccy: outCcy }
+    const seededOut = (() => {
+      const s = dealSeed.current;
+      if (!s || s.outputAmount == null || s.outputAmount === '') return null;
+      if (String(s.amount) !== String(inAmt)) return null;
+      if (s.from && s.from !== inCcy) return null;
+      if (s.to && s.to !== outCcy) return null;
+      return s.outputAmount;
+    })();
+    const quotedReceive = (isExchange && serverQuote && serverQuote.outputAmount) || seededOut;
+    const out = isExchange ? { amt: quotedReceive != null ? quotedReceive : pricing.outAmt, ccy: outCcy }
       : isSend ? { amt: pricing.outAmt, ccy: payoutCcy }
       : isCheque ? { amt: +(amtN - chequeFee).toFixed(2), ccy: home }
       : isReceive ? { amt: amtN, ccy: outCcy }

@@ -32681,6 +32681,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   }
   const shownRate = r => r > 0 && isFinite(r) ? num(r) : 'Rate unavailable';
   const formatPhoneRate = r => r > 0 && isFinite(r) ? Number(r).toFixed(4) : 'Rate unavailable';
+  const stripServerRate = raw => {
+    const text = String(raw == null ? '' : raw).trim();
+    if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return '';
+    return text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  };
   const phoneMoney = (n, ccy) => {
     const fn = window.CDOS.formatPhoneMoney;
     return typeof fn === 'function' ? fn(n, ccy) : num(n) + (ccy ? ' ' + ccy : '');
@@ -33948,7 +33953,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       [k]: true
     });
     const openBorder = (k, filled) => (!phoneSheet || touched[k]) && !filled ? CD.flag : CD.line;
-    const rateShown = r => phoneSheet ? formatPhoneRate(r) : shownRate(r);
+    const rateShown = r => {
+      const seed = dealSeed.current;
+      if (phoneSheet && seed && seed.customerRate && String(seed.amount) === String(inAmt)) {
+        const shown = stripServerRate(seed.customerRate);
+        if (shown) return shown;
+      }
+      return phoneSheet ? formatPhoneRate(r) : shownRate(r);
+    };
     const selectedChip = useRef(null);
     useEffect(() => {
       if (!phoneSheet || !selectedChip.current) return;
@@ -33991,10 +34003,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
 
-    /* A phone quote hands this ticket its currency, side, and amount.
-       Read once, then drop it, so the next New transaction starts blank.
-       The rate is not applied as a hand price: this modal prices with
-       priceDeal, the same function the quote just showed. */
+    /* A phone quote hands this ticket its currency, side, amount, and
+       the server quote it already fetched. Read once, then drop it, so
+       the next New transaction starts blank. Customer receives stays
+       that server output while the ticket still matches it. The rate
+       is not applied as a hand price. */
     const dealSeed = useRef(window.__cdosDealPrefill || null);
     useEffect(() => {
       window.__cdosDealPrefill = null;
@@ -34194,8 +34207,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 
     // what the customer receives / what we collect, per type
     const feeN = parseFloat(fee) || 0;
+    const seededOut = (() => {
+      const s = dealSeed.current;
+      if (!s || s.outputAmount == null || s.outputAmount === '') return null;
+      if (String(s.amount) !== String(inAmt)) return null;
+      if (s.from && s.from !== inCcy) return null;
+      if (s.to && s.to !== outCcy) return null;
+      return s.outputAmount;
+    })();
+    const quotedReceive = isExchange && serverQuote && serverQuote.outputAmount || seededOut;
     const out = isExchange ? {
-      amt: pricing.outAmt,
+      amt: quotedReceive != null ? quotedReceive : pricing.outAmt,
       ccy: outCcy
     } : isSend ? {
       amt: pricing.outAmt,
@@ -62968,7 +62990,10 @@ window.CDOS_PERSIST = (function () {
     useRef
   } = React;
   const HOME_FALLBACK = 'CAD';
-  const TWO_HOURS = 2 * 60 * 60 * 1000;
+  /* The market sync republishes on the hour unless a desk sets
+     RATES_SYNC_MINUTES. The line says that cadence, and the dot
+     turns amber only once a snapshot is older than it. */
+  const HOUR = 60 * 60 * 1000;
   /* Named by the desk, and also any unit priced under 0.10 of home,
      which is the same rule the board uses for a small currency. */
   const PER_HUNDRED = {
@@ -62976,6 +63001,8 @@ window.CDOS_PERSIST = (function () {
     PHP: true,
     MXN: true
   };
+  let names = null;
+  let quoteCustomerId = '';
   function homeCode() {
     const fn = window.CDOS && window.CDOS.deskHomeCcy;
     const code = fn ? fn() : HOME_FALLBACK;
@@ -63005,9 +63032,16 @@ window.CDOS_PERSIST = (function () {
     return fn(new Date(ms)) || '';
   }
 
-  /* Live only when a real provider snapshot is fresh. A locked board,
-     a stale pull, and the built-in rates each say so in words. */
-  function statusOf(feed, locked) {
+  /* A lock names its own moment. Everything else names the snapshot
+     we actually have: the provider pull when one exists, otherwise
+     the published board. No time means we do not invent one. */
+  function stampOf(feed, boardAt) {
+    const market = feed && Number(feed.fetchedAt);
+    if (market > 0) return market;
+    const published = Number(boardAt);
+    return published > 0 ? published : 0;
+  }
+  function statusOf(feed, boardAt, locked) {
     if (locked) {
       let at = null;
       try {
@@ -63021,26 +63055,29 @@ window.CDOS_PERSIST = (function () {
         text: time ? 'Rates locked at ' + time : 'Rates locked'
       };
     }
-    const provider = feed && feed.provider;
-    const at = feed && Number(feed.fetchedAt);
-    const live = provider === 'openexchangerates.org' || provider === 'open.er-api.com';
-    if (live && at > 0) {
-      const time = clock12(at);
-      if (Date.now() - at <= TWO_HOURS) return {
-        tone: 'live',
-        text: 'Live, updated ' + time
-      };
-      return {
-        tone: 'stale',
-        text: 'Rates not updated since ' + time + '. Ask the owner.'
-      };
-    }
+    const at = stampOf(feed, boardAt);
+    const time = at ? clock12(at) : '';
+    if (!time || Date.now() - at > HOUR) return {
+      tone: 'aged',
+      text: 'Rates may be out of date'
+    };
     return {
-      tone: 'saved',
-      text: 'Last updated — not a live feed'
+      tone: 'fresh',
+      text: 'Updated ' + time + ' · refreshes hourly'
     };
   }
+
+  /* Sentence case, from the same Intl.DisplayNames the rate catalog
+     uses ("US dollar", "Swiss franc"). The app table is the fallback
+     when that lookup is missing. */
   function currencyName(code) {
+    try {
+      if (!names) names = new Intl.DisplayNames(['en'], {
+        type: 'currency'
+      });
+      const spoken = names.of(code);
+      if (spoken && spoken !== code) return spoken;
+    } catch (e) {/* the table below */}
     const row = typeof CUR !== 'undefined' ? CUR.find(c => c.code === code) : null;
     return row && row.name || code;
   }
@@ -63100,43 +63137,63 @@ window.CDOS_PERSIST = (function () {
     const rest = visible.slice(6).sort((a, b) => a.code.localeCompare(b.code));
     return top.concat(rest);
   }
-  function quoteOf(side, code, amount, settings) {
-    const home = homeCode();
-    const amt = parseFloat(amount);
+
+  /* The quote row stores the customer rate at 12 places. Showing it
+     with the trailing zeros stripped is the rate that was multiplied.
+     A 4-decimal round is a different number. */
+  function formatServerRate(raw) {
+    const text = String(raw == null ? '' : raw).trim();
+    if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return '';
+    return text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  }
+  function moneyInput(raw) {
+    const text = String(raw || '').trim();
+    if (!/^(?:0|[1-9]\d*)(?:\.\d{0,2})?$/.test(text)) return '';
+    const n = Number(text);
+    if (!(n > 0)) return '';
+    return n.toFixed(2);
+  }
+  function feeInput(settings) {
     const feeRaw = settings && settings.defaultFee != null && settings.defaultFee !== '' ? +settings.defaultFee : 0;
-    const fee = isFinite(feeRaw) ? feeRaw : 0;
-    const unit = homePerOne(code, settings, side === 'buys' ? 'sell' : 'buy');
-    const cadMid = window.CDOS.unitCadMid ? window.CDOS.unitCadMid(code) : 0;
-    const hundred = perHundred(code, cadMid);
-    if (!(amt > 0) || !(unit > 0)) {
-      return {
-        home,
-        fee,
-        unit,
-        hundred,
-        gets: null,
-        getsCcy: side === 'buys' ? code : home
-      };
-    }
-    const deal = side === 'buys' ? window.CDOS.priceDeal({
-      inCcy: home,
-      outCcy: code,
-      inAmt: amt,
-      settings
-    }) : window.CDOS.priceDeal({
-      inCcy: code,
-      outCcy: home,
-      inAmt: amt,
-      settings
+    const fee = isFinite(feeRaw) && feeRaw > 0 ? feeRaw : 0;
+    return fee.toFixed(2);
+  }
+
+  /* POST /api/quotes is the amount the ledger posts. This screen does
+     not multiply a rate of its own. The endpoint requires a customer,
+     so the request uses one already on the desk; the follow-up, once
+     os-src/quote-terms.js lands, is to preview with that module and
+     create the quote for the customer the cashier actually picks. */
+  async function deskCustomerId() {
+    if (quoteCustomerId) return quoteCustomerId;
+    const B = window.CDOS && window.CDOS.Backend;
+    if (!B) return '';
+    const body = await B.request('/api/ledger/customers');
+    const id = body && body.customers && body.customers[0] && body.customers[0].customerId;
+    if (id) quoteCustomerId = id;
+    return id || '';
+  }
+  function cancelQuote(id) {
+    const B = window.CDOS && window.CDOS.Backend;
+    if (!B || !id) return;
+    B.request('/api/quotes/' + encodeURIComponent(id) + '/cancel', {
+      method: 'POST',
+      body: '{}'
+    }).catch(() => {});
+  }
+  async function requestServerQuote(spec) {
+    const B = window.CDOS && window.CDOS.Backend;
+    if (!B) return null;
+    const customerId = await deskCustomerId();
+    if (!customerId) return null;
+    return B.createQuote({
+      customerId,
+      from: spec.from,
+      to: spec.to,
+      inputAmount: spec.inputAmount,
+      feeCad: spec.feeCad,
+      direction: spec.direction
     });
-    return {
-      home,
-      fee,
-      unit,
-      hundred,
-      gets: deal.outAmt,
-      getsCcy: side === 'buys' ? code : home
-    };
   }
   function PhoneRates({
     settings,
@@ -63150,13 +63207,17 @@ window.CDOS_PERSIST = (function () {
     const Phone = window.CDOS.Phone;
     const [phase, setPhase] = useState('loading');
     const [feed, setFeed] = useState(null);
+    const [boardAt, setBoardAt] = useState(null);
     const [query, setQuery] = useState('');
     const [quote, setQuote] = useState(null);
     const [side, setSide] = useState('sells');
     const [amount, setAmount] = useState('');
     const [picking, setPicking] = useState(false);
+    const [serverQuote, setServerQuote] = useState(null);
+    const [quoteNote, setQuoteNote] = useState('');
     const [homeTick, setHomeTick] = useState(0);
     const amountRef = useRef(null);
+    const heldQuote = useRef('');
     const canEdit = role === 'Owner' || role === 'Manager';
     const load = () => {
       setPhase('loading');
@@ -63168,10 +63229,18 @@ window.CDOS_PERSIST = (function () {
         return r.json();
       }).then(data => {
         setFeed(data || null);
+        return fetch('/api/rates', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        }).then(r => r.ok ? r.json() : null).catch(() => null);
+      }).then(board => {
+        const at = board && board.board && board.board.publishedAt;
+        setBoardAt(at || null);
         setPhase('ready');
       }).catch(err => {
         console.error('Rates did not load', err);
         setFeed(null);
+        setBoardAt(null);
         setPhase('error');
       });
     };
@@ -63186,26 +63255,89 @@ window.CDOS_PERSIST = (function () {
     useEffect(() => {
       if (quote && amountRef.current) amountRef.current.focus();
     }, [quote && quote.code]);
+    const feeCad = feeInput(settings);
+    useEffect(() => {
+      if (!quote) return undefined;
+      const inputAmount = moneyInput(amount);
+      const home = homeCode();
+      const from = side === 'buys' ? home : quote.code;
+      const to = side === 'buys' ? quote.code : home;
+      const direction = from === home ? 'customer_buy_foreign' : 'customer_sell_foreign';
+      if (!inputAmount || from === to) {
+        setServerQuote(null);
+        setQuoteNote('');
+        return undefined;
+      }
+      let dropped = false;
+      const timer = setTimeout(() => {
+        requestServerQuote({
+          from,
+          to,
+          inputAmount,
+          feeCad,
+          direction
+        }).then(result => {
+          if (dropped) {
+            if (result && result.quoteId) cancelQuote(result.quoteId);
+            return;
+          }
+          if (!result || !result.outputAmount || !result.quoteId) {
+            setServerQuote(null);
+            setQuoteNote('The server did not quote this amount.');
+            return;
+          }
+          if (heldQuote.current && heldQuote.current !== result.quoteId) cancelQuote(heldQuote.current);
+          heldQuote.current = result.quoteId;
+          setServerQuote(result);
+          setQuoteNote('');
+        }).catch(err => {
+          if (dropped) return;
+          console.error('The server did not quote this amount', err);
+          setServerQuote(null);
+          setQuoteNote('The server did not quote this amount.');
+        });
+      }, 200);
+      return () => {
+        dropped = true;
+        clearTimeout(timer);
+        if (heldQuote.current) {
+          cancelQuote(heldQuote.current);
+          heldQuote.current = '';
+        }
+        setServerQuote(null);
+      };
+    }, [quote && quote.code, side, amount, feeCad, homeTick]);
     const rows = useMemo(() => phase === 'ready' ? buildRows(settings) : [], [phase, settings, rateVersion, feed, homeTick]);
     const q = query.trim().toLowerCase();
     const shown = rows.filter(r => !q || r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
-    const status = statusOf(feed, locked);
+    const status = phase === 'loading' ? {
+      tone: 'fresh',
+      text: ''
+    } : statusOf(feed, boardAt, locked);
     const home = homeCode();
-    const priced = quote ? quoteOf(side, quote.code, amount, settings) : null;
-    const canStart = !!(priced && priced.gets != null);
+    const canStart = !!(serverQuote && serverQuote.outputAmount && serverQuote.quoteId);
     const openQuote = row => {
       setSide('sells');
       setAmount('');
       setPicking(false);
+      setServerQuote(null);
+      setQuoteNote('');
       setQuote(row);
     };
     const startDeal = () => {
       if (!canStart || !onQuoteDeal) return;
+      /* Leave this quote active. Closing the sheet would cancel it,
+         and the deal posts this one. */
+      heldQuote.current = '';
       onQuoteDeal({
         side: side === 'buys' ? 'customer-buys' : 'customer-sells',
         currency: quote.code,
         amount,
-        rate: priced.unit
+        from: serverQuote.from,
+        to: serverQuote.to,
+        outputAmount: serverQuote.outputAmount,
+        customerRate: serverQuote.customerRate,
+        quoteId: serverQuote.quoteId
       });
       setQuote(null);
     };
@@ -63221,12 +63353,12 @@ window.CDOS_PERSIST = (function () {
     }, "Edit") : null;
     const banner = /*#__PURE__*/React.createElement("div", {
       "data-phone-rates": phase
-    }, /*#__PURE__*/React.createElement("p", {
+    }, status.text ? /*#__PURE__*/React.createElement("p", {
       className: 'phone-rates-status is-' + status.tone,
       "data-phone-rates-status": status.tone
     }, /*#__PURE__*/React.createElement("i", {
       "aria-hidden": "true"
-    }), status.text), /*#__PURE__*/React.createElement(Phone.Search, {
+    }), status.text) : null, /*#__PURE__*/React.createElement(Phone.Search, {
       value: query,
       onChange: setQuery,
       placeholder: "Find a currency",
@@ -63271,7 +63403,7 @@ window.CDOS_PERSIST = (function () {
       amount: row.buy,
       meta: row.sell,
       onClick: () => openQuote(row)
-    })))), quote && priced && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+    })))), quote && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "phone-quote",
       role: "dialog",
       "aria-label": 'Quote ' + quote.name
@@ -63323,14 +63455,17 @@ window.CDOS_PERSIST = (function () {
     }, /*#__PURE__*/React.createElement("span", {
       className: "k"
     }, "Customer gets"), /*#__PURE__*/React.createElement("b", {
-      "aria-live": "polite"
-    }, priced.gets == null ? '—' : amountLine(priced.gets, priced.getsCcy))), /*#__PURE__*/React.createElement("div", {
+      "aria-live": "polite",
+      "data-server-quote": serverQuote ? serverQuote.quoteId : '',
+      "data-server-output": serverQuote ? serverQuote.outputAmount : ''
+    }, serverQuote ? amountLine(serverQuote.outputAmount, serverQuote.to) : '—')), /*#__PURE__*/React.createElement("div", {
       className: "phone-quote-kv"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, priced.hundred ? 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ', for 100)' : 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'), /*#__PURE__*/React.createElement("b", {
-      className: side === 'buys' ? 'is-sell' : 'is-buy'
-    }, rateText(priced.unit, priced.hundred), " ", priced.home)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Fee"), /*#__PURE__*/React.createElement("b", null, amountLine(priced.fee, home)))), /*#__PURE__*/React.createElement("p", {
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, 'Our rate (we ' + (side === 'buys' ? 'sell' : 'buy') + ')'), /*#__PURE__*/React.createElement("b", {
+      className: side === 'buys' ? 'is-sell' : 'is-buy',
+      "data-server-rate": serverQuote ? formatServerRate(serverQuote.customerRate) : ''
+    }, serverQuote ? formatServerRate(serverQuote.customerRate) + ' ' + serverQuote.to : '—')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", null, "Fee"), /*#__PURE__*/React.createElement("b", null, amountLine(serverQuote ? serverQuote.feeCad : feeCad, home)))), /*#__PURE__*/React.createElement("p", {
       className: "phone-quote-note"
-    }, "The fee is set in Pricing. The deal uses the rate showing when you post it."), picking && /*#__PURE__*/React.createElement("div", {
+    }, quoteNote || 'The fee is set in Pricing. Customer gets is the server quote, and posting uses that amount.'), picking && /*#__PURE__*/React.createElement("div", {
       className: "phone-quote-pick",
       role: "listbox",
       "aria-label": "Currencies"
