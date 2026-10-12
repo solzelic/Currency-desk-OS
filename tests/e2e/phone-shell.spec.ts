@@ -277,20 +277,20 @@ test("the title sits 16px under the top bar at 360", async ({ page }) => {
 /* A long station and till name used to wrap "open" or "closed"
    onto a second line at 360, so the header grew. The desk name is
    what gets cut. The status stays whole. */
-async function seedLongDesk(page: Page, closed = false): Promise<void> {
+async function seedLongDesk(page: Page, closed = false, tillName = "Wholesale desk"): Promise<void> {
   await page.context().clearCookies();
   await page.goto("/app");
   await page.waitForFunction(() => {
     const stations = window.CDOS && window.CDOS._stations;
     return !!(stations && stations.defaultBranches && stations.SKEY);
   });
-  await page.evaluate(() => {
+  await page.evaluate(({ closed, tillName }) => {
     const stations = window.CDOS._stations;
     const branches = stations.defaultBranches();
     const branch = branches.find((item) => item.id === "b01") || branches[0];
     const till = (branch.tills || []).find((item) => item.teller === "A. Singh") || (branch.tills || [])[0];
     branch.name = "Front Desk 01";
-    till.name = "Wholesale desk";
+    till.name = tillName;
     sessionStorage.setItem("phone-top-seed", JSON.stringify({
       skey: stations.SKEY,
       branches,
@@ -298,7 +298,7 @@ async function seedLongDesk(page: Page, closed = false): Promise<void> {
       operatingName: "York Currency Exchange on Adelaide Street West",
       closed,
     }));
-  });
+  }, { closed, tillName });
   await page.addInitScript(() => {
     const raw = sessionStorage.getItem("phone-top-seed");
     if (!raw) return;
@@ -422,6 +422,45 @@ test("the top bar is one line at 360 when the till is closed", async ({ page }) 
   expect(bar!.tillNameWhole).toBe(true);
   expect(bar!.dotVisible).toBe(true);
   expect(bar!.shopLines).toBe(1);
+});
+
+/* A flex item trims a space on either side of the dot, so a closed
+   till painted "Front Desk 01·Till 1· Till closed". The open line
+   uses the same join. */
+async function renderedTillLine(page: Page): Promise<string> {
+  return page.locator(".phone-till-line").evaluate((line) => {
+    const bits = [...line.querySelectorAll(".phone-till-where, .phone-till-sep, .phone-till-state")];
+    return bits.map((el) => (el instanceof HTMLElement ? el.innerText : "")).join("").replace(/\n/g, "");
+  });
+}
+
+test("the till line joins with a spaced dot at 360 when the till is closed and when a teller has it open", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 360, height: 780 });
+
+  await page.route("**/api/ledger/till-session", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ session: null }),
+    });
+  });
+  await seedLongDesk(page, true, "Till 1");
+  await page.locator('#phonebar [data-phone-app="more"]').click();
+  await page.locator('#phone-more [data-phone-app="reports"]').click();
+  await expect(page.locator('.win.show.active[data-app="reports"]')).toBeVisible();
+  await expect(page.locator(".phone-till-state")).toHaveText("Till closed");
+  expect(await renderedTillLine(page)).toBe("Front Desk 01 · Till 1 · Till closed");
+
+  await page.unroute("**/api/ledger/till-session");
+  await seedLongDesk(page, false, "Till 1");
+  await expect(page.locator(".phone-head")).toBeVisible();
+  await expect(page.locator(".phone-till-state")).toHaveText("Till open");
+  expect(await renderedTillLine(page)).toBe("Front Desk 01 · Till 1 · Till open");
 });
 
 test("Ledger passes the phone sweep", async ({ page }) => {

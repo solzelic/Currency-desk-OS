@@ -62214,7 +62214,9 @@ window.CDOS_PERSIST = (function () {
   }
 
   /* The desk name is cut first. The till name is next. The status
-     is the last segment and stays whole, so "Till closed" never wraps. */
+     is the last segment and stays whole, so "Till closed" never wraps.
+     Every gap is the same " · ", including a caller that omitted the spaces. */
+  const TILL_GAP = ' · ';
   function deskLine(desk) {
     const parts = String(desk || '').trim().split(/\s*·\s*/).map(part => part.trim()).filter(Boolean);
     const last = parts[parts.length - 1];
@@ -62238,6 +62240,29 @@ window.CDOS_PERSIST = (function () {
     avatar
   }) {
     const line = deskLine(desk);
+    const segments = [];
+    line.parts.forEach((part, i) => {
+      if (i > 0) segments.push(/*#__PURE__*/React.createElement("span", {
+        key: 'gap-' + i,
+        className: "phone-till-sep"
+      }, TILL_GAP));
+      segments.push(/*#__PURE__*/React.createElement("span", {
+        key: 'part-' + i,
+        className: 'phone-till-part' + (i === 0 ? ' is-desk' : '')
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "phone-till-where"
+      }, part)));
+    });
+    if (line.status) {
+      if (segments.length) segments.push(/*#__PURE__*/React.createElement("span", {
+        key: "gap-status",
+        className: "phone-till-sep"
+      }, TILL_GAP));
+      segments.push(/*#__PURE__*/React.createElement("span", {
+        key: "status",
+        className: "phone-till-state"
+      }, line.status));
+    }
     return /*#__PURE__*/React.createElement("header", {
       className: "phone-head"
     }, /*#__PURE__*/React.createElement("div", {
@@ -62253,16 +62278,7 @@ window.CDOS_PERSIST = (function () {
       className: "phone-till-dot"
     }), /*#__PURE__*/React.createElement("span", {
       className: "phone-till-line"
-    }, line.parts.map((part, i) => /*#__PURE__*/React.createElement("span", {
-      key: i,
-      className: 'phone-till-part' + (i === 0 ? ' is-desk' : '')
-    }, i > 0 ? /*#__PURE__*/React.createElement("span", {
-      className: "phone-till-sep"
-    }, " \xB7 ") : null, /*#__PURE__*/React.createElement("span", {
-      className: "phone-till-where"
-    }, part))), line.status ? /*#__PURE__*/React.createElement("span", {
-      className: "phone-till-state"
-    }, line.parts.length ? ' · ' : '', line.status) : null)), /*#__PURE__*/React.createElement("button", {
+    }, segments)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "phone-bell",
       "aria-label": unread ? 'Alerts' : 'No alerts',

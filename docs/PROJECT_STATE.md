@@ -571,6 +571,11 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-12**, phone top bar. A closed till and an open teller till
+join the station, the till, and the status with ` · `. A flex item
+was trimming the spaces, so a closed line read
+`Front Desk 01·Till 1· Till closed`.
+
 **2026-10-12**, desktop pictures committed. The 1280 PNGs in
 `tests/e2e/desktop-unchanged.spec.ts-snapshots/` are the Actions render
 from run 38187138637 (frozen refs). Inter is loaded only at

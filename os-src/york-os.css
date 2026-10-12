@@ -1888,10 +1888,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .phone-till-part.is-desk {
     flex-shrink: 1000;
   }
+  /* A flex item trims a space at either end, so " · " was painting
+     as "·". pre keeps the spaces in every state. */
   .phone-till-sep,
   .phone-till-state {
     flex: 0 0 auto;
-    white-space: nowrap;
+    white-space: pre;
   }
   .phone-till-where {
     min-width: 0;

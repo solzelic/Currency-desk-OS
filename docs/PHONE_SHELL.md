@@ -151,7 +151,9 @@ an ellipsis.
 The till line is a sibling, `.phone-till`, and it is one line. The
 desk name (the first segment, `.phone-till-part.is-desk`) is what
 the ellipsis cuts first. The till name is cut only after the desk
-name is gone. The dot and the words `Till open` or `Till closed`
+name is gone. Every segment is joined with ` · `, including a closed
+till and a teller's till (`Front Desk 01 · Till 1 · Till closed`).
+The gap is `.phone-till-sep`. The words `Till open` or `Till closed`
 stay whole, in `.phone-till-state`, at the end of the line. The
 header stays 56px tall at 360 and at 390.
 
