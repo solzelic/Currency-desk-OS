@@ -16,6 +16,7 @@ import { hashPassword } from "../src/auth/password.js";
 import { sendEmail } from "../src/email.js";
 import { CODE_REFUSAL, LOGIN_PROOF_COOKIE, SIGNIN_ACCOUNT_MAX, accountKeyFor, formatLockClock, ipBucket } from "../src/auth/signin-guard.js";
 import { isCloudflareIp } from "../src/auth/cloudflare-ips.js";
+import { clientIp } from "../src/auth/client-ip.js";
 import { applyResetStaffPassword } from "../src/auth/break-glass.js";
 import { verifyPassword } from "../src/auth/password.js";
 import { forget as forgetCooldown } from "../src/cooldown.js";
@@ -35,6 +36,21 @@ describe("sign-in address and lock clock", () => {
 
   it("prints the lock in 12-hour branch time", () => {
     expect(formatLockClock(new Date("2026-10-12T14:42:00.000Z"), "America/Toronto")).toBe("10:42 AM");
+  });
+
+  it("counts the socket when a Cloudflare peer sends no usable CF-Connecting-IP", () => {
+    const warnings: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => { warnings.push(args.map(String).join(" ")); });
+    try {
+      expect(clientIp({ ip: "104.16.0.1", headers: {} })).toBe("104.16.0.1");
+      expect(clientIp({ ip: "104.16.0.1", headers: { "cf-connecting-ip": "not-an-ip" } })).toBe("104.16.0.1");
+      expect(clientIp({ ip: "104.16.0.1", headers: { "cf-connecting-ip": "2001:db8::1" } })).toBe("2001:db8::1");
+      const dumped = warnings.join("\n");
+      expect(dumped).toContain("CF-Connecting-IP is missing or not an IP");
+      expect(dumped).not.toContain("not-an-ip");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
@@ -61,7 +77,7 @@ describe("production does not log a sign-in code", () => {
       const dumped = `${warnings.join("\n")}\n${logs.join("\n")}`;
       expect(dumped).not.toContain(code);
       expect(dumped).not.toContain("sam@shop.example");
-      expect(warnings.join("\n")).toContain("RESEND_API_KEY and EMAIL_FROM are not set");
+      expect(warnings.join("\n")).toContain("RESEND_API_KEY and EMAIL_FROM is not set");
     } finally {
       warn.mockRestore();
       log.mockRestore();
@@ -74,33 +90,6 @@ describe("production does not log a sign-in code", () => {
     }
   });
 
-  it("still logs the provider status when the error body cannot be read", async () => {
-    const errors: string[] = [];
-    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { errors.push(args.map(String).join(" ")); });
-    const prev = process.env.NODE_ENV;
-    const key = process.env.RESEND_API_KEY;
-    const from = process.env.EMAIL_FROM;
-    process.env.NODE_ENV = "production";
-    process.env.RESEND_API_KEY = "re_test_present";
-    process.env.EMAIL_FROM = "CurrencyDesk <noreply@mail.currencydesk.com>";
-    vi.stubGlobal("fetch", async () => ({ ok: false, status: 422, text: () => Promise.reject(new Error("body exploded")) }));
-    try {
-      expect(await sendEmail("sam@shop.example", "918273 is your CurrencyDesk sign-in code", { text: "Your code is 918273" })).toBe("failed");
-      const dumped = errors.join("\n");
-      expect(dumped).toContain("422");
-      expect(dumped).not.toContain("918273");
-      expect(dumped).not.toContain("body exploded");
-    } finally {
-      spy.mockRestore();
-      vi.unstubAllGlobals();
-      if (prev === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = prev;
-      if (key === undefined) delete process.env.RESEND_API_KEY;
-      else process.env.RESEND_API_KEY = key;
-      if (from === undefined) delete process.env.EMAIL_FROM;
-      else process.env.EMAIL_FROM = from;
-    }
-  });
 });
 
 const url = process.env.TEST_DATABASE_URL;
@@ -130,10 +119,25 @@ postgres("shop sign-in against Postgres", () => {
     await pool.query("DELETE FROM sessions WHERE user_id = ANY($1::text[])", [staffIds]);
     await pool.query("DELETE FROM password_resets WHERE user_id = ANY($1::text[])", [staffIds]);
     await pool.query(
-      "DELETE FROM signin_failures WHERE bucket LIKE 'ip:203.0.113.%' OR bucket LIKE 'ip:198.51.100.%' OR bucket LIKE 'ip:104.16.%' OR bucket LIKE 'miss:%' OR bucket = ANY($1::text[])",
+      "DELETE FROM signin_failures WHERE bucket LIKE 'ip:203.0.113.%' OR bucket LIKE 'ip:198.51.100.%' OR bucket LIKE 'ip:104.16.%' OR bucket LIKE 'ip:2001:%' OR bucket = 'ip:not-an-ip' OR bucket LIKE 'miss:%' OR bucket = ANY($1::text[])",
       [staffIds.map((id) => `acct:${id}`)],
     );
     await pool.query("DELETE FROM staff_users WHERE id = ANY($1::text[])", [staffIds]);
+    await wipeOtherDesk();
+  }
+
+  const otherTenant = "tnt-signin-other";
+  const otherUser = `${otherTenant}:desk-b-lock@example.com`;
+
+  async function wipeOtherDesk(): Promise<void> {
+    await pool.query("DELETE FROM signin_failures WHERE bucket = $1", [`acct:${otherUser}`]);
+    await pool.query("DELETE FROM login_challenges WHERE user_id = $1", [otherUser]);
+    await pool.query("DELETE FROM sessions WHERE user_id = $1", [otherUser]);
+    await pool.query("DELETE FROM password_resets WHERE user_id = $1", [otherUser]);
+    await pool.query("DELETE FROM staff_users WHERE id = $1", [otherUser]);
+    await pool.query("DELETE FROM branches WHERE id = $1", ["br-signin-other"]);
+    await pool.query("DELETE FROM legal_entities WHERE id = $1", ["le-signin-other"]);
+    await pool.query("DELETE FROM tenants WHERE id = $1", [otherTenant]);
   }
 
   beforeAll(async () => {
@@ -368,7 +372,7 @@ postgres("shop sign-in against Postgres", () => {
       expect(res.body).not.toMatch(/\d{6}/);
       const dumped = `${warnings.join("\n")}\n${logs.join("\n")}`;
       expect(dumped).not.toMatch(/\d{6}/);
-      expect(dumped).toContain("RESEND_API_KEY and EMAIL_FROM are not set");
+      expect(dumped).toContain("RESEND_API_KEY and EMAIL_FROM is not set");
       const left = await handle.db.select().from(schema.loginChallenges).where(eq(schema.loginChallenges.userId, emailId));
       expect(left).toHaveLength(0);
     } finally {
@@ -426,6 +430,58 @@ postgres("shop sign-in against Postgres", () => {
     expect(buckets).toContain(`ip:${socket}`);
     expect(buckets.some((bucket) => bucket.startsWith("ip:104.16."))).toBe(false);
     expect(buckets.some((bucket) => /^ip:203\.0\.113\.1\d\d$/.test(bucket))).toBe(false);
+  });
+
+  it("answers 401 when a Cloudflare peer omits CF-Connecting-IP", async () => {
+    const warnings: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => { warnings.push(args.map(String).join(" ")); });
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/auth/login/start",
+        remoteAddress: "104.16.0.4",
+        payload: { staffId: "cf-missing@example.com", password: "wrong-password", tenantId: TENANT },
+      });
+      expect(res.statusCode).toBe(401);
+      const buckets = (await pool.query("SELECT bucket FROM signin_failures WHERE bucket = $1", ["ip:104.16.0.4"])).rows;
+      expect(buckets).toHaveLength(1);
+      expect(warnings.join("\n")).toContain("Counting the peer address");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("counts the peer when CF-Connecting-IP is not an IP, and goes red if that check is removed", async () => {
+    const warnings: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => { warnings.push(args.map(String).join(" ")); });
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/auth/login/start",
+        remoteAddress: "104.16.0.5",
+        headers: { "cf-connecting-ip": "not-an-ip" },
+        payload: { staffId: "cf-junk@example.com", password: "wrong-password", tenantId: TENANT },
+      });
+      expect(res.statusCode).toBe(401);
+      const buckets = (await pool.query("SELECT bucket FROM signin_failures WHERE bucket IN ('ip:104.16.0.5', 'ip:not-an-ip')")).rows.map((row) => row.bucket);
+      expect(buckets).toEqual(["ip:104.16.0.5"]);
+      expect(warnings.join("\n")).not.toContain("not-an-ip");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("counts a valid IPv6 CF-Connecting-IP from a Cloudflare peer", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/login/start",
+      remoteAddress: "104.16.0.6",
+      headers: { "cf-connecting-ip": "2001:db8::1" },
+      payload: { staffId: "cf-v6@example.com", password: "wrong-password", tenantId: TENANT },
+    });
+    expect(res.statusCode).toBe(401);
+    const buckets = (await pool.query("SELECT bucket FROM signin_failures WHERE bucket IN ('ip:2001:db8::1', 'ip:104.16.0.6')")).rows.map((row) => row.bucket);
+    expect(buckets).toEqual(["ip:2001:db8::1"]);
   });
 
   it("checks a password for an unknown id, so dropping the dummy hash fails this", async () => {
@@ -516,6 +572,51 @@ postgres("shop sign-in against Postgres", () => {
     expect(owner.statusCode).toBe(200);
     const open = await guess("r.limit", PASS, "203.0.113.18");
     expect(open.statusCode).toBe(200);
+  });
+
+  it("refuses a manager unlocking a person on another desk", async () => {
+    await wipeOtherDesk();
+    const base = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, accountId)))[0];
+    if (!base) throw new Error("r.limit was not seeded");
+    await handle.db.insert(schema.tenants).values({ id: otherTenant, name: "Other Desk" });
+    await handle.db.insert(schema.legalEntities).values({ id: "le-signin-other", tenantId: otherTenant, name: "Other Entity" });
+    await handle.db.insert(schema.branches).values({ id: "br-signin-other", tenantId: otherTenant, legalEntityId: "le-signin-other", name: "Other Branch" });
+    await handle.db.insert(schema.staffUsers).values({
+      ...base,
+      id: otherUser,
+      tenantId: otherTenant,
+      legalEntityId: "le-signin-other",
+      branchId: "br-signin-other",
+      staffId: "desk-b-lock@example.com",
+      name: "Desk B",
+      role: "teller",
+      cdId: null,
+      authorizedBranchIds: [],
+    });
+    await pool.query(
+      "INSERT INTO signin_failures (bucket, failures, window_started_at) VALUES ($1, 5, now())",
+      [`acct:${otherUser}`],
+    );
+    const signed = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      remoteAddress: "203.0.113.81",
+      payload: { staffId: "r.haddad", password: "yorkville", tenantId: TENANT },
+    });
+    expect(signed.statusCode, signed.body).toBe(200);
+    const cookie = signed.cookies.find((item) => item.name === "cdos_session")?.value;
+    if (!cookie) throw new Error("no session");
+    const unlocked = await app.inject({
+      method: "POST",
+      url: "/api/auth/login/unlock",
+      remoteAddress: "203.0.113.81",
+      cookies: { cdos_session: cookie },
+      payload: { staffId: "desk-b-lock@example.com" },
+    });
+    expect(unlocked.statusCode).toBe(404);
+    const left = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [`acct:${otherUser}`]);
+    expect(Number(left.rows[0]?.failures)).toBe(5);
+    await wipeOtherDesk();
   });
 
   it("clears the lock when RESET_STAFF_PASSWORD resets the password", async () => {

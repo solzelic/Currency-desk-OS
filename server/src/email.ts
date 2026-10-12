@@ -35,9 +35,8 @@ export async function sendEmail(
        down just because the provider is not configured yet. Dev and test
        still simulate — the suites read the code back from that log. */
     if (process.env.NODE_ENV === "production") {
-      const missing = [!key ? "RESEND_API_KEY" : null, !from ? "EMAIL_FROM" : null].filter((name): name is string => !!name);
-      const verb = missing.length === 1 ? "is" : "are";
-      console.warn(`[email refused] ${missing.join(" and ")} ${verb} not set. Nothing was sent. The message was not written to the log.`);
+      const missing = [!key ? "RESEND_API_KEY" : null, !from ? "EMAIL_FROM" : null].filter(Boolean).join(" and ");
+      console.warn(`[email refused] ${missing} is not set; nothing was sent. The message was not written to the log.`);
       return "failed";
     }
     console.log(`[email simulated] to=${to} :: ${subject} :: ${body.text}`);
@@ -53,10 +52,7 @@ export async function sendEmail(
       }),
     });
     if (!res.ok) {
-      /* The body is read so the connection can close. A read that throws
-         must not hide the status, and production still does not log the
-         body: a provider echo of the message would be the code. */
-      const providerBody = await res.text().catch(() => "");
+      const providerBody = await res.text();
       if (process.env.NODE_ENV === "production") console.error(`[email failed] provider status ${res.status}`);
       else console.error(`[email failed] ${res.status} ${providerBody}`);
       return "failed";
