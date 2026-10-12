@@ -563,12 +563,12 @@ its fee and its spread. Once that quote is posted, cancelled, or
 expired, the read and the post and cancel acknowledgements leave off
 the spread and the mid. The ledger does not offer a teller the
 earnings sheet, the view-earnings link, or empty spread, revenue, and
-margin cards. The role needs `till:close` (close the day) or
-`report:earnings`. A teller has neither. An owner has both. A
-supervisor and a branch manager close the day and still see the
-figures. An auditor and a compliance officer have `report:earnings`
-and not close-day, because reading the book's take is their job and
-closing the drawer is a different act.
+margin cards. Closing the day (`till:close`) is what opens those
+reads. A teller cannot close the day. An owner, a supervisor, and a branch manager close
+the day and still see the figures. An auditor and a compliance
+officer do not close the day, and they do not hold
+`report:earnings`, which is the same as on main. That permission
+exists and nobody holds it. Granting it is a later decision.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

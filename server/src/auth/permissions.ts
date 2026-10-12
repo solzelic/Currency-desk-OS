@@ -59,21 +59,21 @@ export type BackendPermission =
   | "compliance:thresholds"
   /* Shop earnings, P&L, cost of sale, the booked spread, unrealized
      P&L, cost basis, market value, the market mid, and the per-teller
-     money split. Closing the day (`till:close`) is one way to read
-     them. Reading the same figures without closing is this permission.
-     The customer-facing fee is not one of these. A teller posts the
-     deal and has neither. An auditor and a compliance officer have
-     this permission and not close-day: they read the book's take, and
-     closing the drawer is a different act. */
+     money split. Closing the day (`till:close`) is what opens these
+     reads today. This permission is the other door, for someone who
+     reads the book's take without closing the drawer. No role holds
+     it. Granting it is a separate decision. The customer-facing fee
+     is not one of these. A teller, an auditor, and a compliance
+     officer have neither, which is the same as on main. */
   | "report:earnings";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {
   teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view", "till:count", "vault:view", "compliance:file"],
   supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "compliance:file"],
-  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file", "report:earnings"],
+  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file"],
   branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file"],
-  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "compliance:thresholds", "report:earnings"],
-  auditor: ["quote:view", "customer:view", "ledger:view", "vault:view", "report:earnings"],
+  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "compliance:thresholds"],
+  auditor: ["quote:view", "customer:view", "ledger:view", "vault:view"],
 };
 
 /** Close-day is `till:close`. The earnings report is `report:earnings`. */

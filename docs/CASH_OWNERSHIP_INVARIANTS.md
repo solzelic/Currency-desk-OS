@@ -201,10 +201,11 @@ never zero.
 Shop earnings, realized and unrealized P&L, cost of sale, the booked
 spread, cost basis, market value, the market mid, and the per-teller
 money split are not part of the answer for a role that cannot close the
-day (`till:close`) and cannot read the earnings report
-(`report:earnings`). A teller has neither. An auditor and a compliance
-officer have `report:earnings` without close-day: they read the book's
-take, and closing the drawer is a different act. Those fields are left
+day (`till:close`). `report:earnings` is the other door and no role
+holds it, which is the same as on main. A teller, an auditor, and a
+compliance officer are on that side of the door. An owner, a supervisor,
+and a branch manager close the day and still see the figures. Those
+fields are left
 off `GET /api/ledger/summary` (including each teller's money, and
 `realizedPnlHome` on each currency), each row of
 `GET /api/ledger/transactions` (`spreadCad`, `costOfSaleHome`,

@@ -476,8 +476,8 @@ test("a teller's ledger hides earnings and reports render with no undefined or N
   expect(deal.ok, `no deal could be posted: ${deal.why}`).toBe(true);
 
   await signInAtDesk(page, "m.costa");
-  for (const width of [390, 1280]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+  for (const width of [360, 390, 1280]) {
+    await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     await page.evaluate(() => window.CDOS.openApp("ledger"));
     await rendered(page, /Pay-in volume/i);
     await expect.poll(() => bodyText(page), { timeout: 30_000 }).toMatch(/\d+ records?/);
@@ -518,8 +518,8 @@ test("a teller's ledger hides earnings and reports render with no undefined or N
   }
 
   await signInAtDesk(page, "j.masri");
-  for (const width of [1280, 390]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+  for (const width of [1280, 390, 360]) {
+    await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     await page.evaluate(() => window.CDOS.openApp("ledger"));
     await rendered(page, /Pay-in volume/i);
     const openEarnings = page.getByRole("button", { name: /view earnings/i });

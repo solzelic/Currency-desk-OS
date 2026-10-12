@@ -1,7 +1,8 @@
 /* Teller vs owner on the reads that return the book's take.
-   Close-day is till:close. The earnings report is report:earnings.
-   A teller has neither. An owner has both. A supervisor has till:close only.
-   The customer-facing fee stays with the teller. The shop's take does not. */
+   Close-day is till:close. report:earnings is the other door and no
+   role holds it. A teller, an auditor, and a compliance officer are
+   redacted. A supervisor and a branch manager close the day and see
+   the figures. The customer-facing fee stays with the teller. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -228,5 +229,61 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     expect(leaked).not.toContain("103.30");
     expect(leaked).toContain("4.00");
     expect(leaked).toContain("35.00");
+  });
+
+  it("redacts an auditor and a compliance officer, and leaves close-day figures", async () => {
+    const setRole = (staffId: string, role: "auditor" | "compliance_officer") =>
+      handle.db.update(schema.staffUsers).set({ role, authorizedBranchIds: [DEMO.branchId] }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:${staffId}`));
+    await setRole("s.iqbal", "auditor");
+    await setRole("m.costa", "compliance_officer");
+
+    const owner = await cookie("j.masri");
+    const quote = (await app.inject({
+      method: "POST", url: "/api/quotes", cookies: owner,
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.30", feeCad: "4.00", direction: "customer_buy_foreign" },
+    })).json();
+    const posted = await app.inject({
+      method: "POST", url: `/api/quotes/${quote.quoteId}/post`, cookies: owner,
+      payload: { idempotencyKey: "earn-roles", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+
+    const ownerSummary = await read("j.masri", "/api/ledger/summary");
+    const ownerDeal = (await read("j.masri", "/api/ledger/transactions?limit=20")).transactions[0];
+    const ownerQuote = await read("j.masri", `/api/quotes/${quote.quoteId}`);
+    expect(ownerSummary.earningsHome).toEqual(expect.any(String));
+    expect(ownerDeal.marketMid).toEqual(expect.any(String));
+    expect(ownerQuote.spreadCad).toEqual(expect.any(String));
+
+    for (const staffId of ["s.iqbal", "m.costa"] as const) {
+      const summary = await read(staffId, "/api/ledger/summary");
+      const deal = (await read(staffId, "/api/ledger/transactions?limit=20")).transactions[0];
+      const position = await read(staffId, "/api/ledger/position");
+      const quoteRead = await read(staffId, `/api/quotes/${quote.quoteId}`);
+      expect(summary.feesHome).toBe(ownerSummary.feesHome);
+      lacks(summary, ["earningsHome", "realizedPnlHome", "costOfSaleHome"]);
+      lacks(deal, ["spreadCad", "marketMid", "realizedPnlHome", "costOfSaleHome"]);
+      lacks(position, ["costBasisHome", "marketValueHome", "marketUnitHome", "avgCost", "unrealizedPnlHome"]);
+      expect(position.currencies.find((row: { currency: string }) => row.currency === "USD").quantity).toMatch(/^\d+\.\d{2}$/);
+      expect(quoteRead).toMatchObject({ status: "posted", feeCad: "4.00" });
+      lacks(quoteRead, ["spreadCad", "marketMid"]);
+    }
+
+    for (const staffId of ["a.singh", "r.haddad"] as const) {
+      const summary = await read(staffId, "/api/ledger/summary");
+      const deal = (await read(staffId, "/api/ledger/transactions?limit=20")).transactions[0];
+      const position = await read(staffId, "/api/ledger/position");
+      const quoteRead = await read(staffId, `/api/quotes/${quote.quoteId}`);
+      expect(summary.earningsHome).toBe(ownerSummary.earningsHome);
+      expect(summary.realizedPnlHome).toBe(ownerSummary.realizedPnlHome);
+      expect(deal.spreadCad).toBe(ownerDeal.spreadCad);
+      expect(deal.marketMid).toBe(ownerDeal.marketMid);
+      expect(deal.realizedPnlHome).toBe(ownerDeal.realizedPnlHome);
+      const usd = position.currencies.find((row: { currency: string }) => row.currency === "USD");
+      expect(usd.costBasisHome).toEqual(expect.any(String));
+      expect(usd.marketValueHome).toEqual(expect.any(String));
+      expect(quoteRead.spreadCad).toBe(ownerQuote.spreadCad);
+      expect(quoteRead.marketMid).toBe(ownerQuote.marketMid);
+    }
   });
 });
