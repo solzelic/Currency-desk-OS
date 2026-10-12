@@ -217,7 +217,12 @@ emailed-code step does the same: an unknown staff id and a wrong code are
 one answer, and the code is not compared unless this browser already proved
 the password. Shop sign-in counts five wrong passwords per account and
 twenty per address, in Postgres (`server/src/auth/signin-guard.ts`), and
-locks both the real id and the unknown one with the same sentence.
+locks both the real id and the unknown one with the same sentence. The
+address is the Cloudflare client only when the delivering hop is in
+Cloudflare's published ranges; otherwise it is the Render hop, or the
+socket when nothing is in front. The count is the number the insert
+returned, so a correct password past that count is still refused. An
+owner or a manager can clear the account counter.
 
 **The record of who did what is append-only.** `audit_events` gets a row for
 every credential action and every privileged act. Issuing somebody's sign-in

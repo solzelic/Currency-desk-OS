@@ -117,8 +117,8 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   and the emailed-code marker (the password step has to have passed
   before a code is checked). Both tables are also in the boot DDL,
   because PGlite does not run the SQL migrations. 040 is on main.
-  041 is claimed by open drafts #96 and #132, 042 by #130, and 043
-  by #138, so this file is 044. 027 and 030 are still open drafts.
+  041 is claimed by open drafts #96, #110, #120, and #132, 042 by #130,
+  and 043 by #138, so this file is 044. 027 and 030 are still open drafts.
 
 ## Test commands
 

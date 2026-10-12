@@ -562,14 +562,20 @@ authenticated narrative dashboard.
 
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
 Postgres, five per account and twenty per address, for fifteen
-minutes. The lock says "Too many tries. Try again in N minutes." and
-an unknown staff id gets that same sentence. The emailed-code step
-gives one answer, in the same time, for an unknown id and a wrong
-code, and it checks a code only after the password step has left a
-server-side marker. A wrong code says "That code isn't right. Check your email."
-Production without `RESEND_API_KEY` or
-`EMAIL_FROM` does not send and does not log the code. Migration 044.
-041 is claimed by open drafts #96 and #132, 042 by #130, and 043 by #138.
+minutes. The count is written before the answer, so a burst cannot
+slip a correct password through after the limit. The lock says "Too
+many tries. Try again in N minutes." and an unknown staff id gets
+that same sentence. The address is `CF-Connecting-IP` only when the
+hop is in Cloudflare's published ranges, otherwise the Render hop,
+otherwise the socket. An owner or a manager can clear the account
+counter, and `RESET_STAFF_PASSWORD` clears it too. The emailed-code
+step gives one answer, in the same time, for an unknown id and a
+wrong code, and it checks a code only after the password step has
+left a server-side marker. A wrong code says "That code isn't right.
+Check your email." Production without `RESEND_API_KEY` or
+`EMAIL_FROM` does not send and does not log the code, and signup says
+the code was not sent. Migration 044. 041 is claimed by open drafts
+#96, #110, #120, and #132, 042 by #130, and 043 by #138.
 
 **2026-10-12**, serialization retry. A post that Postgres aborts with 40001 is run
 again, up to six times. The aborted attempt wrote nothing. The same
