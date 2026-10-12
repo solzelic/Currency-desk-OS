@@ -84,6 +84,29 @@ test("the record list names who sent to whom", async ({ page }) => {
   await expect(list).not.toContainText("Generate report");
   await expect(list).not.toContainText("Partner acknowledged");
   await expect(list).not.toContainText("Example data");
+  await expect(list.getByText("Demo").first()).toBeVisible();
+  const philippines = list.getByText("Parent · Philippines · Cash pickup, Cebuana Lhuillier");
+  expect(((await philippines.innerText()).match(/Philippines/g) || []).length).toBe(1);
+  const contrast = await list.locator(".phone-search input").evaluate((el) => {
+    function channel(v: number): number {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    }
+    function lum(color: string): number {
+      const parts = color.match(/[\d.]+/g);
+      if (!parts || parts.length < 3) throw new Error("search colors did not resolve");
+      const rgb = parts.slice(0, 3).map((n) => channel(Number(n)));
+      return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    }
+    const box = el.closest(".phone-search");
+    if (!box) throw new Error("the search box is missing");
+    const ink = getComputedStyle(el, "::placeholder").color;
+    const paper = getComputedStyle(box).backgroundColor;
+    const darker = Math.min(lum(ink), lum(paper));
+    const lighter = Math.max(lum(ink), lum(paper));
+    return (lighter + 0.05) / (darker + 0.05);
+  });
+  expect(contrast).toBeGreaterThanOrEqual(4.5);
   await expect(list).not.toContainText("Joel Carter");
   await expect(list).not.toContainText("C4410");
   await expect(list).not.toContainText("PHP");
@@ -198,4 +221,43 @@ test("the desktop pipeline stays at 1280", async ({ page }) => {
   await expect(win.getByRole("button", { name: "New transfer" })).toHaveCount(2);
   await expect(win.locator("h1")).toHaveCount(0);
   await expect(win.getByText("Rachel Carter")).toBeVisible();
+});
+
+test.describe("a Toronto branch seen from another zone", () => {
+  test.use({ timezoneId: "Pacific/Honolulu" });
+
+  test("uses the branch clock, and 24:05 is not a time", async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await atDesk(page);
+    await openTransfers(page);
+    await page.evaluate(() => {
+      const rows = JSON.parse(localStorage.getItem("cdos_transfers_v1") || "[]");
+      const byRef = (ref: string) => rows.find((item: { ref?: string }) => item.ref === ref);
+      const toronto = byRef("TR-260618-003");
+      const midnight = byRef("TR-260618-002");
+      if (!toronto || !midnight) throw new Error("seed transfers are not in the browser book");
+      const hand = (row: { timeline?: { by?: string; ts?: string }[] }) => {
+        const events = row.timeline || [];
+        for (let i = events.length - 1; i >= 0; i--) {
+          if (events[i] && events[i].by && events[i].by !== "System") return events[i];
+        }
+        return null;
+      };
+      const torontoHand = hand(toronto);
+      const midnightHand = hand(midnight);
+      if (!torontoHand || !midnightHand) throw new Error("a hand stamp is missing");
+      /* 04:05Z is 12:05 AM in Toronto (EDT) and 6:05 PM in Honolulu. */
+      torontoHand.ts = "2026-06-18T04:05:00Z";
+      midnightHand.ts = "2026-06-18 24:05";
+      localStorage.setItem("cdos_transfers_v1", JSON.stringify(rows));
+    });
+    await page.reload();
+    await dismissTour(page);
+    await openTransfers(page);
+    const list = page.locator(".phone-transfers");
+    await expect(list.getByText("12:05 AM")).toBeVisible();
+    await expect(list).not.toContainText("6:05 PM");
+    await expect(list).not.toContainText("24:05");
+    await expect(list).not.toContainText("24:00");
+  });
 });

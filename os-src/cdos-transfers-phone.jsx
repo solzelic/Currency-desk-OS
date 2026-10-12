@@ -64,7 +64,7 @@
     return MONTHS[month - 1] + ' ' + dayNum;
   }
 
-  function PhoneTransfers({ transfers, beneficiaries, corridors, onNew, onOpen }) {
+  function PhoneTransfers({ transfers, beneficiaries, corridors, onNew, onOpen, timeZone }) {
     const { Phone, T, time } = shell();
     const [q, setQ] = useState('');
     const [filter, setFilter] = useState('active');
@@ -112,16 +112,17 @@
           <Phone.ListSection key={g.key || String(i)} title={g.title} meta={i === 0 ? 'Sender to beneficiary' : null}>
             {g.rows.map((t) => {
               const ben = benOf(t.beneficiaryId);
-              const who = t.direction === 'send' ? (ben ? ben.name : (corOf(t.corridor).country || '')) : t.senderName;
-              const how = [ben && ben.relationship, corOf(t.corridor).country, T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')].filter(Boolean).join(' \u00b7 ');
+              const country = corOf(t.corridor).country || '';
+              const who = t.direction === 'send' ? (ben ? ben.name : country) : t.senderName;
+              const how = [ben && ben.relationship, who === country ? '' : country, T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')].filter(Boolean).join(' \u00b7 ');
               return (
                 <Phone.ListRow
                   key={t.id}
                   className="phone-xfer-row"
                   title={t.senderName + ' to ' + who}
                   subtitle={how}
-                  note={t.ref}
-                  meta={shown(time(handStamp(t)))}
+                  note={t.sample ? t.ref + ' \u00b7 Demo' : t.ref}
+                  meta={shown(time(handStamp(t), timeZone))}
                   badge={{ label: T.statusLabel(t.status, t.direction), tone: toneOf(t.status) }}
                   onClick={onOpen ? () => onOpen(t.id) : undefined}
                 />

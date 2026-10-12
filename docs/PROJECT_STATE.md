@@ -109,7 +109,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   list: search by sender, beneficiary, or TR number, the pipeline chips,
   and a row that names who sent to whom. Rows are grouped under
   the record's own day: Today, Yesterday, or the month and day
-  (Jun 18). The row shows the 12-hour time. Amounts, the tracking PIN, a
+  (Jun 18). The row shows the 12-hour time in the branch zone. A sample
+  row is labelled Demo. Amounts, the tracking PIN, a
   receipt, and the EFT report stay off that list. New transfer record
   opens the existing cash step. The desktop pipeline is unchanged.
   Saved beneficiaries and the record page are not on the phone yet. The bar is five
@@ -623,9 +624,13 @@ menu bar, which both machines resolved the same way, matched.
 
 **2026-10-12**, phone Transfers list. Under 430px the Transfers window is
 the record list (who sent to whom, the pipeline chips, grouped under
-the record's own day, with a 12-hour time on the row). The cash step is still the
-existing New transfer sheet. Records stay in the browser, where the
-desktop already keeps them. The desktop pipeline is the same tree.
+the record's own day). The time is 12-hour in the branch zone
+(`settings.timezone`): a wall clock stays where it was written, and an
+instant is read in that zone, never the phone's. A sample row is
+labelled Demo. The search placeholder is the muted text token on
+white. The cash step is still the existing New transfer sheet. Records
+stay in the browser, where the desktop already keeps them. The desktop
+pipeline is the same tree.
 
 **2026-10-12**, QA on the phone shell. The 1280 pictures no longer
 rewrite text after render. The clock is 15:02 on 18 June 2026, the

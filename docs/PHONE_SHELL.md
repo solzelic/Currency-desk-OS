@@ -500,7 +500,10 @@ Records and Compliance stay on both.
 Transfers adopts the same screen for its record list: title, search,
 `FilterChips`, `ListRow`s, and a sticky **New transfer record**. A row
 is the sender, the beneficiary, how it pays out, the TR reference, and
-a 12-hour time. The day is the group heading: Today, Yesterday, or the
-month and day. Amounts stay
+a 12-hour time in the branch zone (`settings.timezone`). A wall clock
+is not moved. An instant is. `24:05` is not a clock. The day is the
+group heading: Today, Yesterday, or the month and day. A sample row
+is labelled Demo. The country is not repeated on a row that already
+uses it as the name. Amounts stay
 off the list. The cash step is still `TransferModal`. The desktop
 pipeline is unchanged.

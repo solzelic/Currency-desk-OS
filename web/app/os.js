@@ -36887,7 +36887,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       sourceOfFunds: 'Salary',
       timeline: [],
       createdBy: 'M. Costa',
-      txId: null
+      txId: null,
+      sample: true
     }, o);
     const mid = c => crossRate('CAD', c);
     return [mk({
@@ -39854,6 +39855,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         transfers: transfers,
         beneficiaries: beneficiaries,
         corridors: corridors,
+        timeZone: settings && settings.timezone,
         onNew: () => setModal(true)
       }), modal && /*#__PURE__*/React.createElement(TransferModal, {
         rows,
@@ -63175,7 +63177,8 @@ window.CDOS_PERSIST = (function () {
     beneficiaries,
     corridors,
     onNew,
-    onOpen
+    onOpen,
+    timeZone
   }) {
     const {
       Phone,
@@ -63265,15 +63268,16 @@ window.CDOS_PERSIST = (function () {
       meta: i === 0 ? 'Sender to beneficiary' : null
     }, g.rows.map(t => {
       const ben = benOf(t.beneficiaryId);
-      const who = t.direction === 'send' ? ben ? ben.name : corOf(t.corridor).country || '' : t.senderName;
-      const how = [ben && ben.relationship, corOf(t.corridor).country, T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')].filter(Boolean).join(' \u00b7 ');
+      const country = corOf(t.corridor).country || '';
+      const who = t.direction === 'send' ? ben ? ben.name : country : t.senderName;
+      const how = [ben && ben.relationship, who === country ? '' : country, T.methodLabel(t.method) + (t.partner ? ', ' + t.partner : '')].filter(Boolean).join(' \u00b7 ');
       return /*#__PURE__*/React.createElement(Phone.ListRow, {
         key: t.id,
         className: "phone-xfer-row",
         title: t.senderName + ' to ' + who,
         subtitle: how,
-        note: t.ref,
-        meta: shown(time(handStamp(t))),
+        note: t.sample ? t.ref + ' \u00b7 Demo' : t.ref,
+        meta: shown(time(handStamp(t), timeZone)),
         badge: {
           label: T.statusLabel(t.status, t.direction),
           tone: toneOf(t.status)

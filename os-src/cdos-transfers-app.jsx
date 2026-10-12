@@ -442,7 +442,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       const PhoneTransfers = window.CDOS.PhoneTransfers;
       return (
         <div className="phone-transfers">
-          <PhoneTransfers transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} onNew={() => setModal(true)} />
+          <PhoneTransfers transfers={transfers} beneficiaries={beneficiaries} corridors={corridors} timeZone={settings && settings.timezone} onNew={() => setModal(true)} />
           {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={() => setModal(false)} />}
         </div>
       );

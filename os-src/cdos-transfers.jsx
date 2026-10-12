@@ -185,7 +185,7 @@
 
   /* seed a believable pipeline across every status */
   function defaultTransfers() {
-    const mk = (o) => Object.assign({ direction: 'send', fee: 9.99, purpose: 'Family support', sourceOfFunds: 'Salary', timeline: [], createdBy: 'M. Costa', txId: null }, o);
+    const mk = (o) => Object.assign({ direction: 'send', fee: 9.99, purpose: 'Family support', sourceOfFunds: 'Salary', timeline: [], createdBy: 'M. Costa', txId: null, sample: true }, o);
     const mid = (c) => crossRate('CAD', c);
     return [
       mk({ id: 't1', ref: 'TR-260618-003', pin: '48 221 905', senderName: 'Rachel Carter', beneficiaryId: 'b1', corridor: 'PH', ccy: 'PHP', method: 'cash', partner: 'Cebuana Lhuillier', payAmt: 600, recvAmt: +(600 * mid('PHP') * 0.97).toFixed(2), date: '2026-06-18', status: 'transit',
