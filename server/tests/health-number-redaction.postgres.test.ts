@@ -12,7 +12,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { REDACTION_ACTION, REDACTED_HEALTH_NUMBER } from "../src/clients/health-numbers.js";
+import { REDACTION_ACTION, REDACTION_REASON, REDACTED_HEALTH_NUMBER } from "../src/clients/health-numbers.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -190,6 +190,10 @@ postgres("health-card review and redaction", () => {
 
   it("dry-run changes nothing, and apply is refused without an owner", async () => {
     const before = await pool.query("SELECT doc_number FROM desk_client_identity_documents WHERE client_id = $1", [onlyId]);
+    const auditsBefore = await pool.query(
+      "SELECT count(*)::int AS n FROM ledger_audit_events WHERE action = $1",
+      [REDACTION_ACTION],
+    );
     const dry = cli(["--actor", "j.masri"]);
     expect(dry.status, dry.stderr + dry.stdout).toBe(0);
     expect(dry.stdout).toContain("dry-run: nothing was changed");
@@ -199,6 +203,11 @@ postgres("health-card review and redaction", () => {
     expect(dry.stdout).not.toContain(CARE);
     const after = await pool.query("SELECT doc_number FROM desk_client_identity_documents WHERE client_id = $1", [onlyId]);
     expect(after.rows).toEqual(before.rows);
+    const auditsAfter = await pool.query(
+      "SELECT count(*)::int AS n FROM ledger_audit_events WHERE action = $1",
+      [REDACTION_ACTION],
+    );
+    expect(auditsAfter.rows[0].n).toBe(auditsBefore.rows[0].n);
 
     const missing = cli(["--apply"]);
     expect(missing.status).not.toBe(0);
@@ -242,18 +251,26 @@ postgres("health-card review and redaction", () => {
     );
     expect(passport.rows[0].doc_number).toBe(PASSPORT);
 
+    const documents = await pool.query(
+      "SELECT document_id FROM desk_client_identity_documents WHERE doc_number = $1 ORDER BY document_id",
+      [REDACTED_HEALTH_NUMBER],
+    );
+    expect(documents.rowCount).toBe(2);
     const audit = await pool.query(
-      "SELECT actor_id, reason, target_id, created_at FROM ledger_audit_events WHERE action = $1 ORDER BY created_at",
+      "SELECT actor_id, action, reason, target_id, created_at FROM ledger_audit_events WHERE action = $1 ORDER BY target_id",
       [REDACTION_ACTION],
     );
-    expect(audit.rowCount).toBe(2);
+    expect(audit.rowCount).toBe(documents.rowCount);
+    expect(audit.rows.map((event) => event.target_id).sort()).toEqual(documents.rows.map((row) => row.document_id).sort());
     for (const event of audit.rows) {
+      expect(event.action).toBe(REDACTION_ACTION);
       expect(event.actor_id).toBe(`${DEMO.tenantId}:j.masri`);
-      expect(event.reason).toContain("number redacted for privacy");
-      expect(event.reason).toContain("health number not lawful to keep, not valid ID");
+      expect(event.reason).toBe(REDACTION_REASON);
+      expect(event.reason).toBe("health number not lawful to keep, not valid ID");
       expect(event.reason).not.toContain(OHIP);
       expect(event.reason).not.toContain(CARE);
       expect(event.created_at).toBeTruthy();
+      expect(Number.isNaN(new Date(event.created_at).getTime())).toBe(false);
     }
 
     const opened = await app.inject({ method: "GET", url: `/api/clients/${onlyId}`, cookies: owner });

@@ -362,24 +362,27 @@ and changes nothing. `--apply` requires `--actor`. The actor must be
 the owner or the compliance officer. The command rewrites
 `doc_number` to `[redacted]` and leaves the type, issuing province,
 expiry, the date recorded, and who recorded it. It sets `updated_by`
-to the actor. It writes one `ledger_audit_events` row per number,
-action `client.health_number.redact`, reason "number redacted for
-privacy" and "health number not lawful to keep, not valid ID". The
-original number is not in the audit row. A second `--apply` matches
-the marker and writes nothing.
+to the actor. It writes one `ledger_audit_events` row per redacted record,
+action `client.health_number.redact` (the number was redacted), with
+the date, the actor who ran it, and the reason "health number not
+lawful to keep, not valid ID". The original number is not in the
+audit row. A dry-run writes no audit row. A second `--apply` matches
+the marker and writes nothing. The review route has to be available
+to the shop before anyone runs `--apply`.
 
 Until the read-side change lands, a client export returns `docNumber`,
 so after redaction the export shows `[redacted]`. The review route
 says `numberStatus: "redacted"` and still does not return the old number.
 
 The production database is Neon (`render.yaml`, `DATABASE_URL`,
-`sync: false`). This repository does not record how long Neon keeps a
-backup or a point-in-time history. A number replaced by `[redacted]`
-remains in any backup taken while it was stored, until that history
-ages out of the provider's window. Do not restore a pre-redaction
-backup over the live book. If a restore happens, run the command with
-`--apply` again immediately. Do not copy a health number out of a
-backup back into the live book.
+`sync: false`). **The backup window is unknown.** This repository
+does not record how long Neon keeps a backup or a point-in-time
+history, and no day count is stated here because none is documented.
+A number replaced by `[redacted]` remains in any backup taken while
+it was stored, until that history ages out of the provider's window.
+Do not restore a pre-redaction backup over the live book. If a
+restore happens, run the command with `--apply` again immediately.
+Do not copy a health number out of a backup back into the live book.
 
 ## What retention obliges
 
@@ -535,8 +538,10 @@ every time.
   and not a reversed deal or a deal whose primary ID is a passport.
   The number is not in the JSON. A teller and a branch manager are
   refused; the owner and a compliance officer are not. Dry-run changes
-  nothing. `--apply` replaces the number, keeps the row, writes the
-  audit entry, shows `[redacted]` on the client read, and a second run
+  nothing and writes no audit row. `--apply` replaces the number,
+  keeps the row, writes one audit entry per redacted record (the date,
+  who ran it, and the reason "health number not lawful to keep, not
+  valid ID"), shows `[redacted]` on the client read, and a second run
   writes nothing. The server entrypoint does not import the command.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted

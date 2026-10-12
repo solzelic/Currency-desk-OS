@@ -116,11 +116,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   response. The owner and the compliance officer can open it. A branch
   manager cannot. Replacing the number is
   `npx tsx src/clients/redact-health-numbers-cli.ts`. Dry-run prints
-  counts and changes nothing. `--apply --actor` writes `[redacted]`,
-  keeps the row, and appends an audit entry. It is not a migration and
-  the server does not run it on deploy. A redacted number remains in
-  backups until the provider's window ages it out, and a pre-redaction
-  backup must not be restored over the live book. See
+  counts and changes nothing, including no audit row. `--apply --actor`
+  writes `[redacted]`, keeps the row, and appends one audit entry per
+  redacted record: the number was redacted, the date, who ran it, and
+  the reason "health number not lawful to keep, not valid ID". The
+  review has to be available to that shop before `--apply` runs. It
+  is not a migration and the server does not run it on deploy.
+  `--apply` stays inert until Sol approves it through the Chief of
+  Staff. The backup window is unknown: this repository does not
+  record how long Neon keeps a backup. A redacted number remains in
+  backups until that window ages it out, and a pre-redaction backup
+  must not be restored over the live book. See
   `docs/CLIENT_RECORDS.md`.
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header

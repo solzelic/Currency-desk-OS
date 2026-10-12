@@ -15,8 +15,10 @@ import { isHealthCardType } from "./health-card.js";
 
 export const REDACTED_HEALTH_NUMBER = "[redacted]";
 export const REDACTION_ACTION = "client.health_number.redact";
-const REDACTION_REASON =
-  "number redacted for privacy. health number not lawful to keep, not valid ID";
+/* The action records that a number was redacted. The reason is the
+   legal ground, and nothing else: the original number is not written
+   here, and neither is the client id. */
+export const REDACTION_REASON = "health number not lawful to keep, not valid ID";
 
 export type RedactionActor = {
   userId: string;
@@ -202,7 +204,7 @@ export async function redactHealthNumbers(
             actor.userId,
             REDACTION_ACTION,
             row.document_id,
-            `${row.client_id} · ${REDACTION_REASON}`,
+            REDACTION_REASON,
             randomUUID(),
           ],
         );
