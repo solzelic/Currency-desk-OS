@@ -63180,6 +63180,7 @@ window.CDOS_PERSIST = (function () {
    (Save count, or Close the till). There is no round + on this screen.
    Amounts go through window.CDOS.formatPhoneMoney, which the phone
    shell owns (docs/PHONE_SHELL.md): "1,765.05 CAD", never a bare "$".
+   Session times go through formatPhoneTime: "3:02 PM".
    A figure the ledger did not return is left out, not shown as 0.
 
    Reconcile is a list of currencies. Hand off, Move cash, and the
@@ -63237,11 +63238,8 @@ window.CDOS_PERSIST = (function () {
     if (!ms) return '';
     const d = new Date(ms);
     if (Number.isNaN(d.getTime())) return '';
-    let h = d.getHours();
-    const ap = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    const m = String(d.getMinutes()).padStart(2, '0');
-    return h + ':' + m + ' ' + ap;
+    const fn = window.CDOS && window.CDOS.formatPhoneTime;
+    return fn ? fn(d) || '' : '';
   }
 
   /* The ledger stores a staff id. The roster is how that id is spelled
