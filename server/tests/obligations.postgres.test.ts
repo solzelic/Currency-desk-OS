@@ -18,8 +18,11 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerError, LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import {
   ObligationService,
+  TRANSFER_ALREADY_CANCELLED_MESSAGE,
   TRANSFER_CANCEL_TELLER_MESSAGE,
+  TRANSFER_HELD_MESSAGE,
   TRANSFER_PAID_OUT_MESSAGE,
+  TRANSFER_PARTNER_MESSAGE,
   TRANSFER_RECEIVE_MESSAGE,
   TRANSFER_TILL_CLOSED_MESSAGE,
 } from "../src/ledger/obligations.js";
@@ -417,6 +420,7 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       posted.transactionId!,
       "reverse-1",
       "Keyed against the wrong beneficiary",
+      true,
     )) as Record<string, string>;
 
     expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).toFixed(2));
@@ -471,7 +475,10 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
     });
     await expect(
       service.reverse(supervisor, posted.transactionId!, "reverse-2", "Too late"),
-    ).rejects.toMatchObject({ code: "REVERSAL_NOT_ALLOWED" });
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_PAID_OUT_MESSAGE,
+    });
   });
 
   it("refuses a reversal the drawer can no longer fund, and leaves the obligation open", async () => {
@@ -484,7 +491,7 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       "UPDATE ledger_till_balances SET available_amount=100 WHERE till_id='till-1' AND currency='CAD'",
     );
     await expect(
-      service.reverse(supervisor, posted.transactionId!, "reverse-3", "Wrong beneficiary"),
+      service.reverse(supervisor, posted.transactionId!, "reverse-3", "Wrong beneficiary", true),
     ).rejects.toMatchObject({ code: "REVERSAL_NOT_ALLOWED" });
     expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("open");
     expect((await cad()).toFixed(2)).toBe("100.00");
@@ -677,12 +684,14 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       posted.transactionId!,
       key,
       "Cancelled at the counter",
+      true,
     )) as Record<string, string>;
     const second = (await service.reverse(
       supervisor,
       posted.transactionId!,
       key,
       "Cancelled at the counter",
+      true,
     )) as Record<string, string>;
     expect(second.reversalId).toBe(first.reversalId);
     expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(1);
@@ -711,7 +720,10 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
        reversed, so the book refuses it and the drawer stays put. */
     await expect(
       service.reverse(supervisor, posted.transactionId!, `${key}:again`, "Cancelled at the counter"),
-    ).rejects.toMatchObject({ code: "REVERSAL_NOT_ALLOWED" });
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_ALREADY_CANCELLED_MESSAGE,
+    });
     expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).toFixed(2));
     expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(1);
   });
@@ -835,6 +847,7 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       posted.transactionId!,
       `web:transfer-cancel:${posted.transactionId}`,
       "Cancelled at the counter",
+      true,
     )) as Record<string, string>;
     const session = await pool.query(
       "SELECT business_date::text AS business_date FROM ledger_till_sessions WHERE session_id='session-2'",
@@ -974,6 +987,7 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
         posted.transactionId!,
         `web:transfer-cancel:${posted.transactionId}`,
         "Cancelled at the counter",
+        true,
       )) as Record<string, string>;
       expect(reversed.businessDate).toBe("2026-10-13");
       expect(at.toISOString().slice(0, 10)).toBe("2026-10-12");
@@ -986,5 +1000,80 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
       service.postingClock = () => new Date();
       await pool.query("DELETE FROM branches WHERE id = 'branch-1'");
     }
+  });
+
+  it("refuses a cancel that has no partner check, and records one that does", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-partner",
+      reference: "TR-PARTNER-1",
+    })) as Record<string, string>;
+    /* A row from before paid_out_at was recorded stays open with a null
+       timestamp. The browser may have called it paid. The server does
+       not invent that timestamp, and cancel still needs the check. */
+    expect((await pool.query("SELECT paid_out_at FROM ledger_obligations")).rows[0].paid_out_at).toBeNull();
+    await expect(
+      service.reverse(supervisor, posted.transactionId!, "web:transfer-cancel:bare", "Customer changed their mind"),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_PARTNER_MESSAGE,
+    });
+    expect((await pool.query("SELECT reversal_id FROM ledger_reversals")).rowCount).toBe(0);
+    await expect(
+      service.reverse(supervisor, posted.transactionId!, "web:transfer-cancel:short", "no"),
+    ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    const done = (await service.reverse(
+      supervisor,
+      posted.transactionId!,
+      `web:transfer-cancel:${posted.transactionId}`,
+      "Customer changed their mind",
+      true,
+    )) as Record<string, string>;
+    const row = (
+      await pool.query(
+        "SELECT reason, partner_confirmed_not_paid FROM ledger_reversals WHERE reversal_id=$1",
+        [done.reversalId],
+      )
+    ).rows[0];
+    expect(row).toEqual({
+      reason: "Customer changed their mind",
+      partner_confirmed_not_paid: true,
+    });
+  });
+
+  it("refuses a cancel while the transfer is on hold, and allows it after release", async () => {
+    const posted = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-hold",
+      reference: "TR-HOLD-1",
+    })) as Record<string, string>;
+    const held = (await service.hold(teller, posted.transactionId!)) as Record<string, string>;
+    expect(held.status).toBe("held");
+    const drawer = (await cad()).toFixed(2);
+    await expect(
+      service.reverse(
+        supervisor,
+        posted.transactionId!,
+        `web:transfer-cancel:${posted.transactionId}`,
+        "Customer changed their mind",
+        true,
+      ),
+    ).rejects.toMatchObject({
+      code: "REVERSAL_NOT_ALLOWED",
+      message: TRANSFER_HELD_MESSAGE,
+    });
+    expect((await cad()).toFixed(2)).toBe(drawer);
+    expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("held");
+    const released = (await service.release(teller, posted.transactionId!)) as Record<string, string>;
+    expect(released.status).toBe("open");
+    await service.reverse(
+      supervisor,
+      posted.transactionId!,
+      `web:transfer-cancel:${posted.transactionId}`,
+      "Customer changed their mind",
+      true,
+    );
+    expect((await pool.query("SELECT status FROM ledger_obligations")).rows[0].status).toBe("reversed");
+    expect((await cad()).toFixed(2)).toBe(new Decimal(OPENING_CAD).toFixed(2));
   });
 });

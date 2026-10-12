@@ -77,6 +77,13 @@ const postBody = z.object({
   .refine((value) => !value.thirdParty || !!value.thirdPartyName, { message: "Third-party name is required.", path: ["thirdPartyName"] })
   .refine((value) => value.thirdParty || !value.thirdPartyName, { message: "Third-party name requires third-party status.", path: ["thirdPartyName"] });
 const reverseBody = z.object({ idempotencyKey: z.string().min(1).max(200), reason: z.string().trim().min(1).max(1000) });
+/* Transfer cancel is not the exchange void. The reason is a sentence,
+   and a send names the partner check. Exchange reversal keeps min 1. */
+const obligationReverseBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  reason: z.string().trim().min(3).max(1000),
+  partnerConfirmedNotPaid: z.boolean().optional(),
+});
 const customerBody = z.object({
   externalRef: z.string().trim().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
@@ -1507,7 +1514,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.post("/api/ledger/obligation-deals/:transactionId/reversal", async (req, reply) => {
-    const parsed = reverseBody.safeParse(req.body);
+    const parsed = obligationReverseBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
       const actor = await actorOrReply(req, reply);
@@ -1518,8 +1525,31 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
               (req.params as { transactionId: string }).transactionId,
               parsed.data.idempotencyKey,
               parsed.data.reason,
+              parsed.data.partnerConfirmedNotPaid === true,
             ),
           )
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/obligation-deals/:transactionId/hold", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await obligations.hold(actor, (req.params as { transactionId: string }).transactionId))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/obligation-deals/:transactionId/release", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await obligations.release(actor, (req.params as { transactionId: string }).transactionId))
         : undefined;
     } catch (error) {
       return failure(reply, error);

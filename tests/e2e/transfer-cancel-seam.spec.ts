@@ -196,6 +196,10 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
   await page.setViewportSize({ width: 1280, height: 800 });
 
   const cancel = page.getByRole("button", { name: "Cancel transfer" });
+  await expect(cancel).toBeDisabled();
+  await page.getByRole("checkbox", { name: "I checked with the partner: it has not been paid out" }).check();
+  await page.getByRole("textbox", { name: "Reason" }).fill("Wrong beneficiary");
+  await expect(cancel).toBeEnabled();
   await cancel.click();
   await expect(page.locator("[data-transfer-cancel='confirm'] [role='alert']")).toContainText("Try the cancel again.");
   await expect(cancel).toBeVisible();
@@ -205,6 +209,9 @@ test("the confirm sheet quotes the server, and cancel puts the drawer back", asy
     `web:transfer-cancel:${row!.transactionId}`,
   ]);
   await expect(page.locator("[data-transfer-cancel='confirm']")).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator("[data-transfer-cancel='timeline']")).toHaveText(
+    /^Cancelled by A\. Singh at \d{1,2}:\d{2} [AP]M, Wrong beneficiary$/,
+  );
   await expect
     .poll(async () => Number((await book.till()).CAD) - before, { timeout: 15_000 })
     .toBeCloseTo(0, 2);
@@ -264,6 +271,7 @@ test("a cashier is told to ask a manager, and Cancel is not offered", async ({ p
       body: JSON.stringify({
         idempotencyKey: `web:transfer-cancel:${transactionId}`,
         reason: "Seam cleanup",
+        partnerConfirmedNotPaid: true,
       }),
     });
     if (!reversed.ok) throw new Error(`cleanup reversal ${reversed.status}`);

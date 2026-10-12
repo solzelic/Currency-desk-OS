@@ -254,7 +254,10 @@ that person a Cancel button.
 The reversal is refused if the drawer can no longer fund the cash going back
 out (`REVERSAL_NOT_ALLOWED`, "The drawer does not have the cash to give back.") and refused
 once the partner has paid the beneficiary or the obligation is settled. That
-refusal is "This transfer was already paid out. It cannot be cancelled."
+refusal is "Already paid out to the customer." A held transfer is "On hold.
+Release it first, then cancel." An already reversed transfer is "Already
+cancelled." A send also needs the manager's recorded confirmation that the
+partner has not paid it out.
 `paid_out_at` (migration 042) is set by
 `POST /api/ledger/obligation-deals/:transactionId/payout`, which moves no cash.
 A written-off or otherwise discharged obligation keeps the older message: a

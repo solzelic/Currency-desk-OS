@@ -820,13 +820,13 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       method: "POST",
       url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
       cookies: managerCookies,
-      payload: { idempotencyKey: key, reason: "Cancelled at the counter" },
+      payload: { idempotencyKey: key, reason: "Cancelled at the counter", partnerConfirmedNotPaid: true },
     });
     const second = await app.inject({
       method: "POST",
       url: `/api/ledger/obligation-deals/${transactionId}/reversal`,
       cookies: managerCookies,
-      payload: { idempotencyKey: key, reason: "Cancelled at the counter" },
+      payload: { idempotencyKey: key, reason: "Cancelled at the counter", partnerConfirmedNotPaid: true },
     });
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(201);
@@ -845,7 +845,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     });
     expect(again.statusCode).toBe(422);
     expect(again.json().code).toBe("REVERSAL_NOT_ALLOWED");
-    expect(String(again.json().message)).toContain("already reversed");
+    expect(again.json().message).toBe("Already cancelled.");
     expect(await cad()).toBe("25000.00");
 
     const paidSend = await app.inject({
@@ -872,7 +872,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(refused.statusCode).toBe(422);
     expect(refused.json()).toMatchObject({
       code: "REVERSAL_NOT_ALLOWED",
-      message: "This transfer was already paid out. It cannot be cancelled.",
+      message: "Already paid out to the customer.",
     });
     const still = (
       await pool.query("SELECT status, paid_out_at FROM ledger_obligations WHERE transaction_id=$1", [paidId])

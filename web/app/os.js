@@ -2586,6 +2586,16 @@
       loadObligationDeal: function (transactionId) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId));
       },
+      holdObligationDeal: function (transactionId) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/hold", {
+          method: "POST",
+        });
+      },
+      releaseObligationDeal: function (transactionId) {
+        return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/release", {
+          method: "POST",
+        });
+      },
       reverseObligationDeal: function (transactionId, payload) {
         return request("/api/ledger/obligation-deals/" + encodeURIComponent(transactionId) + "/reversal", {
           method: "POST",
@@ -36157,8 +36167,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   "use strict";
 
   var TELLER_MESSAGE = "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
-  var PAID_OUT_MESSAGE = "This transfer was already paid out. It cannot be cancelled.";
+  var ALREADY_CANCELLED_MESSAGE = "Already cancelled.";
+  var PAID_OUT_MESSAGE = "Already paid out to the customer.";
+  var HELD_MESSAGE = "On hold. Release it first, then cancel.";
   var RECEIVE_MESSAGE = "A received transfer can't be cancelled here. Ask a manager.";
+  var PARTNER_LABEL = "I checked with the partner: it has not been paid out";
 
   /* OS names of the roles that already hold transaction:reverse.
      Cashier and Trainee do not. This does not grant anything. */
@@ -36203,11 +36216,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     if (!obligation) {
       return { kind: "missing", message: "This transfer is not on the ledger. Nothing was cancelled." };
     }
-    if (obligation.paidOutAt || obligation.status === "settled") {
+    if (obligation.status === "reversed") {
+      return { kind: "already", message: ALREADY_CANCELLED_MESSAGE };
+    }
+    if (obligation.paidOutAt || obligation.status === "settled" || obligation.status === "paid") {
       return { kind: "refused", message: PAID_OUT_MESSAGE };
     }
-    if (obligation.status === "reversed") {
-      return { kind: "already", message: "This transfer is already cancelled." };
+    if (obligation.status === "held") {
+      return { kind: "refused", message: HELD_MESSAGE };
     }
     if (obligation.dealKind === "remittance_receive") {
       return { kind: "refused", message: RECEIVE_MESSAGE };
@@ -36241,13 +36257,37 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     });
   }
 
-  function postCancel(transactionId) {
+  function postCancel(transactionId, reason) {
     var backend = window.CDOS && window.CDOS.Backend;
     if (!backend || typeof backend.reverseObligationDeal !== "function") {
       return Promise.reject(new Error("The ledger client is not loaded. Nothing was cancelled."));
     }
-    var payload = { idempotencyKey: idempotencyKey(transactionId), reason: "Cancelled at the counter" };
+    var text = String(reason == null ? "" : reason).trim();
+    if (text.length < 3) {
+      return Promise.reject(new Error("Say why this transfer is being cancelled."));
+    }
+    var payload = {
+      idempotencyKey: idempotencyKey(transactionId),
+      reason: text,
+      partnerConfirmedNotPaid: true,
+    };
     return postOnce(function () { return backend.reverseObligationDeal(transactionId, payload); });
+  }
+
+  function postHold(transactionId) {
+    var backend = window.CDOS && window.CDOS.Backend;
+    if (!backend || typeof backend.holdObligationDeal !== "function") {
+      return Promise.reject(new Error("The ledger client is not loaded. The transfer was not put on hold."));
+    }
+    return backend.holdObligationDeal(transactionId);
+  }
+
+  function postRelease(transactionId) {
+    var backend = window.CDOS && window.CDOS.Backend;
+    if (!backend || typeof backend.releaseObligationDeal !== "function") {
+      return Promise.reject(new Error("The ledger client is not loaded. The transfer was not released."));
+    }
+    return backend.releaseObligationDeal(transactionId);
   }
 
   function postPaidOut(transactionId) {
@@ -36262,14 +36302,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   window.CDOS = Object.assign(window.CDOS || {}, {
     transferCancel: {
       TELLER_MESSAGE: TELLER_MESSAGE,
+      ALREADY_CANCELLED_MESSAGE: ALREADY_CANCELLED_MESSAGE,
       PAID_OUT_MESSAGE: PAID_OUT_MESSAGE,
+      HELD_MESSAGE: HELD_MESSAGE,
       RECEIVE_MESSAGE: RECEIVE_MESSAGE,
+      PARTNER_LABEL: PARTNER_LABEL,
       canPost: function (role) { return !!CAN_POST[role]; },
       review: review,
       idempotencyKey: idempotencyKey,
       paidOutKey: paidOutKey,
       postCancel: postCancel,
       postPaidOut: postPaidOut,
+      postHold: postHold,
+      postRelease: postRelease,
     },
   });
 })();
@@ -38042,6 +38087,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [sentence, setSentence] = useState('');
     const [cancelError, setCancelError] = useState('');
     const [busy, setBusy] = useState(false);
+    const [reason, setReason] = useState('');
+    const [partnerChecked, setPartnerChecked] = useState(false);
     const Cancel = window.CDOS.transferCancel;
     if (!Cancel) throw new Error("transferCancel is not loaded.");
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
@@ -38062,6 +38109,22 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           return;
         }
       }
+      if (to === 'hold' && t.serverTransactionId) {
+        try {
+          await Cancel.postHold(t.serverTransactionId);
+        } catch (error) {
+          setCancelError(error.message || 'The transfer was not put on hold.');
+          return;
+        }
+      }
+      if (t.status === 'hold' && to === 'sent' && t.serverTransactionId) {
+        try {
+          await Cancel.postRelease(t.serverTransactionId);
+        } catch (error) {
+          setCancelError(error.message || 'The transfer was not released.');
+          return;
+        }
+      }
       setTransfers(list => list.map(x => x.id === t.id ? {
         ...x,
         status: to,
@@ -38077,6 +38140,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const openCancel = async () => {
       setCancelError('');
       setSentence('');
+      setReason('');
+      setPartnerChecked(false);
       setAsk(true);
       if (!t.serverTransactionId) {
         setCancelError('This transfer is not on the ledger. Nothing was cancelled.');
@@ -38091,12 +38156,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     };
     const confirmCancel = async () => {
-      if (busy || !sentence || !t.serverTransactionId) return;
+      const why = reason.trim();
+      if (busy || !sentence || !t.serverTransactionId || why.length < 3 || !partnerChecked) return;
       setBusy(true);
       setCancelError('');
       try {
-        await Cancel.postCancel(t.serverTransactionId);
-        advance('cancelled', 'Cash returned and the obligation cancelled');
+        await Cancel.postCancel(t.serverTransactionId, why);
+        const clock = new Date().toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        advance('cancelled', `Cancelled by ${me.name} at ${clock}, ${why}`);
         setAsk(false);
         if (onTillChanged) {
           try {
@@ -38109,7 +38180,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setCancelError(error.message || 'The transfer was not cancelled.');
         try {
           const row = await window.CDOS.Backend.loadObligationDeal(t.serverTransactionId);
-          if (row && row.status === 'reversed') advance('cancelled', 'Already cancelled on the ledger');else if (row && (row.paidOutAt || row.status === 'settled')) {
+          if (row && row.status === 'reversed') advance('cancelled', 'Already cancelled on the ledger');else if (row && (row.paidOutAt || row.status === 'settled' || row.status === 'paid')) {
             setTransfers(list => list.map(x => x.id === t.id && x.status !== 'paid' ? {
               ...x,
               status: 'paid',
@@ -38117,7 +38188,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
                 status: 'paid',
                 ts: stamp(),
                 by: me.name,
-                note: 'Already paid out on the ledger'
+                note: 'Already paid out to the customer.'
+              }]
+            } : x));
+          } else if (row && row.status === 'held') {
+            setTransfers(list => list.map(x => x.id === t.id ? {
+              ...x,
+              status: 'hold',
+              timeline: [...(x.timeline || []), {
+                status: 'hold',
+                ts: stamp(),
+                by: me.name,
+                note: 'On hold. Release it first, then cancel.'
               }]
             } : x));
           }
@@ -38316,7 +38398,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           color: CD.mute
         }
       }, evt.ts, " \xB7 ", evt.by, evt.note ? ` — ${evt.note}` : '')));
-    })), t.status === 'hold' && /*#__PURE__*/React.createElement("div", {
+    })), (t.timeline || []).filter(e => e.status === 'cancelled').map((evt, i) => /*#__PURE__*/React.createElement("div", {
+      key: 'cancelled-' + i,
+      "data-transfer-cancel": "timeline",
+      className: "text-[13px] mt-1",
+      style: {
+        color: CD.ink
+      }
+    }, evt.note)), t.status === 'hold' && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 mt-1 text-[12px] flex items-center gap-1.5",
       style: {
         background: CD.flagSoft,
@@ -38441,7 +38530,35 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, "Reading the ledger\u2026"), cancelError && /*#__PURE__*/React.createElement("p", {
+    }, "Reading the ledger\u2026"), sentence && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3"
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "flex items-start gap-2 text-sm",
+      style: {
+        color: CD.ink,
+        minHeight: 44
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: partnerChecked,
+      onChange: e => setPartnerChecked(e.target.checked)
+    }), /*#__PURE__*/React.createElement("span", null, Cancel.PARTNER_LABEL)), /*#__PURE__*/React.createElement("label", {
+      className: "block text-sm mt-2",
+      style: {
+        color: CD.ink
+      }
+    }, "Reason", /*#__PURE__*/React.createElement("textarea", {
+      value: reason,
+      onChange: e => setReason(e.target.value),
+      rows: 2,
+      className: "w-full mt-1 px-2 py-2 text-sm",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: 'var(--cd-panel)'
+      }
+    }))), cancelError && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       className: "text-sm mt-3",
       style: {
@@ -38451,11 +38568,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "flex flex-col gap-2 mt-4"
     }, sentence && /*#__PURE__*/React.createElement("button", {
       type: "button",
-      disabled: busy,
+      disabled: busy || reason.trim().length < 3 || !partnerChecked,
       onClick: confirmCancel,
       className: "px-4 text-sm font-semibold text-white",
       style: {
-        background: busy ? 'var(--cd-disabled)' : CD.flag,
+        background: busy || reason.trim().length < 3 || !partnerChecked ? 'var(--cd-disabled)' : CD.flag,
         borderRadius: 8,
         cursor: busy ? 'wait' : 'pointer',
         minHeight: 44

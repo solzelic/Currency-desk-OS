@@ -95,8 +95,11 @@ import {
    administrator. The sentence is the one the desk says out loud. */
 export const TRANSFER_CANCEL_TELLER_MESSAGE =
   "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
-export const TRANSFER_PAID_OUT_MESSAGE =
-  "This transfer was already paid out. It cannot be cancelled.";
+export const TRANSFER_ALREADY_CANCELLED_MESSAGE = "Already cancelled.";
+export const TRANSFER_PAID_OUT_MESSAGE = "Already paid out to the customer.";
+export const TRANSFER_HELD_MESSAGE = "On hold. Release it first, then cancel.";
+export const TRANSFER_PARTNER_MESSAGE =
+  "Confirm you checked with the partner and it has not been paid out.";
 export const TRANSFER_TILL_CLOSED_MESSAGE =
   "Open the till before cancelling a transfer.";
 export const TRANSFER_RECEIVE_MESSAGE =
@@ -1274,9 +1277,15 @@ export class ObligationService {
      cannot be un-made by saying the deal never happened — the partner
      has been paid, or has paid — and the honest move at that point is a
      new deal in the other direction, not a rewrite of history. */
-  reverse(actor: LedgerActor, transactionId: string, idempotencyKey: string, reason: string) {
+  reverse(
+    actor: LedgerActor,
+    transactionId: string,
+    idempotencyKey: string,
+    reason: string,
+    partnerConfirmedNotPaid = false,
+  ) {
     return withSerializationRetry(() =>
-      this.reverseOnce(actor, transactionId, idempotencyKey, reason),
+      this.reverseOnce(actor, transactionId, idempotencyKey, reason, partnerConfirmedNotPaid),
     );
   }
 
@@ -1285,11 +1294,12 @@ export class ObligationService {
     transactionId: string,
     idempotencyKey: string,
     reason: string,
+    partnerConfirmedNotPaid: boolean,
   ): Promise<Record<string, unknown>> {
-    if (!idempotencyKey?.trim() || !reason.trim())
+    if (!idempotencyKey?.trim() || reason.trim().length < 3)
       throw new LedgerError(
         "INVALID_REQUEST",
-        "Reversal reason and idempotency key required.",
+        "Say why this transfer is being cancelled.",
       );
     const client = await this.pool.connect();
     try {
@@ -1334,11 +1344,13 @@ export class ObligationService {
          this screen does not do it. */
       if (obligation.deal_kind === "remittance_receive")
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_RECEIVE_MESSAGE);
-      /* Paid out, or settled with the partner: the beneficiary has the
-         money, or the desk has already funded it. Handing the cash back
-         would pay both sides. */
+      /* These three are the server's status. A browser click is not. */
+      if (obligation.status === "reversed")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_ALREADY_CANCELLED_MESSAGE);
       if (obligation.paid_out_at || obligation.status === "settled")
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
+      if (obligation.status === "held")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_HELD_MESSAGE);
       if (obligation.status !== "open")
         throw new LedgerError(
           "REVERSAL_NOT_ALLOWED",
@@ -1369,6 +1381,12 @@ export class ObligationService {
       );
       if (!session.rowCount)
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_TILL_CLOSED_MESSAGE);
+      /* A send the partner might already have paid. The manager has to
+         say they checked. Bills and money orders are not that question. */
+      const partnerConfirmed =
+        obligation.deal_kind === "remittance_send" && partnerConfirmedNotPaid === true;
+      if (obligation.deal_kind === "remittance_send" && !partnerConfirmed)
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PARTNER_MESSAGE);
       const openSession = session.rows[0];
       const reversalId = `rv_${randomUUID()}`;
       const now = this.postingClock();
@@ -1398,8 +1416,17 @@ export class ObligationService {
         );
       }
       await client.query(
-        "INSERT INTO ledger_reversals (reversal_id,transaction_id,actor_id,reason,posted_at,business_date,till_session_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-        [reversalId, transactionId, actor.userId, reason.trim(), now, businessDate, openSession.session_id],
+        "INSERT INTO ledger_reversals (reversal_id,transaction_id,actor_id,reason,posted_at,business_date,till_session_id,partner_confirmed_not_paid) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        [
+          reversalId,
+          transactionId,
+          actor.userId,
+          reason.trim(),
+          now,
+          businessDate,
+          openSession.session_id,
+          partnerConfirmed,
+        ],
       );
       await client.query(
         "INSERT INTO ledger_reversal_entries (reversal_id,account_code,side,amount_cad,created_at) SELECT $1,account_code,CASE side WHEN 'debit' THEN 'credit' ELSE 'debit' END,amount_cad,$2 FROM ledger_journal_entries WHERE transaction_id=$3",
@@ -1486,6 +1513,8 @@ export class ObligationService {
       if (!found.rowCount)
         throw new LedgerError("TRANSACTION_NOT_FOUND", "That transfer is not on the ledger.");
       const obligation = found.rows[0];
+      if (obligation.status === "held")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_HELD_MESSAGE);
       if (obligation.status !== "open")
         throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
       const now = obligation.paid_out_at ? new Date(obligation.paid_out_at) : new Date();
@@ -1507,6 +1536,57 @@ export class ObligationService {
       );
       await client.query("COMMIT");
       return response;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /* Hold is a status on the row. Release puts it back to open. Neither
+     moves cash. A teller can do both; only a manager can cancel. */
+  hold(actor: LedgerActor, transactionId: string) {
+    return withSerializationRetry(() => this.setHold(actor, transactionId, true));
+  }
+
+  release(actor: LedgerActor, transactionId: string) {
+    return withSerializationRetry(() => this.setHold(actor, transactionId, false));
+  }
+
+  private async setHold(actor: LedgerActor, transactionId: string, held: boolean) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      await authorizeLedgerActor(client, actor, "transaction:post");
+      const found = await client.query(
+        `SELECT obligation_id, status, paid_out_at
+           FROM ledger_obligations
+          WHERE transaction_id=$1 AND tenant_id=$2 AND legal_entity_id=$3
+            AND branch_id=$4 AND workspace_id=$5 AND till_id=$6
+          FOR UPDATE`,
+        [transactionId, ...scope(actor)],
+      );
+      if (!found.rowCount)
+        throw new LedgerError("TRANSACTION_NOT_FOUND", "That transfer is not on the ledger.");
+      const obligation = found.rows[0];
+      if (obligation.status === "reversed")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_ALREADY_CANCELLED_MESSAGE);
+      if (obligation.paid_out_at || obligation.status === "settled")
+        throw new LedgerError("REVERSAL_NOT_ALLOWED", TRANSFER_PAID_OUT_MESSAGE);
+      const next = held ? "held" : "open";
+      if (obligation.status !== next) {
+        if (held && obligation.status !== "open")
+          throw new LedgerError("REVERSAL_NOT_ALLOWED", "This transfer cannot be put on hold.");
+        if (!held && obligation.status !== "held")
+          throw new LedgerError("REVERSAL_NOT_ALLOWED", "This transfer is not on hold.");
+        await client.query(
+          "UPDATE ledger_obligations SET status=$1, updated_at=$2 WHERE obligation_id=$3",
+          [next, new Date(), obligation.obligation_id],
+        );
+      }
+      await client.query("COMMIT");
+      return { transactionId, obligationId: obligation.obligation_id, status: next };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1543,7 +1623,7 @@ export class ObligationService {
       const outstanding = await client.query(
         `SELECT direction, sum(carrying_amount_home) AS total, count(*) AS count
            FROM ledger_obligations
-          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND status='open'
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND status IN ('open', 'held')
           GROUP BY direction`,
         entityScope(actor),
       );

@@ -4,8 +4,11 @@
   "use strict";
 
   var TELLER_MESSAGE = "Only a manager can cancel a transfer that took cash. Ask a manager to cancel.";
-  var PAID_OUT_MESSAGE = "This transfer was already paid out. It cannot be cancelled.";
+  var ALREADY_CANCELLED_MESSAGE = "Already cancelled.";
+  var PAID_OUT_MESSAGE = "Already paid out to the customer.";
+  var HELD_MESSAGE = "On hold. Release it first, then cancel.";
   var RECEIVE_MESSAGE = "A received transfer can't be cancelled here. Ask a manager.";
+  var PARTNER_LABEL = "I checked with the partner: it has not been paid out";
 
   /* OS names of the roles that already hold transaction:reverse.
      Cashier and Trainee do not. This does not grant anything. */
@@ -50,11 +53,14 @@
     if (!obligation) {
       return { kind: "missing", message: "This transfer is not on the ledger. Nothing was cancelled." };
     }
-    if (obligation.paidOutAt || obligation.status === "settled") {
+    if (obligation.status === "reversed") {
+      return { kind: "already", message: ALREADY_CANCELLED_MESSAGE };
+    }
+    if (obligation.paidOutAt || obligation.status === "settled" || obligation.status === "paid") {
       return { kind: "refused", message: PAID_OUT_MESSAGE };
     }
-    if (obligation.status === "reversed") {
-      return { kind: "already", message: "This transfer is already cancelled." };
+    if (obligation.status === "held") {
+      return { kind: "refused", message: HELD_MESSAGE };
     }
     if (obligation.dealKind === "remittance_receive") {
       return { kind: "refused", message: RECEIVE_MESSAGE };
@@ -88,13 +94,37 @@
     });
   }
 
-  function postCancel(transactionId) {
+  function postCancel(transactionId, reason) {
     var backend = window.CDOS && window.CDOS.Backend;
     if (!backend || typeof backend.reverseObligationDeal !== "function") {
       return Promise.reject(new Error("The ledger client is not loaded. Nothing was cancelled."));
     }
-    var payload = { idempotencyKey: idempotencyKey(transactionId), reason: "Cancelled at the counter" };
+    var text = String(reason == null ? "" : reason).trim();
+    if (text.length < 3) {
+      return Promise.reject(new Error("Say why this transfer is being cancelled."));
+    }
+    var payload = {
+      idempotencyKey: idempotencyKey(transactionId),
+      reason: text,
+      partnerConfirmedNotPaid: true,
+    };
     return postOnce(function () { return backend.reverseObligationDeal(transactionId, payload); });
+  }
+
+  function postHold(transactionId) {
+    var backend = window.CDOS && window.CDOS.Backend;
+    if (!backend || typeof backend.holdObligationDeal !== "function") {
+      return Promise.reject(new Error("The ledger client is not loaded. The transfer was not put on hold."));
+    }
+    return backend.holdObligationDeal(transactionId);
+  }
+
+  function postRelease(transactionId) {
+    var backend = window.CDOS && window.CDOS.Backend;
+    if (!backend || typeof backend.releaseObligationDeal !== "function") {
+      return Promise.reject(new Error("The ledger client is not loaded. The transfer was not released."));
+    }
+    return backend.releaseObligationDeal(transactionId);
   }
 
   function postPaidOut(transactionId) {
@@ -109,14 +139,19 @@
   window.CDOS = Object.assign(window.CDOS || {}, {
     transferCancel: {
       TELLER_MESSAGE: TELLER_MESSAGE,
+      ALREADY_CANCELLED_MESSAGE: ALREADY_CANCELLED_MESSAGE,
       PAID_OUT_MESSAGE: PAID_OUT_MESSAGE,
+      HELD_MESSAGE: HELD_MESSAGE,
       RECEIVE_MESSAGE: RECEIVE_MESSAGE,
+      PARTNER_LABEL: PARTNER_LABEL,
       canPost: function (role) { return !!CAN_POST[role]; },
       review: review,
       idempotencyKey: idempotencyKey,
       paidOutKey: paidOutKey,
       postCancel: postCancel,
       postPaidOut: postPaidOut,
+      postHold: postHold,
+      postRelease: postRelease,
     },
   });
 })();

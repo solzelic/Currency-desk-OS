@@ -83,8 +83,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   midnight is that day and not the UTC day. A branch with no timezone
   on file keeps the open session's stored business date. A signed-off
   day stays. A receive is refused.
-  The sheet reads that one transaction. A transfer the partner has
-  already paid out is refused. The phone contract is
+  The sheet reads that one transaction. Paid, settled, and held
+  transfers are refused with their own sentences. A send needs a
+  recorded partner check and a reason of at least three characters.
+  The phone contract is
   `docs/TRANSFER_CANCEL.md`. Before this, desktop Cancel only changed a
   local status, so the cash stayed in the drawer and the partner stayed
   owed.
