@@ -23,6 +23,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -114,9 +115,9 @@ async function publishBoard(rows: Record<string, number>) {
 /**
  * One real deal, through the same frozen-quote path a teller uses.
  *
- * 1,443.30 CAD at the board's 1.40 mid and 3% sell margin buys exactly a
- * thousand US dollars, which keeps every figure below a round number
- * instead of a string of rounding remainders.
+ * 1,443.21 CAD at the displayed 4dp rate (0.6929) buys exactly a thousand
+ * US dollars, which keeps every figure below a round number instead of a
+ * string of rounding remainders.
  */
 async function sellAThousandDollars(idempotencyKey: string, feeCad = "4.00") {
   const cookies = await cookie();
@@ -129,7 +130,7 @@ async function sellAThousandDollars(idempotencyKey: string, feeCad = "4.00") {
         customerId: "customer-demo",
         from: "CAD",
         to: "USD",
-        inputAmount: "1443.30",
+        inputAmount: "1443.21",
         feeCad,
         direction: "customer_buy_foreign",
       },
@@ -144,6 +145,7 @@ async function sellAThousandDollars(idempotencyKey: string, feeCad = "4.00") {
       idempotencyKey,
       purpose: "Personal travel",
       sourceOfFunds: "Employment income",
+      shownAmount: amountShown(quote),
     },
   });
   expect(posted.statusCode).toBe(201);
@@ -214,20 +216,20 @@ postgres("the ledger answers for its own headline figures", () => {
     const one = await summary();
     expect(one.posted).toBe(1);
     expect(one.reversed).toBe(0);
-    expect(one.volumeHome).toBe("1443.30");
+    expect(one.volumeHome).toBe("1443.21");
     expect(one.feesHome).toBe("4.00");
     expect(one.unvaluedDeals).toBe(0);
-    // 1,443.30 taken in against 1,000 USD that cost 1.34 apiece
-    expect(one.realizedPnlHome).toBe("103.30");
+    // 1,443.21 taken in against 1,000 USD that cost 1.34 apiece
+    expect(one.realizedPnlHome).toBe("103.21");
     expect(one.costOfSaleHome).toBe("1340.00");
-    expect(one.earningsHome).toBe("107.30");
+    expect(one.earningsHome).toBe("107.21");
     expect(one.pricedDeals).toBe(1);
     expect(one.byCurrency).toEqual([
       {
         currency: "USD",
         deals: 1,
         sold: "1000.00",
-        realizedPnlHome: "103.30",
+        realizedPnlHome: "103.21",
         pricedDeals: 1,
       },
     ]);

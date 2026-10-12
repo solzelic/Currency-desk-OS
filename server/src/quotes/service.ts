@@ -16,9 +16,31 @@ import {
   type LedgerActor,
 } from "../ledger/service.js";
 import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
-import { calculateQuoteTerms, type QuoteDirection } from "./terms.js";
+import { amountShown, calculateQuoteTerms, minorUnits, roundOutput, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+/* quote-terms throws plain Error. A zero payout is 422. Everything else
+   the arithmetic refuses is a 400 whose words a teller can read. */
+function refuseTerms(error: unknown): never {
+  if (error instanceof LedgerError) throw error;
+  const message = error instanceof Error ? error.message : "";
+  if (message === "This quote pays out nothing.") throw new LedgerError("ZERO_PAYOUT", message);
+  const plain: Record<string, string> = {
+    "Yen has no decimals.": "Yen has no decimals.",
+    "This currency has no decimals.": "This currency has no decimals.",
+    "invalid money": "Enter a valid amount.",
+    "out of range": "That amount is outside what this desk can quote.",
+    "unsupported currency scale": "That currency is not available on this desk.",
+    "negative spread": "This rate cannot be quoted.",
+    "direction and currencies disagree": "Choose one currency to pay and a different one to receive.",
+  };
+  if (plain[message]) throw new LedgerError("INVALID_REQUEST", plain[message]);
+  if (/^[A-Z]{3} uses \d+ decimals\. Try [0-9]+(?:\.[0-9]+)?\.$/.test(message)) {
+    throw new LedgerError("INVALID_REQUEST", message);
+  }
+  if (message.startsWith("invalid ")) throw new LedgerError("INVALID_REQUEST", "The rate board cannot price this.");
+  throw new LedgerError("INVALID_REQUEST", "The quote could not be priced.");
+}
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
    — which is what a `char(3)` column had been narrowed to by hand. It
    was the type-level half of the ceiling described in migration 020: a
@@ -77,6 +99,13 @@ const complianceFact = (value: string, label: string) => {
     throw new LedgerError("INVALID_REQUEST", `${label} is required and must be at most 500 characters.`);
   return value.trim();
 };
+/* What the teller was looking at, as a number. Commas are display. */
+function parseShown(value: string | undefined): Decimal | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim().replace(/,/g, "");
+  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,12})?$/.test(cleaned)) return null;
+  return new Decimal(cleaned);
+}
 
 export class QuoteService {
   constructor(
@@ -325,8 +354,7 @@ export class QuoteService {
           });
         }
       } catch (error) {
-        if (error instanceof LedgerError) throw error;
-        throw new LedgerError("INVALID_REQUEST", "Invalid commercial terms.");
+        refuseTerms(error);
       }
       const {
         input,
@@ -540,15 +568,21 @@ export class QuoteService {
           : currency === home
             ? new Decimal(1)
             : mid;
+      const homePlaces = minorUnits(home);
+      if (homePlaces > 2)
+        throw new LedgerError(
+          "UNSUPPORTED_CURRENCY",
+          `${home} is written to ${homePlaces} decimal places, and this ledger's amounts hold two.`,
+        );
       const input = new Decimal(q.input_amount),
-        output = input.mul(rate).toDecimalPlaces(2),
+        output = roundOutput(input, rate, q.to_currency),
         inputCad = input
           .mul(sideMid(q.from_currency, q.from_mid))
-          .toDecimalPlaces(2),
+          .toDecimalPlaces(homePlaces),
         outputCad = output
           .mul(sideMid(q.to_currency, q.to_mid))
-          .toDecimalPlaces(2),
-        spread = inputCad.sub(outputCad).toDecimalPlaces(2);
+          .toDecimalPlaces(homePlaces),
+        spread = inputCad.sub(outputCad).toDecimalPlaces(homePlaces);
       if (spread.lt(0))
         throw new LedgerError(
           "OVERRIDE_LIMIT_EXCEEDED",
@@ -599,6 +633,7 @@ export class QuoteService {
       usdNoteSerials?: string[];
       reportSuspicion?: boolean;
     },
+    shownAmount?: string,
   ) {
     const validatedPurpose = complianceFact(purpose, "Purpose");
     const validatedSourceOfFunds = complianceFact(sourceOfFunds, "Source of funds");
@@ -636,6 +671,25 @@ export class QuoteService {
         throw new LedgerError("QUOTE_NOT_ACTIVE", "Quote cannot be posted.");
       if (new Date(q.expires_at).getTime() <= Date.now())
         throw new LedgerError("QUOTE_EXPIRED", "Quote has expired.");
+      /* Recompute the figure on Customer receives and refuse unless the
+         post carries that same amount. A tab that never sent it, or one
+         that painted a different figure, does not get to post. */
+      const home = String((await resolvePack(client, actor.legalEntityId)).homeCurrency).trim();
+      const recomputed = roundOutput(
+        new Decimal(q.input_amount),
+        new Decimal(value.customerRate),
+        q.to_currency,
+      );
+      const expected = new Decimal(amountShown({
+        inputAmount: q.input_amount,
+        outputAmount: recomputed.toFixed(minorUnits(q.to_currency)),
+        feeCad: q.fee_cad,
+        from: q.from_currency,
+        to: q.to_currency,
+      }, home));
+      const shown = parseShown(shownAmount);
+      if (!recomputed.eq(new Decimal(value.outputAmount)) || !shown || !shown.eq(expected))
+        throw new LedgerError("RELOAD_REQUIRED", "This screen is out of date. Reload to continue.");
       await client.query("COMMIT");
       return this.forReader(
         role,

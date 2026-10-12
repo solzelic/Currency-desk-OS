@@ -161,6 +161,7 @@ test("a Serbia desk identifies at 5,000 EUR and shows the airside switch", async
             idempotencyKey: `serbia-seam-${inputAmount}`,
             purpose: "Personal travel",
             sourceOfFunds: "Employment income",
+            shownAmount: body.outputAmount,
           }),
         });
         const postedBody = await post.json().catch(() => ({}));

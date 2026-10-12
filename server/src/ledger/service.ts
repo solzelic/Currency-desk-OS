@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import pg from "pg";
+import { cashHands } from "../quotes/terms.js";
 import {
   hasBackendPermission,
   type BackendPermission,
@@ -163,6 +164,42 @@ const decimal = (value: string, min: Decimal.Value) => {
 };
 const fixed = (value: Decimal, places = 2) =>
   value.toDecimalPlaces(places).toFixed(places);
+
+type TillMove = { currency: string; direction: "in" | "out"; amount: string };
+
+/* One object for the cash that changes hands. The journal below still
+   records the exchange and the fee as separate lines. */
+function dealCash(input: Decimal, output: Decimal, fee: Decimal, from: string, to: string, home: string) {
+  return cashHands(fixed(input), fixed(output), fixed(fee), from, to, home);
+}
+
+function tillShort(currency: string): string {
+  return `The till doesn't have enough ${currency}. Ask a manager to move cash in.`;
+}
+
+async function applyCashMoves(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  transactionId: string,
+  moves: TillMove[],
+  now: Date,
+) {
+  for (const move of moves) {
+    const value = new Decimal(move.amount);
+    if (value.isZero()) continue;
+    const delta = move.direction === "in" ? value : value.neg();
+    const updated = await client.query(
+      "UPDATE ledger_till_balances SET available_amount=available_amount+$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND currency=$7 AND available_amount+$1>=0",
+      [fixed(delta), ...scope(actor), move.currency],
+    );
+    if (!updated.rowCount)
+      throw new LedgerError("INSUFFICIENT_TILL_LIQUIDITY", tillShort(move.currency));
+    await client.query(
+      "INSERT INTO ledger_till_movements (transaction_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,'original',$2,$3,$4,$5)",
+      [transactionId, move.currency, move.direction, fixed(value), now],
+    );
+  }
+}
 
 /* ---- the two gates every counter deal passes, wherever it is posted ----
 
@@ -883,17 +920,19 @@ export class LedgerService {
         );
       }
       assertIndiaPurpose(pack, inputHome, "exchange", quote.purpose, quote.sourceOfFunds);
+      const cash = dealCash(input, output, fee, quote.from, quote.to, home);
+      const leaving = cash.tillMoves.find((move) => move.direction === "out" && move.currency === quote.to);
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), quote.to],
       );
       if (
         !destination.rowCount ||
-        new Decimal(destination.rows[0].available_amount).lt(output)
+        (leaving != null && new Decimal(destination.rows[0].available_amount).lt(leaving.amount))
       )
         throw new LedgerError(
           "INSUFFICIENT_TILL_LIQUIDITY",
-          "Insufficient till liquidity.",
+          tillShort(quote.to),
         );
       /* ---------------- COST BASIS ----------------
          Whichever side of this exchange is not the home currency is
@@ -1075,9 +1114,7 @@ export class LedgerService {
             `Receipt ${transactionRef}`,
             `Customer: ${customer.rows[0].name}`,
             `Quote: ${quote.quoteId}`,
-            `Paid exchange: ${fixed(input)} ${quote.from}`,
-            `Fee paid separately: ${home} ${fixed(fee)}`,
-            `Received: ${fixed(output)} ${quote.to}`,
+            ...cash.receiptCash,
             ...(serbia.receiptFacts?.side
               ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]
               : []),
@@ -1144,28 +1181,7 @@ export class LedgerService {
           "INSERT INTO ledger_journal_entries (transaction_id,account_code,side,amount_cad,created_at) VALUES ($1,$2,$3,$4,$5)",
           [transactionId, account, side, fixed(value), now],
         );
-      for (const [currency, direction, value] of [
-        [quote.from, "in", input],
-        [quote.to, "out", output],
-        // the fee is cash too, and it is collected in the desk's own currency
-        [home, "in", fee],
-      ] as const) {
-        if (value.isZero()) continue;
-        const delta = direction === "in" ? value : value.neg();
-        const updated = await client.query(
-          "UPDATE ledger_till_balances SET available_amount=available_amount+$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND currency=$7 AND available_amount+$1>=0",
-          [fixed(delta), ...scope(actor), currency],
-        );
-        if (!updated.rowCount)
-          throw new LedgerError(
-            "INSUFFICIENT_TILL_LIQUIDITY",
-            "Till movement rejected.",
-          );
-        await client.query(
-          "INSERT INTO ledger_till_movements (transaction_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,'original',$2,$3,$4,$5)",
-          [transactionId, currency, direction, fixed(value), now],
-        );
-      }
+      await applyCashMoves(client, actor, transactionId, cash.tillMoves, now);
 
       /* The basis moves with the cash. Quantities have just changed, so the
          pre-move figures captured above are what the weighted average is
@@ -1439,17 +1455,19 @@ export class LedgerService {
           { kind: "exchange" },
         );
       }
+      const cash = dealCash(input, output, fee, request.from, request.to, pack.homeCurrency);
+      const leaving = cash.tillMoves.find((move) => move.direction === "out" && move.currency === request.to);
       const destination = await client.query(
         "SELECT available_amount FROM ledger_till_balances WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND currency=$6 FOR UPDATE",
         [...scope(actor), request.to],
       );
       if (
         !destination.rowCount ||
-        new Decimal(destination.rows[0].available_amount).lt(output)
+        (leaving != null && new Decimal(destination.rows[0].available_amount).lt(leaving.amount))
       )
         throw new LedgerError(
           "INSUFFICIENT_TILL_LIQUIDITY",
-          "Insufficient till liquidity.",
+          tillShort(request.to),
         );
       // Product rule: feeCad is a separate CAD cash payment, never part of inputAmount.
       const journal = [
@@ -1492,9 +1510,7 @@ export class LedgerService {
             "CurrencyDesk OS",
             `Receipt ${transactionRef}`,
             `Customer: ${customer.rows[0].name}`,
-            `Paid exchange: ${fixed(input)} ${request.from}`,
-            `Fee paid separately: CAD ${fixed(fee)}`,
-            `Received: ${fixed(output)} ${request.to}`,
+            ...cash.receiptCash,
             ...(serbia.receiptFacts?.side
               ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]
               : []),
@@ -1549,27 +1565,7 @@ export class LedgerService {
           "INSERT INTO ledger_journal_entries (transaction_id,account_code,side,amount_cad,created_at) VALUES ($1,$2,$3,$4,$5)",
           [transactionId, account, side, fixed(value), now],
         );
-      for (const [currency, direction, value] of [
-        [request.from, "in", input],
-        [request.to, "out", output],
-        ["CAD", "in", fee],
-      ] as const) {
-        if (value.isZero()) continue;
-        const delta = direction === "in" ? value : value.neg();
-        const updated = await client.query(
-          "UPDATE ledger_till_balances SET available_amount=available_amount+$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND currency=$7 AND available_amount+$1>=0",
-          [fixed(delta), ...scope(actor), currency],
-        );
-        if (!updated.rowCount)
-          throw new LedgerError(
-            "INSUFFICIENT_TILL_LIQUIDITY",
-            "Till movement rejected.",
-          );
-        await client.query(
-          "INSERT INTO ledger_till_movements (transaction_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,'original',$2,$3,$4,$5)",
-          [transactionId, currency, direction, fixed(value), now],
-        );
-      }
+      await applyCashMoves(client, actor, transactionId, cash.tillMoves, now);
       await client.query(
         "INSERT INTO ledger_audit_events (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,action,target_id,correlation_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,'transaction.post',$7,$8,$9)",
         [

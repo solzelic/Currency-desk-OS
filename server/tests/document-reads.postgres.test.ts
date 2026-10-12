@@ -25,6 +25,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -111,8 +112,8 @@ async function tillHolds(currency: string, amount: number, avgCost?: string) {
   );
 }
 
-/* 1,443.30 CAD at the board's 1.40 mid and 3% sell margin buys exactly a
-   thousand US dollars — the same round figure ledger-reporting uses, so the
+/* 1,443.21 CAD at the displayed 4dp rate (0.6929) buys exactly a thousand
+   US dollars — the same round figure ledger-reporting uses, so the
    arithmetic below stays readable. */
 async function sellAThousandDollars(staffId: string, key: string, feeCad: string) {
   const cookies = await cookie(staffId);
@@ -125,7 +126,7 @@ async function sellAThousandDollars(staffId: string, key: string, feeCad: string
         customerId: "customer-demo",
         from: "CAD",
         to: "USD",
-        inputAmount: "1443.30",
+        inputAmount: "1443.21",
         feeCad,
         direction: "customer_buy_foreign",
       },
@@ -136,7 +137,7 @@ async function sellAThousandDollars(staffId: string, key: string, feeCad: string
     method: "POST",
     url: `/api/quotes/${quote.quoteId}/post`,
     cookies,
-    payload: { idempotencyKey: key, purpose: "Personal travel", sourceOfFunds: "Employment income" },
+    payload: { idempotencyKey: key, purpose: "Personal travel", sourceOfFunds: "Employment income", shownAmount: amountShown(quote) },
   });
   expect(posted.statusCode, posted.body).toBe(201);
   return posted.json().transactionId as string;
@@ -175,6 +176,9 @@ postgres("the reads a signed document is built from", () => {
   });
 
   afterAll(async () => {
+    /* The London case leaves this entity on GBP. Put the Canadian desk
+       back before the next file posts, or its fee asks for pounds. */
+    await reset();
     await app.close();
     await handle.close();
     await pool.end();
@@ -210,13 +214,13 @@ postgres("the reads a signed document is built from", () => {
       three.byActor.map((a: { actorId: string }) => [a.actorId.split(":").pop(), a]),
     );
     /* One deal, four dollars of commission, and the margin the disposal
-       booked: 1,443.30 in against a thousand dollars that cost 1.34 each. */
+       booked: 1,443.21 in against a thousand dollars that cost 1.34 each. */
     expect(by["r.haddad"]).toMatchObject({
       deals: 1,
-      volumeHome: "1443.30",
+      volumeHome: "1443.21",
       feesHome: "4.00",
-      realizedPnlHome: "103.30",
-      earningsHome: "107.30",
+      realizedPnlHome: "103.21",
+      earningsHome: "107.21",
       pricedDeals: 1,
     });
     /* Two deals for the other teller, and the totals are exactly the sum —
@@ -224,7 +228,7 @@ postgres("the reads a signed document is built from", () => {
        drifting from the book, because both halves are checkable. */
     expect(by["a.singh"]).toMatchObject({
       deals: 2,
-      volumeHome: "2886.60",
+      volumeHome: "2886.42",
       feesHome: "6.00",
       pricedDeals: 2,
     });

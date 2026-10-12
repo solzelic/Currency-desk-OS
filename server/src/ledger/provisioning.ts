@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { cashHands } from "../quotes/terms.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
@@ -378,6 +379,12 @@ export class LedgerProvisioningService {
       }
       const row = result.rows[0];
       await client.query("COMMIT");
+      const from = String(row.from_currency).trim();
+      const to = String(row.to_currency).trim();
+      const home = String(row.home_currency || "CAD").trim();
+      const cash = from === to
+        ? null
+        : cashHands(String(row.input_amount), String(row.output_amount), String(row.fee_cad), from, to, home);
       return redactDeskEarnings(role, {
         receiptId: `rcpt_${row.transaction_id}`,
         transactionId: row.transaction_id,
@@ -388,9 +395,13 @@ export class LedgerProvisioningService {
           `Receipt ${row.transaction_ref}`,
           `Customer: ${row.customer_name}`,
           ...(row.quote_id ? [`Quote: ${row.quote_id}`] : []),
-          `Paid exchange: ${row.input_amount} ${row.from_currency.trim()}`,
-          `Fee paid separately: CAD ${row.fee_cad}`,
-          `Received: ${row.output_amount} ${row.to_currency.trim()}`,
+          ...(cash
+            ? cash.receiptCash
+            : [
+                `Paid exchange: ${row.input_amount} ${from}`,
+                `Fee paid separately: ${home} ${row.fee_cad}`,
+                `Received: ${row.output_amount} ${to}`,
+              ]),
         ],
       });
     } catch (error) {

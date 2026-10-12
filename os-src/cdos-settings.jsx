@@ -2056,7 +2056,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Content</div>
           <div className="grid grid-cols-1 gap-3 mb-4">
             <Field label="Receipt header"><Inp k="receiptHeader" placeholder="York Currency Exchange" /></Field>
-            <Field label="Footer line"><Inp k="receiptFooter" placeholder="Thank you — keep for your records" /></Field>
+            <Field label="Footer line"><Inp k="receiptFooter" placeholder="Thank you. Keep for your records." /></Field>
             <Field label="Disclaimer" desc="Small print at the bottom of every receipt."><textarea value={settings.receiptDisclaimer || ''} onChange={e => set('receiptDisclaimer', e.target.value)} rows={2} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, resize: 'vertical' }} placeholder="All sales final. Rates as quoted at time of transaction." /></Field>
           </div>
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Print</div>

@@ -25,3 +25,9 @@ jobs:
       # require.
       - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_ledger_test'
       - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_ledger_test npm run test:ledger:postgres
+      # The compiled server, the command start:dist runs. A rootDir gap
+      # on the shared quote module would pass typecheck and still crash
+      # here, because this process is node dist/index.js.
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_dist_boot'
+      - run: npm run build
+      - run: TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/currencydesk_dist_boot node scripts/check-dist-boot.mjs

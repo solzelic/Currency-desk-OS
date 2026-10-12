@@ -205,6 +205,7 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
             idempotencyKey: `seam-${from}-${inputAmount}`,
             purpose: "Personal travel",
             sourceOfFunds: "Employment income",
+            shownAmount: body.outputAmount,
           }),
         });
         const posted = await post.json().catch(() => ({}));
@@ -247,6 +248,7 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
           idempotencyKey: "seam-EUR-100.00",
           purpose: "Personal travel",
           sourceOfFunds: "Employment income",
+          shownAmount: body.outputAmount,
         }),
       });
       const posted = await post.json().catch(() => ({}));

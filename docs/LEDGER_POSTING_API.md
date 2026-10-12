@@ -49,14 +49,14 @@ Field limits are: idempotency key 200 characters, customer ID 120 characters,
 purpose 500 characters, source of funds 500 characters, and reversal reason
 1-1,000 characters.
 
-The explicit current product rule is that `feeCad` is separate CAD tender. It
-is **not** included in the currency being exchanged. The till receives the
-source currency at `inputAmount` and separately receives CAD at `feeCad`; the
-receipt has a separate CAD fee line. The journal debits the functional-CAD
-value of source cash plus the CAD fee, then credits destination-cash value, FX
-spread revenue, and fee revenue. This rule requires product and policy signoff
-before any production rollout; the API name makes the CAD denomination
-intentional rather than inferred.
+`feeCad` is home-currency tender. It is not included in `inputAmount` or
+`outputAmount`. The journal debits the functional-home value of the exchange
+and the fee as separate lines, then credits destination value, FX spread, and
+fee revenue. The till movement is the net cash: home in of input plus the fee
+when the customer pays home, or home out of output less the fee when they
+receive it. The receipt keeps the gross exchange and the fee, and adds
+`Cash to customer` for the net the teller hands over. A drawer that cannot fund
+the payout answers `INSUFFICIENT_TILL_LIQUIDITY`.
 
 ## Failure codes
 

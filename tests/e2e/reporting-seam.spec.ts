@@ -96,6 +96,7 @@ async function postOneDeal(page: Page, idempotencyKey: string) {
           idempotencyKey: `${key}-${attempt.from}${attempt.to}`,
           purpose: "Personal travel",
           sourceOfFunds: "Employment income",
+          shownAmount: (window as unknown as { CDOS: { quoteTerms: { cashHands: (...args: string[]) => { receiveWire: string } } } }).CDOS.quoteTerms.cashHands(frozen.inputAmount, frozen.outputAmount, frozen.feeCad, frozen.from, frozen.to, "CAD").receiveWire,
         }),
       });
       if (!posted.ok) { refused.push(`post ${attempt.from}→${attempt.to}: ${posted.status} ${await posted.text()}`); continue; }
@@ -432,16 +433,19 @@ test("the reporting threshold and the date on the ticket are the desk's own", as
   expect(dates.today).not.toBe("2026-06-18");
   expect(dates.business).toBe(session?.businessDate ?? dates.today);
 
-  /* And the ticket the teller reads carries it. This is the line that was
-     read back to customers: "Exchange · A. Singh · 2026-06-18", under a
-     session banner showing the real date. */
+  /* The sheet header carries that same day, spoken. Oct 12, 2026, not
+     the ISO day, and not the old literal 2026-06-18. */
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const [year, month, day] = dates.today.split("-");
+  const spoken = `${months[Number(month) - 1]} ${Number(day)}, ${year}`;
   const newDeal = page.getByRole("button", { name: /^New transaction$/i }).first();
   await expect(newDeal).toBeEnabled({ timeout: 30_000 });
   await newDeal.click();
   await expect
     .poll(() => bodyText(page), { timeout: 20_000 })
-    .toMatch(new RegExp(`·\\s*${dates.today}`));
+    .toContain(`· ${spoken}`);
   expect(await bodyText(page)).not.toContain("2026-06-18");
+  expect(await bodyText(page)).not.toContain(`· ${dates.today}`);
 });
 
 /* ------------------------------------------------------------------

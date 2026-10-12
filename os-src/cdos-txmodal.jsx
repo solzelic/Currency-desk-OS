@@ -56,6 +56,17 @@
     const parts = String(iso).split('-');
     return months[Number(parts[1]) - 1] + ' ' + Number(parts[2]) + ', ' + parts[0];
   };
+  /* Seconds left on a frozen quote. The line is a countdown, so a
+     browser set to another zone still reads the same "4:12". */
+  function quoteLeftSeconds(iso, now) {
+    const end = new Date(iso).getTime();
+    if (!Number.isFinite(end)) return 0;
+    return Math.max(0, Math.round((end - now) / 1000));
+  }
+  function quoteClock(seconds) {
+    const whole = Math.max(0, seconds | 0);
+    return Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
+  }
 
   /* ---- Texts (SMS) hold redemption: read the quote store, validate, write back on post ---- */
   const TG_RKEY = 'cdos_tg_requests_v2', TG_LKEY = 'cdos_tg_log_v2';
@@ -88,20 +99,75 @@
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const FLAG = { CAD: '🇨🇦', USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', INR: '🇮🇳', PHP: '🇵🇭', CNY: '🇨🇳', MXN: '🇲🇽', AED: '🇦🇪' };
   const ccyLabel = (c) => (FLAG[c] ? FLAG[c] + ' ' : '') + c;
-  const CCY_NAME = { CAD: 'Canadian Dollar', USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', INR: 'Indian Rupee', PHP: 'Philippine Peso', CNY: 'Chinese Yuan', MXN: 'Mexican Peso', AED: 'UAE Dirham' };
+  /* Names live on the shared catalog (yorkfx-converter.js). A code
+     the catalog does not know stays a code, with no second table here. */
+  function catalogName(code) {
+    const row = (typeof BY !== 'undefined' && BY[code]) || (typeof CUR !== 'undefined' && CUR.find ? CUR.find(c => c.code === code) : null);
+    return row && row.name ? row.name : '';
+  }
+  /* Digits past this currency's places never stay in the field.
+     A paste of 12.345 becomes 12.34, and the sheet says how many
+     places the currency uses. */
+  function clampTypedAmount(previous, next, currency) {
+    const api = window.CDOS && window.CDOS.quoteTerms;
+    const places = api && typeof api.minorUnits === 'function' ? api.minorUnits(currency) : 2;
+    const prev = String(previous == null ? '' : previous);
+    const incoming = String(next == null ? '' : next);
+    if (incoming === '') return { value: '', refused: '' };
+    if (!/^\d*\.?\d*$/.test(incoming)) return { value: prev, refused: '' };
+    const dot = incoming.indexOf('.');
+    const whole = dot < 0 ? incoming : incoming.slice(0, dot);
+    const frac = dot < 0 ? null : incoming.slice(dot + 1);
+    const sentence = (raw) => (api && typeof api.overScaleMessage === 'function' ? api.overScaleMessage(currency, raw) : '') || '';
+    if (places === 0 && dot >= 0) {
+      return { value: whole, refused: sentence(whole === '' ? '0.' + (frac || '0') : incoming) };
+    }
+    if (frac != null && frac.length > places) {
+      const kept = whole + '.' + frac.slice(0, places);
+      return { value: kept, refused: sentence(incoming) };
+    }
+    return { value: incoming, refused: '' };
+  }
   // mirror the staff-published rate-board order so this picker matches the board
   // (reorder currencies on the Rate Board and they reorder here too).
+  /* Currencies the money columns cannot hold. The scale table is
+     quote-terms, the same list the ledger uses. A code with more than
+     two minor units never enters the picker. */
+  function offDeskScale(code) {
+    const api = window.CDOS && window.CDOS.quoteTerms;
+    return !!(api && api.minorUnits(code) > 2);
+  }
+  /* The quote table in quote-terms. An unknown sentence, including one
+     the server just invented, is the generic line and never the raw text. */
+  function sheetWords(message) {
+    const api = window.CDOS && window.CDOS.quoteTerms;
+    const spoken = api && api.deskWording && message ? api.deskWording(message) : null;
+    if (spoken) return spoken;
+    if (message === 'Quote pricing did not load.') return "Prices didn't load. Reload the page.";
+    return (api && api.quoteFallback) || "Couldn't get a price. Reload and try again.";
+  }
   function boardOrderedCCY() {
     const home = deskHome();
-    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY;
+    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY.slice();
     try {
+      const cfg = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+      const rows = cfg && cfg.rows;
+      if (rows && typeof rows === 'object') {
+        Object.keys(rows).forEach((code) => {
+          const row = rows[code];
+          if (!row || row.show === false) return;
+          const c = String(code || '').toUpperCase();
+          if (offDeskScale(c)) return;
+          if (/^[A-Z]{3}$/.test(c) && base.indexOf(c) < 0) base.push(c);
+        });
+      }
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
         const rank = {}; order.forEach((c, i) => { rank[c] = i; });
-        return [...base].sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
+        return [...base].filter((c) => !offDeskScale(c)).sort((a, b) => (rank[a] != null ? rank[a] : 999) - (rank[b] != null ? rank[b] : 999));
       }
     } catch (e) {}
-    return base;
+    return base.filter((c) => !offDeskScale(c));
   }
   // remittance destinations → payout currency
   const DEST = [
@@ -155,7 +221,7 @@
         <div style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: 224, maxHeight: 288, overflowY: 'auto', background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 11, boxShadow: '0 16px 38px var(--cd-shade)', zIndex: 99998 }}>
           {list.map(c => { const on = c === value; return (
             <button key={c} type="button" onClick={() => { onChange(c); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left" style={{ background: on ? CD.lineSoft : 'transparent' }} onMouseEnter={e => { if (!on) e.currentTarget.style.background = CD.paper; }} onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}>
-              <span className="flex items-baseline gap-2.5"><span className="font-semibold text-sm" style={{ color: CD.ink, width: 36, display: 'inline-block' }}>{c}</span><span className="text-[11.5px]" style={{ color: CD.mute }}>{CCY_NAME[c] || ''}</span></span>
+              <span className="flex items-baseline gap-2.5"><span className="font-semibold text-sm" style={{ color: CD.ink, width: 36, display: 'inline-block' }}>{c}</span><span className="text-[11.5px]" style={{ color: CD.mute }}>{catalogName(c)}</span></span>
               {on && <Ic n="check" s={14} c={CD.green} />}
             </button>); })}
         </div>, document.body)}
@@ -208,13 +274,24 @@
     </>);
   }
 
-  function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus, mark }) {
+  function Money({ value, onChange, ccy, onCcy, big, readOnly, accent, autoFocus, mark, testId, onRefuse }) {
+    const clampEcho = useRef('');
+    const applyTyped = (raw) => {
+      const text = String(raw == null ? '' : raw);
+      if (clampEcho.current && text === clampEcho.current) {
+        clampEcho.current = '';
+        return null;
+      }
+      const next = clampTypedAmount(value, text.trim(), ccy);
+      clampEcho.current = next.refused ? next.value : '';
+      return next;
+    };
     return (
       <div className="cd-money flex items-stretch" style={{ border: `1px solid ${readOnly ? CD.line : CD.ink}`, borderRadius: 9, overflow: 'hidden', background: readOnly ? 'var(--cd-paper-soft)' : 'var(--cd-panel)' }}>
         <CcyPicker value={ccy} onChange={onCcy} disabled={!onCcy} />
         {readOnly
-          ? <div className={'flex-1 min-w-0 px-3 py-2.5 font-semibold text-right' + (mark ? ' ' + mark : '')} style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
-          : <input value={value} onChange={e => onChange(e.target.value)} inputMode="decimal" autoFocus={autoFocus} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontSize: big ? 22 : 16 }} />}
+          ? <div data-testid={testId} className={'flex-1 min-w-0 px-3 py-2.5 font-semibold text-right' + (mark ? ' ' + mark : '')} style={{ fontVariantNumeric: 'tabular-nums', color: accent || CD.ink, fontSize: big ? 22 : 16 }}>{value}</div>
+          : <input value={value} onPaste={e => { const text = (e.clipboardData && e.clipboardData.getData('text') || '').trim(); if (!text) return; const next = applyTyped(text); if (!next || !next.refused) return; e.preventDefault(); e.target.value = next.value; if (onRefuse) onRefuse(next.refused); if (next.value !== value) onChange(next.value); }} onChange={e => { const next = applyTyped(e.target.value); if (!next) return; e.target.value = next.value; if (onRefuse) onRefuse(next.refused); if (next.value !== value) onChange(next.value); }} inputMode="decimal" autoFocus={autoFocus} placeholder="0.00" className="flex-1 min-w-0 px-3 py-2.5 font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontSize: big ? 22 : 16 }} />}
       </div>
     );
   }
@@ -320,15 +397,17 @@
   function PresentQuote({ q, onClose }) {
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
     return ReactDOM.createPortal(
-      <div className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column' }}>
+      /* The quote is a portal, so a press still bubbles through the React
+         tree to the sheet scrim, which would throw the deal away. */
+      <div className="fixed inset-0" onMouseDown={(e) => e.stopPropagation()} style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-10 pt-8 pb-4" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
           <div><div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{q.biz}</div><div style={{ fontWeight: 800, fontSize: 30, color: 'var(--cd-on-ink)', letterSpacing: '-0.02em', marginTop: 4 }}>{q.title}</div></div>
           <span className="px-3 py-1.5" style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: 'var(--cd-on-ink)', background: 'var(--cd-on-ink-faint)', borderRadius: 999 }}>{q.tag}</span>
         </div>
         <div className="flex-1 flex flex-col justify-center" style={{ gap: 30, padding: '24px 10vw' }}>
-          <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.giveLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.give}</div></div>
+          <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.giveLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.give}</div>{q.giveNote ? <div style={{ marginTop: 8, fontSize: 20, lineHeight: 1.3, color: 'var(--cd-on-ink-soft)', fontVariantNumeric: 'tabular-nums' }}>{q.giveNote}</div> : null}{q.cashFromCustomer ? <div style={{ marginTop: 8, fontSize: 20, lineHeight: 1.3, color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums' }}>{q.cashFromCustomer}</div> : null}</div>
           {q.rateLine && <div className="flex items-center gap-4" style={{ color: 'var(--cd-on-ink-soft)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: 16 }}>{q.rateLine}</span><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
-          <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.getLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: '#7fd1a3', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.get}</div></div>
+          <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.getLbl}</div><div data-testid="quote-you-receive" style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: '#7fd1a3', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.get}</div>{q.receiveNote ? <div style={{ marginTop: 8, fontSize: 20, lineHeight: 1.3, color: 'var(--cd-on-ink-soft)', fontVariantNumeric: 'tabular-nums' }}>{q.receiveNote}</div> : null}{q.cashToCustomer ? <div style={{ marginTop: 8, fontSize: 20, lineHeight: 1.3, color: '#7fd1a3', fontVariantNumeric: 'tabular-nums' }}>{q.cashToCustomer}</div> : null}</div>
         </div>
         <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
           <span style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14 }}>{q.foot}</span>
@@ -438,7 +517,15 @@
     // exchange
     const [inCcy, setInCcy] = useState(home);
     const [outCcy, setOutCcy] = useState('USD');
+    /* A seam prices a currency the picker will not offer. Read once. */
+    useEffect(() => {
+      const seeded = window.__cdosOutCcy;
+      if (!seeded || !/^[A-Z]{3}$/.test(seeded)) return;
+      window.__cdosOutCcy = '';
+      setOutCcy(seeded);
+    }, []);
     const [inAmt, setInAmt] = useState('');
+    const [amountNotice, setAmountNotice] = useState('');
     const [override, setOverride] = useState(false);
     const [manualRate, setManualRate] = useState('');
     const [lock, setLock] = useState(null);
@@ -482,6 +569,7 @@
     const [serverQuote, setServerQuote] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+    const [reloadRequired, setReloadRequired] = useState(false);
 
     /* Anything the teller put on this ticket. Closing from the phone is
        the X alone, so that gesture asks before it throws the ticket away.
@@ -552,7 +640,12 @@
         if (observed) observed.disconnect();
       };
     }, [phoneSheet, type]);
-    useEffect(() => { if (!lock) return; const t = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(t); }, [lock]);
+    useEffect(() => {
+      if (!lock && !serverQuote) return;
+      setNowMs(Date.now());
+      const t = setInterval(() => setNowMs(Date.now()), 1000);
+      return () => clearInterval(t);
+    }, [lock, serverQuote]);
 
     const amtN = parseFloat(inAmt) || 0;
     const isExchange = type === 'Currency Exchange';
@@ -567,16 +660,68 @@
     const lockLive = lock && lock.until > nowMs ? lock : null;
     useEffect(() => { if (lock && lock.until <= nowMs) setLock(null); }, [nowMs, lock]);
 
-    // pricing: exchange uses both legs; send uses CAD→payout; receive/mo/bill are face-value
-    const priceArgs = isExchange
-      ? { inCcy, outCcy, inAmt: amtN, settings, lockedRate: lockLive && !override ? lockLive.rate : null, overrideRate: override && manualRate !== '' ? manualRate : null }
-      : isSend ? { inCcy: home, outCcy: payoutCcy, inAmt: amtN, settings, lockedRate: null, overrideRate: null }
-      : null;
+    // Remittance send still prices through priceDeal. Exchange does not:
+    // the figure on this sheet is the quote the server will post.
+    const quoteApi = window.CDOS.quoteTerms;
+    const priceArgs = isSend ? { inCcy: home, outCcy: payoutCcy, inAmt: amtN, settings, lockedRate: null, overrideRate: null } : null;
     const pricing = useMemo(() => priceArgs ? priceDeal(priceArgs) : { rate: 1, outAmt: amtN, midRate: null, marginCad: 0, side: null, midCadIn: amtN, deskRate: 1, outAmtRaw: amtN }, [JSON.stringify(priceArgs), rateVersion]);
-    const rateN = pricing.rate;
+    const exchangeQuote = useMemo(() => {
+      if (!isExchange) return null;
+      if (!quoteApi) return { state: 'bad', message: sheetWords('Quote pricing did not load.') };
+      let board = null;
+      try {
+        const raw = localStorage.getItem('yorkfx_rates_v1');
+        if (raw == null || raw === '') return { state: 'unpriced' };
+        board = JSON.parse(raw);
+      } catch (e) {
+        return { state: 'bad', message: 'The published board on this desk could not be read.' };
+      }
+      const hand = override && String(manualRate).trim() !== '' ? String(manualRate).trim() : null;
+      const held = !hand && lockLive && lockLive.rate != null ? String(lockLive.rate) : null;
+      return quoteApi.preview(board, {
+        from: inCcy,
+        to: outCcy,
+        inputAmount: inAmt,
+        feeCad: fee,
+        homeCurrency: home,
+        overrideRate: hand || held,
+      });
+    }, [isExchange, inCcy, outCcy, inAmt, fee, override, manualRate, lockLive && lockLive.rate, home, rateVersion, quoteApi]);
+    const frozenHands = serverQuote && quoteApi ? quoteApi.cashHands(serverQuote.inputAmount, serverQuote.outputAmount, serverQuote.feeCad, serverQuote.from, serverQuote.to, home) : null;
+    const fx = !isExchange ? null : (serverQuote && quoteApi ? {
+      state: 'ok',
+      side: serverQuote.buyOrSellSide === 'we_buy' ? 'buy' : serverQuote.buyOrSellSide === 'we_sell' ? 'sell' : 'cross',
+      paysLabel: quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from),
+      receivesLabel: quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to),
+      rateLabel: quoteApi.formatRate(serverQuote.customerRate),
+      customerRate: quoteApi.formatRate(serverQuote.customerRate),
+      rateWire: serverQuote.customerRate,
+      spreadCad: serverQuote.spreadCad,
+      inputCad: exchangeQuote && exchangeQuote.state === 'ok' ? exchangeQuote.inputCad : null,
+      inputWire: serverQuote.inputAmount,
+      feeWire: serverQuote.feeCad,
+      outputWire: serverQuote.outputAmount,
+      direction: exchangeQuote && exchangeQuote.direction,
+      give: frozenHands.give,
+      giveAmount: frozenHands.giveAmount,
+      giveCurrency: frozenHands.giveCurrency,
+      giveDetail: frozenHands.giveDetail,
+      giveNote: frozenHands.giveNote,
+      receive: frozenHands.receive,
+      receiveAmount: frozenHands.receiveAmount,
+      receiveCurrency: frozenHands.receiveCurrency,
+      receiveDetail: frozenHands.receiveDetail,
+      receiveWire: frozenHands.receiveWire,
+      receiveNote: frozenHands.receiveNote,
+      cashToCustomer: frozenHands.cashToCustomer,
+      cashFromCustomer: frozenHands.cashFromCustomer,
+    } : (exchangeQuote || { state: 'bad', message: sheetWords('Quote pricing did not load.') }));
+    const rateN = isExchange ? 0 : pricing.rate;
+    const exchangeReady = !!(fx && fx.state === 'ok') && !amountNotice;
     useEffect(() => {
       setServerQuote(null);
       setServerError('');
+      setReloadRequired(false);
     }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
 
     // cheque fee/hold from shared schedule
@@ -587,7 +732,7 @@
 
     // what the customer receives / what we collect, per type
     const feeN = parseFloat(fee) || 0;
-    const out = isExchange ? { amt: pricing.outAmt, ccy: outCcy }
+    const out = isExchange ? { amt: exchangeReady ? fx.outputWire : 0, label: exchangeReady ? fx.receivesLabel : '—', ccy: outCcy }
       : isSend ? { amt: pricing.outAmt, ccy: payoutCcy }
       : isCheque ? { amt: +(amtN - chequeFee).toFixed(2), ccy: home }
       : isReceive ? { amt: amtN, ccy: outCcy }
@@ -602,14 +747,22 @@
     const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
 
     // margin (exchange + send carry FX spread; others are fee-only)
-    const spreadCadLive = (isExchange || isSend) ? (pricing.marginCad || 0) : 0;
-    const profitCad = +(spreadCadLive + (isCheque ? chequeFee : feeN)).toFixed(2);
-    const marginBasis = (isExchange || isSend) ? (pricing.midCadIn || 0) : inCadEquiv;
-    const marginPct = marginBasis > 0 ? (profitCad / marginBasis) * 100 : 0;
+    const sendSpread = isSend ? (pricing.marginCad || 0) : 0;
+    const sendProfit = +(sendSpread + (isCheque ? chequeFee : feeN)).toFixed(2);
+    const sendBasis = isSend ? (pricing.midCadIn || 0) : inCadEquiv;
+    const sendPct = sendBasis > 0 ? (sendProfit / sendBasis) * 100 : 0;
+    const exchangeShare = isExchange && exchangeReady && quoteApi && fx.inputCad != null && fx.spreadCad != null
+      ? quoteApi.profitShare(fx.spreadCad, fee === '' ? '0' : fee, fx.inputCad)
+      : null;
+    const spreadCadLive = isExchange ? (fx && fx.spreadCad != null ? fx.spreadCad : 0) : sendSpread;
+    const profitCad = isExchange ? (exchangeShare ? exchangeShare.profit : 0) : sendProfit;
+    const marginPct = isExchange ? (exchangeShare ? +exchangeShare.pct : 0) : sendPct;
     const mFloor = settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mEnforce = (settings && settings.marginEnforce) || 'block';
-    const belowFloor = amtN > 0 && (isExchange || isSend) && marginPct < mFloor;
+    const belowFloor = isExchange
+      ? !!(exchangeShare && amtN > 0 && quoteApi.lessThan(exchangeShare.pct, mFloor))
+      : amtN > 0 && isSend && sendPct < mFloor;
     const needOverride = belowFloor && mEnforce === 'block';
 
     // ---- compliance ----
@@ -727,8 +880,9 @@
     if (needOverride) reqs.push({ key: 'mgn', ok: marginAck && marginReason.trim(), warn: true, label: 'Below-floor margin — needs a reason', sub: marginAck && marginReason.trim() ? null : 'Acknowledge & give a reason below' });
 
     const hardReqs = reqs.filter(r => !r.soft);
-    const allGreen = hardReqs.every(r => r.ok);
-    const canSave = amtN > 0 && allGreen;
+    const quoteFailed = !!(isExchange && ((fx && fx.state === 'bad') || amountNotice));
+    const allGreen = hardReqs.every(r => r.ok) && !quoteFailed;
+    const canSave = amtN > 0 && allGreen && (!isExchange || exchangeReady);
     const remaining = hardReqs.filter(r => !r.ok).length;
     const stepsLabel = `${remaining} ${remaining === 1 ? 'step' : 'steps'} left`;
     const missField = !missKey ? '' : missKey === 'id' ? (customer ? 'id' : 'cust') : (missKey === 'cap' || missKey === 'server-facts') ? 'facts' : missKey;
@@ -750,9 +904,18 @@
     // ---- actions ----
     const resetPricing = () => { setLock(null); setOverride(false); setManualRate(''); };
     const swap = () => { setInCcy(outCcy); setOutCcy(inCcy); resetPricing(); };
-    const lockRate = () => { const mins = (settings && settings.rateLockMins) || 15; setOverride(false); setManualRate(''); setLock({ rate: pricing.deskRate, until: Date.now() + mins * 60000, ref: 'Q-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(live.filter(r => r.date === TODAY).length + 1).padStart(3, '0'), mins }); };
+    const lockRate = () => {
+      const src = exchangeQuote;
+      if (!src || src.state !== 'ok') return;
+      const mins = (settings && settings.rateLockMins) || 15;
+      setOverride(false);
+      setManualRate('');
+      setLock({ ...src, rate: src.rateWire, until: Date.now() + mins * 60000, ref: 'Q-' + String(TODAY).slice(2).replace(/-/g, '') + '-' + String(live.filter(r => r.date === TODAY).length + 1).padStart(3, '0'), mins });
+    };
     const lockSecs = lockLive ? Math.max(0, Math.round((lockLive.until - nowMs) / 1000)) : 0;
     const lockClock = `${Math.floor(lockSecs / 60)}:${String(lockSecs % 60).padStart(2, '0')}`;
+    const quoteLeft = serverQuote && serverQuote.expiresAt ? quoteLeftSeconds(serverQuote.expiresAt, nowMs) : null;
+    const quoteDead = quoteLeft === 0;
 
     const onPick = (n) => { setCustomer(n); setQuery(n); };
     const onAddNew = () => setAddFlow(true);
@@ -790,30 +953,35 @@
       try {
         const synced = await window.CDOS.Backend.syncCustomer(customer, rec);
         setClients(list => ({ ...list, [customer]: { ...(list[customer] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
+        if (!fx || fx.state !== 'ok' || !quoteApi) throw new Error('This deal is not priced.');
         let quote = await window.CDOS.Backend.createQuote({
           customerId: synced.customerId,
           from: inCcy,
           to: outCcy,
-          inputAmount: window.CDOS.Backend.asMoney(amtN),
-          feeCad: window.CDOS.Backend.asMoney(feeN),
-          direction: inCcy === home ? 'customer_buy_foreign' : 'customer_sell_foreign',
+          inputAmount: fx.inputWire,
+          feeCad: fx.feeWire,
+          direction: fx.direction,
         });
-        if ((override || lockLive) && Math.abs(Number(quote.customerRate) - rateN) > 0.000000000001) {
+        if ((override || lockLive) && !quoteApi.sameRate(quote.customerRate, fx.rateWire || fx.customerRate)) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
-            customerRate: String(rateN),
+            customerRate: fx.rateWire || fx.customerRate,
             reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : lockLive ? `Rate lock ${lockLive.ref || ''}`.trim() : 'Manual counter rate'),
           });
         }
+        setNowMs(Date.now());
         setServerQuote(quote);
       } catch (error) {
-        setServerError(error.message || 'The server quote could not be created.');
+        if (error && error.code === 'RELOAD_REQUIRED') {
+          setReloadRequired(true);
+          setServerError(sheetWords('This screen is out of date. Reload to continue.'));
+        } else setServerError(sheetWords(error && error.message));
       } finally {
         setServerBusy(false);
       }
     };
 
     const postServerQuote = async () => {
-      if (!serverQuote || serverBusy || !window.CDOS.Backend) return;
+      if (!serverQuote || serverBusy || !window.CDOS.Backend || quoteDead || reloadRequired) return;
       setServerBusy(true);
       setServerError('');
       try {
@@ -821,6 +989,7 @@
         const serbia = packId === 'pack-rs-v1';
         const posted = await window.CDOS.Backend.postQuote(serverQuote.quoteId, {
           idempotencyKey: `web:${serverQuote.quoteId}`,
+          shownAmount: fx && fx.receiveWire,
           purpose: purpose.trim(),
           sourceOfFunds: cap.source.trim(),
           thirdParty: !!cap.thirdParty,
@@ -844,8 +1013,13 @@
         }
         onDone && onDone(row.id);
       } catch (error) {
-        if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
-        setServerError(error.message || 'The transaction was not posted.');
+        if (error && error.code === 'RELOAD_REQUIRED') {
+          setReloadRequired(true);
+          setServerError(sheetWords('This screen is out of date. Reload to continue.'));
+        } else {
+          if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
+          setServerError(sheetWords(error && error.message));
+        }
       } finally {
         setServerBusy(false);
       }
@@ -990,7 +1164,7 @@
         thread: memo ? [{ ts: stamp(), user: me.name, text: memo }] : [], notes: memo };
       let tx;
       if (isExchange) {
-        tx = newTx({ ...base, inCcy, inAmt: amtN, rate: rateN, outCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, priced: override ? 'override' : (lockLive ? 'locked' : 'desk'), quoteRef: tq ? tq.ref : (lockLive ? lockLive.ref : null), quotePhone: tq ? tq.phone : null, quoteVia: tq ? 'texts' : null, marginPct: +marginPct.toFixed(2), profitCad, lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : null });
+        tx = newTx({ ...base, inCcy, inAmt: fx && fx.inputWire ? fx.inputWire : amtN, rate: fx ? fx.customerRate : rateN, outCcy, outAmt: fx ? fx.outputWire : 0, fee: feeN, midRate: null, spreadCad: fx ? fx.spreadCad : 0, side: fx ? fx.side : null, priced: override ? 'override' : (lockLive ? 'locked' : 'desk'), quoteRef: tq ? tq.ref : (lockLive ? lockLive.ref : null), quotePhone: tq ? tq.phone : null, quoteVia: tq ? 'texts' : null, marginPct: +marginPct.toFixed(2), profitCad, lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : null });
       } else if (isSend) {
         tx = newTx({ ...base, beneficiary: `${benName.trim()} · ${dest.country}`, inCcy: home, inAmt: amtN, rate: rateN, outCcy: payoutCcy, outAmt: pricing.outAmt, fee: feeN, midRate: pricing.midRate, spreadCad: pricing.marginCad, side: pricing.side, marginPct: +marginPct.toFixed(2), profitCad, notes: purpose || memo });
       } else if (isReceive) {
@@ -1041,10 +1215,17 @@
       onDone && onDone(tx.id);
     };
 
-    // present-quote payload (exchange + send)
+    /* The rate in the field is the four decimal rate the amount was
+       multiplied by, on the phone and on the desk. */
+    const exactRate = exchangeReady ? String(fx.rateWire || fx.customerRate || '') : '';
+    const fourRate = exchangeReady && quoteApi && exactRate !== '' ? quoteApi.displayRate(exactRate) : '';
+    const sheetRate = !exchangeReady ? '—' : (fourRate || fx.rateLabel);
+    /* The big number is the cash that changes hands. A buy shows the
+       net payout; the gross exchange less the fee stays on the next line.
+       A sale already shows the net on You give. */
     const presentQ = isSend
       ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${num(amtN)} ${home}`, rateLine: `1 ${home} = ${rateShown(rateN)} ${payoutCcy}`, getLbl: `${benName || 'Beneficiary'} receives`, get: `${num(out.amt)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
-      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${num(amtN)} ${inCcy}`, rateLine: `1 ${inCcy} = ${rateShown(rateN)} ${outCcy}`, getLbl: 'You receive', get: `${num(out.amt)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
+      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `Exchange ${inCcy} for ${outCcy}`, giveLbl: 'You give', give: exchangeReady && fx.giveAmount ? `${fx.giveAmount} ${fx.giveCurrency}` : `${num(amtN)} ${inCcy}`, giveNote: exchangeReady && fx.giveNote ? fx.giveNote : '', cashFromCustomer: exchangeReady && fx.cashFromCustomer ? fx.cashFromCustomer : '', rateLine: `1 ${inCcy} = ${fourRate || '—'} ${outCcy}`, getLbl: 'You receive', get: exchangeReady && fx.receiveAmount ? `${fx.receiveAmount} ${fx.receiveCurrency}` : `— ${outCcy}`, receiveNote: exchangeReady && fx.receiveNote ? fx.receiveNote : '', cashToCustomer: exchangeReady && fx.cashToCustomer ? fx.cashToCustomer : '', foot: (fx && (fx.giveDetail || fx.receiveDetail)) ? (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') : feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
@@ -1052,7 +1233,7 @@
         <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="cd-tx-quiet text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {phoneSheet ? phoneDay(TODAY) : TODAY}</div></div></div>
+            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="cd-tx-quiet text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {phoneDay(TODAY)}</div></div></div>
             <button type="button" onClick={requestClose} aria-label="Close" className="cd-tx-x p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
@@ -1139,24 +1320,29 @@
                 <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <Lbl>Customer pays in</Lbl>
                   <div data-req-field="amt" className={missField === 'amt' ? 'cd-tx-missing' : undefined}>
-                  <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
+                  <Money value={inAmt} onChange={setInAmt} onRefuse={setAmountNotice} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
+                  {amountNotice && <div role="alert" data-testid="tx-amount-alert" className="text-[11px] mt-2" style={{ color: CD.flag }}>{amountNotice}</div>}
                   </div>
                   <div className="cd-tx-rate-line flex items-center justify-center gap-2 py-2">
-                    <span data-side={pricing.side || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
-                    <span className="cd-tx-kicker cd-tx-quiet text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {rateShown(rateN)} {outCcy}</span>
+                    <span data-side={(fx && fx.side) || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: fx && fx.side === 'buy' ? CD.flagSoft : fx && fx.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: fx && fx.side === 'buy' ? CD.flag : fx && fx.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{fx && fx.side === 'buy' ? `We buy ${inCcy}` : fx && fx.side === 'sell' ? `We sell ${outCcy}` : `Exchange ${inCcy} for ${outCcy}`}</span>
+                    <span className="cd-tx-kicker cd-tx-quiet text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>1 {inCcy} = {sheetRate} {outCcy}</span>
                     <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                   </div>
                   <Lbl>Customer receives</Lbl>
-                  <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
+                  {/* The cash handed over. A fee on a home payout is already
+                      out of receiveAmount, so this matches the ticket, the
+                      quote, and the till. */}
+                  <Money testId="tx-receives" value={exchangeReady ? fx.receiveAmount : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
+                  {fx && fx.state === 'bad' && !amountNotice && <div role="alert" className="text-[11px] mt-2" style={{ color: CD.flag }}>{fx.message}</div>}
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : rateShown(rateN)} onFocus={() => { if (!override && !lockLive) { setManualRate(pricing.deskRate > 0 ? (phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate)) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
-                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (exchangeReady ? sheetRate : '')} onFocus={() => { if (!override && !lockLive) { setManualRate(exchangeReady ? (fourRate || fx.rateWire || fx.customerRate) : ''); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { const next = clampTypedAmount(fee, e.target.value, home); e.target.value = next.value; if (next.value !== fee) setFee(next.value); }} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                     {tq
                       ? <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#8A4B2F', fontFamily: 'Space Mono, monospace' }}><Ic n="smartphone" s={12} c="#8A4B2F" />Priced by {tq.ref}</span>
                       : (!phoneSheet || smsOn) && <button onClick={() => { setTqOpen(o => !o); setTqErr(''); }} title="The customer got a quote by text — enter their ref and it fills this deal in" className="cd-tx-hit tg-send flex items-center gap-2 text-[12.5px] px-3.5 py-2 font-semibold" style={{ border: '1px solid #8A4B2F', background: tqOpen ? '#F2E6DD' : '#8A4B2F', color: tqOpen ? '#8A4B2F' : '#fff', borderRadius: 8 }}><Ic n="smartphone" s={14} c={tqOpen ? '#8A4B2F' : '#fff'} /> Text quote</button>}
-                    <button onClick={() => { if (override) { setOverride(false); setManualRate(''); } else { setManualRate(num(pricing.deskRate)); setOverride(true); setLock(null); } }} title={override ? 'Back to the desk rate' : 'Hand-price this deal'} className="cd-tx-hit flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${override ? CD.ink : CD.line}`, background: override ? CD.ink : 'transparent', color: override ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 7 }}><Ic n="pencil" s={11} c={override ? 'var(--cd-on-ink)' : CD.ink} /> {override ? 'Hand-priced' : 'Override'}</button>
+                    <button onClick={() => { if (override) { setOverride(false); setManualRate(''); } else { setManualRate(exchangeReady ? (fourRate || fx.customerRate) : ''); setOverride(true); setLock(null); } }} title={override ? 'Back to the desk rate' : 'Hand-price this deal'} className="cd-tx-hit flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 font-medium" style={{ border: `1px solid ${override ? CD.ink : CD.line}`, background: override ? CD.ink : 'transparent', color: override ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 7 }}><Ic n="pencil" s={11} c={override ? 'var(--cd-on-ink)' : CD.ink} /> {override ? 'Hand-priced' : 'Override'}</button>
                   </div>
                 </div>
               )}
@@ -1322,25 +1508,25 @@
                     <Ic n={meta.icon} s={14} c="var(--cd-on-ink-soft)" />
                   </div>
                   <div style={{ padding: '12px 0' }}>
-                    <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer gives' : isCheque ? 'Cheque face' : isReceive ? 'Pay out' : 'Customer pays'}</div>
-                    <div style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{phoneSheet ? phoneMoney(amtN > 0 ? (isExchange || isCheque || isReceive ? amtN : amtN + feeN) : 0, isExchange ? inCcy : isReceive ? out.ccy : home) : <>{amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? inCcy : isReceive ? out.ccy : home}</span></>}</div>
+                    <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'You give' : isCheque ? 'Cheque face' : isReceive ? 'Pay out' : 'Customer pays'}</div>
+                    <div data-testid="tx-ticket-pays" style={{ fontWeight: 800, fontSize: exchangeReady && fx && fx.giveDetail ? 18 : 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', lineHeight: exchangeReady && fx && fx.giveDetail ? 1.25 : 1.1 }}>{isExchange ? (exchangeReady && fx.giveDetail ? fx.give : <>{exchangeReady ? fx.paysLabel : (amtN > 0 ? num(amtN) : '0')} <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--cd-on-ink-soft)' }}>{inCcy}</span></>) : phoneSheet ? phoneMoney(amtN > 0 ? (isCheque || isReceive ? amtN : amtN + feeN) : 0, isReceive ? out.ccy : home) : <>{amtN > 0 ? num(isCheque || isReceive ? amtN : amtN + feeN) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--cd-on-ink-soft)' }}>{isReceive ? out.ccy : home}</span></>}</div>
                   </div>
                   {(isExchange || isSend || isCheque) && <div className="flex items-center gap-2 py-1" style={{ color: 'var(--cd-on-ink-faint)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><Ic n="arrowdown" s={13} c="var(--cd-on-ink-soft)" /><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
                   <div style={{ paddingTop: 8 }}>
-                    <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'}</div>
-                    <div className="cd-tx-ticket-get" style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : <>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
+                    <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'You receive' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'}</div>
+                    <div data-testid="tx-ticket-receives" className="cd-tx-ticket-get" style={{ fontWeight: 800, fontSize: exchangeReady && fx && fx.receiveDetail ? 18 : 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: exchangeReady && fx && fx.receiveDetail ? 1.25 : 1.1 }}>{isExchange ? (exchangeReady && fx.receiveDetail ? fx.receive : <>{exchangeReady ? fx.receivesLabel : '—'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>) : phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : <>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
                   </div>
                   <div className="flex items-center justify-between" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
-                    <span className="cd-tx-kicker">{(isExchange || isSend) ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                    <span className="cd-tx-kicker">{isExchange ? `1 ${inCcy} = ${sheetRate} ${out.ccy}` : isSend ? `1 ${home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
                     <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
                   </div>
                 </div>
 
                 {/* margin chip (exchange/send only) */}
-                {(isExchange || isSend) && amtN > 0 && (
+                {((isExchange && exchangeShare) || isSend) && amtN > 0 && (
                   <div className="flex items-center justify-between px-3 py-2" style={{ background: 'var(--cd-panel)', border: `1px solid ${belowFloor ? CD.flag : CD.line}`, borderRadius: 10 }}>
                     <span className="cd-tx-kicker text-[11px] flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="activity" s={12} c={belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber} /> {phoneSheet ? 'Margin' : 'MARGIN'}</span>
-                    <span className="text-[12px] font-bold" style={{ color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber, fontVariantNumeric: 'tabular-nums' }}>{fmt(profitCad, home)} · {marginPct.toFixed(2)}%</span>
+                    <span className="text-[12px] font-bold" style={{ color: belowFloor ? CD.flag : marginPct >= mTarget ? CD.green : CD.amber, fontVariantNumeric: 'tabular-nums' }}>{isExchange && exchangeShare ? `${quoteApi.formatAmount(exchangeShare.profit, home)} ${home}` : fmt(profitCad, home)} · {marginPct.toFixed(2)}%</span>
                   </div>
                 )}
 
@@ -1348,7 +1534,7 @@
                 <div className="px-3.5 py-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
-                    <span className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
+                    <span data-testid="tx-checklist" className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{quoteFailed ? (phoneSheet ? 'Not priced' : 'NOT PRICED') : allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
                   {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
@@ -1364,7 +1550,7 @@
 
               {/* rail footer actions */}
               <div className="cd-tx-actions flex-none p-3 space-y-2" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-                {(isExchange || isSend) && <button onClick={() => setPresent(true)} disabled={!(amtN > 0 && rateN > 0)} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: (amtN > 0 && rateN > 0) ? CD.ink : CD.faint }}><Ic n="smartphone" s={15} /> Show customer the quote</button>}
+                {(isExchange || isSend) && <button onClick={() => setPresent(true)} disabled={!(amtN > 0 && (isExchange ? exchangeReady : rateN > 0))} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: (amtN > 0 && (isExchange ? exchangeReady : rateN > 0)) ? CD.ink : CD.faint }}><Ic n="smartphone" s={15} /> Show customer the quote</button>}
                 {/* A refusal from the ledger, wherever it came from. The
                     exchange path has its own copy inside the branch
                     below; this one is for the lines that post through
@@ -1373,14 +1559,19 @@
                     button that simply did nothing. */}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
                 {serverBacked && isExchange ? <>
-                  {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
-                    Frozen quote · {serverQuote.inputAmount} {serverQuote.from} → {serverQuote.outputAmount} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {serverQuote && !quoteDead && <div data-testid="tx-frozen" className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
+                    Frozen quote · {quoteApi ? quoteApi.formatAmount(serverQuote.inputAmount, serverQuote.from) : serverQuote.inputAmount} {serverQuote.from} → {quoteApi ? quoteApi.formatAmount(serverQuote.outputAmount, serverQuote.to) : serverQuote.outputAmount} {serverQuote.to}{Number(serverQuote.feeCad) > 0 ? ` · Fee ${quoteApi ? quoteApi.formatAmount(serverQuote.feeCad, home) : serverQuote.feeCad} ${home}` : ''}{fx && fx.cashFromCustomer ? ` · ${fx.cashFromCustomer}` : ''}{fx && fx.cashToCustomer ? ` · ${fx.cashToCustomer}` : ''} · Expires in {quoteClock(quoteLeft)}
                   </div>}
-                  {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
+                  {serverQuote && quoteDead && <div data-testid="tx-frozen" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>Quote expired. Get a new rate.</div>}
+                  {reloadRequired && <div role="alert" data-testid="tx-reload" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>
+                    <div>This screen is out of date. Reload to continue.</div>
+                    <button type="button" onClick={() => window.location.reload()} className="mt-2 px-3 py-1.5 text-[12px] font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Reload</button>
+                  </div>}
+                  {serverError && !reloadRequired && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
                   {phoneSheet && !allGreen
                     ? <button type="button" onClick={showMissing} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}><Ic n="lock" s={15} c="currentColor" /> {stepsLabel}</button>
-                    : <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy) ? CD.line : CD.ink, color: (!canSave || serverBusy) ? CD.faint : 'var(--cd-on-ink)' }}>
-                        <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
+                    : <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy || reloadRequired || quoteDead} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy || reloadRequired || quoteDead) ? CD.line : CD.ink, color: (!canSave || serverBusy || reloadRequired || quoteDead) ? CD.faint : 'var(--cd-on-ink)' }}>
+                        <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : quoteFailed ? 'Quote unavailable' : allGreen ? 'Get server quote' : `${remaining} to complete`}
                       </button>}
                 </> : phoneSheet && !allGreen
                   ? <button type="button" onClick={showMissing} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>{stepsLabel}</button>

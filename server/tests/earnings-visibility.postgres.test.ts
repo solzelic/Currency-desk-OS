@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { amountShown } from "../src/quotes/terms.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -92,11 +93,11 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const owner = await cookie("j.masri");
     const quote = (await app.inject({
       method: "POST", url: "/api/quotes", cookies: owner,
-      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.30", feeCad: "4.00", direction: "customer_buy_foreign" },
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.21", feeCad: "4.00", direction: "customer_buy_foreign" },
     })).json();
     const posted = await app.inject({
       method: "POST", url: `/api/quotes/${quote.quoteId}/post`, cookies: owner,
-      payload: { idempotencyKey: "earn-one", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+      payload: { idempotencyKey: "earn-one", purpose: "Personal travel", sourceOfFunds: "Employment income", shownAmount: amountShown(quote) },
     });
     expect(posted.statusCode, posted.body).toBe(201);
     expect(posted.json().spreadCad).toEqual(expect.any(String));
@@ -115,7 +116,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const tellerSummary = await read("m.costa", "/api/ledger/summary");
     const ownerSummary = await read("j.masri", "/api/ledger/summary");
     const supervisorSummary = await read("a.singh", "/api/ledger/summary");
-    expect(tellerSummary.volumeHome).toBe("2443.30");
+    expect(tellerSummary.volumeHome).toBe("2443.21");
     expect(tellerSummary.feesHome).toBe("39.00");
     lacks(tellerSummary, ["earningsHome", "realizedPnlHome", "costOfSaleHome"]);
     expect(tellerSummary.byActor.length).toBeGreaterThan(0);
@@ -132,16 +133,17 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const ownerTx = await read("j.masri", "/api/ledger/transactions?limit=20");
     const deal = ownerTx.transactions.find((row: { transactionId: string }) => row.transactionId === transactionId);
     const tellerDeal = tellerTx.transactions.find((row: { transactionId: string }) => row.transactionId === transactionId);
-    expect(deal).toMatchObject({ feeCad: "4.00", realizedPnlHome: "103.30" });
+    expect(deal).toMatchObject({ feeCad: "4.00", realizedPnlHome: "103.21" });
     expect(deal.spreadCad).toEqual(expect.any(String));
     expect(deal.marketMid).toEqual(expect.any(String));
-    expect(tellerDeal).toMatchObject({ inputAmount: "1443.30", feeCad: "4.00" });
+    expect(tellerDeal).toMatchObject({ inputAmount: "1443.21", feeCad: "4.00" });
     lacks(tellerDeal, ["spreadCad", "costOfSaleHome", "realizedPnlHome", "marketMid"]);
 
     const tellerReceipt = await read("m.costa", `/api/ledger/transactions/${transactionId}/receipt`);
     const ownerReceipt = await read("j.masri", `/api/ledger/transactions/${transactionId}/receipt`);
-    expect(ownerReceipt.lines.join("\n")).toContain("Fee paid separately");
-    expect(tellerReceipt.lines.join("\n")).toContain("Fee paid separately: CAD 4.00");
+    expect(ownerReceipt.lines.join("\n")).toContain("4.00 CAD service fee");
+    expect(tellerReceipt.lines.join("\n")).toContain("4.00 CAD service fee");
+    expect(tellerReceipt.lines.join("\n")).toContain("You give");
 
     const tellerPosition = await read("m.costa", "/api/ledger/position");
     const ownerPosition = await read("j.masri", "/api/ledger/position");
@@ -203,12 +205,12 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     })).json();
     const tellerPost = await app.inject({
       method: "POST", url: `/api/quotes/${tellerMade.quoteId}/post`, cookies: teller,
-      payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+      payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income", shownAmount: amountShown(tellerMade) },
     });
     expect(tellerPost.statusCode, tellerPost.body).toBe(201);
     expect(tellerPost.json()).toMatchObject({ feeCad: "4.00", quoteId: tellerMade.quoteId });
     lacks(tellerPost.json(), ["spreadCad", "marketMid", "fromMid", "toMid"]);
-    expect(tellerPost.json().receipt.lines.join("\n")).toContain("Fee paid separately: CAD 4.00");
+    expect(tellerPost.json().receipt.lines.join("\n")).toContain("4.00 CAD service fee");
     const tellerReplay = await app.inject({
       method: "POST", url: `/api/quotes/${tellerMade.quoteId}/post`, cookies: teller,
       payload: { idempotencyKey: "earn-teller-post", purpose: "Personal travel", sourceOfFunds: "Employment income" },
@@ -225,8 +227,8 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
       tellerPost: tellerPost.json(), tellerCancel: cancelled.json(),
     });
     lacks(JSON.parse(leaked), SHOP);
-    expect(leaked).not.toContain("107.30");
-    expect(leaked).not.toContain("103.30");
+    expect(leaked).not.toContain("107.21");
+    expect(leaked).not.toContain("103.21");
     expect(leaked).toContain("4.00");
     expect(leaked).toContain("35.00");
   });
@@ -240,11 +242,11 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const owner = await cookie("j.masri");
     const quote = (await app.inject({
       method: "POST", url: "/api/quotes", cookies: owner,
-      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.30", feeCad: "4.00", direction: "customer_buy_foreign" },
+      payload: { customerId: "customer-demo", from: "CAD", to: "USD", inputAmount: "1443.21", feeCad: "4.00", direction: "customer_buy_foreign" },
     })).json();
     const posted = await app.inject({
       method: "POST", url: `/api/quotes/${quote.quoteId}/post`, cookies: owner,
-      payload: { idempotencyKey: "earn-roles", purpose: "Personal travel", sourceOfFunds: "Employment income" },
+      payload: { idempotencyKey: "earn-roles", purpose: "Personal travel", sourceOfFunds: "Employment income", shownAmount: amountShown(quote) },
     });
     expect(posted.statusCode, posted.body).toBe(201);
 

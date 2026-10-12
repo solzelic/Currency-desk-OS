@@ -72,6 +72,65 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Customer receives is the cash handed over.** The big green
+  Customer receives field on the New transaction sheet is the cash
+  the till pays out. A buy of USD 100 with a 5.00 CAD fee shows
+  129.36 there, the same figure as the ticket, the customer quote,
+  and the till. The posted exchange output stays 134.36. Before the
+  quote is frozen the preview is that same function
+  (`os-src/quote-terms.js`). A frozen quote is shown from the server's
+  amounts. Its expiry is a countdown, `Expires in 4:12`, and at zero
+  the post is refused on the sheet with `Quote expired. Get a new rate.`
+  Every quote error the sheet can be handed is read from one table in
+  `os-src/quote-terms.js`. An unknown one reads `Couldn't get a price.
+  Reload and try again.` Prices that do not load read `Prices didn't
+  load. Reload the page.`
+  A fee is in the teller headline: selling shows `101.50 CAD (100.00 + 1.50 fee)`
+  and buying shows `132.86 CAD (134.36 less 1.50 fee)`. That net is the
+  cash the till moves, in one movement. The journal still keeps the
+  exchange and the fee as separate lines. The receipt keeps the gross
+  exchange and the fee, and adds the cash the teller hands over:
+  `You receive 134.36 CAD`, `134.36 CAD less 5.00 CAD service fee`, and
+  `Cash to customer 129.36 CAD`. A sell adds `Cash from customer 105.00 CAD`.
+  The receipt names the teller as `M. Costa`, the date as `Oct 12, 2026`,
+  and keeps the quote and receipt identifiers behind Details. It closes
+  with `Thank you. Keep for your records.`
+  The sheet header uses that same date on the desk and on the phone.
+  The ledger Pay-out column keeps the currency's decimals, so
+  `4,702.60 CAD` does not drop the hundredths.
+  The frozen quote line carries the same fee and cash lines. A till that
+  cannot pay the currency says `The till doesn't have enough USD. Ask a
+  manager to move cash in.` On the customer screen the big number is
+  the cash that changes hands. A sale reads `101.50 CAD`, with
+  `100.00 CAD + 1.50 CAD service fee` in 20px under it. A buy shows
+  You receive as `129.36 CAD`, with `134.36 CAD less 5.00 CAD service fee`
+  under it, and `Cash to customer 129.36 CAD`. The footer stays
+  `Rate as quoted now`.
+  The customer screen and the phone rate field show the rate to 4 decimals
+  (`1 CAD = 0.7221 USD`).
+  That displayed rate is the rate the amount is multiplied by, then
+  rounded to the currency. The rate stored on the quote is still the
+  full board rate. An amount with too many decimals
+  is cut back to the currency's places, so `12.345` stays `12.34`, and
+  the sheet says `CAD uses 2 decimals. Try 12.35.` under Customer pays in,
+  including when `12.345` is pasted.
+  A yen fraction reads `JPY uses 0 decimals. Try 1001.` The currency picker reads
+  names from the shared catalog (`Swiss Franc`, `Australian Dollar`,
+  `Japanese Yen`). Every currency whose scale is three minor
+  units (JOD, OMR, TND, IQD, LYD, KWD, BHD) stays out of the picker.
+  That filter reads the scale table in `os-src/quote-terms.js`, the
+  same list the ledger uses. The page carries a build id; a tab from
+  another build gets `409 RELOAD_REQUIRED`. A post also carries the
+  Customer receives amount the teller was shown. The server recomputes
+  it and answers `409 RELOAD_REQUIRED` when that amount is missing or
+  different, and nothing is posted. A request with no build id is still
+  accepted, because the desk on main does not send one. Once that
+  script sends the id, a missing id is the same refusal.
+  `decimal.js` and the quote arithmetic ship as
+  `web/app/quote-terms.min.js`, loaded ahead of the desk script. `os.js`
+  and `admin.js` are still the unminified concatenation; minifying those
+  is a separate change.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -578,6 +637,24 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-11**, receive amount. The New transaction sheet was pricing
+Customer receives in the browser: the published mid was rounded to four
+decimal places, then a float spread was applied, and a sale used
+`1 / (mid × (1 + spread))` instead of `(1 / mid) × (1 − margin)`. On
+USD 3,500 at mid 1.36407 and a 1.5% margin the sheet said CAD 4,702.73
+and the ledger posted CAD 4,702.63. The sheet now uses the server's
+quote function for the preview and, once the quote is frozen, the
+server's input, output, and rate. The amount is the displayed 4 decimal
+rate times the input, rounded half-up to the output currency's minor
+units. A frozen quote counts down (`Expires in 4:12`) and does not
+show a wall-clock time. The You give / You receive headline adds the
+fee to home currency paid in, and subtracts it from home currency paid
+out; the frozen input, output, and fee remain the posted figures.
+`decimal.js` and the quote arithmetic ship as
+`web/app/quote-terms.min.js`. The desk script and the panel script are
+not minified here. The build stamps `web/app/build-id.txt` and the
+desk sends it with quote create and post.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

@@ -2968,6 +2968,28 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     letter-spacing: 0 !important;
     text-transform: none !important;
   }
+  /* The customer rate is the full unrounded figure, and it ends in the
+     currency. It wraps inside the space between the side chip and the
+     swap, so the unit stays on screen and the swap stays centred on
+     the line. */
+  .cd-tx-rate-line {
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+  }
+  .cd-tx-rate-line > .cd-tx-side,
+  .cd-tx-rate-line > .cd-tx-swap {
+    flex: none;
+  }
+  .cd-tx-rate-line > .cd-tx-kicker {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    text-align: center;
+  }
   .cd-tx-check-go {
     display: flex;
     flex-direction: column;

@@ -842,7 +842,7 @@
         // rates & fees
         defaultSpread: 1.5, defaultFee: 0, rateRounding: '4dp',
         // receipts
-        receiptHeader: 'York Currency Exchange', receiptFooter: 'Thank you — keep for your records',
+        receiptHeader: 'York Currency Exchange', receiptFooter: 'Thank you. Keep for your records.',
         receiptDisclaimer: 'All sales final. Rates as quoted at time of transaction.', showLogoOnReceipt: true, showMsbOnReceipt: true,
       };
       try { const raw = localStorage.getItem('cdos_settings'); const merged = raw ? { ...def, ...JSON.parse(raw) } : def; if (merged.deskName === 'Front Desk 01') merged.deskName = 'Desk 1'; if (!merged.employees || !merged.employees.length) merged.employees = STAFF.map(s => ({ id: 'e_' + s.name.replace(/[^A-Za-z]/g, ''), name: s.name, role: s.role, email: '', phone: '', code: s.staffId || s.name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, ''), active: true, requirePin: true, caps: { ...(ROLE_CAPS[s.role] || {}) }, apps: null, branches: s.branches, home: s.home, demo: s.demo }));
