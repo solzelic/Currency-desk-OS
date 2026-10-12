@@ -20,6 +20,9 @@ async function shot(page: Page, name: string): Promise<void> {
 /* 6×44 + 5×8 = 304. Centered, that row fits a 360px phone with the
    16px gutter, and neither end box may sit outside the viewport. */
 async function assertCodeBoxes(page: Page): Promise<void> {
+  /* A click in a text field is :focus-visible. The active box's ring
+     is that selector, so the measure has to happen while it matches. */
+  await page.locator("#si-code").click();
   const report = await page.locator("#lock.si-phone .si-code").evaluate((row) => {
     const rowStyle = getComputedStyle(row);
     const rowBox = row.getBoundingClientRect();
@@ -132,6 +135,7 @@ async function phone(page: Page, width: number): Promise<void> {
 test("desktop sign-in at 1280 is the wide screen", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/app");
+  await shot(page, "signin_desktop_1280");
   await expect(page.getByText("CURRENCYDESK ID")).toBeVisible();
   await expect(page.getByRole("button", { name: /Continue/ })).toBeVisible();
   await expect(page.locator("[data-phone-signin]")).toHaveCount(0);
@@ -194,11 +198,17 @@ for (const width of [360, 390]) {
       await shot(page, `signin_sign-in_${width}`);
       await page.getByRole("button", { name: "Sign in" }).click();
       await expect(page.getByText("That password does not match this staff ID. Check caps lock and try again.")).toBeVisible();
+      await expect(page.locator(".si-err")).toHaveCSS("font-size", "14px");
       await expect(page.locator("#si-id")).toHaveValue("asingh");
       await expect(page.locator("#si-pw")).toHaveValue("");
       await expect(page.locator("#si-pw")).toBeFocused();
       expect(await page.evaluate(() => localStorage.getItem("phone_staff_id"))).toBeNull();
       await shot(page, `signin_error_${width}`);
+      if (width === 390) {
+        await page.setViewportSize({ width: 430, height: 844 });
+        await shot(page, "signin_error_430");
+        await page.setViewportSize({ width: 390, height: 844 });
+      }
 
       await page.locator("#si-id").fill("nobody-on-this-desk");
       await page.locator("#si-pw").fill("still-wrong");
@@ -221,6 +231,11 @@ for (const width of [360, 390]) {
       await expect(waking).toBeVisible({ timeout: 8000 });
       expect(Date.now() - started).toBeGreaterThan(2500);
       await shot(page, `signin_waking_${width}`);
+      if (width === 390) {
+        await page.setViewportSize({ width: 430, height: 844 });
+        await shot(page, "signin_waking_430");
+        await page.setViewportSize({ width: 390, height: 844 });
+      }
       await expect(waking).toBeHidden({ timeout: 8000 });
       await expect(page.getByText("That password does not match this staff ID. Check caps lock and try again.")).toBeVisible();
     });
@@ -455,4 +470,417 @@ test("gives up after 90 seconds when sign-in stays quiet", async ({ page }) => {
   } finally {
     await done();
   }
+});
+
+/* The countdown is one timeout per second, and the next one is armed
+   only after React commits. clock.fastForward fires the timers that
+   already exist and then jumps, so a two-minute wait would shrink by
+   a single second. runFor walks them one second at a time. */
+async function tickUntil(page: Page, name: string): Promise<void> {
+  const button = page.getByRole("button", { name });
+  for (let i = 0; i < 150; i++) {
+    if (await button.isVisible().catch(() => false)) return;
+    await page.clock.runFor(1000);
+  }
+  await expect(button).toBeVisible();
+}
+
+const CODE_WRONG = "That code is not right. Check the newest email.";
+const CODE_EXPIRED = "That code has expired. Sign in again for a new one.";
+const CODE_LOCKED = "This sign-in is locked after 5 tries.";
+const SIGNIN_TROUBLE = "Sign-in is having trouble. Try again in a minute.";
+const PASTE_ONLY = "Paste only the 6-digit code.";
+const RESEND_SENT = "A new code is on its way.";
+
+async function storedText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const parts: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || "";
+      parts.push(k + "=" + (localStorage.getItem(k) || ""));
+    }
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i) || "";
+      parts.push(k + "=" + (sessionStorage.getItem(k) || ""));
+    }
+    return parts.join("\n");
+  });
+}
+
+/* A teller with an email, so the password is not enough on its own.
+   The owner session that creates them is cleared before the phone
+   signs in as the teller. */
+async function makeTeller(page: Page, label: string): Promise<{ email: string; password: string }> {
+  const email = `teller-${label}-${Date.now()}@yorkfx.example`;
+  const password = "counter-pass-2026";
+  const made = await page.evaluate(async ({ email, password }) => {
+    const login = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" }),
+    });
+    if (!login.ok) return { ok: false, status: login.status, step: "login" };
+    const res = await fetch("/api/staff", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staffId: email, name: "Floor Teller", role: "teller", password }),
+    });
+    return { ok: res.ok, status: res.status };
+  }, { email, password });
+  expect(made.ok, JSON.stringify(made)).toBeTruthy();
+  await page.context().clearCookies();
+  await page.evaluate(() => sessionStorage.clear());
+  return { email, password };
+}
+
+async function reachCode(page: Page, email: string, password: string): Promise<void> {
+  await page.reload();
+  await expect(page.locator("#si-id")).toBeVisible();
+  await page.locator("#si-id").fill(email);
+  await page.locator("#si-pw").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible({ timeout: 45_000 });
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
+}
+
+test("back, refresh, browser back, and another account return to the code step", async ({ page }) => {
+  await phone(page, 390);
+  const { email, password } = await makeTeller(page, "return");
+  await reachCode(page, email, password);
+  const raw = await page.evaluate(() => sessionStorage.getItem("phone_signin_step"));
+  expect(raw, "the step is kept").toBeTruthy();
+  const saved = JSON.parse(raw || "{}") as { step?: string; password?: string; code?: string };
+  expect(saved.step).toBe("code");
+  expect(saved.password, "password kept").toBeUndefined();
+  expect(saved.code, "code kept").toBeUndefined();
+  expect(await storedText(page), "password kept").not.toContain(password);
+
+  await page.reload();
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
+  await expect(page.getByText("A code went out moments ago")).toHaveCount(0);
+  expect(await storedText(page), "password kept after refresh").not.toContain(password);
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(page.locator("#si-id")).toHaveValue(email);
+  await expect(page.locator("#si-pw")).toHaveValue("");
+  await page.goBack();
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
+  expect(await storedText(page), "password kept after browser back").not.toContain(password);
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await page.locator("#si-pw").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
+  await expect(page.getByText("A code went out moments ago")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Use another account" }).click();
+  await expect(page.locator("#si-id")).toHaveValue("");
+  await expect(page.locator("#si-pw")).toHaveValue("");
+  await page.goBack();
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await page.getByRole("button", { name: "Use another account" }).click();
+  await page.locator("#si-id").fill(email);
+  await page.locator("#si-pw").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
+  await expect(page.getByText("A code went out moments ago")).toHaveCount(0);
+  expect(await storedText(page), "password kept after another account").not.toContain(password);
+});
+
+test("a code already sent opens the boxes with the remaining wait", async ({ page }) => {
+  await phone(page, 360);
+  await page.route("**/api/auth/login/start", (route) => route.fulfill({
+    status: 429,
+    contentType: "application/json",
+    body: JSON.stringify({
+      error: "too_soon",
+      detail: "A code went out moments ago. You can ask for another in 45 seconds.",
+      retryAfter: 45,
+    }),
+  }));
+  await page.locator("#si-id").fill("someone@yorkfx.example");
+  await page.locator("#si-pw").fill("counter-pass-2026");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await expect(page.getByText(/New code in 0:4\d/)).toBeVisible();
+  await expect(page.getByText("A code went out moments ago")).toHaveCount(0);
+  expect(await storedText(page), "password kept").not.toContain("counter-pass-2026");
+  await shot(page, "signin_already_360");
+});
+
+test("resize and landscape keep the phone code step", async ({ page }) => {
+  await phone(page, 390);
+  const { email, password } = await makeTeller(page, "resize");
+  await reachCode(page, email, password);
+  const sizes = [
+    { width: 360, height: 640 },
+    { width: 430, height: 800 },
+    { width: 780, height: 360 },
+    { width: 844, height: 390 },
+  ];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await expect(page.locator("[data-phone-signin]"), `${size.width}x${size.height}`).toHaveCount(1);
+    await expect(page.locator(".si-code i")).toHaveCount(6);
+    await expect(page.getByText("CURRENCYDESK ID")).toHaveCount(0);
+    await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
+    if (size.width === 430) await shot(page, "signin_code_430");
+  }
+  expect(await storedText(page), "password kept").not.toContain(password);
+  await shot(page, "signin_code_landscape");
+
+  await page.setViewportSize({ width: 780, height: 360 });
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await expect(page.locator("[data-phone-signin]")).toHaveCount(1);
+  await expect(page.locator("#si-id")).toBeVisible();
+  await expect(page.getByText("CURRENCYDESK ID")).toHaveCount(0);
+});
+
+for (const height of [400, 640]) {
+  test(`Sign in stays 52px and on screen at 360x${height}`, async ({ page }) => {
+    await phone(page, 360);
+    await page.setViewportSize({ width: 360, height });
+    await page.locator("#si-id").fill("a.singh");
+    await page.locator("#si-pw").click();
+    await page.locator("#si-pw").fill("yorkville");
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)));
+    }));
+    const box = await page.getByRole("button", { name: "Sign in" }).boundingBox();
+    expect(box, "Sign in button").toBeTruthy();
+    expect(box!.height).toBeGreaterThanOrEqual(52);
+    expect(box!.y).toBeGreaterThanOrEqual(-1);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(height + 1);
+    await shot(page, `signin_keyboard_360x${height}`);
+  });
+}
+
+test("the focus ring is only on :focus-visible", async ({ page }) => {
+  await phone(page, 360);
+  await page.locator("#si-id").fill("a.singh");
+  await page.locator("#si-pw").fill("yorkville");
+  /* A thumb press focuses the control without the ring. Script focus
+     matches :focus-visible in Chromium, so a click is the press.
+     The eye is not Sign in: pressing Sign in would leave this screen. */
+  const eye = page.locator(".si-eye");
+  await eye.click();
+  await expect(eye).toBeFocused();
+  const pointed = await eye.evaluate((el) => ({
+    visible: el.matches(":focus-visible"),
+    outline: getComputedStyle(el).outlineStyle,
+  }));
+  expect(pointed.visible).toBe(false);
+  expect(pointed.outline).toBe("none");
+  await page.locator("#si-pw").focus();
+  await page.keyboard.press("Tab");
+  await expect(eye).toBeFocused();
+  const eyeKeyed = await eye.evaluate((el) => getComputedStyle(el).outlineStyle);
+  expect(eyeKeyed).not.toBe("none");
+  const button = page.getByRole("button", { name: "Sign in" });
+  await page.keyboard.press("Tab");
+  await expect(button).toBeFocused();
+  const keyed = await button.evaluate((el) => getComputedStyle(el).outlineStyle);
+  expect(keyed).not.toBe("none");
+});
+
+test("paste keeps one 6-digit run and spends no try otherwise", async ({ page }) => {
+  await phone(page, 390);
+  const { email, password } = await makeTeller(page, "paste");
+  let hits = 0;
+  let release: (() => void) | null = null;
+  let hold = false;
+  await page.route("**/api/auth/login/verify", async (route) => {
+    hits += 1;
+    if (hold) await new Promise<void>((resolve) => { release = resolve; });
+    await route.continue();
+  });
+  await reachCode(page, email, password);
+  expect(await page.locator("#si-code").getAttribute("maxlength")).toBeNull();
+
+  const good = [" 482913", "482 913", "Till 2: your code is 482913"];
+  for (const text of good) {
+    const before = hits;
+    hold = true;
+    try {
+      await pasteCode(page, text);
+      await expect(page.locator(".si-code i")).toHaveText(["4", "8", "2", "9", "1", "3"]);
+      await expect.poll(() => hits).toBe(before + 1);
+    } finally {
+      hold = false;
+      release?.();
+      release = null;
+    }
+    await expect(page.getByText(CODE_WRONG)).toBeVisible();
+    await expect(page.locator(".si-code i").first()).toHaveText("");
+  }
+
+  for (const text of ["1234567", "12345678", "abcdef"]) {
+    const before = hits;
+    await pasteCode(page, text);
+    await expect(page.getByText(PASTE_ONLY)).toBeVisible();
+    await expect(page.locator(".si-code i").first()).toHaveText("");
+    expect(hits, text).toBe(before);
+  }
+});
+
+test("expired, locked, and a server failure each have their own sentence", async ({ page }) => {
+  await phone(page, 390);
+  const { email, password } = await makeTeller(page, "answers");
+  await reachCode(page, email, password);
+
+  await page.route("**/api/auth/login/verify", (route) => route.fulfill({
+    status: 410,
+    contentType: "application/json",
+    body: JSON.stringify({ error: "expired", detail: "That code expired — sign in again." }),
+  }));
+  await page.locator("#si-code").fill("123456");
+  await expect(page.getByText(CODE_EXPIRED)).toBeVisible();
+  await expect(page.getByText(CODE_WRONG)).toHaveCount(0);
+  await expect(page.getByText(CODE_LOCKED)).toHaveCount(0);
+
+  await page.unroute("**/api/auth/login/verify");
+  await page.route("**/api/auth/login/verify", (route) => route.fulfill({
+    status: 500,
+    contentType: "application/json",
+    body: JSON.stringify({ error: "boom", status: 500 }),
+  }));
+  await page.locator("#si-code").fill("123456");
+  await expect(page.locator(".si-err")).toHaveText(SIGNIN_TROUBLE);
+  await expect(page.locator(".si-err")).not.toContainText("500");
+  await expect(page.getByText(CODE_WRONG)).toHaveCount(0);
+
+  await page.unroute("**/api/auth/login/verify");
+  for (let i = 0; i < 5; i++) {
+    await page.locator("#si-code").fill("000000");
+    await expect(page.getByText(CODE_WRONG)).toBeVisible();
+  }
+  await page.locator("#si-code").fill("111111");
+  await expect(page.getByText(CODE_LOCKED)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in again" })).toBeVisible();
+  await expect(page.getByText(/New code in/)).toHaveCount(0);
+  await expect(page.locator(".si-err")).toHaveCSS("font-size", "14px");
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 780 });
+    await shot(page, `signin_lockout_${width}`);
+  }
+  expect(await page.evaluate(() => sessionStorage.getItem("phone_signin_step"))).toBeNull();
+  await page.getByRole("button", { name: "Sign in again" }).click();
+  await expect(page.locator("#si-id")).toHaveValue(email);
+  await expect(page.locator(".si-code")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("#si-id")).toBeVisible();
+  await expect(page.getByText(CODE_LOCKED)).toHaveCount(0);
+  await expect(page.locator(".si-code")).toHaveCount(0);
+});
+
+test("resend checks the server answer before saying a code is on its way", async ({ page }) => {
+  await pauseClock(page);
+  const { email, password } = await makeTeller(page, "resend");
+  await reachCode(page, email, password);
+  await tickUntil(page, "Send a new code");
+  await page.getByRole("button", { name: "Send a new code" }).click();
+  await expect(page.getByText(RESEND_SENT)).toHaveCount(0);
+  await expect(page.locator(".si-code i")).toHaveCount(6);
+  await expect(page.getByText(/New code in \d+:\d\d/)).toBeVisible();
+
+  await tickUntil(page, "Send a new code");
+  await page.route("**/api/auth/login/start", (route) => route.fulfill({
+    status: 500,
+    contentType: "application/json",
+    body: JSON.stringify({ error: "upstream" }),
+  }));
+  await page.getByRole("button", { name: "Send a new code" }).click();
+  await expect(page.locator(".si-err")).toHaveText(SIGNIN_TROUBLE);
+  await expect(page.getByText(RESEND_SENT)).toHaveCount(0);
+  await expect(page.locator(".si-err")).not.toContainText("500");
+
+  await page.unroute("**/api/auth/login/start");
+  await page.route("**/api/auth/login/start", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      ok: true,
+      needsCode: true,
+      maskedEmail: "t•••@yorkfx.example",
+      user: { id: email, name: "Floor Teller", role: "teller", tenantId: "tnt-yorkfx", mustChangePassword: false },
+    }),
+  }));
+  await page.getByRole("button", { name: "Send a new code" }).click();
+  await expect(page.getByText(RESEND_SENT)).toBeVisible();
+  await expect(page.locator(".si-code i").first()).toHaveText("");
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
+    await shot(page, `signin_resend_${width}`);
+  }
+  expect(await storedText(page), "password kept").not.toContain(password);
+});
+
+test("a 500 on sign-in does not show the status", async ({ page }) => {
+  await phone(page, 390);
+  await page.route("**/api/auth/login/start", (route) => route.fulfill({
+    status: 502,
+    contentType: "text/plain",
+    body: "bad gateway",
+  }));
+  await page.locator("#si-id").fill("a.singh");
+  await page.locator("#si-pw").fill("not-the-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(".si-err")).toHaveText(SIGNIN_TROUBLE);
+  await expect(page.getByText(/502/)).toHaveCount(0);
+  await expect(page.locator(".si-code")).toHaveCount(0);
+});
+
+test("dark theme keeps error, link, and grey text at 4.5:1", async ({ page }) => {
+  await phone(page, 390);
+  await page.evaluate(() => localStorage.setItem("cdos_theme", "dark"));
+  await page.reload();
+  await expect(page.locator("#lock.si-phone")).toHaveCSS("background-color", "rgb(247, 246, 243)");
+  await expect(page.locator("#lock.si-phone")).toHaveCSS("color-scheme", "light");
+  await page.locator("#si-id").fill("asingh");
+  await page.locator("#si-pw").fill("not-the-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(".si-err")).toBeVisible();
+  await expect(page.locator(".si-err")).toHaveCSS("font-size", "14px");
+  const rows = await page.locator("#lock.si-phone").evaluate((root) => {
+    const bgOf = (el: Element) => {
+      let node: Element | null = el;
+      while (node) {
+        const bg = getComputedStyle(node).backgroundColor;
+        const m = bg.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+        if (m && (m[4] == null || Number(m[4]) > 0.99)) return bg;
+        node = node.parentElement;
+      }
+      return getComputedStyle(root).backgroundColor;
+    };
+    const pick = (sel: string) => {
+      const el = root.querySelector(sel);
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return { color: cs.color, bg: bgOf(el), text: (el.textContent || "").trim().slice(0, 40) };
+    };
+    return { err: pick(".si-err"), link: pick(".si-link"), lead: pick(".si-lead") };
+  });
+  const lin = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const L = (css: string) => {
+    const m = css.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/);
+    if (!m) throw new Error(css);
+    return 0.2126 * lin(Number(m[1])) + 0.7152 * lin(Number(m[2])) + 0.0722 * lin(Number(m[3]));
+  };
+  for (const [name, row] of Object.entries(rows)) {
+    expect(row, name).toBeTruthy();
+    const hi = Math.max(L(row!.color), L(row!.bg));
+    const lo = Math.min(L(row!.color), L(row!.bg));
+    const ratio = (hi + 0.05) / (lo + 0.05);
+    expect(ratio, `${name} ${row!.color} on ${row!.bg} (${row!.text})`).toBeGreaterThanOrEqual(4.5);
+  }
+  await phoneSweep(page, { roots: [PHONE_ROOT] });
 });

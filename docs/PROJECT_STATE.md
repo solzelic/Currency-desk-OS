@@ -121,12 +121,22 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   form. Sign-in and the station picker stay on the screen. On a phone
   the shop sign-in is staff ID and password together, then the emailed
   6-digit code. The device remembers the staff ID (Not you? clears it)
-  and does not store the password. That ID, and the last phone tab,
-  stay on the device. They are not part of the desk's saved state.
-  If the server has not answered after
-  a few seconds, the screen says the first sign-in can take up to a
-  minute. After sign-in a phone opens the last tab used on that phone,
-  or Rates. Wider than 430px, sign-in is the screen the desk already had.
+  and does not store the password or the code. This tab remembers the
+  code step, so Back, refresh, the browser back button, and Use another
+  account return to the boxes with the wait that is left. A wrong code,
+  an expired code, and a lock after 5 tries each have their own sentence.
+  The lock has a Sign in again button, and the wait is cleared. A server
+  failure says sign-in is having trouble, and does not show a status
+  number. A paste is one 6-digit run, or it says to paste only that code
+  and does not spend a try. The phone sign-in stays on the light tokens
+  when the desk is dark, so the error, the links, and the grey text stay
+  at least 4.5:1. A landscape phone keeps this code step. Sign in stays
+  52px tall and scrolls into view when a field is focused. That ID, and
+  the last phone tab, stay on the device. They are not part of the desk's
+  saved state. If the server has not answered after a few seconds, the
+  screen says the first sign-in can take up to a minute. After sign-in a
+  phone opens the last tab used on that phone, or Rates. Wider than 430px,
+  and not a short landscape phone, sign-in is the screen the desk already had.
   The window
   title bar is hidden, so the app uses that room. In-app tabs stay.
   A dialog keeps its own header and close, and on a phone it stops
@@ -602,6 +612,18 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-12**, phone sign-in. A phone asks for the staff ID and the
+password together, then six boxes. This tab keeps the code step.
+The password and the code are not stored. Back, refresh, browser
+back, and Use another account return to the boxes with the wait
+that is left. A wrong code, an expired code, a lock after 5 tries,
+and a server failure each have their own sentence. The failure
+does not show a status number. A paste that is not one 6-digit run
+does not spend a try. The screen stays on the light tokens in dark
+mode. Landscape keeps the code step. Sign in stays 52px and scrolls
+into view. Wider than 430px, except a short landscape phone, sign-in
+is unchanged.
 
 **2026-10-12**, desktop pictures are a render of main. The 1280 PNGs are
 the seam job's render of the commit in `tests/e2e/README.md`, checked

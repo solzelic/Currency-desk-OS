@@ -25,8 +25,11 @@
     fontFamily: "'Archivo', system-ui, sans-serif", color: 'var(--si-ink)',
   };
   const MONO = "'Space Mono', monospace";
-  /* Viewport, not a second app. A wide window never takes this branch. */
-  const PHONE_Q = '(max-width: 430px)';
+  /* Viewport, not a second app. A wide window never takes this branch.
+     A phone turned sideways is wider than 430px and shorter than it, so
+     the code step has to follow that shape too. 932px is a large phone
+     on its side. A 1280 desk, even a short one, stays on the wide screen. */
+  const PHONE_Q = '(max-width: 430px), (max-width: 932px) and (max-height: 430px) and (orientation: landscape)';
   const phoneNow = () => typeof window.matchMedia === 'function' && window.matchMedia(PHONE_Q).matches;
   /* The staff ID is the only thing this device stores. The password is
      never written — Apple Passwords (autocomplete) is the only memory.
@@ -37,6 +40,96 @@
   const readStaffId = () => {
     try { return localStorage.getItem(STAFF_KEY) || ''; }
     catch (e) { return ''; } // storage blocked: the field starts empty, sign-in still works
+  };
+  /* The code step, and nothing secret. A refresh, the browser's back
+     button, and the on-screen Back all have to be able to show the
+     boxes again: the server will not email a second code for two
+     minutes, so a password form with only "a code went out" is a
+     dead end. The password and the six digits are never written.
+     sessionStorage, not localStorage, so closing the tab drops it.
+     The name is not cdos_* or yorkfx_*. Those prefixes are the desk's
+     saved state. */
+  const STEP_KEY = 'phone_signin_step';
+  const CODE_TTL_MS = 10 * 60 * 1000;
+  const RESEND_WAIT_MS = 120 * 1000;
+  const CODE_WRONG = 'That code is not right. Check the newest email.';
+  const CODE_EXPIRED = 'That code has expired. Sign in again for a new one.';
+  const CODE_LOCKED = 'This sign-in is locked after 5 tries.';
+  const SIGNIN_TROUBLE = 'Sign-in is having trouble. Try again in a minute.';
+  const PASTE_ONLY = 'Paste only the 6-digit code.';
+  const RESEND_SENT = 'A new code is on its way.';
+  const SRV2OS_ROLE = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
+  const clearCodeStep = () => { try { sessionStorage.removeItem(STEP_KEY); } catch (e) {} };
+  const readCodeStep = () => {
+    let raw = '';
+    try { raw = sessionStorage.getItem(STEP_KEY) || ''; }
+    catch (e) { return null; }
+    if (!raw) return null;
+    let d = null;
+    try { d = JSON.parse(raw); }
+    catch (e) { clearCodeStep(); return null; }
+    if (!d || d.step !== 'code' || typeof d.staffId !== 'string' || !d.staffId || typeof d.sentAt !== 'number') {
+      clearCodeStep(); return null;
+    }
+    /* Ten minutes is the server's challenge life. After that the
+       boxes would only collect a code the server has already dropped. */
+    if (Date.now() - d.sentAt > CODE_TTL_MS) { clearCodeStep(); return null; }
+    return d;
+  };
+  /* Explicit fields. A future edit that passes the whole form must
+     not be able to sneak the password or the code into this record. */
+  const writeCodeStep = (d) => {
+    const safe = {
+      step: 'code',
+      staffId: d.staffId,
+      maskedEmail: d.maskedEmail || '',
+      tenantId: d.tenantId || '',
+      mustChange: !!d.mustChange,
+      sentAt: d.sentAt,
+      waitUntil: d.waitUntil,
+      user: d.user ? {
+        id: d.user.id,
+        name: d.user.name,
+        role: d.user.role,
+        tenantId: d.user.tenantId,
+        mustChangePassword: !!d.user.mustChangePassword,
+      } : null,
+    };
+    try { sessionStorage.setItem(STEP_KEY, JSON.stringify(safe)); }
+    catch (e) {}
+    return safe;
+  };
+  const waitLeft = (waitUntil) => (typeof waitUntil === 'number' ? Math.max(0, Math.ceil((waitUntil - Date.now()) / 1000)) : 0);
+  const stepRecord = (saved) => {
+    const u = saved.user || null;
+    const staffId = saved.staffId;
+    const rec = u
+      ? { id: 'e_' + (u.id || staffId), code: u.id || staffId, name: u.name || u.id || staffId, role: SRV2OS_ROLE[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true }
+      : { id: 'e_' + staffId, code: staffId, name: staffId, role: 'Cashier', active: true, branches: [], home: null, _adopted: true };
+    return {
+      rec,
+      srvPlan: null,
+      srvUser: u,
+      staffId,
+      tenantId: saved.tenantId || (u && u.tenantId) || undefined,
+      maskedEmail: saved.maskedEmail || '',
+      mustChange: !!saved.mustChange || !!(u && u.mustChangePassword),
+    };
+  };
+  /* One code, or nothing. A run is digits in a row. One run of six
+     is the code, including when a sentence also has a shorter number
+     ("Till 2: your code is 482913"). Spaces that only split a single
+     code ("482 913") still join to six once the other characters are
+     gone. Seven or eight digits, two codes, or letters are not a code:
+     the screen says so and does not spend a try. */
+  const oneSixDigitCode = (text) => {
+    const raw = String(text || '');
+    const runs = raw.match(/\d+/g) || [];
+    const sixes = runs.filter((r) => r.length === 6);
+    if (sixes.length === 1) return sixes[0];
+    if (sixes.length > 1) return '';
+    const stripped = raw.replace(/\D/g, '');
+    return stripped.length === 6 ? stripped : '';
   };
   const WAKE_MS = 3000;
   const GIVE_UP_MS = 90000;
@@ -108,9 +201,15 @@
 
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
   function SignIn({ employees, onSignup, onComplete, onMustChange }) {
-    const [step, setStep] = useState('id');            // id | password | code
+    /* Read once. A later render must not pull a cleared record back. */
+    const savedStep = useRef(null);
+    const [step, setStep] = useState(() => {
+      const saved = phoneNow() ? readCodeStep() : null;
+      savedStep.current = saved;
+      return saved ? 'code' : 'id';
+    });            // id | password | code | forgot | reset
     const [phone, setPhone] = useState(phoneNow);
-    const [idInput, setIdInput] = useState(() => (phoneNow() ? readStaffId() : ''));
+    const [idInput, setIdInput] = useState(() => (savedStep.current ? savedStep.current.staffId : (phoneNow() ? readStaffId() : '')));
     const [held, setHeld] = useState(() => phoneNow() && !!readStaffId());
     const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
     const [waking, setWaking] = useState(false); const [gaveUp, setGaveUp] = useState(false);
@@ -131,7 +230,8 @@
        BEFORE the await. React state does not update synchronously, so
        `disabled` alone loses the race against a double-click — the second
        press lands while the first render is still pending. A ref cannot. */
-    const [cool, setCool] = useState(0);
+    const [cool, setCool] = useState(() => (savedStep.current ? waitLeft(savedStep.current.waitUntil) : 0));
+    const [locked, setLocked] = useState(false);
     const sending = useRef(false);
     useEffect(() => {
       if (cool <= 0) return;
@@ -145,6 +245,39 @@
       mq.addEventListener('change', apply);
       return () => mq.removeEventListener('change', apply);
     }, []);
+    /* Browser back does not reset React state on its own, and a refresh
+       does. Both have to land on the boxes while a code is still live.
+       pushState keeps that back press inside this page; the listener
+       puts the boxes back if an on-screen Back had already left them. */
+    useEffect(() => {
+      if (!phone) return undefined;
+      const onPop = () => {
+        const saved = readCodeStep();
+        if (!saved || !phoneNow()) return;
+        authRef.current = stepRecord(saved);
+        setIdInput(saved.staffId);
+        setCool(waitLeft(saved.waitUntil));
+        setCode('');
+        setErr('');
+        setNote('');
+        setLocked(false);
+        setPw('');
+        codeOnce.current = false;
+        setStep('code');
+        try {
+          if (!history.state || history.state.phoneSignIn !== 'code') history.pushState({ phoneSignIn: 'code' }, '');
+        } catch (e) {}
+      };
+      window.addEventListener('popstate', onPop);
+      return () => window.removeEventListener('popstate', onPop);
+    }, [phone]);
+    useEffect(() => {
+      if (!phone || step !== 'code' || locked) return;
+      try {
+        if (history.state && history.state.phoneSignIn === 'code') return;
+        history.pushState({ phoneSignIn: 'code' }, '');
+      } catch (e) {}
+    }, [phone, step, locked]);
     const startCooldown = (secs) => setCool(Math.max(1, Math.round(secs || 120)));
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
@@ -163,8 +296,9 @@
     const rep = ours.find(e => e.role !== 'Owner' && e !== owner) || ours[1];
     const examples = [owner, rep].filter(Boolean).slice(0, 2);
 
-    // captured across the login call so the code step can complete
-    const authRef = useRef({ rec: null, srvPlan: null, srvUser: null });
+    // captured across the login call so the code step can complete.
+    // A refresh rebuilds it from the saved step, which has no password and no code.
+    const authRef = useRef(savedStep.current ? stepRecord(savedStep.current) : { rec: null, srvPlan: null, srvUser: null });
 
     const goPassword = () => { if (idInput.trim().length < 3) { setErr('Enter your CurrencyDesk ID.'); return; } setErr(''); setStep('password'); };
 
@@ -240,8 +374,70 @@
       catch (e) { setErr('This phone could not forget the saved staff ID.'); }
     };
     const mmss = (n) => { const s = Math.max(0, n | 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    const showCode = (saved) => {
+      authRef.current = stepRecord(saved);
+      setIdInput(saved.staffId);
+      setCool(waitLeft(saved.waitUntil));
+      setCode('');
+      setErr('');
+      setNote('');
+      setLocked(false);
+      setGaveUp(false);
+      setWaking(false);
+      codeOnce.current = false;
+      setVerifying(false);
+      setStep('code');
+    };
+    /* Five wrong codes and the server deletes the challenge. The
+       countdown has to go with it: "New code in 1:23" would keep them
+       on a code they can no longer use. Sign in again starts clean. */
+    const lockOut = () => {
+      clearCodeStep();
+      codeOnce.current = false;
+      sending.current = false;
+      setVerifying(false);
+      setBusy(false);
+      setCool(0);
+      setCode('');
+      setNote('');
+      setWaking(false);
+      setGaveUp(false);
+      setLocked(true);
+      setErr(CODE_LOCKED);
+      setStep('code');
+    };
+    const signInAgain = () => {
+      clearCodeStep();
+      codeOnce.current = false;
+      setLocked(false);
+      setCool(0);
+      setCode('');
+      setErr('');
+      setNote('');
+      setPw('');
+      setVerifying(false);
+      setStep('id');
+    };
     const leaveCode = () => {
-      codeOnce.current = false; setVerifying(false); setCode(''); setErr(''); setNote(''); setPw(''); setStep('id');
+      codeOnce.current = false; setVerifying(false); setCode(''); setErr(''); setNote(''); setPw(''); setLocked(false); setStep('id');
+    };
+    /* The staff ID stays. The password field does not: it is not kept
+       on screen, and it is not in the saved step. The step itself stays,
+       so browser back and a second Sign in can open the boxes again. */
+    const useAnother = () => {
+      leaveCode();
+      setIdInput('');
+      setHeld(false);
+      try { localStorage.removeItem(STAFF_KEY); }
+      catch (e) { setErr('This phone could not forget the saved staff ID.'); }
+    };
+    /* A short viewport is the keyboard. The button is below the field
+       that was just focused, so bring it into the scrolling lock. */
+    const keepSignInInView = () => {
+      requestAnimationFrame(() => {
+        const btn = document.querySelector('#lock.si-phone .si-go');
+        if (btn && btn.scrollIntoView) btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      });
     };
     async function phoneSubmit(e) {
       e && e.preventDefault();
@@ -271,13 +467,35 @@
           let d = null;
           try { d = await res.json(); } catch (parseErr) { d = null; }
           sending.current = false; setBusy(false);
-          startCooldown(d && d.retryAfter);
-          setErr((d && d.detail) || 'A code went out moments ago. Check your email.');
+          /* too_many_attempts is the verify lock. login/start's 429 is
+             too_soon: a code is already in the inbox. The boxes have to
+             come back, with the time the server still wants us to wait.
+             The sentence alone, on the password form, is the dead end. */
+          if (d && d.error === 'too_many_attempts') { lockOut(); return; }
+          const retry = Math.max(1, Math.round((d && d.retryAfter) || 120));
+          const prev = readCodeStep();
+          const same = prev && prev.staffId === staffId ? prev : null;
+          const u = (d && d.user) || (same && same.user) || null;
+          const saved = writeCodeStep({
+            staffId,
+            maskedEmail: (d && d.maskedEmail) || (same && same.maskedEmail) || '',
+            tenantId: (u && u.tenantId) || (same && same.tenantId) || '',
+            mustChange: !!(u && u.mustChangePassword) || !!(same && same.mustChange),
+            sentAt: (same && same.sentAt) || Date.now(),
+            waitUntil: Date.now() + retry * 1000,
+            user: u,
+          });
+          showCode(saved);
           return;
         }
         if (!res.ok) {
           sending.current = false; setBusy(false);
-          setErr('Sign-in service error (' + res.status + '). Try again in a moment.');
+          /* Never the status number. A 500 is one sentence. Anything
+             else keeps the server's own words when it sent them. */
+          if (res.status >= 500) { setErr(SIGNIN_TROUBLE); return; }
+          let d = null;
+          try { d = await res.json(); } catch (parseErr) { d = null; }
+          setErr((d && d.detail) || SIGNIN_TROUBLE);
           return;
         }
         let data = null;
@@ -293,13 +511,24 @@
         rememberStaff(staffId);
         sending.current = false; setBusy(false); setErr('');
         if (data && data.needsCode === false) {
+          clearCodeStep();
           if (u && u.mustChangePassword) { onMustChange(rec, { current: pw }, srvPlan, u); return; }
           onComplete(rec, srvPlan, u); return;
         }
         /* needsCode stays in front of the must-change screen. The code is
            the second factor; the password change needs the session it grants. */
-        authRef.current = { rec, srvPlan, srvUser: u, staffId, tenantId: (u && u.tenantId) || undefined, maskedEmail: data && data.maskedEmail, mustChange: !!(u && u.mustChangePassword) };
-        codeOnce.current = false; setCode(''); setStep('code'); startCooldown(120);
+        const sentAt = Date.now();
+        const saved = writeCodeStep({
+          staffId,
+          maskedEmail: (data && data.maskedEmail) || '',
+          tenantId: (u && u.tenantId) || '',
+          mustChange: !!(u && u.mustChangePassword),
+          sentAt,
+          waitUntil: sentAt + RESEND_WAIT_MS,
+          user: u,
+        });
+        authRef.current = { rec, srvPlan, srvUser: u, staffId, tenantId: (u && u.tenantId) || undefined, maskedEmail: saved.maskedEmail, mustChange: !!saved.mustChange };
+        codeOnce.current = false; setCode(''); setErr(''); setNote(''); setLocked(false); setStep('code'); startCooldown(120);
       } catch (err) {
         stopWait();
         sending.current = false; setBusy(false);
@@ -387,9 +616,21 @@
         const data = await res.json().catch(() => null); // a non-JSON body has no detail; the status still decides
         if (!res.ok) {
           codeOnce.current = false; setVerifying(false); setCode('');
-          setErr(phoneNow() ? 'That code is not right. Check the newest email.' : ((data && data.detail) || 'That code isn’t right — check your email.'));
+          if (!phoneNow()) {
+            setErr((data && data.detail) || 'That code isn’t right — check your email.');
+            return;
+          }
+          /* One sentence per answer. The status number is never the
+             sentence: a 500 is the same words every time. */
+          const error = data && data.error;
+          if (res.status >= 500) { setErr(SIGNIN_TROUBLE); return; }
+          if (res.status === 429 && error === 'too_many_attempts') { lockOut(); return; }
+          if (res.status === 410) { setErr(CODE_EXPIRED); return; }
+          if (res.status === 401) { setErr(CODE_WRONG); return; }
+          setErr(SIGNIN_TROUBLE);
           return;
         }
+        clearCodeStep();
         const u = (data && data.user) || a.srvUser;
         if (a.mustChange) { onMustChange(a.rec, { current: pw }, (u && u.plan) || a.srvPlan, u); return; }
         onComplete(a.rec, (u && u.plan) || a.srvPlan, u);
@@ -401,15 +642,50 @@
     async function resendCode() {
       const a = authRef.current;
       if (!a.staffId || a.demo) { setCode(''); return; }
-      if (sending.current || cool > 0) return;   // the latch, before any await
+      if (sending.current || cool > 0 || locked) return;   // the latch, before any await
       sending.current = true;
-      setNote('Sending a new code…');
+      setNote('');
+      setErr('');
       try {
         const res = await fetch('/api/auth/login/start', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ staffId: a.staffId, password: pw }) });
         const d = await res.json().catch(() => null);
-        if (res.status === 429) { startCooldown(d && d.retryAfter); setNote((d && d.detail) || 'A code went out moments ago.'); return; }
-        setNote('A new code is on its way.'); setCode(''); startCooldown(120);
-      } catch (_) { setNote('Couldn’t resend — try again.'); }
+        /* The success sentence waits for the answer. A 429, a 401, or a
+           500 used to fall through and tell them a new code was coming. */
+        if (res.status === 429 && d && d.error === 'too_many_attempts') { lockOut(); return; }
+        if (res.status === 429) {
+          const retry = Math.max(1, Math.round((d && d.retryAfter) || 120));
+          const prev = readCodeStep();
+          if (prev) writeCodeStep({ ...prev, waitUntil: Date.now() + retry * 1000, user: prev.user });
+          startCooldown(retry);
+          setNote('');
+          return;
+        }
+        if (!res.ok) {
+          setNote('');
+          if (phoneNow()) setErr(res.status >= 500 ? SIGNIN_TROUBLE : 'Sign in again to send a new code.');
+          else setNote('Couldn’t resend — try again.');
+          return;
+        }
+        const sentAt = Date.now();
+        const u = (d && d.user) || a.srvUser;
+        writeCodeStep({
+          staffId: a.staffId,
+          maskedEmail: (d && d.maskedEmail) || a.maskedEmail || '',
+          tenantId: (u && u.tenantId) || a.tenantId || '',
+          mustChange: !!(u && u.mustChangePassword) || !!a.mustChange,
+          sentAt,
+          waitUntil: sentAt + RESEND_WAIT_MS,
+          user: u,
+        });
+        if (u) authRef.current = { ...a, srvUser: u, maskedEmail: (d && d.maskedEmail) || a.maskedEmail };
+        setNote(RESEND_SENT);
+        setCode('');
+        startCooldown(120);
+      } catch (_) {
+        setNote('');
+        if (phoneNow()) setErr('The sign-in service is not answering. Check the internet and try again.');
+        else setNote('Couldn’t resend — try again.');
+      }
       finally { sending.current = false; }
     }
 
@@ -446,38 +722,57 @@
           </svg>
         </button>
       );
-      const takeCode = (raw) => {
-        const next = String(raw || '').replace(/\D/g, '').slice(0, 6);
+      /* Typing is digits, one at a time, up to six. Anything else is a
+         paste or an autofill: exactly one 6-digit run, or the paste
+         sentence and no request. maxlength is off so a longer paste is
+         not cut to the first six characters before we can see it.
+         autocomplete=one-time-code is how iOS Safari can offer the code
+         from Mail. Other phones do not fill it from the email. */
+      const applyDigits = (raw, fromPaste) => {
+        if (locked || verifying) return;
+        const text = String(raw || '');
+        const digitsOnly = text.replace(/\D/g, '');
+        const typed = !fromPaste && text === digitsOnly && digitsOnly.length <= 6;
+        if (typed) {
+          setCode(digitsOnly);
+          if (err) setErr('');
+          if (digitsOnly.length === 6) verifyCode(digitsOnly);
+          return;
+        }
+        const next = oneSixDigitCode(text);
+        if (!next) {
+          setCode('');
+          setErr(PASTE_ONLY);
+          return;
+        }
+        setErr('');
         setCode(next);
-        if (err) setErr('');
-        if (next.length === 6) verifyCode(next);
+        verifyCode(next);
       };
-      const onCode = (e) => takeCode(e.target.value);
-      /* A paste replaces every box. The browser would otherwise insert
-         at the caret and leave the earlier digits in place. verifyCode
-         latches, so a paste and the input event that follows send once. */
+      const onCode = (e) => applyDigits(e.target.value, false);
       const onCodePaste = (e) => {
         const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
-        if (!text) return;
         e.preventDefault();
-        takeCode(text);
+        applyDigits(text, true);
       };
       const root = (children) => <div id="lock" className="si-phone" data-phone-signin="1">{children}</div>;
       if (step === 'code') return root(
         <div className="si-col">
-          {backBtn(leaveCode)}
+          {backBtn(locked ? signInAgain : leaveCode)}
           <h1>Check your email</h1>
           <p className="si-lead">We sent a 6-digit code to {maskedEmail}. Type it here.</p>
           <div className={'si-code' + (err ? ' is-err' : '')}>
-            <input id="si-code" className="si-code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]*" autoFocus aria-label="6-digit code" value={code} onChange={onCode} onPaste={onCodePaste} />
-            {[0, 1, 2, 3, 4, 5].map(i => <i key={i} className={!err && i === code.length && !verifying ? 'cur' : ''}>{code[i] || ''}</i>)}
+            <input id="si-code" className="si-code-input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" autoFocus={!locked} aria-label="6-digit code" disabled={locked} value={code} onChange={onCode} onPaste={onCodePaste} />
+            {[0, 1, 2, 3, 4, 5].map(i => <i key={i} className={!err && !locked && i === code.length && !verifying ? 'cur' : ''}>{code[i] || ''}</i>)}
           </div>
           {err ? <p className="si-err" role="alert">{err}</p> : <p className="si-hint">You are signed in as soon as all 6 numbers are in.</p>}
-          <div className="si-resend">
-            {cool > 0 ? <span>New code in {mmss(cool)}</span> : <button type="button" className="si-link" onClick={resendCode}>Send a new code</button>}
-            <button type="button" className="si-link" onClick={leaveCode}>Use another account</button>
-          </div>
-          {note ? <p className="si-hint">{note}</p> : null}
+          {locked
+            ? <button type="button" className="si-go" onClick={signInAgain}>Sign in again</button>
+            : <div className="si-resend">
+                {cool > 0 ? <span>New code in {mmss(cool)}</span> : <button type="button" className="si-link" onClick={resendCode}>Send a new code</button>}
+                <button type="button" className="si-link" onClick={useAnother}>Use another account</button>
+              </div>}
+          {!locked && note ? <p className="si-hint">{note}</p> : null}
         </div>
       );
       if (step === 'forgot') return root(
@@ -528,13 +823,13 @@
               {held ? <button type="button" className="si-link" onClick={forgetStaff}>Not you?</button> : null}
             </div>
             <div className="si-input">
-              <input id="si-id" name="username" autoComplete="username" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoFocus={!held} value={idInput} onChange={e => { setIdInput(e.target.value); setErr(''); setBadPw(false); }} />
+              <input id="si-id" name="username" autoComplete="username" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoFocus={!held} value={idInput} onFocus={keepSignInInView} onChange={e => { setIdInput(e.target.value); setErr(''); setBadPw(false); }} />
             </div>
           </div>
           <div className="si-field">
             <label htmlFor="si-pw">Password</label>
             <div className={'si-input' + (badPw ? ' is-err' : '')}>
-              <input id="si-pw" name="password" type={showPw ? 'text' : 'password'} autoComplete="current-password" autoFocus={!!held} value={pw} onChange={e => { setPw(e.target.value); setErr(''); setBadPw(false); setGaveUp(false); }} />
+              <input id="si-pw" name="password" type={showPw ? 'text' : 'password'} autoComplete="current-password" autoFocus={!!held} value={pw} onFocus={keepSignInInView} onChange={e => { setPw(e.target.value); setErr(''); setBadPw(false); setGaveUp(false); }} />
               {eye(showPw)}
             </div>
             {badPw && <p className="si-err" role="alert">{err}</p>}

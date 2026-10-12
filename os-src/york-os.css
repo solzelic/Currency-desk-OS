@@ -3090,12 +3090,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
 }
 
-/* Shop sign-in on a phone. Only .si-phone, only under 430px, so the
-   desktop sign-in is not in this cascade. Green is --brand-green:
-   --brand-primary follows data-app. The face is --font-ui. At this
-   width tokens.css sets that to Inter. Wider than 430px it stays
-   Archivo, and this block does not apply. */
-@media (max-width: 430px) {
+/* Shop sign-in on a phone. Only .si-phone, so the desktop sign-in is
+   not in this cascade. The query matches PHONE_Q in cdos-signin.jsx:
+   under 430px, or a phone on its side (at most 932px wide and 430px
+   tall). A 1280 desk stays on Archivo and the wide card.
+   Green is --brand-green: --brand-primary follows data-app. The face
+   is --font-ui. At max-width 430px tokens.css sets that to Inter.
+   color-scheme stays light. The dark desk flips #lock to a night
+   gradient and light ink; this screen pins the light tokens so the
+   error, the links, and the grey text stay at or above 4.5:1. */
+@media (max-width: 430px), (max-width: 932px) and (max-height: 430px) and (orientation: landscape) {
   #lock.si-phone {
     box-sizing: border-box;
     display: flex;
@@ -3106,13 +3110,38 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--color-text);
     font-family: var(--font-ui);
     overflow: auto;
+    color-scheme: light;
   }
-  #lock.si-phone::before { content: none; }
+  /* Wins over html[data-cdtheme="dark"] #lock, which is the night
+     gradient. The tokens below are the light set from tokens.css.
+     #B42318, #1F6B47, and #6B6760 are the error, the link, and the
+     grey, each at least 4.5:1 on #F7F6F3. */
+  html[data-cdtheme="dark"] #lock.si-phone {
+    background: #F7F6F3;
+    color: #161513;
+    color-scheme: light;
+    --color-bg: #F7F6F3;
+    --color-surface: #FFFFFF;
+    --color-text: #161513;
+    --color-text-muted: #6B6760;
+    --color-negative: #B42318;
+    --brand-green: #1F6B47;
+    --brand-on-primary: #FFFFFF;
+    --gray-700: #3D3A35;
+    --gray-300: #C9C5BC;
+    --gray-200: #E2DFD8;
+    --color-border: #E2DFD8;
+    --color-focus: #1E5AA8;
+  }
+  #lock.si-phone::before,
+  html[data-cdtheme="dark"] #lock.si-phone::before { content: none; background: none; }
   #lock.si-phone * { box-sizing: border-box; }
   #lock.si-phone .si-col {
     display: flex;
     flex-direction: column;
-    flex: 1 1 auto;
+    /* Grow to fill a tall phone. Do not shrink on a short one: that
+       is what pulled Sign in under 52px when the keyboard was open. */
+    flex: 1 0 auto;
     min-height: 100%;
     width: 100%;
     margin: 0;
@@ -3157,7 +3186,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     align-items: center;
     padding: 0 var(--space-3);
   }
-  #lock.si-phone .si-input:focus-within:not(.is-err) {
+  /* The ring is for the keyboard. A pointer focus does not draw it.
+     :focus-within would, including a script focus after Sign in. */
+  #lock.si-phone .si-input:has(input:focus-visible):not(.is-err) {
     border: 2px solid var(--color-focus);
     padding: 0 11px;
   }
@@ -3192,7 +3223,10 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
     height: 52px;
+    min-height: 52px;
+    flex: 0 0 auto;
     width: 100%;
     margin-top: var(--space-2);
     border: 0;
@@ -3201,6 +3235,20 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: var(--brand-on-primary);
     font: var(--text-title-3);
     cursor: pointer;
+    scroll-margin-bottom: var(--space-4);
+  }
+  #lock.si-phone .si-go:focus,
+  #lock.si-phone .si-link:focus,
+  #lock.si-phone .si-back:focus,
+  #lock.si-phone .si-eye:focus,
+  #lock.si-phone .si-foot button:focus { outline: none; }
+  #lock.si-phone .si-go:focus-visible,
+  #lock.si-phone .si-link:focus-visible,
+  #lock.si-phone .si-back:focus-visible,
+  #lock.si-phone .si-eye:focus-visible,
+  #lock.si-phone .si-foot button:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
   }
   #lock.si-phone .si-go:disabled {
     background: var(--gray-300);
@@ -3237,7 +3285,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   #lock.si-phone .si-err {
     margin: var(--space-1) 0 0;
-    font: var(--text-caption);
+    /* 14px. The caption token is 12px, which is too small for the
+       sentence that says the code was wrong. */
+    font: var(--text-small);
     color: var(--color-negative);
   }
   #lock.si-phone .si-hint {
@@ -3323,7 +3373,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     outline: none;
     box-shadow: none;
   }
-  #lock.si-phone .si-code i.cur { box-shadow: 0 0 0 2px var(--color-focus); }
+  /* The active box is the focus ring. It follows :focus-visible, so a
+     click that does not ask for a ring leaves the box as a plain border. */
+  #lock.si-phone .si-code:has(.si-code-input:focus-visible) i.cur { box-shadow: 0 0 0 2px var(--color-focus); }
   #lock.si-phone .si-code.is-err i { border: 2px solid var(--color-negative); box-shadow: none; }
   #lock.si-phone .si-code-input,
   #lock.si-phone .si-code-input:focus,
