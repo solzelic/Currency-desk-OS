@@ -548,10 +548,13 @@ password field and Next. `data-pin-step` is the step number.
 
 `os-src/phone/toast.jsx`. One line, portaled to `document.body`,
 `role="status"`. It sits at the bottom, 16px above the sticky action,
-inset 16px. The face is `--gray-900`, white 14/20, `--radius-md`.
-It leaves after 4 seconds and calls `onDone`. The timer follows the
-text, not the callback, so a parent re-render does not keep it on
-screen.
+or 16px above the tab bar when the screen has no sticky action. It
+is inset 16px from the screen edges. The face is `--gray-900`, white
+14/20 (`--text-small` on `--gray-0`), and `--radius-md`.
+`actionLabel` and `onAction` are optional. The action is a white
+weight-600 text button. It leaves after 4 seconds and calls `onDone`.
+The timer follows the text, not the callback, so a parent re-render
+does not keep it on screen.
 
 FullScreenSheet is one of those. When a screen builds it, the sheet
 is a `Phone.TaskSheet`. Do not give it a second full-screen treatment.
