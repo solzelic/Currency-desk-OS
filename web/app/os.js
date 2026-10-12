@@ -58833,7 +58833,6 @@ ${snap}`;
     const [locked, setLocked] = useState(false);
     const [lockUntil, setLockUntil] = useState('');
     const [lockAt, setLockAt] = useState(0);
-    const [lockZone, setLockZone] = useState('');
     const sending = useRef(false);
     useEffect(() => {
       if (cool <= 0) return;
@@ -58850,7 +58849,6 @@ ${snap}`;
         setLocked(false);
         setLockUntil('');
         setLockAt(0);
-        setLockZone('');
       };
       tick();
       const t = setInterval(tick, 1000);
@@ -58862,7 +58860,6 @@ ${snap}`;
       const at = typeof d.retryAt === 'string' ? Date.parse(d.retryAt) : NaN;
       setLocked(true);
       setLockUntil(typeof d.until === 'string' ? d.until : '');
-      setLockZone(typeof d.timeZone === 'string' ? d.timeZone : '');
       setLockAt(Number.isFinite(at) ? at : 0);
       setErr('');
       return true;
@@ -58871,22 +58868,9 @@ ${snap}`;
       setLocked(false);
       setLockUntil('');
       setLockAt(0);
-      setLockZone('');
     };
-    const zoneLabel = timeZone => {
-      if (!timeZone) return '';
-      try {
-        const parts = new Intl.DateTimeFormat('en-US', {
-          timeZone,
-          timeZoneName: 'short'
-        }).formatToParts(new Date());
-        const name = parts.find(part => part.type === 'timeZoneName');
-        return name && name.value ? name.value : '';
-      } catch (e) {
-        return '';
-      }
-    };
-    const lockSentence = !locked ? '' : !lockUntil ? 'Too many tries. Try again in a few minutes.' : zoneLabel(lockZone) ? 'Too many tries. Try again at ' + lockUntil + ' (' + zoneLabel(lockZone) + ').' : 'Too many tries. Try again at ' + lockUntil + '.';
+    /* The hour is the shop's own clock. Naming the zone repeats it. */
+    const lockSentence = !locked ? '' : !lockUntil ? 'Too many tries. Try again in a few minutes.' : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = raw => {
@@ -59688,9 +59672,40 @@ ${snap}`;
         disabled: busy || locked || cool > 0 || pw.length < 4,
         style: {
           ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4),
-          marginTop: 16
+          marginTop: 16,
+          ...(locked ? {
+            textTransform: 'none',
+            letterSpacing: 0,
+            fontFamily: 'Archivo, system-ui, sans-serif',
+            fontSize: 15
+          } : {})
         }
-      }, busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
+      }, busy ? 'Checking…' : locked ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8
+        }
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "16",
+        height: "16",
+        "aria-hidden": "true",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }, /*#__PURE__*/React.createElement("rect", {
+        width: "18",
+        height: "11",
+        x: "3",
+        y: "11",
+        rx: "2"
+      }), /*#__PURE__*/React.createElement("path", {
+        d: "M7 11V7a5 5 0 0 1 10 0v4"
+      })), "Sign in") : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'), idInput.indexOf('@') >= 0 && !locked && /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 11.5,

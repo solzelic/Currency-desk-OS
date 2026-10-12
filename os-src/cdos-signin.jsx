@@ -114,7 +114,6 @@
     const [locked, setLocked] = useState(false);
     const [lockUntil, setLockUntil] = useState('');
     const [lockAt, setLockAt] = useState(0);
-    const [lockZone, setLockZone] = useState('');
     const sending = useRef(false);
     useEffect(() => {
       if (cool <= 0) return;
@@ -131,7 +130,6 @@
         setLocked(false);
         setLockUntil('');
         setLockAt(0);
-        setLockZone('');
       };
       tick();
       const t = setInterval(tick, 1000);
@@ -143,25 +141,15 @@
       const at = typeof d.retryAt === 'string' ? Date.parse(d.retryAt) : NaN;
       setLocked(true);
       setLockUntil(typeof d.until === 'string' ? d.until : '');
-      setLockZone(typeof d.timeZone === 'string' ? d.timeZone : '');
       setLockAt(Number.isFinite(at) ? at : 0);
       setErr('');
       return true;
     };
-    const clearLock = () => { setLocked(false); setLockUntil(''); setLockAt(0); setLockZone(''); };
-    const zoneLabel = (timeZone) => {
-      if (!timeZone) return '';
-      try {
-        const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(new Date());
-        const name = parts.find(part => part.type === 'timeZoneName');
-        return name && name.value ? name.value : '';
-      } catch (e) { return ''; }
-    };
+    const clearLock = () => { setLocked(false); setLockUntil(''); setLockAt(0); };
+    /* The hour is the shop's own clock. Naming the zone repeats it. */
     const lockSentence = !locked ? ''
       : !lockUntil ? 'Too many tries. Try again in a few minutes.'
-      : zoneLabel(lockZone)
-        ? 'Too many tries. Try again at ' + lockUntil + ' (' + zoneLabel(lockZone) + ').'
-        : 'Too many tries. Try again at ' + lockUntil + '.';
+      : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
@@ -450,8 +438,8 @@
         </div>
         {locked && <div style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--si-ink)', marginTop: 16, lineHeight: 1.35 }}>{lockSentence}</div>}
         {err && !locked && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy || locked || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4), marginTop: 16 }}>
-          {busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
+        <button type="submit" disabled={busy || locked || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && !locked && cool === 0 && pw.length >= 4), marginTop: 16, ...(locked ? { textTransform: 'none', letterSpacing: 0, fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15 } : {}) }}>
+          {busy ? 'Checking…' : locked ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sign in</span> : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
         {/* A staff id with no @ has nowhere to send a code. Saying we
             will email one tells them the wrong next step, and it is
             worse on a lock, where the button is not going to send. */}

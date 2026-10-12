@@ -5,13 +5,14 @@
    not sign in as a seeded teller. A second run of the suite gets a
    fresh in-memory database, so these five do not pile onto a later run.
 
-   The button stays "Send my code" and comes back when the server's
-   lock time passes. The sentence names that time in the branch zone.
+   While the lock holds, the button reads Sign in and is disabled.
+   It comes back as Send my code when the server's lock time passes.
+   The sentence names that time once, without a zone label.
    A 503 is intercepted, so it does not spend a guess. */
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 
-const SENTENCE = /Too many tries\. Try again at \d{1,2}:\d{2} (AM|PM) \([^)]+\)\./;
+const SENTENCE = /Too many tries\. Try again at \d{1,2}:\d{2} (AM|PM)\./;
 
 async function contrastAgainstWhite(page: Page, text: RegExp): Promise<number> {
   return page.getByText(text).evaluate((el) => {
@@ -57,17 +58,22 @@ test.describe("locked sign-in", () => {
       const status = page.getByText(SENTENCE);
       await expect(status).toBeVisible();
       expect(await contrastAgainstWhite(page, SENTENCE)).toBeGreaterThanOrEqual(4.5);
-      await expect(send).toBeDisabled();
+      const signIn = page.getByRole("button", { name: "Sign in" });
+      await expect(signIn).toBeDisabled();
+      await expect(signIn.locator("svg")).toBeVisible();
+      await expect(page.getByRole("button", { name: /send my code/i })).toHaveCount(0);
       await expect(page.getByRole("button", { name: /^locked$/i })).toHaveCount(0);
       await expect(page.getByText(/Another code/)).toHaveCount(0);
+      await expect(page.getByText(/\((EDT|EST|AM|PM)\)/)).toHaveCount(0);
       await expect(page.getByText("We'll email a fresh code to confirm it's you.")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Send yourself a reset code" })).toBeVisible();
       for (const name of ["not you?", "Send yourself a reset code", "SHOW"]) {
         const box = await page.getByRole("button", { name }).boundingBox();
         expect(box?.height ?? 0, name).toBeGreaterThanOrEqual(44);
       }
 
       await page.clock.fastForward(16 * 60 * 1000);
-      await expect(send).toBeEnabled();
+      await expect(page.getByRole("button", { name: /send my code/i })).toBeEnabled();
     });
   }
 
@@ -82,7 +88,8 @@ test.describe("locked sign-in", () => {
     await page.locator('input[type="password"]').fill("wrong-password-lock");
     await page.getByRole("button", { name: /send my code/i }).click();
     await expect(page.getByText("Too many tries. Try again in a few minutes.")).toBeVisible();
-    await expect(page.getByRole("button", { name: /^locked$/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /send my code/i })).toHaveCount(0);
   });
 
   test("a 503 says sign-in is having trouble", async ({ page }) => {
