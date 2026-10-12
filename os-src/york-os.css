@@ -2968,6 +2968,23 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     letter-spacing: 0 !important;
     text-transform: none !important;
   }
+  /* The customer rate is the full unrounded figure. On a phone that
+     string is wider than the row, and a wrap drops the swap off the
+     line it is supposed to sit on. The rate field below still shows
+     every place. */
+  .cd-tx-rate-line {
+    flex-wrap: nowrap !important;
+  }
+  .cd-tx-rate-line > .cd-tx-side,
+  .cd-tx-rate-line > .cd-tx-swap {
+    flex: none;
+  }
+  .cd-tx-rate-line > .cd-tx-kicker {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .cd-tx-check-go {
     display: flex;
     flex-direction: column;

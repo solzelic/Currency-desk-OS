@@ -53,6 +53,94 @@ async function openNewTransaction(page: Page): Promise<void> {
   await dismissTour(page);
 }
 
+/* The rest of the suite republishes York's board (a 2% margin is
+   enough to move 3,500 USD from 4,702.63 to 4,678.76). This test pins
+   the board the cashier actually misread, then puts the previous
+   publication back. */
+type BoardSnap = {
+  buyMargin: number;
+  sellMargin: number;
+  rows: Record<string, { mid: number; show?: boolean; spread?: number }>;
+  order?: string[];
+};
+
+function cleanRows(
+  rows: Record<string, { mid: number; show?: boolean; spread?: number }>,
+  usdMid?: number,
+): Record<string, { mid: number; show: boolean; spread?: number }> {
+  const out: Record<string, { mid: number; show: boolean; spread?: number }> = {};
+  for (const [code, row] of Object.entries(rows)) {
+    const clean: { mid: number; show: boolean; spread?: number } = {
+      mid: code === "USD" && usdMid != null ? usdMid : Number(row.mid),
+      show: row.show !== false,
+    };
+    if (row.spread != null) clean.spread = Number(row.spread);
+    out[code] = clean;
+  }
+  if (usdMid != null && !out.USD) out.USD = { mid: usdMid, show: true };
+  return out;
+}
+
+async function publishBoard(
+  page: Page,
+  board: { buyMargin: number; sellMargin: number; rows: Record<string, { mid: number; show?: boolean; spread?: number }>; order?: string[] },
+  usdMid?: number,
+): Promise<{ status: number; body: string }> {
+  return page.evaluate(async (payload) => {
+    const res = await fetch("/api/rates/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { status: res.status, body: await res.text() };
+  }, {
+    buyMargin: board.buyMargin,
+    sellMargin: board.sellMargin,
+    rows: cleanRows(board.rows, usdMid),
+    ...(board.order ? { order: board.order } : {}),
+  });
+}
+
+let boardBefore: BoardSnap | null = null;
+
+async function pinQaBoard(page: Page): Promise<void> {
+  const current = await page.evaluate(async () => {
+    const res = await fetch("/api/rates");
+    return { status: res.status, body: await res.json() };
+  });
+  expect(current.status, "board before the deal").toBe(200);
+  expect(current.body.board?.rows?.USD?.mid, "York has no USD mid").toBeTruthy();
+  boardBefore = {
+    buyMargin: current.body.board.buyMargin,
+    sellMargin: current.body.board.sellMargin,
+    rows: current.body.board.rows,
+    order: current.body.board.order,
+  };
+  const published = await publishBoard(page, {
+    buyMargin: 0.015,
+    sellMargin: 0.015,
+    rows: boardBefore.rows,
+    order: boardBefore.order,
+  }, 1.36407);
+  expect(published.status, published.body).toBe(200);
+}
+
+async function restoreBoard(page: Page): Promise<void> {
+  if (!boardBefore) return;
+  const saved = boardBefore;
+  boardBefore = null;
+  await page.evaluate(async () => {
+    const login = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ staffId: "r.haddad", password: "yorkville", tenantId: "tnt-yorkfx" }),
+    });
+    if (!login.ok) throw new Error("restore login " + login.status);
+  });
+  const restored = await publishBoard(page, saved);
+  expect(restored.status, restored.body).toBe(200);
+}
+
 async function quoteUsdToCad(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
   await page.addInitScript(() => {
@@ -77,6 +165,7 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
     return { status: res.status, body: await res.json().catch(() => ({})) };
   });
   expect([201, 409], `opening balances: ${JSON.stringify(funded)}`).toContain(funded.status);
+  await pinQaBoard(page);
   await signInAtDesk(page, "m.costa");
   await dismissTour(page);
   await openNewTransaction(page);
@@ -84,7 +173,8 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
     const raw = localStorage.getItem("yorkfx_rates_v1");
     if (!raw) return false;
     const board = JSON.parse(raw);
-    return !!(board.rows && board.rows.USD && board.rows.USD.mid);
+    const mid = board.rows && board.rows.USD && board.rows.USD.mid;
+    return typeof mid === "number" && Math.abs(mid - 1.36407) < 1e-9 && Math.abs(board.buyMargin - 0.015) < 1e-9;
   });
   await page.locator(".cd-tx-customer input").fill("Amina Diallo");
   await page.locator(".cd-money input").first().click();
@@ -120,25 +210,33 @@ async function quoteUsdToCad(page: Page, width: number): Promise<void> {
 }
 
 test("desktop Customer receives is the posted amount for USD 3,500", async ({ page }) => {
-  await quoteUsdToCad(page, 1280);
-  await openNewTransaction(page);
-  await page.locator(".cd-tx-customer input").fill("Amina Diallo");
-  await page.locator(".cd-money input").first().click();
-  await page.locator(".cd-money input").first().fill("3500");
-  await expect(page.locator(".cd-tx-side")).toContainText("We sell USD");
-  await expect(page.getByTestId("tx-receives")).toHaveText("2,527.36");
-  await page.locator(".cd-tx-purpose").fill("Personal travel");
-  await page.locator(".cd-tx-source").fill("Employment income");
-  await page.getByRole("button", { name: "Get server quote" }).click();
-  await expect(page.getByTestId("tx-frozen")).toContainText("2,527.36");
-  const postedWait = page.waitForResponse((res) => res.url().includes("/api/quotes/") && res.url().endsWith("/post") && res.request().method() === "POST");
-  await page.getByRole("button", { name: "Post frozen quote" }).click();
-  const sellRes = await postedWait;
-  const sellPosted = await sellRes.json();
-  expect(sellRes.status(), JSON.stringify(sellPosted)).toBe(201);
-  expect(sellPosted.outputAmount).toBe("2527.36");
+  try {
+    await quoteUsdToCad(page, 1280);
+    await openNewTransaction(page);
+    await page.locator(".cd-tx-customer input").fill("Amina Diallo");
+    await page.locator(".cd-money input").first().click();
+    await page.locator(".cd-money input").first().fill("3500");
+    await expect(page.locator(".cd-tx-side")).toContainText("We sell USD");
+    await expect(page.getByTestId("tx-receives")).toHaveText("2,527.36");
+    await page.locator(".cd-tx-purpose").fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+    await page.getByRole("button", { name: "Get server quote" }).click();
+    await expect(page.getByTestId("tx-frozen")).toContainText("2,527.36");
+    const postedWait = page.waitForResponse((res) => res.url().includes("/api/quotes/") && res.url().endsWith("/post") && res.request().method() === "POST");
+    await page.getByRole("button", { name: "Post frozen quote" }).click();
+    const sellRes = await postedWait;
+    const sellPosted = await sellRes.json();
+    expect(sellRes.status(), JSON.stringify(sellPosted)).toBe(201);
+    expect(sellPosted.outputAmount).toBe("2527.36");
+  } finally {
+    await restoreBoard(page);
+  }
 });
 
 test("phone Customer receives is the posted amount for USD 3,500", async ({ page }) => {
-  await quoteUsdToCad(page, 390);
+  try {
+    await quoteUsdToCad(page, 390);
+  } finally {
+    await restoreBoard(page);
+  }
 });
