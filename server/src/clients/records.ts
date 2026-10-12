@@ -52,9 +52,18 @@
    examiner reconstructs a customer and they used to live in one browser.
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import type pg from "pg";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
+
+const require = createRequire(import.meta.url);
+const healthCardAliases = require("../../../os-src/health-card-aliases.js") as {
+  maskNotAcceptedNumber: (value: unknown) => string;
+};
+const ID_DOCUMENT_TYPES = (require("../ledger/id-document-types.mjs") as {
+  ID_DOCUMENT_TYPES: { name: string; accepted: boolean }[];
+}).ID_DOCUMENT_TYPES;
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -98,9 +107,143 @@ export type DocumentInput = {
   isPrimary?: boolean;
   /* A data URL, already through `intakeIdImage` in the browser. Optional
      — a desk that has typed a passport number but not photographed the
-     page has still recorded something worth keeping. */
+     page has still recorded something worth keeping. A photo is not a
+     substitute for the number. */
   scanDataUrl?: string | null;
+  /* Who typed the ID. The only value that may create or change the
+     type or the number is "staff". It is not a column: existing rows
+     stay as they are, and a scan or a generated value is refused at
+     the door rather than stored and explained later. */
+  source?: string | null;
 };
+
+/* The sentence a teller sees. One wording, on the service and on the
+   route, so a 422 and a thrown error say the same thing. */
+export const ID_STAFF_MESSAGE =
+  "Type the ID type and number yourself. ID scanning is not connected, so a record with no staff entry is refused.";
+
+export const ID_TYPE_NOT_IN_CATALOGUE_MESSAGE =
+  "That ID type is not one this desk accepts. Pick a type from the list.";
+
+function catalogueKey(value: unknown): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function catalogueRow(value: unknown) {
+  const key = catalogueKey(value);
+  if (!key) return null;
+  return ID_DOCUMENT_TYPES.find((row) => row.name.toLowerCase() === key) ?? null;
+}
+
+/* A type the catalogue does not name cannot be saved. Health-card
+   aliases are outside that list on purpose. "Not stated" stays the
+   staff-entry refusal, handled before this runs. */
+export function assertCatalogueIdType(docType: string | null | undefined): void {
+  const key = catalogueKey(docType);
+  if (!key || key === "not stated") return;
+  if (!catalogueRow(key)) {
+    throw new LedgerError("ID_TYPE_NOT_IN_CATALOGUE", ID_TYPE_NOT_IN_CATALOGUE_MESSAGE);
+  }
+}
+
+/* A number the desk must not show in full. Unknown types and the
+   health-card row are masked. The column keeps the typed value. */
+export function documentNumberForDesk(docType: unknown, docNumber: unknown): string | null {
+  if (docNumber == null) return null;
+  const raw = String(docNumber);
+  if (!raw.trim()) return "";
+  const row = catalogueRow(docType);
+  const mask = !catalogueKey(docType) ? false : !row || row.accepted === false;
+  if (!mask) return raw;
+  return healthCardAliases.maskNotAcceptedNumber(raw);
+}
+
+/* A new identity document. Type and number are both required, and the
+   caller has to say a person typed them. "Not stated" is the old
+   placeholder for a row opened before anyone had read the document. */
+export function assertStaffEnteredId(input: {
+  docType?: string | null;
+  docNumber?: string | null;
+  source?: string | null;
+}): void {
+  const type = String(input.docType ?? "").trim();
+  const number = String(input.docNumber ?? "").trim();
+  if (!type || type === "Not stated" || !number || input.source !== "staff") {
+    throw new LedgerError("ID_NOT_STAFF_ENTERED", ID_STAFF_MESSAGE);
+  }
+  assertCatalogueIdType(type);
+}
+
+/* A change to a document that already exists. Expiry, issue date and a
+   photo may be edited on their own — the number is already on the row.
+   Changing the type or the number is the same act as creating one, and
+   blanking either is refused. Existing rows are not rewritten. */
+export function assertStaffIdChange(input: {
+  docType?: string | null;
+  docNumber?: string | null;
+  source?: string | null;
+}): void {
+  if (input.source !== undefined && input.source !== "staff") {
+    throw new LedgerError("ID_NOT_STAFF_ENTERED", ID_STAFF_MESSAGE);
+  }
+  const touchesType = input.docType !== undefined;
+  const touchesNumber = input.docNumber !== undefined;
+  if (!touchesType && !touchesNumber) return;
+  if (input.source !== "staff") {
+    throw new LedgerError("ID_NOT_STAFF_ENTERED", ID_STAFF_MESSAGE);
+  }
+  if (touchesType) {
+    const type = String(input.docType ?? "").trim();
+    if (!type || type === "Not stated") {
+      throw new LedgerError("ID_NOT_STAFF_ENTERED", ID_STAFF_MESSAGE);
+    }
+    assertCatalogueIdType(type);
+  }
+  if (touchesNumber && !String(input.docNumber ?? "").trim()) {
+    throw new LedgerError("ID_NOT_STAFF_ENTERED", ID_STAFF_MESSAGE);
+  }
+}
+
+/* A file's standing is not a field a request gets to set. Identified
+   follows from a numbered identity document a person typed. Verified,
+   and a screening outcome of clear, follow from an approved provider
+   result — and no provider is connected. */
+export const STATUS_NOT_CLIENT_MESSAGE =
+  "Verification status and screening outcome are not taken from the request. A file is identified only when a staff-entered ID is on it. Verified and clear come only from an approved provider result, and no provider is connected.";
+
+export type DerivedStanding = {
+  verificationStatus: "unverified" | "identified" | "expired";
+  screeningOutcome: null;
+  screeningMatched: null;
+};
+
+/* A file that has just been opened has no identity document, and no
+   provider has been asked. This is the only standing a create may echo. */
+export const OPEN_FILE_STANDING: DerivedStanding = {
+  verificationStatus: "unverified",
+  screeningOutcome: null,
+  screeningMatched: null,
+};
+
+export function assertStandingNotClientSet(
+  sent: {
+    verificationStatus?: string;
+    screeningOutcome?: string | null;
+    screeningMatched?: string | null;
+  },
+  derived: DerivedStanding,
+): void {
+  const statusPresent = sent.verificationStatus !== undefined;
+  const outcomePresent = sent.screeningOutcome !== undefined;
+  const matchedPresent = sent.screeningMatched !== undefined;
+  if (!statusPresent && !outcomePresent && !matchedPresent) return;
+  const matched = sent.screeningMatched == null ? null : sent.screeningMatched.trim() || null;
+  const differs =
+    (statusPresent && sent.verificationStatus !== derived.verificationStatus) ||
+    (outcomePresent && (sent.screeningOutcome ?? null) !== derived.screeningOutcome) ||
+    (matchedPresent && matched !== derived.screeningMatched);
+  if (differs) throw new LedgerError("STATUS_NOT_CLIENT_SET", STATUS_NOT_CLIENT_MESSAGE);
+}
 
 /* The columns a caller may set, and what they are called on the row.
    Spelled out rather than derived, so that adding a column to the table
@@ -119,9 +262,10 @@ const CLIENT_COLUMNS = {
   occupation: "occupation",
   notes: "notes",
   riskRating: "risk_rating",
-  verificationStatus: "verification_status",
-  screeningOutcome: "screening_outcome",
-  screeningMatched: "screening_matched",
+  /* verification_status, screening_outcome and screening_matched are
+     not here. A request does not get to write them. refreshVerification
+     sets the first from the documents on file, and a provider result —
+     none today — is the only thing that may say verified or clear. */
   incorporationDate: "incorporation_date",
   incorporationJurisdiction: "incorporation_jurisdiction",
   natureOfBusiness: "nature_of_business",
@@ -398,9 +542,11 @@ export class ClientRecordService {
           blank(input.occupation),
           blank(input.notes),
           input.riskRating ?? "normal",
-          input.verificationStatus ?? "unverified",
-          blank(input.screeningOutcome),
-          blank(input.screeningMatched),
+          /* Never the caller's word. A new file has no document and no
+             provider result, so it is unverified and unscreened. */
+          "unverified",
+          null,
+          null,
           blank(input.incorporationDate),
           blank(input.incorporationJurisdiction),
           blank(input.natureOfBusiness),
@@ -557,6 +703,7 @@ export class ClientRecordService {
         [clientId, ...entityScope(actor)],
       );
       if (!owned.rowCount) throw notFound();
+      assertStaffEnteredId(input);
       const documentId = `doc_${randomUUID()}`;
       /* Exactly one document drives the desk's KYC standing. The old
          shape let a top-level "primary" ID and an array entry both claim
@@ -596,7 +743,7 @@ export class ClientRecordService {
         actor,
         "client.document.add",
         clientId,
-        `${input.docType.trim()}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
+        `${input.docType.trim()} · staff entered${input.scanDataUrl ? " · scan attached" : " · no scan"}`,
       );
       await this.refreshVerification(client, clientId);
       await this.syncCounterRecord(client, actor, clientId);
@@ -619,6 +766,7 @@ export class ClientRecordService {
         [documentId, clientId, ...entityScope(actor)],
       );
       if (!found.rowCount) throw documentNotFound();
+      assertStaffIdChange(input);
       const columns: Record<string, unknown> = {};
       if (input.docType !== undefined) columns.doc_type = input.docType.trim();
       if (input.docNumber !== undefined) columns.doc_number = blank(input.docNumber);
@@ -1142,6 +1290,44 @@ export class ClientRecordService {
   }
 
   /**
+   * The standing a request is allowed to echo.
+   *
+   * Identified only when a numbered identity document is on the file.
+   * The primary document past its expiry is expired. Anything else is
+   * unverified. Never verified, and never a screening result: those
+   * come from a provider, and none is connected. A row that already
+   * says verified is not what this returns — the caller may not
+   * reaffirm it.
+   */
+  async derivedStanding(actor: LedgerActor, clientId: string): Promise<DerivedStanding> {
+    return this.inTransaction(actor, "customer:view", async (client) => {
+      const found = await client.query(
+        `SELECT CASE
+           WHEN NOT EXISTS (
+             SELECT 1 FROM desk_client_identity_documents d
+              WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'') <> ''
+           ) THEN 'unverified'
+           WHEN EXISTS (
+             SELECT 1 FROM desk_client_identity_documents d
+              WHERE d.client_id=c.client_id AND d.is_primary
+                AND d.expires_on IS NOT NULL AND d.expires_on < current_date
+           ) THEN 'expired'
+           ELSE 'identified'
+         END AS verification_status
+         FROM desk_clients c
+         WHERE c.client_id=$1 AND c.tenant_id=$2 AND c.legal_entity_id=$3`,
+        [clientId, ...entityScope(actor)],
+      );
+      if (!found.rowCount) throw notFound();
+      const status = found.rows[0]!.verification_status;
+      if (status !== "unverified" && status !== "identified" && status !== "expired") {
+        throw new LedgerError("STATUS_NOT_CLIENT_SET", STATUS_NOT_CLIENT_MESSAGE);
+      }
+      return { verificationStatus: status, screeningOutcome: null, screeningMatched: null };
+    });
+  }
+
+  /**
    * What the papers on file now say about this identity.
    *
    * Derived from the documents rather than typed, because a status
@@ -1150,10 +1336,11 @@ export class ClientRecordService {
    * for exactly that reason, and then only in the browser.
    *
    * `verified` is never touched here. It means a provider authenticated
-   * the document and was paid to do it; no amount of adding and removing
-   * rows in this table can grant that, and nothing here may quietly take
-   * it away either. The three states this DOES own are the ones that
-   * follow mechanically from what the desk is holding.
+   * the document, and no provider is connected, so nothing in this
+   * table can grant it. A row that already says verified is left as it
+   * is: cleaning one up is the owner's decision, not a side effect of
+   * saving a document. The three states this DOES own are the ones that
+   * follow from a numbered identity document on the file.
    */
   private async refreshVerification(client: pg.PoolClient, clientId: string) {
     await client.query(
@@ -1330,7 +1517,7 @@ function clientJson(
     documents: documents.map((document) => ({
       documentId: document.document_id,
       docType: document.doc_type,
-      docNumber: document.doc_number ?? null,
+      docNumber: documentNumberForDesk(document.doc_type, document.doc_number),
       issuingJurisdiction: document.issuing_jurisdiction ?? null,
       issuedOn: isoDate(document.issued_on),
       expiresOn: isoDate(document.expires_on),

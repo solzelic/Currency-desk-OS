@@ -32,7 +32,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { ClientRecordService } from "../src/clients/records.js";
+import { ClientRecordService, ID_STAFF_MESSAGE, ID_TYPE_NOT_IN_CATALOGUE_MESSAGE, STATUS_NOT_CLIENT_MESSAGE } from "../src/clients/records.js";
 import { CLASSIFICATION, IDENTIFYING_FIELDS, signalView } from "../src/clients/classification.js";
 import type { LedgerActor } from "../src/ledger/service.js";
 
@@ -234,6 +234,8 @@ postgres("the desk's customer file, on the server", () => {
   it("files a supporting paper on the customer without treating it as identification", async () => {
     const made = await records.create(TILL_1, { legalName: "Priya Raman" });
     expect(made.verificationStatus).toBe("unverified");
+    expect(made.screeningOutcome).toBeNull();
+    expect(made.screeningMatched).toBeNull();
     expect(made.files).toEqual([]);
 
     const saved = await records.addSupportingFile(TILL_1, made.clientId as string, {
@@ -374,11 +376,13 @@ postgres("the desk's customer file, on the server", () => {
       issuingJurisdiction: "Portugal",
       expiresOn: "2031-08-14",
       scanDataUrl: SCAN,
+      source: "staff",
     });
     const withBoth = await records.addDocument(TILL_1, clientId, {
       docType: "PR Card",
       docNumber: "PR-88120",
       expiresOn: "2029-01-31",
+      source: "staff",
     });
 
     expect(withBoth.documents).toHaveLength(2);
@@ -409,6 +413,7 @@ postgres("the desk's customer file, on the server", () => {
       docType: "Passport",
       docNumber: "CZ-9910",
       scanDataUrl: SCAN,
+      source: "staff",
     });
     const documentId = withDoc.documents[0]!.documentId as string;
 
@@ -454,6 +459,7 @@ postgres("the desk's customer file, on the server", () => {
       docType: "Driver's Licence",
       docNumber: "D-5512",
       scanDataUrl: SCAN,
+      source: "staff",
     });
 
     /* Neither the list nor the record carries a scan. If either did, the
@@ -469,6 +475,7 @@ postgres("the desk's customer file, on the server", () => {
     const typedOnly = await records.addDocument(TILL_1, clientId, {
       docType: "Health Card",
       docNumber: "H-1",
+      source: "staff",
     });
     const bare = typedOnly.documents.find((d) => d.docType === "Health Card")!;
     await expect(
@@ -489,7 +496,12 @@ postgres("the desk's customer file, on the server", () => {
     const made = await records.create(TILL_1, { legalName: "Sofia Marchetti" });
     const clientId = made.clientId as string;
     await records.setPhotograph(TILL_1, clientId, SCAN);
-    await records.addDocument(TILL_1, clientId, { docType: "Passport", scanDataUrl: SCAN });
+    await records.addDocument(TILL_1, clientId, {
+      docType: "Passport",
+      docNumber: "P-100",
+      scanDataUrl: SCAN,
+      source: "staff",
+    });
 
     const record = await records.get(TILL_1, clientId);
     /* One photograph, one document, and the photograph is NOT in the
@@ -505,6 +517,109 @@ postgres("the desk's customer file, on the server", () => {
     );
     expect(held.rows.map((r) => r.purpose)).toEqual(["client_photograph", "identity_document"]);
     expect(held.rows[0]!.document_id).toBeNull();
+  });
+
+  /* An ID is what somebody typed off the document. A scan with no
+     number, a number with no staff source, and the old "Not stated"
+     placeholder are all refused. Nothing is written, so a row that
+     was already there is untouched. */
+  it("refuses an ID record that staff did not enter", async () => {
+    const made = await records.create(TILL_1, { legalName: "Nora Unfiled" });
+    const clientId = made.clientId as string;
+    const kept = await records.addDocument(TILL_1, clientId, {
+      docType: "Passport",
+      docNumber: "KEEP-1",
+      source: "staff",
+    });
+    expect(kept.documents).toHaveLength(1);
+
+    await expect(
+      records.addDocument(TILL_1, clientId, { docType: "Passport", scanDataUrl: SCAN }),
+    ).rejects.toMatchObject({ code: "ID_NOT_STAFF_ENTERED", message: ID_STAFF_MESSAGE });
+    await expect(
+      records.addDocument(TILL_1, clientId, { docType: "Passport", docNumber: "P-9" }),
+    ).rejects.toMatchObject({ code: "ID_NOT_STAFF_ENTERED" });
+    await expect(
+      records.addDocument(TILL_1, clientId, { docType: "Passport", docNumber: "P-9", source: "scan" }),
+    ).rejects.toMatchObject({ code: "ID_NOT_STAFF_ENTERED" });
+    await expect(
+      records.addDocument(TILL_1, clientId, { docType: "Not stated", docNumber: "P-9", source: "staff" }),
+    ).rejects.toMatchObject({ code: "ID_NOT_STAFF_ENTERED" });
+
+    const documentId = kept.documents[0]!.documentId as string;
+    await expect(
+      records.updateDocument(TILL_1, clientId, documentId, { docNumber: "" }),
+    ).rejects.toMatchObject({ code: "ID_NOT_STAFF_ENTERED" });
+    await expect(
+      records.updateDocument(TILL_1, clientId, documentId, { docNumber: "P-9", source: "generated" }),
+    ).rejects.toMatchObject({ code: "ID_NOT_STAFF_ENTERED" });
+
+    const after = await records.get(TILL_1, clientId);
+    expect(after.documents).toHaveLength(1);
+    expect(after.documents[0]!.docNumber).toBe("KEEP-1");
+  });
+
+  it("refuses a type outside the catalogue and masks a stored one on the read", async () => {
+    const made = await records.create(TILL_1, { legalName: "Sam Tremblay" });
+    const clientId = made.clientId as string;
+    const aliases = [
+      "Carte d'assurance maladie",
+      "BC Services Card",
+      "Ontario Health Insurance Plan",
+      "Medicare card",
+      "OHIP card",
+      "Library card",
+    ];
+    for (const alias of aliases) {
+      await expect(
+        records.addDocument(TILL_1, clientId, {
+          docType: alias,
+          docNumber: "SAMQ12345678",
+          source: "staff",
+          isPrimary: true,
+        }),
+      ).rejects.toMatchObject({
+        code: "ID_TYPE_NOT_IN_CATALOGUE",
+        message: ID_TYPE_NOT_IN_CATALOGUE_MESSAGE,
+      });
+    }
+    const passport = await records.addDocument(TILL_1, clientId, {
+      docType: "Passport",
+      docNumber: "P-12345",
+      source: "staff",
+      isPrimary: true,
+    });
+    expect(passport.documents.find((d) => d.docType === "Passport")!.docNumber).toBe("P-12345");
+
+    const health = await records.addDocument(TILL_1, clientId, {
+      docType: "Health Card",
+      docNumber: "SAMQ12345678",
+      source: "staff",
+      isPrimary: false,
+    });
+    const healthRow = health.documents.find((d) => d.docType === "Health Card")!;
+    expect(healthRow.docNumber).toBe("****5678");
+    const stored = await pool.query(
+      "SELECT doc_number FROM desk_client_identity_documents WHERE document_id=$1",
+      [healthRow.documentId],
+    );
+    expect(stored.rows[0]!.doc_number).toBe("SAMQ12345678");
+
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, is_primary)
+       VALUES ($1, $2, $3, $4, $5, $6, false)`,
+      [`doc-legacy-${clientId}`, clientId, TENANT, ENTITY, "Carte d'assurance maladie", "TRES12345678"],
+    );
+    const read = await records.get(TILL_1, clientId);
+    const legacy = read.documents.find((d) => d.docType === "Carte d'assurance maladie")!;
+    expect(legacy.docNumber).toBe("****5678");
+    expect(legacy.docNumber).not.toBe("TRES12345678");
+    const column = await pool.query(
+      "SELECT doc_number FROM desk_client_identity_documents WHERE document_id=$1",
+      [`doc-legacy-${clientId}`],
+    );
+    expect(column.rows[0]!.doc_number).toBe("TRES12345678");
   });
 
   /* ------------------------------------------------------------------
@@ -617,10 +732,200 @@ postgres("the desk's customer file, on the server", () => {
       payload: { legalName: "", dateOfBirth: "1985-13-45" },
     });
     expect(nonsense.statusCode).toBe(422);
-    expect(nonsense.json().message).toMatch(/legalName|dateOfBirth/);
+    const nonsenseBody = nonsense.body;
+    expect(nonsenseBody).not.toMatch(/Expected/);
+    expect(nonsenseBody).not.toMatch(/received/);
+    expect(nonsenseBody).not.toMatch(/Invalid/);
+    expect(nonsenseBody).not.toMatch(/String must/);
+    expect(nonsenseBody).not.toMatch(/Unrecognized key/);
+    expect(nonsenseBody).not.toContain("legalName:");
+    expect(nonsenseBody).not.toContain("dateOfBirth:");
+    expect(nonsense.json().message).toMatch(/Type something in that field/);
+    expect(nonsense.json().message).toMatch(/That is not a real date/);
+
+    const unknownField = await app.inject({
+      method: "POST",
+      url: "/api/clients",
+      cookies,
+      headers,
+      payload: { legalName: "Ada Lovelace", notAField: true },
+    });
+    expect(unknownField.statusCode).toBe(422);
+    expect(unknownField.body).not.toMatch(/Unrecognized key/);
+    expect(unknownField.json().message).toBe("That field is not one this desk saves.");
+
+    const badDocument = await app.inject({
+      method: "POST",
+      url: `/api/clients/${clientId}/documents`,
+      cookies,
+      headers,
+      payload: { docType: null, docNumber: "P-1", source: "staff" },
+    });
+    expect(badDocument.statusCode).toBe(422);
+    expect(badDocument.body).not.toMatch(/Expected/);
+    expect(badDocument.body).not.toMatch(/received/);
+    expect(badDocument.body).not.toContain("docType:");
 
     await pool.query("DELETE FROM ledger_customers WHERE client_id=$1", [clientId]);
     await pool.query("DELETE FROM desk_clients WHERE client_id=$1", [clientId]);
+  });
+
+  /* The standing on a file is the server's. A teller and an owner are
+     the same caller here: neither may name verified, identified, or
+     clear, with or without an identity document. */
+  for (const [role, staffId] of [
+    ["owner", "j.masri"],
+    ["teller", "m.costa"],
+  ] as const) {
+    it(`does not take verification or screening from a ${role}, with or without an ID`, async () => {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { staffId, password: DEMO.password },
+      });
+      expect(login.statusCode, login.body).toBe(200);
+      const cookies = {
+        cdos_session: login.cookies.find((c) => c.name === "cdos_session")!.value,
+      };
+      const headers = { "x-workspace-id": DEMO.workspaceId };
+      const tag = `${role}-${Date.now()}`;
+      const createdIds: string[] = [];
+      const forget = async () => {
+        for (const id of createdIds) {
+          await pool.query("DELETE FROM ledger_customers WHERE client_id=$1", [id]);
+          await pool.query("DELETE FROM desk_clients WHERE client_id=$1", [id]);
+        }
+      };
+
+      try {
+        const identified = await app.inject({
+          method: "POST",
+          url: "/api/clients",
+          cookies,
+          headers,
+          payload: { legalName: `${tag} identified`, verificationStatus: "identified" },
+        });
+        expect(identified.statusCode, identified.body).toBe(422);
+        expect(identified.json()).toMatchObject({
+          code: "STATUS_NOT_CLIENT_SET",
+          message: STATUS_NOT_CLIENT_MESSAGE,
+        });
+
+        const clear = await app.inject({
+          method: "POST",
+          url: "/api/clients",
+          cookies,
+          headers,
+          payload: {
+            legalName: `${tag} clear`,
+            screeningOutcome: "clear",
+            screeningMatched: "a list",
+          },
+        });
+        expect(clear.statusCode, clear.body).toBe(422);
+        expect(clear.json().code).toBe("STATUS_NOT_CLIENT_SET");
+
+        const opened = await app.inject({
+          method: "POST",
+          url: "/api/clients",
+          cookies,
+          headers,
+          payload: { legalName: `${tag} file`, verificationStatus: "unverified", screeningOutcome: null },
+        });
+        expect(opened.statusCode, opened.body).toBe(201);
+        const clientId = opened.json().clientId as string;
+        createdIds.push(clientId);
+        expect(opened.json().verificationStatus).toBe("unverified");
+        expect(opened.json().screeningOutcome).toBeNull();
+        expect(opened.json().screeningMatched).toBeNull();
+
+        const poisoned = await app.inject({
+          method: "PATCH",
+          url: `/api/clients/${clientId}`,
+          cookies,
+          headers,
+          payload: {
+            phone: "416-555-0199",
+            verificationStatus: "verified",
+            screeningOutcome: "clear",
+          },
+        });
+        expect(poisoned.statusCode, poisoned.body).toBe(422);
+        expect(poisoned.json().code).toBe("STATUS_NOT_CLIENT_SET");
+        const still = await app.inject({
+          method: "GET",
+          url: `/api/clients/${clientId}`,
+          cookies,
+          headers,
+        });
+        expect(still.statusCode).toBe(200);
+        expect(still.json().verificationStatus).toBe("unverified");
+        expect(still.json().screeningOutcome).toBeNull();
+        expect(still.json().phone).toBeNull();
+
+        const documented = await app.inject({
+          method: "POST",
+          url: `/api/clients/${clientId}/documents`,
+          cookies,
+          headers,
+          payload: {
+            docType: "Passport",
+            docNumber: `P-${tag}`,
+            expiresOn: "2032-04-01",
+            isPrimary: true,
+            source: "staff",
+          },
+        });
+        expect(documented.statusCode, documented.body).toBe(201);
+        expect(documented.json().verificationStatus).toBe("identified");
+        expect(documented.json().screeningOutcome).toBeNull();
+
+        const stillPoison = await app.inject({
+          method: "PATCH",
+          url: `/api/clients/${clientId}`,
+          cookies,
+          headers,
+          payload: { verificationStatus: "verified", screeningOutcome: "clear", screeningMatched: "a list" },
+        });
+        expect(stillPoison.statusCode, stillPoison.body).toBe(422);
+        expect(stillPoison.json().message).toBe(STATUS_NOT_CLIENT_MESSAGE);
+
+        const echoed = await app.inject({
+          method: "PATCH",
+          url: `/api/clients/${clientId}`,
+          cookies,
+          headers,
+          payload: { occupation: "Nurse", verificationStatus: "identified" },
+        });
+        expect(echoed.statusCode, echoed.body).toBe(200);
+        expect(echoed.json().occupation).toBe("Nurse");
+        expect(echoed.json().verificationStatus).toBe("identified");
+        expect(echoed.json().screeningOutcome).toBeNull();
+        expect(echoed.json().screeningMatched).toBeNull();
+      } finally {
+        await forget();
+      }
+    });
+  }
+
+  it("stores unverified when the service is handed a standing", async () => {
+    const made = await records.create(TILL_1, {
+      legalName: "Caller Standing",
+      verificationStatus: "identified",
+      screeningOutcome: "clear",
+      screeningMatched: "a list",
+    });
+    expect(made.verificationStatus).toBe("unverified");
+    expect(made.screeningOutcome).toBeNull();
+    expect(made.screeningMatched).toBeNull();
+    const changed = await records.update(TILL_1, made.clientId as string, {
+      phone: "416-555-0101",
+      verificationStatus: "verified",
+      screeningOutcome: "clear",
+    });
+    expect(changed.phone).toBe("416-555-0101");
+    expect(changed.verificationStatus).toBe("unverified");
+    expect(changed.screeningOutcome).toBeNull();
   });
 });
 
@@ -722,7 +1027,21 @@ postgres("migration 019, over a desk's existing blob", () => {
     /* Re-run the data migration over what was just planted. Every
        statement in 019 is IF NOT EXISTS / WHERE NOT EXISTS, so this is
        the same work a fresh database does — it is just being given
-       something to do. */
+       something to do.
+
+       A pack test can finish by deleting its tenant and leaving the
+       ledger customers (and a saved blob) behind. 019 copies every
+       ledger customer into desk_clients, and that table requires the
+       tenant. A fresh database has no such rows. Drop them first, or
+       this re-run depends on which file ran before it. */
+    await pool.query(
+      `DELETE FROM ledger_customers lc
+        WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = lc.tenant_id)`,
+    );
+    await pool.query(
+      `DELETE FROM tenant_state s
+        WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = s.tenant_id)`,
+    );
     await pool.query("DELETE FROM schema_migrations WHERE migration_id='019_client_records'");
     await runMigrations(pool, [
       ["019_client_records", "src/db/migrations/019_client_records.sql"],

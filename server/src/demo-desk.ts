@@ -481,7 +481,6 @@ async function ensureDemoCustomers(pool: pg.Pool, actor: LedgerActor) {
         occupation: spec.occupation,
         notes: "York FX product-demo file",
         riskRating: "normal",
-        verificationStatus: "identified",
       });
       if (typeof created.clientId !== "string" || !created.clientId) {
         throw new LedgerError("CUSTOMER_NOT_FOUND", `Demo client ${spec.name} was not created.`);
@@ -494,6 +493,7 @@ async function ensureDemoCustomers(pool: pg.Pool, actor: LedgerActor) {
         issuedOn: "2022-04-01",
         expiresOn: "2032-04-01",
         isPrimary: true,
+        source: "staff",
       });
     } else if (!found.clients[0]?.documents?.length) {
       await clients.addDocument(actor, clientId, {
@@ -503,6 +503,7 @@ async function ensureDemoCustomers(pool: pg.Pool, actor: LedgerActor) {
         issuedOn: "2022-04-01",
         expiresOn: "2032-04-01",
         isPrimary: true,
+        source: "staff",
       });
     }
     const counter = await clients.counterRecord(actor, clientId);

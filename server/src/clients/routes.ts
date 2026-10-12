@@ -26,7 +26,11 @@ import { tenantPlan } from "../routes/tenant.js";
 import { ensureLedgerPrincipal } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 import { isRetryable } from "../ledger/retry.js";
-import { ClientRecordService } from "./records.js";
+import {
+  ClientRecordService,
+  OPEN_FILE_STANDING,
+  assertStandingNotClientSet,
+} from "./records.js";
 
 /* An ISO calendar day or nothing. Deliberately not `z.coerce.date()`:
    "1985-13-45" is not a date and a customer record is not the place to
@@ -54,9 +58,12 @@ const clientBody = z.object({
   occupation: text(200),
   notes: text(4000),
   riskRating: z.enum(["low", "normal", "medium", "high"]).default("normal"),
-  verificationStatus: z
-    .enum(["unverified", "identified", "verified", "expired"])
-    .default("unverified"),
+  /* Accepted so a stale screen that echoes the standing it was shown
+     is not a 422 for an unknown key. They are not stored from here.
+     No default: a missing key must stay missing, or a partial update
+     would look like the caller had sent "unverified" and a file that
+     already has an ID would be refused. */
+  verificationStatus: z.enum(["unverified", "identified", "verified", "expired"]).optional(),
   screeningOutcome: z.enum(["clear", "hit", "pending"]).nullable().optional(),
   screeningMatched: text(600),
   incorporationDate: nullableDay,
@@ -82,19 +89,38 @@ const scanDataUrl = z
   .max(8 * 1024 * 1024)
   .regex(/^data:[a-z0-9.+/-]+;base64,/i, "A scan arrives as a base64 data URL.");
 
-const documentBody = z.object({
-  docType: z.string().trim().min(1).max(120),
-  docNumber: text(200),
+/* Same sentence as records.ts. A missing source, a blank number, or
+   the old "Not stated" placeholder are all a 422 — the desk does not
+   invent an ID, and a scan is not one. */
+const ID_STAFF_MESSAGE =
+  "Type the ID type and number yourself. ID scanning is not connected, so a record with no staff entry is refused.";
+
+const documentFields = z.object({
+  docType: z.string().trim().min(1, ID_STAFF_MESSAGE).max(120),
+  docNumber: z.string().trim().min(1, ID_STAFF_MESSAGE).max(200),
   issuingJurisdiction: text(200),
   issuedOn: nullableDay,
   expiresOn: nullableDay,
   isPrimary: z.boolean().optional(),
   scanDataUrl: scanDataUrl.nullable().optional(),
+  source: z.literal("staff", { errorMap: () => ({ message: ID_STAFF_MESSAGE }) }),
 }).strict();
 
-const documentChanges = documentBody.partial().strict().refine(
+const documentBody = documentFields.refine(
+  (value) => value.docType !== "Not stated",
+  { message: ID_STAFF_MESSAGE },
+);
+
+/* A change may name one field. The type and the number, when they are
+   named, still have to be real — partial() is what lets an expiry
+   through on its own. The service repeats the staff check so a caller
+   that skips this schema cannot blank a number. */
+const documentChanges = documentFields.partial().strict().refine(
   (value) => Object.values(value).some((field) => field !== undefined),
   { message: "Name at least one field to change." },
+).refine(
+  (value) => value.docType === undefined || value.docType !== "Not stated",
+  { message: ID_STAFF_MESSAGE },
 );
 
 const photographBody = z.object({ dataUrl: scanDataUrl }).strict();
@@ -113,6 +139,40 @@ const fileLabelBody = z.object({
 const aliasBody = z.object({ alias: z.string().trim().min(1).max(300) }).strict();
 const revealBody = z.object({ purpose: z.string().trim().max(200).optional() }).strict();
 const lookupQuery = z.object({ name: z.string().trim().min(1).max(300) });
+
+/* Sentences this file wrote on purpose. Anything else Zod invented
+   is replaced, including a path prefix such as "docType:". */
+function isDeskSentence(message: string): boolean {
+  if (!message) return false;
+  if (/Expected|received|Invalid|String must|Unrecognized key|\bRequired\b/.test(message)) return false;
+  if (message.includes(":")) return false;
+  return true;
+}
+
+function deskIssueSentence(issue: z.ZodIssue): string {
+  if (isDeskSentence(issue.message)) return issue.message;
+  switch (issue.code) {
+    case "unrecognized_keys":
+      return "That field is not one this desk saves.";
+    case "too_small":
+      return "Type something in that field.";
+    case "too_big":
+      return "That entry is too long.";
+    case "invalid_enum_value":
+      return "Pick one of the choices on the form.";
+    default:
+      return "Check that field and try again.";
+  }
+}
+
+export function deskValidationMessage(error: z.ZodError): string {
+  const sentences: string[] = [];
+  for (const issue of error.issues) {
+    const sentence = deskIssueSentence(issue);
+    if (!sentences.includes(sentence)) sentences.push(sentence);
+  }
+  return sentences.join(" ");
+}
 const disclosureQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
@@ -200,13 +260,12 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     return reply.code(status).send({ code: error.code, message: error.message });
   }
 
-  /* A bad body is a 422 with the field named. Zod's message is the most
-     useful thing anybody gets here and throwing it away for "invalid
-     request" is how a teller ends up guessing. */
+  /* A bad body is a 422 in the words a teller can act on. Zod's own
+     sentences name the parser, not the desk, so they are not shown. */
   const invalid = (reply: Reply, error: z.ZodError) =>
     reply.code(422).send({
       code: "INVALID_REQUEST",
-      message: error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`).join("; "),
+      message: deskValidationMessage(error),
     });
 
   app.get("/api/clients", async (req, reply) => {
@@ -239,7 +298,9 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       if (!actor) return undefined;
       const body = clientBody.safeParse(req.body);
       if (!body.success) return invalid(reply, body.error);
-      return reply.code(201).send(await records.create(actor, body.data));
+      assertStandingNotClientSet(body.data, OPEN_FILE_STANDING);
+      const { verificationStatus: _status, screeningOutcome: _outcome, screeningMatched: _matched, ...input } = body.data;
+      return reply.code(201).send(await records.create(actor, input));
     } catch (error) {
       return failure(reply, error);
     }
@@ -263,7 +324,19 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const body = clientChanges.safeParse(req.body);
       if (!body.success) return invalid(reply, body.error);
       const { clientId } = req.params as { clientId: string };
-      return reply.send(await records.update(actor, clientId, body.data));
+      const sent = body.data;
+      if (
+        sent.verificationStatus !== undefined ||
+        sent.screeningOutcome !== undefined ||
+        sent.screeningMatched !== undefined
+      ) {
+        assertStandingNotClientSet(sent, await records.derivedStanding(actor, clientId));
+      }
+      const { verificationStatus: _status, screeningOutcome: _outcome, screeningMatched: _matched, ...changes } = sent;
+      if (!Object.values(changes).some((field) => field !== undefined)) {
+        return reply.send(await records.get(actor, clientId));
+      }
+      return reply.send(await records.update(actor, clientId, changes));
     } catch (error) {
       return failure(reply, error);
     }

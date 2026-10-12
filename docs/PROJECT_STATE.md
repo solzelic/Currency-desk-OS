@@ -71,6 +71,130 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **KYC does not invent an identity.** The new-client form is manual
+  entry. ID scanning isn't connected, and the screen says so. Nothing
+  in the desk hashes a name into a date of birth, an address, or an ID
+  number, and a finished check does not copy those fields onto the
+  file. The browser does not finish an ID check on a timer or file it
+  as a Persona result. A file with no ID says to check it in person
+  and record it; that action opens the ID fields.   The identity panel says "Persona is not connected yet." and, once,
+  that ID checks are not connected. It does not mark the file verified. The ID panel opened from New Transaction
+  does not price a check or offer the customer a link. It asks the
+  teller to type the ID type and number from the document.
+  The server refuses a new identity document, or a change to its
+  type or number, unless the request says it was typed by staff
+  (`source: "staff"`), with a 422. That flag is set by the caller.
+  The server does not take verification status or a screening
+  outcome from the request. A file is identified only when a
+  staff-entered ID is on it. Verified and clear come only from an
+  approved provider result, and no provider is connected. A request
+  that names a different standing is a 422. The ID type list keeps
+  "Permanent Resident Card". A stored "PR Card" is shown as that.
+  Existing rows are left as they are. No migration. A live file may
+  still hold a date of birth, an address, or an ID number the old
+  generator wrote, or a standing a caller set before this refusal.
+  `DATABASE_URL=… node scripts/audit-synthetic-kyc.mjs` lists
+  generator matches as a client id and a field name, and changes
+  nothing. It also lists client ids stored as verified, and client
+  ids whose screening outcome is set, without printing the outcome.
+  While ID checks are not connected, the label comes from the
+  documents on the file. The stored verification word is ignored.
+  Verified is only a Persona inquiry the server reported. That
+  integration is off, so the response does not carry one, and a
+  stored verified word does not read Verified.
+  Identified is one current government-issued photo ID, and that
+  paper is the primary. Current means the expiry is on or after
+  the desk's business date, or that type's own no-expiry flag is
+  set and the expiry is blank. The only type with that flag is
+  "Canadian citizenship card (pre-2012)". Every other blank
+  expiry, including a Secure Certificate of Indian Status, a PR
+  card, a provincial card, and a foreign document, is Missing
+  ID, "ID has no expiry date". The laminated Certificate of
+  Indian Status is not in the catalogue. The person pickers
+  offer "Driver's Licence" and "Driver's License", "Citizenship
+  certificate (2012 or later, no photo)" for the generic
+  citizenship paper, the pre-2012 card, and "Secure Certificate
+  of Indian Status". A birth certificate is on those pickers
+  and is not a photo ID. Health Card is not on those pickers,
+  so a new one cannot be recorded. The catalogue row stays,
+  with accepted false. A health card already on a file is a
+  read-only row in the client file: no edit and no make
+  primary, and it reads "Health cards can't be used as ID".
+  In edit mode that row sits under "Not accepted as ID",
+  below the picker. Primary ID and the standing label use
+  one catalogue lookup. A stored "Driver licence" is shown
+  as "Driver's Licence", and a stored "PR Card" as
+  "Permanent Resident Card". A current primary one of
+  those is the Primary ID. With no current accepted photo
+  ID, that slot reads "No current photo ID". Under
+  "Not accepted as ID" are the types the catalogue marks
+  accepted false, a health-card alias, and any type the
+  catalogue does not list. The shared alias list is
+  `os-src/health-card-aliases.js` (OHIP, RAMQ, MSP,
+  Medicare, Alberta Health, a care card, "health card",
+  "Carte d'assurance maladie", "BC Services Card",
+  "Ontario Health Insurance Plan", in any case or
+  spacing). #131's list is not on main, so this file is
+  the shared one. Those names are read as a health card:
+  not under Primary ID, not editable. A save of any type
+  that is not a catalogue name is a 422,
+  `ID_TYPE_NOT_IN_CATALOGUE`: "That ID type is not one
+  this desk accepts. Pick a type from the list."
+  "Health Card" itself stays in the catalogue with
+  accepted false, so a stored row can still be read.
+  "Library card" is not a health card and is not in the
+  catalogue: the save is refused, and a row already
+  stored is read-only under that heading with the number
+  masked. The 2012 citizenship certificate is accepted
+  and is not a photo ID, so it stays editable and out of
+  Primary ID. A stored "Citizenship Card" is shown as
+  that certificate. Every not-accepted number, on the
+  read, the screen, and a report, is the last four
+  characters of the stored number, eight characters wide
+  (`****9988`). A number of four or fewer is eight stars.
+  The mask does not keep the first characters and does
+  not grow with the real length. When the read leaves
+  that number off, or sends it blank, the row says
+  "Number not shown". It does not say undefined. The
+  column keeps the full value. A client save that fails
+  zod comes back as a desk sentence, not the parser's
+  own text. LCTR and STR identifier numbers are empty
+  prompts. The form does not copy the primary document
+  number.
+  The flag is a column
+  on each row of one type table
+  (`server/src/ledger/id-document-types.mjs`, copied into the
+  desk helper). It is not a pass for every document. A health
+  card is never accepted. When it is the only document, the
+  reason is "Health cards can't be used as ID". A non-primary
+  document does not identify the client. An expired photo ID
+  with any other current document on the file is Missing ID,
+  "Photo ID expired on" the spoken date. Only non-photo
+  documents, or a photo ID that is not the primary, read
+  "A current photo ID is needed". Dual process and a credit
+  file are not supported: a document has no category and no
+  source. The green line names the qualifying photo ID only.
+  An expired document is never shown with a check. ID dates
+  on the desk and on a phone read like "Jan 1, 2020". The
+  business date is the trading day from the
+  business-date helper, not the browser's local date. The
+  other Missing ID reasons stay "ID type not stated", "No ID
+  number", and "No ID on file". When the only photo ID is
+  expired and nothing current sits beside it, the label is
+  Expired. The stored `verification_status` column is still the
+  older numbered-document derivation. This change does not
+  rewrite it. If the response carries `idStanding`, the desk
+  shows that and does not derive the label. The field is
+  absent until the server sends it.
+  `displayIdStanding` is the only helper. The client file, the
+  KYC panel, the register, the transaction pick lists, the
+  New Transaction checklist, and the posting gates all use it.
+  The ledger customer payload's `idStatus` is that same answer.
+  Client create and update do not send verification status or
+  a screening outcome. The stored value is not rewritten. The audit's
+  `stored_verified` count is distinct client ids. Cleaning any
+  of it up needs the owner's OK.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -129,9 +253,17 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   row of pills, and the selected pill is in view when the sheet
   opens. That row scrolls away with the fields. The customer search
   is one row: icon, name, clear. The suggestion list closes when
-  focus leaves it. When the customer needs identification, the sheet
-  shows one row, "ID needed for this amount", and "Record the ID".
-  That opens the client file's identity editor (type, number, issued,
+  focus leaves it. When `displayIdStanding` is a warning, the sheet
+  shows one row, "ID needed for this amount", the helper's reason
+  under that line, and "Record the ID".
+  When the standing is clear, that row names the qualifying
+  primary photo ID, with a check. An expired photo ID on that
+  same identified file is a second row, warning tone, no check.
+  An expired photo ID beside a document that does not itself
+  identify is the "ID needed" row, and the reason names the
+  expiry. There is no check on that row.
+  The header date on the phone is the same spoken form.
+  "Record the ID" opens the client file's identity editor (type, number, issued,
   expiry, and the scan) and saves the document on the server, then
   returns to the deal. The phone does not keep a type and number that
   exist only in this browser. The deal ticket follows the fields in
@@ -144,8 +276,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   is hidden unless SMS is configured, and the $6.99 verify nudge is
   hidden while Persona is off. An incomplete deal says "N steps
   left" and stays tappable; tapping it scrolls to the first missing
-  item and marks it. The checklist says "ID not recorded yet" and
-  offers Record the ID. Rates show four decimals. Ticket amounts
+  item and marks it. The checklist uses the standing reason
+  ("ID has no expiry date", "No ID on file", and the rest)
+  and offers Record the ID. On the client file at a phone
+  width the name truncates with an ellipsis, City, Province,
+  and Postal code stack so the postal field is whole, and a
+  shown expiry reads like "Jan 1, 2030". Rates show four decimals. Ticket amounts
   include the currency code. The amount the customer receives is
   the text colour in the field and white on the dark ticket. Green
   stays on the margin. Purpose and source of funds stay in the ordinary
@@ -727,6 +863,79 @@ connected. Texting is not connected. The site does not claim encryption
 at rest, and it does not claim data is held in the region where the desk
 operates. Subscription prices printed on the site are unchanged.
 
+**2026-10-11**, KYC identity. The desk no longer fills a date of birth,
+an address, or an ID number from a name. The new-client form is what
+staff type, and it says ID scanning isn't connected. A check does not
+write those fields. The browser no longer finishes an ID check on a
+timer or files that result as Persona. Verify and run-check say
+"ID checks not connected yet" and do not mark a file verified. The
+client file says "Persona is not connected yet." The panel a teller
+opens from New Transaction records a typed ID. It does not price a
+check or send a link. Sanctions copy stays the not-connected sentence
+from the honest screening screen: no list name, and no "screened
+against" claim.
+`POST /api/clients/:id/documents` refuses a
+document that does not say it was typed by staff (422,
+`ID_NOT_STAFF_ENTERED`). An update that blanks the type or the
+number, or that names any other source, is the same refusal. A photo
+on its own is not a document. Create and update of a client do not
+accept `verificationStatus`, `screeningOutcome`, or
+`screeningMatched` from the caller. A value other than the one the
+documents derive is a 422, `STATUS_NOT_CLIENT_SET`. Identified
+requires a numbered ID on the file. Verified and clear are not
+derived: no provider is connected. The ID type list offers
+"Permanent Resident Card" and does not offer Health Card.
+A stored "PR Card" is shown as "Permanent Resident Card".
+A stored "Driver licence" is shown as "Driver's Licence".
+A stored "Citizenship Card" is shown as "Citizenship
+certificate (2012 or later, no photo)". A stored health
+card, a health-card alias, and a type the catalogue does
+not list stay read-only under "Not accepted as ID".
+Primary ID reads "No current photo ID" when no current
+accepted photo ID is on the file. A type outside the
+catalogue is refused on save (422, `ID_TYPE_NOT_IN_CATALOGUE`).
+A not-accepted number on a read is the last four characters,
+eight wide. When the read leaves that number off, or sends it
+blank, the row says "Number not shown" and not
+undefined. ID dates read like "Jan 1, 2020" at every width.
+The "Where they are" sentence wraps. Identified and Missing ID
+use `--color-identified` and `--color-missing` in
+`os-src/york-os.css` (tokens.css is not on this base).
+Add ID, the identity fields, and Close are at least 44px.
+Rows already stored are not rewritten. No
+migration. A live row may still hold a generated date of birth,
+address, or ID number, or a standing a caller set. The read-only
+audit is `DATABASE_URL=… node scripts/audit-synthetic-kyc.mjs`. It
+prints a client id and the matched field only, then the client ids
+stored as verified and the client ids whose screening outcome is
+set. It does not print the outcome. `stored_verified` counts
+distinct client ids. While ID checks are not connected, the desk
+label is one current government photo ID, and it has to be the
+primary. Current means the expiry is on or after the business
+date, or the type's own no-expiry flag is set. That flag is on
+one row only: "Canadian citizenship card (pre-2012)". A health
+card never counts. A non-primary document does not identify
+the client. An expired photo ID with another current document
+is Missing ID, "Photo ID expired on" the spoken date. Only
+non-photo documents, or a photo ID that is not the primary,
+read "A current photo ID is needed". Dual
+process and a credit file are not supported. The other Missing
+ID reasons stay "ID has no expiry date", "Health cards can't
+be used as ID", "ID type not stated", "No ID number", and
+"No ID on file". The stored `verification_status` column is
+unchanged. The business date is the trading day, not the
+browser's local date. On a phone a date reads like "Jan 1,
+2020". A response that carries `idStanding` is shown as sent. Every
+browser decision uses that helper, including the New
+Transaction checklist, the phone row "ID needed for this
+amount", the posting gates, the pick lists, and the ledger
+customer `idStatus`. Client create and update do not send
+verification status or a screening outcome.   A stored
+  verified word does not change the derived label. Verified is
+  only a Persona inquiry the server reported, and that
+  integration is off, so the desk does not show it. The row stays
+  as stored. Any cleanup needs the owner's OK.
+
 **2026-10-11**, New transaction on a phone, follow-up. Under 600px
 an incomplete deal says "N steps left" and stays tappable. Tapping
 it marks the first missing item. The checklist says "ID not
@@ -756,14 +965,15 @@ full-screen sheet and one column. The type names are a horizontal
 row of pills, with the selected pill in view on open, and that row
 scrolls away with the fields. The customer row is icon, name, and
 clear on one line. The suggestion list closes when the amount is
-focused. A deal that needs identification shows "ID needed for this
-amount" and "Record the ID", which opens the client file's identity
-editor and saves type, number, and expiry on the server, then
-returns to the deal. A type and number typed only into the browser
-is not how this sheet records an ID. The quote and the post button
-stay on screen for the whole sheet, including with the keyboard
-open, and the last field can scroll clear of them. The X is 44px.
-If anything has been entered, it asks "Discard this deal?" with
+focused. When `displayIdStanding` is a warning, the sheet shows
+"ID needed for this amount", the helper's reason under it, and
+"Record the ID", which opens the client file's identity editor
+and saves type, number, and expiry on the server, then returns
+to the deal. A type and number typed only into the browser is not
+how this sheet records an ID. The quote and the post button stay
+on screen for the whole sheet, including with the keyboard open,
+and the last field can scroll clear of them. The X is 44px. If
+anything has been entered, it asks "Discard this deal?" with
 Discard and Keep editing. Swap, Override, and Text quote are 44px
 targets. With the bottom bar on the phone, the sheet covers the
 bar, so the post button is not under it. Other dialogs still stop
