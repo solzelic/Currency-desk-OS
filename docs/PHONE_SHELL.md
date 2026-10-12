@@ -390,8 +390,8 @@ same length before it takes the picture. The UUID match does not
 require a word boundary, so `cust_` plus an id is frozen too.
 Those values change every suite run. The first committed pictures
 did not freeze the ref, so the next Actions run differed by that
-column. A later Cheques picture still showed a live `cust_` id.
-That file is replaced by the next Actions render.
+column. The Cheques picture in the tree is the Actions render from
+run 38189339979, with the customer id frozen.
 
 Inter is loaded only at `max-width: 430px` (`media` on the stylesheet
 link, and `--font-ui` in `os-src/tokens.css`). Wider than that the desk
