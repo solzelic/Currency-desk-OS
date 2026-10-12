@@ -192,9 +192,13 @@ one that drives the desk's KYC standing.
 
 `verification_status` is derived from the documents, not typed:
 
-- no document with a number → `unverified`
-- the primary document is past its expiry → `expired`
+- no non-health document with a number → `unverified`
+- the primary document, when it is not a health card, is past its expiry → `expired`
 - otherwise → `identified`
+
+A health card does not count as that number. A file whose only numbered
+document is a health card stays `unverified`. `verified` is still never
+set by this derivation.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of
@@ -211,12 +215,28 @@ where provincial law prohibits it.
 The row can still be in `desk_client_identity_documents` — type,
 issuing province, expiry, who recorded it, and when. **No read returns
 the number.** `clientJson` omits `docNumber` (the key is absent, not
-null) for a health card. The type is recognised by
-`server/src/clients/health-card.ts`: the catalogue name "health card"
-in any case or spacing, and the aliases a desk types — OHIP, RAMQ,
-MSP, Alberta Health, Care Card. The signed catalogue itself lives on
-PR #108 (`server/src/ledger/id-document-types.mjs`) and is not edited
-here; that detector matches only the exact name.
+null) for a health card. The names are one list,
+`shared/health-card-names.js`, loaded by the server and by the
+browser. A name matches the whole type after case, spacing, and
+apostrophes fold away. The list includes the provincial names, OHIP,
+RAMQ, MSP, Care Card, Carte d'assurance maladie, BC Services Card,
+Ontario Health Insurance Plan, and Medicare card. PR #108's catalogue
+(`server/src/ledger/id-document-types.mjs`) is not on this branch.
+When it merges, its health-card row should import this list.
+
+A new health-card document is refused. `addDocument` and
+`updateDocument` throw `HEALTH_CARD_NOT_ID` (HTTP 422), the same code
+and sentence PR #108 uses on its catalogue path. The picker, the
+Record-ID sheet, and the edit field do not offer Health Card.
+
+`/api/tenant/state` scrubs a health number on the way in and on the
+way out, including the conflict body, so an old tab cannot write one
+back. A localStorage write that fails is logged and the rest of the
+desk is left in place. An IndexedDB clear that does not finish is
+logged and given up after a few seconds.
+
+Sealed LCTR filings, and the teller scan reveal, are unchanged.
+Compliance is ruling on those.
 
 The same rule is applied in the browser. The client file shows the
 type, and the province, expiry, and recorded date when they are

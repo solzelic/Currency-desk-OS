@@ -55,7 +55,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
-import { isHealthCardType } from "./health-card.js";
+import { healthCardExcludedSql, HEALTH_CARD_REFUSAL, isHealthCardType } from "./health-card.js";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -552,6 +552,7 @@ export class ClientRecordService {
   /* ---- identity documents ------------------------------------------- */
 
   async addDocument(actor: LedgerActor, clientId: string, input: DocumentInput) {
+    if (isHealthCardType(input.docType)) throw healthCardNotId();
     return this.inTransaction(actor, "customer:write", async (client) => {
       const owned = await client.query(
         "SELECT 1 FROM desk_clients WHERE client_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 FOR UPDATE",
@@ -613,13 +614,19 @@ export class ClientRecordService {
   ) {
     return this.inTransaction(actor, "customer:write", async (client) => {
       const found = await client.query(
-        `SELECT d.document_id FROM desk_client_identity_documents d
+        `SELECT d.document_id, d.doc_type FROM desk_client_identity_documents d
            JOIN desk_clients c ON c.client_id=d.client_id
           WHERE d.document_id=$1 AND d.client_id=$2
             AND c.tenant_id=$3 AND c.legal_entity_id=$4 FOR UPDATE`,
         [documentId, clientId, ...entityScope(actor)],
       );
       if (!found.rowCount) throw documentNotFound();
+      /* A health card already on the file cannot be edited back into
+         service, and a passport cannot be retyped as one. PR #108
+         raises the same refusal once its catalogue is on this branch. */
+      if (isHealthCardType(found.rows[0]!.doc_type) || isHealthCardType(input.docType)) {
+        throw healthCardNotId();
+      }
       const columns: Record<string, unknown> = {};
       if (input.docType !== undefined) columns.doc_type = input.docType.trim();
       if (input.docNumber !== undefined) columns.doc_number = blank(input.docNumber);
@@ -1157,16 +1164,20 @@ export class ClientRecordService {
    * follow mechanically from what the desk is holding.
    */
   private async refreshVerification(client: pg.PoolClient, clientId: string) {
+    const counts = healthCardExcludedSql("d.doc_type");
     await client.query(
       `UPDATE desk_clients c
           SET verification_status = CASE
             WHEN NOT EXISTS (
               SELECT 1 FROM desk_client_identity_documents d
-               WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'') <> ''
+               WHERE d.client_id=c.client_id
+                 AND coalesce(btrim(d.doc_number),'') <> ''
+                 AND ${counts}
             ) THEN 'unverified'
             WHEN EXISTS (
               SELECT 1 FROM desk_client_identity_documents d
                WHERE d.client_id=c.client_id AND d.is_primary
+                 AND ${counts}
                  AND d.expires_on IS NOT NULL AND d.expires_on < current_date
             ) THEN 'expired'
             ELSE 'identified'
@@ -1249,6 +1260,26 @@ export class ClientRecordService {
       ],
     );
   }
+}
+
+const healthCardNotId = () => new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
+
+/* A health card never makes the file identified. `verified` is left
+   as stored: this derivation does not grant it, and it does not take
+   a provider result away. The same exclusion is in refreshVerification,
+   which is what the next write persists. */
+function verificationForRead(status: unknown, documents: Record<string, unknown>[]): string {
+  if (status === "verified") return "verified";
+  const numbered = documents.some((document) => {
+    if (isHealthCardType(document.doc_type)) return false;
+    return String(document.doc_number ?? "").trim() !== "";
+  });
+  if (!numbered) return "unverified";
+  const primary = documents.find((document) => document.is_primary === true && !isHealthCardType(document.doc_type));
+  const expiry = primary ? isoDate(primary.expires_on) : null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (expiry && expiry < today) return "expired";
+  return "identified";
 }
 
 const notFound = () =>
@@ -1338,7 +1369,7 @@ function clientJson(
     occupation: row.occupation ?? null,
     notes: row.notes ?? null,
     riskRating: row.risk_rating,
-    verificationStatus: row.verification_status,
+    verificationStatus: verificationForRead(row.verification_status, documents),
     verifiedAt: row.verified_at ? new Date(row.verified_at as string | Date).toISOString() : null,
     screeningOutcome: row.screening_outcome ?? null,
     screeningMatched: row.screening_matched ?? null,

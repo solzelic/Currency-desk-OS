@@ -259,6 +259,10 @@
     const extraDoc = (i) => (rec.ids || [])[i] || {};
 
     function field(k, v) {
+      if ((k === 'idType' || k === 'type') && window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(v)) {
+        onError(HEALTH_CARD_REFUSAL);
+        return;
+      }
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
@@ -461,7 +465,25 @@
   }
 
 
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
+  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Permanent Resident Card'];
+  /* A type already on the file stays selectable, except a health card.
+     That name is not an option in the picker, the Record-ID sheet, or
+     this edit field. */
+  const offeredType = (value, types) => {
+    if (!value || types.indexOf(value) >= 0) return null;
+    if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(value)) return null;
+    return value;
+  };
+  const HEALTH_CARD_REFUSAL = "Health cards can't be used as ID. Record a current photo ID.";
+  /* What client search is allowed to match. A health-card number is
+     not part of it, on the primary or on an extra document. */
+  function clientSearchText(rec) {
+    rec = rec || {};
+    const health = (t) => window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(t);
+    const ownNum = health(rec.idType) ? '' : (rec.idNum || '');
+    const extra = (rec.ids || []).filter(d => d && !health(d.type)).map(d => d.num || '').join(' ');
+    return `${ownNum} ${extra}`.trim();
+  }
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
@@ -616,7 +638,7 @@
      A covered ID that crashes the profile is the worst of both. */
   function KycEditor({ rec, set, kind, onUpload, canEdit, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    const stated = offeredType(rec.idType, types);
     return (<div className="grid grid-cols-2 gap-3">
       <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
       {!(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(rec.idType)) && <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
@@ -633,7 +655,7 @@
   // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
   function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    const stated = offeredType(doc.type, types);
     return (<div className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
       <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>{canEdit && <button type="button" onClick={() => rmId(i)} className="text-[11px] font-medium" style={{ color: CD.flag }}>Remove</button>}</div>
       <div className="grid grid-cols-2 gap-3">
@@ -1430,10 +1452,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
-      const health = (t) => window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(t);
-      const ownNum = health(r.idType) ? '' : (r.idNum || '');
-      const extraNums = (r.ids || []).filter(d => !health(d.type)).map(d => d.num || '').join(' ');
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${ownNum} ${extraNums} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${clientSearchText(r)} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
 
@@ -1652,6 +1671,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const save = async () => {
       if (leaving || phase !== 'edit') return;
       if (!ready) { setErr('Type, number, and expiry are required.'); return; }
+      if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(draft.idType)) {
+        setErr(HEALTH_CARD_REFUSAL);
+        return;
+      }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -1743,5 +1766,5 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      cdos-kyc.jsx, which can run from screens that never mount this
      one. `RecordIdSheet` is that same identity editor, opened from a
      deal that needs a document on the server. */
-  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan, RecordIdSheet });
+  window.CDOS = Object.assign(window.CDOS || {}, { Clients, ClientIdViewer, ClientRecords, IdScan, RecordIdSheet, exportClientReport, clientSearchText });
 })();

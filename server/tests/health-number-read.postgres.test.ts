@@ -4,6 +4,7 @@
    lookup — returns the type, the issuing province when one was stored,
    the expiry, and the date recorded. The number is not a field and not
    a value anywhere in that JSON. */
+import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -11,6 +12,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { HEALTH_CARD_NAMES, HEALTH_CARD_REFUSAL } from "../src/clients/health-card.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -88,7 +90,30 @@ postgres("a health card number is not on a read", () => {
     delete process.env.LEDGER_DATABASE_URL;
   });
 
-  it("returns type, province, expiry and the date recorded, and no number anywhere", async () => {
+  async function plant(
+    clientId: string,
+    docType: string,
+    docNumber: string,
+    primary: boolean,
+    expiresOn = "2030-04-01",
+    jurisdiction: string | null = "ON",
+  ) {
+    const owner = await pool.query<{ tenant_id: string; legal_entity_id: string }>(
+      "SELECT tenant_id, legal_entity_id FROM desk_clients WHERE client_id=$1",
+      [clientId],
+    );
+    const row = owner.rows[0];
+    if (!row) throw new Error(`no client ${clientId}`);
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+        (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number,
+         issuing_jurisdiction, expires_on, is_primary, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'test')`,
+      [`doc_${randomUUID()}`, clientId, row.tenant_id, row.legal_entity_id, docType, docNumber, jurisdiction, expiresOn, primary],
+    );
+  }
+
+  it("refuses a new health card and still omits a number that is already stored", async () => {
     const made = await app.inject({
       method: "POST",
       url: "/api/clients",
@@ -99,34 +124,27 @@ postgres("a health card number is not on a read", () => {
     const clientId = made.json().clientId as string;
     created.push(clientId);
 
-    const primary = await app.inject({
+    const refused = await app.inject({
       method: "POST",
       url: `/api/clients/${clientId}/documents`,
       cookies,
       payload: {
-        docType: "OHIP",
+        docType: "Ontario Health Insurance Plan",
         docNumber: OHIP_NUMBER,
         issuingJurisdiction: "ON",
         expiresOn: "2030-04-01",
         isPrimary: true,
       },
     });
-    expect(primary.statusCode).toBe(201);
-    expectNoHealthNumber(primary.json(), [OHIP_NUMBER]);
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({ code: "HEALTH_CARD_NOT_ID", message: HEALTH_CARD_REFUSAL });
 
-    const extra = await app.inject({
-      method: "POST",
-      url: `/api/clients/${clientId}/documents`,
-      cookies,
-      payload: {
-        docType: "Health   Card",
-        docNumber: CARD_NUMBER,
-        expiresOn: "2031-01-15",
-        isPrimary: false,
-      },
-    });
-    expect(extra.statusCode).toBe(201);
-    expectNoHealthNumber(extra.json(), [OHIP_NUMBER, CARD_NUMBER]);
+    await plant(clientId, "OHIP", OHIP_NUMBER, true);
+    await plant(clientId, "Health   Card", CARD_NUMBER, false, "2031-01-15", null);
+
+    const primary = await app.inject({ method: "GET", url: `/api/clients/${clientId}`, cookies });
+    expect(primary.statusCode).toBe(200);
+    expectNoHealthNumber(primary.json(), [OHIP_NUMBER, CARD_NUMBER]);
 
     const one = await app.inject({ method: "GET", url: `/api/clients/${clientId}`, cookies });
     expect(one.statusCode).toBe(200);
@@ -193,5 +211,135 @@ postgres("a health card number is not on a read", () => {
     const document = (added.json().documents as { docType: string; docNumber?: string }[])
       .find((row) => row.docType === "Passport");
     expect(document?.docNumber).toBe(PASSPORT_NUMBER);
+  });
+
+  it("runs the shared name list through the clients API and does not identify a health card", async () => {
+    const made = await app.inject({
+      method: "POST",
+      url: "/api/clients",
+      cookies,
+      payload: { legalName: "Health Read Table" },
+    });
+    expect(made.statusCode).toBe(201);
+    const clientId = made.json().clientId as string;
+    created.push(clientId);
+    const secrets = HEALTH_CARD_NAMES.map((name, index) => `${name}::HN-TABLE-${index}-PRIV`);
+    for (let i = 0; i < HEALTH_CARD_NAMES.length; i++) {
+      await plant(clientId, HEALTH_CARD_NAMES[i]!, secrets[i]!, i === 0);
+    }
+    await pool.query("UPDATE desk_clients SET verification_status='identified' WHERE client_id=$1", [clientId]);
+
+    const one = await app.inject({ method: "GET", url: `/api/clients/${clientId}`, cookies });
+    expect(one.statusCode).toBe(200);
+    const body = one.json();
+    expectNoHealthNumber(body, secrets);
+    expect(body.verificationStatus).toBe("unverified");
+    expect(body.documents).toHaveLength(HEALTH_CARD_NAMES.length);
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/clients/${clientId}/documents/${body.documents[0].documentId}`,
+      cookies,
+      payload: { docNumber: "HN-PATCH-PRIV" },
+    });
+    expect(patched.statusCode).toBe(422);
+    expect(patched.json().code).toBe("HEALTH_CARD_NOT_ID");
+
+    const passport = await app.inject({
+      method: "POST",
+      url: `/api/clients/${clientId}/documents`,
+      cookies,
+      payload: { docType: "Passport", docNumber: PASSPORT_NUMBER, expiresOn: "2031-01-01", isPrimary: true },
+    });
+    expect(passport.statusCode).toBe(201);
+    expect(passport.json().verificationStatus).toBe("identified");
+    const passportId = (passport.json().documents as { docType: string; documentId: string }[])
+      .find((row) => row.docType === "Passport")!.documentId;
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/api/clients/${clientId}/documents/${passportId}`,
+      cookies,
+    });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().verificationStatus).toBe("unverified");
+    expectNoHealthNumber(removed.json(), secrets);
+
+    await pool.query("UPDATE desk_clients SET verification_status='verified' WHERE client_id=$1", [clientId]);
+    const kept = await app.inject({ method: "GET", url: `/api/clients/${clientId}`, cookies });
+    expect(kept.json().verificationStatus).toBe("verified");
+    expectNoHealthNumber(kept.json(), secrets);
+  });
+
+  it("scrubs a health number on tenant-state save, read, conflict, and a teller read", async () => {
+    const secret = "HN-TENANT-STATE-PRIV";
+    const before = await app.inject({ method: "GET", url: "/api/tenant/state", cookies });
+    expect(before.statusCode).toBe(200);
+    const prior = before.json() as { state: Record<string, unknown> | null; version: number };
+    const incoming = {
+      ...(prior.state ?? {}),
+      cdos_clients_v1: {
+        "Hana Health": {
+          idType: "BC Services Card",
+          idNum: secret,
+          ids: [{ type: "Carte d'assurance maladie", num: secret }],
+        },
+      },
+    };
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/api/tenant/state",
+      cookies,
+      payload: { state: incoming, version: prior.version },
+    });
+    expect(saved.statusCode).toBe(200);
+    const stored = await pool.query("SELECT state::text AS state, version FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
+    expect(stored.rows[0]!.state).not.toContain(secret);
+
+    await pool.query(
+      `UPDATE tenant_state
+          SET state = jsonb_set(state, '{cdos_clients_v1,Planted}', $2::jsonb, true)
+        WHERE tenant_id=$1`,
+      [DEMO.tenantId, JSON.stringify({ idType: "OHIP", idNum: secret })],
+    );
+    const read = await app.inject({ method: "GET", url: "/api/tenant/state", cookies });
+    expect(read.statusCode).toBe(200);
+    expect(JSON.stringify(read.json())).not.toContain(secret);
+    const version = read.json().version as number;
+
+    const conflict = await app.inject({
+      method: "PUT",
+      url: "/api/tenant/state",
+      cookies,
+      payload: {
+        version: version === 0 ? 1 : 0,
+        state: { cdos_clients_v1: { "Old Tab": { idType: "Medicare card", idNum: secret } } },
+      },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(JSON.stringify(conflict.json())).not.toContain(secret);
+
+    const teller = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { staffId: "m.costa", password: DEMO.password, tenantId: DEMO.tenantId },
+    });
+    expect(teller.statusCode).toBe(200);
+    const tellerCookie = teller.cookies.find((item) => item.name === "cdos_session");
+    if (!tellerCookie) throw new Error("teller sign-in did not set a session");
+    const tellerRead = await app.inject({
+      method: "GET",
+      url: "/api/tenant/state",
+      cookies: { cdos_session: tellerCookie.value },
+    });
+    expect(tellerRead.statusCode).toBe(200);
+    expect(JSON.stringify(tellerRead.json())).not.toContain(secret);
+
+    if (prior.state) {
+      await pool.query("UPDATE tenant_state SET state=$2::jsonb, version=$3 WHERE tenant_id=$1", [
+        DEMO.tenantId,
+        JSON.stringify(prior.state),
+        prior.version,
+      ]);
+    }
   });
 });

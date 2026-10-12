@@ -1938,6 +1938,151 @@
   });
 })();
 
+/* ---- shared/health-card-names.js ---- */
+/* One explicit list of health-card names.
+
+   The server and the browser both load this file. PR #108's catalogue
+   (server/src/ledger/id-document-types.mjs) is not on this branch, and
+   its health-card aliases do not yet include every name below. When
+   that catalogue merges, its health-card row should take this list
+   rather than grow a second one.
+
+   A name matches only as a whole type, after the same fold #108 uses:
+   lower case, apostrophes removed, every other non-letter turned into
+   a space. "healthcare" is not "health card". "mspaint" is not "MSP".
+   "BC Services Card" is on the list because that card, used as a
+   health card, is a health number. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  if (root) root.CDOS_HEALTH_CARDS = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var HEALTH_CARD_NAMES = [
+    "Health Card",
+    "OHIP",
+    "OHIP card",
+    "Ontario Health Insurance Plan",
+    "Ontario Health Card",
+    "Carte d'assurance maladie",
+    "RAMQ",
+    "RAMQ card",
+    "Régie de l'assurance maladie du Québec",
+    "Regie de l'assurance maladie du Quebec",
+    "MSP",
+    "MSP card",
+    "Medical Services Plan",
+    "BC Services Card",
+    "Care Card",
+    "BC Care Card",
+    "Alberta Health",
+    "Alberta Health Card",
+    "Alberta Health Care",
+    "Alberta Health Care Insurance Plan",
+    "Medicare",
+    "Medicare card",
+    "New Brunswick Medicare",
+    "Manitoba Health",
+    "Manitoba Health Card",
+    "Saskatchewan Health Card",
+    "Saskatchewan Health Services Card",
+    "Nova Scotia Health Card",
+    "MSI",
+    "Medical Services Insurance",
+    "PEI Health Card",
+    "Prince Edward Island Health Card",
+    "Newfoundland and Labrador Medical Care Plan",
+    "MCP",
+    "Medical Care Plan",
+    "Northwest Territories Health Care Card",
+    "NWT Health Care Card",
+    "Nunavut Health Care Card",
+    "Yukon Health Care Card",
+    "Yukon Health Care Insurance Plan",
+  ];
+
+  function typeKey(value) {
+    return String(value == null ? "" : value)
+      .toLowerCase()
+      .replace(/['\u2018\u2019]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/ +/g, " ")
+      .trim();
+  }
+
+  var KEYS = Object.create(null);
+  HEALTH_CARD_NAMES.forEach(function (name) {
+    var key = typeKey(name);
+    if (!key) throw new Error("A health-card name folded to nothing: " + name);
+    KEYS[key] = true;
+  });
+  var HEALTH_CARD_TYPE_KEYS = Object.keys(KEYS);
+
+  function isHealthCardType(value) {
+    var key = typeKey(value);
+    return key !== "" && KEYS[key] === true;
+  }
+
+  var NUMBER_KEYS = { docNumber: 1, doc_number: 1, idNum: 1, num: 1, number: 1 };
+  var TYPE_KEYS = ["docType", "doc_type", "idType", "type"];
+
+  function objectIsHealthCard(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    for (var i = 0; i < TYPE_KEYS.length; i++) {
+      if (isHealthCardType(value[TYPE_KEYS[i]])) return true;
+    }
+    return false;
+  }
+
+  function scrubHealthNumbers(value) {
+    if (Array.isArray(value)) return value.map(scrubHealthNumbers);
+    if (typeof value === "string") {
+      if (value.charAt(0) !== "{" && value.charAt(0) !== "[") return value;
+      try {
+        var parsed = JSON.parse(value);
+        var cleaned = scrubHealthNumbers(parsed);
+        if (JSON.stringify(cleaned) === JSON.stringify(parsed)) return value;
+        return JSON.stringify(cleaned);
+      } catch (error) {
+        return value;
+      }
+    }
+    if (!value || typeof value !== "object") return value;
+    var drop = objectIsHealthCard(value);
+    var out = {};
+    Object.keys(value).forEach(function (key) {
+      if (drop && NUMBER_KEYS[key]) return;
+      out[key] = scrubHealthNumbers(value[key]);
+    });
+    return out;
+  }
+
+  /* Same fold as typeKey(), in Postgres. The doubled quote is one
+     apostrophe inside the SQL string. */
+  function healthCardExcludedSql(expr) {
+    var apostrophes = "[''\u2018\u2019]";
+    var folded =
+      "btrim(regexp_replace(regexp_replace(regexp_replace(lower(" +
+      expr +
+      "), '" +
+      apostrophes +
+      "', '', 'g'), '[^a-z0-9]+', ' ', 'g'), ' +', ' ', 'g'))";
+    var list = HEALTH_CARD_TYPE_KEYS.map(function (key) {
+      return "'" + key.replace(/'/g, "''") + "'";
+    }).join(", ");
+    return folded + " <> ALL (ARRAY[" + list + "]::text[])";
+  }
+
+  return {
+    HEALTH_CARD_NAMES: HEALTH_CARD_NAMES,
+    HEALTH_CARD_TYPE_KEYS: HEALTH_CARD_TYPE_KEYS,
+    typeKey: typeKey,
+    isHealthCardType: isHealthCardType,
+    scrubHealthNumbers: scrubHealthNumbers,
+    healthCardExcludedSql: healthCardExcludedSql,
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -2608,54 +2753,21 @@
   var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
   var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
 
-  /* Same rule as server/src/clients/health-card.ts. A health card
-     number is not kept in this browser. The catalogue name, any spacing
-     or case of it, and the aliases OHIP, RAMQ, MSP, Alberta Health and
-     Care Card. PR #108's catalogue matches only the exact name. */
+  /* The list is shared/health-card-names.js, loaded before this file.
+     This used to keep a second copy of the match. */
   function isHealthCardType(value) {
-    var spaced = String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
-    if (!spaced) return false;
-    var compact = spaced.replace(/ /g, "");
-    if (compact.indexOf("healthcard") !== -1) return true;
-    if (compact.indexOf("carecard") !== -1) return true;
-    var words = spaced.split(" ");
-    for (var w = 0; w < words.length; w++) {
-      if (words[w] === "ohip" || words[w] === "ramq" || words[w] === "msp") return true;
+    var api = window.CDOS_HEALTH_CARDS;
+    if (!api || typeof api.isHealthCardType !== "function") {
+      throw new Error("CurrencyDesk has no health-card list loaded");
     }
-    if (spaced.indexOf("alberta health") !== -1) return true;
-    return false;
-  }
-  var HEALTH_NUMBER_KEYS = { docNumber: 1, doc_number: 1, idNum: 1, num: 1, number: 1 };
-  var HEALTH_TYPE_KEYS = ["docType", "doc_type", "idType", "type"];
-  function objectIsHealthCard(value) {
-    if (!value || typeof value !== "object") return false;
-    for (var i = 0; i < HEALTH_TYPE_KEYS.length; i++) {
-      if (isHealthCardType(value[HEALTH_TYPE_KEYS[i]])) return true;
-    }
-    return false;
+    return api.isHealthCardType(value);
   }
   function scrubHealthValue(value) {
-    if (Array.isArray(value)) return value.map(scrubHealthValue);
-    if (typeof value === "string") {
-      if (value.charAt(0) !== "{" && value.charAt(0) !== "[") return value;
-      try {
-        var parsed = JSON.parse(value);
-        var cleaned = scrubHealthValue(parsed);
-        if (JSON.stringify(cleaned) === JSON.stringify(parsed)) return value;
-        return JSON.stringify(cleaned);
-      } catch (error) {
-        console.error("[CurrencyDesk] could not read a cached record while clearing a health number", error);
-        return value;
-      }
+    var api = window.CDOS_HEALTH_CARDS;
+    if (!api || typeof api.scrubHealthNumbers !== "function") {
+      throw new Error("CurrencyDesk has no health-card list loaded");
     }
-    if (!value || typeof value !== "object") return value;
-    var drop = objectIsHealthCard(value);
-    var out = Array.isArray(value) ? [] : {};
-    Object.keys(value).forEach(function (key) {
-      if (drop && HEALTH_NUMBER_KEYS[key]) return;
-      out[key] = scrubHealthValue(value[key]);
-    });
-    return out;
+    return api.scrubHealthNumbers(value);
   }
   function scrubLocalHealthNumbers() {
     var keys = [];
@@ -2663,7 +2775,12 @@
     for (i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
     keys.forEach(function (key) {
       if (!key) return;
-      var raw = localStorage.getItem(key);
+      var raw;
+      try { raw = localStorage.getItem(key); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not read " + key + " while clearing a cached health number", error);
+        return;
+      }
       if (!raw || (raw.charAt(0) !== "{" && raw.charAt(0) !== "[")) return;
       var parsed;
       try { parsed = JSON.parse(raw); }
@@ -2675,62 +2792,86 @@
         return;
       }
       var next = JSON.stringify(scrubHealthValue(parsed));
-      if (next !== raw) localStorage.setItem(key, next);
+      if (next === raw) return;
+      try { localStorage.setItem(key, next); }
+      catch (error) {
+        /* One key that cannot be rewritten must not wipe the desk
+           and must not stop the next key being cleared. */
+        console.error("[CurrencyDesk] could not clear a cached health number in " + key, error);
+      }
     });
   }
+  var INDEXED_HEALTH_SCRUB_MS = 4000;
   function scrubIndexedHealthNumbers() {
     if (!window.indexedDB || typeof indexedDB.databases !== "function") return Promise.resolve();
-    return indexedDB.databases().then(function (list) {
-      var pending = (list || []).filter(function (info) { return info && info.name; }).map(function (info) {
-        return new Promise(function (resolve, reject) {
-          var open = indexedDB.open(info.name);
-          open.onerror = function () { reject(open.error || new Error("Could not open " + info.name)); };
-          open.onsuccess = function () {
-            var db = open.result;
-            var names = [];
-            var n;
-            for (n = 0; n < db.objectStoreNames.length; n++) names.push(db.objectStoreNames[n]);
-            if (!names.length) { db.close(); resolve(); return; }
-            var tx = db.transaction(names, "readwrite");
-            tx.oncomplete = function () { db.close(); resolve(); };
-            tx.onerror = function () { db.close(); reject(tx.error || new Error("Could not clear a cached health number in " + info.name)); };
-            names.forEach(function (storeName) {
-              var cursorReq = tx.objectStore(storeName).openCursor();
-              cursorReq.onerror = function () { reject(cursorReq.error || new Error("Could not read " + storeName)); };
-              cursorReq.onsuccess = function () {
-                var cursor = cursorReq.result;
-                if (!cursor) return;
-                var value = cursor.value;
-                if (typeof value === "string" && (value.charAt(0) === "{" || value.charAt(0) === "[")) {
-                  try {
-                    var parsed = JSON.parse(value);
-                    var asText = JSON.stringify(scrubHealthValue(parsed));
-                    if (asText !== value) cursor.update(asText);
-                  } catch (error) {
-                    console.error("[CurrencyDesk] could not read a cached record in " + storeName, error);
+    return new Promise(function (resolve) {
+      var finished = false;
+      var timer = setTimeout(function () {
+        if (finished) return;
+        finished = true;
+        console.error("[CurrencyDesk] timed out clearing a cached health number");
+        resolve();
+      }, INDEXED_HEALTH_SCRUB_MS);
+      var finish = function (error) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        if (error) console.error("[CurrencyDesk] could not clear a cached health number", error);
+        resolve();
+      };
+      var listed;
+      try { listed = indexedDB.databases(); }
+      catch (error) { finish(error); return; }
+      Promise.resolve(listed).then(function (list) {
+        var pending = (list || []).filter(function (info) { return info && info.name; }).map(function (info) {
+          return new Promise(function (resolveStore, rejectStore) {
+            var open = indexedDB.open(info.name);
+            open.onerror = function () { rejectStore(open.error || new Error("Could not open " + info.name)); };
+            open.onsuccess = function () {
+              var db = open.result;
+              var names = [];
+              var n;
+              for (n = 0; n < db.objectStoreNames.length; n++) names.push(db.objectStoreNames[n]);
+              if (!names.length) { db.close(); resolveStore(); return; }
+              var tx = db.transaction(names, "readwrite");
+              tx.oncomplete = function () { db.close(); resolveStore(); };
+              tx.onerror = function () { db.close(); rejectStore(tx.error || new Error("Could not clear a cached health number in " + info.name)); };
+              names.forEach(function (storeName) {
+                var cursorReq = tx.objectStore(storeName).openCursor();
+                cursorReq.onerror = function () { rejectStore(cursorReq.error || new Error("Could not read " + storeName)); };
+                cursorReq.onsuccess = function () {
+                  var cursor = cursorReq.result;
+                  if (!cursor) return;
+                  var value = cursor.value;
+                  if (typeof value === "string" && (value.charAt(0) === "{" || value.charAt(0) === "[")) {
+                    try {
+                      var parsed = JSON.parse(value);
+                      var asText = JSON.stringify(scrubHealthValue(parsed));
+                      if (asText !== value) cursor.update(asText);
+                    } catch (error) {
+                      console.error("[CurrencyDesk] could not read a cached record in " + storeName, error);
+                    }
+                  } else if (value && typeof value === "object") {
+                    var cleaned = scrubHealthValue(value);
+                    if (JSON.stringify(cleaned) !== JSON.stringify(value)) cursor.update(cleaned);
                   }
-                } else if (value && typeof value === "object") {
-                  var cleaned = scrubHealthValue(value);
-                  if (JSON.stringify(cleaned) !== JSON.stringify(value)) cursor.update(cleaned);
-                }
-                cursor.continue();
-              };
-            });
-          };
+                  cursor.continue();
+                };
+              });
+            };
+          });
         });
-      });
-      return Promise.all(pending);
+        return Promise.all(pending).then(function () { finish(); }, finish);
+      }, finish);
     });
   }
   window.CDOS = window.CDOS || {};
   window.CDOS.isHealthCardType = isHealthCardType;
   window.CDOS.scrubClientMap = scrubHealthValue;
   window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
+  window.CDOS.scrubIndexedHealthNumbers = scrubIndexedHealthNumbers;
   scrubLocalHealthNumbers();
-  window.CDOS.healthNumberScrubbed = scrubIndexedHealthNumbers().catch(function (error) {
-    console.error("[CurrencyDesk] could not clear a cached health number", error);
-    throw error;
-  });
+  window.CDOS.healthNumberScrubbed = scrubIndexedHealthNumbers();
 
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
@@ -22368,6 +22509,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const send = run => Promise.resolve().then(run).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
     const extraDoc = i => (rec.ids || [])[i] || {};
     function field(k, v) {
+      if ((k === 'idType' || k === 'type') && window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(v)) {
+        onError(HEALTH_CARD_REFUSAL);
+        return;
+      }
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
@@ -22855,7 +23000,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }), " Capture")))))));
   }
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
+  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Permanent Resident Card'];
+  /* A type already on the file stays selectable, except a health card.
+     That name is not an option in the picker, the Record-ID sheet, or
+     this edit field. */
+  const offeredType = (value, types) => {
+    if (!value || types.indexOf(value) >= 0) return null;
+    if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(value)) return null;
+    return value;
+  };
+  const HEALTH_CARD_REFUSAL = "Health cards can't be used as ID. Record a current photo ID.";
+  /* What client search is allowed to match. A health-card number is
+     not part of it, on the primary or on an extra document. */
+  function clientSearchText(rec) {
+    rec = rec || {};
+    const health = t => window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(t);
+    const ownNum = health(rec.idType) ? '' : rec.idNum || '';
+    const extra = (rec.ids || []).filter(d => d && !health(d.type)).map(d => d.num || '').join(' ');
+    return `${ownNum} ${extra}`.trim();
+  }
   const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
@@ -23255,7 +23418,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    const stated = offeredType(rec.idType, types);
     return /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(EditField, {
@@ -23351,7 +23514,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    const stated = offeredType(doc.type, types);
     return /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
@@ -25789,10 +25952,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
-      const health = t => window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(t);
-      const ownNum = health(r.idType) ? '' : r.idNum || '';
-      const extraNums = (r.ids || []).filter(d => !health(d.type)).map(d => d.num || '').join(' ');
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${ownNum} ${extraNums} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${clientSearchText(r)} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
     const onClick = name => {
@@ -26266,6 +26426,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setErr('Type, number, and expiry are required.');
         return;
       }
+      if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(draft.idType)) {
+        setErr(HEALTH_CARD_REFUSAL);
+        return;
+      }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -26465,7 +26629,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     ClientIdViewer,
     ClientRecords,
     IdScan,
-    RecordIdSheet
+    RecordIdSheet,
+    exportClientReport,
+    clientSearchText
   });
 })();
 
@@ -50600,7 +50766,7 @@ ${snap}`;
           const tx = data.live.filter(r => r.customer === n);
           const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
           const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-          const idNum = window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType) ? '' : c.idNum || '';
+          const idNum = kycIdNumber(c);
           const st = !c.idType || !idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified';
           return [n, c.idType || '', idNum, c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
@@ -51840,7 +52006,8 @@ ${snap}`;
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = n => {
           const c = clients[n] || {};
-          if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft];
+          const idNum = kycIdNumber(c);
+          if (!c.idType || !idNum) return ['missing ID', CD.flag, CD.flagSoft];
           if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft];
           return ['verified', CD.green, CD.greenSoft];
         };
@@ -51902,7 +52069,7 @@ ${snap}`;
               fontSize: 11,
               color: CD.mute
             }
-          }, window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType) ? '—' : c.idNum || '—'), /*#__PURE__*/React.createElement("td", {
+          }, kycIdNumber(c) || '—'), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute
@@ -53148,9 +53315,18 @@ ${snap}`;
      localStorage. See docs/GENERATED_DOCUMENTS.md.
      ============================================================ */
 
+  /* The ID-number cell of the KYC register, shared by the sheet and
+     the CSV so a health number cannot be in one and absent from the
+     other. */
+  function kycIdNumber(client) {
+    const c = client || {};
+    if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType)) return '';
+    return c.idNum || '';
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Reports,
-    ReportHistory
+    ReportHistory,
+    kycIdNumber
   });
 })();
 

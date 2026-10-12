@@ -667,54 +667,21 @@
   var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
   var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
 
-  /* Same rule as server/src/clients/health-card.ts. A health card
-     number is not kept in this browser. The catalogue name, any spacing
-     or case of it, and the aliases OHIP, RAMQ, MSP, Alberta Health and
-     Care Card. PR #108's catalogue matches only the exact name. */
+  /* The list is shared/health-card-names.js, loaded before this file.
+     This used to keep a second copy of the match. */
   function isHealthCardType(value) {
-    var spaced = String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
-    if (!spaced) return false;
-    var compact = spaced.replace(/ /g, "");
-    if (compact.indexOf("healthcard") !== -1) return true;
-    if (compact.indexOf("carecard") !== -1) return true;
-    var words = spaced.split(" ");
-    for (var w = 0; w < words.length; w++) {
-      if (words[w] === "ohip" || words[w] === "ramq" || words[w] === "msp") return true;
+    var api = window.CDOS_HEALTH_CARDS;
+    if (!api || typeof api.isHealthCardType !== "function") {
+      throw new Error("CurrencyDesk has no health-card list loaded");
     }
-    if (spaced.indexOf("alberta health") !== -1) return true;
-    return false;
-  }
-  var HEALTH_NUMBER_KEYS = { docNumber: 1, doc_number: 1, idNum: 1, num: 1, number: 1 };
-  var HEALTH_TYPE_KEYS = ["docType", "doc_type", "idType", "type"];
-  function objectIsHealthCard(value) {
-    if (!value || typeof value !== "object") return false;
-    for (var i = 0; i < HEALTH_TYPE_KEYS.length; i++) {
-      if (isHealthCardType(value[HEALTH_TYPE_KEYS[i]])) return true;
-    }
-    return false;
+    return api.isHealthCardType(value);
   }
   function scrubHealthValue(value) {
-    if (Array.isArray(value)) return value.map(scrubHealthValue);
-    if (typeof value === "string") {
-      if (value.charAt(0) !== "{" && value.charAt(0) !== "[") return value;
-      try {
-        var parsed = JSON.parse(value);
-        var cleaned = scrubHealthValue(parsed);
-        if (JSON.stringify(cleaned) === JSON.stringify(parsed)) return value;
-        return JSON.stringify(cleaned);
-      } catch (error) {
-        console.error("[CurrencyDesk] could not read a cached record while clearing a health number", error);
-        return value;
-      }
+    var api = window.CDOS_HEALTH_CARDS;
+    if (!api || typeof api.scrubHealthNumbers !== "function") {
+      throw new Error("CurrencyDesk has no health-card list loaded");
     }
-    if (!value || typeof value !== "object") return value;
-    var drop = objectIsHealthCard(value);
-    var out = Array.isArray(value) ? [] : {};
-    Object.keys(value).forEach(function (key) {
-      if (drop && HEALTH_NUMBER_KEYS[key]) return;
-      out[key] = scrubHealthValue(value[key]);
-    });
-    return out;
+    return api.scrubHealthNumbers(value);
   }
   function scrubLocalHealthNumbers() {
     var keys = [];
@@ -722,7 +689,12 @@
     for (i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
     keys.forEach(function (key) {
       if (!key) return;
-      var raw = localStorage.getItem(key);
+      var raw;
+      try { raw = localStorage.getItem(key); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not read " + key + " while clearing a cached health number", error);
+        return;
+      }
       if (!raw || (raw.charAt(0) !== "{" && raw.charAt(0) !== "[")) return;
       var parsed;
       try { parsed = JSON.parse(raw); }
@@ -734,62 +706,86 @@
         return;
       }
       var next = JSON.stringify(scrubHealthValue(parsed));
-      if (next !== raw) localStorage.setItem(key, next);
+      if (next === raw) return;
+      try { localStorage.setItem(key, next); }
+      catch (error) {
+        /* One key that cannot be rewritten must not wipe the desk
+           and must not stop the next key being cleared. */
+        console.error("[CurrencyDesk] could not clear a cached health number in " + key, error);
+      }
     });
   }
+  var INDEXED_HEALTH_SCRUB_MS = 4000;
   function scrubIndexedHealthNumbers() {
     if (!window.indexedDB || typeof indexedDB.databases !== "function") return Promise.resolve();
-    return indexedDB.databases().then(function (list) {
-      var pending = (list || []).filter(function (info) { return info && info.name; }).map(function (info) {
-        return new Promise(function (resolve, reject) {
-          var open = indexedDB.open(info.name);
-          open.onerror = function () { reject(open.error || new Error("Could not open " + info.name)); };
-          open.onsuccess = function () {
-            var db = open.result;
-            var names = [];
-            var n;
-            for (n = 0; n < db.objectStoreNames.length; n++) names.push(db.objectStoreNames[n]);
-            if (!names.length) { db.close(); resolve(); return; }
-            var tx = db.transaction(names, "readwrite");
-            tx.oncomplete = function () { db.close(); resolve(); };
-            tx.onerror = function () { db.close(); reject(tx.error || new Error("Could not clear a cached health number in " + info.name)); };
-            names.forEach(function (storeName) {
-              var cursorReq = tx.objectStore(storeName).openCursor();
-              cursorReq.onerror = function () { reject(cursorReq.error || new Error("Could not read " + storeName)); };
-              cursorReq.onsuccess = function () {
-                var cursor = cursorReq.result;
-                if (!cursor) return;
-                var value = cursor.value;
-                if (typeof value === "string" && (value.charAt(0) === "{" || value.charAt(0) === "[")) {
-                  try {
-                    var parsed = JSON.parse(value);
-                    var asText = JSON.stringify(scrubHealthValue(parsed));
-                    if (asText !== value) cursor.update(asText);
-                  } catch (error) {
-                    console.error("[CurrencyDesk] could not read a cached record in " + storeName, error);
+    return new Promise(function (resolve) {
+      var finished = false;
+      var timer = setTimeout(function () {
+        if (finished) return;
+        finished = true;
+        console.error("[CurrencyDesk] timed out clearing a cached health number");
+        resolve();
+      }, INDEXED_HEALTH_SCRUB_MS);
+      var finish = function (error) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        if (error) console.error("[CurrencyDesk] could not clear a cached health number", error);
+        resolve();
+      };
+      var listed;
+      try { listed = indexedDB.databases(); }
+      catch (error) { finish(error); return; }
+      Promise.resolve(listed).then(function (list) {
+        var pending = (list || []).filter(function (info) { return info && info.name; }).map(function (info) {
+          return new Promise(function (resolveStore, rejectStore) {
+            var open = indexedDB.open(info.name);
+            open.onerror = function () { rejectStore(open.error || new Error("Could not open " + info.name)); };
+            open.onsuccess = function () {
+              var db = open.result;
+              var names = [];
+              var n;
+              for (n = 0; n < db.objectStoreNames.length; n++) names.push(db.objectStoreNames[n]);
+              if (!names.length) { db.close(); resolveStore(); return; }
+              var tx = db.transaction(names, "readwrite");
+              tx.oncomplete = function () { db.close(); resolveStore(); };
+              tx.onerror = function () { db.close(); rejectStore(tx.error || new Error("Could not clear a cached health number in " + info.name)); };
+              names.forEach(function (storeName) {
+                var cursorReq = tx.objectStore(storeName).openCursor();
+                cursorReq.onerror = function () { rejectStore(cursorReq.error || new Error("Could not read " + storeName)); };
+                cursorReq.onsuccess = function () {
+                  var cursor = cursorReq.result;
+                  if (!cursor) return;
+                  var value = cursor.value;
+                  if (typeof value === "string" && (value.charAt(0) === "{" || value.charAt(0) === "[")) {
+                    try {
+                      var parsed = JSON.parse(value);
+                      var asText = JSON.stringify(scrubHealthValue(parsed));
+                      if (asText !== value) cursor.update(asText);
+                    } catch (error) {
+                      console.error("[CurrencyDesk] could not read a cached record in " + storeName, error);
+                    }
+                  } else if (value && typeof value === "object") {
+                    var cleaned = scrubHealthValue(value);
+                    if (JSON.stringify(cleaned) !== JSON.stringify(value)) cursor.update(cleaned);
                   }
-                } else if (value && typeof value === "object") {
-                  var cleaned = scrubHealthValue(value);
-                  if (JSON.stringify(cleaned) !== JSON.stringify(value)) cursor.update(cleaned);
-                }
-                cursor.continue();
-              };
-            });
-          };
+                  cursor.continue();
+                };
+              });
+            };
+          });
         });
-      });
-      return Promise.all(pending);
+        return Promise.all(pending).then(function () { finish(); }, finish);
+      }, finish);
     });
   }
   window.CDOS = window.CDOS || {};
   window.CDOS.isHealthCardType = isHealthCardType;
   window.CDOS.scrubClientMap = scrubHealthValue;
   window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
+  window.CDOS.scrubIndexedHealthNumbers = scrubIndexedHealthNumbers;
   scrubLocalHealthNumbers();
-  window.CDOS.healthNumberScrubbed = scrubIndexedHealthNumbers().catch(function (error) {
-    console.error("[CurrencyDesk] could not clear a cached health number", error);
-    throw error;
-  });
+  window.CDOS.healthNumberScrubbed = scrubIndexedHealthNumbers();
 
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity

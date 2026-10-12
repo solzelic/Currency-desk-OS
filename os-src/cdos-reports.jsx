@@ -523,7 +523,7 @@
           ...names.map(n => { const c = clients[n] || {}; const tx = data.live.filter(r => r.customer === n);
             const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
             const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-            const idNum = (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType)) ? '' : (c.idNum || '');
+            const idNum = kycIdNumber(c);
             const st = (!c.idType || !idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified');
             return [n, c.idType || '', idNum, c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
       }
@@ -937,7 +937,7 @@
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
-        const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['verified', CD.green, CD.greenSoft]; };
+        const stat = (n) => { const c = clients[n] || {}; const idNum = kycIdNumber(c); if (!c.idType || !idNum) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['verified', CD.green, CD.greenSoft]; };
         return (<div>
           <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
           <Card pad={0}>
@@ -952,7 +952,7 @@
                 return (<tr key={n}>
                 <td style={{ ...tdS, fontWeight: 500 }}>{n}</td>
                 <td style={{ ...tdS, color: CD.mute }}>{c.idType || '—'}</td>
-                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{(window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType)) ? '—' : (c.idNum || '—')}</td>
+                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{kycIdNumber(c) || '—'}</td>
                 <td style={{ ...tdS, color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute }}>{c.idExpiry || '—'}</td>
                 <td style={{ ...tdS, textAlign: 'center' }}><span style={{ fontSize: 10, fontWeight: 700, color: col, background: bg, padding: '2px 7px', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{st.toUpperCase()}</span></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tx.length}</td>
@@ -1275,5 +1275,13 @@
      localStorage. See docs/GENERATED_DOCUMENTS.md.
      ============================================================ */
 
-  window.CDOS = Object.assign(window.CDOS || {}, { Reports, ReportHistory });
+  /* The ID-number cell of the KYC register, shared by the sheet and
+     the CSV so a health number cannot be in one and absent from the
+     other. */
+  function kycIdNumber(client) {
+    const c = client || {};
+    if (window.CDOS.isHealthCardType && window.CDOS.isHealthCardType(c.idType)) return '';
+    return c.idNum || '';
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, { Reports, ReportHistory, kycIdNumber });
 })();

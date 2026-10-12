@@ -1,8 +1,23 @@
 /* A health number that was already on the counter PC, and one that is
    still in the database, must not be on the screen or in this browser
-   after the desk loads. An LCTR or STR must not prefill it either. */
+   after the desk loads. An LCTR or STR must not prefill it either.
+   The names are the shared list. Each surface below runs that list. */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
 import type { Page } from "@playwright/test";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop, rendered } from "./fixtures";
+
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as {
+  Pool: new (config: { connectionString: string }) => {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+    end: () => Promise<void>;
+  };
+};
+const { HEALTH_CARD_NAMES } = requireFromServer("../shared/health-card-names.js") as {
+  HEALTH_CARD_NAMES: string[];
+};
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no client records");
 
@@ -34,30 +49,45 @@ test("a loaded client file keeps no health number in the browser", async ({ page
   await page.setViewportSize({ width: 1280, height: 800 });
   await signInAtDesk(page);
 
-  const created = await page.evaluate(async ({ name, secret }) => {
-    const headers = { "content-type": "application/json" };
+  const created = await page.evaluate(async ({ name }) => {
     const made = await fetch("/api/clients", {
       method: "POST",
-      headers,
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ legalName: name, region: "ON" }),
     });
     const client = await made.json();
-    if (!made.ok) return { status: made.status, body: client };
-    const doc = await fetch(`/api/clients/${client.clientId}/documents`, {
+    return { status: made.status, clientId: client.clientId as string, body: client };
+  }, { name: NAME });
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  const refused = await page.evaluate(async ({ clientId, secret }) => {
+    const doc = await fetch(`/api/clients/${clientId}/documents`, {
       method: "POST",
-      headers,
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        docType: "OHIP",
+        docType: "Ontario Health Insurance Plan",
         docNumber: secret,
         issuingJurisdiction: "ON",
         expiresOn: "2030-04-01",
         isPrimary: true,
       }),
     });
-    return { status: doc.status, clientId: client.clientId, body: await doc.json() };
-  }, { name: NAME, secret: SECRET });
-  expect(created.status, JSON.stringify(created.body)).toBe(201);
-  expect(JSON.stringify(created.body)).not.toContain(SECRET);
+    return { status: doc.status, body: await doc.json() };
+  }, { clientId: created.clientId, secret: SECRET });
+  expect(refused.status).toBe(422);
+  expect(JSON.stringify(refused.body)).not.toContain(SECRET);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  const owner = await pool.query(
+    "SELECT tenant_id, legal_entity_id FROM desk_clients WHERE client_id=$1",
+    [created.clientId],
+  );
+  await pool.query(
+    `INSERT INTO desk_client_identity_documents
+      (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number,
+       issuing_jurisdiction, expires_on, is_primary, created_by)
+     VALUES ($1,$2,$3,$4,'OHIP',$5,'ON','2030-04-01',true,'test')`,
+    [`doc_e2e_${RUN}`, created.clientId, owner.rows[0]!.tenant_id, owner.rows[0]!.legal_entity_id, SECRET],
+  );
+  await pool.end();
 
   await page.evaluate(async ({ name, secret }) => {
     const cached = {
@@ -68,6 +98,10 @@ test("a loaded client file keeps no health number in the browser", async ({ page
         ids: [{ type: "Care Card", num: secret }],
       },
     };
+    localStorage.setItem("cdos_tour_v1", JSON.stringify({
+      "a.singh": { status: "finished", tour: "employee", at: Date.now() },
+      "tnt-yorkfx:a.singh": { status: "finished", tour: "employee", at: Date.now() },
+    }));
     localStorage.setItem("cdos_clients_v1", JSON.stringify(cached));
     localStorage.setItem("cdos_kyc_v1", JSON.stringify({
       checks: [{ idType: "RAMQ", idNum: secret }],
@@ -143,6 +177,11 @@ test("a loaded client file keeps no health number in the browser", async ({ page
   await openClients(page);
   const card = page.locator('div[role="button"]').filter({ hasText: NAME }).first();
   await card.waitFor({ state: "visible", timeout: 20_000 });
+  const search = page.getByPlaceholder("Search name, phone, or a file on their record…");
+  await search.fill(SECRET);
+  await expect(page.locator('div[role="button"]').filter({ hasText: NAME })).toHaveCount(0);
+  await search.fill("");
+  await card.waitFor({ state: "visible", timeout: 20_000 });
   await card.click();
   await expect(page.getByText("OHIP").first()).toBeVisible();
   await expect(page.getByText("Issuing province").first()).toBeVisible();
@@ -151,6 +190,13 @@ test("a loaded client file keeps no health number in the browser", async ({ page
   await expect(page.getByText(SECRET)).toHaveCount(0);
   const screen = await page.locator("body").innerText();
   expect(screen).not.toContain(SECRET);
+
+  await page.getByRole("button", { name: "Edit" }).click();
+  const options = await page.locator("select").evaluateAll((nodes) =>
+    nodes.flatMap((node) => Array.from((node as HTMLSelectElement).options).map((option) => option.text)),
+  );
+  expect(options).toContain("Passport");
+  expect(options).not.toContain("Health Card");
 });
 
 const NOTICE = "No accepted ID on file. Record a valid ID before filing if you can, otherwise file with what you have and note why.";
@@ -293,4 +339,199 @@ test("LCTR and STR prefill an accepted photo ID and do not block without one", a
   expect(filled.healthGates).toEqual([]);
   expect(filled.expiredGates).toEqual([]);
   expect(filled.leaked).toBe(false);
+});
+
+test("the shared health-card list stays off search, the KYC cell, print, prefill, and localStorage", async ({ page }) => {
+  await signInAtDesk(page);
+  await page.waitForFunction(() =>
+    (window as any).CDOS_HEALTH_CARDS
+    && (window as any).CDOS.kycIdNumber
+    && (window as any).CDOS.clientSearchText
+    && (window as any).CDOS.exportClientReport
+    && (window as any).CDOS.LCTR);
+
+  const ran = await page.evaluate(({ names, secret }) => {
+    const loaded = ((window as any).CDOS_HEALTH_CARDS.HEALTH_CARD_NAMES as string[]).join("\n");
+    if (loaded !== names.join("\n")) return { error: "browser list is not the shared list", leaks: [loaded], surfaces: [], count: 0 };
+    const leaks: string[] = [];
+    const settings = { timezone: "America/Toronto", structuringDays: 7, retentionYears: 5 };
+    const regime = {
+      id: "FINTRAC", authority: "FINTRAC", country: "Canada", currency: "CAD",
+      threshold: 10000, aggHours: 24, largeCode: "LCTR", largeLabel: "Large Cash Transaction Report",
+      wireCode: "EFTR", wireLabel: "Electronic Funds Transfer Report", strCode: "STR", strLabel: "Suspicious Transaction Report",
+    };
+    names.forEach((name: string, index: number) => {
+      const number = `${secret}-${index}`;
+      localStorage.setItem(`cdos_probe_${index}`, JSON.stringify({
+        idType: name, idNum: number, ids: [{ type: name, num: number }],
+      }));
+      const haystack = (window as any).CDOS.clientSearchText({
+        idType: name, idNum: number, ids: [{ type: name, num: number }],
+      });
+      if (String(haystack).includes(number)) leaks.push(`search ${name}`);
+      if ((window as any).CDOS.kycIdNumber({ idType: name, idNum: number })) leaks.push(`kyc-csv ${name}`);
+      const opened: string[] = [];
+      const origOpen = window.open;
+      window.open = (() => ({
+        document: { write: (html: string) => opened.push(html), close() {} },
+        focus() {},
+        print() {},
+      })) as typeof window.open;
+      try {
+        (window as any).CDOS.exportClientReport(`Table ${index}`, {
+          idType: name, idNum: number, idExpiry: "2030-04-01", kind: "individual",
+        }, [], {}, settings);
+      } finally {
+        window.open = origOpen;
+      }
+      if (!opened.length || opened.join("").includes(number)) leaks.push(`print ${name}`);
+      const blocks = (window as any).CDOS.LCTR.buildMap(
+        { kind: "LCTR", subject: "Only", refs: ["TX"], reportRef: "R", amount: 12000, basis: null },
+        {
+          settings,
+          regime,
+          rows: [{ ref: "TX", customer: "Only", date: "2026-10-01", time: "10:00", inCcy: "CAD", inAmt: 12000, outCcy: "USD", outAmt: 8000, type: "Exchange" }],
+          clients: { Only: { idType: name, idNum: number, idExpiry: "2030-04-01", province: "ON", country: "Canada" } },
+        },
+      );
+      const str = (window as any).CDOS.LCTR.buildMap(
+        { kind: "STR", subject: "Only", refs: ["TX"], reportRef: "S", amount: 12000, basis: null },
+        {
+          settings,
+          regime,
+          rows: [{ ref: "TX", customer: "Only", date: "2026-10-01", time: "10:00", inCcy: "CAD", inAmt: 12000, outCcy: "USD", outAmt: 8000, type: "Exchange" }],
+          clients: { Only: { idType: name, idNum: number, idExpiry: "2030-04-01", province: "ON", country: "Canada" } },
+        },
+      );
+      if (JSON.stringify(blocks).includes(number) || JSON.stringify(str).includes(number)) leaks.push(`prefill ${name}`);
+    });
+    (window as any).CDOS.scrubLocalHealthNumbers();
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      const raw = key ? (localStorage.getItem(key) || "") : "";
+      if (raw.includes(secret)) leaks.push(`localStorage ${key}`);
+    }
+    return {
+      error: "",
+      leaks,
+      surfaces: ["localStorage", "search", "kyc-csv", "print", "lctr-str-prefill"],
+      count: names.length,
+    };
+  }, { names: HEALTH_CARD_NAMES, secret: "HN-SURFACE" });
+
+  expect(ran.error).toBe("");
+  expect(ran.leaks).toEqual([]);
+  expect(ran.count).toBe(HEALTH_CARD_NAMES.length);
+  expect(ran.surfaces).toEqual(["localStorage", "search", "kyc-csv", "print", "lctr-str-prefill"]);
+});
+
+test("a localStorage write failure does not blank the desk", async ({ page }) => {
+  await signInAtDesk(page);
+  const result = await page.evaluate(() => {
+    const logs: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => {
+      logs.push(args.map((item) => String(item)).join(" "));
+      return origErr.apply(console, args as []);
+    };
+    localStorage.setItem("cdos_desk_still_here", "open");
+    localStorage.setItem("cdos_probe_ok", JSON.stringify({ idType: "OHIP", idNum: "HN-LOCAL-OK" }));
+    localStorage.setItem("cdos_probe_fail", JSON.stringify({ idType: "Medicare card", idNum: "HN-LOCAL-FAIL" }));
+    const orig = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === "cdos_probe_fail") throw new Error("quota");
+      return orig.call(this, key, value);
+    };
+    try {
+      (window as any).CDOS.scrubLocalHealthNumbers();
+    } finally {
+      Storage.prototype.setItem = orig;
+      console.error = origErr;
+    }
+    return {
+      logs: logs.join("\n"),
+      still: localStorage.getItem("cdos_desk_still_here"),
+      ok: localStorage.getItem("cdos_probe_ok"),
+      fail: localStorage.getItem("cdos_probe_fail"),
+      length: localStorage.length,
+    };
+  });
+  expect(result.still).toBe("open");
+  expect(result.ok || "").not.toContain("HN-LOCAL-OK");
+  expect(result.fail || "").toContain("HN-LOCAL-FAIL");
+  expect(result.logs).toContain("could not clear a cached health number");
+  expect(result.length).toBeGreaterThan(2);
+});
+
+test("an IndexedDB clear that does not finish is logged and does not hang", async ({ page }) => {
+  await signInAtDesk(page);
+  const result = await page.evaluate(async () => {
+    const logs: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => {
+      logs.push(args.map((item) => String(item)).join(" "));
+      return origErr.apply(console, args as []);
+    };
+    const orig = indexedDB.databases.bind(indexedDB);
+    indexedDB.databases = () => new Promise(() => {}) as Promise<IDBDatabaseInfo[]>;
+    const started = Date.now();
+    await (window as any).CDOS.scrubIndexedHealthNumbers();
+    indexedDB.databases = orig;
+    console.error = origErr;
+    return { ms: Date.now() - started, logs: logs.join("\n") };
+  });
+  expect(result.ms).toBeGreaterThan(3000);
+  expect(result.ms).toBeLessThan(7000);
+  expect(result.logs).toContain("timed out clearing a cached health number");
+});
+
+test("the KYC CSV that opens has no health number", async ({ page }) => {
+  await signInAtDesk(page, "j.masri");
+  const name = `Kyc Csv ${RUN}`;
+  const secret = `HN-CSV-${RUN}-PRIV`;
+  const created = await page.evaluate(async (legalName) => {
+    const made = await fetch("/api/clients", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ legalName, region: "ON" }),
+    });
+    const body = await made.json();
+    return { status: made.status, clientId: body.clientId as string };
+  }, name);
+  expect(created.status).toBe(201);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  const owner = await pool.query(
+    "SELECT tenant_id, legal_entity_id FROM desk_clients WHERE client_id=$1",
+    [created.clientId],
+  );
+  await pool.query(
+    `INSERT INTO desk_client_identity_documents
+      (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number,
+       issuing_jurisdiction, expires_on, is_primary, created_by)
+     VALUES ($1,$2,$3,$4,'OHIP',$5,'ON','2030-04-01',true,'test')`,
+    [`doc_csv_${RUN}`, created.clientId, owner.rows[0]!.tenant_id, owner.rows[0]!.legal_entity_id, secret],
+  );
+  await pool.end();
+  await page.evaluate(() => {
+    const done = { status: "finished", tour: "employee", at: Date.now() };
+    localStorage.setItem("cdos_tour_v1", JSON.stringify({ "j.masri": done, "tnt-yorkfx:j.masri": done }));
+  });
+  await page.reload();
+  await landOnDesktop(page);
+  await page.getByText(/^Reports$/).first().click();
+  await rendered(page, /End-of-Day Sign-Off/);
+  await page.getByText("Client & KYC Register").first().click();
+  await page.locator("#cdos-report-doc").waitFor({ state: "visible", timeout: 30_000 });
+  const sheet = await page.locator("#cdos-report-doc").innerText();
+  expect(sheet).toContain(name);
+  expect(sheet).toContain("OHIP");
+  expect(sheet).not.toContain(secret);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "CSV" }).click(),
+  ]);
+  const csv = readFileSync((await download.path())!, "utf8");
+  expect(csv).toContain(name);
+  expect(csv).toContain("OHIP");
+  expect(csv).not.toContain(secret);
 });

@@ -1,32 +1,32 @@
 /* Health cards are not valid ID.
 
-   Ontario's Health Cards and Numbers Control Act, 1991 bars a business
-   outside health care from collecting or using a health number. FINTRAC
-   says not to use a health card where provincial law prohibits it.
+   The names live in shared/health-card-names.js, which the browser
+   loads as the same file. PR #108's catalogue is not on this branch.
+   Its health-card row should import that list when the two meet, so
+   a provincial name is refused on write and omitted on read together. */
+import { createRequire } from "node:module";
 
-   PR #108 owns the signed document catalogue
-   (server/src/ledger/id-document-types.mjs). That file is not on main,
-   and this change does not edit that branch. Its isHealthCardType
-   matches the exact name "health card" after trim and lower case.
-   This detector is the read-side boundary. It includes that catalogue
-   name, any spacing or case of it, and the aliases a desk has typed:
-   OHIP, RAMQ, MSP, Alberta Health, Care Card. */
+const require = createRequire(import.meta.url);
 
-/* Short names match a whole word, so "mspaint" is not MSP. "Care Card"
-   matches as a phrase, including "BC Care Card". */
-const WORD_ALIASES = new Set(["ohip", "ramq", "msp"]);
+type HealthCardModule = {
+  HEALTH_CARD_NAMES: readonly string[];
+  HEALTH_CARD_TYPE_KEYS: readonly string[];
+  typeKey: (value: unknown) => string;
+  isHealthCardType: (value: unknown) => boolean;
+  scrubHealthNumbers: <T>(value: T) => T;
+  healthCardExcludedSql: (expr: string) => string;
+};
 
-export function isHealthCardType(value: unknown): boolean {
-  const spaced = String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-  if (!spaced) return false;
-  const compact = spaced.replace(/ /g, "");
-  if (compact.includes("healthcard")) return true;
-  if (compact.includes("carecard")) return true;
-  if (spaced.split(" ").some((word) => WORD_ALIASES.has(word))) return true;
-  if (spaced.includes("alberta health")) return true;
-  return false;
-}
+const shared = require("../../../shared/health-card-names.js") as HealthCardModule;
+
+export const HEALTH_CARD_NAMES = shared.HEALTH_CARD_NAMES;
+export const HEALTH_CARD_TYPE_KEYS = shared.HEALTH_CARD_TYPE_KEYS;
+export const typeKey = shared.typeKey;
+export const isHealthCardType = shared.isHealthCardType;
+export const scrubHealthNumbers = shared.scrubHealthNumbers;
+export const healthCardExcludedSql = shared.healthCardExcludedSql;
+
+/* The same refusal PR #108 raises on its catalogue path
+   (HEALTH_CARD_NOT_ID). That path is not on this branch. */
+export const HEALTH_CARD_REFUSAL =
+  "Health cards can't be used as ID. Record a current photo ID.";
