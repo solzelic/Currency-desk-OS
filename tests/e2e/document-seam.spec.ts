@@ -287,9 +287,17 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
      answers have landed" are different moments. The footer date is also
      the wall clock when the session has not arrived yet, so wait for the
      session number, which only that fetch can print. */
+  /* Session number and the day's count come from different fetches.
+     The number can paint while the summary is still "reading the ledger",
+     which is what a zone just past midnight (Pacific/Auckland) hit. */
   await expect
     .poll(() => sheet(page), { timeout: 30_000 })
-    .toContain(`Session #${till.session.sessionNumber}`);
+    .toMatch(
+      new RegExp(
+        `Session #${till.session.sessionNumber}[\\s\\S]*Transactions\\s*\\n?\\s*${day.posted}\\b`,
+        "i",
+      ),
+    );
   const doc = await sheet(page);
 
   // ---- the date and the day ----
