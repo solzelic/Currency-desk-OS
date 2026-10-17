@@ -65,6 +65,7 @@ import { redactDeskEarnings } from "./earnings-redaction.js";
 import {
   addCalendarDays,
   chequeFeeAmount,
+  DEFAULT_CHEQUE_SCHEDULE,
   ruleFor,
   type ChequeFeeRule,
 } from "./cheque-money.js";
@@ -384,6 +385,13 @@ export class ChequeService {
         throw new LedgerError(
           "INVALID_REQUEST",
           "A hold is a whole number of days between 0 and 365.",
+        );
+      /* The schedule names the shortest hold for this paper. A personal
+         cheque at 0 days is refused here, before any row is written. */
+      if (holdDays < rule.holdMin)
+        throw new LedgerError(
+          "CHEQUE_HOLD",
+          `This ${String(input.typeLabel || input.chequeType || "cheque")} cheque has to be held at least ${rule.holdMin} days. Nothing was cashed.`,
         );
 
       const customer = await client.query(
@@ -1268,7 +1276,12 @@ export class ChequeService {
           const feePct = Number(row.feePct);
           const feeMin = Number(row.feeMin);
           if (!Number.isFinite(feePct) || !Number.isFinite(feeMin) || feePct < 0 || feeMin < 0) return [];
-          return [{ id, feePct: String(feePct), feeMin: String(feeMin) }];
+          /* A saved row that names no hold keeps the default for that
+             type. A row that names 0 really is a 0 day hold. */
+          const named = Number(row.holdDays);
+          const fallback = DEFAULT_CHEQUE_SCHEDULE.find((item) => item.id === id);
+          const holdMin = Number.isInteger(named) && named >= 0 ? named : (fallback ? fallback.holdMin : 0);
+          return [{ id, feePct: String(feePct), feeMin: String(feeMin), holdMin }];
         })
       : null;
     const rule = ruleFor(schedule, chequeType);

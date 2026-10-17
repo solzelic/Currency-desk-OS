@@ -10,18 +10,21 @@ export type ChequeFeeRule = {
   id: string;
   feePct: string;
   feeMin: string;
+  /* Shortest hold the book will carry, in calendar days. */
+  holdMin: number;
 };
 
 /* The same figures the desk ships as its starting schedule
    (os-src/cdos-cheques.jsx defaultSchedule). A saved schedule
-   replaces this. A type that is not on the schedule has no rule. */
+   replaces this. A type that is not on the schedule has no rule.
+   holdMin is the shortest hold. Personal paper is 5 days. */
 export const DEFAULT_CHEQUE_SCHEDULE: readonly ChequeFeeRule[] = [
-  { id: "government", feePct: "1.5", feeMin: "4" },
-  { id: "payroll", feePct: "2.0", feeMin: "5" },
-  { id: "certified", feePct: "1.0", feeMin: "5" },
-  { id: "money_order", feePct: "1.5", feeMin: "4" },
-  { id: "business", feePct: "3.0", feeMin: "10" },
-  { id: "personal", feePct: "3.5", feeMin: "10" },
+  { id: "government", feePct: "1.5", feeMin: "4", holdMin: 0 },
+  { id: "payroll", feePct: "2.0", feeMin: "5", holdMin: 1 },
+  { id: "certified", feePct: "1.0", feeMin: "5", holdMin: 0 },
+  { id: "money_order", feePct: "1.5", feeMin: "4", holdMin: 0 },
+  { id: "business", feePct: "3.0", feeMin: "10", holdMin: 3 },
+  { id: "personal", feePct: "3.5", feeMin: "10", holdMin: 5 },
 ];
 
 /** Percent of the face, or the minimum, whichever is larger.

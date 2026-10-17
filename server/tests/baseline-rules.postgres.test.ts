@@ -122,7 +122,7 @@ postgres("the international baseline", () => {
          SELECT id, $2::jsonb FROM tenants WHERE site_slug = $1
          ON CONFLICT (tenant_id) DO UPDATE SET state = EXCLUDED.state`,
         [slug, JSON.stringify({
-          cdos_cheque_schedule_v1: [{ id: "personal", feePct: 0, feeMin: 0 }],
+          cdos_cheque_schedule_v1: [{ id: "personal", feePct: 0, feeMin: 0, holdDays: 0 }],
         })],
       );
     }

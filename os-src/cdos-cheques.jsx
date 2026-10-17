@@ -40,7 +40,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, TODAY, formatPhoneMoney, crossRate, newTx, mkRef } = window.CDOS;
+  const { CD, Ic, TODAY, businessDate, formatPhoneMoney, crossRate, newTx, mkRef } = window.CDOS;
   const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
@@ -134,11 +134,11 @@
     }, o); };
     return [
       mk({ ref: 'CHQ-260618-002', chequeNumber: '004821', maker: 'Northbridge Imports Ltd.', draweeBank: 'RBC Royal Bank', customer: 'Jakob Miller', typeId: 'business', amount: 4200, receivedDate: '2026-06-18', status: 'held', holdUntil: '2026-06-23',
-        timeline: [{ status: 'held', ts: '2026-06-18 09:48', by: 'A. Singh', note: 'Cash fronted — 3-day business hold' }] }),
+        timeline: [{ status: 'held', ts: '2026-06-18 09:48', by: 'A. Singh', note: 'Cash fronted, 3-day business hold' }] }),
       mk({ ref: 'CHQ-260618-001', chequeNumber: '1180', maker: 'Service Canada', draweeBank: 'Bank of Canada', customer: 'Rachel Carter', typeId: 'government', amount: 1340, receivedDate: '2026-06-18', status: 'cleared', holdUntil: '2026-06-18',
-        timeline: [{ status: 'held', ts: '2026-06-18 10:20', by: 'M. Costa' }, { status: 'cleared', ts: '2026-06-18 14:02', by: 'System', note: 'Government cheque — same-day clearance' }] }),
-      mk({ ref: 'CHQ-260616-004', chequeNumber: '00917', maker: 'Brooke Lawson', draweeBank: 'TD Canada Trust', customer: 'Brooke Lawson', typeId: 'personal', amount: 2600, receivedDate: '2026-06-16', status: 'returned', nsf: true, holdUntil: '2026-06-21', returnedReason: 'NSF — insufficient funds',
-        timeline: [{ status: 'held', ts: '2026-06-16 16:30', by: 'A. Singh', note: '5-day personal hold' }, { status: 'returned', ts: '2026-06-19 09:10', by: 'J. Masri', note: 'Returned NSF — cash loss, customer contacted' }] }),
+        timeline: [{ status: 'held', ts: '2026-06-18 10:20', by: 'M. Costa' }, { status: 'cleared', ts: '2026-06-18 14:02', by: 'System', note: 'Government cheque, same-day clearance' }] }),
+      mk({ ref: 'CHQ-260616-004', chequeNumber: '00917', maker: 'Brooke Lawson', draweeBank: 'TD Canada Trust', customer: 'Brooke Lawson', typeId: 'personal', amount: 2600, receivedDate: '2026-06-16', status: 'returned', nsf: true, holdUntil: '2026-06-21', returnedReason: 'NSF, insufficient funds',
+        timeline: [{ status: 'held', ts: '2026-06-16 16:30', by: 'A. Singh', note: '5-day personal hold' }, { status: 'returned', ts: '2026-06-19 09:10', by: 'J. Masri', note: 'Returned NSF. Cash loss, customer contacted' }] }),
       mk({ ref: 'CHQ-260617-003', chequeNumber: '88204', maker: 'Maple Payroll Services', draweeBank: 'Scotiabank', customer: 'Jakob Miller', typeId: 'payroll', amount: 1850, receivedDate: '2026-06-17', status: 'cleared', holdUntil: '2026-06-18',
         timeline: [{ status: 'held', ts: '2026-06-17 11:05', by: 'A. Singh' }, { status: 'cleared', ts: '2026-06-18 08:30', by: 'System', note: 'Payroll cleared next business day' }] }),
     ];
@@ -219,8 +219,18 @@
     const net = +(amtN - fee).toFixed(2);
     // Settings › Cheques can set a minimum hold that floors every cheque's scheduled hold
     const minHold = Math.max(0, +((settings && settings.chequeMinHoldDays)) || 0);
-    const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
-    const holdUntil = addDays(TODAY, holdDays);
+    /* The till's trading day, not the browser's wall clock. A session
+       opened yesterday is still yesterday at 12:30 AM. */
+    const [bookDay, setBookDay] = useState(businessDate);
+    useEffect(() => {
+      const sync = () => setBookDay(businessDate());
+      window.addEventListener('cdos-business-date', sync);
+      sync();
+      return () => window.removeEventListener('cdos-business-date', sync);
+    }, []);
+    const typeHold = Math.max(0, +(type && type.holdDays) || 0);
+    const holdDays = Math.max(minHold, typeHold, holdOverride != null ? +holdOverride : typeHold);
+    const holdUntil = addDays(bookDay, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
     const ready = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
     const canSave = ready && endorsed;
@@ -335,7 +345,7 @@
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 560, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
         <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
-          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="receipt" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash a cheque</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {sheetDate(TODAY)}</div></div></div>
+          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="receipt" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash a cheque</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {sheetDate(bookDay)}</div></div></div>
           <button onClick={onClose} className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
         </div>
         <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
@@ -372,7 +382,7 @@
               </Field>
               <div ref={endorseBox} data-endorsement-box={endorseMark ? 'marked' : 'plain'} style={endorseMark ? { outline: `2px solid ${CD.ink}`, outlineOffset: 3, borderRadius: 8 } : undefined}>
               <Field label="Endorsement">
-                <button onClick={() => { setEndorsed(v => !v); setEndorseMark(false); }} className="w-full flex items-center gap-2 px-2.5 py-2" style={{ border: `1px solid ${endorsed ? CD.ink : CD.line}`, borderRadius: 8, background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)' }}>
+                <button onClick={() => { setEndorsed(v => !v); setEndorseMark(false); }} className="w-full flex items-center gap-2 px-2.5" style={{ height: 44, boxSizing: 'border-box', border: `1px solid ${endorsed ? CD.ink : CD.line}`, borderRadius: 8, background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)' }}>
                   <span className="grid place-items-center" style={{ width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${endorsed ? CD.ink : CD.faint}`, background: endorsed ? CD.ink : 'transparent' }}>{endorsed && <Ic n="check" s={12} c="var(--cd-on-ink)" />}</span>
                   <span className="text-[12.5px]" style={{ color: CD.ink }}>Signed on the back</span>
                 </button>
@@ -388,9 +398,9 @@
               <span className="text-[11px]" style={{ color: CD.mute }}>fee {sheetMoney(fee)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{sheetMoney(net)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="font-bold" style={{ color: CD.ink, fontSize: 28, lineHeight: '32px', fontVariantNumeric: 'tabular-nums' }}>{sheetMoney(net)}</div></div>
               <Ic n="arrowright" s={16} c={CD.faint} />
-              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>At risk until</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{holdDays === 0 ? 'cleared' : sheetDate(holdUntil)}</div></div>
+              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>At risk until</div><div className="font-bold" style={{ color: CD.ink, fontSize: 20, lineHeight: '24px', fontVariantNumeric: 'tabular-nums' }}>{holdDays === 0 ? 'cleared' : sheetDate(holdUntil)}</div></div>
             </div>
             <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: `1px solid ${rt.c}33` }}>
               <span className="text-[11px]" style={{ color: CD.mute }}>Hold</span>
@@ -408,7 +418,7 @@
           <div className="text-[12px]" style={{ color: CD.mute, flex: '1 1 140px' }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{sheetMoney(net)}</b> · keep <b style={{ color: CD.green }}>{sheetMoney(fee)}</b></> : 'Enter the cheque amount'}</div>
           <div className="flex flex-wrap items-center justify-end gap-2" style={{ flex: '1 1 200px' }}>
             {ready && !endorsed && !busy && <span className="text-[12px] text-right" style={{ color: CD.mute, maxWidth: 220 }}>Tick Signed on the back to cash this cheque.</span>}
-            <button type="button" onClick={() => { if (ready && !endorsed) { showEndorsement(); return; } save(); }} disabled={busy || !ready} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) || (ready && !endorsed) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+            <button type="button" onClick={() => { if (ready && !endorsed) { showEndorsement(); return; } save(); }} disabled={busy || !ready} aria-disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 text-sm font-semibold text-white" style={{ height: 44, boxSizing: 'border-box', background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) || (ready && !endorsed) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
           </div>
         </div>
       </div>
@@ -452,10 +462,10 @@
       (book, key) => book.clearCheque(c.chequeId, { idempotencyKey: key }),
       'Cheque cleared', 'Funds confirmed by drawee bank');
     const returnNsf = () => act('nsf',
-      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'NSF — insufficient funds', nsf: true }),
+      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'NSF, insufficient funds', nsf: true }),
       'Cheque returned NSF', `loss ${sheetMoney(c.netCad)}`);
     const returnFraud = () => act('fraud',
-      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'Fraud — suspect cheque', fraud: true }),
+      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'Fraud, suspect cheque', fraud: true }),
       'Cheque flagged fraud', `loss ${sheetMoney(c.netCad)}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
@@ -487,7 +497,7 @@
               <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{overdue ? 'Overdue' : 'Clears'}</div><div className="text-[15px] font-bold" style={{ color: overdue ? CD.flag : CD.ink }}>{sheetDate(c.holdUntil)}{overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`}</div></div>
             </div>
           </div>}
-          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned — {sheetMoney(c.netCad)} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
+          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned, {sheetMoney(c.netCad)} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
 
           {/* cheque capture */}
           <div>
@@ -497,7 +507,7 @@
             <DRow k="Cheque #" v={c.chequeNumber} mono />
             <DRow k="Type" v={c.typeLabel} />
             <DRow k="Customer" v={c.customer} />
-            <DRow k="Endorsed" v={c.endorsed ? 'Yes — signed' : 'Not endorsed'} accent={c.endorsed ? CD.green : CD.flag} />
+            <DRow k="Endorsed" v={c.endorsed ? 'Yes, signed' : 'Not endorsed'} accent={c.endorsed ? CD.green : CD.flag} />
             <DRow k="Face value" v={sheetMoney(c.amount)} mono />
             <DRow k="Fee kept" v={sheetMoney(c.feeCad)} mono accent={CD.green} />
             <DRow k="Cash fronted" v={sheetMoney(c.netCad)} mono />
@@ -511,7 +521,7 @@
               {(c.timeline || []).map((e, i) => { const s = STATUS[e.status] || STATUS.held; return (
                 <div key={i} className="flex gap-2.5">
                   <span className="grid place-items-center flex-none mt-0.5" style={{ width: 22, height: 22, borderRadius: '50%', background: s.soft }}><Ic n={s.icon} s={12} c={s.ink} /></span>
-                  <div><div className="text-[12.5px] font-medium" style={{ color: CD.ink }}>{s.label}</div><div className="text-[11px]" style={{ color: CD.mute }}>{e.ts} · {e.by}{e.note ? ` — ${e.note}` : ''}</div></div>
+                  <div><div className="text-[12.5px] font-medium" style={{ color: CD.ink }}>{s.label}</div><div className="text-[11px]" style={{ color: CD.mute }}>{e.ts} · {e.by}{e.note ? `. ${e.note}` : ''}</div></div>
                 </div>); })}
             </div>
           </div>

@@ -139,16 +139,16 @@ postgres("a desk with no country pack uses the baseline", () => {
     app = await buildApp(handle.db);
     service = new LedgerService(pool);
     /* This file's cheques are about the identification gate, not the
-       fee. The desk's rule for these types is 0, which is the only
-       reason a 0.00 fee is accepted. */
+       fee and not the hold. The desk's rule for these types is 0,
+       which is the only reason a 0.00 fee and a 0 day hold are accepted. */
     await pool.query(
       `INSERT INTO tenant_state (tenant_id, state) VALUES ($1, $2::jsonb)
        ON CONFLICT (tenant_id) DO UPDATE SET state = EXCLUDED.state`,
       [DEMO.tenantId, JSON.stringify({
         cdos_cheque_schedule_v1: [
-          { id: "personal", feePct: 0, feeMin: 0 },
-          { id: "payroll", feePct: 0, feeMin: 0 },
-          { id: "business", feePct: 0, feeMin: 0 },
+          { id: "personal", feePct: 0, feeMin: 0, holdDays: 0 },
+          { id: "payroll", feePct: 0, feeMin: 0, holdDays: 0 },
+          { id: "business", feePct: 0, feeMin: 0, holdDays: 0 },
         ],
       })],
     );

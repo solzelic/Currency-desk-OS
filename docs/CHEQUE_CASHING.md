@@ -143,7 +143,13 @@ On the cheque sheet those dates read Oct 17, 2026, and the amounts
 read with grouping and two decimals, so 1,200.00. Cash & hold stays
 grey until Signed on the back is ticked. The line beside that grey
 button says to tick it. Tapping the grey button scrolls to the
-Endorsement box and outlines it.
+Endorsement box and outlines it. That button is 44px tall, and the
+Signed on the back row is a 44px tap target. The net cash figure is
+28px. The hold date on the same sheet is 20px. The hold the sheet
+shows is the till's business date plus the hold, not the browser's
+wall clock. A hold shorter than the schedule for that type is
+refused and nothing is written. A personal cheque at 0 days is
+refused. The detail line for a signed cheque reads "Yes, signed".
 
 ## Scope: home currency only
 

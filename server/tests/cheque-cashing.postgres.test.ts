@@ -793,7 +793,7 @@ postgres("cheque cashing on the ledger", () => {
       draweeBank: "RBC Royal Bank",
       faceAmount: "40.00",
       feeAmount: "10.00",
-      holdDays: 0,
+      holdDays: 3,
     };
     const first = await cashCheque(cookies, { ...paper, idempotencyKey: "tap-1002841-a" });
     expect(first.statusCode, first.body).toBe(201);
@@ -817,7 +817,7 @@ postgres("cheque cashing on the ledger", () => {
       draweeBank: "RBC Royal Bank",
       faceAmount: "40.00",
       feeAmount: "10.00",
-      holdDays: 0,
+      holdDays: 3,
     };
     const first = await cashCheque(cookies, { ...paper, idempotencyKey: "live-a" });
     expect(first.statusCode, first.body).toBe(201);
@@ -1060,6 +1060,28 @@ postgres("cheque cashing on the ledger", () => {
     expect(refused.statusCode).toBe(422);
     expect(refused.json().code).toBe("CHEQUE_NOT_ENDORSED");
     expect(refused.json().message).toMatch(/signed on the back/);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_cheques")).rows[0].n,
+    ).toBe(0);
+  });
+
+  /* Personal paper is 5 days on the schedule. A teller who sends 0
+     is refused before any cheque row exists. */
+  it("refuses a personal cheque held for 0 days and writes nothing", async () => {
+    const cookies = await cookie();
+    const refused = await cashCheque(cookies, {
+      chequeType: "personal",
+      typeLabel: "Personal",
+      chequeNumber: "104834",
+      faceAmount: "1000.00",
+      feeAmount: "35.00",
+      holdDays: 0,
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("CHEQUE_HOLD");
+    expect(refused.json().message).toBe(
+      "This Personal cheque has to be held at least 5 days. Nothing was cashed.",
+    );
     expect(
       (await pool.query("SELECT count(*)::int AS n FROM ledger_cheques")).rows[0].n,
     ).toBe(0);

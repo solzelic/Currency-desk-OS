@@ -39829,6 +39829,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     CD,
     Ic,
     TODAY,
+    businessDate,
     formatPhoneMoney,
     crossRate,
     newTx,
@@ -40045,7 +40046,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         status: 'held',
         ts: '2026-06-18 09:48',
         by: 'A. Singh',
-        note: 'Cash fronted — 3-day business hold'
+        note: 'Cash fronted, 3-day business hold'
       }]
     }), mk({
       ref: 'CHQ-260618-001',
@@ -40066,7 +40067,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         status: 'cleared',
         ts: '2026-06-18 14:02',
         by: 'System',
-        note: 'Government cheque — same-day clearance'
+        note: 'Government cheque, same-day clearance'
       }]
     }), mk({
       ref: 'CHQ-260616-004',
@@ -40080,7 +40081,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       status: 'returned',
       nsf: true,
       holdUntil: '2026-06-21',
-      returnedReason: 'NSF — insufficient funds',
+      returnedReason: 'NSF, insufficient funds',
       timeline: [{
         status: 'held',
         ts: '2026-06-16 16:30',
@@ -40090,7 +40091,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         status: 'returned',
         ts: '2026-06-19 09:10',
         by: 'J. Masri',
-        note: 'Returned NSF — cash loss, customer contacted'
+        note: 'Returned NSF. Cash loss, customer contacted'
       }]
     }), mk({
       ref: 'CHQ-260617-003',
@@ -40304,8 +40305,18 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const net = +(amtN - fee).toFixed(2);
     // Settings › Cheques can set a minimum hold that floors every cheque's scheduled hold
     const minHold = Math.max(0, +(settings && settings.chequeMinHoldDays) || 0);
-    const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
-    const holdUntil = addDays(TODAY, holdDays);
+    /* The till's trading day, not the browser's wall clock. A session
+       opened yesterday is still yesterday at 12:30 AM. */
+    const [bookDay, setBookDay] = useState(businessDate);
+    useEffect(() => {
+      const sync = () => setBookDay(businessDate());
+      window.addEventListener('cdos-business-date', sync);
+      sync();
+      return () => window.removeEventListener('cdos-business-date', sync);
+    }, []);
+    const typeHold = Math.max(0, +(type && type.holdDays) || 0);
+    const holdDays = Math.max(minHold, typeHold, holdOverride != null ? +holdOverride : typeHold);
+    const holdUntil = addDays(bookDay, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
     const ready = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
     const canSave = ready && endorsed;
@@ -40473,7 +40484,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "Teller ", me.name, " \xB7 ", sheetDate(TODAY)))), /*#__PURE__*/React.createElement("button", {
+    }, "Teller ", me.name, " \xB7 ", sheetDate(bookDay)))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "p-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
@@ -40639,8 +40650,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         setEndorsed(v => !v);
         setEndorseMark(false);
       },
-      className: "w-full flex items-center gap-2 px-2.5 py-2",
+      className: "w-full flex items-center gap-2 px-2.5",
       style: {
+        height: 44,
+        boxSizing: 'border-box',
         border: `1px solid ${endorsed ? CD.ink : CD.line}`,
         borderRadius: 8,
         background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)'
@@ -40695,9 +40708,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono, monospace'
       }
     }, "Cash to customer now"), /*#__PURE__*/React.createElement("div", {
-      className: "text-xl font-bold",
+      className: "font-bold",
       style: {
         color: CD.ink,
+        fontSize: 28,
+        lineHeight: '32px',
         fontVariantNumeric: 'tabular-nums'
       }
     }, sheetMoney(net))), /*#__PURE__*/React.createElement(Ic, {
@@ -40713,9 +40728,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono, monospace'
       }
     }, "At risk until"), /*#__PURE__*/React.createElement("div", {
-      className: "text-xl font-bold",
+      className: "font-bold",
       style: {
         color: CD.ink,
+        fontSize: 20,
+        lineHeight: '24px',
         fontVariantNumeric: 'tabular-nums'
       }
     }, holdDays === 0 ? 'cleared' : sheetDate(holdUntil)))), /*#__PURE__*/React.createElement("div", {
@@ -40786,8 +40803,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         save();
       },
       disabled: busy || !ready,
-      className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
+      "aria-disabled": !canSave || busy,
+      className: "flex items-center gap-1.5 px-4 text-sm font-semibold text-white",
       style: {
+        height: 44,
+        boxSizing: 'border-box',
         background: canSave && !busy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
         cursor: canSave && !busy || ready && !endorsed ? 'pointer' : 'not-allowed'
@@ -40848,12 +40868,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), 'Cheque cleared', 'Funds confirmed by drawee bank');
     const returnNsf = () => act('nsf', (book, key) => book.returnCheque(c.chequeId, {
       idempotencyKey: key,
-      reason: 'NSF — insufficient funds',
+      reason: 'NSF, insufficient funds',
       nsf: true
     }), 'Cheque returned NSF', `loss ${sheetMoney(c.netCad)}`);
     const returnFraud = () => act('fraud', (book, key) => book.returnCheque(c.chequeId, {
       idempotencyKey: key,
-      reason: 'Fraud — suspect cheque',
+      reason: 'Fraud, suspect cheque',
       fraud: true
     }), 'Cheque flagged fraud', `loss ${sheetMoney(c.netCad)}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
@@ -40966,7 +40986,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.flag
       }
-    }, "Returned \u2014 ", sheetMoney(c.netCad), " loss"), /*#__PURE__*/React.createElement("div", {
+    }, "Returned, ", sheetMoney(c.netCad), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: '#8a3b30'
@@ -40995,7 +41015,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       v: c.customer
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Endorsed",
-      v: c.endorsed ? 'Yes — signed' : 'Not endorsed',
+      v: c.endorsed ? 'Yes, signed' : 'Not endorsed',
       accent: c.endorsed ? CD.green : CD.flag
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Face value",
@@ -41055,7 +41075,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         style: {
           color: CD.mute
         }
-      }, e.ts, " \xB7 ", e.by, e.note ? ` — ${e.note}` : '')));
+      }, e.ts, " \xB7 ", e.by, e.note ? `. ${e.note}` : '')));
     }))), c.status === 'held' && /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-2"
     }, /*#__PURE__*/React.createElement("button", {

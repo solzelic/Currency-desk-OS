@@ -20,8 +20,13 @@
    the response hid a 500 in this repository for months, and a test whose
    setup fails silently fails later on something unrelated.
    ============================================================ */
+import { createRequire } from "node:module";
+import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop, ledger } from "./fixtures";
 import type { Page } from "@playwright/test";
+
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as { Pool: new (c: { connectionString: string }) => { query: (sql: string, params?: unknown[]) => Promise<{ rows: { session_id: string; day: string }[] }>; end: () => Promise<void> } };
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -285,13 +290,75 @@ test("the capture sheet names the missing signature and writes a date and an amo
   await page.getByPlaceholder("e.g. RBC Royal Bank").fill("Scotiabank");
 
   await expect(page.getByText("Tick Signed on the back to cash this cheque.")).toBeVisible();
-  await expect(page.getByText("Cash to customer now").locator("xpath=following-sibling::div[1]")).toHaveText("1,176.00");
-  await expect(page.getByText("At risk until").locator("xpath=following-sibling::div[1]")).toHaveText(/^Oct \d{1,2}, \d{4}$/);
+  const net = page.getByText("Cash to customer now").locator("xpath=following-sibling::div[1]");
+  const hold = page.getByText("At risk until").locator("xpath=following-sibling::div[1]");
+  await expect(net).toHaveText("1,176.00");
+  await expect(hold).toHaveText(/^Oct \d{1,2}, \d{4}$/);
+  await expect(net).toHaveCSS("font-size", "28px");
+  await expect(hold).toHaveCSS("font-size", "20px");
   expect(await page.evaluate(() => (window as unknown as { CDOS: { _cheques: { sheetMoney: (n: number) => string; sheetDate: (d: string) => string } } }).CDOS._cheques.sheetMoney(1200))).toBe("1,200.00");
   expect(await page.evaluate(() => (window as unknown as { CDOS: { _cheques: { sheetDate: (d: string) => string } } }).CDOS._cheques.sheetDate("2026-10-17"))).toBe("Oct 17, 2026");
 
-  await page.getByRole("button", { name: "Cash & hold" }).click();
+  const cash = page.getByRole("button", { name: "Cash & hold" });
+  /* The row sits inside the Endorsement label, so its accessible name
+     is that label. The words on the row are what the teller taps. */
+  const signed = page.locator("button", { hasText: "Signed on the back" });
+  await expect(cash).toBeDisabled();
+  expect(Math.round((await cash.boundingBox())!.height)).toBe(44);
+  expect(Math.round((await signed.boundingBox())!.height)).toBe(44);
+
+  await cash.click({ force: true });
   const marked = page.locator('[data-endorsement-box="marked"]');
   await expect(marked).toBeVisible();
   expect(await marked.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
+
+  await signed.click();
+  await expect(cash).toBeEnabled();
+});
+
+/* 00:30 in Toronto is still the previous trading day when the till
+   was opened yesterday. The hold adds to that day, not to the
+   browser's wall clock. */
+test.describe("the capture hold follows the till", () => {
+  test.use({ timezoneId: "America/Toronto" });
+  let pool: InstanceType<typeof Pool>;
+
+  test.beforeAll(async () => {
+    if (!hasLedger) return;
+    pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  });
+  test.afterAll(async () => {
+    await pool?.end();
+  });
+
+  test("a payroll hold at 12:30 AM Toronto uses the till's previous day", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-10-18T04:30:00.000Z") });
+    await signInAtDesk(page);
+    const skip = page.locator(".cdos-tour-skip");
+    if (await skip.isVisible().catch(() => false)) await skip.click();
+    const session = await ensureOpenSession(page);
+    expect(session, `the till would not open: ${session}`).toBe("open");
+
+    const saved = await pool.query(
+      "SELECT session_id, business_date::text AS day FROM ledger_till_sessions WHERE status = 'open'",
+    );
+    await pool.query("UPDATE ledger_till_sessions SET business_date = DATE '2026-10-17' WHERE status = 'open'");
+    try {
+      await page.reload();
+      await landOnDesktop(page);
+      if (await skip.isVisible().catch(() => false)) await skip.click();
+      await expect.poll(async () => page.evaluate(() => (window as unknown as { CDOS: { businessDate: () => string } }).CDOS.businessDate())).toBe("2026-10-17");
+      await openCheques(page);
+      await page.getByRole("button", { name: /Cash a cheque/i }).first().click();
+      await expect(page.getByText(/Teller /).first()).toContainText("Oct 17, 2026");
+      await expect(page.getByText("At risk until").locator("xpath=following-sibling::div[1]")).toHaveText("Oct 18, 2026");
+    } finally {
+      for (const row of saved.rows) {
+        await pool.query(
+          "UPDATE ledger_till_sessions SET business_date = $2::date WHERE session_id = $1",
+          [row.session_id, String(row.day).slice(0, 10)],
+        );
+      }
+    }
+  });
 });
