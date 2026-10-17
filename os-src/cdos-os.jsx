@@ -2319,7 +2319,9 @@
       if (meApps && id !== 'settings' && !meApps.includes(id)) return false;
       if (id === 'dashboard' || id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
       if (id === 'till') return can('canViewReports') || can('canCloseDay');
-      if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
+      /* Rates & fees is on this screen for every signed-in person. The
+         panel locks what they cannot change, so a teller can read it. */
+      if (id === 'settings') return true;
       return true;
     };
     // plan gating: which apps the active subscription unlocks. Locked apps drop
@@ -2358,7 +2360,7 @@
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
-        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
+        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, serverRole: srvUser && srvUser.role, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
         case 'calc': return <Calc settings={settings} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;

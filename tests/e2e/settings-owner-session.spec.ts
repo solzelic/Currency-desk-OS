@@ -264,6 +264,24 @@ test("a teller and a manager save a customer and the day, and a threshold change
   await shots(page, testInfo, "refusal");
   expect(await refusalCount()).toBe(1);
 
+  /* A Rates save that the server still refuses must not toast, and the
+     stored spread stays. The panel keeps what was typed on its own. */
+  const held = await page.evaluate(async () => {
+    const raw = JSON.parse(localStorage.getItem("cdos_settings") || "{}") as { defaultSpread?: number };
+    const stored = raw.defaultSpread;
+    raw.defaultSpread = 9.5;
+    localStorage.setItem("cdos_settings", JSON.stringify(raw));
+    const bridge = (window as unknown as { CDOS_PERSIST: { save: (opts: { keepTyped: boolean }) => Promise<string | void> } }).CDOS_PERSIST;
+    const result = await bridge.save({ keepTyped: true });
+    const back = await fetch("/api/tenant/state", { credentials: "same-origin" }).then((r) => r.json()) as { state: { cdos_settings: string } };
+    const settings = JSON.parse(back.state.cdos_settings) as { defaultSpread?: number };
+    return { result, toast: document.getElementById("cdos-persist-banner")?.textContent ?? "", spread: settings.defaultSpread, stored };
+  });
+  expect(held.result).toBe("refused");
+  expect(held.toast).toBe("");
+  expect(held.spread).toBe(held.stored);
+  expect(await refusalCount()).toBe(2);
+
   const kept = await page.evaluate(async () => {
     const day = JSON.parse(localStorage.getItem("cdos_day") || "{}");
     day.note = "still-saving";
@@ -288,5 +306,5 @@ test("a teller and a manager save a customer and the day, and a threshold change
   expect(managerSaves).toContain(200);
   expect(managerSaves).not.toContain(403);
   expect((await savedState(page)).cdos_day).toBeTruthy();
-  expect(await refusalCount()).toBe(1);
+  expect(await refusalCount()).toBe(2);
 });

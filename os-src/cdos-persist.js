@@ -218,7 +218,7 @@ window.CDOS_PERSIST = (function () {
     return 'empty';
   }
 
-  async function save() {
+  async function save(opts) {
     if (!tenantId) return;
     if (health === 'stopped') return;           // a person has to clear this
     if (Date.now() < nextAttemptAt) return;     // backing off
@@ -285,27 +285,33 @@ window.CDOS_PERSIST = (function () {
       });
     }
 
-    /* A real change to an owner-only setting. Say so, put the stored
-       document back, and keep saving. Stopping here used to freeze every
-       later customer and day-state write for the rest of the session. */
+    /* A real change to an owner-only setting. Put the stored document
+       back and keep saving. Stopping here used to freeze every later
+       customer and day-state write for the rest of the session.
+       keepTyped is the Rates & fees Save: the panel keeps what was
+       typed and says so itself. This path must not toast, and it must
+       not put an error code on screen. */
     if (r.status === 403) {
-      /* The refusal names the rule. A body that is not JSON is shown
-         as written, so a failure to parse is not dropped. */
       var raw = await r.text();
-      var detail = 'Only the owner can change that setting. Nothing was saved.';
-      if (raw) {
-        try {
-          var denied = JSON.parse(raw);
-          detail = (denied && (denied.detail || denied.message)) || detail;
-        } catch (e) {
-          if (!(e instanceof SyntaxError)) throw e;
-          detail = raw;
+      var keepTyped = !!(opts && opts.keepTyped);
+      if (!keepTyped) {
+        /* The refusal names the rule. A body that is not JSON is shown
+           as written, so a failure to parse is not dropped. */
+        var detail = 'Only the owner can change that setting. Nothing was saved.';
+        if (raw) {
+          try {
+            var denied = JSON.parse(raw);
+            detail = (denied && (denied.detail || denied.message)) || detail;
+          } catch (e) {
+            if (!(e instanceof SyntaxError)) throw e;
+            detail = raw;
+          }
         }
+        announce({
+          level: 'retrying', code: 'settings_forbidden',
+          detail: detail,
+        });
       }
-      announce({
-        level: 'retrying', code: 'settings_forbidden',
-        detail: detail,
-      });
       var again;
       try {
         again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
@@ -320,6 +326,14 @@ window.CDOS_PERSIST = (function () {
       version = typeof fresh.version === 'number' ? fresh.version : version;
       baseline = snapshot();
       lastSig = JSON.stringify(outgoing());
+      if (keepTyped) {
+        /* The bottom strip is the toast. This refusal does not use it. */
+        var toast = document.getElementById('cdos-persist-banner');
+        if (toast) toast.remove();
+        if (typeof window.dispatchEvent !== 'function') throw new Error('desk save bridge is not loaded');
+        window.dispatchEvent(new CustomEvent('cdos-rates-refused'));
+        return 'refused';
+      }
       return;
     }
 

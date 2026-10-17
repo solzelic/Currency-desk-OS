@@ -86,10 +86,21 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   nothing in that save is written. An equal value, or a key the client
   left out, is not a change: the stored value stays and the rest saves.
   Sign-in does not upload the derived role presets or billing plan.
-  A refusal reloads the stored desk and saving continues. Settings
-  search hides the owner-only tabs. The settings rail follows the
-  signed-in role, so a manager still sees it after a teller has
-  rewritten the shared preset. A manager cannot move the threshold.
+  A refusal of any other save reloads the stored desk and saving
+  continues. Settings search hides the owner-only tabs. The settings
+  rail follows the signed-in role, so a manager still sees it after a
+  teller has rewritten the shared preset. Rates & fees shows a field
+  the person cannot change as a grey value with a lock, before they
+  type. The default spread stays editable for a manager and the owner,
+  and that row says a manager or the owner can change it. Every other
+  price on that screen is the owner's, and the row says only the owner
+  can change it. A teller has nothing to edit there, so there is no
+  Save. A non-owner sees one line: only the owner can change rates and
+  fees, and to ask the owner to make the change. A Rates & fees save
+  the server still refuses keeps what was typed, repeats that line
+  above Save, and does not toast or show an error code. The stored
+  desk is put back underneath so other saves continue. A manager
+  cannot move the threshold.
   `PUT /api/ledger/desk-thresholds` was already limited to the owner.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
@@ -706,10 +717,14 @@ spread. A teller who sends a different default spread is refused,
 audited, and the stored spread is kept. A different owner-only value,
 including the large-cash line, is refused whole and audited. Leaving a
 derived key out (role presets, billing plan) keeps the stored value
-and saves the rest. A refusal reloads the stored desk and saving
-continues. The settings rail follows the signed-in role. A manager
-cannot move the large-cash line. The ledger threshold route was
-already the owner's.
+and saves the rest. A refusal of any other save reloads the stored
+desk and saving continues. The settings rail follows the signed-in
+role. Rates & fees locks every price except the default spread, which
+a manager or the owner can change. A teller gets no Save on that
+panel. A refused Rates & fees save keeps the typed values and repeats
+the same sentence above Save, with no toast and no error code. A
+manager cannot move the large-cash line. The ledger threshold route
+was already the owner's.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the
