@@ -1432,6 +1432,9 @@ html[data-cdtheme="dark"] .till-step:hover { background: rgba(255,255,255,0.07);
 html[data-cdtheme="dark"] .cdos-tour-ring { box-shadow: 0 0 0 4px rgba(236, 234, 227, 0.08); }
 html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 
+.fee-lock { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.fee-lock svg { display: inline-block; vertical-align: -0.2em; margin-right: 6px; }
+
 /* ============================================================
    PHONE  (390 and 360)
    The desk is a desktop. On a phone the same screens have to be

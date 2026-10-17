@@ -41352,7 +41352,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      or a change to this person's role, updates the header and
      leaves this tab as it was. Save then asks the server who the
      cookie is now. A refusal keeps what was typed and says why
-     above the button. It does not toast, and it does not show a code. */
+     above the button. The lock sits in that sentence, and the sentence wraps. */
   const FEE_SENTENCE = 'Only the owner can change cheque fees. Ask the owner to make this change.';
   function FeeSchedule({
     schedule,
@@ -41416,10 +41416,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     };
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
-      "data-testid": "fee-schedule"
-    }, !isOwner && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "fee-schedule",
+      style: {
+        minWidth: 0,
+        maxWidth: '100%'
+      }
+    }, !isOwner && /*#__PURE__*/React.createElement("p", {
       "data-testid": "fee-schedule-lock",
-      className: "flex items-start gap-2 mb-3 text-[12px]",
+      className: "fee-lock mb-3 text-[12px]",
       style: {
         color: CD.ink
       }
@@ -41427,7 +41431,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "lock",
       s: 14,
       c: CD.mute
-    }), /*#__PURE__*/React.createElement("span", null, FEE_SENTENCE)), /*#__PURE__*/React.createElement("div", {
+    }), " ", FEE_SENTENCE), /*#__PURE__*/React.createElement("div", {
       className: "mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold",
@@ -41440,7 +41444,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: CD.mute
       }
     }, "Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-x-auto",
+      className: "overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -41556,10 +41560,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }
     }, "Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce."), isOwner && /*#__PURE__*/React.createElement("div", {
       className: "mt-3"
-    }, refused && /*#__PURE__*/React.createElement("div", {
+    }, refused && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       "data-testid": "fee-schedule-refused",
-      className: "mb-2 flex items-start gap-2 px-3 py-2 text-[12px]",
+      className: "fee-lock mb-2 px-3 py-2 text-[12px]",
       style: {
         background: CD.brassSoft,
         color: 'var(--cd-brass-text)',
@@ -41569,7 +41573,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "lock",
       s: 13,
       c: "var(--cd-brass-text)"
-    }), /*#__PURE__*/React.createElement("span", null, FEE_SENTENCE)), /*#__PURE__*/React.createElement("div", {
+    }), " ", FEE_SENTENCE), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -41722,7 +41726,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         }
       }, badge));
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto"
+      className: "flex-1 overflow-auto",
+      style: {
+        minWidth: 0
+      }
     }, tab === 'clearing' && /*#__PURE__*/React.createElement(Clearing, {
       cheques: cheques,
       onOpen: setDetailId,

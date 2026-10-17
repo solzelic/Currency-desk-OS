@@ -82,7 +82,7 @@
      or a change to this person's role, updates the header and
      leaves this tab as it was. Save then asks the server who the
      cookie is now. A refusal keeps what was typed and says why
-     above the button. It does not toast, and it does not show a code. */
+     above the button. The lock sits in that sentence, and the sentence wraps. */
   const FEE_SENTENCE = 'Only the owner can change cheque fees. Ask the owner to make this change.';
   function FeeSchedule({ schedule, setSchedule, me }) {
     const liveOwner = !!(me && me.role === 'Owner');
@@ -116,10 +116,10 @@
       } finally { setBusy(false); }
     };
     const cell = { color: isOwner ? CD.ink : CD.mute, fontVariantNumeric: 'tabular-nums' };
-    return (<div className="p-4" data-testid="fee-schedule">
-      {!isOwner && <div data-testid="fee-schedule-lock" className="flex items-start gap-2 mb-3 text-[12px]" style={{ color: CD.ink }}><Ic n="lock" s={14} c={CD.mute} /><span>{FEE_SENTENCE}</span></div>}
+    return (<div className="p-4" data-testid="fee-schedule" style={{ minWidth: 0, maxWidth: '100%' }}>
+      {!isOwner && <p data-testid="fee-schedule-lock" className="fee-lock mb-3 text-[12px]" style={{ color: CD.ink }}><Ic n="lock" s={14} c={CD.mute} /> {FEE_SENTENCE}</p>}
       <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Fee schedule by cheque type</div><div className="text-[11px]" style={{ color: CD.mute }}>Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.</div></div>
-      <div className="overflow-x-auto" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
+      <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
         <table className="w-full text-sm border-collapse">
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
             <th className="px-3 py-2">Type</th><th className="px-3 py-2">Risk</th><th className="px-3 py-2 text-right">Fee %</th><th className="px-3 py-2 text-right">Min fee</th><th className="px-3 py-2 text-right">Hold days</th><th className="px-3 py-2 text-right">e.g. $2,000</th>
@@ -145,7 +145,7 @@
       </div>
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
       {isOwner && <div className="mt-3">
-        {refused && <div role="alert" data-testid="fee-schedule-refused" className="mb-2 flex items-start gap-2 px-3 py-2 text-[12px]" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={13} c="var(--cd-brass-text)" /><span>{FEE_SENTENCE}</span></div>}
+        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={13} c="var(--cd-brass-text)" /> {FEE_SENTENCE}</p>}
         <div className="flex items-center gap-2">
           <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
           {saved && <span data-testid="fee-schedule-saved" className="text-[12px] font-semibold" style={{ color: CD.green }}>Saved</span>}
@@ -194,7 +194,7 @@
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" style={{ minWidth: 0 }}>
         {tab === 'clearing' && <Clearing cheques={cheques} onOpen={setDetailId} onNew={() => setModal(true)} />}
         {tab === 'schedule' && <FeeSchedule schedule={schedule} setSchedule={setSchedule} me={me} />}
       </div>
