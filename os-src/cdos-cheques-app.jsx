@@ -76,25 +76,26 @@
 
   /* ===================== FEE SCHEDULE =====================
      The fee is the price of cash the desk has not yet collected.
-     Anyone but the owner can read it. They cannot save it. The
+     The owner and a manager can change it, including to 0%. A teller cannot. The
      server is the check. This screen only stops inviting the edit.
      The form keeps the controls it opened with. A session switch,
      or a change to this person's role, updates the header and
      leaves this tab as it was. Save then asks the server who the
      cookie is now. A refusal keeps what was typed and says why
      above the button. The lock sits in that sentence, and the sentence wraps. */
-  const FEE_SENTENCE = 'Only the owner can change cheque fees. Ask the owner to make this change.';
+  const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
+  const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   function FeeSchedule({ schedule, setSchedule, me }) {
-    const liveOwner = !!(me && me.role === 'Owner');
-    const [openedAsOwner] = useState(liveOwner);
-    const isOwner = openedAsOwner;
+    const liveEditor = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
+    const [openedAsEditor] = useState(liveEditor);
+    const mayEdit = openedAsEditor;
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => { setDraft(schedule); }, [schedule]);
     const set = (id, k, v) => { setSaved(false); setDraft(list => list.map(t => t.id === id ? { ...t, [k]: v } : t)); };
-    const rows = isOwner ? draft : schedule;
+    const rows = mayEdit ? draft : schedule;
     const save = async () => {
       setBusy(true);
       try {
@@ -115,9 +116,9 @@
         setSaved(true);
       } finally { setBusy(false); }
     };
-    const cell = { color: isOwner ? CD.ink : CD.mute, fontVariantNumeric: 'tabular-nums' };
+    const cell = { color: mayEdit ? CD.ink : CD.mute, fontVariantNumeric: 'tabular-nums' };
     return (<div className="p-4" data-testid="fee-schedule" style={{ minWidth: 0, maxWidth: '100%' }}>
-      {!isOwner && <p data-testid="fee-schedule-lock" className="fee-lock mb-3 text-[12px]" style={{ color: CD.ink }}><Ic n="lock" s={14} c={CD.mute} /> {FEE_SENTENCE}</p>}
+      {!mayEdit && <p data-testid="fee-schedule-lock" className="fee-lock mb-3 text-[12px]" style={{ color: CD.ink }}><Ic n="lock" s={14} c={CD.mute} /> {FEE_SENTENCE}</p>}
       <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Fee schedule by cheque type</div><div className="text-[11px]" style={{ color: CD.mute }}>Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.</div></div>
       <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
         <table className="w-full text-sm border-collapse">
@@ -126,26 +127,26 @@
           </tr></thead>
           <tbody>{rows.map(t => { const rt = RISK_TONE[t.risk] || RISK_TONE.low; const eg = feeFor(2000, t); return (
             <tr key={t.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <td className="px-3 py-2 font-medium" style={{ color: isOwner ? CD.ink : CD.mute }}>{t.label}</td>
-              <td className="px-3 py-2">{isOwner
+              <td className="px-3 py-2 font-medium" style={{ color: mayEdit ? CD.ink : CD.mute }}>{t.label}</td>
+              <td className="px-3 py-2">{mayEdit
                 ? <select value={t.risk} onChange={e => set(t.id, 'risk', e.target.value)} className="text-[12px] px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: rt.c, background: rt.bg }}>{['low', 'medium', 'high'].map(r => <option key={r} value={r}>{RISK_TONE[r].t}</option>)}</select>
                 : <span className="text-[12px]" style={{ color: CD.mute }}>{rt.t}</span>}</td>
-              <td className="px-3 py-2 text-right">{isOwner
+              <td className="px-3 py-2 text-right">{mayEdit
                 ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.feePct}</span>}</td>
-              <td className="px-3 py-2 text-right">{isOwner
+              <td className="px-3 py-2 text-right">{mayEdit
                 ? <input type="number" value={t.feeMin} onChange={e => set(t.id, 'feeMin', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.feeMin}</span>}</td>
-              <td className="px-3 py-2 text-right">{isOwner
+              <td className="px-3 py-2 text-right">{mayEdit
                 ? <input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.holdDays}</span>}</td>
-              <td className="px-3 py-2 text-right font-semibold" style={{ color: isOwner ? CD.green : CD.mute, fontVariantNumeric: 'tabular-nums' }}>{fmt(eg, homeCcy())}</td>
+              <td className="px-3 py-2 text-right font-semibold" style={{ color: mayEdit ? CD.green : CD.mute, fontVariantNumeric: 'tabular-nums' }}>{fmt(eg, homeCcy())}</td>
             </tr>); })}</tbody>
         </table>
       </div>
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
-      {isOwner && <div className="mt-3">
-        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={13} c="var(--cd-brass-text)" /> {FEE_SENTENCE}</p>}
+      {mayEdit && <div className="mt-3">
+        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}
         <div className="flex items-center gap-2">
           <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
           {saved && <span data-testid="fee-schedule-saved" className="text-[12px] font-semibold" style={{ color: CD.green }}>Saved</span>}

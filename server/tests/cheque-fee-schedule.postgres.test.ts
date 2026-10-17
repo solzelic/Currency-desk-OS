@@ -55,7 +55,7 @@ async function desk() {
   await pool.query("INSERT INTO ledger_till_sessions (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,session_number,business_date,status,opened_by,opened_at) VALUES ('fee-session',$1,$2,$3,$4,$5,1,DATE '2026-06-18','open',$6,now())", [...scope, `${DEMO.tenantId}:m.costa`]);
 }
 
-postgres("cheque fee schedule is owner only", () => {
+postgres("cheque fee schedule is owner or manager", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     process.env.LEDGER_DATABASE_URL = url;
@@ -79,7 +79,7 @@ postgres("cheque fee schedule is owner only", () => {
     }).onConflictDoNothing();
     pool = new pg.Pool({ connectionString: url });
     app = await buildApp(handle.db);
-    for (const staffId of ["j.masri", "r.haddad", "m.costa", ...platformRoles.map((role) => `fee.${role}`)]) sessions[staffId] = await sign(staffId);
+    for (const staffId of ["j.masri", "r.haddad", "a.singh", "m.costa", ...platformRoles.map((role) => `fee.${role}`)]) sessions[staffId] = await sign(staffId);
   });
 
   afterAll(async () => {
@@ -94,17 +94,35 @@ postgres("cheque fee schedule is owner only", () => {
     delete process.env.SEED_PASSWORD;
   });
 
-  it("refuses a teller and a manager, and leaves the schedule", async () => {
+  it("refuses a teller, a senior teller, and an auditor before validation", async () => {
     await desk();
     const before = await storedSchedule();
-    for (const staffId of ["m.costa", "r.haddad"]) {
+    for (const staffId of ["m.costa", "a.singh", "fee.auditor"]) {
       const res = await put(session(staffId), payroll(0, 0), "no");
       expect(res.statusCode).toBe(403);
       expect(res.json()).toEqual({ error: "permission_denied", detail: CHEQUE_FEE_REFUSAL });
       expect(await storedSchedule()).toBe(before);
     }
-    const audit = await pool.query("SELECT action FROM audit_events WHERE action='settings.owner_only_refused'");
-    expect(audit.rowCount).toBe(2);
+    const audit = await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_refused'");
+    expect(audit.rowCount).toBe(3);
+    const changed = await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_changed'");
+    expect(changed.rowCount).toBe(0);
+  });
+
+  it("lets a manager save 0% and records who changed which price", async () => {
+    await desk();
+    const saved = await put(session("r.haddad"), payroll(0, 0));
+    expect(saved.statusCode).toBe(200);
+    expect(await storedSchedule()).toContain('"feePct":0');
+    const row = await pool.query("SELECT detail, at FROM audit_events WHERE action='settings.cheque_fee_changed'");
+    expect(row.rowCount).toBe(1);
+    expect(row.rows[0].at).toBeTruthy();
+    const detail = row.rows[0].detail;
+    expect(detail).toMatchObject({ staffId: "r.haddad", name: "R. Haddad", role: "branch_manager" });
+    const payrollBefore = detail.before.find((item: { id: string }) => item.id === "payroll");
+    const payrollAfter = detail.after.find((item: { id: string }) => item.id === "payroll");
+    expect(payrollBefore).toMatchObject({ feePct: 2, feeMin: 5, holdDays: 1 });
+    expect(payrollAfter).toMatchObject({ feePct: 0, feeMin: 0, holdDays: 1 });
   });
 
   it("lets the owner save, and refuses every platform role", async () => {
@@ -121,6 +139,8 @@ postgres("cheque fee schedule is owner only", () => {
     const bad = await put(session("j.masri"), payroll(9, 9), "no");
     expect(bad.statusCode).toBe(400);
     expect(await storedSchedule()).toContain('"feePct":0');
+    const changes = await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_changed'");
+    expect(changes.rowCount).toBe(1);
   });
 
   it("still lets a teller save a state that does not change the schedule", async () => {

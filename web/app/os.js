@@ -41346,22 +41346,23 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 
   /* ===================== FEE SCHEDULE =====================
      The fee is the price of cash the desk has not yet collected.
-     Anyone but the owner can read it. They cannot save it. The
+     The owner and a manager can change it, including to 0%. A teller cannot. The
      server is the check. This screen only stops inviting the edit.
      The form keeps the controls it opened with. A session switch,
      or a change to this person's role, updates the header and
      leaves this tab as it was. Save then asks the server who the
      cookie is now. A refusal keeps what was typed and says why
      above the button. The lock sits in that sentence, and the sentence wraps. */
-  const FEE_SENTENCE = 'Only the owner can change cheque fees. Ask the owner to make this change.';
+  const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
+  const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   function FeeSchedule({
     schedule,
     setSchedule,
     me
   }) {
-    const liveOwner = !!(me && me.role === 'Owner');
-    const [openedAsOwner] = useState(liveOwner);
-    const isOwner = openedAsOwner;
+    const liveEditor = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
+    const [openedAsEditor] = useState(liveEditor);
+    const mayEdit = openedAsEditor;
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -41376,7 +41377,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         [k]: v
       } : t));
     };
-    const rows = isOwner ? draft : schedule;
+    const rows = mayEdit ? draft : schedule;
     const save = async () => {
       setBusy(true);
       try {
@@ -41411,7 +41412,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }
     };
     const cell = {
-      color: isOwner ? CD.ink : CD.mute,
+      color: mayEdit ? CD.ink : CD.mute,
       fontVariantNumeric: 'tabular-nums'
     };
     return /*#__PURE__*/React.createElement("div", {
@@ -41421,7 +41422,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         minWidth: 0,
         maxWidth: '100%'
       }
-    }, !isOwner && /*#__PURE__*/React.createElement("p", {
+    }, !mayEdit && /*#__PURE__*/React.createElement("p", {
       "data-testid": "fee-schedule-lock",
       className: "fee-lock mb-3 text-[12px]",
       style: {
@@ -41481,11 +41482,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 font-medium",
         style: {
-          color: isOwner ? CD.ink : CD.mute
+          color: mayEdit ? CD.ink : CD.mute
         }
       }, t.label), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2"
-      }, isOwner ? /*#__PURE__*/React.createElement("select", {
+      }, mayEdit ? /*#__PURE__*/React.createElement("select", {
         value: t.risk,
         onChange: e => set(t.id, 'risk', e.target.value),
         className: "text-[12px] px-2 py-1 outline-none",
@@ -41505,7 +41506,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         }
       }, rt.t)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, isOwner ? /*#__PURE__*/React.createElement("input", {
+      }, mayEdit ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         step: "0.1",
         value: t.feePct,
@@ -41520,7 +41521,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         style: cell
       }, t.feePct)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, isOwner ? /*#__PURE__*/React.createElement("input", {
+      }, mayEdit ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         value: t.feeMin,
         onChange: e => set(t.id, 'feeMin', +e.target.value),
@@ -41534,7 +41535,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         style: cell
       }, t.feeMin)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, isOwner ? /*#__PURE__*/React.createElement("input", {
+      }, mayEdit ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         value: t.holdDays,
         onChange: e => set(t.id, 'holdDays', +e.target.value),
@@ -41549,7 +41550,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, t.holdDays)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
-          color: isOwner ? CD.green : CD.mute,
+          color: mayEdit ? CD.green : CD.mute,
           fontVariantNumeric: 'tabular-nums'
         }
       }, fmt(eg, homeCcy())));
@@ -41558,22 +41559,22 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.faint
       }
-    }, "Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce."), isOwner && /*#__PURE__*/React.createElement("div", {
+    }, "Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce."), mayEdit && /*#__PURE__*/React.createElement("div", {
       className: "mt-3"
     }, refused && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       "data-testid": "fee-schedule-refused",
       className: "fee-lock mb-2 px-3 py-2 text-[12px]",
       style: {
-        background: CD.brassSoft,
-        color: 'var(--cd-brass-text)',
+        background: CD.amberSoft,
+        color: CD.amber,
         borderRadius: 8
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
       s: 13,
-      c: "var(--cd-brass-text)"
-    }), " ", FEE_SENTENCE), /*#__PURE__*/React.createElement("div", {
+      c: CD.amber
+    }), " ", FEE_BANNER), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",

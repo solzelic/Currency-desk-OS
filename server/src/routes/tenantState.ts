@@ -21,16 +21,14 @@ import { describe as describeState, summarise } from "../state/shape.js";
 
 /* The cheque fee is the price of the desk's own credit. Zeroing it is
    how a teller cashes the next cheque for nothing. The need is
-   `compliance:thresholds`, the owner-only need this desk already uses
-   for settings that decide what the shop will and will not do. A new
-   name with the same holder would be a second thing to get out of step. */
+   `cheque:fees`: the owner and a manager, including a fee of 0%. */
 export const CHEQUE_FEE_SCHEDULE_KEY = "cdos_cheque_schedule_v1";
 export const CHEQUE_FEE_REFUSAL =
-  "Only the owner can change cheque fees. Ask the owner to make this change.";
+  "Only the owner or a manager can change cheque fees. Ask a manager to make this change.";
 
 /* The schedule the capture screen ships. A first save of exactly this
    is the desk opening, not a price change, so a teller may store it.
-   Anything else is a change and needs the owner. */
+   Anything else is a change and needs the owner or a manager. */
 export const DEFAULT_CHEQUE_SCHEDULE = [
   { id: "government", label: "Government", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
   { id: "payroll", label: "Payroll", feePct: 2, feeMin: 5, holdDays: 1, risk: "low" },
@@ -69,14 +67,30 @@ export function chequeScheduleWrite(stored: Record<string, unknown> | null, inco
   return true;
 }
 
-/* The owner is the desk administrator. That role is the only one
-   that holds `compliance:thresholds`, the same need this desk already
-   uses for settings that decide what the shop will and will not do.
-   A platform row does not grant the need, and it does not take it
-   away. The person signed in as the owner has to be able to save.
-   Refusing them because they are also on the platform team was a bug. */
-function deskOwnerMaySetChequeFees(who: SessionUser): boolean {
-  return hasBackendPermission(who.role, "compliance:thresholds");
+/* `cheque:fees` is the owner and a manager. A platform row is not a
+   vote: it neither grants the need nor takes it from the owner. */
+function maySetChequeFees(who: SessionUser): boolean {
+  return hasBackendPermission(who.role, "cheque:fees");
+}
+
+/* One row per cheque type, so the audit can show the old price and
+   the new one. A string that is not JSON is stored as itself. */
+function feeRows(value: unknown): unknown {
+  if (value == null) return null;
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try { parsed = JSON.parse(value); }
+    catch (error) {
+      if (error instanceof SyntaxError) return value;
+      throw error;
+    }
+  }
+  if (!Array.isArray(parsed)) return parsed;
+  return parsed.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const item = row as Record<string, unknown>;
+    return { id: item.id, label: item.label, feePct: item.feePct, feeMin: item.feeMin, holdDays: item.holdDays, risk: item.risk };
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -172,18 +186,17 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        400 that describes the document. */
     const raw = asRecord(req.body);
     const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
-    if (chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state))) {
-      if (!deskOwnerMaySetChequeFees(who)) {
-        await audit(db, {
-          tenantId: who.tenantId,
-          legalEntityId: who.legalEntityId,
-          branchId: who.branchId,
-          actorId: who.id,
-          action: "settings.owner_only_refused",
-          detail: { key: CHEQUE_FEE_SCHEDULE_KEY, role: who.role, staffId: who.staffId },
-        });
-        return reply.code(403).send({ error: "permission_denied", detail: CHEQUE_FEE_REFUSAL });
-      }
+    const changingFees = chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state));
+    if (changingFees && !maySetChequeFees(who)) {
+      await audit(db, {
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "settings.cheque_fee_refused",
+        detail: { key: CHEQUE_FEE_SCHEDULE_KEY, role: who.role, staffId: who.staffId, name: who.name },
+      });
+      return reply.code(403).send({ error: "permission_denied", detail: CHEQUE_FEE_REFUSAL });
     }
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -250,6 +263,25 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       .insert(schema.tenantState)
       .values({ tenantId: who.tenantId, state, updatedBy: who.id, updatedAt: now, version })
       .onConflictDoUpdate({ target: schema.tenantState.tenantId, set: { state, updatedBy: who.id, updatedAt: now, version } });
+    /* A change that landed. Who, when (`at` on the row), and the
+       price of each cheque type before and after. */
+    if (changingFees) {
+      const prev = asRecord(current?.state);
+      await audit(db, {
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "settings.cheque_fee_changed",
+        detail: {
+          staffId: who.staffId,
+          name: who.name,
+          role: who.role,
+          before: feeRows(prev ? prev[CHEQUE_FEE_SCHEDULE_KEY] : null),
+          after: feeRows(state[CHEQUE_FEE_SCHEDULE_KEY]),
+        },
+      });
+    }
     /* Say how close they are while there is still room to act. The client
        surfaces this once rather than every four seconds. */
     return {

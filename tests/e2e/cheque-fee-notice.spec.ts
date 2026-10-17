@@ -12,7 +12,7 @@ test("the fee notice wraps at 360", async ({ page }) => {
   await page.locator('#phone-more [data-phone-app="cheques"]').click();
   await page.getByRole("button", { name: "Fee schedule" }).click();
   const note = page.getByTestId("fee-schedule-lock");
-  await expect(note).toContainText("Ask the owner to make this change.");
+  await expect(note).toContainText("Ask a manager to make this change.");
   const box = await note.evaluate((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
