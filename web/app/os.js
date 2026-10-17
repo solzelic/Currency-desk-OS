@@ -41344,19 +41344,79 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }, "Cash a cheque to start tracking it."))));
   }
 
-  /* ===================== FEE SCHEDULE ===================== */
+  /* ===================== FEE SCHEDULE =====================
+     The fee is the price of cash the desk has not yet collected.
+     Anyone but the owner can read it. They cannot save it. The
+     server is the check. This screen only stops inviting the edit.
+     A Save the server refuses keeps what was typed and says why
+     above the button. It does not toast, and it does not show a code. */
+  const FEE_SENTENCE = 'Only the owner can change cheque fees. Ask the owner to make this change.';
   function FeeSchedule({
     schedule,
     setSchedule,
-    log
+    me
   }) {
-    const set = (id, k, v) => setSchedule(list => list.map(t => t.id === id ? {
+    const isOwner = !!(me && me.role === 'Owner');
+    const [draft, setDraft] = useState(schedule);
+    const [refused, setRefused] = useState(false);
+    const [busy, setBusy] = useState(false);
+    useEffect(() => {
+      setDraft(schedule);
+    }, [schedule]);
+    const set = (id, k, v) => setDraft(list => list.map(t => t.id === id ? {
       ...t,
       [k]: v
     } : t));
+    const rows = isOwner ? draft : schedule;
+    const save = async () => {
+      setBusy(true);
+      try {
+        const persist = window.CDOS_PERSIST;
+        const snap = persist && persist.snapshot ? persist.snapshot() : {};
+        const version = persist && persist.status ? persist.status().version : 0;
+        snap[SKEY] = JSON.stringify(draft);
+        const res = await fetch('/api/tenant/state', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            state: snap,
+            version: version
+          })
+        });
+        const body = await res.json();
+        if (res.status === 403) {
+          setRefused(true);
+          return;
+        }
+        if (!res.ok) throw new Error(body && body.detail ? body.detail : 'The fee schedule was not saved.');
+        localStorage.setItem(SKEY, JSON.stringify(draft));
+        setSchedule(draft);
+        setRefused(false);
+      } finally {
+        setBusy(false);
+      }
+    };
+    const cell = {
+      color: isOwner ? CD.ink : CD.mute,
+      fontVariantNumeric: 'tabular-nums'
+    };
     return /*#__PURE__*/React.createElement("div", {
-      className: "p-4"
-    }, /*#__PURE__*/React.createElement("div", {
+      className: "p-4",
+      "data-testid": "fee-schedule"
+    }, !isOwner && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "fee-schedule-lock",
+      className: "flex items-start gap-2 mb-3 text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 14,
+      c: CD.mute
+    }), /*#__PURE__*/React.createElement("span", null, FEE_SENTENCE)), /*#__PURE__*/React.createElement("div", {
       className: "mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold",
@@ -41368,8 +41428,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk \u2014 wider on riskier paper.")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+    }, "Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.")), /*#__PURE__*/React.createElement("div", {
+      className: "overflow-x-auto",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -41395,7 +41455,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       className: "px-3 py-2 text-right"
     }, "Hold days"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "e.g. $2,000"))), /*#__PURE__*/React.createElement("tbody", null, schedule.map(t => {
+    }, "e.g. $2,000"))), /*#__PURE__*/React.createElement("tbody", null, rows.map(t => {
       const rt = RISK_TONE[t.risk] || RISK_TONE.low;
       const eg = feeFor(2000, t);
       return /*#__PURE__*/React.createElement("tr", {
@@ -41406,11 +41466,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 font-medium",
         style: {
-          color: CD.ink
+          color: isOwner ? CD.ink : CD.mute
         }
       }, t.label), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2"
-      }, /*#__PURE__*/React.createElement("select", {
+      }, isOwner ? /*#__PURE__*/React.createElement("select", {
         value: t.risk,
         onChange: e => set(t.id, 'risk', e.target.value),
         className: "text-[12px] px-2 py-1 outline-none",
@@ -41423,9 +41483,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, ['low', 'medium', 'high'].map(r => /*#__PURE__*/React.createElement("option", {
         key: r,
         value: r
-      }, RISK_TONE[r].t)))), /*#__PURE__*/React.createElement("td", {
+      }, RISK_TONE[r].t))) : /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px]",
+        style: {
+          color: CD.mute
+        }
+      }, rt.t)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("input", {
+      }, isOwner ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         step: "0.1",
         value: t.feePct,
@@ -41436,9 +41501,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           borderRadius: 6,
           fontVariantNumeric: 'tabular-nums'
         }
-      })), /*#__PURE__*/React.createElement("td", {
+      }) : /*#__PURE__*/React.createElement("span", {
+        style: cell
+      }, t.feePct)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("input", {
+      }, isOwner ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         value: t.feeMin,
         onChange: e => set(t.id, 'feeMin', +e.target.value),
@@ -41448,9 +41515,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           borderRadius: 6,
           fontVariantNumeric: 'tabular-nums'
         }
-      })), /*#__PURE__*/React.createElement("td", {
+      }) : /*#__PURE__*/React.createElement("span", {
+        style: cell
+      }, t.feeMin)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("input", {
+      }, isOwner ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         value: t.holdDays,
         onChange: e => set(t.id, 'holdDays', +e.target.value),
@@ -41460,10 +41529,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           borderRadius: 6,
           fontVariantNumeric: 'tabular-nums'
         }
-      })), /*#__PURE__*/React.createElement("td", {
+      }) : /*#__PURE__*/React.createElement("span", {
+        style: cell
+      }, t.holdDays)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
-          color: CD.green,
+          color: isOwner ? CD.green : CD.mute,
           fontVariantNumeric: 'tabular-nums'
         }
       }, fmt(eg, homeCcy())));
@@ -41472,7 +41543,33 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.faint
       }
-    }, "Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce."));
+    }, "Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce."), isOwner && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3"
+    }, refused && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-testid": "fee-schedule-refused",
+      className: "mb-2 flex items-start gap-2 px-3 py-2 text-[12px]",
+      style: {
+        background: CD.brassSoft,
+        color: 'var(--cd-brass-text)',
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 13,
+      c: "var(--cd-brass-text)"
+    }), /*#__PURE__*/React.createElement("span", null, FEE_SENTENCE)), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "fee-schedule-save",
+      onClick: save,
+      disabled: busy,
+      className: "px-3.5 py-2 text-sm font-semibold text-white",
+      style: {
+        background: CD.ink,
+        borderRadius: 9,
+        opacity: busy ? 0.6 : 1
+      }
+    }, "Save")));
   }
 
   /* ===================== ROOT ===================== */
@@ -41614,7 +41711,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), tab === 'schedule' && /*#__PURE__*/React.createElement(FeeSchedule, {
       schedule: schedule,
       setSchedule: setSchedule,
-      log: log
+      me: me
     })), modal && /*#__PURE__*/React.createElement(CaptureModal, {
       rows,
       setRows,

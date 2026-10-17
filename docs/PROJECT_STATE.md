@@ -74,6 +74,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 New agent pull requests are frozen until the repository owner pushes a commit to main that ends the freeze, except pull requests that finish work already in progress.
 
+- **Cheque fees are the owner's.** A teller or a manager can read the Fee schedule and cannot save it. `PUT /api/tenant/state` is the route that writes `cdos_cheque_schedule_v1`. The need is `compliance:thresholds`, checked before the body is validated. Anyone else, including a platform auditor and the other platform roles, gets 403: "Only the owner can change cheque fees. Ask the owner to make this change." The stored schedule stays as it was. The refusal is `settings.owner_only_refused`. The next cheque uses that stored fee. The Fee schedule tab is grey, with a lock and no Save, for anyone who is not the owner. A refused Save keeps the typed values and shows that sentence above Save.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -559,6 +561,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-17**, cheque fees. Only the owner can change the cheque fee schedule. The need is `compliance:thresholds`, checked on `PUT /api/tenant/state` before the body is validated. A refusal is 403, the stored schedule is unchanged, and the audit action is `settings.owner_only_refused`. A cheque cashed after that refusal uses the fee already stored. The Fee schedule tab is read-only for every other role.
 
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
 Postgres, five per account and twenty per address, for fifteen

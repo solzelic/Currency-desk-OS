@@ -12,10 +12,77 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
-import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { hasBackendPermission } from "../auth/permissions.js";
+import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
+import { member } from "../platform/team.js";
+import { audit } from "../audit.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
+
+/* The cheque fee is the price of the desk's own credit. Zeroing it is
+   how a teller cashes the next cheque for nothing. The need is
+   `compliance:thresholds`, the owner-only need this desk already uses
+   for settings that decide what the shop will and will not do. A new
+   name with the same holder would be a second thing to get out of step. */
+export const CHEQUE_FEE_SCHEDULE_KEY = "cdos_cheque_schedule_v1";
+export const CHEQUE_FEE_REFUSAL =
+  "Only the owner can change cheque fees. Ask the owner to make this change.";
+
+/* The schedule the capture screen ships. A first save of exactly this
+   is the desk opening, not a price change, so a teller may store it.
+   Anything else is a change and needs the owner. */
+export const DEFAULT_CHEQUE_SCHEDULE = [
+  { id: "government", label: "Government", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
+  { id: "payroll", label: "Payroll", feePct: 2, feeMin: 5, holdDays: 1, risk: "low" },
+  { id: "certified", label: "Certified / bank draft", feePct: 1, feeMin: 5, holdDays: 0, risk: "low" },
+  { id: "money_order", label: "Money order", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
+  { id: "business", label: "Business", feePct: 3, feeMin: 10, holdDays: 3, risk: "medium" },
+  { id: "personal", label: "Personal", feePct: 3.5, feeMin: 10, holdDays: 5, risk: "high" },
+];
+
+function canonSchedule(value: unknown): string | null {
+  if (value == null) return null;
+  const parsed = typeof value === "string" ? JSON.parse(value) : value;
+  return JSON.stringify(parsed);
+}
+
+/* True when this save would change the stored fee schedule.
+   Omitting the key replaces the whole document, which deletes the
+   schedule, and that is a write. A string that is not JSON is still
+   an attempt to write the key. A SyntaxError is that attempt, not a
+   failure to hide: every other error is rethrown. */
+export function chequeScheduleWrite(stored: Record<string, unknown> | null, incoming: Record<string, unknown> | null): boolean {
+  const prev = stored ? stored[CHEQUE_FEE_SCHEDULE_KEY] : undefined;
+  if (!incoming || !(CHEQUE_FEE_SCHEDULE_KEY in incoming)) return prev != null;
+  const next = incoming[CHEQUE_FEE_SCHEDULE_KEY];
+  let nextCanon: string | null;
+  let prevCanon: string | null;
+  try {
+    nextCanon = canonSchedule(next);
+    prevCanon = prev == null ? null : canonSchedule(prev);
+  } catch (error) {
+    if (error instanceof SyntaxError) return true;
+    throw error;
+  }
+  if (nextCanon === prevCanon) return false;
+  if (prev == null && nextCanon === JSON.stringify(DEFAULT_CHEQUE_SCHEDULE)) return false;
+  return true;
+}
+
+/* The shop owner holds `compliance:thresholds`. A platform role does
+   not, even when the staff row says administrator so the person can
+   sign in. Pricing a customer's cheques is the shop's decision. */
+async function deskOwnerMaySetChequeFees(db: Db, who: SessionUser): Promise<boolean> {
+  if (!hasBackendPermission(who.role, "compliance:thresholds")) return false;
+  if (await member(db, who.staffId)) return false;
+  return true;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
 
 /* What we last said about each desk's document, so a save every four
    seconds does not become a log line every four seconds. Only a CHANGE in
@@ -99,6 +166,25 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
   app.put("/api/tenant/state", { bodyLimit: BODY_LIMIT_BYTES }, async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    /* The need is decided from the raw body, and it is checked before
+       Zod. A caller who may not change the fee is told that, including
+       when the rest of the body is the wrong shape. They do not get a
+       400 that describes the document. */
+    const raw = asRecord(req.body);
+    const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
+    if (chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state))) {
+      if (!(await deskOwnerMaySetChequeFees(db, who))) {
+        await audit(db, {
+          tenantId: who.tenantId,
+          legalEntityId: who.legalEntityId,
+          branchId: who.branchId,
+          actorId: who.id,
+          action: "settings.owner_only_refused",
+          detail: { key: CHEQUE_FEE_SCHEDULE_KEY, role: who.role, staffId: who.staffId },
+        });
+        return reply.code(403).send({ error: "permission_denied", detail: CHEQUE_FEE_REFUSAL });
+      }
+    }
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const state = parsed.data.state;
@@ -128,7 +214,6 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        still running the old bridge, and breaking its saves to fix a race is
        a bad trade. It is logged so we can see when the last one is gone,
        and then this branch becomes a 400. */
-    const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
     const expected = parsed.data.version;
     if (expected === undefined) {
       req.log.warn({ tenantId: who.tenantId }, "desk state saved without a version — an old client is still open");
