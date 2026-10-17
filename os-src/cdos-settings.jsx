@@ -682,18 +682,21 @@
 
   /* Rates & fees. A default spread from anyone but a manager or the owner
      is refused, so that box is not offered to them. Every other price on
-     this panel is the owner's on screen: a grey value and a lock, not a
+     this panel is the owner's on screen: a grey pill and a lock, not a
      field they type and then get refused. A manager still edits the
      default spread. Save is absent when nothing here is editable. A save
-     the server still refuses keeps the typed numbers and repeats the
-     same sentence above Save. No toast, no error code. */
-  const RATES_OWNER_LINE = 'Only the owner can change rates and fees. Ask the owner to make this change.';
+     the server still refuses keeps the typed numbers and repeats that
+     person's line above Save. No toast, no error code. */
+  const RATES_TELLER_LINE = 'Only the owner can change rates and fees. Ask the owner or a manager.';
+  const RATES_MANAGER_LINE = 'Only the owner can change most of these. You can change the default spread.';
   const RATES_FIELD = 'Only the owner can change this.';
   const RATES_SPREAD = 'A manager or the owner can change this.';
+  const rates2 = (n) => (Number.isFinite(+n) ? (+n).toFixed(2) : '0.00');
   function LockedValue({ field, children }) {
+    /* Pill text uses the body ink. Mute grey on the disabled chip is under 4.5:1. */
     return (
-      <span data-rates-locked="1" data-rates-field={field} className="inline-flex items-center gap-1.5 text-sm px-2 py-1.5" style={{ color: CD.mute, background: 'var(--cd-disabled)', borderRadius: 8 }}>
-        <Ic n="lock" s={12} c={CD.mute} /><span style={{ fontVariantNumeric: 'tabular-nums' }}>{children}</span>
+      <span data-rates-locked="1" data-rates-field={field} className="inline-flex items-center gap-1.5 text-sm px-2 py-1.5" style={{ color: CD.text, background: 'var(--cd-disabled)', borderRadius: 8 }}>
+        <Ic n="lock" s={12} c={CD.text} /><span style={{ fontVariantNumeric: 'tabular-nums' }}>{children}</span>
       </span>
     );
   }
@@ -734,30 +737,31 @@
     const providers = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
     const roundTo = [['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']];
     const canSave = owner || spreadOn;
+    const line = owner ? '' : (spreadOn ? RATES_MANAGER_LINE : RATES_TELLER_LINE);
     return (<div data-rates-panel>
       <SectionTitle icon="coins" title="Rates & fees" sub="Two-sided pricing. The desk buys under mid and sells over mid. The gap is your margin." />
-      {!owner && <div data-rates-owner-line className="text-[12.5px] mb-4" style={{ color: CD.ink }}>{RATES_OWNER_LINE}</div>}
+      {!owner && <div data-rates-owner-line className="text-[12.5px] mb-4" style={{ color: CD.ink }}>{line}</div>}
       <Row title="Rate feed provider" desc={owner ? "Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads and margins are applied on top." : RATES_FIELD}>
         {owner ? pick('rateProvider', rates.rateProvider || providers[0], (v) => { setKey('rateProvider', v); try { localStorage.setItem('yorkfx_rate_provider', v); } catch (e) { throw e; } }, providers.map(p => [p, p]), 230) : shown('rateProvider', rates.rateProvider || providers[0])}
       </Row>
       <Row title="Default spread" desc={RATES_SPREAD}>
-        {spreadOn ? num('defaultSpread', rates.defaultSpread, '%', v => setKey('defaultSpread', v)) : shown('defaultSpread', (rates.defaultSpread ?? '') + '%')}
+        {spreadOn ? num('defaultSpread', rates.defaultSpread, '%', v => setKey('defaultSpread', v)) : shown('defaultSpread', rates2(rates.defaultSpread) + '%')}
       </Row>
-      {note === 'refused' && <div data-rates-refusal role="status" className="mt-3 p-3 text-[12.5px]" style={{ background: 'var(--cd-chip)', color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9 }}>{RATES_OWNER_LINE}</div>}
+      {note === 'refused' && line && <div data-rates-refusal role="status" className="mt-3 p-3 text-[12.5px]" style={{ background: 'var(--cd-chip)', color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9 }}>{line}</div>}
       {canSave && <div className="mt-3 flex items-center justify-end gap-3">
         {note === 'saved' && <span data-rates-saved className="text-[12px]" style={{ color: CD.mute }}>Saved</span>}
         <button type="button" data-rates-save onClick={save} className="text-[12px] px-3.5 py-2 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Save</button>
       </div>}
       <Row title="Default commission" desc={owner ? 'Suggested flat fee pre-filled on a new deal.' : RATES_FIELD}>
-        {owner ? num('defaultFee', rates.defaultFee, settings.baseCurrency || 'CAD', v => setKey('defaultFee', v)) : shown('defaultFee', (rates.defaultFee ?? '') + ' ' + (settings.baseCurrency || 'CAD'))}
+        {owner ? num('defaultFee', rates.defaultFee, settings.baseCurrency || 'CAD', v => setKey('defaultFee', v)) : shown('defaultFee', rates2(rates.defaultFee) + ' ' + (settings.baseCurrency || 'CAD'))}
       </Row>
       <div className="mt-5 mb-1 text-sm font-medium flex items-center gap-1.5" style={{ color: CD.ink }}><Ic n="activity" s={15} c={CD.ink} /> Margin floor</div>
       <div className="text-[11px] mb-1" style={{ color: CD.mute }}>The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override.</div>
       <Row title="Target margin" desc={owner ? 'At or above this, the meter reads green.' : RATES_FIELD}>
-        {owner ? num('marginTargetPct', rates.marginTargetPct ?? 1, '%', v => setKey('marginTargetPct', v)) : shown('marginTargetPct', (rates.marginTargetPct ?? 1) + '%')}
+        {owner ? num('marginTargetPct', rates.marginTargetPct ?? 1, '%', v => setKey('marginTargetPct', v)) : shown('marginTargetPct', rates2(rates.marginTargetPct ?? 1) + '%')}
       </Row>
       <Row title="Minimum floor" desc={owner ? 'Below this, the deal is flagged red.' : RATES_FIELD}>
-        {owner ? num('marginFloorPct', rates.marginFloorPct ?? 0.5, '%', v => setKey('marginFloorPct', v)) : shown('marginFloorPct', (rates.marginFloorPct ?? 0.5) + '%')}
+        {owner ? num('marginFloorPct', rates.marginFloorPct ?? 0.5, '%', v => setKey('marginFloorPct', v)) : shown('marginFloorPct', rates2(rates.marginFloorPct ?? 0.5) + '%')}
       </Row>
       <Row title="Below the floor" desc={owner ? 'Warn lets the teller post anyway (logged). Require override blocks the post until they confirm with a reason.' : RATES_FIELD}>
         {owner ? <span data-rates-field="marginEnforce"><Seg value={rates.marginEnforce || 'block'} onPick={v => setKey('marginEnforce', v)} opts={[['warn', 'Warn only'], ['block', 'Require override']]} /></span> : shown('marginEnforce', (rates.marginEnforce || 'block') === 'warn' ? 'Warn only' : 'Require override')}
@@ -781,7 +785,7 @@
                   {owner ? <span data-rates-field={'spread-' + c} className="inline-flex items-center" style={{ border: `1px solid ${custom ? CD.ink : CD.line}`, borderRadius: 7, overflow: 'hidden' }}>
                     <input type="number" step="0.1" value={spreads[c] ?? ''} onChange={e => { const v = e.target.value; setDraft({ ...rates, spreads: { ...(rates.spreads || {}), [c]: v === '' ? '' : +v } }); setNote(''); }} placeholder={String(+rates.defaultSpread || 1.5)} className="text-sm px-2 py-1.5 outline-none text-right bg-transparent" style={{ width: 64, fontVariantNumeric: 'tabular-nums' }} />
                     <span className="px-1.5 text-[11px]" style={{ color: CD.faint }}>%</span>
-                  </span> : shown('spread-' + c, (custom ? spreads[c] : (+rates.defaultSpread || 1.5)) + '%')}
+                  </span> : shown('spread-' + c, rates2(custom ? spreads[c] : (+rates.defaultSpread || 1.5)) + '%')}
                 </td>
                 <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.flag }}>{buyUnitCad(c, rates).toFixed(4)}</td>
                 <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.green }}>{sellUnitCad(c, rates).toFixed(4)}</td>
@@ -794,7 +798,7 @@
         {owner ? <span data-rates-field="payoutRound" className="flex items-center gap-2">
           <Seg value={rates.payoutRoundMode || 'nearest'} onPick={v => setKey('payoutRoundMode', v)} opts={[['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]} />
           {pick('payoutRoundTo', rates.payoutRoundTo ?? 0.01, v => setKey('payoutRoundTo', +v), roundTo, 116)}
-        </span> : shown('payoutRound', (rates.payoutRoundMode || 'nearest') + ' ' + (rates.payoutRoundTo ?? 0.01))}
+        </span> : shown('payoutRound', (rates.payoutRoundMode || 'nearest') + ' ' + rates2(rates.payoutRoundTo ?? 0.01))}
       </Row>
       <Row title="Rate-lock duration" desc={owner ? 'How long a customer quote holds the quoted rate before it must be re-priced.' : RATES_FIELD}>
         {owner ? pick('rateLockMins', rates.rateLockMins || 15, v => setKey('rateLockMins', +v), [5, 10, 15, 30, 60].map(m => [m, m + ' minutes']), 130) : shown('rateLockMins', (rates.rateLockMins || 15) + ' minutes')}

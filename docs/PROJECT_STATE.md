@@ -95,10 +95,13 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   and that row says a manager or the owner can change it. Every other
   price on that screen is the owner's, and the row says only the owner
   can change it. A teller has nothing to edit there, so there is no
-  Save. A non-owner sees one line: only the owner can change rates and
-  fees, and to ask the owner to make the change. A Rates & fees save
-  the server still refuses keeps what was typed, repeats that line
-  above Save, and does not toast or show an error code. The stored
+  Save. A manager sees one line: only the owner can change most of
+  these, and that they can change the default spread. A teller sees
+  one line: only the owner can change rates and fees, and to ask the
+  owner or a manager. A locked amount shows two decimals. A Rates &
+  fees save the server still refuses keeps what was typed, repeats
+  that person's line above Save, and does not toast or show an error
+  code. The stored
   desk is put back underneath so other saves continue. A manager
   cannot move the threshold.
   `PUT /api/ledger/desk-thresholds` was already limited to the owner.
@@ -718,13 +721,15 @@ audited, and the stored spread is kept. A different owner-only value,
 including the large-cash line, is refused whole and audited. Leaving a
 derived key out (role presets, billing plan) keeps the stored value
 and saves the rest. A refusal of any other save reloads the stored
-desk and saving continues. The settings rail follows the signed-in
-role. Rates & fees locks every price except the default spread, which
-a manager or the owner can change. A teller gets no Save on that
-panel. A refused Rates & fees save keeps the typed values and repeats
-the same sentence above Save, with no toast and no error code. A
-manager cannot move the large-cash line. The ledger threshold route
-was already the owner's.
+  desk and saving continues. The settings rail follows the signed-in
+  role. Rates & fees locks every price except the default spread, which
+  a manager or the owner can change. A teller gets no Save on that
+  panel. A manager's line says they can change the default spread. A
+  teller's line says to ask the owner or a manager. A locked amount
+  shows two decimals. A refused Rates & fees save keeps the typed
+  values and repeats that person's line above Save, with no toast and
+  no error code. A manager cannot move the large-cash line. The ledger
+  threshold route was already the owner's.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

@@ -6097,31 +6097,34 @@
 
   /* Rates & fees. A default spread from anyone but a manager or the owner
      is refused, so that box is not offered to them. Every other price on
-     this panel is the owner's on screen: a grey value and a lock, not a
+     this panel is the owner's on screen: a grey pill and a lock, not a
      field they type and then get refused. A manager still edits the
      default spread. Save is absent when nothing here is editable. A save
-     the server still refuses keeps the typed numbers and repeats the
-     same sentence above Save. No toast, no error code. */
-  const RATES_OWNER_LINE = 'Only the owner can change rates and fees. Ask the owner to make this change.';
+     the server still refuses keeps the typed numbers and repeats that
+     person's line above Save. No toast, no error code. */
+  const RATES_TELLER_LINE = 'Only the owner can change rates and fees. Ask the owner or a manager.';
+  const RATES_MANAGER_LINE = 'Only the owner can change most of these. You can change the default spread.';
   const RATES_FIELD = 'Only the owner can change this.';
   const RATES_SPREAD = 'A manager or the owner can change this.';
+  const rates2 = n => Number.isFinite(+n) ? (+n).toFixed(2) : '0.00';
   function LockedValue({
     field,
     children
   }) {
+    /* Pill text uses the body ink. Mute grey on the disabled chip is under 4.5:1. */
     return /*#__PURE__*/React.createElement("span", {
       "data-rates-locked": "1",
       "data-rates-field": field,
       className: "inline-flex items-center gap-1.5 text-sm px-2 py-1.5",
       style: {
-        color: CD.mute,
+        color: CD.text,
         background: 'var(--cd-disabled)',
         borderRadius: 8
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
       s: 12,
-      c: CD.mute
+      c: CD.text
     }), /*#__PURE__*/React.createElement("span", {
       style: {
         fontVariantNumeric: 'tabular-nums'
@@ -6212,6 +6215,7 @@
     const providers = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
     const roundTo = [['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']];
     const canSave = owner || spreadOn;
+    const line = owner ? '' : spreadOn ? RATES_MANAGER_LINE : RATES_TELLER_LINE;
     return /*#__PURE__*/React.createElement("div", {
       "data-rates-panel": true
     }, /*#__PURE__*/React.createElement(SectionTitle, {
@@ -6224,7 +6228,7 @@
       style: {
         color: CD.ink
       }
-    }, RATES_OWNER_LINE), /*#__PURE__*/React.createElement(Row, {
+    }, line), /*#__PURE__*/React.createElement(Row, {
       title: "Rate feed provider",
       desc: owner ? "Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads and margins are applied on top." : RATES_FIELD
     }, owner ? pick('rateProvider', rates.rateProvider || providers[0], v => {
@@ -6237,7 +6241,7 @@
     }, providers.map(p => [p, p]), 230) : shown('rateProvider', rates.rateProvider || providers[0])), /*#__PURE__*/React.createElement(Row, {
       title: "Default spread",
       desc: RATES_SPREAD
-    }, spreadOn ? num('defaultSpread', rates.defaultSpread, '%', v => setKey('defaultSpread', v)) : shown('defaultSpread', (rates.defaultSpread ?? '') + '%')), note === 'refused' && /*#__PURE__*/React.createElement("div", {
+    }, spreadOn ? num('defaultSpread', rates.defaultSpread, '%', v => setKey('defaultSpread', v)) : shown('defaultSpread', rates2(rates.defaultSpread) + '%')), note === 'refused' && line && /*#__PURE__*/React.createElement("div", {
       "data-rates-refusal": true,
       role: "status",
       className: "mt-3 p-3 text-[12.5px]",
@@ -6247,7 +6251,7 @@
         border: `1px solid ${CD.line}`,
         borderRadius: 9
       }
-    }, RATES_OWNER_LINE), canSave && /*#__PURE__*/React.createElement("div", {
+    }, line), canSave && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 flex items-center justify-end gap-3"
     }, note === 'saved' && /*#__PURE__*/React.createElement("span", {
       "data-rates-saved": true,
@@ -6268,7 +6272,7 @@
     }, "Save")), /*#__PURE__*/React.createElement(Row, {
       title: "Default commission",
       desc: owner ? 'Suggested flat fee pre-filled on a new deal.' : RATES_FIELD
-    }, owner ? num('defaultFee', rates.defaultFee, settings.baseCurrency || 'CAD', v => setKey('defaultFee', v)) : shown('defaultFee', (rates.defaultFee ?? '') + ' ' + (settings.baseCurrency || 'CAD'))), /*#__PURE__*/React.createElement("div", {
+    }, owner ? num('defaultFee', rates.defaultFee, settings.baseCurrency || 'CAD', v => setKey('defaultFee', v)) : shown('defaultFee', rates2(rates.defaultFee) + ' ' + (settings.baseCurrency || 'CAD'))), /*#__PURE__*/React.createElement("div", {
       className: "mt-5 mb-1 text-sm font-medium flex items-center gap-1.5",
       style: {
         color: CD.ink
@@ -6285,10 +6289,10 @@
     }, "The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override."), /*#__PURE__*/React.createElement(Row, {
       title: "Target margin",
       desc: owner ? 'At or above this, the meter reads green.' : RATES_FIELD
-    }, owner ? num('marginTargetPct', rates.marginTargetPct ?? 1, '%', v => setKey('marginTargetPct', v)) : shown('marginTargetPct', (rates.marginTargetPct ?? 1) + '%')), /*#__PURE__*/React.createElement(Row, {
+    }, owner ? num('marginTargetPct', rates.marginTargetPct ?? 1, '%', v => setKey('marginTargetPct', v)) : shown('marginTargetPct', rates2(rates.marginTargetPct ?? 1) + '%')), /*#__PURE__*/React.createElement(Row, {
       title: "Minimum floor",
       desc: owner ? 'Below this, the deal is flagged red.' : RATES_FIELD
-    }, owner ? num('marginFloorPct', rates.marginFloorPct ?? 0.5, '%', v => setKey('marginFloorPct', v)) : shown('marginFloorPct', (rates.marginFloorPct ?? 0.5) + '%')), /*#__PURE__*/React.createElement(Row, {
+    }, owner ? num('marginFloorPct', rates.marginFloorPct ?? 0.5, '%', v => setKey('marginFloorPct', v)) : shown('marginFloorPct', rates2(rates.marginFloorPct ?? 0.5) + '%')), /*#__PURE__*/React.createElement(Row, {
       title: "Below the floor",
       desc: owner ? 'Warn lets the teller post anyway (logged). Require override blocks the post until they confirm with a reason.' : RATES_FIELD
     }, owner ? /*#__PURE__*/React.createElement("span", {
@@ -6390,7 +6394,7 @@
         style: {
           color: CD.faint
         }
-      }, "%")) : shown('spread-' + c, (custom ? spreads[c] : +rates.defaultSpread || 1.5) + '%')), /*#__PURE__*/React.createElement("td", {
+      }, "%")) : shown('spread-' + c, rates2(custom ? spreads[c] : +rates.defaultSpread || 1.5) + '%')), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           fontFamily: 'Space Mono, monospace',
@@ -6420,7 +6424,7 @@
       value: rates.payoutRoundMode || 'nearest',
       onPick: v => setKey('payoutRoundMode', v),
       opts: [['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]
-    }), pick('payoutRoundTo', rates.payoutRoundTo ?? 0.01, v => setKey('payoutRoundTo', +v), roundTo, 116)) : shown('payoutRound', (rates.payoutRoundMode || 'nearest') + ' ' + (rates.payoutRoundTo ?? 0.01))), /*#__PURE__*/React.createElement(Row, {
+    }), pick('payoutRoundTo', rates.payoutRoundTo ?? 0.01, v => setKey('payoutRoundTo', +v), roundTo, 116)) : shown('payoutRound', (rates.payoutRoundMode || 'nearest') + ' ' + rates2(rates.payoutRoundTo ?? 0.01))), /*#__PURE__*/React.createElement(Row, {
       title: "Rate-lock duration",
       desc: owner ? 'How long a customer quote holds the quoted rate before it must be re-priced.' : RATES_FIELD
     }, owner ? pick('rateLockMins', rates.rateLockMins || 15, v => setKey('rateLockMins', +v), [5, 10, 15, 30, 60].map(m => [m, m + ' minutes']), 130) : shown('rateLockMins', (rates.rateLockMins || 15) + ' minutes')), /*#__PURE__*/React.createElement("div", {
