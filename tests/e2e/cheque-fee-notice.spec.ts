@@ -2,7 +2,7 @@
    On a 360px phone that line has to wrap. A row that runs off the
    screen is the notice cut off, which is what this check refuses. */
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk } from "./fixtures";
+import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 
 test("the fee notice wraps at 360", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
@@ -222,4 +222,46 @@ test("a conflict keeps Fee % and a 44px Reload", async ({ page }) => {
   await expect(min).toHaveValue("4.50");
   await page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
   await expect(page.getByTestId("fee-schedule-saved")).toBeVisible();
+});
+
+/* A 500, and a 200 that is not JSON, both have to show the plain error
+   line and leave the typed fees alone. Break, then restored: removing
+   setTrouble(true) from save()'s catch hid the line and this check failed. */
+test("a failed save shows the error line and keeps the typed fee", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await signInAtDesk(page, "r.haddad");
+  await openFees(page);
+  const fee = page.getByTestId("fee-schedule");
+  const pct = fee.locator("input[type='number']").first();
+  const min = fee.locator("input[inputmode='decimal']").first();
+  const banner = page.getByTestId("fee-schedule-error");
+  const save = () => page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
+
+  await pct.fill("2.5");
+  await min.fill("8.25");
+  await min.blur();
+  await page.route("**/api/tenant/state", (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    return route.fulfill({ status: 500, contentType: "application/json", body: "{\"error\":\"no\"}" });
+  });
+  await save();
+  await expect(banner).toContainText("That change didn't save. Try again.");
+  await expect(pct).toHaveValue("2.5");
+  await expect(min).toHaveValue("8.25");
+  await page.unroute("**/api/tenant/state");
+
+  await page.reload();
+  await landOnDesktop(page);
+  await openFees(page);
+  await pct.fill("3.5");
+  await min.fill("7.10");
+  await min.blur();
+  await page.route("**/api/tenant/state", (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    return route.fulfill({ status: 200, contentType: "text/plain", body: "nope" });
+  });
+  await save();
+  await expect(banner).toContainText("That change didn't save. Try again.");
+  await expect(pct).toHaveValue("3.5");
+  await expect(min).toHaveValue("7.10");
 });
