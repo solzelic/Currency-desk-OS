@@ -74,7 +74,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 New agent pull requests are frozen until the repository owner pushes a commit to main that ends the freeze, except pull requests that finish work already in progress.
 
-- **Public site on a phone.** At 430px wide and under, the marketing header is the logo and one control. The front page keeps Early access. FAQ, compliance, contact, and the legal page use a Menu of the same links. Early access keeps Sign in in the header. See pricing, Sign in, Terms, and Privacy are at least 44px tall. Wider than 430px, those headers stay as they are. The desk is unchanged.
+- **Public site on a phone.** At 430px wide and under, the marketing header is the logo and one control. The front page keeps Early access on one line, at least 44px tall. FAQ, compliance, contact, and the legal page use a Menu control at least 44 by 44. The signup page keeps the logo and Sign in, and the logo returns to the site. See pricing, Sign in, Terms, and Privacy are at least 44px tall. Wider than 430px, those headers stay as they are. The desk is unchanged.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header

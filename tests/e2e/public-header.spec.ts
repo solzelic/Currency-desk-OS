@@ -81,6 +81,44 @@ for (const width of WIDTHS) {
           expect(box.h, name).toBeGreaterThanOrEqual(44);
           expect(box.clipped, name).toBe(false);
         }
+
+        const primary = header.locator("[data-primary]");
+        if (await primary.count()) {
+          const early = await primary.evaluate((el) => {
+            const r = el.getBoundingClientRect();
+            const text = [...el.childNodes].find((n) => n.nodeType === 3 && (n.textContent || "").trim());
+            const range = document.createRange();
+            range.selectNodeContents(text || el);
+            const tops = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top)));
+            return { h: r.height, lines: tops.size, clipped: el.scrollWidth > el.clientWidth + 1 };
+          });
+          expect(early.h, "Early access").toBeGreaterThanOrEqual(44);
+          expect(early.clipped, "Early access").toBe(false);
+          if (width === 360) expect(early.lines, "Early access lines").toBe(1);
+        }
+
+        if (await summary.isVisible()) {
+          const menu = await summary.evaluate((el) => {
+            const r = el.getBoundingClientRect();
+            const cs = getComputedStyle(el);
+            const parts = cs.borderTopColor.replace(/[^\d.,]/g, "").split(",").map((n) => Number(n));
+            const alpha = parts.length === 4 ? parts[3] : 1;
+            return {
+              w: r.width,
+              h: r.height,
+              border: parseFloat(cs.borderTopWidth) || 0,
+              alpha,
+              radius: parseFloat(cs.borderTopLeftRadius) || 0,
+              animation: cs.animationName,
+            };
+          });
+          expect(menu.w, "Menu").toBeGreaterThanOrEqual(44);
+          expect(menu.h, "Menu").toBeGreaterThanOrEqual(44);
+          expect(menu.border, "Menu border").toBeGreaterThanOrEqual(1);
+          expect(menu.alpha, "Menu border").toBeGreaterThan(0);
+          expect(menu.radius, "Menu radius").toBeLessThan(menu.h / 2);
+          expect(menu.animation, "Menu animation").toBe("none");
+        }
       });
     }
   });
