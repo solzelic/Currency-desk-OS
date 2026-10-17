@@ -33,6 +33,22 @@
       [style*="grid-template-columns: 232px"] { grid-template-columns: minmax(0, 1fr) !important; gap: 0 !important; }
       [style*="grid-template-columns: 232px"] > div:first-child { display: none !important; }
     }
+    [data-site-menu] { display: none; }
+    @media (max-width: 430px) {
+      [data-site-header] { height: 58px !important; padding-left: 16px !important; padding-right: 16px !important; gap: 12px !important; position: relative; }
+      [data-site-header] [data-desk] { display: none !important; }
+      [data-site-header] > a { display: inline-flex; align-items: center; min-height: 44px; }
+      [data-site-header] svg[viewBox="0 0 200 140"] { width: 38px !important; height: 27px !important; }
+      [data-site-header] [style*="font-size: 15.5px"] { font-size: 13px !important; }
+      [data-site-menu] { display: block; height: auto; margin-left: auto; flex: none; position: static; }
+      [data-site-menu] > summary { display: flex; align-items: center; min-height: 44px; padding: 0 2px 0 8px; list-style: none; cursor: pointer; font-family: var(--f); font-size: 17px; font-weight: 600; color: var(--ink); }
+      [data-site-menu] > summary::-webkit-details-marker { display: none; }
+      [data-site-menu] > summary::marker { content: ""; }
+      [data-site-links] { display: none; height: auto; }
+      [data-site-menu][open] > [data-site-links] { display: flex; flex-direction: column; align-items: stretch; position: absolute; z-index: 5; top: 100%; left: 0; right: 0; gap: 0; height: auto; margin: 0; padding: 6px 8px 8px; background: #FBF9F4; border-top: 1px solid rgba(23,20,15,0.12); }
+      [data-site-header] [data-site-links] a { display: flex !important; align-items: center; box-sizing: border-box; min-height: 44px !important; height: auto !important; width: auto !important; margin: 0 !important; padding: 0 12px !important; overflow: visible !important; animation: none !important; white-space: nowrap; border-radius: 8px; background: transparent !important; color: var(--ink) !important; font-family: var(--f) !important; font-size: 17px !important; font-weight: 600 !important; letter-spacing: 0 !important; text-transform: none !important; box-shadow: none !important; }
+      [data-site-links] a > span[style*="border-radius: 50%"] { display: none !important; }
+    }
   </style>
 </helmet>
 
@@ -43,14 +59,21 @@
   </div>
 
   <div style="position: sticky; top: 0; z-index: 50; backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); background: rgba(231,227,218,0.82); border-bottom: 1px solid var(--line);">
-    <div style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: flex; align-items: center; gap: 20px;">
+    <div data-site-header style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: flex; align-items: center; gap: 20px;">
       <a href="CurrencyDesk Site.dc.html" style="display: inline-flex; align-items: center; gap: 11px; color: var(--ink);">
         <svg viewBox="0 0 200 140" width="46" height="32"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
         <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: var(--m); font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: var(--green); margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
       </a>
       <div style="flex: 1;"></div>
-      <a href="CurrencyDesk FAQ.dc.html" style="font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Questions</a>
-      <a href="CurrencyDesk Site.dc.html" style="font-size: 13.5px; font-weight: 700; color: var(--ink);" style-hover="color: var(--green);">Back to site</a>
+      <a data-desk href="CurrencyDesk FAQ.dc.html" style="font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Questions</a>
+      <a data-desk href="CurrencyDesk Site.dc.html" style="font-size: 13.5px; font-weight: 700; color: var(--ink);" style-hover="color: var(--green);">Back to site</a>
+      <details data-site-menu>
+        <summary>Menu</summary>
+        <div data-site-links>
+          <a href="CurrencyDesk FAQ.dc.html">Questions</a>
+          <a href="CurrencyDesk Site.dc.html">Back to site</a>
+        </div>
+      </details>
     </div>
   </div>
 
