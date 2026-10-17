@@ -41348,11 +41348,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      The fee is the price of cash the desk has not yet collected.
      The owner and a manager can change it, including to 0%. A teller cannot. The
      server is the check. This screen only stops inviting the edit.
-     The form keeps the controls it opened with. A session switch,
-     or a change to this person's role, updates the header and
-     leaves this tab as it was. Save then asks the server who the
-     cookie is now. A refusal keeps what was typed and says why
-     above the button. The lock sits in that sentence, and the sentence wraps. */
+     The table follows who is signed in now. A cashier sees the lock
+     and the read-only figures, with no inputs, before any Save.
+     The lock sits in that sentence, and the sentence wraps. */
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
@@ -41367,9 +41365,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     setSchedule,
     me
   }) {
-    const liveEditor = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
-    const [openedAsEditor] = useState(liveEditor);
-    const mayEdit = openedAsEditor;
+    const mayEdit = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
     const [conflict, setConflict] = useState(false);
@@ -41488,7 +41484,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       className: "px-3 py-2 text-right"
     }, "Hold days"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "e.g. $2,000"))), /*#__PURE__*/React.createElement("tbody", null, rows.map(t => {
+    }, "e.g. $2,000.00"))), /*#__PURE__*/React.createElement("tbody", null, rows.map(t => {
       const rt = RISK_TONE[t.risk] || RISK_TONE.low;
       const eg = feeFor(2000, t);
       return /*#__PURE__*/React.createElement("tr", {
@@ -41543,6 +41539,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         inputMode: "decimal",
         value: money2(t.feeMin),
         onChange: e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, '')),
+        onBlur: e => set(t.id, 'feeMin', money2(e.target.value)),
         className: "fee-field w-20 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
@@ -41606,7 +41603,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       type: "button",
       "data-testid": "fee-schedule-reload",
       onClick: () => window.location.reload(),
-      className: "font-semibold underline",
+      className: "fee-reload",
       style: {
         color: CD.amber
       }
@@ -65918,8 +65915,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           if (!alive || !d || !d.user || !d.user.id) return;
           /* The header has to name whoever the cookie is now. A switch,
              or a change of role, does not reload the desk. The open Fee
-             schedule tab keeps the form it was opened with, and Save is
-             answered for this session. */
+             schedule follows that role, so a cashier sees the lock and
+             the read-only figures, with no inputs. */
           if (stageRef.current !== 'desktop') return;
           const u = d.user;
           const role = SRV2OS[u.role] || 'Cashier';

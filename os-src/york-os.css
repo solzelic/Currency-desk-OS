@@ -1434,7 +1434,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 
 .fee-lock { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .fee-lock svg { display: inline-block; vertical-align: -0.2em; margin-right: 6px; }
-.fee-field, .fee-save { min-height: 44px; box-sizing: border-box; }
+.fee-field, .fee-save, .fee-reload { min-height: 44px; box-sizing: border-box; }
+.fee-reload { display: inline-flex; align-items: center; padding: 0 8px; margin-left: 8px; border: 0; background: transparent; font-weight: 600; text-decoration: underline; color: inherit; }
 
 /* ============================================================
    PHONE  (390 and 360)
@@ -1557,29 +1558,6 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   /* A reference such as CD-261011-18284a was wrapping onto three
      lines inside a narrow column. One line, and the card scrolls. */
   .win-body .overflow-hidden:has(table) :is(th, td) { white-space: nowrap; }
-  /* The fee schedule is the exception. Six columns have to sit in
-     the window, including the example, and the sentence above wraps. */
-  .win-body .fee-schedule-card {
-    overflow: hidden;
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-  .win-body .fee-schedule-card table {
-    min-width: 0 !important;
-    width: 100%;
-    table-layout: fixed;
-  }
-  .win-body .fee-schedule-card :is(th, td) {
-    white-space: normal !important;
-    padding: 4px 2px !important;
-    overflow-wrap: anywhere;
-  }
-  .win-body .fee-schedule-card .fee-field {
-    width: 100% !important;
-    max-width: 100%;
-    padding-left: 2px;
-    padding-right: 2px;
-  }
   /* Settings is a 212px rail beside the panel. On a phone that rail
      leaves the account form a sliver, and the theme drawing (drawn
      at a desktop offset) sticks out of the screen. Stack them. */

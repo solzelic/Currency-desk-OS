@@ -1651,8 +1651,8 @@
             if (!alive || !d || !d.user || !d.user.id) return;
             /* The header has to name whoever the cookie is now. A switch,
                or a change of role, does not reload the desk. The open Fee
-               schedule tab keeps the form it was opened with, and Save is
-               answered for this session. */
+               schedule follows that role, so a cashier sees the lock and
+               the read-only figures, with no inputs. */
             if (stageRef.current !== 'desktop') return;
             const u = d.user;
             const role = SRV2OS[u.role] || 'Cashier';

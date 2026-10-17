@@ -78,11 +78,9 @@
      The fee is the price of cash the desk has not yet collected.
      The owner and a manager can change it, including to 0%. A teller cannot. The
      server is the check. This screen only stops inviting the edit.
-     The form keeps the controls it opened with. A session switch,
-     or a change to this person's role, updates the header and
-     leaves this tab as it was. Save then asks the server who the
-     cookie is now. A refusal keeps what was typed and says why
-     above the button. The lock sits in that sentence, and the sentence wraps. */
+     The table follows who is signed in now. A cashier sees the lock
+     and the read-only figures, with no inputs, before any Save.
+     The lock sits in that sentence, and the sentence wraps. */
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
@@ -93,9 +91,7 @@
     return Number.isFinite(x) ? x.toFixed(2) : '';
   }
   function FeeSchedule({ schedule, setSchedule, me }) {
-    const liveEditor = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
-    const [openedAsEditor] = useState(liveEditor);
-    const mayEdit = openedAsEditor;
+    const mayEdit = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
     const [conflict, setConflict] = useState(false);
@@ -134,7 +130,7 @@
       <div className="fee-schedule-card overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
         <table className="w-full text-sm border-collapse">
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
-            <th className="px-3 py-2">Type</th><th className="px-3 py-2">Risk</th><th className="px-3 py-2 text-right">Fee %</th><th className="px-3 py-2 text-right">Min fee</th><th className="px-3 py-2 text-right">Hold days</th><th className="px-3 py-2 text-right">e.g. $2,000</th>
+            <th className="px-3 py-2">Type</th><th className="px-3 py-2">Risk</th><th className="px-3 py-2 text-right">Fee %</th><th className="px-3 py-2 text-right">Min fee</th><th className="px-3 py-2 text-right">Hold days</th><th className="px-3 py-2 text-right">e.g. $2,000.00</th>
           </tr></thead>
           <tbody>{rows.map(t => { const rt = RISK_TONE[t.risk] || RISK_TONE.low; const eg = feeFor(2000, t); return (
             <tr key={t.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
@@ -146,7 +142,7 @@
                 ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.feePct}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
-                ? <input type="text" inputMode="decimal" value={money2(t.feeMin)} onChange={e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, ''))} className="fee-field w-20 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                ? <input type="text" inputMode="decimal" value={money2(t.feeMin)} onChange={e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, ''))} onBlur={e => set(t.id, 'feeMin', money2(e.target.value))} className="fee-field w-20 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{money2(t.feeMin)}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
                 ? <input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="fee-field w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
@@ -158,7 +154,7 @@
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
       {mayEdit && <div className="mt-3">
         {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}
-        {conflict && <p role="alert" data-testid="fee-schedule-conflict" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}>{FEE_CONFLICT} <button type="button" data-testid="fee-schedule-reload" onClick={() => window.location.reload()} className="font-semibold underline" style={{ color: CD.amber }}>Reload</button></p>}
+        {conflict && <p role="alert" data-testid="fee-schedule-conflict" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}>{FEE_CONFLICT} <button type="button" data-testid="fee-schedule-reload" onClick={() => window.location.reload()} className="fee-reload" style={{ color: CD.amber }}>Reload</button></p>}
         <div className="flex items-center gap-2">
           <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="fee-save px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
           {saved && <span data-testid="fee-schedule-saved" className="text-[12px] font-semibold" style={{ color: CD.green }}>Saved</span>}
