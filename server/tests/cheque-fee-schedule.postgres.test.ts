@@ -2,6 +2,7 @@
    A teller who can save payroll at 0% cashes the next cheque for nothing.
    Real Postgres: the write is refused, the schedule stays, the cheque pays the old fee. */
 import pg from "pg";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
@@ -66,10 +67,16 @@ postgres("cheque fee schedule is owner only", () => {
       const staffId = `fee.${role}`;
       await handle.db.insert(schema.staffUsers).values({
         id: `${DEMO.tenantId}:${staffId}`, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, branchId: DEMO.branchId,
-        staffId, name: role, role: "administrator", authorizedBranchIds: [DEMO.branchId], passwordHash,
+        staffId, name: role, role: "auditor", authorizedBranchIds: [DEMO.branchId], passwordHash,
       }).onConflictDoNothing();
       await handle.db.insert(schema.platformUsers).values({ email: staffId, name: role, role, status: "active", addedBy: "test" }).onConflictDoNothing();
+      await handle.db.update(schema.staffUsers).set({ role: "auditor" }).where(eq(schema.staffUsers.staffId, staffId));
     }
+    /* The shop owner is also the platform owner. That row must not
+       turn their fee save into the teller's refusal. */
+    await handle.db.insert(schema.platformUsers).values({
+      email: "j.masri", name: "J. Masri", role: "owner", status: "active", addedBy: "test",
+    }).onConflictDoNothing();
     pool = new pg.Pool({ connectionString: url });
     app = await buildApp(handle.db);
     for (const staffId of ["j.masri", "r.haddad", "m.costa", ...platformRoles.map((role) => `fee.${role}`)]) sessions[staffId] = await sign(staffId);

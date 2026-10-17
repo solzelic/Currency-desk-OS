@@ -14,7 +14,6 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
-import { member } from "../platform/team.js";
 import { audit } from "../audit.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
@@ -70,13 +69,14 @@ export function chequeScheduleWrite(stored: Record<string, unknown> | null, inco
   return true;
 }
 
-/* The shop owner holds `compliance:thresholds`. A platform role does
-   not, even when the staff row says administrator so the person can
-   sign in. Pricing a customer's cheques is the shop's decision. */
-async function deskOwnerMaySetChequeFees(db: Db, who: SessionUser): Promise<boolean> {
-  if (!hasBackendPermission(who.role, "compliance:thresholds")) return false;
-  if (await member(db, who.staffId)) return false;
-  return true;
+/* The owner is the desk administrator. That role is the only one
+   that holds `compliance:thresholds`, the same need this desk already
+   uses for settings that decide what the shop will and will not do.
+   A platform row does not grant the need, and it does not take it
+   away. The person signed in as the owner has to be able to save.
+   Refusing them because they are also on the platform team was a bug. */
+function deskOwnerMaySetChequeFees(who: SessionUser): boolean {
+  return hasBackendPermission(who.role, "compliance:thresholds");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -173,7 +173,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     const raw = asRecord(req.body);
     const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
     if (chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state))) {
-      if (!(await deskOwnerMaySetChequeFees(db, who))) {
+      if (!deskOwnerMaySetChequeFees(who)) {
         await audit(db, {
           tenantId: who.tenantId,
           legalEntityId: who.legalEntityId,

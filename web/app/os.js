@@ -41348,7 +41348,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      The fee is the price of cash the desk has not yet collected.
      Anyone but the owner can read it. They cannot save it. The
      server is the check. This screen only stops inviting the edit.
-     A Save the server refuses keeps what was typed and says why
+     The form keeps the controls it opened with. A session switch,
+     or a change to this person's role, updates the header and
+     leaves this tab as it was. Save then asks the server who the
+     cookie is now. A refusal keeps what was typed and says why
      above the button. It does not toast, and it does not show a code. */
   const FEE_SENTENCE = 'Only the owner can change cheque fees. Ask the owner to make this change.';
   function FeeSchedule({
@@ -41356,17 +41359,23 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     setSchedule,
     me
   }) {
-    const isOwner = !!(me && me.role === 'Owner');
+    const liveOwner = !!(me && me.role === 'Owner');
+    const [openedAsOwner] = useState(liveOwner);
+    const isOwner = openedAsOwner;
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
+    const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => {
       setDraft(schedule);
     }, [schedule]);
-    const set = (id, k, v) => setDraft(list => list.map(t => t.id === id ? {
-      ...t,
-      [k]: v
-    } : t));
+    const set = (id, k, v) => {
+      setSaved(false);
+      setDraft(list => list.map(t => t.id === id ? {
+        ...t,
+        [k]: v
+      } : t));
+    };
     const rows = isOwner ? draft : schedule;
     const save = async () => {
       setBusy(true);
@@ -41389,12 +41398,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         const body = await res.json();
         if (res.status === 403) {
           setRefused(true);
+          setSaved(false);
           return;
         }
         if (!res.ok) throw new Error(body && body.detail ? body.detail : 'The fee schedule was not saved.');
         localStorage.setItem(SKEY, JSON.stringify(draft));
         setSchedule(draft);
         setRefused(false);
+        setSaved(true);
       } finally {
         setBusy(false);
       }
@@ -41558,7 +41569,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "lock",
       s: 13,
       c: "var(--cd-brass-text)"
-    }), /*#__PURE__*/React.createElement("span", null, FEE_SENTENCE)), /*#__PURE__*/React.createElement("button", {
+    }), /*#__PURE__*/React.createElement("span", null, FEE_SENTENCE)), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "fee-schedule-save",
       onClick: save,
@@ -41569,7 +41582,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         borderRadius: 9,
         opacity: busy ? 0.6 : 1
       }
-    }, "Save")));
+    }, "Save"), saved && /*#__PURE__*/React.createElement("span", {
+      "data-testid": "fee-schedule-saved",
+      className: "text-[12px] font-semibold",
+      style: {
+        color: CD.green
+      }
+    }, "Saved"))));
   }
 
   /* ===================== ROOT ===================== */
@@ -65774,6 +65793,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     useEffect(() => {
       settingsRef.current = settings;
     }, [settings]);
+    const meRef = useRef(me);
+    useEffect(() => {
+      meRef.current = me;
+    }, [me]);
     const routeAfterAuth = rec => {
       if (!rec) {
         setStage('lock');
@@ -65827,7 +65850,31 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         fetch('/api/auth/me', {
           credentials: 'same-origin'
         }).then(r => {
-          if (r.status === 401) relock();
+          if (r.status === 401) {
+            relock();
+            return null;
+          }
+          if (!r.ok) return null;
+          return r.json();
+        }).then(d => {
+          if (!alive || !d || !d.user || !d.user.id) return;
+          /* The header has to name whoever the cookie is now. A switch,
+             or a change of role, does not reload the desk. The open Fee
+             schedule tab keeps the form it was opened with, and Save is
+             answered for this session. */
+          if (stageRef.current !== 'desktop') return;
+          const u = d.user;
+          const role = SRV2OS[u.role] || 'Cashier';
+          const name = u.name || u.id;
+          const cur = meRef.current;
+          if (cur && cur.name === name && cur.role === role) return;
+          srvUserRef.current = u;
+          setSrvUser(u);
+          setUser(u.id);
+          setMe({
+            name,
+            role
+          });
         }).catch(() => {}); // offline: leave the desk alone
       };
 

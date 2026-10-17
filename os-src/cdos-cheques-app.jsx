@@ -78,16 +78,22 @@
      The fee is the price of cash the desk has not yet collected.
      Anyone but the owner can read it. They cannot save it. The
      server is the check. This screen only stops inviting the edit.
-     A Save the server refuses keeps what was typed and says why
+     The form keeps the controls it opened with. A session switch,
+     or a change to this person's role, updates the header and
+     leaves this tab as it was. Save then asks the server who the
+     cookie is now. A refusal keeps what was typed and says why
      above the button. It does not toast, and it does not show a code. */
   const FEE_SENTENCE = 'Only the owner can change cheque fees. Ask the owner to make this change.';
   function FeeSchedule({ schedule, setSchedule, me }) {
-    const isOwner = !!(me && me.role === 'Owner');
+    const liveOwner = !!(me && me.role === 'Owner');
+    const [openedAsOwner] = useState(liveOwner);
+    const isOwner = openedAsOwner;
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
+    const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => { setDraft(schedule); }, [schedule]);
-    const set = (id, k, v) => setDraft(list => list.map(t => t.id === id ? { ...t, [k]: v } : t));
+    const set = (id, k, v) => { setSaved(false); setDraft(list => list.map(t => t.id === id ? { ...t, [k]: v } : t)); };
     const rows = isOwner ? draft : schedule;
     const save = async () => {
       setBusy(true);
@@ -101,11 +107,12 @@
           body: JSON.stringify({ state: snap, version: version }),
         });
         const body = await res.json();
-        if (res.status === 403) { setRefused(true); return; }
+        if (res.status === 403) { setRefused(true); setSaved(false); return; }
         if (!res.ok) throw new Error(body && body.detail ? body.detail : 'The fee schedule was not saved.');
         localStorage.setItem(SKEY, JSON.stringify(draft));
         setSchedule(draft);
         setRefused(false);
+        setSaved(true);
       } finally { setBusy(false); }
     };
     const cell = { color: isOwner ? CD.ink : CD.mute, fontVariantNumeric: 'tabular-nums' };
@@ -139,7 +146,10 @@
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
       {isOwner && <div className="mt-3">
         {refused && <div role="alert" data-testid="fee-schedule-refused" className="mb-2 flex items-start gap-2 px-3 py-2 text-[12px]" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={13} c="var(--cd-brass-text)" /><span>{FEE_SENTENCE}</span></div>}
-        <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
+        <div className="flex items-center gap-2">
+          <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
+          {saved && <span data-testid="fee-schedule-saved" className="text-[12px] font-semibold" style={{ color: CD.green }}>Saved</span>}
+        </div>
       </div>}
     </div>);
   }

@@ -1842,16 +1842,21 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     box-shadow: 0 0 0 2px #fff;
   }
   .phone-head .mb-acct-wrap { grid-column: 2; grid-row: 1 / span 2; }
-  .phone-head .mb-acct-id,
+  /* The name stays. A refused fee save has to show who is signed in,
+     not only an avatar. The chevron does not fit beside it. */
   .phone-head .mb-acct > svg { display: none; }
   .phone-head .mb-acct {
-    width: 44px;
+    width: auto;
     height: 44px;
     min-width: 44px;
     min-height: 44px;
-    padding: 0;
-    justify-content: center;
+    padding: 0 4px 0 0;
+    gap: 6px;
+    justify-content: flex-start;
   }
+  .phone-head .mb-acct-id { max-width: 96px; }
+  .phone-head .mb-acct-id b,
+  .phone-head .mb-acct-id i { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .phone-head .mb-acct-av { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }
 
   /* The bar is fixed over the desk. The window runs under it.
