@@ -129,6 +129,34 @@ touched, `ledger_cost_events` gets nothing, and `realized_pnl_home` and
 The fee is fee revenue, not a margin against a purchase. An NSF is an
 expense, not a loss on inventory. Neither is a disposal of anything.
 
+The fee figure is the desk's rule for that cheque type, worked out on
+the server. Percent of the face, or the minimum, whichever is larger,
+rounded half up to the cent. 1,000.25 at 2% is 20.005, which is 20.01.
+A client fee that is not that figure is refused, including 0, unless
+the saved rule for that type really is 0. A cheque that is not signed
+on the back is refused and nothing is written. The hold-until date is
+the business date plus the hold, as calendar days. It is not an instant
+passed through `toISOString`, which moves the day back one in a zone
+east of UTC.
+
+On the cheque sheet those dates read Oct 17, 2026, and the amounts
+read with grouping and two decimals, so 1,200.00. Cash & hold stays
+grey until Signed on the back is ticked. The line beside that grey
+button says to tick it. Tapping the grey button scrolls to the
+Endorsement box and outlines it. That button is 44px tall, and the
+Signed on the back row is a 44px tap target. The net cash figure is
+28px. The hold date on the same sheet is 20px. The hold the sheet
+shows is the till's business date plus the hold, not the browser's
+wall clock. A hold shorter than the schedule for that type is
+refused and nothing is written. A personal cheque at 0 days is
+refused. The detail line for a signed cheque reads "Yes, signed". The
+cheque amount shows 1,200.00 after the field loses focus, with CAD
+beside the digits. On a narrow sheet the cheque number sits under
+that field so no digit is cut off. The line that says to tick
+Signed on the back sits on one line above Cash & hold. A fee that
+does not match also says to check the amount and type, then press
+Cash & hold again.
+
 ## Scope: home currency only
 
 A cheque written in another currency is an **exchange as well as a

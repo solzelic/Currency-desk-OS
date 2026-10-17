@@ -39828,9 +39828,9 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const {
     CD,
     Ic,
-    fmt,
-    num,
     TODAY,
+    businessDate,
+    formatPhoneMoney,
     crossRate,
     newTx,
     mkRef
@@ -39845,12 +39845,34 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
+  /* Calendar days on the YYYY-MM-DD string. toISOString of a local
+     midnight moves the hold back one day in any zone east of UTC. */
   const addDays = (date, n) => {
-    const d = new Date(date + 'T00:00:00');
-    d.setDate(d.getDate() + (+n || 0));
-    return d.toISOString().slice(0, 10);
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+    if (!m) return '';
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (+n || 0)));
+    const y = at.getUTCFullYear();
+    const mo = String(at.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(at.getUTCDate()).padStart(2, '0');
+    return y + '-' + mo + '-' + d;
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+  /* Oct 17, 2026. The book still stores YYYY-MM-DD. UTC, because a
+     local midnight west of Greenwich is the day before. */
+  const sheetDate = iso => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return new Intl.DateTimeFormat('en-CA', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(at);
+  };
+  /* 1,200.00. Same grouped two-decimal line as the phone ticket,
+     with no currency code, because this sheet already names CAD. */
+  const sheetMoney = n => formatPhoneMoney(n);
 
   /* ---- default fee schedule by cheque type (editable in the Fee schedule tab) ---- */
   function defaultSchedule() {
@@ -39915,9 +39937,40 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       bg: CD.flagSoft
     }
   };
+  /* Half up to the cent, in integer arithmetic. 1,000.25 at 2% is
+     20.005, which is 20.01. A float times toFixed gets that one wrong. */
+  function roundHalfUpMulDiv(amount, pct, divisor) {
+    const parts = value => {
+      const s = String(value == null ? '' : value).trim();
+      const neg = s.charAt(0) === '-';
+      const body = neg ? s.slice(1) : s;
+      const bits = body.split('.');
+      const whole = bits[0] || '0';
+      const frac = bits[1] || '';
+      const digits = (whole + frac).replace(/^0+(?=\d)/, '') || '0';
+      if (!/^\d+$/.test(digits)) return null;
+      return {
+        neg: neg,
+        digits: digits,
+        scale: frac.length
+      };
+    };
+    const a = parts(amount);
+    const p = parts(pct);
+    if (!a || !p || a.neg || p.neg) return 0;
+    const product = BigInt(a.digits) * BigInt(p.digits);
+    const den = 10n ** BigInt(a.scale + p.scale) * BigInt(divisor);
+    const num = product * 100n;
+    const q = num / den;
+    const r = num % den;
+    const cents = r * 2n >= den ? q + 1n : q;
+    return Number((Number(cents) / 100).toFixed(2));
+  }
   const feeFor = (amount, type) => {
     const t = type || {};
-    return Math.max(+t.feeMin || 0, (+amount || 0) * (+t.feePct || 0) / 100);
+    const percent = roundHalfUpMulDiv(amount, t.feePct || 0, 100);
+    const minimum = roundHalfUpMulDiv(t.feeMin || 0, 1, 1);
+    return Math.max(minimum, percent);
   };
   const STATUS = {
     held: {
@@ -39993,7 +40046,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         status: 'held',
         ts: '2026-06-18 09:48',
         by: 'A. Singh',
-        note: 'Cash fronted — 3-day business hold'
+        note: 'Cash fronted, 3-day business hold'
       }]
     }), mk({
       ref: 'CHQ-260618-001',
@@ -40014,7 +40067,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         status: 'cleared',
         ts: '2026-06-18 14:02',
         by: 'System',
-        note: 'Government cheque — same-day clearance'
+        note: 'Government cheque, same-day clearance'
       }]
     }), mk({
       ref: 'CHQ-260616-004',
@@ -40028,7 +40081,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       status: 'returned',
       nsf: true,
       holdUntil: '2026-06-21',
-      returnedReason: 'NSF — insufficient funds',
+      returnedReason: 'NSF, insufficient funds',
       timeline: [{
         status: 'held',
         ts: '2026-06-16 16:30',
@@ -40038,7 +40091,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         status: 'returned',
         ts: '2026-06-19 09:10',
         by: 'J. Masri',
-        note: 'Returned NSF — cash loss, customer contacted'
+        note: 'Returned NSF. Cash loss, customer contacted'
       }]
     }), mk({
       ref: 'CHQ-260617-003',
@@ -40247,15 +40300,61 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const [image, setImage] = useState(null);
     const [holdOverride, setHoldOverride] = useState(null);
     const type = schedule.find(t => t.id === typeId) || schedule[0];
-    const amtN = parseFloat(amount) || 0;
+    /* 1,200.00 once the teller leaves the field. Commas are display.
+       The fee is worked from the digits with the commas taken out. */
+    const amtN = parseFloat(String(amount).replace(/,/g, '')) || 0;
+    const blurAmount = () => {
+      const n = parseFloat(String(amount).replace(/,/g, ''));
+      if (Number.isFinite(n)) setAmount(sheetMoney(n));
+    };
+    const amountEl = useRef(null);
+    /* A long face at 360 stays inside the field. The type shrinks
+       before a digit is cut off. */
+    const fitAmount = () => {
+      const el = amountEl.current;
+      if (!el) return;
+      let size = 18;
+      el.style.fontSize = size + 'px';
+      while (size > 11 && el.scrollWidth > el.clientWidth) {
+        size -= 1;
+        el.style.fontSize = size + 'px';
+      }
+    };
+    useEffect(() => {
+      fitAmount();
+      window.addEventListener('resize', fitAmount);
+      return () => window.removeEventListener('resize', fitAmount);
+    }, [amount]);
     const fee = +feeFor(amtN, type).toFixed(2);
     const net = +(amtN - fee).toFixed(2);
     // Settings › Cheques can set a minimum hold that floors every cheque's scheduled hold
     const minHold = Math.max(0, +(settings && settings.chequeMinHoldDays) || 0);
-    const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
-    const holdUntil = addDays(TODAY, holdDays);
+    /* The till's trading day, not the browser's wall clock. A session
+       opened yesterday is still yesterday at 12:30 AM. */
+    const [bookDay, setBookDay] = useState(businessDate);
+    useEffect(() => {
+      const sync = () => setBookDay(businessDate());
+      window.addEventListener('cdos-business-date', sync);
+      sync();
+      return () => window.removeEventListener('cdos-business-date', sync);
+    }, []);
+    const typeHold = Math.max(0, +(type && type.holdDays) || 0);
+    const holdDays = Math.max(minHold, typeHold, holdOverride != null ? +holdOverride : typeHold);
+    const holdUntil = addDays(bookDay, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
-    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const ready = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const canSave = ready && endorsed;
+    /* A disabled button swallows the tap, so the teller never reaches
+       the box they still have to tick. Grey, but it still points there. */
+    const endorseBox = useRef(null);
+    const [endorseMark, setEndorseMark] = useState(false);
+    const showEndorsement = () => {
+      const node = endorseBox.current;
+      if (node && node.scrollIntoView) node.scrollIntoView({
+        block: 'center'
+      });
+      setEndorseMark(true);
+    };
     useEffect(() => {
       const h = e => {
         if (e.key === 'Escape') onClose();
@@ -40354,7 +40453,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           }
         }
         onTillChanged && onTillChanged(posted.balances);
-        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${sheetMoney(amtN)} ${type.label} · fronted ${sheetMoney(Number(posted.cheque.netAmount))} · hold to ${sheetDate(posted.cheque.holdUntil)}`);
         onDone && onDone(chq.id);
       } catch (error) {
         setErr(error.message || 'The cheque was not cashed.');
@@ -40409,7 +40508,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "Teller ", me.name, " \xB7 ", TODAY))), /*#__PURE__*/React.createElement("button", {
+    }, "Teller ", me.name, " \xB7 ", sheetDate(bookDay)))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "p-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
@@ -40434,7 +40533,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       value: n
     })))), /*#__PURE__*/React.createElement(Field, {
       label: "Cheque type",
-      hint: `${type.feePct}% · min ${fmt(type.feeMin, homeCcy())} · ${type.holdDays}d hold`
+      hint: `${type.feePct}% · min ${sheetMoney(type.feeMin)} · ${type.holdDays}d hold`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
     }, schedule.map(t => {
@@ -40470,29 +40569,33 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         borderRadius: 10
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-2 gap-3"
+      className: "grid gap-3",
+      style: {
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'
+      }
     }, /*#__PURE__*/React.createElement(Field, {
       label: "Cheque amount"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex",
+      className: "flex flex-nowrap items-stretch",
       style: {
         border: `1px solid ${CD.ink}`,
-        borderRadius: 8,
-        overflow: 'hidden'
+        borderRadius: 8
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: "px-2.5 grid place-items-center text-sm font-semibold",
+      className: "flex-none px-2.5 grid place-items-center text-sm font-semibold",
       style: {
         background: 'var(--cd-chip)',
         borderRight: `1px solid ${CD.line}`
       }
     }, "CAD"), /*#__PURE__*/React.createElement("input", {
+      ref: amountEl,
       value: amount,
       onChange: e => setAmount(e.target.value),
+      onBlur: blurAmount,
       inputMode: "decimal",
       autoFocus: true,
       placeholder: "0.00",
-      className: "flex-1 min-w-0 px-3 py-2 text-lg font-semibold text-right outline-none",
+      className: "flex-1 min-w-0 px-2 py-2 text-lg font-semibold text-right outline-none",
       style: {
         fontVariantNumeric: 'tabular-nums'
       }
@@ -40560,12 +40663,25 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.flag
       }
-    }, imgErr)), /*#__PURE__*/React.createElement(Field, {
+    }, imgErr)), /*#__PURE__*/React.createElement("div", {
+      ref: endorseBox,
+      "data-endorsement-box": endorseMark ? 'marked' : 'plain',
+      style: endorseMark ? {
+        outline: `2px solid ${CD.ink}`,
+        outlineOffset: 3,
+        borderRadius: 8
+      } : undefined
+    }, /*#__PURE__*/React.createElement(Field, {
       label: "Endorsement"
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setEndorsed(v => !v),
-      className: "w-full flex items-center gap-2 px-2.5 py-2",
+      onClick: () => {
+        setEndorsed(v => !v);
+        setEndorseMark(false);
+      },
+      className: "w-full flex items-center gap-2 px-2.5",
       style: {
+        height: 44,
+        boxSizing: 'border-box',
         border: `1px solid ${endorsed ? CD.ink : CD.line}`,
         borderRadius: 8,
         background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)'
@@ -40588,7 +40704,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.ink
       }
-    }, "Signed on the back"))))), /*#__PURE__*/React.createElement("div", {
+    }, "Signed on the back")))))), /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
         background: rt.bg,
@@ -40611,7 +40727,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "fee ", fmt(fee, homeCcy()))), /*#__PURE__*/React.createElement("div", {
+    }, "fee ", sheetMoney(fee))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -40620,12 +40736,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono, monospace'
       }
     }, "Cash to customer now"), /*#__PURE__*/React.createElement("div", {
-      className: "text-xl font-bold",
+      className: "font-bold",
       style: {
         color: CD.ink,
+        fontSize: 28,
+        lineHeight: '32px',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(net, homeCcy()))), /*#__PURE__*/React.createElement(Ic, {
+    }, sheetMoney(net))), /*#__PURE__*/React.createElement(Ic, {
       n: "arrowright",
       s: 16,
       c: CD.faint
@@ -40638,12 +40756,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         fontFamily: 'Space Mono, monospace'
       }
     }, "At risk until"), /*#__PURE__*/React.createElement("div", {
-      className: "text-xl font-bold",
+      className: "font-bold",
       style: {
         color: CD.ink,
+        fontSize: 20,
+        lineHeight: '24px',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, holdDays === 0 ? 'cleared' : holdUntil))), /*#__PURE__*/React.createElement("div", {
+    }, holdDays === 0 ? 'cleared' : sheetDate(holdUntil)))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 mt-2 pt-2",
       style: {
         borderTop: `1px solid ${rt.c}33`
@@ -40670,39 +40790,57 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       },
       role: "alert"
     }, err), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between gap-3 px-5 py-4",
+      className: "flex-none px-5 py-4",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)',
         borderRadius: '0 0 14px 14px'
       }
+    }, ready && !endorsed && !busy && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] text-right mb-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Tick Signed on the back to cash this cheque."), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap items-center justify-between gap-2"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        flex: '1 1 140px'
       }
     }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, fmt(net, homeCcy())), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
+    }, sheetMoney(net)), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.green
       }
-    }, fmt(fee, homeCcy()))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
-      onClick: save,
-      disabled: !canSave || busy,
-      className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
+    }, sheetMoney(fee))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        if (ready && !endorsed) {
+          showEndorsement();
+          return;
+        }
+        save();
+      },
+      disabled: busy || !ready,
+      "aria-disabled": !canSave || busy,
+      className: "flex items-center gap-1.5 px-4 text-sm font-semibold text-white",
       style: {
+        height: 44,
+        boxSizing: 'border-box',
         background: canSave && !busy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
-        cursor: canSave && !busy ? 'pointer' : 'not-allowed'
+        cursor: canSave && !busy || ready && !endorsed ? 'pointer' : 'not-allowed'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " ", busy ? 'Posting…' : 'Cash & hold')))));
+    }), " ", busy ? 'Posting…' : 'Cash & hold'))))));
   }
 
   /* ===================== DETAIL DRAWER ===================== */
@@ -40754,14 +40892,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), 'Cheque cleared', 'Funds confirmed by drawee bank');
     const returnNsf = () => act('nsf', (book, key) => book.returnCheque(c.chequeId, {
       idempotencyKey: key,
-      reason: 'NSF — insufficient funds',
+      reason: 'NSF, insufficient funds',
       nsf: true
-    }), 'Cheque returned NSF', `loss ${fmt(c.netCad, homeCcy())}`);
+    }), 'Cheque returned NSF', `loss ${sheetMoney(c.netCad)}`);
     const returnFraud = () => act('fraud', (book, key) => book.returnCheque(c.chequeId, {
       idempotencyKey: key,
-      reason: 'Fraud — suspect cheque',
+      reason: 'Fraud, suspect cheque',
       fraud: true
-    }), 'Cheque flagged fraud', `loss ${fmt(c.netCad, homeCcy())}`);
+    }), 'Cheque flagged fraud', `loss ${sheetMoney(c.netCad)}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
        drawer and the fee is reversed with it, because the desk did not
@@ -40844,7 +40982,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: overdue ? CD.flag : 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(c.netCad, homeCcy()))), /*#__PURE__*/React.createElement("div", {
+    }, sheetMoney(c.netCad))), /*#__PURE__*/React.createElement("div", {
       className: "text-right"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -40857,7 +40995,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: overdue ? CD.flag : CD.ink
       }
-    }, c.holdUntil, overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`)))), c.status === 'returned' && /*#__PURE__*/React.createElement("div", {
+    }, sheetDate(c.holdUntil), overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`)))), c.status === 'returned' && /*#__PURE__*/React.createElement("div", {
       className: "p-3 flex items-center gap-2",
       style: {
         background: CD.flagSoft,
@@ -40872,7 +41010,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.flag
       }
-    }, "Returned \u2014 ", fmt(c.netCad, homeCcy()), " loss"), /*#__PURE__*/React.createElement("div", {
+    }, "Returned, ", sheetMoney(c.netCad), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: '#8a3b30'
@@ -40901,20 +41039,20 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       v: c.customer
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Endorsed",
-      v: c.endorsed ? 'Yes — signed' : 'Not endorsed',
+      v: c.endorsed ? 'Yes, signed' : 'Not endorsed',
       accent: c.endorsed ? CD.green : CD.flag
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Face value",
-      v: fmt(c.amount, homeCcy()),
+      v: sheetMoney(c.amount),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee kept",
-      v: fmt(c.feeCad, homeCcy()),
+      v: sheetMoney(c.feeCad),
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Cash fronted",
-      v: fmt(c.netCad, homeCcy()),
+      v: sheetMoney(c.netCad),
       mono: true
     }), c.image && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
@@ -40961,7 +41099,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         style: {
           color: CD.mute
         }
-      }, e.ts, " \xB7 ", e.by, e.note ? ` — ${e.note}` : '')));
+      }, e.ts, " \xB7 ", e.by, e.note ? `. ${e.note}` : '')));
     }))), c.status === 'held' && /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-2"
     }, /*#__PURE__*/React.createElement("button", {
@@ -41044,6 +41182,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       feeFor,
       addDays,
       daysBetween,
+      sheetDate,
+      sheetMoney,
       StatusPill,
       CaptureModal,
       ChequeDetail
@@ -41067,11 +41207,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const {
     CD,
     Ic,
-    fmt,
-    num,
     TODAY
   } = window.CDOS;
-  const homeCcy = () => window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
   const K = window.CDOS._cheques;
   const {
     defaultSchedule,
@@ -41083,6 +41220,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     RISK_TONE,
     feeFor,
     daysBetween,
+    sheetDate,
+    sheetMoney,
     StatusPill,
     CaptureModal,
     ChequeDetail
@@ -41175,7 +41314,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.exposure, homeCcy())), /*#__PURE__*/React.createElement("div", {
+    }, sheetMoney(stats.exposure)), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -41227,7 +41366,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: stats.lossN ? CD.flag : CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.losses, homeCcy())), /*#__PURE__*/React.createElement("div", {
+    }, sheetMoney(stats.losses)), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -41317,12 +41456,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(c.amount, homeCcy())), /*#__PURE__*/React.createElement("div", {
+      }, sheetMoney(c.amount)), /*#__PURE__*/React.createElement("div", {
         className: "text-[10.5px] mt-0.5",
         style: {
           color: overdue ? CD.flag : CD.mute
         }
-      }, c.status === 'held' ? overdue ? `overdue ${c.holdUntil}` : `holds to ${c.holdUntil}` : (STATUS[c.status] || STATUS.held).label)));
+      }, c.status === 'held' ? overdue ? `overdue ${sheetDate(c.holdUntil)}` : `holds to ${sheetDate(c.holdUntil)}` : (STATUS[c.status] || STATUS.held).label)));
     }), !list.length && /*#__PURE__*/React.createElement("div", {
       className: "text-center py-14",
       style: {
@@ -41466,7 +41605,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(eg, homeCcy())));
+      }, sheetMoney(eg)));
     })))), /*#__PURE__*/React.createElement("p", {
       className: "mt-2 text-[11px]",
       style: {
@@ -41568,7 +41707,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, fmt(exposure, homeCcy()), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
+    }, sheetMoney(exposure), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setModal(true),
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {

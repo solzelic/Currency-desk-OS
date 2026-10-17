@@ -560,6 +560,40 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-17**, cheque fee, hold, and a refused reverse. The server
+owns the fee on a cashed cheque. It is the percent of the face, or
+the minimum, whichever is larger, rounded half up to the cent.
+1,000.25 at 2% is 20.01. The rule is the desk's saved schedule
+(`cdos_cheque_schedule_v1` on `tenant_state`). A desk with none
+saved uses the same figures the capture screen ships. A fee that
+is not that figure is refused, including 0, unless the saved rule
+for that type is 0. A type with no rule is refused. A cheque that
+is not signed on the back is refused and nothing is written. The
+hold-until date is the till's business date plus the hold, counted
+as calendar days, so the machine zone does not move the day. On
+the cheque route, a teller who tries to reverse is told "You
+cannot reverse this cheque. Ask a supervisor." A caller who is
+not at this till is told "You are not signed in at this till."
+Any other error from that check is returned as it was. The
+generic deal reversal route still refuses a cheque row and names
+the cheque route. That door is unchanged. Cash & hold on the
+capture screen stays grey until Signed on the back is set. The
+line beside it says "Tick Signed on the back to cash this cheque."
+Tapping that grey button scrolls to the Endorsement box and
+outlines it. Cash & hold is 44px tall. The Signed on the back row
+is a 44px tap target. Net cash on that sheet is 28px. The hold
+date stays 20px. Dates on the cheque sheet read Oct 17, 2026.
+Amounts on that sheet use grouping and two decimals, so 1,200.00.
+The screen rounds the fee the same way. The hold on the capture
+sheet is the till's business date plus the hold. A hold shorter
+than the schedule is refused and nothing is written. A personal
+cheque held for 0 days is refused. A signed cheque reads
+"Yes, signed". The cheque amount shows 1,200.00 after the field
+loses focus, with CAD beside the digits. On a narrow sheet the
+cheque number sits under that field. The tick line sits on one
+line above Cash & hold. A mismatched fee says to check the amount
+and type, then press Cash & hold again.
+
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
 Postgres, five per account and twenty per address, for fifteen
 minutes. The count is written before the answer, so a burst cannot

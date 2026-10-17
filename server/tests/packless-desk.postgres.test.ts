@@ -138,6 +138,20 @@ postgres("a desk with no country pack uses the baseline", () => {
     await seed(handle.db);
     app = await buildApp(handle.db);
     service = new LedgerService(pool);
+    /* This file's cheques are about the identification gate, not the
+       fee and not the hold. The desk's rule for these types is 0,
+       which is the only reason a 0.00 fee and a 0 day hold are accepted. */
+    await pool.query(
+      `INSERT INTO tenant_state (tenant_id, state) VALUES ($1, $2::jsonb)
+       ON CONFLICT (tenant_id) DO UPDATE SET state = EXCLUDED.state`,
+      [DEMO.tenantId, JSON.stringify({
+        cdos_cheque_schedule_v1: [
+          { id: "personal", feePct: 0, feeMin: 0, holdDays: 0 },
+          { id: "payroll", feePct: 0, feeMin: 0, holdDays: 0 },
+          { id: "business", feePct: 0, feeMin: 0, holdDays: 0 },
+        ],
+      })],
+    );
   });
   afterAll(async () => {
     /* This file points the shared demo desk at no pack. Put Canada back
@@ -150,6 +164,7 @@ postgres("a desk with no country pack uses the baseline", () => {
         WHERE id=$1`,
       [DEMO.legalEntityId],
     );
+    await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
     await app.close();
     await handle.close();
     await pool.end();
@@ -322,6 +337,7 @@ postgres("a desk with no country pack uses the baseline", () => {
         faceAmount: "0.01",
         feeAmount: "0.00",
         holdDays: 0,
+        endorsed: true,
       },
     }));
     await expectIdentified(await app.inject({
@@ -393,6 +409,7 @@ postgres("a desk with no country pack uses the baseline", () => {
         faceAmount: "100.00",
         feeAmount: "0.00",
         holdDays: 0,
+        endorsed: true,
       },
     });
     expect(cashed.statusCode).toBe(201);
@@ -541,6 +558,7 @@ postgres("a desk with no country pack uses the baseline", () => {
         faceAmount: "40.00",
         feeAmount: "0.00",
         holdDays: 0,
+        endorsed: true,
       },
     });
     expect(cashed.statusCode).toBe(201);

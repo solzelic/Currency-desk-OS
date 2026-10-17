@@ -40,12 +40,33 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, TODAY, crossRate, newTx, mkRef } = window.CDOS;
+  const { CD, Ic, TODAY, businessDate, formatPhoneMoney, crossRate, newTx, mkRef } = window.CDOS;
   const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
-  const addDays = (date, n) => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + (+n || 0)); return d.toISOString().slice(0, 10); };
+  /* Calendar days on the YYYY-MM-DD string. toISOString of a local
+     midnight moves the hold back one day in any zone east of UTC. */
+  const addDays = (date, n) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+    if (!m) return '';
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (+n || 0)));
+    const y = at.getUTCFullYear();
+    const mo = String(at.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(at.getUTCDate()).padStart(2, '0');
+    return y + '-' + mo + '-' + d;
+  };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+  /* Oct 17, 2026. The book still stores YYYY-MM-DD. UTC, because a
+     local midnight west of Greenwich is the day before. */
+  const sheetDate = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return new Intl.DateTimeFormat('en-CA', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(at);
+  };
+  /* 1,200.00. Same grouped two-decimal line as the phone ticket,
+     with no currency code, because this sheet already names CAD. */
+  const sheetMoney = (n) => formatPhoneMoney(n);
 
   /* ---- default fee schedule by cheque type (editable in the Fee schedule tab) ---- */
   function defaultSchedule() {
@@ -59,7 +80,37 @@
     ];
   }
   const RISK_TONE = { low: { t: 'Low', c: CD.green, bg: CD.greenSoft }, medium: { t: 'Medium', c: CD.amber, bg: CD.amberSoft }, high: { t: 'High', c: CD.flag, bg: CD.flagSoft } };
-  const feeFor = (amount, type) => { const t = type || {}; return Math.max(+t.feeMin || 0, (+amount || 0) * (+t.feePct || 0) / 100); };
+  /* Half up to the cent, in integer arithmetic. 1,000.25 at 2% is
+     20.005, which is 20.01. A float times toFixed gets that one wrong. */
+  function roundHalfUpMulDiv(amount, pct, divisor) {
+    const parts = (value) => {
+      const s = String(value == null ? '' : value).trim();
+      const neg = s.charAt(0) === '-';
+      const body = neg ? s.slice(1) : s;
+      const bits = body.split('.');
+      const whole = bits[0] || '0';
+      const frac = bits[1] || '';
+      const digits = (whole + frac).replace(/^0+(?=\d)/, '') || '0';
+      if (!/^\d+$/.test(digits)) return null;
+      return { neg: neg, digits: digits, scale: frac.length };
+    };
+    const a = parts(amount);
+    const p = parts(pct);
+    if (!a || !p || a.neg || p.neg) return 0;
+    const product = BigInt(a.digits) * BigInt(p.digits);
+    const den = (10n ** BigInt(a.scale + p.scale)) * BigInt(divisor);
+    const num = product * 100n;
+    const q = num / den;
+    const r = num % den;
+    const cents = r * 2n >= den ? q + 1n : q;
+    return Number((Number(cents) / 100).toFixed(2));
+  }
+  const feeFor = (amount, type) => {
+    const t = type || {};
+    const percent = roundHalfUpMulDiv(amount, t.feePct || 0, 100);
+    const minimum = roundHalfUpMulDiv(t.feeMin || 0, 1, 1);
+    return Math.max(minimum, percent);
+  };
 
   const STATUS = {
     held:     { label: 'On hold',  tone: CD.amber, soft: CD.amberSoft, ink: 'var(--cd-brass-text)', icon: 'clock' },
@@ -83,11 +134,11 @@
     }, o); };
     return [
       mk({ ref: 'CHQ-260618-002', chequeNumber: '004821', maker: 'Northbridge Imports Ltd.', draweeBank: 'RBC Royal Bank', customer: 'Jakob Miller', typeId: 'business', amount: 4200, receivedDate: '2026-06-18', status: 'held', holdUntil: '2026-06-23',
-        timeline: [{ status: 'held', ts: '2026-06-18 09:48', by: 'A. Singh', note: 'Cash fronted — 3-day business hold' }] }),
+        timeline: [{ status: 'held', ts: '2026-06-18 09:48', by: 'A. Singh', note: 'Cash fronted, 3-day business hold' }] }),
       mk({ ref: 'CHQ-260618-001', chequeNumber: '1180', maker: 'Service Canada', draweeBank: 'Bank of Canada', customer: 'Rachel Carter', typeId: 'government', amount: 1340, receivedDate: '2026-06-18', status: 'cleared', holdUntil: '2026-06-18',
-        timeline: [{ status: 'held', ts: '2026-06-18 10:20', by: 'M. Costa' }, { status: 'cleared', ts: '2026-06-18 14:02', by: 'System', note: 'Government cheque — same-day clearance' }] }),
-      mk({ ref: 'CHQ-260616-004', chequeNumber: '00917', maker: 'Brooke Lawson', draweeBank: 'TD Canada Trust', customer: 'Brooke Lawson', typeId: 'personal', amount: 2600, receivedDate: '2026-06-16', status: 'returned', nsf: true, holdUntil: '2026-06-21', returnedReason: 'NSF — insufficient funds',
-        timeline: [{ status: 'held', ts: '2026-06-16 16:30', by: 'A. Singh', note: '5-day personal hold' }, { status: 'returned', ts: '2026-06-19 09:10', by: 'J. Masri', note: 'Returned NSF — cash loss, customer contacted' }] }),
+        timeline: [{ status: 'held', ts: '2026-06-18 10:20', by: 'M. Costa' }, { status: 'cleared', ts: '2026-06-18 14:02', by: 'System', note: 'Government cheque, same-day clearance' }] }),
+      mk({ ref: 'CHQ-260616-004', chequeNumber: '00917', maker: 'Brooke Lawson', draweeBank: 'TD Canada Trust', customer: 'Brooke Lawson', typeId: 'personal', amount: 2600, receivedDate: '2026-06-16', status: 'returned', nsf: true, holdUntil: '2026-06-21', returnedReason: 'NSF, insufficient funds',
+        timeline: [{ status: 'held', ts: '2026-06-16 16:30', by: 'A. Singh', note: '5-day personal hold' }, { status: 'returned', ts: '2026-06-19 09:10', by: 'J. Masri', note: 'Returned NSF. Cash loss, customer contacted' }] }),
       mk({ ref: 'CHQ-260617-003', chequeNumber: '88204', maker: 'Maple Payroll Services', draweeBank: 'Scotiabank', customer: 'Jakob Miller', typeId: 'payroll', amount: 1850, receivedDate: '2026-06-17', status: 'cleared', holdUntil: '2026-06-18',
         timeline: [{ status: 'held', ts: '2026-06-17 11:05', by: 'A. Singh' }, { status: 'cleared', ts: '2026-06-18 08:30', by: 'System', note: 'Payroll cleared next business day' }] }),
     ];
@@ -163,15 +214,56 @@
     const [holdOverride, setHoldOverride] = useState(null);
 
     const type = schedule.find(t => t.id === typeId) || schedule[0];
-    const amtN = parseFloat(amount) || 0;
+    /* 1,200.00 once the teller leaves the field. Commas are display.
+       The fee is worked from the digits with the commas taken out. */
+    const amtN = parseFloat(String(amount).replace(/,/g, '')) || 0;
+    const blurAmount = () => {
+      const n = parseFloat(String(amount).replace(/,/g, ''));
+      if (Number.isFinite(n)) setAmount(sheetMoney(n));
+    };
+    const amountEl = useRef(null);
+    /* A long face at 360 stays inside the field. The type shrinks
+       before a digit is cut off. */
+    const fitAmount = () => {
+      const el = amountEl.current;
+      if (!el) return;
+      let size = 18;
+      el.style.fontSize = size + 'px';
+      while (size > 11 && el.scrollWidth > el.clientWidth) { size -= 1; el.style.fontSize = size + 'px'; }
+    };
+    useEffect(() => {
+      fitAmount();
+      window.addEventListener('resize', fitAmount);
+      return () => window.removeEventListener('resize', fitAmount);
+    }, [amount]);
     const fee = +feeFor(amtN, type).toFixed(2);
     const net = +(amtN - fee).toFixed(2);
     // Settings › Cheques can set a minimum hold that floors every cheque's scheduled hold
     const minHold = Math.max(0, +((settings && settings.chequeMinHoldDays)) || 0);
-    const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
-    const holdUntil = addDays(TODAY, holdDays);
+    /* The till's trading day, not the browser's wall clock. A session
+       opened yesterday is still yesterday at 12:30 AM. */
+    const [bookDay, setBookDay] = useState(businessDate);
+    useEffect(() => {
+      const sync = () => setBookDay(businessDate());
+      window.addEventListener('cdos-business-date', sync);
+      sync();
+      return () => window.removeEventListener('cdos-business-date', sync);
+    }, []);
+    const typeHold = Math.max(0, +(type && type.holdDays) || 0);
+    const holdDays = Math.max(minHold, typeHold, holdOverride != null ? +holdOverride : typeHold);
+    const holdUntil = addDays(bookDay, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
-    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const ready = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const canSave = ready && endorsed;
+    /* A disabled button swallows the tap, so the teller never reaches
+       the box they still have to tick. Grey, but it still points there. */
+    const endorseBox = useRef(null);
+    const [endorseMark, setEndorseMark] = useState(false);
+    const showEndorsement = () => {
+      const node = endorseBox.current;
+      if (node && node.scrollIntoView) node.scrollIntoView({ block: 'center' });
+      setEndorseMark(true);
+    };
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
 
     /* A cheque image is stored the same way an ID scan is, and used to
@@ -262,7 +354,7 @@
           }
         }
         onTillChanged && onTillChanged(posted.balances);
-        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${sheetMoney(amtN)} ${type.label} · fronted ${sheetMoney(Number(posted.cheque.netAmount))} · hold to ${sheetDate(posted.cheque.holdUntil)}`);
         onDone && onDone(chq.id);
       } catch (error) {
         setErr(error.message || 'The cheque was not cashed.');
@@ -274,7 +366,7 @@
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 560, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
         <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
-          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="receipt" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash a cheque</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {TODAY}</div></div></div>
+          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="receipt" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash a cheque</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {sheetDate(bookDay)}</div></div></div>
           <button onClick={onClose} className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
         </div>
         <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
@@ -285,7 +377,7 @@
           </Field>
 
           {/* cheque type → fee schedule */}
-          <Field label="Cheque type" hint={`${type.feePct}% · min ${fmt(type.feeMin, homeCcy())} · ${type.holdDays}d hold`}>
+          <Field label="Cheque type" hint={`${type.feePct}% · min ${sheetMoney(type.feeMin)} · ${type.holdDays}d hold`}>
             <div className="flex flex-wrap gap-1.5">
               {schedule.map(t => { const on = typeId === t.id; const r = RISK_TONE[t.risk]; return (
                 <button key={t.id} onClick={() => { setTypeId(t.id); setHoldOverride(null); }} className="px-2.5 py-1.5 text-[12px] font-medium flex items-center gap-1.5" style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.text }}>
@@ -296,8 +388,8 @@
 
           {/* cheque capture */}
           <div className="p-3 space-y-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Cheque amount"><div className="flex" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, overflow: 'hidden' }}><span className="px-2.5 grid place-items-center text-sm font-semibold" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>CAD</span><input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" autoFocus placeholder="0.00" className="flex-1 min-w-0 px-3 py-2 text-lg font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums' }} /></div></Field>
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+              <Field label="Cheque amount"><div className="flex flex-nowrap items-stretch" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8 }}><span className="flex-none px-2.5 grid place-items-center text-sm font-semibold" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>CAD</span><input ref={amountEl} value={amount} onChange={e => setAmount(e.target.value)} onBlur={blurAmount} inputMode="decimal" autoFocus placeholder="0.00" className="flex-1 min-w-0 px-2 py-2 text-lg font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums' }} /></div></Field>
               <Field label="Cheque number"><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="e.g. 004821" className={inputCls} style={inputSty} /></Field>
               <Field label="Maker (who wrote it)"><input value={maker} onChange={e => setMaker(e.target.value)} placeholder="Payer name / business" className={inputCls} style={inputSty} /></Field>
               <Field label="Drawee bank"><input value={draweeBank} onChange={e => setDraweeBank(e.target.value)} placeholder="e.g. RBC Royal Bank" className={inputCls} style={inputSty} /></Field>
@@ -309,12 +401,14 @@
                   : <label className="flex items-center justify-center gap-1.5 text-[11px] px-2 py-2.5 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="camera" s={13} /> Capture / upload<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && upload(e.target.files[0])} /></label>}
                   {imgErr && <div className="text-[11px] mt-1" style={{ color: CD.flag }}>{imgErr}</div>}
               </Field>
+              <div ref={endorseBox} data-endorsement-box={endorseMark ? 'marked' : 'plain'} style={endorseMark ? { outline: `2px solid ${CD.ink}`, outlineOffset: 3, borderRadius: 8 } : undefined}>
               <Field label="Endorsement">
-                <button onClick={() => setEndorsed(v => !v)} className="w-full flex items-center gap-2 px-2.5 py-2" style={{ border: `1px solid ${endorsed ? CD.ink : CD.line}`, borderRadius: 8, background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)' }}>
+                <button onClick={() => { setEndorsed(v => !v); setEndorseMark(false); }} className="w-full flex items-center gap-2 px-2.5" style={{ height: 44, boxSizing: 'border-box', border: `1px solid ${endorsed ? CD.ink : CD.line}`, borderRadius: 8, background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)' }}>
                   <span className="grid place-items-center" style={{ width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${endorsed ? CD.ink : CD.faint}`, background: endorsed ? CD.ink : 'transparent' }}>{endorsed && <Ic n="check" s={12} c="var(--cd-on-ink)" />}</span>
                   <span className="text-[12.5px]" style={{ color: CD.ink }}>Signed on the back</span>
                 </button>
               </Field>
+              </div>
             </div>
           </div>
 
@@ -322,12 +416,12 @@
           <div className="p-3" style={{ background: rt.bg, borderRadius: 10, border: `1px solid ${rt.c}` }}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: rt.c }}><Ic n="shield" s={13} c={rt.c} /> Fronting cash · {rt.t.toLowerCase()} risk</span>
-              <span className="text-[11px]" style={{ color: CD.mute }}>fee {fmt(fee, homeCcy())}</span>
+              <span className="text-[11px]" style={{ color: CD.mute }}>fee {sheetMoney(fee)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(net, homeCcy())}</div></div>
+              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="font-bold" style={{ color: CD.ink, fontSize: 28, lineHeight: '32px', fontVariantNumeric: 'tabular-nums' }}>{sheetMoney(net)}</div></div>
               <Ic n="arrowright" s={16} c={CD.faint} />
-              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>At risk until</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{holdDays === 0 ? 'cleared' : holdUntil}</div></div>
+              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>At risk until</div><div className="font-bold" style={{ color: CD.ink, fontSize: 20, lineHeight: '24px', fontVariantNumeric: 'tabular-nums' }}>{holdDays === 0 ? 'cleared' : sheetDate(holdUntil)}</div></div>
             </div>
             <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: `1px solid ${rt.c}33` }}>
               <span className="text-[11px]" style={{ color: CD.mute }}>Hold</span>
@@ -341,9 +435,12 @@
             reason — the drawer is short, the till is closed, the customer
             needs identifying, the cheque is in the wrong currency. */}
         {err && <div className="flex-none px-5 pb-2 text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
-        <div className="flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
-          <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, homeCcy())}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, homeCcy())}</b></> : 'Enter the cheque amount'}</div>
-          <button onClick={save} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+        <div className="flex-none px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
+          {ready && !endorsed && !busy && <div className="text-[12px] text-right mb-2" style={{ color: CD.mute }}>Tick Signed on the back to cash this cheque.</div>}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[12px]" style={{ color: CD.mute, flex: '1 1 140px' }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{sheetMoney(net)}</b> · keep <b style={{ color: CD.green }}>{sheetMoney(fee)}</b></> : 'Enter the cheque amount'}</div>
+            <button type="button" onClick={() => { if (ready && !endorsed) { showEndorsement(); return; } save(); }} disabled={busy || !ready} aria-disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 text-sm font-semibold text-white" style={{ height: 44, boxSizing: 'border-box', background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) || (ready && !endorsed) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+          </div>
         </div>
       </div>
     </div></Portal>);
@@ -386,11 +483,11 @@
       (book, key) => book.clearCheque(c.chequeId, { idempotencyKey: key }),
       'Cheque cleared', 'Funds confirmed by drawee bank');
     const returnNsf = () => act('nsf',
-      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'NSF — insufficient funds', nsf: true }),
-      'Cheque returned NSF', `loss ${fmt(c.netCad, homeCcy())}`);
+      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'NSF, insufficient funds', nsf: true }),
+      'Cheque returned NSF', `loss ${sheetMoney(c.netCad)}`);
     const returnFraud = () => act('fraud',
-      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'Fraud — suspect cheque', fraud: true }),
-      'Cheque flagged fraud', `loss ${fmt(c.netCad, homeCcy())}`);
+      (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'Fraud, suspect cheque', fraud: true }),
+      'Cheque flagged fraud', `loss ${sheetMoney(c.netCad)}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
        drawer and the fee is reversed with it, because the desk did not
@@ -417,11 +514,11 @@
           {/* exposure banner */}
           {c.status === 'held' && <div className="p-3" style={{ background: overdue ? CD.flagSoft : CD.amberSoft, borderRadius: 11 }}>
             <div className="flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>Cash at risk</div><div className="text-xl font-bold" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.netCad, homeCcy())}</div></div>
-              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{overdue ? 'Overdue' : 'Clears'}</div><div className="text-[15px] font-bold" style={{ color: overdue ? CD.flag : CD.ink }}>{c.holdUntil}{overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`}</div></div>
+              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>Cash at risk</div><div className="text-xl font-bold" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{sheetMoney(c.netCad)}</div></div>
+              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{overdue ? 'Overdue' : 'Clears'}</div><div className="text-[15px] font-bold" style={{ color: overdue ? CD.flag : CD.ink }}>{sheetDate(c.holdUntil)}{overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`}</div></div>
             </div>
           </div>}
-          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned — {fmt(c.netCad, homeCcy())} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
+          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned, {sheetMoney(c.netCad)} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
 
           {/* cheque capture */}
           <div>
@@ -431,10 +528,10 @@
             <DRow k="Cheque #" v={c.chequeNumber} mono />
             <DRow k="Type" v={c.typeLabel} />
             <DRow k="Customer" v={c.customer} />
-            <DRow k="Endorsed" v={c.endorsed ? 'Yes — signed' : 'Not endorsed'} accent={c.endorsed ? CD.green : CD.flag} />
-            <DRow k="Face value" v={fmt(c.amount, homeCcy())} mono />
-            <DRow k="Fee kept" v={fmt(c.feeCad, homeCcy())} mono accent={CD.green} />
-            <DRow k="Cash fronted" v={fmt(c.netCad, homeCcy())} mono />
+            <DRow k="Endorsed" v={c.endorsed ? 'Yes, signed' : 'Not endorsed'} accent={c.endorsed ? CD.green : CD.flag} />
+            <DRow k="Face value" v={sheetMoney(c.amount)} mono />
+            <DRow k="Fee kept" v={sheetMoney(c.feeCad)} mono accent={CD.green} />
+            <DRow k="Cash fronted" v={sheetMoney(c.netCad)} mono />
             {c.image && <div className="mt-2"><img src={c.image} alt="cheque" style={{ maxWidth: '100%', border: `1px solid ${CD.line}`, borderRadius: 8 }} /></div>}
           </div>
 
@@ -445,7 +542,7 @@
               {(c.timeline || []).map((e, i) => { const s = STATUS[e.status] || STATUS.held; return (
                 <div key={i} className="flex gap-2.5">
                   <span className="grid place-items-center flex-none mt-0.5" style={{ width: 22, height: 22, borderRadius: '50%', background: s.soft }}><Ic n={s.icon} s={12} c={s.ink} /></span>
-                  <div><div className="text-[12.5px] font-medium" style={{ color: CD.ink }}>{s.label}</div><div className="text-[11px]" style={{ color: CD.mute }}>{e.ts} · {e.by}{e.note ? ` — ${e.note}` : ''}</div></div>
+                  <div><div className="text-[12.5px] font-medium" style={{ color: CD.ink }}>{s.label}</div><div className="text-[11px]" style={{ color: CD.mute }}>{e.ts} · {e.by}{e.note ? `. ${e.note}` : ''}</div></div>
                 </div>); })}
             </div>
           </div>
@@ -472,6 +569,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, IKEY, load, ledger, fromServer, STATUS, RISK_TONE, feeFor, addDays, daysBetween, StatusPill, CaptureModal, ChequeDetail }
+    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, IKEY, load, ledger, fromServer, STATUS, RISK_TONE, feeFor, addDays, daysBetween, sheetDate, sheetMoney, StatusPill, CaptureModal, ChequeDetail }
   });
 })();

@@ -107,7 +107,8 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
       payload: {
         idempotencyKey: "earn-cheque", customerId: "customer-demo", chequeNumber: "004821",
         maker: "Northbridge Imports Ltd.", draweeBank: "RBC Royal Bank", chequeType: "business",
-        typeLabel: "Business", currency: "CAD", faceAmount: "1000.00", feeAmount: "35.00", holdDays: 3, endorsed: true,
+        /* The desk's business rule is 3% with a $10 minimum, so this face is 30.00. */
+        typeLabel: "Business", currency: "CAD", faceAmount: "1000.00", feeAmount: "30.00", holdDays: 3, endorsed: true,
       },
     });
     expect(cashed.statusCode, cashed.body).toBe(201);
@@ -116,12 +117,12 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const ownerSummary = await read("j.masri", "/api/ledger/summary");
     const supervisorSummary = await read("a.singh", "/api/ledger/summary");
     expect(tellerSummary.volumeHome).toBe("2443.30");
-    expect(tellerSummary.feesHome).toBe("39.00");
+    expect(tellerSummary.feesHome).toBe("34.00");
     lacks(tellerSummary, ["earningsHome", "realizedPnlHome", "costOfSaleHome"]);
     expect(tellerSummary.byActor.length).toBeGreaterThan(0);
     for (const row of tellerSummary.byActor) lacks(row, ["feesHome", "earningsHome", "realizedPnlHome"]);
     for (const row of tellerSummary.byCurrency) lacks(row, ["realizedPnlHome"]);
-    expect(ownerSummary).toMatchObject({ feesHome: "39.00" });
+    expect(ownerSummary).toMatchObject({ feesHome: "34.00" });
     expect(ownerSummary.earningsHome).not.toBeNull();
     expect(ownerSummary.byActor.some((row: { earningsHome: string | null }) => row.earningsHome != null)).toBe(true);
     expect(supervisorSummary.feesHome).toBe(ownerSummary.feesHome);
@@ -160,8 +161,8 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
 
     const tellerCheques = await read("m.costa", "/api/ledger/cheques");
     const ownerCheques = await read("j.masri", "/api/ledger/cheques");
-    expect(ownerCheques.cheques[0].feeAmount).toBe("35.00");
-    expect(tellerCheques.cheques[0]).toMatchObject({ faceAmount: "1000.00", feeAmount: "35.00" });
+    expect(ownerCheques.cheques[0].feeAmount).toBe("30.00");
+    expect(tellerCheques.cheques[0]).toMatchObject({ faceAmount: "1000.00", feeAmount: "30.00" });
 
     const tellerQuote = await read("m.costa", `/api/quotes/${quote.quoteId}`);
     const ownerQuote = await read("j.masri", `/api/quotes/${quote.quoteId}`);
@@ -229,7 +230,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     expect(leaked).not.toContain("107.30");
     expect(leaked).not.toContain("103.30");
     expect(leaked).toContain("4.00");
-    expect(leaked).toContain("35.00");
+    expect(leaked).toContain("30.00");
   });
 
   it("redacts an auditor and a compliance officer, and leaves close-day figures", async () => {
