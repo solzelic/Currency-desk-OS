@@ -15,7 +15,13 @@ const LINE = "Only the owner can change rates and fees. Ask the owner to make th
 async function openRates(page: Page): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible()) await skip.click();
-  await page.locator('.app-btn[data-app="settings"]').click();
+  /* A teller has no Settings icon. Profile, then Rates & fees. */
+  const dock = page.locator('.app-btn[data-app="settings"]');
+  if (await dock.isVisible()) await dock.click();
+  else {
+    await page.locator(".mb-acct").locator("visible=true").first().click();
+    await page.getByRole("button", { name: "View profile" }).click();
+  }
   await page.locator(".settings-nav button", { hasText: "Rates & fees" }).click();
   await expect(page.locator("[data-rates-panel]")).toBeVisible();
 }

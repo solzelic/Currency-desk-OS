@@ -2319,9 +2319,9 @@
       if (meApps && id !== 'settings' && !meApps.includes(id)) return false;
       if (id === 'dashboard' || id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
       if (id === 'till') return can('canViewReports') || can('canCloseDay');
-      /* Rates & fees is on this screen for every signed-in person. The
-         panel locks what they cannot change, so a teller can read it. */
-      if (id === 'settings') return true;
+      /* Settings stays off a teller's dock. They open Rates & fees from
+         their profile. The panel locks what they cannot change. */
+      if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;
     };
     // plan gating: which apps the active subscription unlocks. Locked apps drop
