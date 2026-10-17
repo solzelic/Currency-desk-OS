@@ -149,7 +149,13 @@ Signed on the back row is a 44px tap target. The net cash figure is
 shows is the till's business date plus the hold, not the browser's
 wall clock. A hold shorter than the schedule for that type is
 refused and nothing is written. A personal cheque at 0 days is
-refused. The detail line for a signed cheque reads "Yes, signed".
+refused. The detail line for a signed cheque reads "Yes, signed". The
+cheque amount shows 1,200.00 after the field loses focus, with CAD
+beside the digits. On a narrow sheet the cheque number sits under
+that field so no digit is cut off. The line that says to tick
+Signed on the back sits on one line above Cash & hold. A fee that
+does not match also says to check the amount and type, then press
+Cash & hold again.
 
 ## Scope: home currency only
 

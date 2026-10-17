@@ -365,7 +365,7 @@ export class ChequeService {
       if (!offered.eq(fee))
         throw new LedgerError(
           "CHEQUE_FEE",
-          "The fee does not match this cheque. Nothing was cashed.",
+          "The fee does not match this cheque. Nothing was cashed. Check the amount and type, then press Cash & hold again.",
         );
       /* The signature is on the paper. An unsigned cheque is refused
          before any row is written. */

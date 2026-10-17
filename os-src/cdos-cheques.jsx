@@ -214,7 +214,28 @@
     const [holdOverride, setHoldOverride] = useState(null);
 
     const type = schedule.find(t => t.id === typeId) || schedule[0];
-    const amtN = parseFloat(amount) || 0;
+    /* 1,200.00 once the teller leaves the field. Commas are display.
+       The fee is worked from the digits with the commas taken out. */
+    const amtN = parseFloat(String(amount).replace(/,/g, '')) || 0;
+    const blurAmount = () => {
+      const n = parseFloat(String(amount).replace(/,/g, ''));
+      if (Number.isFinite(n)) setAmount(sheetMoney(n));
+    };
+    const amountEl = useRef(null);
+    /* A long face at 360 stays inside the field. The type shrinks
+       before a digit is cut off. */
+    const fitAmount = () => {
+      const el = amountEl.current;
+      if (!el) return;
+      let size = 18;
+      el.style.fontSize = size + 'px';
+      while (size > 11 && el.scrollWidth > el.clientWidth) { size -= 1; el.style.fontSize = size + 'px'; }
+    };
+    useEffect(() => {
+      fitAmount();
+      window.addEventListener('resize', fitAmount);
+      return () => window.removeEventListener('resize', fitAmount);
+    }, [amount]);
     const fee = +feeFor(amtN, type).toFixed(2);
     const net = +(amtN - fee).toFixed(2);
     // Settings › Cheques can set a minimum hold that floors every cheque's scheduled hold
@@ -367,8 +388,8 @@
 
           {/* cheque capture */}
           <div className="p-3 space-y-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Cheque amount"><div className="flex" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, overflow: 'hidden' }}><span className="px-2.5 grid place-items-center text-sm font-semibold" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>CAD</span><input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" autoFocus placeholder="0.00" className="flex-1 min-w-0 px-3 py-2 text-lg font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums' }} /></div></Field>
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+              <Field label="Cheque amount"><div className="flex flex-nowrap items-stretch" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8 }}><span className="flex-none px-2.5 grid place-items-center text-sm font-semibold" style={{ background: 'var(--cd-chip)', borderRight: `1px solid ${CD.line}` }}>CAD</span><input ref={amountEl} value={amount} onChange={e => setAmount(e.target.value)} onBlur={blurAmount} inputMode="decimal" autoFocus placeholder="0.00" className="flex-1 min-w-0 px-2 py-2 text-lg font-semibold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums' }} /></div></Field>
               <Field label="Cheque number"><input value={chequeNumber} onChange={e => setChequeNumber(e.target.value)} placeholder="e.g. 004821" className={inputCls} style={inputSty} /></Field>
               <Field label="Maker (who wrote it)"><input value={maker} onChange={e => setMaker(e.target.value)} placeholder="Payer name / business" className={inputCls} style={inputSty} /></Field>
               <Field label="Drawee bank"><input value={draweeBank} onChange={e => setDraweeBank(e.target.value)} placeholder="e.g. RBC Royal Bank" className={inputCls} style={inputSty} /></Field>
@@ -414,10 +435,10 @@
             reason — the drawer is short, the till is closed, the customer
             needs identifying, the cheque is in the wrong currency. */}
         {err && <div className="flex-none px-5 pb-2 text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
-        <div className="flex-none flex flex-wrap items-center justify-between gap-2 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
-          <div className="text-[12px]" style={{ color: CD.mute, flex: '1 1 140px' }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{sheetMoney(net)}</b> · keep <b style={{ color: CD.green }}>{sheetMoney(fee)}</b></> : 'Enter the cheque amount'}</div>
-          <div className="flex flex-wrap items-center justify-end gap-2" style={{ flex: '1 1 200px' }}>
-            {ready && !endorsed && !busy && <span className="text-[12px] text-right" style={{ color: CD.mute, maxWidth: 220 }}>Tick Signed on the back to cash this cheque.</span>}
+        <div className="flex-none px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
+          {ready && !endorsed && !busy && <div className="text-[12px] text-right mb-2" style={{ color: CD.mute }}>Tick Signed on the back to cash this cheque.</div>}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[12px]" style={{ color: CD.mute, flex: '1 1 140px' }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{sheetMoney(net)}</b> · keep <b style={{ color: CD.green }}>{sheetMoney(fee)}</b></> : 'Enter the cheque amount'}</div>
             <button type="button" onClick={() => { if (ready && !endorsed) { showEndorsement(); return; } save(); }} disabled={busy || !ready} aria-disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 text-sm font-semibold text-white" style={{ height: 44, boxSizing: 'border-box', background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) || (ready && !endorsed) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
           </div>
         </div>

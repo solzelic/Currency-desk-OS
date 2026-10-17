@@ -588,7 +588,11 @@ The screen rounds the fee the same way. The hold on the capture
 sheet is the till's business date plus the hold. A hold shorter
 than the schedule is refused and nothing is written. A personal
 cheque held for 0 days is refused. A signed cheque reads
-"Yes, signed".
+"Yes, signed". The cheque amount shows 1,200.00 after the field
+loses focus, with CAD beside the digits. On a narrow sheet the
+cheque number sits under that field. The tick line sits on one
+line above Cash & hold. A mismatched fee says to check the amount
+and type, then press Cash & hold again.
 
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
 Postgres, five per account and twenty per address, for fifteen

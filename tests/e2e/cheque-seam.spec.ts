@@ -289,7 +289,9 @@ test("the capture sheet names the missing signature and writes a date and an amo
   await page.getByPlaceholder("Payer name / business").fill("Maple Payroll Services");
   await page.getByPlaceholder("e.g. RBC Royal Bank").fill("Scotiabank");
 
-  await expect(page.getByText("Tick Signed on the back to cash this cheque.")).toBeVisible();
+  const why = page.getByText("Tick Signed on the back to cash this cheque.");
+  await expect(why).toBeVisible();
+  const whyBox = await why.boundingBox();
   const net = page.getByText("Cash to customer now").locator("xpath=following-sibling::div[1]");
   const hold = page.getByText("At risk until").locator("xpath=following-sibling::div[1]");
   await expect(net).toHaveText("1,176.00");
@@ -300,6 +302,9 @@ test("the capture sheet names the missing signature and writes a date and an amo
   expect(await page.evaluate(() => (window as unknown as { CDOS: { _cheques: { sheetDate: (d: string) => string } } }).CDOS._cheques.sheetDate("2026-10-17"))).toBe("Oct 17, 2026");
 
   const cash = page.getByRole("button", { name: "Cash & hold" });
+  const cashBox = await cash.boundingBox();
+  expect(whyBox!.y + whyBox!.height).toBeLessThanOrEqual(cashBox!.y + 1);
+  expect(whyBox!.height).toBeLessThan(24);
   /* The row sits inside the Endorsement label, so its accessible name
      is that label. The words on the row are what the teller taps. */
   const signed = page.locator("button", { hasText: "Signed on the back" });
@@ -314,6 +319,32 @@ test("the capture sheet names the missing signature and writes a date and an amo
 
   await signed.click();
   await expect(cash).toBeEnabled();
+});
+
+/* 360 is one column. The amount is 1,200.00, CAD sits beside it,
+   and the cheque number is underneath so no digit is clipped. */
+test("a 360 viewport shows the full formatted cheque amount", async ({ page }) => {
+  await signInAtDesk(page);
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await openCheques(page);
+  await page.getByRole("button", { name: /Cash a cheque/i }).first().click();
+  await page.getByRole("button", { name: /^Payroll$/ }).click();
+  const amount = page.getByPlaceholder("0.00");
+  await amount.fill("1200");
+  await amount.blur();
+  await expect(amount).toHaveValue("1,200.00");
+  await page.setViewportSize({ width: 360, height: 844 });
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await expect(amount).toHaveValue("1,200.00");
+  await expect(page.getByText("Cash to customer now").locator("xpath=following-sibling::div[1]")).toHaveText("1,176.00");
+  await expect.poll(async () => amount.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  const cad = await amount.locator("xpath=preceding-sibling::span[1]").boundingBox();
+  const box = await amount.boundingBox();
+  expect(cad!.y).toBeLessThan(box!.y + box!.height);
+  expect(box!.y).toBeLessThan(cad!.y + cad!.height);
+  const numberBox = await page.getByPlaceholder("e.g. 004821").boundingBox();
+  expect(numberBox!.y).toBeGreaterThan(box!.y + box!.height - 2);
 });
 
 /* 00:30 in Toronto is still the previous trading day when the till

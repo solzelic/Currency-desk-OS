@@ -998,7 +998,7 @@ postgres("cheque cashing on the ledger", () => {
     });
     expect(refused.statusCode).toBe(422);
     expect(refused.json().code).toBe("CHEQUE_FEE");
-    expect(refused.json().message).toMatch(/does not match/);
+    expect(refused.json().message).toBe("The fee does not match this cheque. Nothing was cashed. Check the amount and type, then press Cash & hold again.");
     expect(refused.json().message).not.toMatch(/Missing /);
     expect(
       (await pool.query("SELECT count(*)::int AS n FROM ledger_cheques")).rows[0].n,
@@ -1014,6 +1014,7 @@ postgres("cheque cashing on the ledger", () => {
     });
     expect(wrong.statusCode).toBe(422);
     expect(wrong.json().code).toBe("CHEQUE_FEE");
+    expect(wrong.json().message).toBe("The fee does not match this cheque. Nothing was cashed. Check the amount and type, then press Cash & hold again.");
 
     const cashed = await cashCheque(cookies, {
       chequeType: "payroll",
