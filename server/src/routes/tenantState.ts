@@ -8,7 +8,7 @@
    never read or write another tenant's state.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -198,13 +198,14 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
     /* The version is the first answer. A tab loaded before someone else
        saved is 409, the same shape as any other stale desk save, and it
-       is not a permission refusal. */
+       is not a permission refusal. A save with no version that would change the fee is that same 409, and it writes no refusal row. */
     const sent = sentVersion(raw);
     if (sent !== undefined && (current?.version ?? 0) !== sent) {
       return reply.code(409).send(stateConflict(current));
     }
     const mayWriteFees = canWriteSetting(who.role, CHEQUE_FEE_SCHEDULE_KEY);
     const changingFees = chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state));
+    if (changingFees && raw?.version == null) return reply.code(409).send(stateConflict(current));
     if (changingFees && !mayWriteFees) {
       await audit(db, {
         tenantId: who.tenantId,
@@ -238,13 +239,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        So a save carries the version it was built on. If the stored version
        has moved, this save is refused and the current document is handed
        back, so the client can merge key by key (see cdos-persist.js) rather
-       than either side losing everything.
-
-       A save with NO version behaves exactly as before. That is deliberate
-       and temporary: a browser that was already open when this deployed is
-       still running the old bridge, and breaking its saves to fix a race is
-       a bad trade. It is logged so we can see when the last one is gone,
-       and then this branch becomes a 400. */
+       than either side losing everything. A save with no version may still write the desk, but the update matches only when the stored fee text is unchanged. */
     const expected = parsed.data.version;
     if (expected === undefined) {
       req.log.warn({ tenantId: who.tenantId }, "desk state saved without a version — an old client is still open");
@@ -287,7 +282,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         .set({ state, updatedBy: who.id, updatedAt: now, version })
         .where(and(
           eq(schema.tenantState.tenantId, who.tenantId),
-          expected === undefined ? eq(schema.tenantState.tenantId, who.tenantId) : eq(schema.tenantState.version, expected),
+          expected === undefined ? sql`(${schema.tenantState.state} ->> ${CHEQUE_FEE_SCHEDULE_KEY}) is not distinct from ${typeof state[CHEQUE_FEE_SCHEDULE_KEY] === "string" ? state[CHEQUE_FEE_SCHEDULE_KEY] : state[CHEQUE_FEE_SCHEDULE_KEY] == null ? null : JSON.stringify(state[CHEQUE_FEE_SCHEDULE_KEY])}` : eq(schema.tenantState.version, expected),
         ))
         .returning()
       : await db

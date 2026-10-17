@@ -1432,10 +1432,10 @@ html[data-cdtheme="dark"] .till-step:hover { background: rgba(255,255,255,0.07);
 html[data-cdtheme="dark"] .cdos-tour-ring { box-shadow: 0 0 0 4px rgba(236, 234, 227, 0.08); }
 html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 
-.fee-lock { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.fee-lock { max-width: 100%; white-space: normal; overflow-wrap: anywhere; } .fee-banner { color: #6a4a12; } .fee-conflict { position: fixed; z-index: 530; left: 12px; right: 12px; bottom: 12px; }
 .fee-lock svg { display: inline-block; vertical-align: -0.2em; margin-right: 6px; }
-.fee-field, .fee-save, .fee-reload { min-height: 44px; box-sizing: border-box; }
-.fee-reload { display: inline-flex; align-items: center; padding: 0 8px; margin-left: 8px; border: 0; background: transparent; font-weight: 600; text-decoration: underline; color: inherit; }
+.fee-field, .fee-save, .fee-reload { min-height: 44px; box-sizing: border-box; } select.fee-field { height: 48px; min-height: 48px; }
+.fee-reload { display: inline-flex; align-items: center; min-height: 46px; padding: 0 8px; margin-left: 8px; border: 0; background: transparent; font-weight: 600; text-decoration: underline; color: inherit; }
 
 /* ============================================================
    PHONE  (390 and 360)
@@ -1859,7 +1859,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     gap: 6px;
     justify-content: flex-start;
   }
-  .phone-head .mb-acct-id { max-width: 96px; }
+  .phone-head .mb-acct-id { max-width: 96px; } .fee-conflict { left: 8px; right: 8px; bottom: calc(var(--phone-dock-h) + 8px); }
   .phone-head .mb-acct-id b,
   .phone-head .mb-acct-id i { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .phone-head .mb-acct-av { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }

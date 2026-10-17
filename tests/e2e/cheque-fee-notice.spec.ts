@@ -66,6 +66,8 @@ async function feeColumn(page: Page, editable: boolean) {
     const count = await mins.count();
     expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i++) await expect(mins.nth(i)).toHaveValue(/\d+\.\d{2}/);
+    const riskH = await page.getByTestId("fee-schedule").locator("select").first().evaluate((el) => el.getBoundingClientRect().height);
+    expect(riskH).toBeGreaterThanOrEqual(44);
   } else {
     await expect(inputs).toHaveCount(0);
     await expect(page.getByTestId("fee-schedule-lock")).toBeVisible();
@@ -85,6 +87,8 @@ test("the owner keeps Fee % inside the card", async ({ page }) => {
   await openFees(page);
   await expect(page.getByRole("columnheader", { name: /\$2,000\.00/ })).toBeVisible();
   await atPhones(page, true);
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  expect(await page.getByTestId("fee-schedule").locator("select").first().evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
 });
 
 test("a manager keeps Fee % inside the card", async ({ page }) => {
@@ -92,6 +96,8 @@ test("a manager keeps Fee % inside the card", async ({ page }) => {
   await signInAtDesk(page, "r.haddad");
   await openFees(page);
   await atPhones(page, true);
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  expect(await page.getByTestId("fee-schedule").locator("select").first().evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
 });
 
 test("a teller sees the lock and no fields", async ({ page }) => {
@@ -160,12 +166,60 @@ test("a conflict keeps Fee % and a 44px Reload", async ({ page }) => {
     return put.status;
   });
   expect(bumped).toBe(200);
+  await min.fill("9.99");
+  await min.blur();
   await page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
   await expect(page.getByTestId("fee-schedule-conflict")).toBeVisible();
+  await expect(min).toHaveValue("9.99");
+  const tone = await page.getByTestId("fee-schedule-conflict").evaluate((el) => {
+    const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const L = (rgb: string) => {
+      const [r, g, b] = rgb.match(/\d+/g)!.map(Number);
+      return 0.2126 * lin(r / 255) + 0.7152 * lin(g / 255) + 0.0722 * lin(b / 255);
+    };
+    const banner = getComputedStyle(el);
+    const reload = getComputedStyle(el.querySelector("button")!);
+    const pair = (fg: string) => (Math.max(L(fg), L(banner.backgroundColor)) + 0.05) / (Math.min(L(fg), L(banner.backgroundColor)) + 0.05);
+    return { text: pair(banner.color), reload: pair(reload.color) };
+  });
+  expect(tone.text).toBeGreaterThanOrEqual(4.5);
+  expect(tone.reload).toBeGreaterThanOrEqual(4.5);
   for (const width of PHONE) {
-    await page.setViewportSize({ width, height: 800 });
+    await page.setViewportSize({ width, height: 780 });
     await feeColumn(page, true);
-    const h = await page.getByTestId("fee-schedule-reload").evaluate((el) => el.getBoundingClientRect().height);
-    expect(h).toBeGreaterThanOrEqual(44);
+    await expect(min).toHaveValue("9.99");
+    await page.evaluate(() => {
+      document.querySelectorAll(".win-body, .fee-schedule-card").forEach((el) => { (el as HTMLElement).scrollTop = 0; (el as HTMLElement).scrollLeft = 0; });
+      window.scrollTo(0, 0);
+    });
+    const place = await page.getByTestId("fee-schedule-conflict").evaluate((el) => {
+      const banner = el.getBoundingClientRect();
+      const reload = el.querySelector("button")!.getBoundingClientRect();
+      const dock = document.querySelector("#phone-dock");
+      const dockTop = dock && getComputedStyle(dock).display !== "none" ? dock.getBoundingClientRect().top : window.innerHeight;
+      return { position: getComputedStyle(el).position, top: banner.top, bottom: banner.bottom, reloadBottom: reload.bottom, reloadH: reload.height, dockTop, viewH: window.innerHeight, viewW: window.innerWidth, right: banner.right };
+    });
+    expect(place.position).toBe("fixed");
+    expect(place.reloadH).toBeGreaterThanOrEqual(44);
+    expect(place.top).toBeGreaterThanOrEqual(0);
+    expect(place.reloadBottom).toBeLessThanOrEqual(place.dockTop + 0.5);
+    expect(place.bottom).toBeLessThanOrEqual(place.viewH + 0.5);
+    expect(place.right).toBeLessThanOrEqual(place.viewW + 0.5);
   }
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.evaluate(() => {
+    document.querySelectorAll(".win-body").forEach((el) => { (el as HTMLElement).scrollTop = 0; });
+  });
+  const desk = await page.getByTestId("fee-schedule-conflict").evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    return { position: getComputedStyle(el).position, top: box.top, bottom: box.bottom, viewH: window.innerHeight };
+  });
+  expect(desk.position).toBe("fixed");
+  expect(desk.top).toBeGreaterThanOrEqual(0);
+  expect(desk.bottom).toBeLessThanOrEqual(desk.viewH + 0.5);
+  await page.getByTestId("fee-schedule-reload").evaluate((el: HTMLElement) => el.click());
+  await expect(page.getByTestId("fee-schedule-conflict")).toHaveCount(0);
+  await expect(min).toHaveValue("4.50");
+  await page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
+  await expect(page.getByTestId("fee-schedule-saved")).toBeVisible();
 });

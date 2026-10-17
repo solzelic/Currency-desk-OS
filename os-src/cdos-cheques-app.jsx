@@ -94,7 +94,7 @@
     const mayEdit = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
-    const [conflict, setConflict] = useState(false);
+    const [conflict, setConflict] = useState(false); const [trouble, setTrouble] = useState(false);
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => { setDraft(schedule); }, [schedule]);
@@ -111,17 +111,17 @@
           method: 'PUT', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ state: snap, version: version }),
         });
-        const body = await res.json();
-        if (res.status === 409) { setConflict(true); setRefused(false); setSaved(false); return; }
-        if (res.status === 403) { setRefused(true); setConflict(false); setSaved(false); return; }
-        if (!res.ok) throw new Error(body && body.detail ? body.detail : 'The fee schedule was not saved.');
+        let body = null; try { body = await res.json(); } catch (e) { body = null; }
+        if (res.status === 409) { setConflict(true); setRefused(false); setTrouble(false); setSaved(false); return; }
+        if (res.status === 403) { setRefused(true); setConflict(false); setTrouble(false); setSaved(false); return; }
+        if (!res.ok || !body) throw new Error('The fee schedule was not saved.');
         if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
         localStorage.setItem(SKEY, JSON.stringify(draft));
         setSchedule(draft);
         setRefused(false);
-        setConflict(false);
+        setConflict(false); setTrouble(false);
         setSaved(true);
-      } finally { setBusy(false); }
+      } catch (e) { setTrouble(true); setConflict(false); setRefused(false); setSaved(false); } finally { setBusy(false); }
     };
     const cell = { color: mayEdit ? CD.ink : CD.mute, fontVariantNumeric: 'tabular-nums' };
     return (<div className="p-4" data-testid="fee-schedule" style={{ minWidth: 0, maxWidth: '100%' }}>
@@ -136,7 +136,7 @@
             <tr key={t.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
               <td className="px-3 py-2 font-medium" style={{ color: mayEdit ? CD.ink : CD.mute }}>{t.label}</td>
               <td className="px-3 py-2">{mayEdit
-                ? <select value={t.risk} onChange={e => set(t.id, 'risk', e.target.value)} className="text-[12px] px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: rt.c, background: rt.bg }}>{['low', 'medium', 'high'].map(r => <option key={r} value={r}>{RISK_TONE[r].t}</option>)}</select>
+                ? <select value={t.risk} onChange={e => set(t.id, 'risk', e.target.value)} className="fee-field text-[12px] px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: rt.c, background: rt.bg }}>{['low', 'medium', 'high'].map(r => <option key={r} value={r}>{RISK_TONE[r].t}</option>)}</select>
                 : <span className="text-[12px]" style={{ color: CD.mute }}>{rt.t}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
                 ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
@@ -153,8 +153,8 @@
       </div>
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
       {mayEdit && <div className="mt-3">
-        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}
-        {conflict && <p role="alert" data-testid="fee-schedule-conflict" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}>{FEE_CONFLICT} <button type="button" data-testid="fee-schedule-reload" onClick={() => window.location.reload()} className="fee-reload" style={{ color: CD.amber }}>Reload</button></p>}
+        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}{trouble && <p role="alert" data-testid="fee-schedule-error" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>That change didn't save. Try again.</p>}
+        {conflict && <p role="alert" data-testid="fee-schedule-conflict" className="fee-lock fee-banner fee-conflict mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>{FEE_CONFLICT} <button type="button" data-testid="fee-schedule-reload" onClick={async () => { try { const res = await fetch('/api/tenant/state', { credentials: 'same-origin' }); if (!res.ok) throw new Error('reload'); const body = await res.json(); const persist = window.CDOS_PERSIST; if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version); const raw = body && body.state ? body.state[SKEY] : null; const next = typeof raw === 'string' ? JSON.parse(raw) : (Array.isArray(raw) ? raw : schedule); setDraft(next); setSchedule(next); setConflict(false); setTrouble(false); } catch (e) { setTrouble(true); } }} className="fee-reload">Reload</button></p>}
         <div className="flex items-center gap-2">
           <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="fee-save px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
           {saved && <span data-testid="fee-schedule-saved" className="text-[12px] font-semibold" style={{ color: CD.green }}>Saved</span>}

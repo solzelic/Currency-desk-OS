@@ -199,4 +199,27 @@ postgres("cheque fee schedule is owner or manager", () => {
       expect(feePct === 2 || feePct === 7).toBe(true);
     }
   });
+
+  it("does not let an unversioned save replace a fee", async () => {
+    await desk();
+    const before = await storedSchedule();
+    const bare = await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("j.masri"), payload: { state: payroll(1, 1) } });
+    expect(bare.statusCode).toBe(409);
+    expect(await storedSchedule()).toBe(before);
+    expect((await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_refused'")).rowCount).toBe(0);
+    expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { deskName: "York" } } } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: payroll(0, 0) } })).statusCode).toBe(409);
+    expect(await storedSchedule()).toBe(before);
+    for (let n = 0; n < 15; n++) {
+      await desk();
+      const original = await storedSchedule();
+      const [ownerRes] = await Promise.all([
+        put(session("j.masri"), payroll(7, 5), 1),
+        app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { n } } } }),
+      ]);
+      const feePct = (JSON.parse((await storedSchedule()) ?? "[]") as { id: string; feePct: number }[]).find((row) => row.id === "payroll")?.feePct;
+      if (ownerRes.statusCode === 200) expect(feePct).toBe(7);
+    }
+    expect((await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_refused'")).rowCount).toBe(0);
+  });
 });

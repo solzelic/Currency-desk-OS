@@ -41369,6 +41369,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
     const [conflict, setConflict] = useState(false);
+    const [trouble, setTrouble] = useState(false);
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => {
@@ -41400,26 +41401,39 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
             version: version
           })
         });
-        const body = await res.json();
+        let body = null;
+        try {
+          body = await res.json();
+        } catch (e) {
+          body = null;
+        }
         if (res.status === 409) {
           setConflict(true);
           setRefused(false);
+          setTrouble(false);
           setSaved(false);
           return;
         }
         if (res.status === 403) {
           setRefused(true);
           setConflict(false);
+          setTrouble(false);
           setSaved(false);
           return;
         }
-        if (!res.ok) throw new Error(body && body.detail ? body.detail : 'The fee schedule was not saved.');
+        if (!res.ok || !body) throw new Error('The fee schedule was not saved.');
         if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
         localStorage.setItem(SKEY, JSON.stringify(draft));
         setSchedule(draft);
         setRefused(false);
         setConflict(false);
+        setTrouble(false);
         setSaved(true);
+      } catch (e) {
+        setTrouble(true);
+        setConflict(false);
+        setRefused(false);
+        setSaved(false);
       } finally {
         setBusy(false);
       }
@@ -41502,7 +41516,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, mayEdit ? /*#__PURE__*/React.createElement("select", {
         value: t.risk,
         onChange: e => set(t.id, 'risk', e.target.value),
-        className: "text-[12px] px-2 py-1 outline-none",
+        className: "fee-field text-[12px] px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
@@ -41580,33 +41594,54 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }, refused && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       "data-testid": "fee-schedule-refused",
-      className: "fee-lock mb-2 px-3 py-2 text-[12px]",
+      className: "fee-lock fee-banner mb-2 px-3 py-2 text-[12px]",
       style: {
         background: CD.amberSoft,
-        color: CD.amber,
         borderRadius: 8
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
       s: 13,
       c: CD.amber
-    }), " ", FEE_BANNER), conflict && /*#__PURE__*/React.createElement("p", {
+    }), " ", FEE_BANNER), trouble && /*#__PURE__*/React.createElement("p", {
       role: "alert",
-      "data-testid": "fee-schedule-conflict",
-      className: "fee-lock mb-2 px-3 py-2 text-[12px]",
+      "data-testid": "fee-schedule-error",
+      className: "fee-lock fee-banner mb-2 px-3 py-2 text-[12px]",
       style: {
         background: CD.amberSoft,
-        color: CD.amber,
+        borderRadius: 8
+      }
+    }, "That change didn't save. Try again."), conflict && /*#__PURE__*/React.createElement("p", {
+      role: "alert",
+      "data-testid": "fee-schedule-conflict",
+      className: "fee-lock fee-banner fee-conflict mb-2 px-3 py-2 text-[12px]",
+      style: {
+        background: CD.amberSoft,
         borderRadius: 8
       }
     }, FEE_CONFLICT, " ", /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "fee-schedule-reload",
-      onClick: () => window.location.reload(),
-      className: "fee-reload",
-      style: {
-        color: CD.amber
-      }
+      onClick: async () => {
+        try {
+          const res = await fetch('/api/tenant/state', {
+            credentials: 'same-origin'
+          });
+          if (!res.ok) throw new Error('reload');
+          const body = await res.json();
+          const persist = window.CDOS_PERSIST;
+          if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
+          const raw = body && body.state ? body.state[SKEY] : null;
+          const next = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : schedule;
+          setDraft(next);
+          setSchedule(next);
+          setConflict(false);
+          setTrouble(false);
+        } catch (e) {
+          setTrouble(true);
+        }
+      },
+      className: "fee-reload"
     }, "Reload")), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("button", {
