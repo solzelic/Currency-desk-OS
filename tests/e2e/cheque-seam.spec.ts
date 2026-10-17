@@ -266,3 +266,32 @@ test("marking a cheque cleared writes a journal and leaves the drawer alone", as
     "a settlement should not appear in the deal list",
   ).toBe(false);
 });
+
+/* The grey Cash & hold button is not a dead control. It tells the
+   teller what is missing, and a tap moves the sheet to that box.
+   Dates and amounts on the same sheet are for a person, not a parser. */
+test("the capture sheet names the missing signature and writes a date and an amount a person can read", async ({ page }) => {
+  await signInAtDesk(page);
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+
+  await openCheques(page);
+  await page.getByRole("button", { name: /Cash a cheque/i }).first().click();
+  await page.getByPlaceholder("Type a name…").fill("Seam Cheque Customer");
+  await page.getByRole("button", { name: /^Payroll$/ }).click();
+  await page.getByPlaceholder("0.00").fill("1200");
+  await page.getByPlaceholder("e.g. 004821").fill("88204");
+  await page.getByPlaceholder("Payer name / business").fill("Maple Payroll Services");
+  await page.getByPlaceholder("e.g. RBC Royal Bank").fill("Scotiabank");
+
+  await expect(page.getByText("Tick Signed on the back to cash this cheque.")).toBeVisible();
+  await expect(page.getByText("Cash to customer now").locator("xpath=following-sibling::div[1]")).toHaveText("1,176.00");
+  await expect(page.getByText("At risk until").locator("xpath=following-sibling::div[1]")).toHaveText(/^Oct \d{1,2}, \d{4}$/);
+  expect(await page.evaluate(() => (window as unknown as { CDOS: { _cheques: { sheetMoney: (n: number) => string; sheetDate: (d: string) => string } } }).CDOS._cheques.sheetMoney(1200))).toBe("1,200.00");
+  expect(await page.evaluate(() => (window as unknown as { CDOS: { _cheques: { sheetDate: (d: string) => string } } }).CDOS._cheques.sheetDate("2026-10-17"))).toBe("Oct 17, 2026");
+
+  await page.getByRole("button", { name: "Cash & hold" }).click();
+  const marked = page.locator('[data-endorsement-box="marked"]');
+  await expect(marked).toBeVisible();
+  expect(await marked.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
+});

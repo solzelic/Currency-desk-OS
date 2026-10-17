@@ -40,7 +40,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, TODAY, crossRate, newTx, mkRef } = window.CDOS;
+  const { CD, Ic, TODAY, formatPhoneMoney, crossRate, newTx, mkRef } = window.CDOS;
   const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
@@ -56,6 +56,17 @@
     return y + '-' + mo + '-' + d;
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+  /* Oct 17, 2026. The book still stores YYYY-MM-DD. UTC, because a
+     local midnight west of Greenwich is the day before. */
+  const sheetDate = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return new Intl.DateTimeFormat('en-CA', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(at);
+  };
+  /* 1,200.00. Same grouped two-decimal line as the phone ticket,
+     with no currency code, because this sheet already names CAD. */
+  const sheetMoney = (n) => formatPhoneMoney(n);
 
   /* ---- default fee schedule by cheque type (editable in the Fee schedule tab) ---- */
   function defaultSchedule() {
@@ -211,7 +222,17 @@
     const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
     const holdUntil = addDays(TODAY, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
-    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0 && endorsed;
+    const ready = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const canSave = ready && endorsed;
+    /* A disabled button swallows the tap, so the teller never reaches
+       the box they still have to tick. Grey, but it still points there. */
+    const endorseBox = useRef(null);
+    const [endorseMark, setEndorseMark] = useState(false);
+    const showEndorsement = () => {
+      const node = endorseBox.current;
+      if (node && node.scrollIntoView) node.scrollIntoView({ block: 'center' });
+      setEndorseMark(true);
+    };
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
 
     /* A cheque image is stored the same way an ID scan is, and used to
@@ -302,7 +323,7 @@
           }
         }
         onTillChanged && onTillChanged(posted.balances);
-        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${sheetMoney(amtN)} ${type.label} · fronted ${sheetMoney(Number(posted.cheque.netAmount))} · hold to ${sheetDate(posted.cheque.holdUntil)}`);
         onDone && onDone(chq.id);
       } catch (error) {
         setErr(error.message || 'The cheque was not cashed.');
@@ -314,7 +335,7 @@
     return (<Portal><div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 560, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
         <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
-          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="receipt" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash a cheque</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {TODAY}</div></div></div>
+          <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="receipt" s={16} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>Cash a cheque</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {sheetDate(TODAY)}</div></div></div>
           <button onClick={onClose} className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
         </div>
         <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
@@ -325,7 +346,7 @@
           </Field>
 
           {/* cheque type → fee schedule */}
-          <Field label="Cheque type" hint={`${type.feePct}% · min ${fmt(type.feeMin, homeCcy())} · ${type.holdDays}d hold`}>
+          <Field label="Cheque type" hint={`${type.feePct}% · min ${sheetMoney(type.feeMin)} · ${type.holdDays}d hold`}>
             <div className="flex flex-wrap gap-1.5">
               {schedule.map(t => { const on = typeId === t.id; const r = RISK_TONE[t.risk]; return (
                 <button key={t.id} onClick={() => { setTypeId(t.id); setHoldOverride(null); }} className="px-2.5 py-1.5 text-[12px] font-medium flex items-center gap-1.5" style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', color: on ? 'var(--cd-on-ink)' : CD.text }}>
@@ -349,12 +370,14 @@
                   : <label className="flex items-center justify-center gap-1.5 text-[11px] px-2 py-2.5 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="camera" s={13} /> Capture / upload<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files[0] && upload(e.target.files[0])} /></label>}
                   {imgErr && <div className="text-[11px] mt-1" style={{ color: CD.flag }}>{imgErr}</div>}
               </Field>
+              <div ref={endorseBox} data-endorsement-box={endorseMark ? 'marked' : 'plain'} style={endorseMark ? { outline: `2px solid ${CD.ink}`, outlineOffset: 3, borderRadius: 8 } : undefined}>
               <Field label="Endorsement">
-                <button onClick={() => setEndorsed(v => !v)} className="w-full flex items-center gap-2 px-2.5 py-2" style={{ border: `1px solid ${endorsed ? CD.ink : CD.line}`, borderRadius: 8, background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)' }}>
+                <button onClick={() => { setEndorsed(v => !v); setEndorseMark(false); }} className="w-full flex items-center gap-2 px-2.5 py-2" style={{ border: `1px solid ${endorsed ? CD.ink : CD.line}`, borderRadius: 8, background: endorsed ? 'var(--cd-chip)' : 'var(--cd-panel)' }}>
                   <span className="grid place-items-center" style={{ width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${endorsed ? CD.ink : CD.faint}`, background: endorsed ? CD.ink : 'transparent' }}>{endorsed && <Ic n="check" s={12} c="var(--cd-on-ink)" />}</span>
                   <span className="text-[12.5px]" style={{ color: CD.ink }}>Signed on the back</span>
                 </button>
               </Field>
+              </div>
             </div>
           </div>
 
@@ -362,12 +385,12 @@
           <div className="p-3" style={{ background: rt.bg, borderRadius: 10, border: `1px solid ${rt.c}` }}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: rt.c }}><Ic n="shield" s={13} c={rt.c} /> Fronting cash · {rt.t.toLowerCase()} risk</span>
-              <span className="text-[11px]" style={{ color: CD.mute }}>fee {fmt(fee, homeCcy())}</span>
+              <span className="text-[11px]" style={{ color: CD.mute }}>fee {sheetMoney(fee)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmt(net, homeCcy())}</div></div>
+              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Cash to customer now</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{sheetMoney(net)}</div></div>
               <Ic n="arrowright" s={16} c={CD.faint} />
-              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>At risk until</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{holdDays === 0 ? 'cleared' : holdUntil}</div></div>
+              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>At risk until</div><div className="text-xl font-bold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{holdDays === 0 ? 'cleared' : sheetDate(holdUntil)}</div></div>
             </div>
             <div className="flex items-center gap-2 mt-2 pt-2" style={{ borderTop: `1px solid ${rt.c}33` }}>
               <span className="text-[11px]" style={{ color: CD.mute }}>Hold</span>
@@ -381,9 +404,12 @@
             reason — the drawer is short, the till is closed, the customer
             needs identifying, the cheque is in the wrong currency. */}
         {err && <div className="flex-none px-5 pb-2 text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
-        <div className="flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
-          <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, homeCcy())}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, homeCcy())}</b></> : 'Enter the cheque amount'}</div>
-          <button onClick={save} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+        <div className="flex-none flex flex-wrap items-center justify-between gap-2 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
+          <div className="text-[12px]" style={{ color: CD.mute, flex: '1 1 140px' }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{sheetMoney(net)}</b> · keep <b style={{ color: CD.green }}>{sheetMoney(fee)}</b></> : 'Enter the cheque amount'}</div>
+          <div className="flex flex-wrap items-center justify-end gap-2" style={{ flex: '1 1 200px' }}>
+            {ready && !endorsed && !busy && <span className="text-[12px] text-right" style={{ color: CD.mute, maxWidth: 220 }}>Tick Signed on the back to cash this cheque.</span>}
+            <button type="button" onClick={() => { if (ready && !endorsed) { showEndorsement(); return; } save(); }} disabled={busy || !ready} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) || (ready && !endorsed) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+          </div>
         </div>
       </div>
     </div></Portal>);
@@ -427,10 +453,10 @@
       'Cheque cleared', 'Funds confirmed by drawee bank');
     const returnNsf = () => act('nsf',
       (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'NSF — insufficient funds', nsf: true }),
-      'Cheque returned NSF', `loss ${fmt(c.netCad, homeCcy())}`);
+      'Cheque returned NSF', `loss ${sheetMoney(c.netCad)}`);
     const returnFraud = () => act('fraud',
       (book, key) => book.returnCheque(c.chequeId, { idempotencyKey: key, reason: 'Fraud — suspect cheque', fraud: true }),
-      'Cheque flagged fraud', `loss ${fmt(c.netCad, homeCcy())}`);
+      'Cheque flagged fraud', `loss ${sheetMoney(c.netCad)}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
        drawer and the fee is reversed with it, because the desk did not
@@ -457,11 +483,11 @@
           {/* exposure banner */}
           {c.status === 'held' && <div className="p-3" style={{ background: overdue ? CD.flagSoft : CD.amberSoft, borderRadius: 11 }}>
             <div className="flex items-center justify-between">
-              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>Cash at risk</div><div className="text-xl font-bold" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.netCad, homeCcy())}</div></div>
-              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{overdue ? 'Overdue' : 'Clears'}</div><div className="text-[15px] font-bold" style={{ color: overdue ? CD.flag : CD.ink }}>{c.holdUntil}{overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`}</div></div>
+              <div><div className="text-[10px] uppercase tracking-widest" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontFamily: 'Space Mono, monospace' }}>Cash at risk</div><div className="text-xl font-bold" style={{ color: overdue ? CD.flag : 'var(--cd-brass-text)', fontVariantNumeric: 'tabular-nums' }}>{sheetMoney(c.netCad)}</div></div>
+              <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{overdue ? 'Overdue' : 'Clears'}</div><div className="text-[15px] font-bold" style={{ color: overdue ? CD.flag : CD.ink }}>{sheetDate(c.holdUntil)}{overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`}</div></div>
             </div>
           </div>}
-          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned — {fmt(c.netCad, homeCcy())} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
+          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>Returned — {sheetMoney(c.netCad)} loss</div><div className="text-[11px]" style={{ color: '#8a3b30' }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
 
           {/* cheque capture */}
           <div>
@@ -472,9 +498,9 @@
             <DRow k="Type" v={c.typeLabel} />
             <DRow k="Customer" v={c.customer} />
             <DRow k="Endorsed" v={c.endorsed ? 'Yes — signed' : 'Not endorsed'} accent={c.endorsed ? CD.green : CD.flag} />
-            <DRow k="Face value" v={fmt(c.amount, homeCcy())} mono />
-            <DRow k="Fee kept" v={fmt(c.feeCad, homeCcy())} mono accent={CD.green} />
-            <DRow k="Cash fronted" v={fmt(c.netCad, homeCcy())} mono />
+            <DRow k="Face value" v={sheetMoney(c.amount)} mono />
+            <DRow k="Fee kept" v={sheetMoney(c.feeCad)} mono accent={CD.green} />
+            <DRow k="Cash fronted" v={sheetMoney(c.netCad)} mono />
             {c.image && <div className="mt-2"><img src={c.image} alt="cheque" style={{ maxWidth: '100%', border: `1px solid ${CD.line}`, borderRadius: 8 }} /></div>}
           </div>
 
@@ -512,6 +538,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, IKEY, load, ledger, fromServer, STATUS, RISK_TONE, feeFor, addDays, daysBetween, StatusPill, CaptureModal, ChequeDetail }
+    _cheques: { defaultSchedule, defaultCheques, KKEY, SKEY, IKEY, load, ledger, fromServer, STATUS, RISK_TONE, feeFor, addDays, daysBetween, sheetDate, sheetMoney, StatusPill, CaptureModal, ChequeDetail }
   });
 })();

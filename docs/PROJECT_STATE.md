@@ -577,8 +577,12 @@ not at this till is told "You are not signed in at this till."
 Any other error from that check is returned as it was. The
 generic deal reversal route still refuses a cheque row and names
 the cheque route. That door is unchanged. Cash & hold on the
-capture screen stays disabled until Signed on the back is set,
-and the screen rounds the fee the same way.
+capture screen stays grey until Signed on the back is set. The
+line beside it says "Tick Signed on the back to cash this cheque."
+Tapping that grey button scrolls to the Endorsement box and
+outlines it. Dates on the cheque sheet read Oct 17, 2026. Amounts
+on that sheet use grouping and two decimals, so 1,200.00. The
+screen rounds the fee the same way.
 
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
 Postgres, five per account and twenty per address, for fifteen

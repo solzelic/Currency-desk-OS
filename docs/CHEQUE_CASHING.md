@@ -139,6 +139,12 @@ the business date plus the hold, as calendar days. It is not an instant
 passed through `toISOString`, which moves the day back one in a zone
 east of UTC.
 
+On the cheque sheet those dates read Oct 17, 2026, and the amounts
+read with grouping and two decimals, so 1,200.00. Cash & hold stays
+grey until Signed on the back is ticked. The line beside that grey
+button says to tick it. Tapping the grey button scrolls to the
+Endorsement box and outlines it.
+
 ## Scope: home currency only
 
 A cheque written in another currency is an **exchange as well as a

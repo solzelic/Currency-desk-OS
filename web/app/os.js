@@ -39828,9 +39828,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const {
     CD,
     Ic,
-    fmt,
-    num,
     TODAY,
+    formatPhoneMoney,
     crossRate,
     newTx,
     mkRef
@@ -39857,6 +39856,22 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     return y + '-' + mo + '-' + d;
   };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+  /* Oct 17, 2026. The book still stores YYYY-MM-DD. UTC, because a
+     local midnight west of Greenwich is the day before. */
+  const sheetDate = iso => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return new Intl.DateTimeFormat('en-CA', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(at);
+  };
+  /* 1,200.00. Same grouped two-decimal line as the phone ticket,
+     with no currency code, because this sheet already names CAD. */
+  const sheetMoney = n => formatPhoneMoney(n);
 
   /* ---- default fee schedule by cheque type (editable in the Fee schedule tab) ---- */
   function defaultSchedule() {
@@ -40292,7 +40307,19 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
     const holdUntil = addDays(TODAY, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
-    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0 && endorsed;
+    const ready = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const canSave = ready && endorsed;
+    /* A disabled button swallows the tap, so the teller never reaches
+       the box they still have to tick. Grey, but it still points there. */
+    const endorseBox = useRef(null);
+    const [endorseMark, setEndorseMark] = useState(false);
+    const showEndorsement = () => {
+      const node = endorseBox.current;
+      if (node && node.scrollIntoView) node.scrollIntoView({
+        block: 'center'
+      });
+      setEndorseMark(true);
+    };
     useEffect(() => {
       const h = e => {
         if (e.key === 'Escape') onClose();
@@ -40391,7 +40418,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           }
         }
         onTillChanged && onTillChanged(posted.balances);
-        log && log('Cheque cashed', `${posted.cheque.ref} · ${fmt(amtN, homeCcy())} ${type.label} · fronted ${fmt(Number(posted.cheque.netAmount), homeCcy())} · hold to ${posted.cheque.holdUntil}`);
+        log && log('Cheque cashed', `${posted.cheque.ref} · ${sheetMoney(amtN)} ${type.label} · fronted ${sheetMoney(Number(posted.cheque.netAmount))} · hold to ${sheetDate(posted.cheque.holdUntil)}`);
         onDone && onDone(chq.id);
       } catch (error) {
         setErr(error.message || 'The cheque was not cashed.');
@@ -40446,7 +40473,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "Teller ", me.name, " \xB7 ", TODAY))), /*#__PURE__*/React.createElement("button", {
+    }, "Teller ", me.name, " \xB7 ", sheetDate(TODAY)))), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "p-1.5"
     }, /*#__PURE__*/React.createElement(Ic, {
@@ -40471,7 +40498,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       value: n
     })))), /*#__PURE__*/React.createElement(Field, {
       label: "Cheque type",
-      hint: `${type.feePct}% · min ${fmt(type.feeMin, homeCcy())} · ${type.holdDays}d hold`
+      hint: `${type.feePct}% · min ${sheetMoney(type.feeMin)} · ${type.holdDays}d hold`
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5"
     }, schedule.map(t => {
@@ -40597,10 +40624,21 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.flag
       }
-    }, imgErr)), /*#__PURE__*/React.createElement(Field, {
+    }, imgErr)), /*#__PURE__*/React.createElement("div", {
+      ref: endorseBox,
+      "data-endorsement-box": endorseMark ? 'marked' : 'plain',
+      style: endorseMark ? {
+        outline: `2px solid ${CD.ink}`,
+        outlineOffset: 3,
+        borderRadius: 8
+      } : undefined
+    }, /*#__PURE__*/React.createElement(Field, {
       label: "Endorsement"
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setEndorsed(v => !v),
+      onClick: () => {
+        setEndorsed(v => !v);
+        setEndorseMark(false);
+      },
       className: "w-full flex items-center gap-2 px-2.5 py-2",
       style: {
         border: `1px solid ${endorsed ? CD.ink : CD.line}`,
@@ -40625,7 +40663,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.ink
       }
-    }, "Signed on the back"))))), /*#__PURE__*/React.createElement("div", {
+    }, "Signed on the back")))))), /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
         background: rt.bg,
@@ -40648,7 +40686,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "fee ", fmt(fee, homeCcy()))), /*#__PURE__*/React.createElement("div", {
+    }, "fee ", sheetMoney(fee))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -40662,7 +40700,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(net, homeCcy()))), /*#__PURE__*/React.createElement(Ic, {
+    }, sheetMoney(net))), /*#__PURE__*/React.createElement(Ic, {
       n: "arrowright",
       s: 16,
       c: CD.faint
@@ -40680,7 +40718,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, holdDays === 0 ? 'cleared' : holdUntil))), /*#__PURE__*/React.createElement("div", {
+    }, holdDays === 0 ? 'cleared' : sheetDate(holdUntil)))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 mt-2 pt-2",
       style: {
         borderTop: `1px solid ${rt.c}33`
@@ -40707,7 +40745,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       },
       role: "alert"
     }, err), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between gap-3 px-5 py-4",
+      className: "flex-none flex flex-wrap items-center justify-between gap-2 px-5 py-4",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)',
@@ -40716,30 +40754,49 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        flex: '1 1 140px'
       }
     }, amtN > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Front ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
-    }, fmt(net, homeCcy())), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
+    }, sheetMoney(net)), " \xB7 keep ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.green
       }
-    }, fmt(fee, homeCcy()))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("button", {
-      onClick: save,
-      disabled: !canSave || busy,
+    }, sheetMoney(fee))) : 'Enter the cheque amount'), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap items-center justify-end gap-2",
+      style: {
+        flex: '1 1 200px'
+      }
+    }, ready && !endorsed && !busy && /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px] text-right",
+      style: {
+        color: CD.mute,
+        maxWidth: 220
+      }
+    }, "Tick Signed on the back to cash this cheque."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        if (ready && !endorsed) {
+          showEndorsement();
+          return;
+        }
+        save();
+      },
+      disabled: busy || !ready,
       className: "flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white",
       style: {
         background: canSave && !busy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 8,
-        cursor: canSave && !busy ? 'pointer' : 'not-allowed'
+        cursor: canSave && !busy || ready && !endorsed ? 'pointer' : 'not-allowed'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " ", busy ? 'Posting…' : 'Cash & hold')))));
+    }), " ", busy ? 'Posting…' : 'Cash & hold'))))));
   }
 
   /* ===================== DETAIL DRAWER ===================== */
@@ -40793,12 +40850,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       idempotencyKey: key,
       reason: 'NSF — insufficient funds',
       nsf: true
-    }), 'Cheque returned NSF', `loss ${fmt(c.netCad, homeCcy())}`);
+    }), 'Cheque returned NSF', `loss ${sheetMoney(c.netCad)}`);
     const returnFraud = () => act('fraud', (book, key) => book.returnCheque(c.chequeId, {
       idempotencyKey: key,
       reason: 'Fraud — suspect cheque',
       fraud: true
-    }), 'Cheque flagged fraud', `loss ${fmt(c.netCad, homeCcy())}`);
+    }), 'Cheque flagged fraud', `loss ${sheetMoney(c.netCad)}`);
     /* Undoing a cashing done in error, which is NOT the same act as an
        NSF and does not share its button. The cash comes back into the
        drawer and the fee is reversed with it, because the desk did not
@@ -40881,7 +40938,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: overdue ? CD.flag : 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(c.netCad, homeCcy()))), /*#__PURE__*/React.createElement("div", {
+    }, sheetMoney(c.netCad))), /*#__PURE__*/React.createElement("div", {
       className: "text-right"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -40894,7 +40951,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: overdue ? CD.flag : CD.ink
       }
-    }, c.holdUntil, overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`)))), c.status === 'returned' && /*#__PURE__*/React.createElement("div", {
+    }, sheetDate(c.holdUntil), overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`)))), c.status === 'returned' && /*#__PURE__*/React.createElement("div", {
       className: "p-3 flex items-center gap-2",
       style: {
         background: CD.flagSoft,
@@ -40909,7 +40966,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.flag
       }
-    }, "Returned \u2014 ", fmt(c.netCad, homeCcy()), " loss"), /*#__PURE__*/React.createElement("div", {
+    }, "Returned \u2014 ", sheetMoney(c.netCad), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: '#8a3b30'
@@ -40942,16 +40999,16 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       accent: c.endorsed ? CD.green : CD.flag
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Face value",
-      v: fmt(c.amount, homeCcy()),
+      v: sheetMoney(c.amount),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Fee kept",
-      v: fmt(c.feeCad, homeCcy()),
+      v: sheetMoney(c.feeCad),
       mono: true,
       accent: CD.green
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Cash fronted",
-      v: fmt(c.netCad, homeCcy()),
+      v: sheetMoney(c.netCad),
       mono: true
     }), c.image && /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
@@ -41081,6 +41138,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       feeFor,
       addDays,
       daysBetween,
+      sheetDate,
+      sheetMoney,
       StatusPill,
       CaptureModal,
       ChequeDetail
@@ -41104,11 +41163,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const {
     CD,
     Ic,
-    fmt,
-    num,
     TODAY
   } = window.CDOS;
-  const homeCcy = () => window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
   const K = window.CDOS._cheques;
   const {
     defaultSchedule,
@@ -41120,6 +41176,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     RISK_TONE,
     feeFor,
     daysBetween,
+    sheetDate,
+    sheetMoney,
     StatusPill,
     CaptureModal,
     ChequeDetail
@@ -41212,7 +41270,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: 'var(--cd-brass-text)',
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.exposure, homeCcy())), /*#__PURE__*/React.createElement("div", {
+    }, sheetMoney(stats.exposure)), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -41264,7 +41322,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: stats.lossN ? CD.flag : CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, fmt(stats.losses, homeCcy())), /*#__PURE__*/React.createElement("div", {
+    }, sheetMoney(stats.losses)), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
         color: CD.mute
@@ -41354,12 +41412,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(c.amount, homeCcy())), /*#__PURE__*/React.createElement("div", {
+      }, sheetMoney(c.amount)), /*#__PURE__*/React.createElement("div", {
         className: "text-[10.5px] mt-0.5",
         style: {
           color: overdue ? CD.flag : CD.mute
         }
-      }, c.status === 'held' ? overdue ? `overdue ${c.holdUntil}` : `holds to ${c.holdUntil}` : (STATUS[c.status] || STATUS.held).label)));
+      }, c.status === 'held' ? overdue ? `overdue ${sheetDate(c.holdUntil)}` : `holds to ${sheetDate(c.holdUntil)}` : (STATUS[c.status] || STATUS.held).label)));
     }), !list.length && /*#__PURE__*/React.createElement("div", {
       className: "text-center py-14",
       style: {
@@ -41503,7 +41561,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           color: CD.green,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(eg, homeCcy())));
+      }, sheetMoney(eg)));
     })))), /*#__PURE__*/React.createElement("p", {
       className: "mt-2 text-[11px]",
       style: {
@@ -41605,7 +41663,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, fmt(exposure, homeCcy()), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
+    }, sheetMoney(exposure), " at risk", overdue ? ` · ${overdue} overdue` : ''))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setModal(true),
       className: "flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
