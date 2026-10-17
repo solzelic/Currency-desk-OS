@@ -74,28 +74,92 @@
     </div>);
   }
 
-  /* ===================== FEE SCHEDULE ===================== */
-  function FeeSchedule({ schedule, setSchedule, log }) {
-    const set = (id, k, v) => setSchedule(list => list.map(t => t.id === id ? { ...t, [k]: v } : t));
-    return (<div className="p-4">
-      <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Fee schedule by cheque type</div><div className="text-[11px]" style={{ color: CD.mute }}>Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk — wider on riskier paper.</div></div>
-      <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
+  /* ===================== FEE SCHEDULE =====================
+     The fee is the price of cash the desk has not yet collected.
+     The owner and a manager can change it, including to 0%. A teller cannot. The
+     server is the check. This screen only stops inviting the edit.
+     The table follows who is signed in now. A cashier sees the lock
+     and the read-only figures, with no inputs, before any Save.
+     The lock sits in that sentence, and the sentence wraps. */
+  const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
+  const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
+  const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
+  /* Two decimals while a digit is still being typed. */
+  function money2(n) {
+    if (typeof n === 'string' && /^\d*\.\d{0,1}$/.test(n)) return n;
+    const x = Number(n);
+    return Number.isFinite(x) ? x.toFixed(2) : '';
+  }
+  function FeeSchedule({ schedule, setSchedule, me }) {
+    const mayEdit = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
+    const [draft, setDraft] = useState(schedule);
+    const [refused, setRefused] = useState(false);
+    const [conflict, setConflict] = useState(false); const [trouble, setTrouble] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [busy, setBusy] = useState(false);
+    useEffect(() => { setDraft(schedule); }, [schedule]);
+    const set = (id, k, v) => { setSaved(false); setDraft(list => list.map(t => t.id === id ? { ...t, [k]: v } : t)); };
+    const rows = mayEdit ? draft : schedule;
+    const save = async () => {
+      setBusy(true);
+      try {
+        const persist = window.CDOS_PERSIST;
+        const snap = persist && persist.snapshot ? persist.snapshot() : {};
+        const version = persist && persist.status ? persist.status().version : 0;
+        snap[SKEY] = JSON.stringify(draft);
+        const res = await fetch('/api/tenant/state', {
+          method: 'PUT', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ state: snap, version: version }),
+        });
+        let body = null; try { body = await res.json(); } catch (e) { body = null; }
+        if (res.status === 409) { setConflict(true); setRefused(false); setTrouble(false); setSaved(false); return; }
+        if (res.status === 403) { setRefused(true); setConflict(false); setTrouble(false); setSaved(false); return; }
+        if (!res.ok || !body) throw new Error('The fee schedule was not saved.');
+        if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
+        localStorage.setItem(SKEY, JSON.stringify(draft));
+        setSchedule(draft);
+        setRefused(false);
+        setConflict(false); setTrouble(false);
+        setSaved(true);
+      } catch (e) { setTrouble(true); setConflict(false); setRefused(false); setSaved(false); } finally { setBusy(false); }
+    };
+    const cell = { color: mayEdit ? CD.ink : CD.mute, fontVariantNumeric: 'tabular-nums' };
+    return (<div className="p-4" data-testid="fee-schedule" style={{ minWidth: 0, maxWidth: '100%' }}>
+      {!mayEdit && <p data-testid="fee-schedule-lock" className="fee-lock mb-3 text-[12px]" style={{ color: CD.ink }}><Ic n="lock" s={14} c={CD.mute} /> {FEE_SENTENCE}</p>}
+      <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Fee schedule by cheque type</div><div className="text-[11px]" style={{ color: CD.mute }}>Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.</div></div>
+      <div className="fee-schedule-card overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
         <table className="w-full text-sm border-collapse">
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
-            <th className="px-3 py-2">Type</th><th className="px-3 py-2">Risk</th><th className="px-3 py-2 text-right">Fee %</th><th className="px-3 py-2 text-right">Min fee</th><th className="px-3 py-2 text-right">Hold days</th><th className="px-3 py-2 text-right">e.g. $2,000</th>
+            <th className="px-3 py-2">Type</th><th className="px-3 py-2">Risk</th><th className="px-3 py-2 text-right">Fee %</th><th className="px-3 py-2 text-right">Min fee</th><th className="px-3 py-2 text-right">Hold days</th><th className="px-3 py-2 text-right">e.g. $2,000.00</th>
           </tr></thead>
-          <tbody>{schedule.map(t => { const rt = RISK_TONE[t.risk] || RISK_TONE.low; const eg = feeFor(2000, t); return (
+          <tbody>{rows.map(t => { const rt = RISK_TONE[t.risk] || RISK_TONE.low; const eg = feeFor(2000, t); return (
             <tr key={t.id} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}>{t.label}</td>
-              <td className="px-3 py-2"><select value={t.risk} onChange={e => set(t.id, 'risk', e.target.value)} className="text-[12px] px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: rt.c, background: rt.bg }}>{['low', 'medium', 'high'].map(r => <option key={r} value={r}>{RISK_TONE[r].t}</option>)}</select></td>
-              <td className="px-3 py-2 text-right"><input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} /></td>
-              <td className="px-3 py-2 text-right"><input type="number" value={t.feeMin} onChange={e => set(t.id, 'feeMin', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} /></td>
-              <td className="px-3 py-2 text-right"><input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} /></td>
-              <td className="px-3 py-2 text-right font-semibold" style={{ color: CD.green, fontVariantNumeric: 'tabular-nums' }}>{fmt(eg, homeCcy())}</td>
+              <td className="px-3 py-2 font-medium" style={{ color: mayEdit ? CD.ink : CD.mute }}>{t.label}</td>
+              <td className="px-3 py-2">{mayEdit
+                ? <select value={t.risk} onChange={e => set(t.id, 'risk', e.target.value)} className="fee-field text-[12px] px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: rt.c, background: rt.bg }}>{['low', 'medium', 'high'].map(r => <option key={r} value={r}>{RISK_TONE[r].t}</option>)}</select>
+                : <span className="text-[12px]" style={{ color: CD.mute }}>{rt.t}</span>}</td>
+              <td className="px-3 py-2 text-right">{mayEdit
+                ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                : <span style={cell}>{t.feePct}</span>}</td>
+              <td className="px-3 py-2 text-right">{mayEdit
+                ? <input type="text" inputMode="decimal" value={money2(t.feeMin)} onChange={e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, ''))} onBlur={e => set(t.id, 'feeMin', money2(e.target.value))} className="fee-field w-20 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                : <span style={cell}>{money2(t.feeMin)}</span>}</td>
+              <td className="px-3 py-2 text-right">{mayEdit
+                ? <input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="fee-field w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                : <span style={cell}>{t.holdDays}</span>}</td>
+              <td className="px-3 py-2 text-right" data-testid="fee-example" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{money2(eg)} {homeCcy()}</td>
             </tr>); })}</tbody>
         </table>
       </div>
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
+      {mayEdit && <div className="mt-3">
+        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}{trouble && <p role="alert" data-testid="fee-schedule-error" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>That change didn't save. Try again.</p>}
+        {conflict && <p role="alert" data-testid="fee-schedule-conflict" className="fee-lock fee-banner fee-conflict mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>{FEE_CONFLICT} <button type="button" data-testid="fee-schedule-reload" onClick={async () => { try { const res = await fetch('/api/tenant/state', { credentials: 'same-origin' }); if (!res.ok) throw new Error('reload'); const body = await res.json(); const persist = window.CDOS_PERSIST; if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version); const raw = body && body.state ? body.state[SKEY] : null; const next = typeof raw === 'string' ? JSON.parse(raw) : (Array.isArray(raw) ? raw : schedule); setDraft(next); setSchedule(next); setConflict(false); setTrouble(false); } catch (e) { setTrouble(true); } }} className="fee-reload">Reload</button></p>}
+        <div className="flex items-center gap-2">
+          <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="fee-save px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
+          {saved && <span data-testid="fee-schedule-saved" className="text-[12px] font-semibold" style={{ color: CD.green }}>Saved</span>}
+        </div>
+      </div>}
     </div>);
   }
 
@@ -139,9 +203,9 @@
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" style={{ minWidth: 0 }}>
         {tab === 'clearing' && <Clearing cheques={cheques} onOpen={setDetailId} onNew={() => setModal(true)} />}
-        {tab === 'schedule' && <FeeSchedule schedule={schedule} setSchedule={setSchedule} log={log} />}
+        {tab === 'schedule' && <FeeSchedule schedule={schedule} setSchedule={setSchedule} me={me} />}
       </div>
 
       {modal && <CaptureModal {...{ rows, setRows, clients, settings, schedule, me, log, cheques, setCheques, onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('clearing'); setDetailId(id); }} />}

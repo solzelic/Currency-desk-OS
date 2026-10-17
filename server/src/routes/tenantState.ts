@@ -8,14 +8,105 @@
    never read or write another tenant's state.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
+import { canWriteSetting, CHEQUE_FEE_SCHEDULE_KEY } from "../auth/settingsWrite.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { audit } from "../audit.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
+
+/* The cheque fee is the price of the desk's own credit. Who may write
+   it lives in canWriteSetting, not in a role list at this route. */
+export { CHEQUE_FEE_SCHEDULE_KEY };
+export const CHEQUE_FEE_REFUSAL =
+  "Only the owner or a manager can change cheque fees. Ask a manager to make this change.";
+
+/* The schedule the capture screen ships. A first save of exactly this
+   is the desk opening, not a price change, so a teller may store it.
+   Anything else is a change and needs the owner or a manager. */
+export const DEFAULT_CHEQUE_SCHEDULE = [
+  { id: "government", label: "Government", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
+  { id: "payroll", label: "Payroll", feePct: 2, feeMin: 5, holdDays: 1, risk: "low" },
+  { id: "certified", label: "Certified / bank draft", feePct: 1, feeMin: 5, holdDays: 0, risk: "low" },
+  { id: "money_order", label: "Money order", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
+  { id: "business", label: "Business", feePct: 3, feeMin: 10, holdDays: 3, risk: "medium" },
+  { id: "personal", label: "Personal", feePct: 3.5, feeMin: 10, holdDays: 5, risk: "high" },
+];
+
+function canonSchedule(value: unknown): string | null {
+  if (value == null) return null;
+  const parsed = typeof value === "string" ? JSON.parse(value) : value;
+  return JSON.stringify(parsed);
+}
+
+/* True when this save would change the stored fee schedule.
+   Omitting the key replaces the whole document, which deletes the
+   schedule, and that is a write. A string that is not JSON is still
+   an attempt to write the key. A SyntaxError is that attempt, not a
+   failure to hide: every other error is rethrown. */
+export function chequeScheduleWrite(stored: Record<string, unknown> | null, incoming: Record<string, unknown> | null): boolean {
+  const prev = stored ? stored[CHEQUE_FEE_SCHEDULE_KEY] : undefined;
+  if (!incoming || !(CHEQUE_FEE_SCHEDULE_KEY in incoming)) return prev != null;
+  const next = incoming[CHEQUE_FEE_SCHEDULE_KEY];
+  let nextCanon: string | null;
+  let prevCanon: string | null;
+  try {
+    nextCanon = canonSchedule(next);
+    prevCanon = prev == null ? null : canonSchedule(prev);
+  } catch (error) {
+    if (error instanceof SyntaxError) return true;
+    throw error;
+  }
+  if (nextCanon === prevCanon) return false;
+  if (prev == null && nextCanon === JSON.stringify(DEFAULT_CHEQUE_SCHEDULE)) return false;
+  return true;
+}
+
+/* One row per cheque type, so the audit can show the old price and
+   the new one. A string that is not JSON is stored as itself. */
+function feeRows(value: unknown): unknown {
+  if (value == null) return null;
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try { parsed = JSON.parse(value); }
+    catch (error) {
+      if (error instanceof SyntaxError) return value;
+      throw error;
+    }
+  }
+  if (!Array.isArray(parsed)) return parsed;
+  return parsed.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const item = row as Record<string, unknown>;
+    return { id: item.id, label: item.label, feePct: item.feePct, feeMin: item.feeMin, holdDays: item.holdDays, risk: item.risk };
+  });
+}
+
+/* A stale tab sends the version it loaded. Anything else, including a
+   body that is not valid yet, is not a version conflict. */
+function sentVersion(body: Record<string, unknown> | null): number | undefined {
+  const version = body?.version;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 0) return undefined;
+  return version;
+}
+
+function stateConflict(row: { state: unknown; version: number } | undefined) {
+  return {
+    error: "state_conflict",
+    detail: "Somebody else saved this desk while you were working. Merging.",
+    state: row?.state ?? null,
+    version: row?.version ?? 0,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
 
 /* What we last said about each desk's document, so a save every four
    seconds does not become a log line every four seconds. Only a CHANGE in
@@ -99,6 +190,33 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
   app.put("/api/tenant/state", { bodyLimit: BODY_LIMIT_BYTES }, async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    /* The need is decided from the raw body, and it is checked before
+       Zod. A caller who may not change the fee is told that, including
+       when the rest of the body is the wrong shape. They do not get a
+       400 that describes the document. */
+    const raw = asRecord(req.body);
+    const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
+    /* The version is the first answer. A tab loaded before someone else
+       saved is 409, the same shape as any other stale desk save, and it
+       is not a permission refusal. A save with no version that would change the fee is that same 409, and it writes no refusal row. */
+    const sent = sentVersion(raw);
+    if (sent !== undefined && (current?.version ?? 0) !== sent) {
+      return reply.code(409).send(stateConflict(current));
+    }
+    const mayWriteFees = canWriteSetting(who.role, CHEQUE_FEE_SCHEDULE_KEY);
+    const changingFees = chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state));
+    if (changingFees && raw?.version == null) return reply.code(409).send(stateConflict(current));
+    if (changingFees && !mayWriteFees) {
+      await audit(db, {
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "settings.cheque_fee_refused",
+        detail: { key: CHEQUE_FEE_SCHEDULE_KEY, role: who.role, staffId: who.staffId, name: who.name },
+      });
+      return reply.code(403).send({ error: "permission_denied", detail: CHEQUE_FEE_REFUSAL });
+    }
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const state = parsed.data.state;
@@ -121,24 +239,19 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        So a save carries the version it was built on. If the stored version
        has moved, this save is refused and the current document is handed
        back, so the client can merge key by key (see cdos-persist.js) rather
-       than either side losing everything.
-
-       A save with NO version behaves exactly as before. That is deliberate
-       and temporary: a browser that was already open when this deployed is
-       still running the old bridge, and breaking its saves to fix a race is
-       a bad trade. It is logged so we can see when the last one is gone,
-       and then this branch becomes a 400. */
-    const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
+       than either side losing everything. A save with no version may still write the desk, but the update matches only when the stored fee text is unchanged. */
     const expected = parsed.data.version;
     if (expected === undefined) {
       req.log.warn({ tenantId: who.tenantId }, "desk state saved without a version — an old client is still open");
-    } else if (current && current.version !== expected) {
-      return reply.code(409).send({
-        error: "state_conflict",
-        detail: "Somebody else saved this desk while you were working. Merging.",
-        state: current.state,
-        version: current.version,
-      });
+    } else if ((current?.version ?? 0) !== expected) {
+      return reply.code(409).send(stateConflict(current));
+    }
+    /* A teller's document carries a copy of the fee key. That copy is
+       not the price. The stored key is. */
+    if (!mayWriteFees) {
+      const stored = asRecord(current?.state);
+      if (stored && CHEQUE_FEE_SCHEDULE_KEY in stored) state[CHEQUE_FEE_SCHEDULE_KEY] = stored[CHEQUE_FEE_SCHEDULE_KEY];
+      else delete state[CHEQUE_FEE_SCHEDULE_KEY];
     }
 
     /* Describe what is being saved. This NEVER refuses — the browser holds
@@ -161,10 +274,45 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     await absorbStaffPins(db, who.tenantId, state);
     const now = new Date();
     const version = (current?.version ?? 0) + 1;
-    await db
-      .insert(schema.tenantState)
-      .values({ tenantId: who.tenantId, state, updatedBy: who.id, updatedAt: now, version })
-      .onConflictDoUpdate({ target: schema.tenantState.tenantId, set: { state, updatedBy: who.id, updatedAt: now, version } });
+    /* The predicate is the race. Two saves can both have read version N.
+       Only one update matches N. The other is 409 and writes nothing. */
+    const written = current
+      ? await db
+        .update(schema.tenantState)
+        .set({ state, updatedBy: who.id, updatedAt: now, version })
+        .where(and(
+          eq(schema.tenantState.tenantId, who.tenantId),
+          expected === undefined ? sql`(${schema.tenantState.state} ->> ${CHEQUE_FEE_SCHEDULE_KEY}) is not distinct from ${typeof state[CHEQUE_FEE_SCHEDULE_KEY] === "string" ? state[CHEQUE_FEE_SCHEDULE_KEY] : state[CHEQUE_FEE_SCHEDULE_KEY] == null ? null : JSON.stringify(state[CHEQUE_FEE_SCHEDULE_KEY])}` : eq(schema.tenantState.version, expected),
+        ))
+        .returning()
+      : await db
+        .insert(schema.tenantState)
+        .values({ tenantId: who.tenantId, state, updatedBy: who.id, updatedAt: now, version })
+        .onConflictDoNothing({ target: schema.tenantState.tenantId })
+        .returning();
+    if (!written.length) {
+      const fresh = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
+      return reply.code(409).send(stateConflict(fresh));
+    }
+    /* A change that landed. Who, when (`at` on the row), and the
+       price of each cheque type before and after. */
+    if (changingFees) {
+      const prev = asRecord(current?.state);
+      await audit(db, {
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "settings.cheque_fee_changed",
+        detail: {
+          staffId: who.staffId,
+          name: who.name,
+          role: who.role,
+          before: feeRows(prev ? prev[CHEQUE_FEE_SCHEDULE_KEY] : null),
+          after: feeRows(state[CHEQUE_FEE_SCHEDULE_KEY]),
+        },
+      });
+    }
     /* Say how close they are while there is still room to act. The client
        surfaces this once rather than every four seconds. */
     return {
