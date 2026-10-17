@@ -41356,6 +41356,12 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
+  /* Two decimals while a digit is still being typed. */
+  function money2(n) {
+    if (typeof n === 'string' && /^\d*\.\d{0,1}$/.test(n)) return n;
+    const x = Number(n);
+    return Number.isFinite(x) ? x.toFixed(2) : '';
+  }
   function FeeSchedule({
     schedule,
     setSchedule,
@@ -41533,10 +41539,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, t.feePct)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
       }, mayEdit ? /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        value: t.feeMin,
-        onChange: e => set(t.id, 'feeMin', +e.target.value),
-        className: "fee-field w-16 text-right px-2 py-1 outline-none",
+        type: "text",
+        inputMode: "decimal",
+        value: money2(t.feeMin),
+        onChange: e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, '')),
+        className: "fee-field w-20 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
@@ -41544,7 +41551,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         }
       }) : /*#__PURE__*/React.createElement("span", {
         style: cell
-      }, t.feeMin)), /*#__PURE__*/React.createElement("td", {
+      }, money2(t.feeMin))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
       }, mayEdit ? /*#__PURE__*/React.createElement("input", {
         type: "number",
@@ -41559,12 +41566,13 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }) : /*#__PURE__*/React.createElement("span", {
         style: cell
       }, t.holdDays)), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right font-semibold",
+        className: "px-3 py-2 text-right",
+        "data-testid": "fee-example",
         style: {
-          color: mayEdit ? CD.green : CD.mute,
+          color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(eg, homeCcy())));
+      }, money2(eg), " ", homeCcy()));
     })))), /*#__PURE__*/React.createElement("p", {
       className: "mt-2 text-[11px]",
       style: {

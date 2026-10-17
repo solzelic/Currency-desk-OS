@@ -86,6 +86,12 @@
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
+  /* Two decimals while a digit is still being typed. */
+  function money2(n) {
+    if (typeof n === 'string' && /^\d*\.\d{0,1}$/.test(n)) return n;
+    const x = Number(n);
+    return Number.isFinite(x) ? x.toFixed(2) : '';
+  }
   function FeeSchedule({ schedule, setSchedule, me }) {
     const liveEditor = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
     const [openedAsEditor] = useState(liveEditor);
@@ -140,12 +146,12 @@
                 ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.feePct}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
-                ? <input type="number" value={t.feeMin} onChange={e => set(t.id, 'feeMin', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
-                : <span style={cell}>{t.feeMin}</span>}</td>
+                ? <input type="text" inputMode="decimal" value={money2(t.feeMin)} onChange={e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, ''))} className="fee-field w-20 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                : <span style={cell}>{money2(t.feeMin)}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
                 ? <input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="fee-field w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.holdDays}</span>}</td>
-              <td className="px-3 py-2 text-right font-semibold" style={{ color: mayEdit ? CD.green : CD.mute, fontVariantNumeric: 'tabular-nums' }}>{fmt(eg, homeCcy())}</td>
+              <td className="px-3 py-2 text-right" data-testid="fee-example" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{money2(eg)} {homeCcy()}</td>
             </tr>); })}</tbody>
         </table>
       </div>
