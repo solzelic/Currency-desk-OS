@@ -174,7 +174,6 @@ describe("PINs are checked by the server", () => {
     await handle.db.update(schema.staffUsers).set({ pinHash: null });
     const state = {
       cdos_settings: {
-        deskName: "Desk 1",
         employees: [
           { id: "e1", name: "Maria Costa", code: "m.costa", pin: "4913", requirePin: true },
           { id: "e2", name: "Rana Haddad", code: "r.haddad", pin: "0000", requirePin: true },

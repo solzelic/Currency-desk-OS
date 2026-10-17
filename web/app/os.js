@@ -6094,12 +6094,367 @@
       c: "var(--cd-on-ink)"
     }), " ", busy ? 'Saving…' : 'Save PIN')));
   }
+
+  /* Rates & fees. A default spread from anyone but a manager or the owner
+     is refused, so that box is not offered to them. Every other price on
+     this panel is the owner's on screen: a grey pill and a lock, not a
+     field they type and then get refused. A manager still edits the
+     default spread. Save is absent when nothing here is editable. A save
+     the server still refuses keeps the typed numbers and repeats that
+     person's line above Save. No toast, no error code. */
+  const RATES_TELLER_LINE = 'Only the owner can change rates and fees. Ask the owner or a manager.';
+  const RATES_MANAGER_LINE = 'Only the owner can change most of these. You can change the default spread.';
+  const RATES_FIELD = 'Only the owner can change this.';
+  const RATES_SPREAD = 'A manager or the owner can change this.';
+  const rates2 = n => Number.isFinite(+n) ? (+n).toFixed(2) : '0.00';
+  function LockedValue({
+    field,
+    children
+  }) {
+    /* Pill text uses the body ink. Mute grey on the disabled chip is under 4.5:1. */
+    return /*#__PURE__*/React.createElement("span", {
+      "data-rates-locked": "1",
+      "data-rates-field": field,
+      className: "inline-flex items-center gap-1.5 text-sm px-2 py-1.5",
+      style: {
+        color: CD.text,
+        background: 'var(--cd-disabled)',
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 12,
+      c: CD.text
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }, children));
+  }
+  function RatesFees({
+    me,
+    serverRole,
+    settings,
+    setSettings
+  }) {
+    const owner = serverRole ? serverRole === 'administrator' : me.role === 'Owner';
+    const spreadOn = owner || (serverRole ? serverRole === 'branch_manager' : me.role === 'Manager');
+    const [draft, setDraft] = useState(null);
+    const [note, setNote] = useState('');
+    const rates = draft || settings;
+    const quoteHome = (() => {
+      const p = window.CDOS.deskPack && window.CDOS.deskPack();
+      return p && p.homeCurrency || 'CAD';
+    })();
+    useEffect(() => {
+      const onRefuse = () => setNote('refused');
+      window.addEventListener('cdos-rates-refused', onRefuse);
+      return () => window.removeEventListener('cdos-rates-refused', onRefuse);
+    }, []);
+    const setKey = (k, v) => {
+      setDraft({
+        ...rates,
+        [k]: v
+      });
+      setNote('');
+    };
+    const save = async () => {
+      const next = {
+        ...settings,
+        ...rates
+      };
+      setSettings(next);
+      try {
+        localStorage.setItem('cdos_settings', JSON.stringify(next));
+      } catch (e) {
+        throw e;
+      }
+      const bridge = window.CDOS_PERSIST;
+      if (!bridge || !bridge.save) throw new Error('desk save bridge is not loaded');
+      setNote((await bridge.save({
+        keepTyped: true
+      })) === 'refused' ? 'refused' : 'saved');
+    };
+    const num = (field, value, unit, onChange) => /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": field,
+      className: "flex items-center",
+      style: inSty
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      step: "0.1",
+      value: value ?? '',
+      onChange: e => onChange(+e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
+      style: {
+        width: 90,
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }), unit && /*#__PURE__*/React.createElement("span", {
+      className: "px-2 text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, unit));
+    const pick = (field, value, onChange, opts, width) => /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": field
+    }, /*#__PURE__*/React.createElement("select", {
+      value: value,
+      onChange: e => onChange(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        width
+      }
+    }, opts.map(([v, l]) => /*#__PURE__*/React.createElement("option", {
+      key: v,
+      value: v
+    }, l))));
+    const shown = (field, text) => /*#__PURE__*/React.createElement(LockedValue, {
+      field: field
+    }, text);
+    const providers = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
+    const roundTo = [['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']];
+    const canSave = owner || spreadOn;
+    const line = owner ? '' : spreadOn ? RATES_MANAGER_LINE : RATES_TELLER_LINE;
+    return /*#__PURE__*/React.createElement("div", {
+      "data-rates-panel": true
+    }, /*#__PURE__*/React.createElement(SectionTitle, {
+      icon: "coins",
+      title: "Rates & fees",
+      sub: "Two-sided pricing. The desk buys under mid and sells over mid. The gap is your margin."
+    }), !owner && /*#__PURE__*/React.createElement("div", {
+      "data-rates-owner-line": true,
+      className: "text-[12.5px] mb-4",
+      style: {
+        color: CD.ink
+      }
+    }, line), /*#__PURE__*/React.createElement(Row, {
+      title: "Rate feed provider",
+      desc: owner ? "Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads and margins are applied on top." : RATES_FIELD
+    }, owner ? pick('rateProvider', rates.rateProvider || providers[0], v => {
+      setKey('rateProvider', v);
+      try {
+        localStorage.setItem('yorkfx_rate_provider', v);
+      } catch (e) {
+        throw e;
+      }
+    }, providers.map(p => [p, p]), 230) : shown('rateProvider', rates.rateProvider || providers[0])), /*#__PURE__*/React.createElement(Row, {
+      title: "Default spread",
+      desc: RATES_SPREAD
+    }, spreadOn ? num('defaultSpread', rates.defaultSpread, '%', v => setKey('defaultSpread', v)) : shown('defaultSpread', rates2(rates.defaultSpread) + '%')), note === 'refused' && line && /*#__PURE__*/React.createElement("div", {
+      "data-rates-refusal": true,
+      role: "status",
+      className: "mt-3 p-3 text-[12.5px]",
+      style: {
+        background: 'var(--cd-chip)',
+        color: CD.ink,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9
+      }
+    }, line), canSave && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3 flex items-center justify-end gap-3"
+    }, note === 'saved' && /*#__PURE__*/React.createElement("span", {
+      "data-rates-saved": true,
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Saved"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-rates-save": true,
+      onClick: save,
+      className: "text-[12px] px-3.5 py-2 font-semibold",
+      style: {
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        borderRadius: 8
+      }
+    }, "Save")), /*#__PURE__*/React.createElement(Row, {
+      title: "Default commission",
+      desc: owner ? 'Suggested flat fee pre-filled on a new deal.' : RATES_FIELD
+    }, owner ? num('defaultFee', rates.defaultFee, settings.baseCurrency || 'CAD', v => setKey('defaultFee', v)) : shown('defaultFee', rates2(rates.defaultFee) + ' ' + (settings.baseCurrency || 'CAD'))), /*#__PURE__*/React.createElement("div", {
+      className: "mt-5 mb-1 text-sm font-medium flex items-center gap-1.5",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "activity",
+      s: 15,
+      c: CD.ink
+    }), " Margin floor"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override."), /*#__PURE__*/React.createElement(Row, {
+      title: "Target margin",
+      desc: owner ? 'At or above this, the meter reads green.' : RATES_FIELD
+    }, owner ? num('marginTargetPct', rates.marginTargetPct ?? 1, '%', v => setKey('marginTargetPct', v)) : shown('marginTargetPct', rates2(rates.marginTargetPct ?? 1) + '%')), /*#__PURE__*/React.createElement(Row, {
+      title: "Minimum floor",
+      desc: owner ? 'Below this, the deal is flagged red.' : RATES_FIELD
+    }, owner ? num('marginFloorPct', rates.marginFloorPct ?? 0.5, '%', v => setKey('marginFloorPct', v)) : shown('marginFloorPct', rates2(rates.marginFloorPct ?? 0.5) + '%')), /*#__PURE__*/React.createElement(Row, {
+      title: "Below the floor",
+      desc: owner ? 'Warn lets the teller post anyway (logged). Require override blocks the post until they confirm with a reason.' : RATES_FIELD
+    }, owner ? /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": "marginEnforce"
+    }, /*#__PURE__*/React.createElement(Seg, {
+      value: rates.marginEnforce || 'block',
+      onPick: v => setKey('marginEnforce', v),
+      opts: [['warn', 'Warn only'], ['block', 'Require override']]
+    })) : shown('marginEnforce', (rates.marginEnforce || 'block') === 'warn' ? 'Warn only' : 'Require override')), /*#__PURE__*/React.createElement("div", {
+      className: "mt-5"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Spread by currency"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-0.5 mb-2",
+      style: {
+        color: owner ? CD.mute : CD.ink
+      }
+    }, owner ? 'Tight on liquid pairs, wider on exotics. Blank uses the default. We buy and sell are previewed live.' : RATES_FIELD), /*#__PURE__*/React.createElement("div", {
+      className: "overflow-hidden",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      className: "w-full text-sm border-collapse"
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: 'var(--cd-chip)',
+        color: CD.mute
+      },
+      className: "text-[10.5px] uppercase tracking-wide text-left"
+    }, /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2"
+    }, "Currency"), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "Spot \xB7 ", quoteHome), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "Spread %"), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "We buy"), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== quoteHome).map(c => {
+      const spreads = rates.spreads || {};
+      const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
+      const custom = spreads[c] != null && spreads[c] !== '';
+      return /*#__PURE__*/React.createElement("tr", {
+        key: c,
+        style: {
+          borderTop: `1px solid ${CD.lineSoft}`
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 font-medium",
+        style: {
+          color: CD.ink
+        }
+      }, c), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right",
+        style: {
+          fontFamily: 'Space Mono, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: CD.mute
+        }
+      }, mid.toFixed(4)), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right"
+      }, owner ? /*#__PURE__*/React.createElement("span", {
+        "data-rates-field": 'spread-' + c,
+        className: "inline-flex items-center",
+        style: {
+          border: `1px solid ${custom ? CD.ink : CD.line}`,
+          borderRadius: 7,
+          overflow: 'hidden'
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "number",
+        step: "0.1",
+        value: spreads[c] ?? '',
+        onChange: e => {
+          const v = e.target.value;
+          setDraft({
+            ...rates,
+            spreads: {
+              ...(rates.spreads || {}),
+              [c]: v === '' ? '' : +v
+            }
+          });
+          setNote('');
+        },
+        placeholder: String(+rates.defaultSpread || 1.5),
+        className: "text-sm px-2 py-1.5 outline-none text-right bg-transparent",
+        style: {
+          width: 64,
+          fontVariantNumeric: 'tabular-nums'
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "px-1.5 text-[11px]",
+        style: {
+          color: CD.faint
+        }
+      }, "%")) : shown('spread-' + c, rates2(custom ? spreads[c] : +rates.defaultSpread || 1.5) + '%')), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right",
+        style: {
+          fontFamily: 'Space Mono, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: CD.flag
+        }
+      }, buyUnitCad(c, rates).toFixed(4)), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right",
+        style: {
+          fontFamily: 'Space Mono, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: CD.green
+        }
+      }, sellUnitCad(c, rates).toFixed(4)));
+    }))))), /*#__PURE__*/React.createElement("div", {
+      className: "mt-5 mb-2 text-sm font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Pay-out rounding"), /*#__PURE__*/React.createElement(Row, {
+      title: "Round the customer pay-out",
+      desc: owner ? 'Cash desks rarely hand out odd cents. Applied to the amount the customer receives.' : RATES_FIELD
+    }, owner ? /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": "payoutRound",
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement(Seg, {
+      value: rates.payoutRoundMode || 'nearest',
+      onPick: v => setKey('payoutRoundMode', v),
+      opts: [['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]
+    }), pick('payoutRoundTo', rates.payoutRoundTo ?? 0.01, v => setKey('payoutRoundTo', +v), roundTo, 116)) : shown('payoutRound', (rates.payoutRoundMode || 'nearest') + ' ' + rates2(rates.payoutRoundTo ?? 0.01))), /*#__PURE__*/React.createElement(Row, {
+      title: "Rate-lock duration",
+      desc: owner ? 'How long a customer quote holds the quoted rate before it must be re-priced.' : RATES_FIELD
+    }, owner ? pick('rateLockMins', rates.rateLockMins || 15, v => setKey('rateLockMins', +v), [5, 10, 15, 30, 60].map(m => [m, m + ' minutes']), 130) : shown('rateLockMins', (rates.rateLockMins || 15) + ' minutes')), /*#__PURE__*/React.createElement("div", {
+      className: "mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2",
+      style: {
+        background: CD.lineSoft,
+        color: CD.mute,
+        borderRadius: 9
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "coins",
+      s: 13,
+      c: CD.mute
+    }), /*#__PURE__*/React.createElement("span", null, "These prices drive every new deal in the Ledger. The spread booked at the counter is the spread that lands in ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink
+      }
+    }, "Revenue & Earnings"), ". Mid rates come from the ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink
+      }
+    }, "Rate Board"), ".")));
+  }
   function SettingsView({
     perms,
     setPerms,
     settings,
     setSettings,
     me,
+    serverRole,
     log,
     tickerCfg,
     setTicker,
@@ -6120,7 +6475,9 @@
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
-    const canSys = me.role === 'Owner' || perms.Teller.canSettings;
+    /* A teller sign-in rewrites the shared preset. The rail follows the
+       signed-in role, so a manager still sees their tabs after that. */
+    const canSys = me.role === 'Owner' || me.role === 'Manager' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [packRev, setPackRev] = useState(0);
     const [addingLoc, setAddingLoc] = useState(false); // enterprise Add-location modal (shared with Branch Network's rail)
@@ -6302,7 +6659,9 @@
         // (York FX this week, another next week) shows THEIR live details,
         // not a stale local copy. Only fill blanks \u2014 never clobber unsaved edits.
         const cfg = d.tenant.siteConfig;
-        if (cfg) setSettings(s => {
+        /* Filling a blank shop field from the public site is a settings
+           write. Only the owner may do that. */
+        if (cfg && me.role === 'Owner') setSettings(s => {
           const patch = {};
           ['phone:bizPhone', 'email:bizEmail', 'address:bizAddress', 'city:bizCity', 'region:bizRegion', 'postal:bizPostal'].forEach(pair => {
             const [src, dst] = pair.split(':');
@@ -6314,7 +6673,7 @@
             ...patch
           } : s;
         });
-      }).catch(() => {});
+      });
     }, []);
     // business hours: a template until the shop edits them; the editor and the
     // publisher both read this fallback so a fresh shop still ships sane hours
@@ -6737,7 +7096,27 @@
     const toggleCcy = code => setT({
       hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code]
     }, code);
-    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [];
+
+    /* Shop, compliance, localization, billing, payment, and role presets
+       are the owner's. Search does not offer them to anyone else. The
+       server still refuses the write. */
+    const ownerDesk = me.role === 'Owner';
+    const ownerOnlyTab = {
+      business: 1,
+      localization: 1,
+      compliance: 1,
+      billing: 1,
+      payment: 1,
+      permissions: 1
+    };
+    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [
+    /* A cashier does not get the rest of this rail. They can open
+       Rates & fees and read the locked prices. */
+    ['App settings', [['rates', 'Rates & fees', 'percent']]]];
+    const visibleNav = NAV_GROUPS.map(([group, items]) => [group, items.filter(([id]) => ownerDesk || !ownerOnlyTab[id])]).filter(([, items]) => items.length);
+    useEffect(() => {
+      if (!ownerDesk && ownerOnlyTab[tab]) setTab('account');
+    }, [tab, ownerDesk]);
     return /*#__PURE__*/React.createElement(SettingsCtx.Provider, {
       value: ctxVal
     }, /*#__PURE__*/React.createElement("div", {
@@ -6811,7 +7190,7 @@
       n: "x",
       s: 13,
       c: CD.faint
-    }))), NAV_GROUPS.map(([group, items]) => {
+    }))), visibleNav.map(([group, items]) => {
       const shownItems = items.filter(([id, label]) => navMatch(id, label));
       if (!shownItems.length) return null;
       return /*#__PURE__*/React.createElement("div", {
@@ -6838,7 +7217,7 @@
         s: 15,
         c: tab === id ? 'var(--cd-on-ink)' : CD.mute
       }), " ", label)));
-    }), canSys && navQ.trim() && !NAV_GROUPS.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && /*#__PURE__*/React.createElement("div", {
+    }), canSys && navQ.trim() && !visibleNav.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] px-2 py-3 text-center",
       style: {
         color: CD.faint
@@ -8244,15 +8623,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement(Sw, {
       on: !!settings.requireCountOnClose,
       click: () => toggleSet('requireCountOnClose', 'Require count on close')
-    })), /*#__PURE__*/React.createElement("div", {
+    })), ownerDesk && /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1 mt-6",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Handoffs"), /*#__PURE__*/React.createElement(Row, {
+    }, "Handoffs"), ownerDesk && /*#__PURE__*/React.createElement(Row, {
       title: "Require a count when the drawer changes hands",
-      desc: "When one teller hands the drawer to another, count it first and record any variance against the outgoing operator."
+      desc: "When one teller hands the drawer to another, count it first and record any variance against the outgoing operator. The owner sets this."
     }, /*#__PURE__*/React.createElement(Sw, {
       on: !!settings.requireCountOnHandoff,
       click: () => toggleSet('requireCountOnHandoff', 'Require count on handoff')
@@ -10636,332 +11015,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink
         }
       }, "Compliance"), " desk. Sanctions screening is not connected yet. Aggregation and fileable submissions follow the active pack."))));
-    })(), tab === 'rates' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
-      icon: "coins",
-      title: "Rates & fees",
-      sub: "Two-sided pricing \u2014 the desk buys under mid and sells over mid. The gap is your margin."
-    }), /*#__PURE__*/React.createElement(Row, {
-      title: "Rate feed provider",
-      desc: "Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads & margins are applied on top."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "fp-set",
-      style: {
-        position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("select", {
-      value: settings.rateProvider || 'OANDA · fxTrade rates',
-      onChange: e => {
-        set('rateProvider', e.target.value, `rate provider ${e.target.value}`);
-        try {
-          localStorage.setItem('yorkfx_rate_provider', e.target.value);
-        } catch (_) {}
-      },
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 230,
-        appearance: 'none',
-        WebkitAppearance: 'none',
-        paddingRight: 28
-      }
-    }, ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'].map(p => /*#__PURE__*/React.createElement("option", {
-      key: p,
-      value: p
-    }, p))), /*#__PURE__*/React.createElement("span", {
-      style: {
-        position: 'absolute',
-        right: 10,
-        pointerEvents: 'none',
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 13,
-      c: CD.faint
-    })))), /*#__PURE__*/React.createElement(Row, {
-      title: "Default spread",
-      desc: "Buy/sell margin over the spot rate, applied to any currency without its own spread below."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
-      style: inSty
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: settings.defaultSpread ?? '',
-      onChange: e => set('defaultSpread', +e.target.value),
-      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
-      style: {
-        width: 90,
-        fontVariantNumeric: 'tabular-nums'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2 text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, "%"))), /*#__PURE__*/React.createElement(Row, {
-      title: "Default commission",
-      desc: "Suggested flat fee pre-filled on a new deal."
-    }, /*#__PURE__*/React.createElement(Money, {
-      k: "defaultFee"
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5 mb-1 text-sm font-medium flex items-center gap-1.5",
-      style: {
-        color: CD.ink
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "activity",
-      s: 15,
-      c: CD.ink
-    }), " Margin floor"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mb-1",
-      style: {
-        color: CD.mute
-      }
-    }, "The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override."), /*#__PURE__*/React.createElement(Row, {
-      title: "Target margin",
-      desc: "At or above this, the meter reads green."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
-      style: inSty
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: settings.marginTargetPct ?? 1.0,
-      onChange: e => set('marginTargetPct', +e.target.value, `margin target ${e.target.value}%`),
-      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
-      style: {
-        width: 90,
-        fontVariantNumeric: 'tabular-nums'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2 text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, "%"))), /*#__PURE__*/React.createElement(Row, {
-      title: "Minimum floor",
-      desc: "Below this, the deal is flagged red."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
-      style: inSty
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: settings.marginFloorPct ?? 0.5,
-      onChange: e => set('marginFloorPct', +e.target.value, `margin floor ${e.target.value}%`),
-      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
-      style: {
-        width: 90,
-        fontVariantNumeric: 'tabular-nums'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2 text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, "%"))), /*#__PURE__*/React.createElement(Row, {
-      title: "Below the floor",
-      desc: "Warn lets the teller post anyway (logged); Require override blocks the post until they confirm with a reason."
-    }, /*#__PURE__*/React.createElement(Seg, {
-      value: settings.marginEnforce || 'block',
-      onPick: v => set('marginEnforce', v, `margin enforce ${v}`),
-      opts: [['warn', 'Warn only'], ['block', 'Require override']]
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between mb-2"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-sm font-medium",
-      style: {
-        color: CD.ink
-      }
-    }, "Spread by currency"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-0.5",
-      style: {
-        color: CD.mute
-      }
-    }, "Tight on liquid pairs, wider on exotics. Blank = use the default. We buy and sell are previewed live."))), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 10
-      }
-    }, /*#__PURE__*/React.createElement("table", {
-      className: "w-full text-sm border-collapse"
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-      style: {
-        background: 'var(--cd-chip)',
-        color: CD.mute
-      },
-      className: "text-[10.5px] uppercase tracking-wide text-left"
-    }, /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2"
-    }, "Currency"), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "Spot \xB7 ", quoteHome), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "Spread %"), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "We buy"), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== quoteHome).map(c => {
-      const spreads = settings.spreads || {};
-      const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
-      const eff = spreadOf(c, settings) * 100;
-      const custom = spreads[c] != null && spreads[c] !== '';
-      return /*#__PURE__*/React.createElement("tr", {
-        key: c,
-        style: {
-          borderTop: `1px solid ${CD.lineSoft}`
-        }
-      }, /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 font-medium",
-        style: {
-          color: CD.ink
-        }
-      }, c), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right",
-        style: {
-          fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums',
-          color: CD.mute
-        }
-      }, mid.toFixed(4)), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "inline-flex items-center",
-        style: {
-          border: `1px solid ${custom ? CD.ink : CD.line}`,
-          borderRadius: 7,
-          overflow: 'hidden'
-        }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        step: "0.1",
-        value: spreads[c] ?? '',
-        onChange: e => {
-          const v = e.target.value;
-          setSettings(s => ({
-            ...s,
-            spreads: {
-              ...(s.spreads || {}),
-              [c]: v === '' ? '' : +v
-            }
-          }));
-        },
-        placeholder: (+settings.defaultSpread || 1.5).toString(),
-        className: "text-sm px-2 py-1.5 outline-none text-right bg-transparent",
-        style: {
-          width: 64,
-          fontVariantNumeric: 'tabular-nums'
-        }
-      }), /*#__PURE__*/React.createElement("span", {
-        className: "px-1.5 text-[11px]",
-        style: {
-          color: CD.faint
-        }
-      }, "%"))), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right",
-        style: {
-          fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums',
-          color: CD.flag
-        }
-      }, buyUnitCad(c, settings).toFixed(4)), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right",
-        style: {
-          fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums',
-          color: CD.green
-        }
-      }, sellUnitCad(c, settings).toFixed(4)));
-    })))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-1.5 flex items-center gap-3",
-      style: {
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "flex items-center gap-1"
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 8,
-        height: 8,
-        borderRadius: 2,
-        background: CD.flag,
-        display: 'inline-block'
-      }
-    }), " We buy = what we pay the customer"), /*#__PURE__*/React.createElement("span", {
-      className: "flex items-center gap-1"
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 8,
-        height: 8,
-        borderRadius: 2,
-        background: CD.green,
-        display: 'inline-block'
-      }
-    }), " We sell = what we charge"))), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5 mb-2 text-sm font-medium",
-      style: {
-        color: CD.ink
-      }
-    }, "Pay-out rounding"), /*#__PURE__*/React.createElement(Row, {
-      title: "Round the customer pay-out",
-      desc: "Cash desks rarely hand out odd cents. Applied to the amount the customer receives."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2"
-    }, /*#__PURE__*/React.createElement(Seg, {
-      value: settings.payoutRoundMode || 'nearest',
-      onPick: v => set('payoutRoundMode', v, `rounding ${v}`),
-      opts: [['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]
-    }), /*#__PURE__*/React.createElement("select", {
-      value: settings.payoutRoundTo ?? 0.01,
-      onChange: e => set('payoutRoundTo', +e.target.value),
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 116
-      }
-    }, [['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
-      key: v,
-      value: v
-    }, l))))), /*#__PURE__*/React.createElement(Row, {
-      title: "Rate-lock duration",
-      desc: "How long a customer quote holds the quoted rate before it must be re-priced."
-    }, /*#__PURE__*/React.createElement("select", {
-      value: settings.rateLockMins || 15,
-      onChange: e => set('rateLockMins', +e.target.value, `rate lock ${e.target.value}m`),
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 130
-      }
-    }, [5, 10, 15, 30, 60].map(m => /*#__PURE__*/React.createElement("option", {
-      key: m,
-      value: m
-    }, m, " minutes")))), /*#__PURE__*/React.createElement("div", {
-      className: "mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2",
-      style: {
-        background: CD.lineSoft,
-        color: CD.mute,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "coins",
-      s: 13,
-      c: CD.mute
-    }), /*#__PURE__*/React.createElement("span", null, "These prices drive every new deal in the Ledger \u2014 the spread booked at the counter is the spread that lands in ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, "Revenue & Earnings"), ". Mid rates come from the ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, "Rate Board"), "."))), tab === 'receipts' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+    })(), tab === 'rates' && /*#__PURE__*/React.createElement(RatesFees, {
+      me: me,
+      serverRole: serverRole,
+      settings: settings,
+      setSettings: setSettings
+    }), tab === 'receipts' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "receipt",
       title: "Receipts",
       sub: "What prints on the customer's exchange receipt."
@@ -60684,6 +60743,10 @@ window.CDOS_PERSIST = (function () {
      losing everything. */
   var version = 0;
   var baseline = {};
+  /* False until the signed-in person is the owner. A teller must not
+     upload the two keys the shell derives on the way in. */
+  var savesOwnerSettings = false;
+  var reloaded = null;
 
   var SAVE_EVERY_MS = 4000;
   /* Back off rather than hammer a server that is already unhappy, but never
@@ -60705,6 +60768,29 @@ window.CDOS_PERSIST = (function () {
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
+  }
+  /* What actually goes to the server. Owners send the desk as it stands.
+     Everyone else leaves out cdos_perms and billingPlan. Those two are
+     rewritten on sign-in from the role and the plan the server already
+     has. Sending them looked like a change and the save was refused. */
+  function outgoing() {
+    var snap = snapshot();
+    if (savesOwnerSettings) return snap;
+    delete snap.cdos_perms;
+    if (typeof snap.cdos_settings === 'string') {
+      try {
+        var parsed = JSON.parse(snap.cdos_settings);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          delete parsed.billingPlan;
+          snap.cdos_settings = JSON.stringify(parsed);
+        }
+      } catch (e) {
+        /* A string that is not JSON is sent as stored. A real change in
+           it is still refused. Any other failure is a bug. */
+        if (!(e instanceof SyntaxError)) throw e;
+      }
+    }
+    return snap;
   }
   function clearKeys() { keys().forEach(function (k) { localStorage.removeItem(k); }); }
   function applyState(obj) {
@@ -60826,11 +60912,11 @@ window.CDOS_PERSIST = (function () {
     return 'empty';
   }
 
-  async function save() {
+  async function save(opts) {
     if (!tenantId) return;
     if (health === 'stopped') return;           // a person has to clear this
     if (Date.now() < nextAttemptAt) return;     // backing off
-    var snap = snapshot();
+    var snap = outgoing();
     var sig = JSON.stringify(snap);
     if (sig === lastSig) return; // unchanged since the last successful save
 
@@ -60893,6 +60979,58 @@ window.CDOS_PERSIST = (function () {
       });
     }
 
+    /* A real change to an owner-only setting. Put the stored document
+       back and keep saving. Stopping here used to freeze every later
+       customer and day-state write for the rest of the session.
+       keepTyped is the Rates & fees Save: the panel keeps what was
+       typed and says so itself. This path must not toast, and it must
+       not put an error code on screen. */
+    if (r.status === 403) {
+      var raw = await r.text();
+      var keepTyped = !!(opts && opts.keepTyped);
+      if (!keepTyped) {
+        /* The refusal names the rule. A body that is not JSON is shown
+           as written, so a failure to parse is not dropped. */
+        var detail = 'Only the owner can change that setting. Nothing was saved.';
+        if (raw) {
+          try {
+            var denied = JSON.parse(raw);
+            detail = (denied && (denied.detail || denied.message)) || detail;
+          } catch (e) {
+            if (!(e instanceof SyntaxError)) throw e;
+            detail = raw;
+          }
+        }
+        announce({
+          level: 'retrying', code: 'settings_forbidden',
+          detail: detail,
+        });
+      }
+      var again;
+      try {
+        again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
+      } catch (e) {
+        return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      }
+      if (!again.ok) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      var fresh = await again.json();
+      if (!fresh || !fresh.state) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      applyState(fresh.state);
+      if (typeof reloaded === 'function') reloaded();
+      version = typeof fresh.version === 'number' ? fresh.version : version;
+      baseline = snapshot();
+      lastSig = JSON.stringify(outgoing());
+      if (keepTyped) {
+        /* The bottom strip is the toast. This refusal does not use it. */
+        var toast = document.getElementById('cdos-persist-banner');
+        if (toast) toast.remove();
+        if (typeof window.dispatchEvent !== 'function') throw new Error('desk save bridge is not loaded');
+        window.dispatchEvent(new CustomEvent('cdos-rates-refused'));
+        return 'refused';
+      }
+      return;
+    }
+
     /* Session gone. Retrying cannot fix it either; the OS handles the
        sign-out, we just stop pretending we are saving. */
     if (r.status === 401) {
@@ -60915,7 +61053,7 @@ window.CDOS_PERSIST = (function () {
     timer = setInterval(save, SAVE_EVERY_MS);
     window.addEventListener('beforeunload', function () {
       if (!tenantId || health === 'stopped') return;
-      var snap = snapshot();
+      var snap = outgoing();
       if (JSON.stringify(snap) === lastSig) return;
       try {
         /* Carries the version like any other save. There is no chance to
@@ -60944,10 +61082,14 @@ window.CDOS_PERSIST = (function () {
   // (after seeding a fresh desk we save() explicitly, which sets this)
   function markClean() { baseline = snapshot(); lastSig = JSON.stringify(baseline); }
 
+  function setOwner(isOwner) { savesOwnerSettings = !!isOwner; }
+  function onReloaded(fn) { reloaded = typeof fn === 'function' ? fn : null; return function () { if (reloaded === fn) reloaded = null; }; }
+
   return {
     begin: begin, save: save, end: end, startAutosave: startAutosave,
     snapshot: snapshot, applyState: applyState, clearKeys: clearKeys,
     markClean: markClean, tenant: function () { return tenantId; },
+    setOwner: setOwner, onReloaded: onReloaded,
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
     /* Exposed because it is the one piece of logic in this file worth
@@ -65532,7 +65674,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null); // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null); // { title, sub, name, expected, onOk } when a PIN is being asked
+    /* The bridge must know the role before hydrate, because the first
+       save can run inside it. A missing bridge is a boot failure. */
+    const markPersistRole = role => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.setOwner) throw new Error('desk save bridge is not loaded');
+      window.CDOS_PERSIST.setOwner(role === 'Owner');
+    };
     const applyRole = s => {
+      markPersistRole(s.role);
       setMe({
         name: s.name,
         role: s.role
@@ -65774,10 +65923,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
               _adopted: undefined
             }]
           }));
-          if (u.plan) setSettings(s => ({
+          /* The plan is the owner's field. Copying it for anyone else is a settings write. */
+          if (u.plan && rec.role === 'Owner') setSettings(s => ({
             ...s,
             billingPlan: u.plan
           }));
+          markPersistRole(rec.role);
           srvUserRef.current = u;
           setSrvUser(u);
           setUser(rec.code || rec.name);
@@ -66582,6 +66733,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         } catch (e) {}
       }, 0);
     };
+    useEffect(() => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.onReloaded) return;
+      return window.CDOS_PERSIST.onReloaded(function () {
+        reseatFromStorage();
+      });
+    }, []);
     // A brand-new desk starts CLEAN (no demo transactions/clients), seeded from
     // the onboarding answers: business identity, home currency, ID threshold,
     // one branch named for the business, the owner as the sole employee.
@@ -66839,10 +66996,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             _adopted: undefined
           }]
         }));
-        if (srvPlan) setSettings(s => ({
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({
           ...s,
           billingPlan: srvPlan
         }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
         setUser(rec.code || rec.name);
@@ -66858,10 +67016,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             _adopted: undefined
           }]
         }));
-        if (srvPlan) setSettings(s => ({
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({
           ...s,
           billingPlan: srvPlan
         }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
         setUser(rec.code || rec.name);
@@ -66907,6 +67066,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           ...s,
           employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec]
         }));
+        markPersistRole('Owner');
         srvUserRef.current = u && u.tenantId ? u : null;
         setSrvUser(u && u.tenantId ? u : null);
         setUser(rec.code);
@@ -66920,6 +67080,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       current: pwTemp && pwTemp.current,
       onDone: async () => {
         setPwTemp(null);
+        markPersistRole(authRec && authRec.role);
         await hydrateTenant();
         routeAfterAuth(authRec);
       },
@@ -66981,6 +67142,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (meApps && id !== 'settings' && !meApps.includes(id)) return false;
       if (id === 'dashboard' || id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
       if (id === 'till') return can('canViewReports') || can('canCloseDay');
+      /* Settings stays off a teller's dock. They open Rates & fees from
+         their profile. The panel locks what they cannot change. */
       if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;
     };
@@ -67269,6 +67432,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             settings,
             setSettings,
             me,
+            serverRole: srvUser && srvUser.role,
             log,
             tickerCfg,
             setTicker,
