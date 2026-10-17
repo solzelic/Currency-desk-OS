@@ -684,10 +684,8 @@
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
-    /* An owner and a manager are not gated by the shared teller preset.
-       A teller sign-in rewrites that preset, and it used to hide every
-       settings tab from the manager who signed in next — including the
-       public site, which is theirs to publish. */
+    /* A teller sign-in rewrites the shared preset. The rail follows the
+       signed-in role, so a manager still sees their tabs after that. */
     const canSys = me.role === 'Owner' || me.role === 'Manager' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [packRev, setPackRev] = useState(0);
@@ -792,8 +790,6 @@
     const [siteBusy, setSiteBusy] = useState(false);
     const [pubMsg, setPubMsg] = useState('');
     const [pubBusy, setPubBusy] = useState(false);
-    const [pubDraft, setPubDraft] = useState(null);
-    const HOURS_SEED = [{ days: 'Mon–Fri', hours: '9:30am–6:00pm' }, { days: 'Sat–Sun & holidays', hours: '10:00am–5:00pm' }];
     useEffect(() => {
       if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
       fetch('/api/tenant', { credentials: 'same-origin' })
@@ -802,29 +798,36 @@
           if (!d || !d.tenant) return;
           setSiteInfo(d.tenant);
           setSiteDraft(d.tenant.siteDomain || '');
-          /* Contact and hours publish on their own tab, straight to the
-             public site. Copying them into desk settings made a manager's
-             open of this screen look like an owner-only write. */
-          const cfg = d.tenant.siteConfig || {};
-          setPubDraft(current => current || {
-            phone: cfg.phone || '', email: cfg.email || '',
-            address: cfg.address || '', city: cfg.city || '', region: cfg.region || '', postal: cfg.postal || '',
-            hours: (Array.isArray(cfg.hours) && cfg.hours.length) ? cfg.hours : HOURS_SEED,
+          // adopt whatever this tenant already published so switching shops
+          // (York FX this week, another next week) shows THEIR live details,
+          // not a stale local copy. Only fill blanks \u2014 never clobber unsaved edits.
+          const cfg = d.tenant.siteConfig;
+          /* Filling a blank shop field from the public site is a settings
+             write. Only the owner may do that. */
+          if (cfg && me.role === 'Owner') setSettings(s => {
+            const patch = {};
+            ['phone:bizPhone', 'email:bizEmail', 'address:bizAddress', 'city:bizCity', 'region:bizRegion', 'postal:bizPostal'].forEach(pair => {
+              const [src, dst] = pair.split(':');
+              if (cfg[src] && !s[dst]) patch[dst] = cfg[src];
+            });
+            if (Array.isArray(cfg.hours) && cfg.hours.length && !(Array.isArray(s.hours) && s.hours.length)) patch.hours = cfg.hours;
+            return Object.keys(patch).length ? { ...s, ...patch } : s;
           });
-        })
-        .catch(() => {});
+        });
     }, []);
-    const pub = pubDraft || { phone: '', email: '', address: '', city: '', region: '', postal: '', hours: HOURS_SEED };
-    const setPub = (patch) => setPubDraft({ ...pub, ...patch });
-    const setPubHours = (next) => setPub({ hours: next });
-    /* Published on its own, not written into the desk snapshot. A manager
-       may do this. A teller is refused by the server. */
+    // business hours: a template until the shop edits them; the editor and the
+    // publisher both read this fallback so a fresh shop still ships sane hours
+    const HOURS_SEED = [{ days: 'Mon–Fri', hours: '9:30am–6:00pm' }, { days: 'Sat–Sun & holidays', hours: '10:00am–5:00pm' }];
+    const hoursList = Array.isArray(settings.hours) && settings.hours.length ? settings.hours : HOURS_SEED;
+    const setHours = (next) => setSettings(s => ({ ...s, hours: next }));
+    // one source of truth: the same phone/email/address/hours the desk shows
+    // are what the public site publishes
     const publishSiteConfig = () => {
       setPubBusy(true); setPubMsg('');
       const body = { siteConfig: {
-        phone: pub.phone || '', email: pub.email || '',
-        address: pub.address || '', city: pub.city || '', region: pub.region || '', postal: pub.postal || '',
-        hours: (pub.hours || []).filter(h => h && String(h.days).trim() && String(h.hours).trim()),
+        phone: settings.bizPhone || '', email: settings.bizEmail || '',
+        address: settings.bizAddress || '', city: settings.bizCity || '', region: settings.bizRegion || '', postal: settings.bizPostal || '',
+        hours: hoursList.filter(h => h && String(h.days).trim() && String(h.hours).trim()),
       } };
       fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
         .then(async r => {
@@ -863,7 +866,7 @@
       setPwForm({ cur: '', a: '', b: '', msg: 'Password changed.', busy: false });
       setTimeout(() => setPwForm(null), 1600);
     };
-    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity name address', public: 'phone hours contact publish website visit', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
+    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
     const navMatch = (id, label) => { const q = navQ.trim().toLowerCase(); if (!q) return true; return (label + ' ' + (NAV_KEYWORDS[id] || '')).toLowerCase().includes(q); };
     /* "Reset demo data" IS GONE, and it is worth saying why rather than
        leaving a gap somebody fills back in.
@@ -943,6 +946,7 @@
       else exportLedger();
     };
     const inits = (n) => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+    // a staff member can ALWAYS manage their own profile; system + app settings need canSettings
     const myProf = (settings.staff && settings.staff[me.name]) || {};
     const setProf = (k, v) => setSettings(s => ({ ...s, staff: { ...(s.staff || {}), [me.name]: { ...((s.staff || {})[me.name] || {}), [k]: v } } }));
     // the signed-in user's own account record — holds their transaction PIN
@@ -986,16 +990,14 @@
     const setT = (patch, note) => { setTicker(t => ({ ...t, ...patch })); if (note) log('Ticker updated', note); };
     const toggleCcy = (code) => setT({ hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code] }, code);
 
-    /* Shop, compliance thresholds, localization, billing, and role presets
-       are the owner's. A teller with "open settings" still does not get
-       those rows, including in search. The server refuses the write. */
+    /* Shop, compliance, localization, billing, payment, and role presets
+       are the owner's. Search does not offer them to anyone else. The
+       server still refuses the write. */
     const ownerDesk = me.role === 'Owner';
-    const canPublishSite = ownerDesk || me.role === 'Manager';
     const ownerOnlyTab = { business: 1, localization: 1, compliance: 1, billing: 1, payment: 1, permissions: 1 };
     const NAV_GROUPS = canSys ? [
       ['Business', [
         ['business', 'Business profile', 'building'],
-        ['public', 'Public site', 'globe'],
         ['locations', 'Locations & tills', 'wallet'],
         ['employees', 'Employees', 'users'],
         ['localization', 'Localization', 'globe'],
@@ -1021,7 +1023,7 @@
       ]],
     ] : [];
     const visibleNav = NAV_GROUPS
-      .map(([group, items]) => [group, items.filter(([id]) => (ownerDesk || !ownerOnlyTab[id]) && (id !== 'public' || canPublishSite))])
+      .map(([group, items]) => [group, items.filter(([id]) => ownerDesk || !ownerOnlyTab[id])])
       .filter(([, items]) => items.length);
     useEffect(() => { if (!ownerDesk && ownerOnlyTab[tab]) setTab('account'); }, [tab, ownerDesk]);
 
@@ -1374,7 +1376,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <Sw on={!!settings.requireCountOnClose} click={() => toggleSet('requireCountOnClose', 'Require count on close')} />
           </Row>
           {ownerDesk && <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Handoffs</div>}
-          {ownerDesk && <Row title="Require a count when the drawer changes hands" desc="When one teller hands the drawer to another, count it first and record any variance against the outgoing operator.">
+          {ownerDesk && <Row title="Require a count when the drawer changes hands" desc="When one teller hands the drawer to another, count it first and record any variance against the outgoing operator. The owner sets this.">
             <Sw on={!!settings.requireCountOnHandoff} click={() => toggleSet('requireCountOnHandoff', 'Require count on handoff')} />
           </Row>}
           <p className="mt-6 text-[11px]" style={{ color: CD.faint }}>The opening float is issued by the vault and is never editable in the Till — these settings govern only how the physical count is taken and checked against it.</p>
@@ -1646,6 +1648,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <Field label="Country"><select value={settings.bizCountry || ''} onChange={e => set('bizCountry', e.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}><option value="">Select a country…</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></Field>
           </div>
 
+          <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
+            <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Business hours</div>
+            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 560 }}>When you're open. Shown on your public site's Visit page — each row is a set of days and the hours for it.</div>
+            {hoursList.map((h, i) => (
+              <div key={i} className="flex items-center gap-2 mb-1.5">
+                <input value={h.days || ''} onChange={ev => setHours(hoursList.map((x, j) => j === i ? { ...x, days: ev.target.value } : x))} placeholder="Mon–Fri" className="text-[13px] px-2.5 py-2 outline-none" style={{ ...inSty, width: 190 }} />
+                <span className="text-[12px] flex-none" style={{ color: CD.faint }}>→</span>
+                <input value={h.hours || ''} onChange={ev => setHours(hoursList.map((x, j) => j === i ? { ...x, hours: ev.target.value } : x))} placeholder="9:30am–6:00pm" className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={inSty} />
+                <button onClick={() => setHours(hoursList.filter((_, j) => j !== i))} title="Remove row" className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 7, color: CD.faint }}><Ic n="trash" s={14} /></button>
+              </div>
+            ))}
+            <button onClick={() => setHours([...hoursList, { days: '', hours: '' }])} className="text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1" style={{ border: `1px dashed ${CD.line}`, borderRadius: 8, color: CD.mute }}><Ic n="plus" s={13} /> Add hours row</button>
+          </div>
+
           {siteInfo && siteInfo.siteSlug && (() => {
             const siteUrl = window.location.origin + '/sites/' + siteInfo.siteSlug + '/';
             return (
@@ -1664,7 +1680,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   </div>
                 </Field>
                 {siteInfo.siteDomain && <div className="text-[11px] mt-1.5" style={{ color: CD.green }}>Connected: <b style={{ fontFamily: 'Space Mono, monospace' }}>{siteInfo.siteDomain}</b> serves your site the moment DNS points here.</div>}
-                <div className="text-[11px] mt-3" style={{ color: CD.mute }}>Contact and hours are published from Public site. A manager can do that. The domain stays here.</div>
+                <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+                  <div className="text-[11px] mb-1.5" style={{ color: CD.mute }}>Push contact &amp; hours to the site</div>
+                  <div className="text-[10.5px] mb-2.5" style={{ color: CD.faint }}>Publishes the phone, email, address and business hours from above — the site updates the moment you do.</div>
+                  <div className="p-2.5 mb-2.5 text-[11px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-paper-soft)', color: CD.mute, lineHeight: 1.7 }}>
+                    <div><b style={{ color: CD.ink }}>{settings.bizPhone || '—'}</b>{settings.bizEmail ? ' · ' + settings.bizEmail : ''}</div>
+                    {settings.bizAddress && <div>{settings.bizAddress}{settings.bizCity ? ', ' + settings.bizCity : ''}</div>}
+                    {hoursList.filter(h => h.days && h.hours).map((h, i) => <div key={i}>{h.days} {h.hours}</div>)}
+                  </div>
+                  <button onClick={publishSiteConfig} disabled={pubBusy} className="text-[12px] px-3 py-2 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: pubBusy ? 0.5 : 1 }}>Publish contact &amp; hours →</button>
+                  {siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && <span className="text-[10.5px] ml-2.5" style={{ color: CD.faint }}>Last published {new Date(siteInfo.siteConfig.updatedAt).toLocaleString()}</span>}
+                  {pubMsg && <div className="text-[11px] mt-1.5" style={{ color: pubMsg.startsWith('Published') ? CD.green : CD.flag }}>{pubMsg}</div>}
+                </div>
                 {siteMsg && <div className="text-[11px] mt-1.5" style={{ color: siteMsg.startsWith('Saved') || siteMsg.startsWith('Domain') ? CD.green : CD.flag }}>{siteMsg}</div>}
               </div>
             );
@@ -1679,36 +1706,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <Field label="FINTRAC contact name" desc="Compliance contact; must match FWR."><Inp k="fintracContactName" placeholder="Compliance officer name" /></Field>
             </div>
           </div>) : null}
-        </div>)}
-
-        {tab === 'public' && canPublishSite && (<div>
-          <SectionTitle icon="globe" title="Public site" sub="Phone, address and hours on the customer site. Publishing sends them straight to the site. It does not change the desk's own settings." />
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Phone"><input value={pub.phone} onChange={e => setPub({ phone: e.target.value })} placeholder="(416) 555-0100" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-            <Field label="Email"><input value={pub.email} onChange={e => setPub({ email: e.target.value })} placeholder="desk@business.com" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-            <Field label="Street address"><input value={pub.address} onChange={e => setPub({ address: e.target.value })} placeholder="120 Adelaide St W" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-            <Field label="City"><input value={pub.city} onChange={e => setPub({ city: e.target.value })} placeholder="Toronto" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-            <Field label="Region"><input value={pub.region} onChange={e => setPub({ region: e.target.value })} placeholder="ON" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-            <Field label="Postal / ZIP"><input value={pub.postal} onChange={e => setPub({ postal: e.target.value })} placeholder="M5H 1T1" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-          </div>
-          <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
-            <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Business hours</div>
-            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 560 }}>When you're open. Each row is a set of days and the hours for it. Nothing here is saved until you publish.</div>
-            {(pub.hours || []).map((h, i) => (
-              <div key={i} className="flex items-center gap-2 mb-1.5">
-                <input value={h.days || ''} onChange={ev => setPubHours((pub.hours || []).map((x, j) => j === i ? { ...x, days: ev.target.value } : x))} placeholder="Mon–Fri" className="text-[13px] px-2.5 py-2 outline-none" style={{ ...inSty, width: 190 }} />
-                <span className="text-[12px] flex-none" style={{ color: CD.faint }}>→</span>
-                <input value={h.hours || ''} onChange={ev => setPubHours((pub.hours || []).map((x, j) => j === i ? { ...x, hours: ev.target.value } : x))} placeholder="9:30am–6:00pm" className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={inSty} />
-                <button onClick={() => setPubHours((pub.hours || []).filter((_, j) => j !== i))} title="Remove row" className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 7, color: CD.faint }}><Ic n="trash" s={14} /></button>
-              </div>
-            ))}
-            <button onClick={() => setPubHours([...(pub.hours || []), { days: '', hours: '' }])} className="text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1" style={{ border: `1px dashed ${CD.line}`, borderRadius: 8, color: CD.mute }}><Ic n="plus" s={13} /> Add hours row</button>
-          </div>
-          <div className="mt-4">
-            <button onClick={publishSiteConfig} disabled={pubBusy} className="text-[12px] px-3 py-2 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: pubBusy ? 0.5 : 1 }}>Publish contact &amp; hours →</button>
-            {siteInfo && siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && <span className="text-[10.5px] ml-2.5" style={{ color: CD.faint }}>Last published {new Date(siteInfo.siteConfig.updatedAt).toLocaleString()}</span>}
-            {pubMsg && <div className="text-[11px] mt-1.5" style={{ color: pubMsg.startsWith('Published') ? CD.green : CD.flag }}>{pubMsg}</div>}
-          </div>
         </div>)}
 
         {tab === 'locations' && (<div>
@@ -2009,6 +2006,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
           <Row title="Rate feed provider" desc="Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads & margins are applied on top."><div className="fp-set" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}><select value={settings.rateProvider || 'OANDA · fxTrade rates'} onChange={e => { set('rateProvider', e.target.value, `rate provider ${e.target.value}`); try { localStorage.setItem('yorkfx_rate_provider', e.target.value); } catch (_) {} }} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 230, appearance: 'none', WebkitAppearance: 'none', paddingRight: 28 }}>{['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'].map(p => <option key={p} value={p}>{p}</option>)}</select><span style={{ position: 'absolute', right: 10, pointerEvents: 'none', color: CD.faint }}><Ic n="chev" s={13} c={CD.faint} /></span></div></Row>
 
+          {/* A manager or the owner sets the default spread. A cashier does not see the row. The server refuses their write. */}
           {(ownerDesk || me.role === 'Manager') && <Row title="Default spread" desc="Buy/sell margin over the spot rate, applied to any currency without its own spread below. A manager or the owner sets this."><div className="flex items-center" style={inSty}><input type="number" step="0.1" value={settings.defaultSpread ?? ''} onChange={e => set('defaultSpread', +e.target.value)} className="text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ width: 90, fontVariantNumeric: 'tabular-nums' }} /><span className="px-2 text-[11px]" style={{ color: CD.mute }}>%</span></div></Row>}
           <Row title="Default commission" desc="Suggested flat fee pre-filled on a new deal."><Money k="defaultFee" /></Row>
 

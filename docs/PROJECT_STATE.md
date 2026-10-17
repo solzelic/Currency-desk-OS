@@ -78,9 +78,9 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   an allowlist of desk fields their own screens write (their account,
   the people a sign-in adopts, and the manager's app settings). A
   manager may also change the default spread. Every other field in
-  the desk settings — shop, compliance including the large-cash line,
+  the desk settings (shop, compliance including the large-cash line,
   localization, billing, hours and timezone, role presets, and the
-  handoff count — is the owner's. A teller who sends a different
+  handoff count) is the owner's. A teller who sends a different
   default spread is refused, audited, and the stored spread is kept.
   A different value on `PUT /api/tenant/state` is 403, an audit row, and
   nothing in that save is written. An equal value, or a key the client
@@ -89,11 +89,8 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   A refusal reloads the stored desk and saving continues. Settings
   search hides the owner-only tabs. The settings rail follows the
   signed-in role, so a manager still sees it after a teller has
-  rewritten the shared preset. Public contact and hours are a
-  separate tab a manager can see, published with `PATCH /api/tenant`.
-  A teller who tries that is refused and audited. A manager cannot move
-  the threshold. `PUT /api/ledger/desk-thresholds` and the EU pack opt-in
-  were already owner-only; a refused attempt on either is audited.
+  rewritten the shared preset. A manager cannot move the threshold.
+  `PUT /api/ledger/desk-thresholds` was already limited to the owner.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
@@ -703,16 +700,16 @@ officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
 
-**2026-10-12**, owner-only settings. Non-owners may change only the
+**2026-10-17**, owner-only settings. Non-owners may change only the
 allowlist their screens write. A manager may also change the default
 spread. A teller who sends a different default spread is refused,
 audited, and the stored spread is kept. A different owner-only value,
 including the large-cash line, is refused whole and audited. Leaving a
 derived key out (role presets, billing plan) keeps the stored value
 and saves the rest. A refusal reloads the stored desk and saving
-continues. Public contact and hours publish from a manager tab. The
-settings rail follows the signed-in role, so that tab stays available
-after a teller has rewritten the shared preset.
+continues. The settings rail follows the signed-in role. A manager
+cannot move the large-cash line. The ledger threshold route was
+already the owner's.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

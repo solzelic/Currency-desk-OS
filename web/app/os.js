@@ -6120,10 +6120,8 @@
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
-    /* An owner and a manager are not gated by the shared teller preset.
-       A teller sign-in rewrites that preset, and it used to hide every
-       settings tab from the manager who signed in next — including the
-       public site, which is theirs to publish. */
+    /* A teller sign-in rewrites the shared preset. The rail follows the
+       signed-in role, so a manager still sees their tabs after that. */
     const canSys = me.role === 'Owner' || me.role === 'Manager' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [packRev, setPackRev] = useState(0);
@@ -6294,14 +6292,6 @@
     const [siteBusy, setSiteBusy] = useState(false);
     const [pubMsg, setPubMsg] = useState('');
     const [pubBusy, setPubBusy] = useState(false);
-    const [pubDraft, setPubDraft] = useState(null);
-    const HOURS_SEED = [{
-      days: 'Mon–Fri',
-      hours: '9:30am–6:00pm'
-    }, {
-      days: 'Sat–Sun & holidays',
-      hours: '10:00am–5:00pm'
-    }];
     useEffect(() => {
       if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
       fetch('/api/tenant', {
@@ -6310,51 +6300,54 @@
         if (!d || !d.tenant) return;
         setSiteInfo(d.tenant);
         setSiteDraft(d.tenant.siteDomain || '');
-        /* Contact and hours publish on their own tab, straight to the
-           public site. Copying them into desk settings made a manager's
-           open of this screen look like an owner-only write. */
-        const cfg = d.tenant.siteConfig || {};
-        setPubDraft(current => current || {
-          phone: cfg.phone || '',
-          email: cfg.email || '',
-          address: cfg.address || '',
-          city: cfg.city || '',
-          region: cfg.region || '',
-          postal: cfg.postal || '',
-          hours: Array.isArray(cfg.hours) && cfg.hours.length ? cfg.hours : HOURS_SEED
+        // adopt whatever this tenant already published so switching shops
+        // (York FX this week, another next week) shows THEIR live details,
+        // not a stale local copy. Only fill blanks \u2014 never clobber unsaved edits.
+        const cfg = d.tenant.siteConfig;
+        /* Filling a blank shop field from the public site is a settings
+           write. Only the owner may do that. */
+        if (cfg && me.role === 'Owner') setSettings(s => {
+          const patch = {};
+          ['phone:bizPhone', 'email:bizEmail', 'address:bizAddress', 'city:bizCity', 'region:bizRegion', 'postal:bizPostal'].forEach(pair => {
+            const [src, dst] = pair.split(':');
+            if (cfg[src] && !s[dst]) patch[dst] = cfg[src];
+          });
+          if (Array.isArray(cfg.hours) && cfg.hours.length && !(Array.isArray(s.hours) && s.hours.length)) patch.hours = cfg.hours;
+          return Object.keys(patch).length ? {
+            ...s,
+            ...patch
+          } : s;
         });
-      }).catch(() => {});
+      });
     }, []);
-    const pub = pubDraft || {
-      phone: '',
-      email: '',
-      address: '',
-      city: '',
-      region: '',
-      postal: '',
-      hours: HOURS_SEED
-    };
-    const setPub = patch => setPubDraft({
-      ...pub,
-      ...patch
-    });
-    const setPubHours = next => setPub({
+    // business hours: a template until the shop edits them; the editor and the
+    // publisher both read this fallback so a fresh shop still ships sane hours
+    const HOURS_SEED = [{
+      days: 'Mon–Fri',
+      hours: '9:30am–6:00pm'
+    }, {
+      days: 'Sat–Sun & holidays',
+      hours: '10:00am–5:00pm'
+    }];
+    const hoursList = Array.isArray(settings.hours) && settings.hours.length ? settings.hours : HOURS_SEED;
+    const setHours = next => setSettings(s => ({
+      ...s,
       hours: next
-    });
-    /* Published on its own, not written into the desk snapshot. A manager
-       may do this. A teller is refused by the server. */
+    }));
+    // one source of truth: the same phone/email/address/hours the desk shows
+    // are what the public site publishes
     const publishSiteConfig = () => {
       setPubBusy(true);
       setPubMsg('');
       const body = {
         siteConfig: {
-          phone: pub.phone || '',
-          email: pub.email || '',
-          address: pub.address || '',
-          city: pub.city || '',
-          region: pub.region || '',
-          postal: pub.postal || '',
-          hours: (pub.hours || []).filter(h => h && String(h.days).trim() && String(h.hours).trim())
+          phone: settings.bizPhone || '',
+          email: settings.bizEmail || '',
+          address: settings.bizAddress || '',
+          city: settings.bizCity || '',
+          region: settings.bizRegion || '',
+          postal: settings.bizPostal || '',
+          hours: hoursList.filter(h => h && String(h.days).trim() && String(h.hours).trim())
         }
       };
       fetch('/api/tenant', {
@@ -6468,7 +6461,6 @@
     };
     const NAV_KEYWORDS = {
       business: 'logo msb fintrac reporting entity name address',
-      public: 'phone hours contact publish website visit',
       locations: 'branch till teller station',
       localization: 'currency timezone date time format region',
       compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code',
@@ -6613,6 +6605,7 @@
       });else exportLedger();
     };
     const inits = n => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+    // a staff member can ALWAYS manage their own profile; system + app settings need canSettings
     const myProf = settings.staff && settings.staff[me.name] || {};
     const setProf = (k, v) => setSettings(s => ({
       ...s,
@@ -6749,11 +6742,10 @@
       hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code]
     }, code);
 
-    /* Shop, compliance thresholds, localization, billing, and role presets
-       are the owner's. A teller with "open settings" still does not get
-       those rows, including in search. The server refuses the write. */
+    /* Shop, compliance, localization, billing, payment, and role presets
+       are the owner's. Search does not offer them to anyone else. The
+       server still refuses the write. */
     const ownerDesk = me.role === 'Owner';
-    const canPublishSite = ownerDesk || me.role === 'Manager';
     const ownerOnlyTab = {
       business: 1,
       localization: 1,
@@ -6762,8 +6754,8 @@
       payment: 1,
       permissions: 1
     };
-    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['public', 'Public site', 'globe'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [];
-    const visibleNav = NAV_GROUPS.map(([group, items]) => [group, items.filter(([id]) => (ownerDesk || !ownerOnlyTab[id]) && (id !== 'public' || canPublishSite))]).filter(([, items]) => items.length);
+    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [];
+    const visibleNav = NAV_GROUPS.map(([group, items]) => [group, items.filter(([id]) => ownerDesk || !ownerOnlyTab[id])]).filter(([, items]) => items.length);
     useEffect(() => {
       if (!ownerDesk && ownerOnlyTab[tab]) setTab('account');
     }, [tab, ownerDesk]);
@@ -8281,7 +8273,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, "Handoffs"), ownerDesk && /*#__PURE__*/React.createElement(Row, {
       title: "Require a count when the drawer changes hands",
-      desc: "When one teller hands the drawer to another, count it first and record any variance against the outgoing operator."
+      desc: "When one teller hands the drawer to another, count it first and record any variance against the outgoing operator. The owner sets this."
     }, /*#__PURE__*/React.createElement(Sw, {
       on: !!settings.requireCountOnHandoff,
       click: () => toggleSet('requireCountOnHandoff', 'Require count on handoff')
@@ -9430,7 +9422,80 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       value: ""
     }, "Select a country\u2026"), COUNTRIES.map(c => /*#__PURE__*/React.createElement("option", {
       key: c
-    }, c))))), siteInfo && siteInfo.siteSlug && (() => {
+    }, c))))), /*#__PURE__*/React.createElement("div", {
+      className: "mt-5 pt-4",
+      style: {
+        borderTop: `1px solid ${CD.line}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] uppercase tracking-widest mb-1",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Business hours"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-3",
+      style: {
+        color: CD.mute,
+        maxWidth: 560
+      }
+    }, "When you're open. Shown on your public site's Visit page \u2014 each row is a set of days and the hours for it."), hoursList.map((h, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      className: "flex items-center gap-2 mb-1.5"
+    }, /*#__PURE__*/React.createElement("input", {
+      value: h.days || '',
+      onChange: ev => setHours(hoursList.map((x, j) => j === i ? {
+        ...x,
+        days: ev.target.value
+      } : x)),
+      placeholder: "Mon\u2013Fri",
+      className: "text-[13px] px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        width: 190
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px] flex-none",
+      style: {
+        color: CD.faint
+      }
+    }, "\u2192"), /*#__PURE__*/React.createElement("input", {
+      value: h.hours || '',
+      onChange: ev => setHours(hoursList.map((x, j) => j === i ? {
+        ...x,
+        hours: ev.target.value
+      } : x)),
+      placeholder: "9:30am\u20136:00pm",
+      className: "flex-1 text-[13px] px-2.5 py-2 outline-none",
+      style: inSty
+    }), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setHours(hoursList.filter((_, j) => j !== i)),
+      title: "Remove row",
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 30,
+        height: 30,
+        borderRadius: 7,
+        color: CD.faint
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "trash",
+      s: 14
+    })))), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setHours([...hoursList, {
+        days: '',
+        hours: ''
+      }]),
+      className: "text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1",
+      style: {
+        border: `1px dashed ${CD.line}`,
+        borderRadius: 8,
+        color: CD.mute
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "plus",
+      s: 13
+    }), " Add hours row")), siteInfo && siteInfo.siteSlug && (() => {
       const siteUrl = window.location.origin + '/sites/' + siteInfo.siteSlug + '/';
       return /*#__PURE__*/React.createElement("div", {
         className: "mt-5 pt-4",
@@ -9512,11 +9577,56 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontFamily: 'Space Mono, monospace'
         }
       }, siteInfo.siteDomain), " serves your site the moment DNS points here."), /*#__PURE__*/React.createElement("div", {
-        className: "text-[11px] mt-3",
+        className: "mt-4 pt-3",
+        style: {
+          borderTop: `1px solid ${CD.lineSoft}`
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mb-1.5",
         style: {
           color: CD.mute
         }
-      }, "Contact and hours are published from Public site. A manager can do that. The domain stays here."), siteMsg && /*#__PURE__*/React.createElement("div", {
+      }, "Push contact & hours to the site"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[10.5px] mb-2.5",
+        style: {
+          color: CD.faint
+        }
+      }, "Publishes the phone, email, address and business hours from above \u2014 the site updates the moment you do."), /*#__PURE__*/React.createElement("div", {
+        className: "p-2.5 mb-2.5 text-[11px]",
+        style: {
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10,
+          background: 'var(--cd-paper-soft)',
+          color: CD.mute,
+          lineHeight: 1.7
+        }
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: CD.ink
+        }
+      }, settings.bizPhone || '—'), settings.bizEmail ? ' · ' + settings.bizEmail : ''), settings.bizAddress && /*#__PURE__*/React.createElement("div", null, settings.bizAddress, settings.bizCity ? ', ' + settings.bizCity : ''), hoursList.filter(h => h.days && h.hours).map((h, i) => /*#__PURE__*/React.createElement("div", {
+        key: i
+      }, h.days, " ", h.hours))), /*#__PURE__*/React.createElement("button", {
+        onClick: publishSiteConfig,
+        disabled: pubBusy,
+        className: "text-[12px] px-3 py-2 font-semibold",
+        style: {
+          background: CD.ink,
+          color: 'var(--cd-on-ink)',
+          borderRadius: 8,
+          opacity: pubBusy ? 0.5 : 1
+        }
+      }, "Publish contact & hours \u2192"), siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && /*#__PURE__*/React.createElement("span", {
+        className: "text-[10.5px] ml-2.5",
+        style: {
+          color: CD.faint
+        }
+      }, "Last published ", new Date(siteInfo.siteConfig.updatedAt).toLocaleString()), pubMsg && /*#__PURE__*/React.createElement("div", {
+        className: "text-[11px] mt-1.5",
+        style: {
+          color: pubMsg.startsWith('Published') ? CD.green : CD.flag
+        }
+      }, pubMsg)), siteMsg && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mt-1.5",
         style: {
           color: siteMsg.startsWith('Saved') || siteMsg.startsWith('Domain') ? CD.green : CD.flag
@@ -9567,168 +9677,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement(Inp, {
       k: "fintracContactName",
       placeholder: "Compliance officer name"
-    })))) : null), tab === 'public' && canPublishSite && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
-      icon: "globe",
-      title: "Public site",
-      sub: "Phone, address and hours on the customer site. Publishing sends them straight to the site. It does not change the desk's own settings."
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "grid grid-cols-2 gap-3"
-    }, /*#__PURE__*/React.createElement(Field, {
-      label: "Phone"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: pub.phone,
-      onChange: e => setPub({
-        phone: e.target.value
-      }),
-      placeholder: "(416) 555-0100",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
-      style: inSty
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: "Email"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: pub.email,
-      onChange: e => setPub({
-        email: e.target.value
-      }),
-      placeholder: "desk@business.com",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
-      style: inSty
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: "Street address"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: pub.address,
-      onChange: e => setPub({
-        address: e.target.value
-      }),
-      placeholder: "120 Adelaide St W",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
-      style: inSty
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: "City"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: pub.city,
-      onChange: e => setPub({
-        city: e.target.value
-      }),
-      placeholder: "Toronto",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
-      style: inSty
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: "Region"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: pub.region,
-      onChange: e => setPub({
-        region: e.target.value
-      }),
-      placeholder: "ON",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
-      style: inSty
-    })), /*#__PURE__*/React.createElement(Field, {
-      label: "Postal / ZIP"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: pub.postal,
-      onChange: e => setPub({
-        postal: e.target.value
-      }),
-      placeholder: "M5H 1T1",
-      className: "w-full text-sm px-2.5 py-2 outline-none",
-      style: inSty
-    }))), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5 pt-4",
-      style: {
-        borderTop: `1px solid ${CD.line}`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] uppercase tracking-widest mb-1",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Business hours"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mb-3",
-      style: {
-        color: CD.mute,
-        maxWidth: 560
-      }
-    }, "When you're open. Each row is a set of days and the hours for it. Nothing here is saved until you publish."), (pub.hours || []).map((h, i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
-      className: "flex items-center gap-2 mb-1.5"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: h.days || '',
-      onChange: ev => setPubHours((pub.hours || []).map((x, j) => j === i ? {
-        ...x,
-        days: ev.target.value
-      } : x)),
-      placeholder: "Mon\u2013Fri",
-      className: "text-[13px] px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 190
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[12px] flex-none",
-      style: {
-        color: CD.faint
-      }
-    }, "\u2192"), /*#__PURE__*/React.createElement("input", {
-      value: h.hours || '',
-      onChange: ev => setPubHours((pub.hours || []).map((x, j) => j === i ? {
-        ...x,
-        hours: ev.target.value
-      } : x)),
-      placeholder: "9:30am\u20136:00pm",
-      className: "flex-1 text-[13px] px-2.5 py-2 outline-none",
-      style: inSty
-    }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setPubHours((pub.hours || []).filter((_, j) => j !== i)),
-      title: "Remove row",
-      className: "grid place-items-center flex-none",
-      style: {
-        width: 30,
-        height: 30,
-        borderRadius: 7,
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "trash",
-      s: 14
-    })))), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setPubHours([...(pub.hours || []), {
-        days: '',
-        hours: ''
-      }]),
-      className: "text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1",
-      style: {
-        border: `1px dashed ${CD.line}`,
-        borderRadius: 8,
-        color: CD.mute
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "plus",
-      s: 13
-    }), " Add hours row")), /*#__PURE__*/React.createElement("div", {
-      className: "mt-4"
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: publishSiteConfig,
-      disabled: pubBusy,
-      className: "text-[12px] px-3 py-2 font-semibold",
-      style: {
-        background: CD.ink,
-        color: 'var(--cd-on-ink)',
-        borderRadius: 8,
-        opacity: pubBusy ? 0.5 : 1
-      }
-    }, "Publish contact & hours \u2192"), siteInfo && siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && /*#__PURE__*/React.createElement("span", {
-      className: "text-[10.5px] ml-2.5",
-      style: {
-        color: CD.faint
-      }
-    }, "Last published ", new Date(siteInfo.siteConfig.updatedAt).toLocaleString()), pubMsg && /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-1.5",
-      style: {
-        color: pubMsg.startsWith('Published') ? CD.green : CD.flag
-      }
-    }, pubMsg))), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+    })))) : null), tab === 'locations' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "wallet",
       title: "Locations, tills & people",
       sub: "Set up each branch, add its tills, then assign a staff member to each till. The header station switcher, the Till and the Branch Network all read this one list."
@@ -60798,8 +60747,9 @@ window.CDOS_PERSIST = (function () {
           snap.cdos_settings = JSON.stringify(parsed);
         }
       } catch (e) {
-        /* Not JSON. Send the string as stored so a real change is still
-           refused, instead of pretending the parse never happened. */
+        /* A string that is not JSON is sent as stored. A real change in
+           it is still refused. Any other failure is a bug. */
+        if (!(e instanceof SyntaxError)) throw e;
       }
     }
     return snap;
@@ -60995,27 +60945,37 @@ window.CDOS_PERSIST = (function () {
        document back, and keep saving. Stopping here used to freeze every
        later customer and day-state write for the rest of the session. */
     if (r.status === 403) {
-      var denied = null;
-      try { denied = await r.json(); } catch (e) {}
+      /* The refusal names the rule. A body that is not JSON is shown
+         as written, so a failure to parse is not dropped. */
+      var raw = await r.text();
+      var detail = 'Only the owner can change that setting. Nothing was saved.';
+      if (raw) {
+        try {
+          var denied = JSON.parse(raw);
+          detail = (denied && (denied.detail || denied.message)) || detail;
+        } catch (e) {
+          if (!(e instanceof SyntaxError)) throw e;
+          detail = raw;
+        }
+      }
       announce({
         level: 'retrying', code: 'settings_forbidden',
-        detail: (denied && (denied.detail || denied.message)) || 'Only the owner can change that setting. Nothing was saved.',
+        detail: detail,
       });
+      var again;
       try {
-        var again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
-        if (again.ok) {
-          var fresh = await again.json();
-          if (fresh && fresh.state) {
-            applyState(fresh.state);
-            if (typeof reloaded === 'function') reloaded();
-            version = typeof fresh.version === 'number' ? fresh.version : version;
-            baseline = snapshot();
-            lastSig = JSON.stringify(outgoing());
-          }
-        }
+        again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
       } catch (e) {
         return transient('CurrencyDesk could not reload the saved desk. Still trying.');
       }
+      if (!again.ok) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      var fresh = await again.json();
+      if (!fresh || !fresh.state) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      applyState(fresh.state);
+      if (typeof reloaded === 'function') reloaded();
+      version = typeof fresh.version === 'number' ? fresh.version : version;
+      baseline = snapshot();
+      lastSig = JSON.stringify(outgoing());
       return;
     }
 
@@ -65662,10 +65622,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null); // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null); // { title, sub, name, expected, onOk } when a PIN is being asked
+    /* The bridge must know the role before hydrate, because the first
+       save can run inside it. A missing bridge is a boot failure. */
     const markPersistRole = role => {
-      try {
-        window.CDOS_PERSIST.setOwner(role === 'Owner');
-      } catch (e) {}
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.setOwner) throw new Error('desk save bridge is not loaded');
+      window.CDOS_PERSIST.setOwner(role === 'Owner');
     };
     const applyRole = s => {
       markPersistRole(s.role);
@@ -65910,6 +65871,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
               _adopted: undefined
             }]
           }));
+          /* The plan is the owner's field. Copying it for anyone else is a settings write. */
           if (u.plan && rec.role === 'Owner') setSettings(s => ({
             ...s,
             billingPlan: u.plan

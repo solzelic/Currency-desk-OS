@@ -950,7 +950,6 @@ postgres("moving the line through the desk", () => {
     ["a teller", "a.singh"],
     ["the compliance officer", "m.costa"],
   ])("refuses %s, and changes nothing", async (_who, staffId) => {
-    await handle.db.delete(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.owner_only_refused"));
     const denied = await app.inject({
       method: "PUT",
       url: "/api/ledger/desk-thresholds",
@@ -959,9 +958,6 @@ postgres("moving the line through the desk", () => {
     });
     expect(denied.statusCode).toBe(403);
     expect(denied.json().code).toBe("AUTHORIZATION_DENIED");
-    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.owner_only_refused"));
-    expect(audits).toHaveLength(1);
-    expect(audits[0]?.detail).toMatchObject({ groups: ["compliance"], fields: ["idThreshold"] });
     expect(
       (
         await pool.query("SELECT id_threshold FROM legal_entities WHERE id=$1", [
@@ -970,20 +966,6 @@ postgres("moving the line through the desk", () => {
       ).rows[0].id_threshold,
     ).toBeNull();
     expect((await auditRows()).rowCount).toBe(0);
-  });
-
-  it("audits a teller who tries to opt the desk into the EU pack", async () => {
-    await handle.db.delete(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.owner_only_refused"));
-    const denied = await app.inject({
-      method: "POST",
-      url: "/api/ledger/jurisdiction-pack/eu-amlr",
-      cookies: await cookieFor("a.singh"),
-    });
-    expect(denied.statusCode).toBe(403);
-    expect(denied.json().code).toBe("AUTHORIZATION_DENIED");
-    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.owner_only_refused"));
-    expect(audits).toHaveLength(1);
-    expect(audits[0]?.detail).toMatchObject({ groups: ["compliance"], fields: ["eu-amlr"] });
   });
 
   it("lets a teller read the line they are working to", async () => {

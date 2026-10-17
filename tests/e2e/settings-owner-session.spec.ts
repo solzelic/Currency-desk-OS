@@ -289,16 +289,4 @@ test("a teller and a manager save a customer and the day, and a threshold change
   expect(managerSaves).not.toContain(403);
   expect((await savedState(page)).cdos_day).toBeTruthy();
   expect(await refusalCount()).toBe(1);
-
-  await page.getByText(/^Settings$/i).first().click();
-  await page.locator(".settings-nav").getByRole("button", { name: "Public site" }).click();
-  await page.getByPlaceholder("(416) 555-0100").fill("416-555-0142");
-  await page.getByRole("button", { name: /Publish contact & hours/ }).click();
-  await expect(page.getByText(/Published/)).toBeVisible();
-  const site = await page.evaluate(async () => {
-    const r = await fetch("/api/tenant", { credentials: "same-origin" });
-    return r.json();
-  });
-  expect(site.tenant.siteConfig.phone).toBe("416-555-0142");
-  expect(await refusalCount()).toBe(1);
 });

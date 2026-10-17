@@ -8,8 +8,6 @@ import { schema } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
-import { audit } from "../audit.js";
-import { OWNER_ONLY_REFUSAL } from "../state/owner-settings.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
 import { ensureLedgerPrincipal } from "./principal.js";
 import {
@@ -795,25 +793,10 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   /* One-way move from the published EU pack onto the 2027 rules.
      The owner permission is the same one that moves a threshold. */
   app.post("/api/ledger/jurisdiction-pack/eu-amlr", async (req, reply) => {
-    let actor: LedgerActor | null = null;
     try {
-      actor = await actorOrReply(req, reply);
-      if (!actor) return;
-      return reply.send(await thresholds.optInEuAmlr(actor));
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await thresholds.optInEuAmlr(actor)) : undefined;
     } catch (error) {
-      if (error instanceof LedgerError && error.code === "AUTHORIZATION_DENIED") {
-        if (actor) {
-          await audit(db, {
-            tenantId: actor.tenantId,
-            legalEntityId: actor.legalEntityId,
-            branchId: actor.branchId,
-            actorId: actor.userId,
-            action: "settings.owner_only_refused",
-            detail: { groups: ["compliance"], fields: ["eu-amlr"] },
-          });
-        }
-        return reply.code(403).send({ code: "AUTHORIZATION_DENIED", message: OWNER_ONLY_REFUSAL });
-      }
       return failure(reply, error);
     }
   });
@@ -832,25 +815,10 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       changes[field as keyof ThresholdChanges] =
         value === "pack_default" ? null : value;
     }
-    let actor: LedgerActor | null = null;
     try {
-      actor = await actorOrReply(req, reply);
-      if (!actor) return;
-      return reply.send(await thresholds.set(actor, changes));
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await thresholds.set(actor, changes)) : undefined;
     } catch (error) {
-      if (error instanceof LedgerError && error.code === "AUTHORIZATION_DENIED") {
-        if (actor) {
-          await audit(db, {
-            tenantId: actor.tenantId,
-            legalEntityId: actor.legalEntityId,
-            branchId: actor.branchId,
-            actorId: actor.userId,
-            action: "settings.owner_only_refused",
-            detail: { groups: ["compliance"], fields: Object.keys(changes) },
-          });
-        }
-        return reply.code(403).send({ code: "AUTHORIZATION_DENIED", message: OWNER_ONLY_REFUSAL });
-      }
       return failure(reply, error);
     }
   });

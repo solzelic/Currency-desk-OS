@@ -207,39 +207,16 @@ describe("owner-only settings", () => {
     expect((await read()).json().state.cdos_settings.threshold).toBe(10000);
   });
 
-  it("a teller PATCH of public hours is refused, audited, and not published", async () => {
-    const denied = await app.inject({
-      method: "PATCH",
-      url: "/api/tenant",
-      cookies: teller,
-      payload: { siteConfig: { phone: "555", hours: [{ days: "Mon", hours: "1-2" }] } },
-    });
-    expect(denied.statusCode).toBe(403);
-    expect(denied.json().detail).toBe("You can't change the public site. Nothing was saved.");
-    const row = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, DEMO.tenantId)))[0];
-    expect(row?.siteConfig).toBeNull();
-    const audits = await refusalAudits();
-    expect(audits[0]?.detail).toMatchObject({ groups: ["hours"], fields: ["phone", "hours"] });
-  });
-
-  it("a manager publishes public contact and hours, and cannot move the threshold", async () => {
-    const published = await app.inject({
-      method: "PATCH",
-      url: "/api/tenant",
-      cookies: manager,
-      payload: { siteConfig: { phone: "416-555-0199", hours: [{ days: "Mon–Fri", hours: "9–5" }] } },
-    });
-    expect(published.statusCode).toBe(200);
-    expect(published.json().tenant.siteConfig.phone).toBe("416-555-0199");
-    const row = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, DEMO.tenantId)))[0];
-    expect(row?.siteConfig).toMatchObject({ phone: "416-555-0199" });
-
+  it("a manager cannot move the threshold", async () => {
     const denied = await put(manager, {
       ...baseline,
       cdos_settings: { ...baseline.cdos_settings, threshold: 999999 },
     });
     expect(denied.statusCode).toBe(403);
     expect((await read()).json().state.cdos_settings.threshold).toBe(10000);
+    const audits = await refusalAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.detail).toMatchObject({ fields: ["threshold"] });
   });
 
   it("a manager can save the default spread, and a teller cannot", async () => {

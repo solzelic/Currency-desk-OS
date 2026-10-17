@@ -1498,7 +1498,12 @@
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null);   // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null);   // { title, sub, name, expected, onOk } when a PIN is being asked
-    const markPersistRole = (role) => { try { window.CDOS_PERSIST.setOwner(role === 'Owner'); } catch (e) {} };
+    /* The bridge must know the role before hydrate, because the first
+       save can run inside it. A missing bridge is a boot failure. */
+    const markPersistRole = (role) => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.setOwner) throw new Error('desk save bridge is not loaded');
+      window.CDOS_PERSIST.setOwner(role === 'Owner');
+    };
     const applyRole = (s) => {
       markPersistRole(s.role);
       setMe({ name: s.name, role: s.role });
@@ -1672,6 +1677,7 @@
             const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
             const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
             if (!known) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
+            /* The plan is the owner's field. Copying it for anyone else is a settings write. */
             if (u.plan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: u.plan }));
             markPersistRole(rec.role);
             srvUserRef.current = u; setSrvUser(u);

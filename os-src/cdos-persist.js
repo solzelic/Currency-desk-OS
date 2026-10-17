@@ -91,8 +91,9 @@ window.CDOS_PERSIST = (function () {
           snap.cdos_settings = JSON.stringify(parsed);
         }
       } catch (e) {
-        /* Not JSON. Send the string as stored so a real change is still
-           refused, instead of pretending the parse never happened. */
+        /* A string that is not JSON is sent as stored. A real change in
+           it is still refused. Any other failure is a bug. */
+        if (!(e instanceof SyntaxError)) throw e;
       }
     }
     return snap;
@@ -288,27 +289,37 @@ window.CDOS_PERSIST = (function () {
        document back, and keep saving. Stopping here used to freeze every
        later customer and day-state write for the rest of the session. */
     if (r.status === 403) {
-      var denied = null;
-      try { denied = await r.json(); } catch (e) {}
+      /* The refusal names the rule. A body that is not JSON is shown
+         as written, so a failure to parse is not dropped. */
+      var raw = await r.text();
+      var detail = 'Only the owner can change that setting. Nothing was saved.';
+      if (raw) {
+        try {
+          var denied = JSON.parse(raw);
+          detail = (denied && (denied.detail || denied.message)) || detail;
+        } catch (e) {
+          if (!(e instanceof SyntaxError)) throw e;
+          detail = raw;
+        }
+      }
       announce({
         level: 'retrying', code: 'settings_forbidden',
-        detail: (denied && (denied.detail || denied.message)) || 'Only the owner can change that setting. Nothing was saved.',
+        detail: detail,
       });
+      var again;
       try {
-        var again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
-        if (again.ok) {
-          var fresh = await again.json();
-          if (fresh && fresh.state) {
-            applyState(fresh.state);
-            if (typeof reloaded === 'function') reloaded();
-            version = typeof fresh.version === 'number' ? fresh.version : version;
-            baseline = snapshot();
-            lastSig = JSON.stringify(outgoing());
-          }
-        }
+        again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
       } catch (e) {
         return transient('CurrencyDesk could not reload the saved desk. Still trying.');
       }
+      if (!again.ok) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      var fresh = await again.json();
+      if (!fresh || !fresh.state) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      applyState(fresh.state);
+      if (typeof reloaded === 'function') reloaded();
+      version = typeof fresh.version === 'number' ? fresh.version : version;
+      baseline = snapshot();
+      lastSig = JSON.stringify(outgoing());
       return;
     }
 
