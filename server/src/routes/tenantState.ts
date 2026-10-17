@@ -12,17 +12,16 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
-import { hasBackendPermission } from "../auth/permissions.js";
-import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
+import { canWriteSetting, CHEQUE_FEE_SCHEDULE_KEY } from "../auth/settingsWrite.js";
+import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
 
-/* The cheque fee is the price of the desk's own credit. Zeroing it is
-   how a teller cashes the next cheque for nothing. The need is
-   `cheque:fees`: the owner and a manager, including a fee of 0%. */
-export const CHEQUE_FEE_SCHEDULE_KEY = "cdos_cheque_schedule_v1";
+/* The cheque fee is the price of the desk's own credit. Who may write
+   it lives in canWriteSetting, not in a role list at this route. */
+export { CHEQUE_FEE_SCHEDULE_KEY };
 export const CHEQUE_FEE_REFUSAL =
   "Only the owner or a manager can change cheque fees. Ask a manager to make this change.";
 
@@ -67,12 +66,6 @@ export function chequeScheduleWrite(stored: Record<string, unknown> | null, inco
   return true;
 }
 
-/* `cheque:fees` is the owner and a manager. A platform row is not a
-   vote: it neither grants the need nor takes it from the owner. */
-function maySetChequeFees(who: SessionUser): boolean {
-  return hasBackendPermission(who.role, "cheque:fees");
-}
-
 /* One row per cheque type, so the audit can show the old price and
    the new one. A string that is not JSON is stored as itself. */
 function feeRows(value: unknown): unknown {
@@ -91,6 +84,23 @@ function feeRows(value: unknown): unknown {
     const item = row as Record<string, unknown>;
     return { id: item.id, label: item.label, feePct: item.feePct, feeMin: item.feeMin, holdDays: item.holdDays, risk: item.risk };
   });
+}
+
+/* A stale tab sends the version it loaded. Anything else, including a
+   body that is not valid yet, is not a version conflict. */
+function sentVersion(body: Record<string, unknown> | null): number | undefined {
+  const version = body?.version;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 0) return undefined;
+  return version;
+}
+
+function stateConflict(row: { state: unknown; version: number } | undefined) {
+  return {
+    error: "state_conflict",
+    detail: "Somebody else saved this desk while you were working. Merging.",
+    state: row?.state ?? null,
+    version: row?.version ?? 0,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -186,8 +196,16 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        400 that describes the document. */
     const raw = asRecord(req.body);
     const current = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
+    /* The version is the first answer. A tab loaded before someone else
+       saved is 409, the same shape as any other stale desk save, and it
+       is not a permission refusal. */
+    const sent = sentVersion(raw);
+    if (sent !== undefined && (current?.version ?? 0) !== sent) {
+      return reply.code(409).send(stateConflict(current));
+    }
+    const mayWriteFees = canWriteSetting(who.role, CHEQUE_FEE_SCHEDULE_KEY);
     const changingFees = chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state));
-    if (changingFees && !maySetChequeFees(who)) {
+    if (changingFees && !mayWriteFees) {
       await audit(db, {
         tenantId: who.tenantId,
         legalEntityId: who.legalEntityId,
@@ -230,13 +248,15 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     const expected = parsed.data.version;
     if (expected === undefined) {
       req.log.warn({ tenantId: who.tenantId }, "desk state saved without a version — an old client is still open");
-    } else if (current && current.version !== expected) {
-      return reply.code(409).send({
-        error: "state_conflict",
-        detail: "Somebody else saved this desk while you were working. Merging.",
-        state: current.state,
-        version: current.version,
-      });
+    } else if ((current?.version ?? 0) !== expected) {
+      return reply.code(409).send(stateConflict(current));
+    }
+    /* A teller's document carries a copy of the fee key. That copy is
+       not the price. The stored key is. */
+    if (!mayWriteFees) {
+      const stored = asRecord(current?.state);
+      if (stored && CHEQUE_FEE_SCHEDULE_KEY in stored) state[CHEQUE_FEE_SCHEDULE_KEY] = stored[CHEQUE_FEE_SCHEDULE_KEY];
+      else delete state[CHEQUE_FEE_SCHEDULE_KEY];
     }
 
     /* Describe what is being saved. This NEVER refuses — the browser holds
@@ -259,10 +279,26 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     await absorbStaffPins(db, who.tenantId, state);
     const now = new Date();
     const version = (current?.version ?? 0) + 1;
-    await db
-      .insert(schema.tenantState)
-      .values({ tenantId: who.tenantId, state, updatedBy: who.id, updatedAt: now, version })
-      .onConflictDoUpdate({ target: schema.tenantState.tenantId, set: { state, updatedBy: who.id, updatedAt: now, version } });
+    /* The predicate is the race. Two saves can both have read version N.
+       Only one update matches N. The other is 409 and writes nothing. */
+    const written = current
+      ? await db
+        .update(schema.tenantState)
+        .set({ state, updatedBy: who.id, updatedAt: now, version })
+        .where(and(
+          eq(schema.tenantState.tenantId, who.tenantId),
+          expected === undefined ? eq(schema.tenantState.tenantId, who.tenantId) : eq(schema.tenantState.version, expected),
+        ))
+        .returning()
+      : await db
+        .insert(schema.tenantState)
+        .values({ tenantId: who.tenantId, state, updatedBy: who.id, updatedAt: now, version })
+        .onConflictDoNothing({ target: schema.tenantState.tenantId })
+        .returning();
+    if (!written.length) {
+      const fresh = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
+      return reply.code(409).send(stateConflict(fresh));
+    }
     /* A change that landed. Who, when (`at` on the row), and the
        price of each cheque type before and after. */
     if (changingFees) {

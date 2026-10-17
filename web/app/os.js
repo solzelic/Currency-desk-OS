@@ -41355,6 +41355,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      above the button. The lock sits in that sentence, and the sentence wraps. */
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
+  const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
   function FeeSchedule({
     schedule,
     setSchedule,
@@ -41365,6 +41366,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     const mayEdit = openedAsEditor;
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
+    const [conflict, setConflict] = useState(false);
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => {
@@ -41397,15 +41399,24 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           })
         });
         const body = await res.json();
+        if (res.status === 409) {
+          setConflict(true);
+          setRefused(false);
+          setSaved(false);
+          return;
+        }
         if (res.status === 403) {
           setRefused(true);
+          setConflict(false);
           setSaved(false);
           return;
         }
         if (!res.ok) throw new Error(body && body.detail ? body.detail : 'The fee schedule was not saved.');
+        if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
         localStorage.setItem(SKEY, JSON.stringify(draft));
         setSchedule(draft);
         setRefused(false);
+        setConflict(false);
         setSaved(true);
       } finally {
         setBusy(false);
@@ -41445,7 +41456,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         color: CD.mute
       }
     }, "Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+      className: "fee-schedule-card overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -41511,7 +41522,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         step: "0.1",
         value: t.feePct,
         onChange: e => set(t.id, 'feePct', +e.target.value),
-        className: "w-16 text-right px-2 py-1 outline-none",
+        className: "fee-field w-16 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
@@ -41525,7 +41536,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         type: "number",
         value: t.feeMin,
         onChange: e => set(t.id, 'feeMin', +e.target.value),
-        className: "w-16 text-right px-2 py-1 outline-none",
+        className: "fee-field w-16 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
@@ -41539,7 +41550,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         type: "number",
         value: t.holdDays,
         onChange: e => set(t.id, 'holdDays', +e.target.value),
-        className: "w-14 text-right px-2 py-1 outline-none",
+        className: "fee-field w-14 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
@@ -41574,14 +41585,31 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       n: "lock",
       s: 13,
       c: CD.amber
-    }), " ", FEE_BANNER), /*#__PURE__*/React.createElement("div", {
+    }), " ", FEE_BANNER), conflict && /*#__PURE__*/React.createElement("p", {
+      role: "alert",
+      "data-testid": "fee-schedule-conflict",
+      className: "fee-lock mb-2 px-3 py-2 text-[12px]",
+      style: {
+        background: CD.amberSoft,
+        color: CD.amber,
+        borderRadius: 8
+      }
+    }, FEE_CONFLICT, " ", /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "fee-schedule-reload",
+      onClick: () => window.location.reload(),
+      className: "font-semibold underline",
+      style: {
+        color: CD.amber
+      }
+    }, "Reload")), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "fee-schedule-save",
       onClick: save,
       disabled: busy,
-      className: "px-3.5 py-2 text-sm font-semibold text-white",
+      className: "fee-save px-3.5 py-2 text-sm font-semibold text-white",
       style: {
         background: CD.ink,
         borderRadius: 9,
@@ -61004,6 +61032,19 @@ window.CDOS_PERSIST = (function () {
       return;
     }
 
+    /* A refusal is the answer. Sending the same document again writes
+       another refusal row and does not save anything. The keys stay
+       in this browser. */
+    if (r.status === 403) {
+      lastSig = sig;
+      health = 'stopped';
+      return announce({
+        level: 'stopped',
+        code: 'permission_denied',
+        detail: 'That change was refused. Recent work on this screen is still here.',
+      });
+    }
+
     /* Over the limit. The next attempt is the same size as this one, so
        retrying is a loop, not resilience. Stop, and say so in words that
        point at a person rather than at a button. */
@@ -61074,6 +61115,7 @@ window.CDOS_PERSIST = (function () {
     markClean: markClean, tenant: function () { return tenantId; },
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
+    noteVersion: function (v) { if (typeof v === 'number') version = v; },
     /* Exposed because it is the one piece of logic in this file worth
        testing on its own: pure, and the thing standing between two tellers
        and a lost afternoon. See server/tests/state-merge.test.ts. */

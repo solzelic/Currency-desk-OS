@@ -245,6 +245,19 @@ window.CDOS_PERSIST = (function () {
       return;
     }
 
+    /* A refusal is the answer. Sending the same document again writes
+       another refusal row and does not save anything. The keys stay
+       in this browser. */
+    if (r.status === 403) {
+      lastSig = sig;
+      health = 'stopped';
+      return announce({
+        level: 'stopped',
+        code: 'permission_denied',
+        detail: 'That change was refused. Recent work on this screen is still here.',
+      });
+    }
+
     /* Over the limit. The next attempt is the same size as this one, so
        retrying is a loop, not resilience. Stop, and say so in words that
        point at a person rather than at a button. */
@@ -315,6 +328,7 @@ window.CDOS_PERSIST = (function () {
     markClean: markClean, tenant: function () { return tenantId; },
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
+    noteVersion: function (v) { if (typeof v === 'number') version = v; },
     /* Exposed because it is the one piece of logic in this file worth
        testing on its own: pure, and the thing standing between two tellers
        and a lost afternoon. See server/tests/state-merge.test.ts. */

@@ -85,12 +85,14 @@
      above the button. The lock sits in that sentence, and the sentence wraps. */
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
+  const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
   function FeeSchedule({ schedule, setSchedule, me }) {
     const liveEditor = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
     const [openedAsEditor] = useState(liveEditor);
     const mayEdit = openedAsEditor;
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
+    const [conflict, setConflict] = useState(false);
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => { setDraft(schedule); }, [schedule]);
@@ -108,11 +110,14 @@
           body: JSON.stringify({ state: snap, version: version }),
         });
         const body = await res.json();
-        if (res.status === 403) { setRefused(true); setSaved(false); return; }
+        if (res.status === 409) { setConflict(true); setRefused(false); setSaved(false); return; }
+        if (res.status === 403) { setRefused(true); setConflict(false); setSaved(false); return; }
         if (!res.ok) throw new Error(body && body.detail ? body.detail : 'The fee schedule was not saved.');
+        if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
         localStorage.setItem(SKEY, JSON.stringify(draft));
         setSchedule(draft);
         setRefused(false);
+        setConflict(false);
         setSaved(true);
       } finally { setBusy(false); }
     };
@@ -120,7 +125,7 @@
     return (<div className="p-4" data-testid="fee-schedule" style={{ minWidth: 0, maxWidth: '100%' }}>
       {!mayEdit && <p data-testid="fee-schedule-lock" className="fee-lock mb-3 text-[12px]" style={{ color: CD.ink }}><Ic n="lock" s={14} c={CD.mute} /> {FEE_SENTENCE}</p>}
       <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Fee schedule by cheque type</div><div className="text-[11px]" style={{ color: CD.mute }}>Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.</div></div>
-      <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
+      <div className="fee-schedule-card overflow-hidden" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 11 }}>
         <table className="w-full text-sm border-collapse">
           <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
             <th className="px-3 py-2">Type</th><th className="px-3 py-2">Risk</th><th className="px-3 py-2 text-right">Fee %</th><th className="px-3 py-2 text-right">Min fee</th><th className="px-3 py-2 text-right">Hold days</th><th className="px-3 py-2 text-right">e.g. $2,000</th>
@@ -132,13 +137,13 @@
                 ? <select value={t.risk} onChange={e => set(t.id, 'risk', e.target.value)} className="text-[12px] px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: rt.c, background: rt.bg }}>{['low', 'medium', 'high'].map(r => <option key={r} value={r}>{RISK_TONE[r].t}</option>)}</select>
                 : <span className="text-[12px]" style={{ color: CD.mute }}>{rt.t}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
-                ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.feePct}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
-                ? <input type="number" value={t.feeMin} onChange={e => set(t.id, 'feeMin', +e.target.value)} className="w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                ? <input type="number" value={t.feeMin} onChange={e => set(t.id, 'feeMin', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.feeMin}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
-                ? <input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                ? <input type="number" value={t.holdDays} onChange={e => set(t.id, 'holdDays', +e.target.value)} className="fee-field w-14 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.holdDays}</span>}</td>
               <td className="px-3 py-2 text-right font-semibold" style={{ color: mayEdit ? CD.green : CD.mute, fontVariantNumeric: 'tabular-nums' }}>{fmt(eg, homeCcy())}</td>
             </tr>); })}</tbody>
@@ -147,8 +152,9 @@
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
       {mayEdit && <div className="mt-3">
         {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}
+        {conflict && <p role="alert" data-testid="fee-schedule-conflict" className="fee-lock mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, color: CD.amber, borderRadius: 8 }}>{FEE_CONFLICT} <button type="button" data-testid="fee-schedule-reload" onClick={() => window.location.reload()} className="font-semibold underline" style={{ color: CD.amber }}>Reload</button></p>}
         <div className="flex items-center gap-2">
-          <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
+          <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="fee-save px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
           {saved && <span data-testid="fee-schedule-saved" className="text-[12px] font-semibold" style={{ color: CD.green }}>Saved</span>}
         </div>
       </div>}

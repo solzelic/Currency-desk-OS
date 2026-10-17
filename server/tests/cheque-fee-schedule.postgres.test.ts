@@ -1,6 +1,8 @@
 /* The cheque fee is the price of cash the desk has not collected.
    A teller who can save payroll at 0% cashes the next cheque for nothing.
-   Real Postgres: the write is refused, the schedule stays, the cheque pays the old fee. */
+   Real Postgres: the write is refused, the schedule stays, the cheque pays the old fee.
+   A stale numeric version is a conflict before it is a refusal.
+   A teller's copy cannot replace a fee the owner just saved. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -167,5 +169,34 @@ postgres("cheque fee schedule is owner or manager", () => {
     expect(cashed.json().cheque.feeAmount).toBe("5.00");
     const till = await pool.query("SELECT available_amount FROM ledger_till_balances WHERE till_id='till-01'");
     expect(till.rows[0].available_amount).toBe("4805.00");
+  });
+
+  it("answers a stale fee tab with 409 before it calls the fee a refusal", async () => {
+    await desk();
+    const before = await storedSchedule();
+    const stale = await put(session("m.costa"), payroll(0, 0), 0);
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error).toBe("state_conflict");
+    expect(await storedSchedule()).toBe(before);
+    const refused = await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_refused'");
+    expect(refused.rowCount).toBe(0);
+  });
+
+  it("does not let a teller's copy replace a fee the owner just saved", async () => {
+    for (let n = 0; n < 15; n++) {
+      await desk();
+      const original = await storedSchedule();
+      const [ownerRes, tellerRes] = await Promise.all([
+        put(session("j.masri"), payroll(7, 5), 1),
+        put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { deskName: "Yorkville" } }, 1),
+      ]);
+      expect([200, 409]).toContain(ownerRes.statusCode);
+      expect([200, 409]).toContain(tellerRes.statusCode);
+      expect([ownerRes.statusCode, tellerRes.statusCode]).not.toEqual([200, 200]);
+      const stored = JSON.parse((await storedSchedule()) ?? "[]") as { id: string; feePct: number }[];
+      const feePct = stored.find((row) => row.id === "payroll")?.feePct;
+      if (ownerRes.statusCode === 200) expect(feePct).toBe(7);
+      expect(feePct === 2 || feePct === 7).toBe(true);
+    }
   });
 });
