@@ -1604,6 +1604,8 @@
        branch, no till → till pick. Multiple → filtered picker. None → stop. */
     useEffect(() => { stageRef.current = stage; }, [stage]);
     useEffect(() => { settingsRef.current = settings; }, [settings]);
+    const meRef = useRef(me);
+    useEffect(() => { meRef.current = me; }, [me]);
 
     const routeAfterAuth = (rec) => {
       if (!rec) { setStage('lock'); return; }
@@ -1640,7 +1642,28 @@
       const check = () => {
         if (typeof fetch !== 'function') return;
         fetch('/api/auth/me', { credentials: 'same-origin' })
-          .then(r => { if (r.status === 401) relock(); })
+          .then(r => {
+            if (r.status === 401) { relock(); return null; }
+            if (!r.ok) return null;
+            return r.json();
+          })
+          .then(d => {
+            if (!alive || !d || !d.user || !d.user.id) return;
+            /* The header has to name whoever the cookie is now. A switch,
+               or a change of role, does not reload the desk. The open Fee
+               schedule follows that role, so a cashier sees the lock and
+               the read-only figures, with no inputs. */
+            if (stageRef.current !== 'desktop') return;
+            const u = d.user;
+            const role = SRV2OS[u.role] || 'Cashier';
+            const name = u.name || u.id;
+            const cur = meRef.current;
+            if (cur && cur.name === name && cur.role === role) return;
+            srvUserRef.current = u;
+            setSrvUser(u);
+            setUser(u.id);
+            setMe({ name, role });
+          })
           .catch(() => {});   // offline: leave the desk alone
       };
 
