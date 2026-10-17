@@ -44,7 +44,17 @@
   const homeCcy = () => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; };
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
-  const addDays = (date, n) => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + (+n || 0)); return d.toISOString().slice(0, 10); };
+  /* Calendar days on the YYYY-MM-DD string. toISOString of a local
+     midnight moves the hold back one day in any zone east of UTC. */
+  const addDays = (date, n) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+    if (!m) return '';
+    const at = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (+n || 0)));
+    const y = at.getUTCFullYear();
+    const mo = String(at.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(at.getUTCDate()).padStart(2, '0');
+    return y + '-' + mo + '-' + d;
+  };
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 
   /* ---- default fee schedule by cheque type (editable in the Fee schedule tab) ---- */
@@ -59,7 +69,37 @@
     ];
   }
   const RISK_TONE = { low: { t: 'Low', c: CD.green, bg: CD.greenSoft }, medium: { t: 'Medium', c: CD.amber, bg: CD.amberSoft }, high: { t: 'High', c: CD.flag, bg: CD.flagSoft } };
-  const feeFor = (amount, type) => { const t = type || {}; return Math.max(+t.feeMin || 0, (+amount || 0) * (+t.feePct || 0) / 100); };
+  /* Half up to the cent, in integer arithmetic. 1,000.25 at 2% is
+     20.005, which is 20.01. A float times toFixed gets that one wrong. */
+  function roundHalfUpMulDiv(amount, pct, divisor) {
+    const parts = (value) => {
+      const s = String(value == null ? '' : value).trim();
+      const neg = s.charAt(0) === '-';
+      const body = neg ? s.slice(1) : s;
+      const bits = body.split('.');
+      const whole = bits[0] || '0';
+      const frac = bits[1] || '';
+      const digits = (whole + frac).replace(/^0+(?=\d)/, '') || '0';
+      if (!/^\d+$/.test(digits)) return null;
+      return { neg: neg, digits: digits, scale: frac.length };
+    };
+    const a = parts(amount);
+    const p = parts(pct);
+    if (!a || !p || a.neg || p.neg) return 0;
+    const product = BigInt(a.digits) * BigInt(p.digits);
+    const den = (10n ** BigInt(a.scale + p.scale)) * BigInt(divisor);
+    const num = product * 100n;
+    const q = num / den;
+    const r = num % den;
+    const cents = r * 2n >= den ? q + 1n : q;
+    return Number((Number(cents) / 100).toFixed(2));
+  }
+  const feeFor = (amount, type) => {
+    const t = type || {};
+    const percent = roundHalfUpMulDiv(amount, t.feePct || 0, 100);
+    const minimum = roundHalfUpMulDiv(t.feeMin || 0, 1, 1);
+    return Math.max(minimum, percent);
+  };
 
   const STATUS = {
     held:     { label: 'On hold',  tone: CD.amber, soft: CD.amberSoft, ink: 'var(--cd-brass-text)', icon: 'clock' },
@@ -171,7 +211,7 @@
     const holdDays = Math.max(minHold, holdOverride != null ? holdOverride : type.holdDays);
     const holdUntil = addDays(TODAY, holdDays);
     const rt = RISK_TONE[type.risk] || RISK_TONE.low;
-    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0;
+    const canSave = amtN > 0 && maker.trim() && chequeNumber.trim() && customer.trim() && net >= 0 && endorsed;
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
 
     /* A cheque image is stored the same way an ID scan is, and used to

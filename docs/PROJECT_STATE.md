@@ -560,6 +560,26 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-17**, cheque fee, hold, and a refused reverse. The server
+owns the fee on a cashed cheque. It is the percent of the face, or
+the minimum, whichever is larger, rounded half up to the cent.
+1,000.25 at 2% is 20.01. The rule is the desk's saved schedule
+(`cdos_cheque_schedule_v1` on `tenant_state`). A desk with none
+saved uses the same figures the capture screen ships. A fee that
+is not that figure is refused, including 0, unless the saved rule
+for that type is 0. A type with no rule is refused. A cheque that
+is not signed on the back is refused and nothing is written. The
+hold-until date is the till's business date plus the hold, counted
+as calendar days, so the machine zone does not move the day. On
+the cheque route, a teller who tries to reverse is told "You
+cannot reverse this cheque. Ask a supervisor." A caller who is
+not at this till is told "You are not signed in at this till."
+Any other error from that check is returned as it was. The
+generic deal reversal route still refuses a cheque row and names
+the cheque route. That door is unchanged. Cash & hold on the
+capture screen stays disabled until Signed on the back is set,
+and the screen rounds the fee the same way.
+
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
 Postgres, five per account and twenty per address, for fifteen
 minutes. The count is written before the answer, so a burst cannot

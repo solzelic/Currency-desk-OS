@@ -112,6 +112,7 @@ async function cashACheque(
   await page.getByPlaceholder("e.g. 004821").fill(cheque.number);
   await page.getByPlaceholder("Payer name / business").fill(cheque.maker);
   await page.getByPlaceholder("e.g. RBC Royal Bank").fill(cheque.bank);
+  await page.locator("button", { hasText: "Signed on the back" }).click();
 
   await page.getByRole("button", { name: /Cash & hold/i }).click();
 }
