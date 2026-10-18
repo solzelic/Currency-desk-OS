@@ -1,12 +1,15 @@
-/* A new desk is one that has not saved cdos_settings. The cheque
-   schedule, and a tour flag beside it, are not a finished desk.
-   Loaded from the shipped bridge, not a copy. */
+/* A new desk has no saved shop and no rows or clients. A blank
+   cdos_settings is missing. Rows or clients open as the saved desk,
+   or seeding would replace them with empty. Loaded from the shipped
+   bridge, not a copy. */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SCHEDULE = "[{\"id\":\"payroll\",\"feePct\":2}]";
 const RATES = "{\"rows\":{\"EUR\":{\"mid\":1.25}}}";
+const ROWS = "[{\"id\":\"t1\",\"amount\":500}]";
+const CLIENTS = "{\"Ada\":{\"name\":\"Ada\"}}";
 
 function loadBridge() {
   const src = readFileSync(resolve(process.cwd(), "../os-src/cdos-persist.js"), "utf8");
@@ -76,5 +79,29 @@ describe("opening a desk", () => {
     expect(bridge.store.get("cdos_settings")).toBe(settings);
     expect(bridge.store.get("cdos_cheque_schedule_v1")).toBe(SCHEDULE);
     expect(bridge.store.has("yorkfx_rates_v1")).toBe(false);
+  });
+
+  it("opens as restored when rows are stored and settings are missing", async () => {
+    expect(await bridge.begin({ cdos_cheque_schedule_v1: SCHEDULE, cdos_rows_v1: ROWS })).toBe("restored");
+    expect(bridge.store.get("cdos_rows_v1")).toBe(ROWS);
+    expect(bridge.store.has("yorkfx_rates_v1")).toBe(false);
+  });
+
+  it("opens as restored when clients are stored and settings are missing", async () => {
+    expect(await bridge.begin({ cdos_cheque_schedule_v1: SCHEDULE, cdos_clients_v1: CLIENTS })).toBe("restored");
+    expect(bridge.store.get("cdos_clients_v1")).toBe(CLIENTS);
+    expect(bridge.store.has("yorkfx_rates_v1")).toBe(false);
+  });
+
+  it("opens as restored when rows and clients are stored and settings are missing", async () => {
+    expect(await bridge.begin({ cdos_rows_v1: ROWS, cdos_clients_v1: CLIENTS })).toBe("restored");
+    expect(bridge.store.get("cdos_rows_v1")).toBe(ROWS);
+    expect(bridge.store.get("cdos_clients_v1")).toBe(CLIENTS);
+  });
+
+  it("opens as new when cdos_settings is blank and there are no rows or clients", async () => {
+    expect(await bridge.begin({ cdos_cheque_schedule_v1: SCHEDULE, cdos_settings: "" })).toBe("empty");
+    expect(bridge.store.get("cdos_cheque_schedule_v1")).toBe(SCHEDULE);
+    expect(bridge.store.get("yorkfx_rates_v1")).toBe(RATES);
   });
 });

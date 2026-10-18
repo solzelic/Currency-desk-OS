@@ -30,9 +30,11 @@
    ============================================================ */
 window.CDOS_PERSIST = (function () {
   var KEY_RE = /^(cdos_|yorkfx_)/;
-  /* A desk is new until this key holds the shop. The schedule and a
-     tour flag are not that. */
+  /* A desk is new only when the shop is unsaved and it has no records.
+     The schedule and a tour flag are not records. */
   var SETTINGS_KEY = 'cdos_settings';
+  var ROWS_KEY = 'cdos_rows_v1';
+  var CLIENTS_KEY = 'cdos_clients_v1';
   var tenantId = null;
   var lastSig = '';
   var timer = null;
@@ -82,12 +84,28 @@ window.CDOS_PERSIST = (function () {
     });
   }
 
-  /* Missing, null, or blank settings means the shop has not been saved.
-     Any other value is a finished desk. */
-  function hasSavedSettings(state) {
-    if (!state || !Object.prototype.hasOwnProperty.call(state, SETTINGS_KEY)) return false;
+  /* Missing, null, or "" is not a saved shop. */
+  function settingsMissing(state) {
+    if (!state || !Object.prototype.hasOwnProperty.call(state, SETTINGS_KEY)) return true;
     var value = state[SETTINGS_KEY];
-    return value != null && value !== '';
+    return value == null || value === '';
+  }
+
+  /* No key, null, "", "[]", and "{}" are not records. Anything else is
+     a desk that already has rows or clients, and opening it as new
+     would replace those with empty. */
+  function hasRecords(value) {
+    if (value == null || value === '' || value === '[]' || value === '{}') return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return true;
+  }
+
+  /* New only when the shop is unsaved and there are no rows and no clients. */
+  function opensAsNew(state) {
+    if (!settingsMissing(state)) return false;
+    if (state && (hasRecords(state[ROWS_KEY]) || hasRecords(state[CLIENTS_KEY]))) return false;
+    return true;
   }
 
   /* ---- telling somebody ------------------------------------------------
@@ -192,10 +210,12 @@ window.CDOS_PERSIST = (function () {
     } catch (e) { tenantId = null; return 'offline'; }
     version = (res && res.version) || 0;
     var state = res && res.state;
-    /* No saved shop yet. Keep every stored key, including the schedule,
-       and leave the rate board already in this browser alone. Clearing
-       here is what opened the desk as York and then saved that. */
-    if (!hasSavedSettings(state)) {
+    /* No saved shop and no records yet. Keep every stored key, including
+       the schedule, and leave the rate board already in this browser
+       alone. Clearing here is what opened the desk as York and then
+       saved that. A desk that already has rows or clients is not new:
+       seeding would replace those with empty. */
+    if (opensAsNew(state)) {
       Object.keys(state || {}).forEach(function (k) {
         if (KEY_RE.test(k) && state[k] != null) {
           localStorage.setItem(k, state[k]);
