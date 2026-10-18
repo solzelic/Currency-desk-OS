@@ -170,42 +170,66 @@ const putBody = z.object({
   version: z.number().int().nonnegative().optional(),
 });
 
-/* The desk's settings used to carry every teller's till PIN in the clear,
-   inside this very snapshot, which the browser downloads whole on sign-in.
-   Anyone who could open devtools could read the room's PINs.
+/* The desk's settings used to carry every teller's till PIN in the clear.
+   The browser stores cdos_settings as a JSON string. An older client may
+   still send an object. Either form is stripped before the save.
 
-   The snapshot is not allowed to hold one. A PIN in the blob is stripped
-   before anything is stored. It is not written to the staff record, for
-   any role, including the owner. A till PIN is set only through
-   /api/staff/pin, or by a manager or an admin through the reset routes.
-   The placeholder the OS ships with ("0000") is not counted as an offered
-   PIN. A real one (four digits, anything but 0000) is counted so the save
-   can write a single audit row. The digits are not in that row.
+   A pin field anywhere inside an employee entry is removed, including
+   0000, and is never copied onto a staff record. Each one that was a
+   four-digit PIN is counted. The audit row names only staff ids that
+   exist on this desk, and both the count and that list are capped.
+   The digits are not in the row. The rest of the document is still saved. */
+const PIN_FIELD = /^pin(hash)?$/i;
+const PIN_CAP = 40;
 
-   This runs on every save, so an older client that still sends the field
-   does not put a PIN on file. The rest of the document is still saved.
-   Refusing the whole save would drop the only copy of the desk. */
-const PLACEHOLDER_PIN = "0000";
+function offeredPin(value: unknown): boolean {
+  return typeof value === "string" ? /^\d{4}$/.test(value) : typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 9999;
+}
 
-function absorbStaffPins(state: Record<string, unknown>): { count: number; codes: string[] } {
-  const settings = state.cdos_settings;
-  if (!settings || typeof settings !== "object") return { count: 0, codes: [] };
-  const employees = (settings as Record<string, unknown>).employees;
-  if (!Array.isArray(employees)) return { count: 0, codes: [] };
+function stripPinFields(node: unknown): number {
+  if (!node || typeof node !== "object") return 0;
+  if (Array.isArray(node)) return node.reduce((n, item) => n + stripPinFields(item), 0);
+  const rec = node as Record<string, unknown>;
+  let n = 0;
+  for (const key of Object.keys(rec)) {
+    if (PIN_FIELD.test(key)) {
+      if (offeredPin(rec[key])) n += 1;
+      delete rec[key];
+    } else n += stripPinFields(rec[key]);
+  }
+  return n;
+}
 
+function employeeList(employees: unknown): Record<string, unknown>[] {
+  const values = Array.isArray(employees) ? employees : employees && typeof employees === "object" ? Object.values(employees) : [];
+  return values.filter((item) => item && typeof item === "object" && !Array.isArray(item)) as Record<string, unknown>[];
+}
+
+function stripSnapshotPins(state: Record<string, unknown>): { count: number; codes: string[] } {
+  const raw = state.cdos_settings;
+  let settings: Record<string, unknown> | null = null;
+  let asString = false;
+  if (typeof raw === "string") {
+    asString = true;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) settings = parsed as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof SyntaxError) return { count: 0, codes: [] };
+      throw error;
+    }
+  } else if (raw && typeof raw === "object" && !Array.isArray(raw)) settings = raw as Record<string, unknown>;
+  if (!settings) return { count: 0, codes: [] };
   let count = 0;
   const codes: string[] = [];
-  for (const emp of employees) {
-    if (!emp || typeof emp !== "object") continue;
-    const e = emp as Record<string, unknown>;
-    const pin = typeof e.pin === "string" ? e.pin : null;
-    delete e.pin;
-    if (!pin || !/^\d{4}$/.test(pin) || pin === PLACEHOLDER_PIN) continue;
-    count += 1;
-    const code = typeof e.code === "string" ? e.code : typeof e.name === "string" ? e.name : null;
-    if (code) codes.push(code);
+  for (const entry of employeeList(settings.employees)) {
+    const found = stripPinFields(entry);
+    if (!found) continue;
+    count += found;
+    if (typeof entry.code === "string" && entry.code) codes.push(entry.code.slice(0, 80));
   }
-  return { count, codes };
+  if (asString) state.cdos_settings = JSON.stringify(settings);
+  return { count: Math.min(count, PIN_CAP), codes: codes.slice(0, PIN_CAP) };
 }
 
 export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
@@ -329,7 +353,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     /* Any till PIN in the blob is removed here, before the document is
        described or stored. It is not copied onto a staff record. The
        audit row is written only when this save lands. */
-    const ignoredPins = absorbStaffPins(state);
+    const ignoredPins = stripSnapshotPins(state);
 
     /* Describe what is being saved. This NEVER refuses — the browser holds
        the only copy, so rejecting a document we merely find surprising
@@ -372,13 +396,15 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     /* A change that landed. Who, when (`at` on the row), and the
        price of each cheque type before and after. */
     if (ignoredPins.count > 0) {
+      const roster = await db.select({ staffId: schema.staffUsers.staffId }).from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, who.tenantId));
+      const known = new Set(roster.map((row) => row.staffId));
       await audit(db, {
         tenantId: who.tenantId,
         legalEntityId: who.legalEntityId,
         branchId: who.branchId,
         actorId: who.id,
         action: "settings.staff_pin_ignored",
-        detail: { count: ignoredPins.count, codes: ignoredPins.codes },
+        detail: { count: ignoredPins.count, codes: ignoredPins.codes.filter((code) => known.has(code)) },
       });
     }
     if (changingFees) {

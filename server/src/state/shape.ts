@@ -33,7 +33,7 @@
    from "described" to "enforced" one at a time, on evidence.
 
    Genuinely dangerous content is a separate matter and is stripped rather
-   than described. See absorbStaffPins in routes/tenantState.ts, which
+   than described. See stripSnapshotPins in routes/tenantState.ts, which
    removes a till PIN from the document and does not copy it onto a staff record.
 
    THE CATALOGUE IS THE ROADMAP

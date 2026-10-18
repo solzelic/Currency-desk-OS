@@ -29,26 +29,18 @@
    access — they would have won already.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
+import { canManage } from "./staff.js";
 
 const PIN = z.string().regex(/^\d{4}$/, "pin: four digits");
 const verifyBody = z.object({ staffId: z.string().min(1).max(120).optional(), pin: PIN });
 const setBody = z.object({ pin: PIN, currentPin: PIN.optional(), staffId: z.string().min(1).max(120).optional() });
-
-/* A manager may set a PIN for someone below them. An administrator may set
-   one for anyone else. A teller naming another person is refused before
-   any write, including their own PIN. */
-function maySetOtherPin(actorRole: string, targetRole: string): boolean {
-  if (actorRole === "administrator") return true;
-  if (actorRole !== "branch_manager") return false;
-  return targetRole !== "branch_manager" && targetRole !== "administrator";
-}
 const resetBody = z.object({ password: z.string().min(1).max(512), pin: PIN });
 
 const MAX_TRIES = 5;
@@ -213,9 +205,9 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       const target = (await db.select().from(schema.staffUsers).where(and(
         eq(schema.staffUsers.tenantId, who.tenantId),
         eq(schema.staffUsers.staffId, named),
-      )).limit(1))[0];
+      )).orderBy(asc(schema.staffUsers.id)).limit(1))[0];
       if (!target) return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
-      if (!maySetOtherPin(who.role, target.role)) {
+      if (!canManage(who, target.role)) {
         return reply.code(403).send({
           error: "permission_denied",
           detail: "You can't set a PIN for that person.",
