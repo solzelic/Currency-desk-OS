@@ -7,15 +7,16 @@ import { createContext, runInContext } from "node:vm";
 
 type FeeFn = (face: unknown, feePct: unknown, feeMin: unknown) => string | null;
 type TextFn = (value: unknown) => string | null;
-type OverFn = (value: unknown) => boolean;
 type ShownFn = (value: unknown) => string | null;
+type ProblemFn = (value: unknown, kind: string) => string | null;
 
 type FeeBox = {
   chequeScheduleFee?: FeeFn;
   feePctText?: TextFn;
-  feePercentOverTwo?: OverFn;
-  moneyOverTwo?: OverFn;
   feePctShown?: ShownFn;
+  feeFigureProblem?: ProblemFn;
+  moneyShown?: ShownFn;
+  feePctCommit?: ShownFn;
 };
 
 const sandbox = createContext({}) as { CDOS_CHEQUE_FEE?: FeeBox };
@@ -40,16 +41,27 @@ export function feePctText(value: unknown): string | null {
   return out == null ? null : String(out);
 }
 
-export function feePercentOverTwo(value: unknown): boolean {
-  const fn = box().feePercentOverTwo;
+export function feeFigureProblem(value: unknown, kind: "percent" | "money"): "places" | "unread" | null {
+  const fn = box().feeFigureProblem;
   if (typeof fn !== "function") throw new Error("cheque fee helper missing");
-  return fn(value) === true;
+  const out = fn(value, kind);
+  if (out == null) return null;
+  if (out !== "places" && out !== "unread") throw new Error("cheque fee helper missing");
+  return out;
 }
 
-export function moneyOverTwo(value: unknown): boolean {
-  const fn = box().moneyOverTwo;
+export function moneyShown(value: unknown): string | null {
+  const fn = box().moneyShown;
   if (typeof fn !== "function") throw new Error("cheque fee helper missing");
-  return fn(value) === true;
+  const out = fn(value);
+  return out == null ? null : String(out);
+}
+
+export function feePctCommit(value: unknown): string | null {
+  const fn = box().feePctCommit;
+  if (typeof fn !== "function") throw new Error("cheque fee helper missing");
+  const out = fn(value);
+  return out == null ? null : String(out);
 }
 
 export function feePctShown(value: unknown): string | null {

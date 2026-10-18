@@ -13,7 +13,7 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { canWriteSetting, CHEQUE_FEE_SCHEDULE_KEY } from "../auth/settingsWrite.js";
-import { feePercentOverTwo, moneyOverTwo } from "../ledger/chequeFee.js";
+import { feeFigureProblem } from "../ledger/chequeFee.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { hashPin } from "./pin.js";
@@ -113,10 +113,12 @@ function stateConflict(row: { state: unknown; version: number } | undefined) {
   };
 }
 
-/* The first fee figure on this save with more than 2 digits after the
-   point. The field name is feePct, feeMin, or feeMax. A string that is
-   not JSON is not this refusal. */
-export function scheduleFigureOverTwo(state: Record<string, unknown> | null): { field: string; detail: string } | null {
+/* The first fee figure this save cannot store. "places" is more than 2
+   digits after the point. "unread" is a figure booking cannot price,
+   including "4." and ".". Both use the same reader as booking. The field
+   name is feePct, feeMin, or feeMax. A string that is not JSON is not
+   this refusal. */
+export function scheduleFigureOverTwo(state: Record<string, unknown> | null): { field: string; id: string; detail: string } | null {
   if (!state || !(CHEQUE_FEE_SCHEDULE_KEY in state)) return null;
   const raw = state[CHEQUE_FEE_SCHEDULE_KEY];
   let parsed: unknown = raw;
@@ -130,10 +132,11 @@ export function scheduleFigureOverTwo(state: Record<string, unknown> | null): { 
   if (!Array.isArray(parsed)) return null;
   for (const row of parsed) {
     if (!row || typeof row !== "object") continue;
-    const item = row as { feePct?: unknown; feeMin?: unknown; feeMax?: unknown };
-    if (feePercentOverTwo(item.feePct)) return { field: "feePct", detail: FEE_PERCENT_PLACES };
-    if ("feeMin" in item && moneyOverTwo(item.feeMin)) return { field: "feeMin", detail: FEE_MIN_PLACES };
-    if ("feeMax" in item && moneyOverTwo(item.feeMax)) return { field: "feeMax", detail: FEE_MAX_PLACES };
+    const item = row as { id?: unknown; feePct?: unknown; feeMin?: unknown; feeMax?: unknown };
+    const id = item.id == null ? "" : String(item.id);
+    if (feeFigureProblem(item.feePct, "percent")) return { field: "feePct", id, detail: FEE_PERCENT_PLACES };
+    if ("feeMin" in item && feeFigureProblem(item.feeMin, "money")) return { field: "feeMin", id, detail: FEE_MIN_PLACES };
+    if ("feeMax" in item && feeFigureProblem(item.feeMax, "money")) return { field: "feeMax", id, detail: FEE_MAX_PLACES };
   }
   return null;
 }
@@ -254,7 +257,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     }
     const overTwo = changingFees ? scheduleFigureOverTwo(asRecord(raw?.state)) : null;
     if (overTwo) {
-      return reply.code(400).send({ error: "fee_places", field: overTwo.field, detail: overTwo.detail });
+      return reply.code(400).send({ error: "fee_places", field: overTwo.field, id: overTwo.id, detail: overTwo.detail });
     }
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });

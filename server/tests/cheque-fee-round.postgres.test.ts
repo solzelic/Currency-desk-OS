@@ -118,7 +118,7 @@ postgres("cheque fee rounding on the route", () => {
     await desk("nope", 5);
     const refused = await cash(teller, "1000.00", "round-unreadable");
     expect(refused.statusCode, refused.body).toBe(422);
-    expect(refused.json()).toMatchObject({ code: "INVALID_REQUEST", message: "The cheque fee schedule cannot be read." });
+    expect(refused.json()).toMatchObject({ code: "INVALID_REQUEST", message: "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule." });
     const booked = await pool.query("SELECT fee_amount FROM ledger_cheques");
     expect(booked.rowCount).toBe(0);
     const till = await pool.query("SELECT available_amount FROM ledger_till_balances WHERE till_id='till-01'");
@@ -142,7 +142,7 @@ postgres("cheque fee rounding on the route", () => {
     const before = await savedSchedule();
     const saved = await putSchedule(schedule(2.12345, 5));
     expect(saved.statusCode, saved.body).toBe(400);
-    expect(saved.json()).toEqual({ error: "fee_places", field: "feePct", detail: FEE_PERCENT_PLACES });
+    expect(saved.json()).toEqual({ error: "fee_places", field: "feePct", id: "payroll", detail: FEE_PERCENT_PLACES });
     expect(await savedSchedule()).toBe(before);
   });
 
@@ -151,7 +151,7 @@ postgres("cheque fee rounding on the route", () => {
     const before = await savedSchedule();
     const saved = await putSchedule(schedule(2, 4.005));
     expect(saved.statusCode, saved.body).toBe(400);
-    expect(saved.json()).toEqual({ error: "fee_places", field: "feeMin", detail: FEE_MIN_PLACES });
+    expect(saved.json()).toEqual({ error: "fee_places", field: "feeMin", id: "payroll", detail: FEE_MIN_PLACES });
     expect(await savedSchedule()).toBe(before);
   });
 
@@ -161,7 +161,7 @@ postgres("cheque fee rounding on the route", () => {
     const withMax = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) => row.id === "payroll" ? { ...row, feeMax: 4.005 } : row));
     const saved = await putSchedule(withMax);
     expect(saved.statusCode, saved.body).toBe(400);
-    expect(saved.json()).toEqual({ error: "fee_places", field: "feeMax", detail: FEE_MAX_PLACES });
+    expect(saved.json()).toEqual({ error: "fee_places", field: "feeMax", id: "payroll", detail: FEE_MAX_PLACES });
     expect(await savedSchedule()).toBe(before);
   });
 
@@ -170,11 +170,42 @@ postgres("cheque fee rounding on the route", () => {
     const before = await savedSchedule();
     const refused = await putSchedule(schedule(1e-7, 5));
     expect(refused.statusCode, refused.body).toBe(400);
-    expect(refused.json()).toEqual({ error: "fee_places", field: "feePct", detail: FEE_PERCENT_PLACES });
+    expect(refused.json()).toEqual({ error: "fee_places", field: "feePct", id: "payroll", detail: FEE_PERCENT_PLACES });
     expect(await savedSchedule()).toBe(before);
     const saved = await putSchedule(schedule(1e2, 5));
     expect(saved.statusCode, saved.body).toBe(200);
     expect(await savedSchedule()).toContain('"feePct":100');
+  });
+
+  it.each([
+    ["feePct", -2, FEE_PERCENT_PLACES],
+    ["feePct", "abc", FEE_PERCENT_PLACES],
+    ["feePct", 1e21, FEE_PERCENT_PLACES],
+    ["feePct", 1234567, FEE_PERCENT_PLACES],
+    ["feePct", "2.5000000000000", FEE_PERCENT_PLACES],
+    ["feePct", ".", FEE_PERCENT_PLACES],
+    ["feeMin", -5, FEE_MIN_PLACES],
+    ["feeMin", "1e3", FEE_MIN_PLACES],
+    ["feeMin", 1e13, FEE_MIN_PLACES],
+    ["feeMin", "4.", FEE_MIN_PLACES],
+    ["feeMax", "x", FEE_MAX_PLACES],
+  ] as const)("refuses a %s of %j on save", async (field, value, detail) => {
+    await desk();
+    const before = await savedSchedule();
+    const body = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) => row.id === "payroll" ? { ...row, [field]: value } : row));
+    const saved = await putSchedule(body);
+    expect(saved.statusCode, saved.body).toBe(400);
+    expect(saved.json()).toEqual({ error: "fee_places", field, id: "payroll", detail });
+    expect(await savedSchedule()).toBe(before);
+  });
+
+  it("refuses a stored minimum of 4. and cashes nothing", async () => {
+    await desk(2, "4.");
+    const refused = await cash(teller, "1000.25", "round-dot-min");
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json()).toMatchObject({ code: "INVALID_REQUEST", message: "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule." });
+    const booked = await pool.query("SELECT fee_amount FROM ledger_cheques");
+    expect(booked.rowCount).toBe(0);
   });
 
   it("rounds a stored percent of 2.125 half up to 2.13 and still books", async () => {

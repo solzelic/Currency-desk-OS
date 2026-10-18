@@ -24,19 +24,30 @@ var CDOS_CHEQUE_FEE = (function () {
     return centsText(due);
   }
 
-  function moneyCents(value) {
-    var match = /^(\d{1,12})(?:\.(\d{1,2}))?$/.exec(String(value).trim());
+  /* One reader for a fee figure. Booking and the save check both call it.
+     A trailing dot, a sign, an exponent, or too many digits is not a figure.
+     "1000.5" is 1000.50. "4." is not money. "." is not a percent. */
+  function readParts(value, wholeMax, fracMax) {
+    if (typeof value !== "number" && typeof value !== "string") return null;
+    var text = typeof value === "number" ? String(value) : value.trim();
+    var match = new RegExp("^(\\d{1," + wholeMax + "})(?:\\.(\\d{1," + fracMax + "}))?$").exec(text);
     if (!match) return null;
-    var cents = Number(match[1]) * 100 + Number((match[2] || "").padEnd(2, "0"));
+    return { whole: match[1], frac: match[2] || "" };
+  }
+
+  function moneyCents(value) {
+    var parts = readParts(value, 12, 2);
+    if (!parts) return null;
+    var cents = Number(parts.whole) * 100 + Number(parts.frac.padEnd(2, "0"));
     return Number.isSafeInteger(cents) ? cents : null;
   }
 
   /* A stored percent with more than 2 digits after the point becomes 2
      digits, half up, before the fee is taken. 2.125 is 2.13. 2.12345 is 2.12. */
   function percentParts(value) {
-    var match = /^(\d{1,6})(?:\.(\d{1,12}))?$/.exec(String(value).trim());
-    if (!match) return null;
-    var hundredths = percentHundredths(match[1], match[2] || "");
+    var parts = readParts(value, 6, 12);
+    if (!parts) return null;
+    var hundredths = percentHundredths(parts.whole, parts.frac);
     if (hundredths == null) return null;
     return { num: hundredths, scale: 100 };
   }
@@ -105,14 +116,38 @@ var CDOS_CHEQUE_FEE = (function () {
     return (body.split(".")[1] || "").replace(/0+$/, "").length;
   }
 
-  function feePercentOverTwo(value) {
+  /* One answer for a percent and for a money figure. They used to be two
+     copies of the same digit count, and the count treated an unreadable
+     figure as fine. "places" is more than 2 digits after the point.
+     "unread" is anything this reader's booking path cannot price, including
+     "4." and ".". Empty is 0, which booking already prices. */
+  function feeFigureProblem(value, kind) {
+    if (value == null || String(value).trim() === "") return null;
     var digits = fractionalDigits(value);
-    return digits != null && digits > 2;
+    if (digits != null && digits > 2) return "places";
+    if (kind === "percent") return percentParts(value) == null ? "unread" : null;
+    return moneyCents(value) == null ? "unread" : null;
   }
 
-  function moneyOverTwo(value) {
-    var digits = fractionalDigits(value);
-    return digits != null && digits > 2;
+  /* "4." is 4.00. A figure booking cannot price stays null, so the field
+     can keep it and the save can refuse it. */
+  function moneyShown(value) {
+    var text = String(value == null ? "" : value).trim();
+    if (text === "" || text === ".") return "";
+    if (/\.$/.test(text)) text = text.slice(0, -1);
+    var cents = moneyCents(text);
+    return cents == null ? null : centsText(cents);
+  }
+
+  /* "." and an empty field commit as "". "2." commits as "2". A percent
+     booking cannot price, or one with more than 2 digits, commits as null. */
+  function feePctCommit(value) {
+    var text = String(value == null ? "" : value).trim();
+    if (text === "" || text === ".") return "";
+    if (/\.$/.test(text)) text = text.slice(0, -1);
+    if (text === "") return "";
+    if (feeFigureProblem(text, "percent")) return null;
+    return feePctShown(text);
   }
 
   /* The percent the table shows and the edit state keeps. 2.125 is 2.13,
@@ -132,15 +167,13 @@ var CDOS_CHEQUE_FEE = (function () {
     return neg ? "-" + text : text;
   }
 
+  /* The screen and the save. The readers above stay inside this file. */
   return {
     chequeScheduleFee: chequeScheduleFee,
-    moneyCents: moneyCents,
-    percentParts: percentParts,
-    divHalfUp: divHalfUp,
-    centsText: centsText,
     feePctText: feePctText,
-    feePercentOverTwo: feePercentOverTwo,
-    moneyOverTwo: moneyOverTwo,
     feePctShown: feePctShown,
+    feeFigureProblem: feeFigureProblem,
+    moneyShown: moneyShown,
+    feePctCommit: feePctCommit,
   };
 })();

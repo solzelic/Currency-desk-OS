@@ -356,3 +356,52 @@ test("a stored 2.125 shows as 2.13, and editing another row saves 2.13", async (
     await pool.end();
   }
 });
+
+/* "4." is 4.00. "." is not a percent, so blur puts the saved one back. */
+test("a trailing dot tidies on blur", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await signInAtDesk(page, "j.masri");
+  await openFees(page);
+  const min = page.getByTestId("fee-min").nth(1);
+  await min.fill("4.");
+  await min.blur();
+  await expect(min).toHaveValue("4.00");
+  const pct = page.getByTestId("fee-pct").nth(1);
+  await pct.fill(".");
+  await pct.blur();
+  await expect(pct).toHaveValue("2");
+});
+
+/* The banner prints the server's sentence. Hardcoding the fee % line
+   leaves Min and Max showing the wrong words, and this check goes red. */
+test("the places banner shows each server message", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await signInAtDesk(page, "j.masri");
+  await openFees(page);
+  const cases = [
+    { field: "feePct", testid: "fee-pct", detail: "That change didn't save. A fee % can have up to 2 decimals, like 2.25." },
+    { field: "feeMin", testid: "fee-min", detail: "That change didn't save. A minimum fee can have up to 2 decimals, like 4.00." },
+    { field: "feeMax", testid: "", detail: "That change didn't save. A maximum fee can have up to 2 decimals, like 4.00." },
+  ];
+  for (const item of cases) {
+    await page.route("**/api/tenant/state", (route) => {
+      if (route.request().method() !== "PUT") return route.continue();
+      return route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "fee_places", field: item.field, id: "government", detail: item.detail }),
+      });
+    });
+    await page.getByTestId("fee-min").first().fill("4.50");
+    await page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
+    const banner = page.getByTestId("fee-schedule-places");
+    await expect(banner).toHaveText(item.detail);
+    await expect(banner).toHaveCSS("font-size", "13px");
+    if (item.testid) {
+      const input = page.getByTestId(item.testid).first();
+      await expect(input).toHaveAttribute("aria-invalid", "true");
+      await expect.poll(() => input.evaluate((el) => getComputedStyle(el).outlineWidth)).not.toBe("0px");
+    }
+    await page.unroute("**/api/tenant/state");
+  }
+});

@@ -186,7 +186,7 @@ async function scheduledFee(
   const raw = found.rows[0].schedule;
   const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
   if (!Array.isArray(parsed)) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+    throw new LedgerError("INVALID_REQUEST", "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule.");
   }
   const row = parsed.find((item) => item && String(item.id) === chequeType) as
     | { feePct?: unknown; feeMin?: unknown }
@@ -197,7 +197,7 @@ async function scheduledFee(
      A figure it cannot read is refused. It is not a fee of 0.00. */
   const dueText = chequeScheduleFee(fixed(face), row.feePct, row.feeMin);
   if (dueText == null) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+    throw new LedgerError("INVALID_REQUEST", "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule.");
   }
   return new Decimal(dueText);
 }
