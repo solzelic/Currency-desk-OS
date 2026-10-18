@@ -192,12 +192,10 @@ async function scheduledFee(
     | { feePct?: unknown; feeMin?: unknown }
     | undefined;
   if (!row) return null;
-  const pct = new Decimal(row.feePct as Decimal.Value);
-  const min = new Decimal(row.feeMin as Decimal.Value);
-  if (!pct.isFinite() || !min.isFinite() || pct.isNeg() || min.isNeg()) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
-  }
-  const dueText = chequeScheduleFee(fixed(face), String(row.feePct), String(row.feeMin));
+  /* The helper reads the stored figures. A percent with more than 2
+     digits after the point rounds half up to 2 here, and still books.
+     A figure it cannot read is refused. It is not a fee of 0.00. */
+  const dueText = chequeScheduleFee(fixed(face), row.feePct, row.feeMin);
   if (dueText == null) {
     throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
   }

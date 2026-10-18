@@ -84,6 +84,7 @@
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
+  const FEE_PLACES = 'A fee percent can have at most 2 decimal places.';
   /* Two decimals while a digit is still being typed. */
   function money2(n) {
     if (typeof n === 'string' && /^\d*\.\d{0,1}$/.test(n)) return n;
@@ -94,6 +95,7 @@
     const mayEdit = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
     const [draft, setDraft] = useState(schedule);
     const [refused, setRefused] = useState(false);
+    const [places, setPlaces] = useState(false);
     const [conflict, setConflict] = useState(false); const [trouble, setTrouble] = useState(false);
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -106,22 +108,28 @@
         const persist = window.CDOS_PERSIST;
         const snap = persist && persist.snapshot ? persist.snapshot() : {};
         const version = persist && persist.status ? persist.status().version : 0;
-        snap[SKEY] = JSON.stringify(draft);
+        const clean = draft.map(row => {
+          const text = String(row.feePct).replace(/\.$/, '');
+          return /^\d{1,6}(?:\.\d{1,2})?$/.test(text) ? { ...row, feePct: Number(text) } : row;
+        });
+        snap[SKEY] = JSON.stringify(clean);
         const res = await fetch('/api/tenant/state', {
           method: 'PUT', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ state: snap, version: version }),
         });
         let body = null; try { body = await res.json(); } catch (e) { body = null; }
-        if (res.status === 409) { setConflict(true); setRefused(false); setTrouble(false); setSaved(false); return; }
-        if (res.status === 403) { setRefused(true); setConflict(false); setTrouble(false); setSaved(false); return; }
+        if (res.status === 409) { setConflict(true); setRefused(false); setPlaces(false); setTrouble(false); setSaved(false); return; }
+        if (res.status === 403) { setRefused(true); setConflict(false); setPlaces(false); setTrouble(false); setSaved(false); return; }
+        if (res.status === 400 && body && body.error === 'fee_percent_places') { setPlaces(true); setRefused(false); setConflict(false); setTrouble(false); setSaved(false); return; }
         if (!res.ok || !body) throw new Error('The fee schedule was not saved.');
         if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
-        localStorage.setItem(SKEY, JSON.stringify(draft));
-        setSchedule(draft);
-        setRefused(false);
+        localStorage.setItem(SKEY, JSON.stringify(clean));
+        setDraft(clean);
+        setSchedule(clean);
+        setRefused(false); setPlaces(false);
         setConflict(false); setTrouble(false);
         setSaved(true);
-      } catch (e) { setTrouble(true); setConflict(false); setRefused(false); setSaved(false); } finally { setBusy(false); }
+      } catch (e) { setTrouble(true); setConflict(false); setRefused(false); setPlaces(false); setSaved(false); } finally { setBusy(false); }
     };
     const cell = { color: mayEdit ? CD.ink : CD.mute, fontVariantNumeric: 'tabular-nums' };
     return (<div className="p-4" data-testid="fee-schedule" style={{ minWidth: 0, maxWidth: '100%' }}>
@@ -139,7 +147,7 @@
                 ? <select value={t.risk} onChange={e => set(t.id, 'risk', e.target.value)} className="fee-field text-[12px] px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, color: rt.c, background: rt.bg }}>{['low', 'medium', 'high'].map(r => <option key={r} value={r}>{RISK_TONE[r].t}</option>)}</select>
                 : <span className="text-[12px]" style={{ color: CD.mute }}>{rt.t}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
-                ? <input type="number" step="0.1" value={t.feePct} onChange={e => set(t.id, 'feePct', +e.target.value)} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
+                ? <input type="number" step="0.01" value={t.feePct} onChange={e => { const next = window.CDOS_CHEQUE_FEE.feePctText(e.target.value); if (next != null && next !== '') set(t.id, 'feePct', next); }} className="fee-field w-16 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
                 : <span style={cell}>{t.feePct}</span>}</td>
               <td className="px-3 py-2 text-right">{mayEdit
                 ? <input type="text" inputMode="decimal" value={money2(t.feeMin)} onChange={e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, ''))} onBlur={e => set(t.id, 'feeMin', money2(e.target.value))} className="fee-field w-20 text-right px-2 py-1 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontVariantNumeric: 'tabular-nums' }} />
@@ -153,7 +161,7 @@
       </div>
       <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce.</p>
       {mayEdit && <div className="mt-3">
-        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}{trouble && <p role="alert" data-testid="fee-schedule-error" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>That change didn't save. Try again.</p>}
+        {refused && <p role="alert" data-testid="fee-schedule-refused" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}><Ic n="lock" s={13} c={CD.amber} /> {FEE_BANNER}</p>}{places && <p role="alert" data-testid="fee-schedule-places" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>{FEE_PLACES}</p>}{trouble && <p role="alert" data-testid="fee-schedule-error" className="fee-lock fee-banner mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>That change didn't save. Try again.</p>}
         {conflict && <p role="alert" data-testid="fee-schedule-conflict" className="fee-lock fee-banner fee-conflict mb-2 px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 8 }}>{FEE_CONFLICT} <button type="button" data-testid="fee-schedule-reload" onClick={async () => { try { const res = await fetch('/api/tenant/state', { credentials: 'same-origin' }); if (!res.ok) throw new Error('reload'); const body = await res.json(); const persist = window.CDOS_PERSIST; if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version); const raw = body && body.state ? body.state[SKEY] : null; const next = typeof raw === 'string' ? JSON.parse(raw) : (Array.isArray(raw) ? raw : schedule); setDraft(next); setSchedule(next); setConflict(false); setTrouble(false); } catch (e) { setTrouble(true); } }} className="fee-reload">Reload</button></p>}
         <div className="flex items-center gap-2">
           <button type="button" data-testid="fee-schedule-save" onClick={save} disabled={busy} className="fee-save px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9, opacity: busy ? 0.6 : 1 }}>Save</button>
