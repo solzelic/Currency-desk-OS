@@ -55,6 +55,19 @@
       [data-tile] b, [data-tile] b + span { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; -webkit-line-clamp: unset !important; display: block !important; }
       [data-tile] [aria-hidden="true"] { display: none !important; }
       [data-detail-points] { grid-template-columns: minmax(0, 1fr) !important; hyphens: none !important; -webkit-hyphens: none !important; }
+      #product { height: auto !important; }
+      #product [data-sticky] { position: relative !important; height: auto !important; overflow: visible !important; }
+      [data-feat-frame] { height: auto !important; min-height: 280px !important; }
+      [data-feat-detail] { position: relative !important; inset: auto !important; height: auto !important; }
+    }
+    @media (max-width: 399px) {
+      [data-nav-row] { grid-template-columns: minmax(0, 1fr) auto !important; column-gap: 8px !important; padding-left: 12px !important; padding-right: 12px !important; }
+      [data-nav-actions] { gap: 0 !important; flex-wrap: nowrap !important; }
+      [data-nav-brand] { gap: 8px !important; min-width: 0 !important; white-space: nowrap !important; }
+      [data-nav-brand] svg { width: 32px !important; height: 22px !important; }
+      [data-nav-word] { font-size: 12px !important; letter-spacing: 0.02em !important; white-space: nowrap !important; }
+      [data-nav-signin] { display: none !important; }
+      [data-nav-cta] { height: 44px !important; white-space: nowrap !important; flex: none !important; padding: 0 10px !important; letter-spacing: 0.04em !important; }
     }
   </style>
   <meta name="ext-resource-dependency" content="../photos/rate-board-storefront.jpg">
@@ -82,19 +95,19 @@
 
   <!-- ================= NAV ================= -->
   <div style="position: sticky; top: 0; z-index: 50; backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); background: rgba(231,227,218,0.8); border-bottom: 1px solid var(--line);">
-    <div style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px;">
-      <a href="#top" style="justify-self: start; display: inline-flex; align-items: center; gap: 11px; height: 100%; color: var(--ink);">
+    <div data-nav-row style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px;">
+      <a data-nav-brand href="#top" style="justify-self: start; display: inline-flex; align-items: center; gap: 11px; height: 100%; color: var(--ink);">
         <svg viewBox="0 0 200 140" width="46" height="32"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
-        <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
+        <span style="display: inline-flex; align-items: baseline; flex: none;"><span data-nav-word style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
       </a>
       <div style="justify-self: center; display: none; gap: 30px; align-items: center; height: 100%;" data-nav-links="true">
         <a href="#product" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Product</a>
         <a href="#compliance" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Compliance</a>
         <a href="#pricing" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Pricing</a>
       </div>
-      <div style="justify-self: end; display: flex; align-items: center; gap: 20px; height: 100%;">
-        <a href="../app/CurrencyDesk Sign In.dc.html" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 700; color: var(--ink); transition: color 0.25s ease;" style-hover="color: var(--green);">Sign in</a>
-        <a href="CurrencyDesk Early Access.dc.html" style="position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 15px; background: var(--green); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; animation: cdPulseG 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), background 0.25s ease;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);"><span style="position: relative; width: 5.5px; height: 5.5px; border-radius: 50%; flex: none; background: #7fe3ab; animation: cdLive 2s infinite;"></span><span style="position: relative;">Get early access</span></a>
+      <div data-nav-actions style="justify-self: end; display: flex; align-items: center; gap: 20px; height: 100%;">
+        <a data-nav-signin href="../app/CurrencyDesk Sign In.dc.html" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 700; color: var(--ink); transition: color 0.25s ease;" style-hover="color: var(--green);">Sign in</a>
+        <a data-nav-cta href="CurrencyDesk Early Access.dc.html" style="position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 15px; background: var(--green); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; animation: cdPulseG 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), background 0.25s ease;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);"><span style="position: relative; width: 5.5px; height: 5.5px; border-radius: 50%; flex: none; background: #7fe3ab; animation: cdLive 2s infinite;"></span><span style="position: relative;">Get early access</span></a>
       </div>
     </div>
   </div>
@@ -233,7 +246,7 @@
 
       <div style="position: relative; border-radius: 20px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 44px 90px -42px rgba(23,20,15,0.6);">
         <div style="position: relative; z-index: 5; display: flex; align-items: center; gap: 7px; padding: 12px 16px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span><span style="margin-left: auto; font-family: var(--m); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--green-deep); font-weight: 600;">{{ activeTitle }}</span></div>
-        <div style="position: relative; height: clamp(250px, 42vh, 452px); background: var(--paper2);">
+        <div data-feat-frame style="position: relative; height: clamp(250px, 42vh, 452px); background: var(--paper2);">
           <sc-for list="{{ features }}" as="f" hint-placeholder-count="9">
             <div style="{{ f.layerStyle }}">
               <image-slot id="{{ f.slot }}" src="{{ f.src }}" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
@@ -246,7 +259,7 @@
             </div>
           </sc-for>
           <sc-if value="{{ detailOpen }}" hint-placeholder-val="{{ false }}">
-            <div style="position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; padding: 26px 28px 24px; background: rgba(251,249,244,0.94); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); animation: cdStageIn 0.42s cubic-bezier(0.2,0.8,0.2,1);">
+            <div data-feat-detail style="position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; padding: 26px 28px 24px; background: rgba(251,249,244,0.94); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); animation: cdStageIn 0.42s cubic-bezier(0.2,0.8,0.2,1);">
               <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
                 <div>
                   <div style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green-deep); font-weight: 600;"><span style="width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: var(--green);">{{ detailIcon }}</span>{{ detailNum }} · {{ detailKicker }}</div>
@@ -666,7 +679,7 @@
         <div>
           <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Get started</div>
           <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 12px 18px; border-radius: 11px; background: var(--green); color: #fff; font-family: var(--m); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);">Apply for access<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
-          <div style="margin-top: 12px;"><a href="../app/CurrencyDesk Sign In.dc.html" style="font-size: 13px; color: var(--mute);">Already a member? Sign in</a></div>
+          <div style="margin-top: 12px;"><a data-footer-signin href="../app/CurrencyDesk Sign In.dc.html" style="font-size: 13px; color: var(--mute);">Already a member? Sign in</a></div>
         </div>
       </div>
 
