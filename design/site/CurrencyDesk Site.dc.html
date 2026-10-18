@@ -1360,7 +1360,11 @@ class Component extends DCLogic {
         });
       })(this),
       jurRules: J.rules.map((r, i) => {
-        const sp = (this.SPANBY[J.rules.length] || [])[i] || [3, 1]; const acc = this.JACC[J.tag];
+        /* Five Hong Kong rows used to put the first card on two rows.
+           That card is one line of text, so the tile was tall and empty.
+           One row each fills the same grid. */
+        const spans = J.tag === 'C&ED' ? [[6,1],[3,1],[3,1],[3,1],[3,1]] : (this.SPANBY[J.rules.length] || []);
+        const sp = spans[i] || [3, 1]; const acc = this.JACC[J.tag];
         const ico = this.CATICON[r.cat] || 'shield';
         const tall = sp[1] > 1;
         return { slot: i, name: r.name, spec: r.spec, tag: r.tag, tall: tall, flat: !tall,
