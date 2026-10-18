@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -59,13 +60,14 @@ describe("tenant state", () => {
     expect(put.statusCode).toBe(401);
   });
 
-  it("starts empty, then round-trips the saved snapshot", async () => {
+  it("starts from the default cheque schedule, then round-trips a save that keeps it", async () => {
     const cookie = await yorkCookie();
     const empty = await app.inject({ method: "GET", url: "/api/tenant/state", headers: { cookie } });
     expect(empty.statusCode).toBe(200);
-    expect(empty.json().state).toBeNull(); // never saved yet
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    expect(empty.json().state.cdos_cheque_schedule_v1).toBe(schedule);
 
-    const snapshot = { cdos_rows_v1: [{ id: "t1", amount: 500 }], cdos_settings: { deskName: "Yorkville Desk" }, yorkfx_rates_v1: { USD: 1.37 } };
+    const snapshot = { cdos_cheque_schedule_v1: schedule, cdos_rows_v1: [{ id: "t1", amount: 500 }], cdos_settings: { deskName: "Yorkville Desk" }, yorkfx_rates_v1: { USD: 1.37 } };
     const save = await app.inject({ method: "PUT", url: "/api/tenant/state", headers: { cookie }, payload: { state: snapshot } });
     expect(save.statusCode).toBe(200);
     expect(save.json().ok).toBe(true);
@@ -79,17 +81,19 @@ describe("tenant state", () => {
     const york = await yorkCookie();
     const aspen = await newDeskCookie("aspenstate");
 
-    // the brand-new desk sees NOTHING of York's saved state
+    // the brand-new desk has its own schedule, and none of York's other keys
     const aspenEmpty = await app.inject({ method: "GET", url: "/api/tenant/state", headers: { cookie: aspen } });
-    expect(aspenEmpty.json().state).toBeNull();
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    expect(aspenEmpty.json().state.cdos_cheque_schedule_v1).toBe(schedule);
+    expect(aspenEmpty.json().state.cdos_rows_v1).toBeUndefined();
 
     // each writes its own; neither leaks into the other
-    await app.inject({ method: "PUT", url: "/api/tenant/state", headers: { cookie: aspen }, payload: { state: { desk: "aspen" } } });
-    await app.inject({ method: "PUT", url: "/api/tenant/state", headers: { cookie: york }, payload: { state: { desk: "york" } } });
+    await app.inject({ method: "PUT", url: "/api/tenant/state", headers: { cookie: aspen }, payload: { state: { cdos_cheque_schedule_v1: schedule, desk: "aspen" } } });
+    await app.inject({ method: "PUT", url: "/api/tenant/state", headers: { cookie: york }, payload: { state: { cdos_cheque_schedule_v1: schedule, desk: "york" } } });
     const a = await app.inject({ method: "GET", url: "/api/tenant/state", headers: { cookie: aspen } });
     const y = await app.inject({ method: "GET", url: "/api/tenant/state", headers: { cookie: york } });
-    expect(a.json().state).toEqual({ desk: "aspen" });
-    expect(y.json().state).toEqual({ desk: "york" });
+    expect(a.json().state).toEqual({ cdos_cheque_schedule_v1: schedule, desk: "aspen" });
+    expect(y.json().state).toEqual({ cdos_cheque_schedule_v1: schedule, desk: "york" });
 
     // one row per tenant — an upsert, not an append
     const rows = await handle.db.select().from(schema.tenantState);

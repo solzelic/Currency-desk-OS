@@ -50,6 +50,7 @@ async function removeDesk() {
   await pool.query("DELETE FROM branches WHERE tenant_id=$1", [TENANT]);
   await pool.query("DELETE FROM legal_entities WHERE id=$1", [ENTITY]);
   await pool.query("DELETE FROM audit_events WHERE tenant_id=$1", [TENANT]);
+  await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [TENANT]);
   await pool.query("DELETE FROM tenants WHERE id=$1", [TENANT]);
   await pool.query("DELETE FROM pending_signups WHERE email=$1", [EMAIL]);
 }

@@ -43,6 +43,8 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     pool = new pg.Pool({ connectionString: url });
     handle = await createDb();
     await seed(handle.db);
+    /* The 35.00 fee is the payload. The seed's schedule would book 30.00. */
+    await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
     app = await buildApp(handle.db);
   });
   afterAll(async () => {

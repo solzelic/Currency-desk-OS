@@ -25,6 +25,7 @@ import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js
 import { forgetClaimedCount } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
+import { ensureDefaultChequeSchedule } from "../state/defaultChequeSchedule.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
 import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
@@ -1527,6 +1528,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if ((await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.staffId, b.ownerEmail)).limit(1)).length) return reply.code(409).send({ error: "email_in_use", detail: "That email already owns a desk." });
     const tenantId = "tnt-" + b.slug, legalEntityId = "le-" + b.slug, branchId = "br-" + b.slug + "-main", workspaceId = "ws-" + b.slug + "-till-01";
     await db.insert(schema.tenants).values({ id: tenantId, name: b.businessName, plan: b.plan, siteSlug: b.slug }).onConflictDoNothing();
+    await ensureDefaultChequeSchedule(db, tenantId);
     const canada = requirePackForCountry("CA");
     await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: b.businessName, homeCurrency: canada.homeCurrency, jurisdictionPackId: canada.packId, jurisdictionPackVersion: canada.version, jurisdiction: "FINTRAC" }).onConflictDoNothing();
     await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();

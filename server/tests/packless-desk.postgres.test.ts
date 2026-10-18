@@ -136,6 +136,7 @@ postgres("a desk with no country pack uses the baseline", () => {
     pool = new pg.Pool({ connectionString: url });
     handle = await createDb();
     await seed(handle.db);
+    await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
     app = await buildApp(handle.db);
     service = new LedgerService(pool);
   });
