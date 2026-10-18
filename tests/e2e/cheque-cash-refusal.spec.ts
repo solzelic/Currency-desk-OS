@@ -158,6 +158,21 @@ async function contrast(page: Page) {
   });
 }
 
+test("payroll of 1,000.25 at 2% shows a fee of $20.01 and a front of $980.24", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await signInAtDesk(page, "m.costa");
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await openTill(page);
+  await openCheques(page);
+  await fillTicket(page);
+  const ticket = page.locator(".fixed").filter({ hasText: "Cash & hold" });
+  await expect(ticket).toContainText("fee $20.01");
+  await expect(ticket).toContainText("$980.24");
+  await expect(ticket).not.toContainText("$20.00");
+  await expect(ticket).not.toContainText("$980.25");
+});
+
 test("a refused cashing keeps the ticket and shows the amber alert", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await signInAtDesk(page, "m.costa");

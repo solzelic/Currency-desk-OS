@@ -330,7 +330,7 @@ postgres("cheque fee schedule is owner or manager", () => {
   it("refuses off-schedule fees for every role except the owner and a branch manager", async () => {
     await desk();
     const tillBefore = await tillAmount();
-    /* Trainee is stored as a teller. s.iqbal is that teller. */
+    /* s.iqbal is a second teller. There is no trainee staff role. */
     const refused = [
       ["m.costa", 422],
       ["a.singh", 422],

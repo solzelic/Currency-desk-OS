@@ -170,7 +170,7 @@ const CHEQUE_FEE_UNREADABLE = "Nothing was cashed. The cheque fee schedule canno
 
 /* Who may book a fee other than the schedule. Not who may edit the
    schedule: a compliance officer may set it and may not book off it. */
-function canBookOffSchedule(role: string): boolean {
+export function canBookOffSchedule(role: string): boolean {
   return role === "administrator" || role === "branch_manager";
 }
 
