@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>window.__resources = {"https://unpkg.com/react@18.3.1/umd/react.production.min.js":"/web/vendor/react.production.min.js","https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js":"/web/vendor/react-dom.production.min.js"};</script>
 <script src="/web/support.js"></script>
-<title>CurrencyDesk, more trades, less paperwork</title>
+<title>more trades, less paperwork | CurrencyDesk</title>
 <meta name="description" content="One desk for the whole shop: the rate board, till and ledger, and clients. Canada is the only Live country.">
 <link rel="canonical" href="https://www.currencydeskos.com/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="CurrencyDesk">
-<meta property="og:title" content="CurrencyDesk, more trades, less paperwork">
+<meta property="og:title" content="more trades, less paperwork | CurrencyDesk">
 <meta property="og:description" content="One desk for the whole shop: the rate board, till and ledger, and clients. Canada is the only Live country.">
 <meta property="og:url" content="https://www.currencydeskos.com/">
 <meta property="og:image" content="https://www.currencydeskos.com/web/photos/rate-board-storefront.jpg">
@@ -361,7 +361,7 @@
         <div style="{{ textColStyle }}">
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Compliance · On the record</div>
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.015em; margin: 9px 0 0; color: var(--ink); text-wrap: pretty;">The desk knows the rules, so you can focus on the transaction.</h2>
-          <p style="margin: 14px 0 0; font-size: 15.5px; line-height: 1.6; color: var(--mute); max-width: 470px;">Your regulator's rulebook loads first, thresholds watched, reports prepared, every record kept in one place. You quote the rate; the desk keeps the file. <a href="{{ jurLink }}" style="color: var(--green); font-weight: 600; white-space: nowrap; border-bottom: 1px solid rgba(29,107,69,0.32);" style-hover="color: var(--green-deep); border-bottom-color: var(--green);">See more details</a></p>
+          <p style="margin: 14px 0 0; font-size: 15.5px; line-height: 1.6; color: var(--mute); max-width: 470px;">For Canada, the desk applies the identification lines and watches cash thresholds from the book. A large cash worksheet can be prepared. The desk does not send it. You quote the rate; the desk keeps the file. <a href="{{ jurLink }}" style="color: var(--green); font-weight: 600; white-space: nowrap; border-bottom: 1px solid rgba(29,107,69,0.32);" style-hover="color: var(--green-deep); border-bottom-color: var(--green);">See more details</a></p>
         </div>
 
         <div style="min-width: 0; display: flex; flex-direction: column;">
@@ -749,7 +749,7 @@ class Component extends DCLogic {
       { icon:'chart', slot:'gc-report', src:'/web/photos/reports-ledger.jpg', ph:'Overhead of a ledger book, calculator and tea on a desk', kicker:'SAMPLE FIGURE', value:'+$1,284', sub:'Sample takings, not a measured day', chip:'Sample', kind:'good', title:'Reports', body:'Figures the book already holds. The desk does not write a regulator report on its own.' },
       { icon:'shield', slot:'gc-cash', src:'/web/photos/cheque-cashing.jpg', ph:'Customer handing a cheque across the counter to a teller', kicker:'SAMPLE FIGURE', value:'$1,450.00', sub:'Sample cheque, not a real ticket', chip:'Logged', kind:'good', title:'Cheque cashing', body:'Cash a cheque and the desk logs it. Payer, amount, fee and hold, attached to the client.' },
       { icon:'vault', slot:'gc-vault', src:'/web/photos/vault-count.jpg', ph:'Large safe open in the back room, shelves squared and counted', kicker:'SAMPLE FIGURE', value:'$184,200', sub:'Sample vault total, not a count', chip:'Sample', kind:'good', title:'Vault management', body:'Always know what is in the safe, and who was the last one in it.' },
-      { icon:'spark', slot:'gc-ai', src:'/web/photos/ai-copilot-guilloche.jpg', ph:'Engraved banknote guilloch\u00e9 line-work, macro, deep green', kicker:'COMING SOON', value:'Not included yet', sub:'Coming soon, not included yet', chip:'Coming soon', kind:'good', title:'AI copilot', body:'Coming soon, not included yet. The AI copilot does not answer questions on a customer desk today.' }
+      { icon:'spark', slot:'gc-ai', src:'/web/photos/ai-copilot-guilloche.jpg', ph:'Engraved banknote guilloch\u00e9 line-work, macro, deep green', kicker:'COMING SOON', value:'Not included yet', sub:'Coming soon, not included yet', chip:'Coming soon', kind:'neutral', title:'AI copilot', body:'Coming soon, not included yet. The AI copilot does not answer questions on a customer desk today.' }
     ];
   }
 
@@ -761,7 +761,7 @@ class Component extends DCLogic {
       { tag: 'CLIENTS', desc: 'Capture a client once and they are yours. The next visit reuses the file already on the desk.', points: ['Capture ID once, reuse every visit', 'Screening is not connected', 'No list is loaded', 'A document expiry reminder is not sent'] },
       { tag: 'REGULATORY', desc: 'The Canada pack watches cash thresholds on the book. The desk does not draft a regulator report on its own and does not send one.', points: ['Cash thresholds watched from the book', 'A large cash worksheet can be prepared', 'The desk does not send it', 'There is no one-click exam package'] },
       { tag: 'REPORTS', desc: 'The book can show takings, margin, and a client history from deals already written. It does not write whatever an accountant or a regulator asks for.', points: ['Takings for a period the book holds', 'Margin from posted deals', 'One client history from posted deals', 'An export is not a filing'] },
-      { tag: 'CHEQUES', desc: 'Cheque cashing, on the record. Set your fee once and the desk figures the rest. What the client gets, what you keep, and how long the funds are held, then files it against their name so a returned cheque is never a mystery.', points: ['Fee and hold worked out for you', 'Payer and cheque details kept on file', 'Repeat cheques recognised at the counter', 'Returned-cheque history on every client'] },
+      { tag: 'CHEQUES', desc: 'Cheque cashing, on the record. Set your fee once and the desk figures the rest: what the client gets, what you keep, and how long the funds are held: then files it against their name so a returned cheque is never a mystery.', points: ['Fee and hold worked out for you', 'Payer and cheque details kept on file', 'Repeat cheques recognised at the counter', 'Returned-cheque history on every client'] },
       { tag: 'VAULT', desc: 'The safe, on the record. Holdings by currency and denomination, every movement between till and vault logged, and the count you did sitting next to the number expected.', points: ['Holdings by currency and denomination', 'Every till-to-vault move logged', 'Counted against expected, side by side', 'Who opened it, and when'] },
       { tag: 'INTELLIGENCE', desc: 'Coming soon, not included yet. The AI copilot does not answer questions on a customer desk today.', points: ['Coming soon, not included yet', 'It does not answer questions on a customer desk today', 'No pattern check runs', 'No daily read is prepared']
       }
@@ -1126,9 +1126,9 @@ class Component extends DCLogic {
       { tag:'AMLC', title:'Philippines', status:'Not live', kind:'soon', tz:/Asia\/Manila/,
         rules:[{name:'Covered transaction',spec:'CTR, a single deal over 500,000 PHP. Deals in one banking day are not summed.',tag:'Mapped',cat:'threshold'},{name:'Customer due diligence',spec:'Above 5,000 PHP for money changing and remittance',tag:'Mapped',cat:'screening'},{name:'Suspicious transactions',spec:'STR, next working day. Not filed.',tag:'Listed',cat:'suspicious'},{name:'BSP registration',spec:'Not tracked',tag:'Gap',cat:'licence'},{name:'5-year records',spec:'AMLA retention. Nothing is deleted.',tag:'Listed',cat:'records'}] },
       { tag:'MAS', title:'Singapore', status:'2028', kind:'soon', tz:/Asia\/Singapore/,
-        rules:[{name:'Cash threshold',spec:'S$20,000',tag:'Planned',cat:'threshold'},{name:'Suspicious reports',spec:'STR to the STRO',tag:'Planned',cat:'suspicious'},{name:'Payment licence',spec:'PS Act class',tag:'Planned',cat:'licence'},{name:'5-year records',spec:'MAS 626 retention',tag:'Planned',cat:'records'}] },
+        rules:[{name:'Cash threshold',spec:'S$20,000',tag:'Planned',cat:'threshold'},{name:'Suspicious reports',spec:'STR to the STRO',tag:'Planned',cat:'suspicious'},{name:'Payment licence',spec:'Not tracked',tag:'Planned',cat:'licence'},{name:'5-year records',spec:'MAS 626 retention',tag:'Planned',cat:'records'}] },
       { tag:'C&ED', title:'Hong Kong', status:'2028', kind:'soon', tz:/Asia\/Hong_Kong/,
-        rules:[{name:'Cash threshold',spec:'HK$120,000',tag:'Planned',cat:'threshold'},{name:'Suspicious reports',spec:'STR to the JFIU',tag:'Planned',cat:'suspicious'},{name:'MSO licence',spec:'C&ED licensed',tag:'Planned',cat:'licence'},{name:'6-year records',spec:'AMLO retention',tag:'Planned',cat:'records'}] }
+        rules:[{name:'Money changing CDD',spec:'HK$120,000 or more (AMLO Sch. 2, s.3(1)(b))',tag:'Planned',cat:'threshold'},{name:'Remittance and wire transfer',spec:'HK$8,000 or more (Sch. 2, s.13 and s.3(1A))',tag:'Planned',cat:'transfer'},{name:'Suspicious reports',spec:'STR to the JFIU',tag:'Planned',cat:'suspicious'},{name:'MSO licence',spec:'Not tracked',tag:'Planned',cat:'licence'},{name:'5-year records',spec:'AMLO Sch. 2, s.20',tag:'Planned',cat:'records'}] }
     ];
   }
   SPANBY = { 4:[[3,2],[3,2],[3,1],[3,1]], 5:[[3,2],[3,1],[3,1],[3,1],[3,1]], 6:[[2,2],[2,2],[2,1],[2,1],[3,1],[3,1]] };
@@ -1278,6 +1278,7 @@ class Component extends DCLogic {
       const base = 'font-family:var(--m);font-size:8.5px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;border-radius:999px;padding:3px 8px;';
       if (kind === 'alert') return base + 'color:var(--clay);background:rgba(194,69,45,0.1);';
       if (kind === 'amber') return base + 'color:#8a6216;background:rgba(169,121,28,0.14);';
+      if (kind === 'neutral') return base + 'color:var(--mute);background:rgba(23,20,15,0.06);';
       return base + 'color:var(--green-deep);background:rgba(29,107,69,0.1);';
     };
 

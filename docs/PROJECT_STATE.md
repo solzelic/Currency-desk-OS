@@ -934,9 +934,12 @@ document in person. Outside verification is not connected. A
 refused attempt is not written to the book. The desk does not
 draft or send a suspicious transaction report. A desk runs under
 one country's rules, chosen at setup. Adding a location does not
-load a second pack. Singapore and Hong Kong have no pack. The
-Hong Kong card states the money-changing line at HK$120,000 and
-the remittance and wire line at HK$8,000, both planned. Verified
+load a second pack. Singapore and Hong Kong have no pack. The compliance page and
+the home Hong Kong card both state money changing at HK$120,000
+and remittance and wire transfer at HK$8,000. The home card says
+the MSO licence is not tracked and names five-year records under
+AMLO Schedule 2, section 20. The home Singapore card says the
+payment licence is not tracked. Verified
 and Verified Plus are planned badges, not connected. The desk
 does not read a licence. Records stay while the account is open,
 and keeping them for the statutory period is the shop's
@@ -945,12 +948,18 @@ CSVs. There is no single export of every client file with its ID
 scans. CurrencyDesk staff can reach a desk for setup, support,
 security, or a legal demand. Hosting is Render in Oregon, in the
 United States. The database is Neon [Neon region: to confirm].
-The pages do not name a Neon region. The pages also name Resend,
+The pages do not name a Neon region. Privacy section 8 shows
+[Data processing terms with Render and Neon: to confirm]. The
+desk does not delete records on a schedule while the account is
+open, and keeping them for the statutory period is the shop's
+obligation. The pages also name Resend,
 Stripe, Twilio, Google, Tavily, and ElevenLabs. Admin changes are
 logged. Admin reads are not described as logged. Texting is not
 connected. Sanctions screening is not connected. The AI copilot
-is marked coming soon, not included yet, and it is not in the AI
-Bundle's list of live features. The AI Bundle stays $749. Founder
+is marked coming soon, not included yet, with a neutral chip,
+and it is not in the AI
+Bundle's list of live features. FAQ 40 does not offer a full
+export on request. The AI Bundle stays $749. Founder
 offers and the other printed prices are unchanged. Em dashes and
 en dashes are out of the visible copy, titles, and meta.
 

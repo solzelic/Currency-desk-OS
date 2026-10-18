@@ -486,6 +486,12 @@ describe("public marketing claims", () => {
       "Due diligence at HK$120,000.",
       "occasional-transaction threshold",
       "AI assistant",
+      "If you need everything at once, ask us.",
+      "6-year records",
+      "C&ED licensed",
+      "PS Act class",
+      "We rely on our contracts with these providers to require a level of protection",
+      "retained for the statutory retention period that applies to your business",
     ];
     for (const claim of removed) {
       const result = probe(claim);
@@ -519,6 +525,14 @@ describe("public marketing claims", () => {
     expect(hongKong).not.toContain("Due diligence at HK$120,000.");
     expect(faq).toContain("[Neon region: to confirm]");
     expect(legal).toContain("[Neon region: to confirm]");
+    expect(legal).toContain("[Data processing terms with Render and Neon: to confirm]");
+    expect(legal).toContain("The desk does not delete records on a schedule while your account is open.");
+    expect(faq).not.toContain("If you need everything at once, ask us.");
+    expect(home).toContain("HK$8,000 or more (Sch. 2, s.13 and s.3(1A))");
+    expect(home).toContain("5-year records");
+    expect(home).not.toContain("6-year records");
+    expect(home).not.toContain("PS Act class");
+    expect(home).toContain("spec:'Not tracked'");
     expect(legal).toContain("Texting is not connected, so the desk does not send messages to your clients.");
     expect(legal).not.toContain("messages you send clients through the desk");
     expect(legal).not.toContain("support analytics and can be declined");

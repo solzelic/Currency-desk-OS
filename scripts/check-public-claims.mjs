@@ -157,6 +157,12 @@ const phrases = [
   [/listed in the pack\. a licence is not tracked/, "listed in the pack, licence"],
   [/due diligence at hk\$120,000/, "due diligence at HK$120,000"],
   [/occasional-transaction threshold/, "occasional-transaction threshold"],
+  [/if you need everything at once, ask us/, "If you need everything at once, ask us"],
+  [/6-year records/, "6-year records"],
+  [/c&ed licensed/, "C&ED licensed"],
+  [/ps act class/, "PS Act class"],
+  [/we rely on our contracts with these providers/, "we rely on our contracts"],
+  [/retained for the statutory retention period that applies/, "retained for the statutory retention period"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";
