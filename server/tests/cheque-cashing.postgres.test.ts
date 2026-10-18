@@ -31,6 +31,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { zeroFloorSchedule } from "./zeroFloorSchedule.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -102,6 +103,9 @@ async function reset(options: { openTill?: boolean; cad?: number } = {}) {
        VALUES ('chq-session-1',$1,$2,$3,$4,$5,1,DATE '2026-06-18','open',$1||':a.singh',now())`,
       scope,
     );
+  /* A missing schedule is a refusal. These tests name the fee they
+     mean to book, so the stored floor is zero and that fee stands. */
+  await zeroFloorSchedule(pool, DEMO.tenantId);
 }
 
 /* ---- the calls under test, each of which ASSERTS its own success where

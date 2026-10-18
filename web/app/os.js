@@ -40339,6 +40339,17 @@ function centsText(cents) {
        from the book. */
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState('');
+    /* The refusal stays until the teller changes the ticket. A second
+       tap of Cash & hold does not wipe it, and a success closes the
+       form, so there is nothing left to clear. */
+    useEffect(() => {
+      setErr('');
+    }, [customer, typeId, amount, chequeNumber, maker, draweeBank, endorsed, holdOverride, image]);
+    const bookingRefusal = message => {
+      const text = String(message || '').trim();
+      if (!text) return 'Nothing was cashed.';
+      return text.startsWith('Nothing was cashed.') ? text : 'Nothing was cashed. ' + text;
+    };
     /* One key for this opened form, reused on a retry and on a second
        tap. It used to be rebuilt from the clock, so two taps of the same
        cheque were two keys and the drawer paid the net twice. A refusal
@@ -40358,7 +40369,6 @@ function centsText(cents) {
         return;
       }
       setBusy(true);
-      setErr('');
       try {
         /* The ledger's own customer record. A cheque cashing is a deal
            against a named person — the identification line is enforced
@@ -40710,19 +40720,27 @@ function centsText(cents) {
         background: holdDays === d ? CD.ink : 'transparent',
         color: holdDays === d ? 'var(--cd-on-ink)' : CD.mute
       }
-    }, d === 0 ? 'None' : d + 'd'))))), err && /*#__PURE__*/React.createElement("div", {
-      className: "flex-none px-5 pb-2 text-[12px]",
-      style: {
-        color: CD.flag
-      },
-      role: "alert"
-    }, err), /*#__PURE__*/React.createElement("div", {
-      className: "flex-none flex items-center justify-between gap-3 px-5 py-4",
+    }, d === 0 ? 'None' : d + 'd'))))), /*#__PURE__*/React.createElement("div", {
+      className: "flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)',
         borderRadius: '0 0 14px 14px'
       }
+    }, err && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-testid": "cheque-cash-error",
+      className: "fee-lock fee-banner mx-5 mt-3 text-[13px] px-3 py-2",
+      style: {
+        background: CD.amberSoft,
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 13,
+      c: "#6a4a12"
+    }), " ", bookingRefusal(err)), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between gap-3 px-5 py-4"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
@@ -40749,7 +40767,7 @@ function centsText(cents) {
       n: "check",
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " ", busy ? 'Posting…' : 'Cash & hold')))));
+    }), " ", busy ? 'Posting…' : 'Cash & hold'))))));
   }
 
   /* ===================== DETAIL DRAWER ===================== */

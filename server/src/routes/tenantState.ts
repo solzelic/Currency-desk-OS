@@ -26,8 +26,8 @@ export const CHEQUE_FEE_REFUSAL =
   "Only the owner or a manager can change cheque fees. Ask a manager to make this change.";
 
 /* The schedule the capture screen ships. A first save of exactly this
-   is the desk opening, not a price change, so a teller may store it.
-   Anything else is a change and needs the owner or a manager. */
+   by the owner or a manager is the desk opening, not a price change.
+   A teller cannot store a schedule the desk does not already have. */
 export const DEFAULT_CHEQUE_SCHEDULE = [
   { id: "government", label: "Government", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
   { id: "payroll", label: "Payroll", feePct: 2, feeMin: 5, holdDays: 1, risk: "low" },
@@ -64,6 +64,19 @@ export function chequeScheduleWrite(stored: Record<string, unknown> | null, inco
   if (nextCanon === prevCanon) return false;
   if (prev == null && nextCanon === JSON.stringify(DEFAULT_CHEQUE_SCHEDULE)) return false;
   return true;
+}
+
+/* A non-writer's fee key is copied back or deleted. If that is not the
+   schedule they sent, the save did not do what they asked. */
+function feeSaveDropped(stored: Record<string, unknown> | null, incoming: Record<string, unknown> | null): boolean {
+  if (!incoming || !(CHEQUE_FEE_SCHEDULE_KEY in incoming)) return false;
+  if (!stored || !(CHEQUE_FEE_SCHEDULE_KEY in stored)) return true;
+  try {
+    return canonSchedule(stored[CHEQUE_FEE_SCHEDULE_KEY]) !== canonSchedule(incoming[CHEQUE_FEE_SCHEDULE_KEY]);
+  } catch (error) {
+    if (error instanceof SyntaxError) return true;
+    throw error;
+  }
 }
 
 /* One row per cheque type, so the audit can show the old price and
@@ -206,7 +219,8 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     const mayWriteFees = canWriteSetting(who.role, CHEQUE_FEE_SCHEDULE_KEY);
     const changingFees = chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state));
     if (changingFees && raw?.version == null) return reply.code(409).send(stateConflict(current));
-    if (changingFees && !mayWriteFees) {
+    const incomingState = asRecord(raw?.state);
+    if (!mayWriteFees && (changingFees || feeSaveDropped(asRecord(current?.state), incomingState))) {
       await audit(db, {
         tenantId: who.tenantId,
         legalEntityId: who.legalEntityId,

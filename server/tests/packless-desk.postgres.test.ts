@@ -12,6 +12,7 @@ import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { DEMO, seed } from "../src/seed.js";
+import { zeroFloorSchedule } from "./zeroFloorSchedule.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -117,6 +118,7 @@ async function reset() {
     scope.slice(0, 3),
   );
   await pool.query("INSERT INTO ledger_rates VALUES ($1,$2,$3,$4,'CAD',1),($1,$2,$3,$4,'USD',0.731)", scope.slice(0, 4));
+  await zeroFloorSchedule(pool, DEMO.tenantId);
 }
 
 async function expectIdentified(response: { statusCode: number; json: () => { code?: string } }) {

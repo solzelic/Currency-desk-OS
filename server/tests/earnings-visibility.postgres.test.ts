@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { zeroFloorSchedule } from "./zeroFloorSchedule.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -86,6 +87,7 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
        VALUES ('earn-board',$1,$2,$3,0.02,0.03,'{"USD":{"mid":1.4,"show":true}}','earn-snap',now())`,
       scope.slice(0, 3),
     );
+    await zeroFloorSchedule(pool, DEMO.tenantId);
   });
 
   it("keeps the customer fee and strips the shop's take from a teller", async () => {

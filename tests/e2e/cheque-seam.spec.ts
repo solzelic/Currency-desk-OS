@@ -22,6 +22,7 @@
    ============================================================ */
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop, ledger } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { storeChequeSchedule } from "./cheque-floor";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -132,6 +133,16 @@ test("cashing a cheque at the counter moves the ledger's drawer, not just the sc
   const chequesBefore = (await server.cheques()).length;
 
   await openCheques(page);
+  /* The screen prices payroll at 2% from its own schedule. A senior
+     teller has to book that figure, so the desk stores the same one. */
+  await storeChequeSchedule([
+    { id: "government", label: "Government", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
+    { id: "payroll", label: "Payroll", feePct: 2, feeMin: 5, holdDays: 1, risk: "low" },
+    { id: "certified", label: "Certified / bank draft", feePct: 1, feeMin: 5, holdDays: 0, risk: "low" },
+    { id: "money_order", label: "Money order", feePct: 1.5, feeMin: 4, holdDays: 0, risk: "low" },
+    { id: "business", label: "Business", feePct: 3, feeMin: 10, holdDays: 3, risk: "medium" },
+    { id: "personal", label: "Personal", feePct: 3.5, feeMin: 10, holdDays: 5, risk: "high" },
+  ]);
   await cashACheque(page, {
     amount: "1200",
     number: "88204",

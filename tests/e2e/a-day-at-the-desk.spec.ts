@@ -26,6 +26,7 @@
    ============================================================ */
 import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { seedZeroFloor } from "./cheque-floor";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -246,6 +247,7 @@ test("the counter trades — a cheque is cashed out of the drawer", async ({ pag
   const api = desk(page);
   const book = drawer(page);
 
+  await seedZeroFloor();
   const cashed = await api.post("/api/ledger/cheques", {
     idempotencyKey: `day-cheque-${Date.now()}`,
     customerId,

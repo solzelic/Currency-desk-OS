@@ -200,6 +200,15 @@
        from the book. */
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState('');
+    /* The refusal stays until the teller changes the ticket. A second
+       tap of Cash & hold does not wipe it, and a success closes the
+       form, so there is nothing left to clear. */
+    useEffect(() => { setErr(''); }, [customer, typeId, amount, chequeNumber, maker, draweeBank, endorsed, holdOverride, image]);
+    const bookingRefusal = (message) => {
+      const text = String(message || '').trim();
+      if (!text) return 'Nothing was cashed.';
+      return text.startsWith('Nothing was cashed.') ? text : 'Nothing was cashed. ' + text;
+    };
     /* One key for this opened form, reused on a retry and on a second
        tap. It used to be rebuilt from the clock, so two taps of the same
        cheque were two keys and the drawer paid the net twice. A refusal
@@ -221,7 +230,7 @@
         setErr('This desk has no ledger to post to, so a cheque cannot be cashed here. Nothing was recorded.');
         return;
       }
-      setBusy(true); setErr('');
+      setBusy(true);
       try {
         /* The ledger's own customer record. A cheque cashing is a deal
            against a named person — the identification line is enforced
@@ -335,15 +344,15 @@
             </div>
           </div>
         </div>
-        {/* What the ledger said when it refused. Shown in full and never
-            swallowed: a cheque that was not cashed must not leave the
-            teller thinking it was, and the server's own words name the
-            reason — the drawer is short, the till is closed, the customer
-            needs identifying, the cheque is in the wrong currency. */}
-        {err && <div className="flex-none px-5 pb-2 text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
-        <div className="flex-none flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
-          <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, homeCcy())}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, homeCcy())}</b></> : 'Enter the cheque amount'}</div>
-          <button onClick={save} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+        <div className="flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: '0 0 14px 14px' }}>
+          {/* The same amber line as a refused fee change. It sits on the
+              button, not in the scrolling ticket, and it stays until the
+              next edit. */}
+          {err && <div role="alert" data-testid="cheque-cash-error" className="fee-lock fee-banner mx-5 mt-3 text-[13px] px-3 py-2" style={{ background: CD.amberSoft, borderRadius: 8 }}><Ic n="alert" s={13} c="#6a4a12" /> {bookingRefusal(err)}</div>}
+          <div className="flex items-center justify-between gap-3 px-5 py-4">
+            <div className="text-[12px]" style={{ color: CD.mute }}>{amtN > 0 ? <>Front <b style={{ color: CD.ink }}>{fmt(net, homeCcy())}</b> · keep <b style={{ color: CD.green }}>{fmt(fee, homeCcy())}</b></> : 'Enter the cheque amount'}</div>
+            <button onClick={save} disabled={!canSave || busy} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white" style={{ background: (canSave && !busy) ? CD.ink : 'var(--cd-disabled)', borderRadius: 8, cursor: (canSave && !busy) ? 'pointer' : 'not-allowed' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Posting…' : 'Cash & hold'}</button>
+          </div>
         </div>
       </div>
     </div></Portal>);

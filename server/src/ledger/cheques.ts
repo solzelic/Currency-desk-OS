@@ -49,9 +49,10 @@
    see `CHEQUE_CURRENCY_NOT_HOME` below — rather than mis-posted quietly.
    ============================================================ */
 import { randomUUID } from "node:crypto";
+import { CHEQUE_FEE_SCHEDULE_KEY } from "../auth/settingsWrite.js";
+import { chequeScheduleFee } from "./chequeFee.js";
 import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
-import { chequeScheduleFee } from "./chequeFee.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import {
@@ -159,49 +160,80 @@ const money = (value: string, minimum: Decimal.Value) => {
 const fixed = (value: Decimal.Value, places = 2) =>
   new Decimal(value).toDecimalPlaces(places).toFixed(places);
 
-/* The fee the desk published for this type. Null when this desk has
-   not stored a schedule: the capture screen's figure stands, which is
-   how every cheque posted before a schedule was saved still posts.
-   Once a schedule is stored, the book uses that row. A refused edit
-   therefore cannot arrive as a fee of 0 on the next cheque. A stored
-   schedule that cannot be read is thrown, not treated as "no fee". */
-/* The price already stored for this cheque type.
-   A missing schedule, or a type the stored schedule does not name,
-   returns null so the fee the capture screen sent still stands. That
-   is how a desk that has never saved a schedule keeps booking.
-   A schedule that is present and names the type is the price: the
-   greater of the percentage of the face and the minimum. A stored
-   schedule that cannot be read throws. It is not read as a zero fee. */
-async function scheduledFee(
+/* Exact ids. A lookalike such as PAYROLL is not payroll. */
+const CHEQUE_TYPE_IDS = new Set(["government", "payroll", "certified", "money_order", "business", "personal"]);
+export const CHEQUE_FEE_SETUP = "Nothing was cashed. This desk has no cheque fees yet. The owner or a manager sets them in Cheques, Fee schedule.";
+export const CHEQUE_TYPE_UNKNOWN = "Nothing was cashed. That cheque type isn't on this desk's fee list. Pick another type.";
+export const CHEQUE_FEE_BELOW = "Nothing was cashed. That fee is below the schedule for this cheque.";
+export const CHEQUE_FEE_ABOVE = "Nothing was cashed. That fee is above the schedule for this cheque.";
+const CHEQUE_FEE_UNREADABLE = "Nothing was cashed. The cheque fee schedule cannot be read.";
+
+/* Who may book a fee other than the schedule. Not who may edit the
+   schedule: a compliance officer may set it and may not book off it. */
+function canBookOffSchedule(role: string): boolean {
+  return role === "administrator" || role === "branch_manager";
+}
+
+/* The stored schedule is the fee. A teller who sends any other figure
+   is refused. The owner or a branch manager may send more or less,
+   including 0, and that booking is audited. A desk with no schedule is
+   not priced at 0. A schedule set to 0% has a fee of 0, so a teller
+   may book 0. */
+async function resolveChequeFee(
   client: pg.PoolClient,
-  tenantId: string,
+  actor: LedgerActor,
   chequeType: string,
   face: Decimal,
-): Promise<Decimal | null> {
-  const found = await client.query(
-    "SELECT state->'cdos_cheque_schedule_v1' AS schedule FROM tenant_state WHERE tenant_id=$1",
-    [tenantId],
-  );
-  if (!found.rowCount || found.rows[0].schedule == null) return null;
-  const raw = found.rows[0].schedule;
-  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-  if (!Array.isArray(parsed)) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+  quoted: Decimal,
+): Promise<{ fee: Decimal; off: "below" | "above" | null; due: Decimal }> {
+  if (!CHEQUE_TYPE_IDS.has(chequeType)) {
+    throw new LedgerError("INVALID_REQUEST", CHEQUE_TYPE_UNKNOWN);
   }
-  const row = parsed.find((item) => item && String(item.id) === chequeType) as
+  const found = await client.query(
+    "SELECT state->$2 AS schedule FROM tenant_state WHERE tenant_id=$1",
+    [actor.tenantId, CHEQUE_FEE_SCHEDULE_KEY],
+  );
+  if (!found.rowCount || found.rows[0].schedule == null) {
+    throw new LedgerError("INVALID_REQUEST", CHEQUE_FEE_SETUP);
+  }
+  const raw = found.rows[0].schedule;
+  let parsed: unknown;
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new LedgerError("INVALID_REQUEST", CHEQUE_FEE_UNREADABLE);
+    }
+    throw error;
+  }
+  if (!Array.isArray(parsed)) {
+    throw new LedgerError("INVALID_REQUEST", CHEQUE_FEE_UNREADABLE);
+  }
+  const row = parsed.find((item) => item && item.id === chequeType) as
     | { feePct?: unknown; feeMin?: unknown }
     | undefined;
-  if (!row) return null;
-  const pct = new Decimal(row.feePct as Decimal.Value);
-  const min = new Decimal(row.feeMin as Decimal.Value);
+  if (!row) throw new LedgerError("INVALID_REQUEST", CHEQUE_FEE_SETUP);
+  let pct: Decimal;
+  let min: Decimal;
+  try {
+    pct = new Decimal(row.feePct as Decimal.Value);
+    min = new Decimal(row.feeMin as Decimal.Value);
+  } catch (error) {
+    if (error instanceof LedgerError) throw error;
+    throw new LedgerError("INVALID_REQUEST", CHEQUE_FEE_UNREADABLE);
+  }
   if (!pct.isFinite() || !min.isFinite() || pct.isNeg() || min.isNeg()) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+    throw new LedgerError("INVALID_REQUEST", CHEQUE_FEE_UNREADABLE);
   }
   const dueText = chequeScheduleFee(fixed(face), String(row.feePct), String(row.feeMin));
-  if (dueText == null) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+  if (dueText == null) throw new LedgerError("INVALID_REQUEST", CHEQUE_FEE_UNREADABLE);
+  const due = new Decimal(dueText);
+  if (quoted.eq(due)) return { fee: quoted, off: null, due };
+  const off = quoted.lt(due) ? "below" : "above";
+  if (!canBookOffSchedule(actor.role)) {
+    throw new LedgerError("INVALID_REQUEST", off === "below" ? CHEQUE_FEE_BELOW : CHEQUE_FEE_ABOVE);
   }
-  return new Decimal(dueText);
+  return { fee: quoted, off, due };
 }
 
 const dateOnly = (value: unknown) => {
@@ -395,10 +427,15 @@ export class ChequeService {
 
       const face = money(input.faceAmount, "0.01");
       const quoted = money(input.feeAmount, "0");
-      /* The browser can send 0 after a teller was refused a schedule
-         write. The stored schedule is the fee when it names this type. */
-      const listed = await scheduledFee(client, actor.tenantId, String(input.chequeType ?? "").trim(), face);
-      const fee = listed ?? quoted;
+      /* Exact type, then the stored floor. A lookalike is not a fee of 0. */
+      const priced = await resolveChequeFee(
+        client,
+        actor,
+        String(input.chequeType ?? ""),
+        face,
+        quoted,
+      );
+      const fee = priced.fee;
       const net = face.minus(fee);
       if (net.lt(0))
         throw new LedgerError(
@@ -666,6 +703,27 @@ export class ChequeService {
         transactionId,
         now,
       });
+      if (priced.off) {
+        await client.query(
+          `INSERT INTO audit_events (id, tenant_id, legal_entity_id, branch_id, actor_id, action, detail)
+           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+          [
+            randomUUID(),
+            actor.tenantId,
+            actor.legalEntityId,
+            actor.branchId,
+            actor.userId,
+            priced.off === "below" ? "cheque.fee_below_schedule" : "cheque.fee_above_schedule",
+            JSON.stringify({
+              role: actor.role,
+              chequeType: String(input.chequeType ?? ""),
+              scheduleFee: fixed(priced.due),
+              bookedFee: fixed(fee),
+              face: fixed(face),
+            }),
+          ],
+        );
+      }
       await this.writeAudit(client, actor, "cheque.cash", chequeId, null, input.idempotencyKey, now);
 
       const response = {

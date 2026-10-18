@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { BASELINE_NOTICE } from "../src/ledger/jurisdiction.js";
+import { zeroFloorSchedule } from "./zeroFloorSchedule.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -144,6 +145,7 @@ postgres("the international baseline", () => {
          VALUES ($1,$2,$3,$4,'till-01',$5,100000)`,
         [`tnt-${desk.slug}`, `le-${desk.slug}`, `br-${desk.slug}-main`, `ws-${desk.slug}-till-01`, home],
       );
+      await zeroFloorSchedule(pool, `tnt-${desk.slug}`);
     }
   });
 
