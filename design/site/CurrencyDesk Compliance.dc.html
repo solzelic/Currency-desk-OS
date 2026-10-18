@@ -487,11 +487,11 @@ class Component extends DCLogic {
       whatWeDo:'Not live. A licence class is not tracked. Screening is not connected. The desk does not draft or send a report to the STRO.',
       how:[{n:'1',t:'Not live. A licence class is not tracked.'},{n:'2',t:'Screening is not connected. No list is loaded.'},{n:'3',t:'The desk does not draft or send a report. Nothing is removed on a schedule.'}],
       rules:[
-        {name:'Payment services licence', spec:'Listed here for planning. No pack is built. A licence class is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
-        {name:'STR to the STRO', spec:'Listed here for planning. No pack is built. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'Transfer information', spec:'Originator and beneficiary data on transfers.', tag:'Planned', cat:'transfer', when:'On transfer'},
-        {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
+        {name:'Payment services licence', spec:'Listed here for planning. No Singapore pack is built. A licence class is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'STR to the STRO', spec:'Listed here for planning. No Singapore pack is built. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'Transfer information', spec:'Originator and beneficiary data on transfers. No Singapore pack is built.', tag:'Planned', cat:'transfer', when:'On transfer'},
+        {name:'Sanctions', spec:'Screening is not connected. No list is loaded. No Singapore pack is built.', tag:'Planned', cat:'screening', when:'Before the deal'},
+        {name:'5-year record retention', spec:'Client and transaction files kept. No Singapore pack is built.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'c-ed', tag:'C&ED', country:'Hong Kong', regulator:'Customs & Excise Department', status:'Coming soon', kind:'soon', color:'#4A6B2F', soft:'rgba(74,107,47,0.1)', official:'https://www.customs.gov.hk', updated:'23 May 2026', retention:'Per AMLO',
       supervisor:'Customs & Excise for money service operators, JFIU for reports',

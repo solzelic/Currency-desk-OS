@@ -525,7 +525,9 @@ describe("public marketing claims", () => {
     expect(hongKong).not.toContain("Due diligence at HK$120,000.");
     expect(faq).toContain("[Neon region: to confirm]");
     expect(legal).toContain("[Neon region: to confirm]");
-    expect(legal).toContain("[Data processing terms with Render and Neon: to confirm]");
+    expect(legal).toContain("[Data processing terms with Render and Neon: to confirm].");
+    expect(home).toContain("It then files it against their name so a returned cheque is never a mystery.");
+    expect(compliance).toContain("No Singapore pack is built.");
     expect(legal).toContain("The desk does not delete records on a schedule while your account is open.");
     expect(faq).not.toContain("If you need everything at once, ask us.");
     expect(home).toContain("HK$8,000 or more (Sch. 2, s.13 and s.3(1A))");

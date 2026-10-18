@@ -939,7 +939,8 @@ the home Hong Kong card both state money changing at HK$120,000
 and remittance and wire transfer at HK$8,000. The home card says
 the MSO licence is not tracked and names five-year records under
 AMLO Schedule 2, section 20. The home Singapore card says the
-payment licence is not tracked. Verified
+payment licence is not tracked. Each Singapore row on the compliance
+page says "No Singapore pack is built." Verified
 and Verified Plus are planned badges, not connected. The desk
 does not read a licence. Records stay while the account is open,
 and keeping them for the statutory period is the shop's
@@ -949,7 +950,7 @@ scans. CurrencyDesk staff can reach a desk for setup, support,
 security, or a legal demand. Hosting is Render in Oregon, in the
 United States. The database is Neon [Neon region: to confirm].
 The pages do not name a Neon region. Privacy section 8 shows
-[Data processing terms with Render and Neon: to confirm]. The
+[Data processing terms with Render and Neon: to confirm]. The placeholder is followed by a period. The
 desk does not delete records on a schedule while the account is
 open, and keeping them for the statutory period is the shop's
 obligation. The pages also name Resend,
