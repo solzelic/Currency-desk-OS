@@ -16,7 +16,6 @@ import { canWriteSetting, CHEQUE_FEE_SCHEDULE_KEY } from "../auth/settingsWrite.
 import { feeFigureProblem } from "../ledger/chequeFee.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
-import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
 import {
@@ -172,51 +171,41 @@ const putBody = z.object({
 });
 
 /* The desk's settings used to carry every teller's till PIN in the clear,
-   inside this very snapshot — which the browser downloads whole on sign-in.
+   inside this very snapshot, which the browser downloads whole on sign-in.
    Anyone who could open devtools could read the room's PINs.
 
-   So the snapshot is no longer allowed to hold one. On the way in, a PIN
-   somebody has genuinely chosen is moved to their staff record, hashed; the
-   placeholder the OS ships with ("0000", the same for everyone) is dropped
-   rather than adopted, so the panel goes on saying "no PIN set" — which is
-   the truth — instead of recording a code the whole desk knows.
+   The snapshot is not allowed to hold one. A PIN in the blob is stripped
+   before anything is stored. It is not written to the staff record, for
+   any role, including the owner. A till PIN is set only through
+   /api/staff/pin, or by a manager or an admin through the reset routes.
+   The placeholder the OS ships with ("0000") is not counted as an offered
+   PIN. A real one (four digits, anything but 0000) is counted so the save
+   can write a single audit row. The digits are not in that row.
 
-   Either way the plaintext is stripped before anything is stored. This runs
-   on every save, so a desk migrates the first time it is used and stays
-   clean afterwards even if an older client keeps sending the field. */
+   This runs on every save, so an older client that still sends the field
+   does not put a PIN on file. The rest of the document is still saved.
+   Refusing the whole save would drop the only copy of the desk. */
 const PLACEHOLDER_PIN = "0000";
 
-async function absorbStaffPins(db: Db, tenantId: string, state: Record<string, unknown>): Promise<number> {
+function absorbStaffPins(state: Record<string, unknown>): { count: number; codes: string[] } {
   const settings = state.cdos_settings;
-  if (!settings || typeof settings !== "object") return 0;
+  if (!settings || typeof settings !== "object") return { count: 0, codes: [] };
   const employees = (settings as Record<string, unknown>).employees;
-  if (!Array.isArray(employees)) return 0;
+  if (!Array.isArray(employees)) return { count: 0, codes: [] };
 
-  let absorbed = 0;
+  let count = 0;
+  const codes: string[] = [];
   for (const emp of employees) {
     if (!emp || typeof emp !== "object") continue;
     const e = emp as Record<string, unknown>;
     const pin = typeof e.pin === "string" ? e.pin : null;
     delete e.pin;
     if (!pin || !/^\d{4}$/.test(pin) || pin === PLACEHOLDER_PIN) continue;
-
-    // employees are keyed by their sign-in code; fall back to the name, which
-    // is what the OS's own seeded roster matches on
-    const code = typeof e.code === "string" ? e.code : null;
-    const name = typeof e.name === "string" ? e.name : null;
-    const rows = code
-      ? await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.staffId, code))).limit(1)
-      : name
-        ? await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.name, name))).limit(1)
-        : [];
-    const target = rows[0];
-    // never overwrite a PIN already held here — the server's copy is the real
-    // one, and a stale blob must not be able to roll it back
-    if (!target || target.pinHash) continue;
-    await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date() }).where(eq(schema.staffUsers.id, target.id));
-    absorbed += 1;
+    count += 1;
+    const code = typeof e.code === "string" ? e.code : typeof e.name === "string" ? e.name : null;
+    if (code) codes.push(code);
   }
-  return absorbed;
+  return { count, codes };
 }
 
 export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
@@ -337,6 +326,11 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       state = keepOwnerFields(storedState, state, who.role);
     }
 
+    /* Any till PIN in the blob is removed here, before the document is
+       described or stored. It is not copied onto a staff record. The
+       audit row is written only when this save lands. */
+    const ignoredPins = absorbStaffPins(state);
+
     /* Describe what is being saved. This NEVER refuses — the browser holds
        the only copy, so rejecting a document we merely find surprising
        destroys the data it was meant to protect. What it does is make drift
@@ -353,8 +347,6 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       );
     }
 
-    // mutates `state`: any till PIN in the blob moves to the staff record
-    await absorbStaffPins(db, who.tenantId, state);
     const now = new Date();
     const version = (current?.version ?? 0) + 1;
     /* The predicate is the race. Two saves can both have read version N.
@@ -379,6 +371,16 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     }
     /* A change that landed. Who, when (`at` on the row), and the
        price of each cheque type before and after. */
+    if (ignoredPins.count > 0) {
+      await audit(db, {
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "settings.staff_pin_ignored",
+        detail: { count: ignoredPins.count, codes: ignoredPins.codes },
+      });
+    }
     if (changingFees) {
       const prev = asRecord(current?.state);
       await audit(db, {
