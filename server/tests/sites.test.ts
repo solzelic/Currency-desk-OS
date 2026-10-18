@@ -104,9 +104,10 @@ describe("domain door: DNS handoff", () => {
   });
 });
 
-/* The marketing site is two designs — a desktop page with no mobile
-   breakpoints and a phone page that is its own document — plus the two
-   doors into the product. */
+/* The marketing site is two designs. A phone user agent gets its own
+   document. A narrow window that is not a phone still gets the desktop
+   page, and that page stacks pricing, the footer, and the jurisdiction
+   block below 640px. */
 describe("the public site", () => {
   const canonical = (body: string) => /rel="canonical" href="[^"]*?([^/"]*)"/.exec(body)?.[1] ?? "";
 
