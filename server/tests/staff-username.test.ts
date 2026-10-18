@@ -55,6 +55,8 @@ let york: Record<string, string>;
 let harbour: Record<string, string>;
 let harbourDesk: { le: string; br: string };
 let quayDesk: { le: string; br: string };
+// Lina's temporary password, kept so a later test can sign in with the real one
+let linaTemp = "";
 
 beforeAll(async () => {
   process.env.PGLITE_MEMORY = "1";
@@ -141,6 +143,7 @@ describe("the work email and the first sign-in", () => {
     // no mail provider in tests, so the temporary password comes back to be passed on
     expect(body.signIn.delivered).toBe("simulated");
     expect(typeof body.signIn.tempPassword).toBe("string");
+    linaTemp = body.signIn.tempPassword;
 
     /* The sign-in screen sends only the username and the password. Harbour
        is not the default desk, and the username still finds it. */
@@ -184,6 +187,18 @@ describe("sign-in from the username alone", () => {
       });
     }
     expect((await loginStart("x.dup", "dup-pass-1")).statusCode).toBe(401);
+  });
+
+  it("a caller that names a desk gets that desk only", async () => {
+    expect(linaTemp).not.toBe("");
+    // her real password, at a desk that does not have her
+    const named = await app.inject({
+      method: "POST", url: "/api/auth/login/start",
+      payload: { staffId: "lina.harbourfx", password: linaTemp, tenantId: DEMO.tenantId },
+    });
+    expect(named.statusCode).toBe(401);
+    // the same password with no desk named finds her
+    expect((await loginStart("lina.harbourfx", linaTemp)).statusCode).toBe(200);
   });
 
   it("York's older ids still sign in at York", async () => {
