@@ -51,6 +51,7 @@
 import { randomUUID } from "node:crypto";
 import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
+import { chequeScheduleFee } from "./chequeFee.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import {
@@ -196,7 +197,11 @@ async function scheduledFee(
   if (!pct.isFinite() || !min.isFinite() || pct.isNeg() || min.isNeg()) {
     throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
   }
-  return Decimal.max(min, face.mul(pct).div(100)).toDecimalPlaces(2);
+  const dueText = chequeScheduleFee(fixed(face), String(row.feePct), String(row.feeMin));
+  if (dueText == null) {
+    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+  }
+  return new Decimal(dueText);
 }
 
 const dateOnly = (value: unknown) => {
