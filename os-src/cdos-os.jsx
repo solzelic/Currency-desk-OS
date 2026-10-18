@@ -810,7 +810,7 @@
        has posted nothing shows nothing, rather than 38 invented deals and 18
        invented customers that a new owner has to recognise as fiction before
        they can trust anything else on the screen. What is here is filled from
-       the ledger — see `loadLedger` below. */
+       the ledger — see `loadLedger` in cdos-backend.js, called by the Ledger app. */
     const [rows, setRows] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null'); return Array.isArray(r) ? r : []; } catch (e) { return []; } });
     const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
@@ -861,11 +861,9 @@
       const def = { Teller: { canDelete: true, canExport: true, canViewReports: true, canEditKYC: true, canSettings: false, canCloseDay: false } };
       try { const raw = localStorage.getItem('cdos_perms'); const p = raw ? JSON.parse(raw) : null; return p && p.Teller ? { Teller: { ...def.Teller, ...p.Teller } } : def; } catch (e) { return def; }
     });
-    // ---- ONE shared opening baseline + ONE shared wholesale-receipts store ----
-    // both the Vault (position) and the Till (expected) derive from these via
-    // window.CDOS.position(); receipts are kept OUT of the customer ledger so a
-    // wholesale purchase never trips a compliance flag, yet the till still
-    // counts against them. Edited in the Till's reconcile, read by the Vault.
+    // ---- legacy opening baseline + wholesale-receipts stores ----
+    // Both are empty now and nothing reads cash from them: cash comes from the
+    // ledger (see the headstone above `defaultBaseline` in cdos-base.jsx).
     const [baseline, setBaseline] = useState(() => { try { const r = localStorage.getItem('cdos_baseline_v1'); return r ? JSON.parse(r) : window.CDOS.defaultBaseline(); } catch (e) { return window.CDOS.defaultBaseline(); } });
     const [receipts, setReceipts] = useState(() => { try { const r = localStorage.getItem('cdos_receipts_v1'); return r ? JSON.parse(r) : window.CDOS.defaultReceipts(); } catch (e) { return window.CDOS.defaultReceipts(); } });
     useEffect(() => { try { localStorage.setItem('cdos_baseline_v1', JSON.stringify(baseline)); } catch (e) {} }, [baseline]);
@@ -2080,10 +2078,9 @@
          ledger and the Ledger app's own fetch of it. Reseating it wholesale
          raced that fetch and won: the Ledger showed one record while the
          ledger held two. So anything already carrying a server id is kept —
-         the book is the book — and the blob supplies only what the ledger has
-         never heard of, which today is every deal type that does not post
-         yet: cheques, remittances, money orders, bill payments. When those
-         post, this whole store goes. */
+         the book is the book — and the blob supplies only rows the ledger has
+         never heard of (a desk with no ledger). Every deal type now posts —
+         docs/CASH_OWNERSHIP_INVARIANTS.md, Known scope limits. */
       setRows(current => {
         const saved = rd('cdos_rows_v1', []);
         if (!Array.isArray(saved)) return current;

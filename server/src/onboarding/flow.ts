@@ -3,12 +3,10 @@
 
    This is the signup flow itself, declared as data: steps made of
    FIELDS, not a checklist of things somebody ticks. That matters,
-   because the same declaration drives three things that must never
+   because the same declaration drives two things that must never
    drift apart —
 
      · the owner's wizard, when they set the desk up themselves
-     · the platform team's version in the control panel, when we do it
-       with them at their counter or over the phone
      · what actually gets built when the desk is created
 
    And because a step is a set of answers rather than a box, an answer
@@ -26,13 +24,13 @@
    time slowly disagreeing about what a desk even has. There is no
    translation layer between the applicant's screens and this file
    because a translation layer is a thing that goes stale silently every
-   time a screen changes. The design asks it; this stores it; the panel
-   shows the same list back.
+   time a screen changes. The design asks it; this stores it;
+   routes/onboarding-public.ts serves the same list back to the page.
 
    The one place the two surfaces differ on purpose is the password. The
    design puts it on the same screen as the owner's name; here it is its
-   own step, because a step is the unit the panel gates on and an
-   operator must not be able to type it.
+   own step, marked who: "customer", because nobody but the owner may
+   set it.
    ============================================================ */
 
 export type FieldType =
@@ -68,8 +66,8 @@ export interface Step {
   blurb: string;
   kind: StepKind;
   who: StepWho;
-  /* Which screen of the applicant's flow this is, so the panel can sit the
-     two side by side and an operator on the phone can say "you're on the
+  /* Which screen of the applicant's flow this is, in the design's
+     numbering, so somebody on the phone with them can say "you're on the
      one about spreads" without translating. */
   screen: number | null;
   fields: Field[];

@@ -1,10 +1,11 @@
 /* ============================================================
    Transactional email — one function, two backends.
    With RESEND_API_KEY + EMAIL_FROM set, sends via Resend's REST API
-   (plain fetch, no SDK). Without them, sends are SIMULATED: the body
-   is logged, so the whole signup / email-OTP flow can be built,
-   demoed and tested before an email provider exists — the same
-   pattern as src/sms.ts. Never throws.
+   (plain fetch, no SDK). Without them, dev and test sends are
+   SIMULATED: the body is logged, so the whole signup / email-OTP flow
+   can be built, demoed and tested before an email provider exists —
+   the same pattern as src/sms.ts. Production refuses instead and does
+   not write the message to the log. Never throws.
    (SendGrid is a small addition if one-vendor billing is preferred.)
    ============================================================ */
 import { randomInt, createHash, timingSafeEqual } from "node:crypto";

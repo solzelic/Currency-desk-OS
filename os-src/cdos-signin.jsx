@@ -4,8 +4,9 @@
      A1 CurrencyDesk ID  →  A2 Password  →  A3 email-code keypad
    then the existing station picker / desktop. The shared on-screen
    keypad also powers desk-lock unlock (B) and operator handover (C).
-   Backend auth is unchanged: the ID resolves a staff record, the
-   password calls /api/auth/login, the code step is the (simulated) 2FA.
+   Backend auth: the ID resolves a staff record, the password calls
+   /api/auth/login/start, which emails a code to an email sign-in; the
+   code step checks it at /api/auth/login/verify.
    Tokens mirror the design exactly (ink #17140F, primary #1D6B45, …).
    ============================================================ */
 (function () {

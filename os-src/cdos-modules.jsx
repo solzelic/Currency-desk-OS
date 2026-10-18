@@ -24,8 +24,9 @@
        same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
 
        The LINE itself comes from reportingLimit(), which is one answer for
-       the whole product: the owner's setting, else the jurisdiction pack
-       the server states, in the desk's own currency. It used to fall back
+       the whole product: the desk's line on the ledger, else the
+       jurisdiction pack, else the owner's saved setting, in the desk's own
+       currency. It used to fall back
        to a hardcoded 10,000 Canadian dollars, which is how this engine and
        the Ledger's own row flags came to disagree on the same desk.
 

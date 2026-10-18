@@ -29,7 +29,7 @@ import {
 } from "../ledger/jurisdiction.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
-import { ensureDefaultChequeSchedule } from "../state/defaultChequeSchedule.js";
+import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { landApplicantStatedPhone } from "./applicant-phone.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
 

@@ -226,8 +226,8 @@ export const CATALOGUE: readonly KeyShape[] = [
 
      Removed from the catalogue rather than left behind, because a
      catalogue entry for a key nothing writes is a claim about the product
-     that is no longer true — which is precisely what the test below
-     exists to catch, and it caught this. */
+     that is no longer true — which is precisely what the catalogue test
+     in tests/state-shape.test.ts exists to catch, and it caught this. */
 ] as const;
 
 const BY_KEY = new Map(CATALOGUE.map((k) => [k.key, k]));

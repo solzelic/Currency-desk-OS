@@ -25,7 +25,7 @@
        real desk. In the prototype both are theatre.
 
    Everything else — every screen, every animation, every word that
-   isn't about the two changes above — is the design's.
+   isn't about the three changes above — is the design's.
 
    HOW THE PATCHING WORKS
 
@@ -36,7 +36,7 @@
    nobody can read and a build that silently stops matching. So we
    parse it, patch the real source, and re-serialize.
 
-   The one wrinkle is that the bundler escapes "</" as "</" so an
+   The one wrinkle is that the bundler escapes "</" as "<\u002F" so an
    inner </script> can't close the outer tag. We reproduce that exactly;
    forget it and the page truncates at the first inner script.
 

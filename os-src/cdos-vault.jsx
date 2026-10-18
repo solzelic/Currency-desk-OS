@@ -92,10 +92,10 @@
      The desk's own currency belongs on that list wherever the desk is; the
      other three are a starting suggestion the owner edits. */
   const DEFAULT_FC = () => Array.from(new Set([homeCcy(), 'USD', 'EUR', 'GBP']));
-  /* What a wholesale order can be placed in. The ledger carries these four
-     today (see the scope limits in docs/CASH_OWNERSHIP_INVARIANTS.md), and
-     offering the other five would let somebody record a delivery the book
-     cannot take. The nine-currency list this replaced was the demo seed's. */
+  /* What a wholesale order offers by default: the same starting list as a
+     float. The ledger itself takes any currency the desk trades
+     (docs/DESK_CURRENCIES.md). The nine-currency list this replaced was the
+     demo seed's. */
   /* Evaluated per render, not once at module load: the pack arrives from
      the server after this file has been parsed, so a constant captured here
      would freeze whatever the fallback said. */

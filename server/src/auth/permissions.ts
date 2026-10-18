@@ -64,7 +64,7 @@ export type BackendPermission =
      reads the book's take without closing the drawer. No role holds
      it. Granting it is a separate decision. The customer-facing fee
      is not one of these. A teller, an auditor, and a compliance
-     officer have neither, which is the same as on main. */
+     officer have neither. */
   | "report:earnings";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {

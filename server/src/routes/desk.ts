@@ -24,12 +24,12 @@
    trade — its own rate board and its first till — because a location that
    cannot take a customer is not one.
 
-   NOTHING HERE CHARGES ANYBODY. There is no billing pipe to charge with
-   (see routes/billing.ts and the panel's own "Stripe not connected"), and
-   inventing one in the place that creates a branch would be the worst
-   possible place to discover that. The response says plainly what the
-   commercial effect was, which at present is none, and the change is on
-   the audit trail for whoever does the billing by hand.
+   NOTHING HERE CHARGES ANYBODY. Locations are not metered in billing
+   (routes/billing.ts), and inventing a charge in the place that creates a
+   branch would be the worst possible place to discover that. The
+   response says plainly what the commercial effect was, which at present
+   is none, and the change is on the audit trail for whoever does the
+   billing by hand.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -322,8 +322,8 @@ async function tenantSetup(db: Db, tenantId: string): Promise<Record<string, unk
 
 /* The commercial truth about what just happened, said out loud.
 
-   The screen offers "Add location · $1,398/mo" and there is no Stripe
-   connection behind it, so nothing is charged and the plan does not move.
+   The screen offers "Add location · $1,398/mo" and locations are not
+   metered, Stripe or not, so nothing is charged and the plan does not move.
    Rather than silently doing nothing, every response carries what the
    effect was; the client should show that sentence instead of a price it
    cannot honour. */

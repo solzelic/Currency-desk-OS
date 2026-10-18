@@ -12,7 +12,7 @@ import { schema } from "./db/index.js";
 import { requirePackForCountry } from "./ledger/jurisdiction.js";
 import type { Db } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
-import { ensureDefaultChequeSchedule } from "./state/defaultChequeSchedule.js";
+import { ensureDefaultChequeSchedule } from "./state/default-cheque-schedule.js";
 
 // the operator's own tenant — hidden from the customer desk list
 export const PLATFORM_TENANT = "tnt-platform";

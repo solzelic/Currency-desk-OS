@@ -4,7 +4,8 @@
    identity, localization, compliance thresholds, rate/fee defaults,
    receipt content, staff permissions and the ticker tape. Everything
    reads/writes the shared `settings` object (persisted by the shell)
-   except permissions (perms) and the ticker (tickerCfg).
+   except permissions (perms), the ticker (tickerCfg), and the rows the
+   server owns (cost method, thresholds, currencies, sign-ins).
    ============================================================ */
 (function () {
   const { useState, useEffect } = React;

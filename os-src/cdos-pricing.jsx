@@ -1,5 +1,5 @@
 /* ============================================================
-   CurrencyDesk OS — Pricing Console  (roadmap #5)
+   CurrencyDesk OS — Pricing Console
    The owner's profit lever in one place. Reads & writes the SAME
    settings keys the Ledger prices from (settings.spreads, defaultSpread,
    defaultFee, marginFloor/Target/Enforce, payoutRound*, rateProvider) —
