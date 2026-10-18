@@ -5086,6 +5086,107 @@
     });
   };
 
+  /* ---------- the username (server-picked) ----------
+     amir.yorkfx: their first name and the shop. The server picks it, because
+     it has to be free on every desk and only the server can see the others
+     (server/src/auth/username.ts). While the box holds the server's
+     suggestion it follows the name as it is typed. Once the manager types in
+     the box it is theirs, and the server is asked whether it is free
+     instead. Once the sign-in exists it is fixed: the server knows the
+     person by it. Module scope for the same reason as the controls above. */
+  const isWorkEmail = s => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s || '').trim());
+  function UsernameField({
+    name,
+    code,
+    typed,
+    email,
+    locked,
+    online,
+    onChange
+  }) {
+    const [check, setCheck] = useState(null); // { available, detail } for what is in the box
+    useEffect(() => {
+      const n = (name || '').trim();
+      if (locked || typed || !online || !n || n === 'New employee') return;
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?name=' + encodeURIComponent(n), {
+          credentials: 'same-origin'
+        }).then(r => r.ok ? r.json() : null).then(d => {
+          if (live && d && d.suggestion) {
+            onChange(d.suggestion, false);
+            setCheck({
+              available: true,
+              detail: null
+            });
+          }
+        }).catch(() => {});
+      }, 300);
+      return () => {
+        live = false;
+        clearTimeout(t);
+      };
+    }, [name, typed, locked, online]);
+    useEffect(() => {
+      const c = (code || '').trim();
+      if (locked || !typed || !online) return;
+      if (!c) {
+        setCheck(null);
+        return;
+      }
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?check=' + encodeURIComponent(c), {
+          credentials: 'same-origin'
+        }).then(r => r.ok ? r.json() : null).then(d => {
+          if (live && d && d.check) setCheck({
+            available: d.check.available,
+            detail: d.check.detail
+          });
+        }).catch(() => {});
+      }, 300);
+      return () => {
+        live = false;
+        clearTimeout(t);
+      };
+    }, [code, typed, locked, online]);
+    const note = locked ? 'What they type to sign in. It stays the same once their sign-in exists.' : isWorkEmail(email) ? 'We’ll email their username and a temporary password to ' + email.trim() + '.' : 'Add a work email and we’ll email them their username and a temporary password.';
+    return /*#__PURE__*/React.createElement("label", {
+      className: "block"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "Staff ID / username"), /*#__PURE__*/React.createElement("input", {
+      value: code || '',
+      readOnly: locked,
+      onChange: ev => onChange(ev.target.value.toLowerCase().replace(/\s+/g, ''), true),
+      placeholder: "Fills in from their name",
+      autoComplete: "off",
+      spellCheck: false,
+      className: "w-full text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        fontFamily: 'Space Mono, monospace',
+        ...(locked ? {
+          color: CD.mute,
+          background: CD.lineSoft
+        } : {})
+      }
+    }), !locked && check && /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mt-1",
+      style: {
+        color: check.available ? CD.green : CD.flag
+      }
+    }, check.available ? 'Available' : check.detail), /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mt-1",
+      style: {
+        color: CD.faint
+      }
+    }, note));
+  }
+
   /* ---------- cost basis method (server-backed, NOT a saved preference) ----------
      Every other control on this screen writes the shared `settings` object the
      browser persists. This one does not, and must not: it decides how the
@@ -6136,6 +6237,8 @@
     const [empSel, setEmpSel] = useState(null); // selected employee id — master/detail view
     // a PIN the owner has just issued, shown once so it can be read out
     const [newPin, setNewPin] = useState({}); // employee id → { pin } | { err }
+    // what creating a sign-in did: where it was sent, or a temporary password to read out once
+    const [newSignIn, setNewSignIn] = useState({}); // employee id → { detail, temp }
     // ---- server sign-in accounts (per-employee credentials) ----
     const [srvStaff, setSrvStaff] = useState(null); // staffId → server account
     const [srvState, setSrvState] = useState('loading'); // loading | ok | offline | forbidden
@@ -8582,6 +8685,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const apps = Array.isArray(e.apps) ? e.apps : null;
         const isOwner = e.role === 'Owner';
         const blocked = e.active === false;
+        /* Their server sign-in. A profile finds its account by username, so a
+           username typed here that already belongs to somebody else would read
+           as this person's — with that person's reset, disable, block and PIN
+           buttons. It is theirs only once the sign-in was created from this
+           profile (codeLinked), or when the profile predates the username
+           flow (codeAuto was never set). From then on the username is fixed. */
+        const loginId = (e.code || '').trim();
+        const found = loginId && srvStaff ? srvStaff[loginId] : null;
+        const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
+        // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
+        const syncEmail = () => {
+          if (!loginAcct) return;
+          const v = (e.email || '').trim();
+          if (v === (loginAcct.email || '') || v && !isWorkEmail(v)) return;
+          srvCall('PATCH', '/api/staff/' + encodeURIComponent(loginId), {
+            email: v
+          }).then(() => {
+            log('Work email', e.name + ' · ' + (v || 'cleared'));
+            srvReload();
+          }).catch(err => setSrvMsg(String(err.message || err)));
+        };
         const worksAt = e.branches === '*' || isOwner ? 'Whole network' : Array.isArray(e.branches) && e.branches.length ? e.branches.map(id => {
           const b = (branches || []).find(x => x.id === id);
           return (b ? b.code : id) + (e.home === id ? ' ★' : '');
@@ -8681,6 +8805,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           onChange: ev => setEmp(e.id, {
             email: ev.target.value
           }),
+          onBlur: syncEmail,
           placeholder: "name@business.com",
           className: "w-full text-sm px-2.5 py-2 outline-none",
           style: inSty
@@ -8694,21 +8819,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           placeholder: "(416) 555-0000",
           className: "w-full text-sm px-2.5 py-2 outline-none",
           style: inSty
-        })), /*#__PURE__*/React.createElement(Field, {
-          label: "Staff ID / sign-in",
-          desc: "What they type to sign in."
-        }, /*#__PURE__*/React.createElement("input", {
-          value: e.code || '',
-          onChange: ev => setEmp(e.id, {
-            code: ev.target.value
-          }),
-          placeholder: "e.g. a.singh",
-          className: "w-full text-sm px-2.5 py-2 outline-none",
-          style: {
-            ...inSty,
-            fontFamily: 'Space Mono, monospace'
-          }
-        })), /*#__PURE__*/React.createElement("div", {
+        })), /*#__PURE__*/React.createElement(UsernameField, {
+          key: e.id,
+          name: e.name,
+          code: e.code,
+          typed: e.codeAuto === false || !!e.code && e.codeAuto !== true,
+          email: e.email,
+          locked: !!loginAcct || isOwner,
+          online: srvState === 'ok',
+          onChange: (v, typed) => setEmp(e.id, {
+            code: v,
+            codeAuto: !typed
+          })
+        }), /*#__PURE__*/React.createElement("div", {
           className: "col-span-2"
         }, /*#__PURE__*/React.createElement("div", {
           className: "text-[11px] mb-1",
@@ -8905,23 +9028,39 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontFamily: 'Space Mono, monospace'
           }
         }, "Security"), (() => {
-          const sid = (e.code || '').trim();
-          const acct = sid && srvStaff ? srvStaff[sid] : null;
+          const sid = loginId;
+          const acct = loginAcct;
+          const mailTo = isWorkEmail(e.email) ? e.email.trim() : null;
+          /* No password from the manager: the server issues a temporary one
+             and emails it to the work email, or hands it back to be read out
+             once when there is no address. They pick their own on the way in. */
           const doCreate = () => {
-            if (srvPw.length < 8) {
-              setSrvMsg('Temporary password needs at least 8 characters.');
-              return;
-            }
             setSrvBusy(true);
             setSrvMsg('');
+            setNewSignIn(m => ({
+              ...m,
+              [e.id]: null
+            }));
             srvCall('POST', '/api/staff', {
               staffId: sid,
               name: e.name,
               role: SRV_ROLE[e.role] || 'teller',
-              password: srvPw
-            }).then(() => {
-              log('Sign-in created', e.name + ' \u00b7 ' + sid);
-              setSrvPw('');
+              ...(mailTo ? {
+                email: mailTo
+              } : {})
+            }).then(d => {
+              const s = d && d.signIn || {};
+              setNewSignIn(m => ({
+                ...m,
+                [e.id]: {
+                  detail: s.detail || '',
+                  temp: s.tempPassword || null
+                }
+              }));
+              setEmp(e.id, {
+                codeLinked: true
+              });
+              log('Sign-in created', e.name + ' \u00b7 ' + sid + (s.delivered === 'sent' ? ' \u00b7 emailed' : ''));
               srvReload();
             }).catch(err => setSrvMsg(String(err.message || err))).then(() => setSrvBusy(false));
           };
@@ -8971,7 +9110,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             style: {
               color: CD.mute
             }
-          }, srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' : srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' : srvState === 'loading' ? 'Checking the server…' : !sid ? 'Give them a Staff ID above first — that’s their username.' : !acct ? 'No server account yet — issue a temporary password and hand it to them privately.' : !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' : acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' : 'Password set by the employee — only they know it. Reset issues a new temporary one.')), acct && /*#__PURE__*/React.createElement("span", {
+          }, srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' : srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' : srvState === 'loading' ? 'Checking the server…' : !sid ? 'Type their name above — their username fills in by itself.' : !acct ? mailTo ? 'No sign-in yet. Create it and we’ll email their username and a temporary password to ' + mailTo + '.' : 'No sign-in yet. Create it and you’ll get a temporary password to give them in person.' : !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' : acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' : 'Password set by the employee — only they know it. Reset issues a new temporary one.')), acct && /*#__PURE__*/React.createElement("span", {
             className: "text-[9px] px-1.5 py-0.5 font-semibold flex-none",
             style: {
               background: acct.active ? CD.greenSoft : CD.flagSoft,
@@ -8985,7 +9124,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               opacity: srvBusy ? 0.5 : 1,
               pointerEvents: srvBusy ? 'none' : 'auto'
             }
-          }, /*#__PURE__*/React.createElement("input", {
+          }, !acct ? /*#__PURE__*/React.createElement("button", {
+            onClick: doCreate,
+            className: "text-[11.5px] px-2.5 py-1.5 font-semibold flex-none",
+            style: {
+              background: CD.ink,
+              color: 'var(--cd-on-ink)',
+              borderRadius: 8
+            }
+          }, mailTo ? 'Create sign-in & email it' : 'Create sign-in') : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
             type: "text",
             value: srvPw,
             onChange: ev => setSrvPw(ev.target.value),
@@ -8995,15 +9142,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               ...inSty,
               fontFamily: 'Space Mono, monospace'
             }
-          }), !acct ? /*#__PURE__*/React.createElement("button", {
-            onClick: doCreate,
-            className: "text-[11.5px] px-2.5 py-1.5 font-semibold flex-none",
-            style: {
-              background: CD.ink,
-              color: 'var(--cd-on-ink)',
-              borderRadius: 8
-            }
-          }, "Create sign-in") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+          }), /*#__PURE__*/React.createElement("button", {
             onClick: doReset,
             className: "text-[11.5px] px-2.5 py-1.5 font-semibold flex-none",
             style: {
@@ -9025,7 +9164,23 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             style: {
               color: CD.flag
             }
-          }, srvMsg));
+          }, srvMsg), newSignIn[e.id] && /*#__PURE__*/React.createElement("div", {
+            className: "text-[11px] mt-2",
+            style: {
+              color: CD.mute
+            }
+          }, newSignIn[e.id].detail, newSignIn[e.id].temp && /*#__PURE__*/React.createElement("div", {
+            className: "mt-1.5 text-[15px] font-bold tracking-[0.12em]",
+            style: {
+              fontFamily: 'Space Mono, monospace',
+              color: CD.green
+            }
+          }, newSignIn[e.id].temp), newSignIn[e.id].temp && /*#__PURE__*/React.createElement("div", {
+            className: "mt-1",
+            style: {
+              color: CD.faint
+            }
+          }, "Shown once \u2014 it can\u2019t be looked up again.")));
         })(), /*#__PURE__*/React.createElement(Row, {
           title: "Transaction PIN",
           desc: "The 4-digit PIN this person enters to take a till, switch accounts and confirm sensitive actions. It can\u2019t be looked up \u2014 issue a new one if they\u2019ve forgotten it."
@@ -9043,14 +9198,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontFamily: 'Space Mono, monospace',
             color: CD.faint
           }
-        }, "\u2022\u2022\u2022\u2022"), /*#__PURE__*/React.createElement("button", {
+        }, "\u2022\u2022\u2022\u2022"), loginAcct ? /*#__PURE__*/React.createElement("button", {
           onClick: async () => {
             setNewPin(m => ({
               ...m,
               [e.id]: null
             }));
             try {
-              const d = await srvCall('POST', '/api/staff/' + encodeURIComponent((e.code || '').trim()) + '/pin');
+              const d = await srvCall('POST', '/api/staff/' + encodeURIComponent(loginId) + '/pin');
               setNewPin(m => ({
                 ...m,
                 [e.id]: {
@@ -9073,7 +9228,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             borderRadius: 7,
             color: CD.ink
           }
-        }, "Issue a new PIN"), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("span", {
+        }, "Issue a new PIN") : /*#__PURE__*/React.createElement("span", {
+          className: "text-[11px]",
+          style: {
+            color: CD.faint
+          }
+        }, "Create their sign-in first"), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("span", {
           className: "text-[11px]",
           style: {
             color: CD.flag
@@ -9112,11 +9272,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             setEmp(e.id, {
               active: blocked
             }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`);
-            srvSetActive(e.code, blocked);
+            if (loginAcct) srvSetActive(e.code, blocked);
           }
         }), " Block this account"), /*#__PURE__*/React.createElement("button", {
           onClick: () => {
-            srvSetActive(e.code, false);
+            if (loginAcct) srvSetActive(e.code, false);
             removeEmp(e.id, e.name);
             setEmpSel(null);
           },
