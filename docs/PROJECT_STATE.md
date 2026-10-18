@@ -926,6 +926,34 @@ and says "Not counted" until a currency is counted. The ledger search
 stays one line. Screening reads Not connected. This sits on the phone
 layout that landed with the desk-fits-a-phone change.
 
+**2026-10-19**, public site claims. The public pages say what the
+desk does today. Canada is the only live country. In Canada the
+desk applies the identification lines and will not post a deal
+over a line until a teller records the ID. Staff check the
+document in person. Outside verification is not connected. A
+refused attempt is not written to the book. The desk does not
+draft or send a suspicious transaction report. A desk runs under
+one country's rules, chosen at setup. Adding a location does not
+load a second pack. Singapore and Hong Kong have no pack. The
+Hong Kong card states the money-changing line at HK$120,000 and
+the remittance and wire line at HK$8,000, both planned. Verified
+and Verified Plus are planned badges, not connected. The desk
+does not read a licence. Records stay while the account is open,
+and keeping them for the statutory period is the shop's
+obligation. Export is the ledger CSV, a client report, and report
+CSVs. There is no single export of every client file with its ID
+scans. CurrencyDesk staff can reach a desk for setup, support,
+security, or a legal demand. Hosting is Render in Oregon, in the
+United States. The database is Neon [Neon region: to confirm].
+The pages do not name a Neon region. The pages also name Resend,
+Stripe, Twilio, Google, Tavily, and ElevenLabs. Admin changes are
+logged. Admin reads are not described as logged. Texting is not
+connected. Sanctions screening is not connected. The AI copilot
+is marked coming soon, not included yet, and it is not in the AI
+Bundle's list of live features. The AI Bundle stays $749. Founder
+offers and the other printed prices are unchanged. Em dashes and
+en dashes are out of the visible copy, titles, and meta.
+
 **2026-10-11**, public site claims, fourteenth pass. Only
 the exact names "24-hour rule" and "24-hour aggregation rule"
 are kept. A 24-hour setup fails. Spaced 48 hour and 2 hour,
@@ -1043,8 +1071,8 @@ Philippines are marked not live, and their rule tags no longer say they
 are on the desk. The site does not say deals are running in real shops,
 that a first shop exists, that anything was measured at the counter, or
 that history is imported. History is entered by hand. ID verification is
-not billed. The only service providers named are Render (hosting, United
-States) and Neon (database). Hero and feature amounts that are not a
+not billed. That pass named only Render (hosting, United
+States) and Neon (database) as service providers. Hero and feature amounts that are not a
 regulatory threshold are labelled sample figures. A large cash worksheet
 can be prepared from the book and is not sent. The 24-hour window on the
 server starts at midnight in the branch time zone. Screening is not

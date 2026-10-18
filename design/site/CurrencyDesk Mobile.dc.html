@@ -66,7 +66,7 @@
       <div style="position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding: 22px 20px 52px;">
         <div style="align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.18); font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #F1EEE8; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright); animation: cdLive 2s infinite;"></span>Available in Canada (early access)</div>
         <h1 style="font-family: var(--serif); font-weight: 400; font-size: 52px; line-height: 0.94; letter-spacing: -0.028em; margin: 16px 0 0; color: #FBF9F4; text-wrap: pretty; text-shadow: 0 2px 30px rgba(0,0,0,0.4);">More trades.<br>Less paperwork.</h1>
-        <p style="font-size: 15.5px; line-height: 1.5; color: rgba(251,249,244,0.78); margin: 14px 0 0; max-width: 330px;">One desk for the whole shop — rates, till, ledger, clients and compliance.</p>
+        <p style="font-size: 15.5px; line-height: 1.5; color: rgba(251,249,244,0.78); margin: 14px 0 0; max-width: 330px;">One desk for the whole shop. Rates, till, ledger, clients and compliance.</p>
       </div>
     </div>
 
@@ -278,9 +278,9 @@ class Component extends DCLogic {
     { src: '../photos/kyc-counter.jpg', kicker: 'Clients', title: 'Take their ID once', body: 'Every visit after that reuses the file already on the desk.' },
     { src: '../photos/compliance-institution.jpg', kicker: 'Compliance', title: 'The rules, carried', body: 'Thresholds watched from the book. A worksheet can be prepared. The desk does not send it.' },
     { src: '../photos/reports-ledger.jpg', kicker: 'Reports', title: 'Figures from the book', body: 'Takings and margin from deals already written. The desk does not write a regulator report on request.' },
-    { src: '../photos/cheque-cashing.jpg', kicker: 'Cheques', title: 'Fee and hold, worked out', body: 'Cash a cheque and the desk logs it — payer, amount, fee and hold, all filed against the client.' },
+    { src: '../photos/cheque-cashing.jpg', kicker: 'Cheques', title: 'Fee and hold, worked out', body: 'Cash a cheque and the desk logs it. Payer, amount, fee and hold, all filed against the client.' },
     { src: '../photos/vault-count.jpg', kicker: 'Vault', title: 'Know what is in the safe', body: 'Every count signed and timed, so you always know the position and who was last in it.' },
-    { src: '../photos/ai-copilot-guilloche.jpg', kicker: 'Planned', title: 'Ask your business', body: 'Which currency earned this month? Which teller is fastest? Ask in plain words and get a straight answer.' }
+    { src: '../photos/ai-copilot-guilloche.jpg', kicker: 'Coming soon', title: 'AI copilot', body: 'Coming soon, not included yet. The AI copilot does not answer questions on a customer desk today.' }
   ];
 
   JURS = [
@@ -319,14 +319,14 @@ class Component extends DCLogic {
     { name: 'Rates', mo: 299, popular: false, desc: 'Live rate board and pricing tools for a shop that just needs great numbers.',
       features: ['Live rate board', 'Per-currency spreads', 'Publish to your website'] },
     { name: 'Full System', mo: 599, popular: false, desc: 'The whole desk. Every application, one price, your entire team.',
-      features: ['Everything in Rates', 'Every application on the desk', 'Ledger, till & float', 'Clients & KYC', 'Compliance & reports'] },
-    { name: 'AI Bundle', mo: 749, popular: false, desc: 'The full desk plus the copilot that watches your numbers.',
-      features: ['Everything in Full System', 'AI assistant', 'New features first', 'Exclusive partner deals', 'Priority support'] }
+      features: ['Everything in Rates', 'Every application on the desk', 'Ledger, till & float', 'Client files (verification not connected)', 'Compliance & reports'] },
+    { name: 'AI Bundle', mo: 749, popular: false, desc: 'The full desk. The AI assistant is coming soon, not included yet.',
+      features: ['Everything in Full System', 'New features first', 'Exclusive partner deals', 'Priority support'] }
   ];
 
   PROOF = [
     { n: 'More', h: 'Customers who find you', t: 'Your rates are on the web where people search, not only on the wall.' },
-    { n: 'More', h: 'Margin kept', t: 'Every ticket prices at your spread — never eyeballed, never given away.' },
+    { n: 'More', h: 'Margin kept', t: 'Every ticket prices at your spread. Never eyeballed, never given away.' },
     { n: 'Less', h: 'Time on the books', t: 'The day closes with till, ledger and drawer already agreeing.' },
     { n: 'Less', h: 'Filing to chase', t: 'Cash thresholds are watched. The desk does not draft a regulator report as the deal is written.' },
     { n: 'Less', h: 'Training to do', t: 'The screen asks for the same steps on every deal. Nothing here was timed.' }
@@ -334,11 +334,11 @@ class Component extends DCLogic {
 
   FAQS = [
     { q: 'Is CurrencyDesk live yet?', a: 'Yes, in Canada. Canada is the only country live. We are onboarding the first desks now. FINTRAC\'s rulebook is listed. Early access is open to the first hundred desks.' },
-    { q: 'What do I need to run it?', a: 'A computer or tablet with a browser. No servers, no installs, no new hardware at the counter — your note counter and printer keep working exactly as they do now.' },
+    { q: 'What do I need to run it?', a: 'A computer or tablet with a browser. No servers, no installs, no new hardware at the counter. Your note counter and printer keep working exactly as they do now.' },
     { q: 'Do you take a cut of my trades?', a: 'Never. A flat monthly price, no percentage, no per-transaction fee, no share of your spread. We do not touch your money.' },
     { q: 'How long until my desk is running?', a: 'We are onboarding the first desks now, so this has not been timed. We set the desk up with you.' },
     { q: 'Can I bring my existing records across?', a: 'We help you enter clients, rates and history by hand during setup. There is no import.' },
-    { q: 'When will you support my country?', a: 'Serbia is not live. A pack is drafted. Exchange identification is 5,000 EUR or more when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it. Still being mapped: United States early 2027, United Kingdom and Australia mid-2027, European Union late 2027, UAE early 2028, Singapore and Hong Kong through 2028. India is not live. The India rules are mapped. The desk does not file to FIU-IND. The Philippines is not live. Those rules are mapped. The desk does not file to the AMLC.' }
+    { q: 'When will you support my country?', a: 'Serbia is not live. A pack is drafted. Exchange identification is 5,000 EUR or more when the National Bank of Serbia middle rate for that day is on file. Cash of 15,000 EUR or more is prepared for APML. A teller can stop a suspicious attempt and save a draft. The desk does not send it. Still being mapped: United States early 2027, United Kingdom and Australia mid-2027, European Union late 2027, UAE early 2028, Singapore and Hong Kong through 2028. These dates are plans, not commitments. India is not live. The India rules are mapped. The desk does not file to FIU-IND. The Philippines is not live. Those rules are mapped. The desk does not file to the AMLC.' }
   ];
 
   componentDidMount() {

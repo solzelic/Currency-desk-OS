@@ -31,7 +31,7 @@
       [style*="scroll-snap-type"] { scroll-snap-type: none !important; }
       [style*="scroll-margin-top: 67px"] { scroll-margin-top: 58px !important; }
       [style*="scroll-snap-align"] { scroll-snap-align: none !important; scroll-snap-stop: normal !important; min-height: 0 !important; height: auto !important; }
-      [style*="grid-template-columns: 1.3fr"], [style*="grid-template-columns: 0.82fr"], [style*="grid-template-columns: minmax(0, 0.68fr)"] { grid-template-columns: minmax(0, 1fr) !important; }
+      [style*="grid-template-columns: 1.3fr"], [style*="grid-template-columns: 0.82fr"], [style*="0.68fr"] { grid-template-columns: minmax(0, 1fr) !important; }
       [style*="grid-template-columns: repeat(auto-fill"] { grid-template-columns: minmax(0, 1fr) !important; }
     }
   </style>
@@ -57,7 +57,7 @@
     <div style="text-align: center;">
       <div style="display: inline-flex; align-items: center; gap: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--green-deep); font-weight: 600; background: var(--green-soft); border: 1px solid rgba(29,107,69,0.22); border-radius: 999px; padding: 7px 15px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright);"></span>Compliance &amp; security</div>
       <h1 style="font-family: var(--serif); font-weight: 400; font-size: 68px; line-height: 0.98; letter-spacing: -0.02em; margin: 22px auto 0; max-width: 900px; text-wrap: balance;">Every rule your desk answers to, written as it stands.</h1>
-      <p style="font-size: 17px; line-height: 1.62; color: var(--mute); margin: 22px auto 0; max-width: 640px; text-wrap: pretty;">CurrencyDesk maps your regulator's obligations onto the desk: every deal logged, and cash thresholds watched from the book. Canada is the only Live country. Below is what the product does now, what is only in the pack, and where each rule comes from.</p>
+      <p style="font-size: 17px; line-height: 1.62; color: var(--mute); margin: 22px auto 0; max-width: 640px; text-wrap: pretty;">For Canada, CurrencyDesk maps FINTRAC's obligations onto the desk: every deal logged, and cash thresholds watched from the book. Canada is the only live country. Below is what the product does now, what is only in a pack, and where each rule comes from.</p>
       <div aria-hidden="true" style="width: 74px; height: 1px; background: var(--line); margin: 34px auto 0;"></div>
     </div>
 
@@ -68,7 +68,7 @@
       </div>
       <div>
         <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600; padding-bottom: 11px; border-bottom: 1px solid var(--line);">The rulebook</div>
-        <p style="font-size: 14px; line-height: 1.65; color: var(--mute); margin: 13px 0 0;">Your registration decides which obligations load: thresholds, aggregation windows, and report names. The desk checks cash thresholds from the book while the customer is still standing there. A large cash worksheet can be prepared. The desk does not send it.</p>
+        <p style="font-size: 14px; line-height: 1.65; color: var(--mute); margin: 13px 0 0;">The country your desk is set up in decides which pack loads, and Canada is the only live pack. While the customer is at the counter, the desk checks the identification lines from the book and will not post a deal over a line until ID is on file. A large cash worksheet can be prepared. The desk does not send it.</p>
       </div>
       <div>
         <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600; padding-bottom: 11px; border-bottom: 1px solid var(--line);">KYC, not connected</div>
@@ -99,7 +99,7 @@
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass); font-weight: 600;">How it works</div>
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: 42px; line-height: 1.02; letter-spacing: -0.015em; margin: 12px 0 0; max-width: 620px;">The rulebook runs at the till, not in a binder.</h2>
         </div>
-        <p style="font-size: 14.5px; line-height: 1.6; color: var(--mute); margin: 0; max-width: 400px;">The same four steps run in every jurisdiction. Only the rulebook changes.</p>
+        <p style="font-size: 14.5px; line-height: 1.6; color: var(--mute); margin: 0; max-width: 400px;">These four steps describe a Canada desk, the only live country.</p>
       </div>
       <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 34px;">
         <sc-for list="{{ howSteps }}" as="h" hint-placeholder-count="4">
@@ -234,10 +234,13 @@
               </div>
             </sc-for>
           </div>
-          <div style="flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 20px;">
-            <span style="font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); font-weight: 600; margin-right: 2px;">Badge id's<br></span>
+          <div data-badge-list="true" style="flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 20px;">
+            <span style="font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Badge id's</span>
             <sc-for list="{{ kycLadder }}" as="l" hint-placeholder-count="3">
-              <span style="{{ l.badgeStyle }}">{{ l.badge }}</span>
+              <span style="display: flex; align-items: flex-start; gap: 8px; max-width: 100%;">
+                <span style="{{ l.badgeStyle }}">{{ l.badge }}</span>
+                <span style="font-size: 12px; line-height: 1.4; color: var(--mute); padding-top: 3px;">{{ l.note }}</span>
+              </span>
             </sc-for>
           </div>
         </div>
@@ -316,7 +319,7 @@
         <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 9px; margin-top: 26px; padding: 15px 26px; background: #fff; color: var(--green-deep); border-radius: 13px; font-size: 15px; font-weight: 700;" style-hover="background: #F1EEE8; color: var(--green-deep);">Get early access<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
       </div>
     </div>
-    <div style="text-align: center; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.06em; color: var(--faint); margin-top: 26px;">CurrencyDesk OS · Compliance overview · Not legal advice — obligations vary; we help you meet them.</div>
+    <div style="text-align: center; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.06em; color: var(--faint); margin-top: 26px;">CurrencyDesk OS · Compliance overview · Not legal advice. Obligations vary; we help you meet them.</div>
   </div>
 
   <div style="border-top: 1px solid var(--line); background: rgba(255,255,255,0.5);">
@@ -437,7 +440,7 @@ class Component extends DCLogic {
         {name:'IVTS · International value transfer', spec:'Every transfer of value in or out. No amount. Within 10 business days. This is the report formerly called an IFTI.', tag:'Planned', cat:'transfer', when:'On transfer'},
         {name:'SMR · Suspicious Matter Report', spec:'24 hours for terrorism financing. Otherwise 3 business days.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'Customer due diligence', spec:'Before a currency exchange of A$1,000 or more, and before every remittance.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'AML/CTF program', spec:'Maintained with the desk. The annual compliance report is not prepared here.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'AML/CTF program', spec:'Your AML/CTF program is yours to write and keep up to date. The desk does not hold it. The annual compliance report is not prepared here.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'7-year record retention', spec:'Transaction and identity records kept.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'fiu-ind', tag:'FIU-IND', country:'India', regulator:'RBI / FIU-IND', status:'Not live', kind:'soon', color:'#B4682A', soft:'rgba(180,104,42,0.11)', official:'https://fiuindia.gov.in', updated:'7 Oct 2026', retention:'5 years',
@@ -462,7 +465,7 @@ class Component extends DCLogic {
         {name:'STR via goAML', spec:'Listed in the pack. The desk does not send it.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'Exchange identification', spec:'AED 3,500 or more on one deal. No cash threshold report.', tag:'Planned', cat:'threshold', when:'At the till'},
         {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'AML/CFT program', spec:'Maintained to the CBUAE rulebook.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'AML/CFT program', spec:'Your AML/CFT program is yours to write and keep up to date. The desk does not hold it.', tag:'Planned', cat:'licence', when:'Ongoing'},
         {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
       ] },
     { id:'amlc', tag:'AMLC', country:'Philippines', regulator:'BSP / AMLC', status:'Not live', kind:'soon', color:'#0E7C7B', soft:'rgba(14,124,123,0.1)', official:'https://www.amlc.gov.ph', updated:'7 Oct 2026', retention:'5 years',
@@ -484,8 +487,8 @@ class Component extends DCLogic {
       whatWeDo:'Not live. A licence class is not tracked. Screening is not connected. The desk does not draft or send a report to the STRO.',
       how:[{n:'1',t:'Not live. A licence class is not tracked.'},{n:'2',t:'Screening is not connected. No list is loaded.'},{n:'3',t:'The desk does not draft or send a report. Nothing is removed on a schedule.'}],
       rules:[
-        {name:'Payment services licence', spec:'Listed in the pack. A licence class is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
-        {name:'STR to the STRO', spec:'Listed in the pack. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'Payment services licence', spec:'Listed here for planning. No pack is built. A licence class is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'STR to the STRO', spec:'Listed here for planning. No pack is built. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
         {name:'Transfer information', spec:'Originator and beneficiary data on transfers.', tag:'Planned', cat:'transfer', when:'On transfer'},
         {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
         {name:'5-year record retention', spec:'Client and transaction files kept.', tag:'Planned', cat:'records', when:'After the deal'}
@@ -494,13 +497,14 @@ class Component extends DCLogic {
       supervisor:'Customs & Excise for money service operators, JFIU for reports',
       deadline:'A suspicion report is due without delay. The desk does not send it.',
       whatWeDo:'Not live. A licence is not tracked. Screening is not connected. The desk does not draft or send a report to the JFIU.',
-      how:[{n:'1',t:'Not live. A licence is not tracked.'},{n:'2',t:'The pack names due diligence at the occasional-transaction threshold.'},{n:'3',t:'The desk does not draft or send a report.'}],
+      how:[{n:'1',t:'Not live. A licence is not tracked.'},{n:'2',t:'No Hong Kong pack is built. The figures below are summaries for planning.'},{n:'3',t:'The desk does not draft or send a report.'}],
       rules:[
-        {name:'MSO licence', spec:'Listed in the pack. A licence is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
-        {name:'STR to the JFIU', spec:'Listed in the pack. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
-        {name:'Occasional transaction CDD', spec:'Due diligence at HK$120,000.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'MSO licence', spec:'Listed here for planning. No pack is built. A licence is not tracked.', tag:'Planned', cat:'licence', when:'Ongoing'},
+        {name:'STR to the JFIU', spec:'Listed here for planning. No pack is built. The desk does not draft or send it.', tag:'Planned', cat:'suspicious', when:'On review'},
+        {name:'Money changing CDD', spec:'Customer due diligence before an occasional currency exchange of HK$120,000 or more, including linked deals (AMLO Sch. 2, s.3(1)(b)). At any amount on suspicion or doubt about earlier ID.', tag:'Planned', cat:'threshold', when:'At the till'},
+        {name:'Remittance and wire transfer', spec:'Identify, verify and record the originator before a remittance of HK$8,000 or more (Sch. 2, s.13). Customer due diligence before an occasional wire transfer of HK$8,000 or more (Sch. 2, s.3(1A)).', tag:'Planned', cat:'transfer', when:'On transfer'},
         {name:'Sanctions', spec:'Screening is not connected. No list is loaded.', tag:'Planned', cat:'screening', when:'Before the deal'},
-        {name:'Record retention', spec:'Kept in line with the AMLO.', tag:'Planned', cat:'records', when:'After the deal'}
+        {name:'Record retention', spec:'Planned. The AMLO asks for records to be kept for at least five years (Schedule 2, section 20). No Hong Kong pack is built.', tag:'Planned', cat:'records', when:'After the deal'}
       ] }
   ];
 
@@ -619,7 +623,7 @@ class Component extends DCLogic {
       coverageNote: trading + ' live · ' + available + ' available · ' + (this.JURS.length - trading - available) + ' on the roadmap',
       howReveal: true,
       howSteps: [
-        { reveal: '0.04', n: '01', icon: this.ic('institution', 19, '#1D6B45', 2), title: 'We read your licence', body: 'Tell us where you are registered. That chooses the rulebook. A licence renewal is not tracked.' },
+        { reveal: '0.04', n: '01', icon: this.ic('institution', 19, '#1D6B45', 2), title: 'We set your country', body: 'Tell us where you operate. That chooses the pack. A licence number can be typed in, but the desk does not check it and renewals are not tracked.' },
         { reveal: '0.1', n: '02', icon: this.ic('board', 19, '#1D6B45', 2), title: 'The rulebook loads', body: 'Thresholds and report names for your regulator are listed on the desk, in your currency.' },
         { reveal: '0.16', n: '03', icon: this.ic('till', 19, '#1D6B45', 2), title: 'Cash thresholds', body: 'As you write a ticket the desk checks the cash thresholds in the loaded pack. Screening is not connected yet.' },
         { reveal: '0.22', n: '04', icon: this.ic('archive', 19, '#1D6B45', 2), title: 'Reports stay with you', body: 'A large cash worksheet can be prepared from the book. The desk does not file it and does not send it.' }
@@ -686,8 +690,8 @@ class Component extends DCLogic {
       }),
       kycLadder: [
         { badge:'Unverified', note:'New client, nothing on file yet.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--faint);background:rgba(23,20,15,0.05);border:1px solid var(--line);border-radius:999px;padding:5px 11px;flex:none;' },
-        { badge:'Verified', note:'Green badge, good for a year.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:#fff;background:var(--green);border-radius:999px;padding:5px 11px;flex:none;' },
-        { badge:'Verified Plus', note:'Deep file behind the badge for scrutiny.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--brass);background:var(--brass-soft);border:1px solid rgba(169,121,28,0.35);border-radius:999px;padding:5px 11px;flex:none;' }
+        { badge:'Verified', note:'Planned badge after a check by an outside provider. Not connected.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:#fff;background:var(--green);border-radius:999px;padding:5px 11px;flex:none;' },
+        { badge:'Verified Plus', note:'Planned deeper check. Not connected.', badgeStyle:'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:var(--brass);background:var(--brass-soft);border:1px solid rgba(169,121,28,0.35);border-radius:999px;padding:5px 11px;flex:none;' }
       ],
       modules: [
         { icon: this.ic('idcard', 19, '#1D6B45', 2), title: 'KYC provider', body: 'Verification is not connected. No outside identity provider is wired in.', options: 'Not connected' },

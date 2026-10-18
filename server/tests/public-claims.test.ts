@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -437,5 +438,89 @@ describe("public marketing claims", () => {
   it("allows the moment a deal is written and an untimed launch", () => {
     const result = probe("the second it happens. a second shop. an on-site launch week. We have not timed it.");
     expect(result.ok).toBe(true);
+  });
+
+  it("flags the false claims removed from the public pages", () => {
+    const removed = [
+      "the desk tells you when that is",
+      "A small walk-in exchange is not the same as a large one",
+      "being able to show declines is exactly what a regulator expects",
+      "The desk carries the rules with you",
+      "same screens, different thresholds",
+      "The nine things on the desk today",
+      "the next nine will come the same way",
+      "Only you and the staff you name",
+      "We hold it as a custodian, not an owner",
+      "the people you nominate",
+      "the messages you send clients through the desk",
+      "staff who need it to do their job and is logged",
+      "without anyone managing it",
+      "a five-year-old ticket",
+      "Moving your recordkeeping is not a reportable event",
+      "your public board, clients and your ledger anywhere",
+      "standard formats your accountant and regulator already read",
+      "a full export, not a locked door",
+      "a shared view across them",
+      "a phone hotspot keeps you trading through an outage",
+      "maps your regulator's obligations",
+      "Your registration decides which obligations load",
+      "The same four steps run in every jurisdiction",
+      "We read your licence",
+      "Green badge, good for a year",
+      "Deep file behind the badge for scrutiny",
+      "Maintained with the desk",
+      "Maintained to the CBUAE rulebook",
+      "Kept in line with the AMLO",
+      "others support analytics and can be declined",
+      "mapped for nine more jurisdictions",
+      "get a straight answer back",
+      "an AI assistant that watches the numbers with you",
+      "the copilot that watches your numbers",
+      "get an answer, not a spreadsheet",
+      "Spots patterns you would never have looked for",
+      "A short daily read on how the desk is doing",
+      "Service providers we rely on are Render, for hosting",
+      "The database is Neon.",
+      "Listed in the pack. A licence class is not tracked.",
+      "Listed in the pack. A licence is not tracked.",
+      "Due diligence at HK$120,000.",
+      "occasional-transaction threshold",
+      "AI assistant",
+    ];
+    for (const claim of removed) {
+      const result = probe(claim);
+      expect(result.ok, claim).toBe(false);
+    }
+    expect(probe("The AI assistant is coming soon, not included yet.").ok).toBe(true);
+    expect(probe("The AI assistant is not connected.").ok).toBe(true);
+    expect(probe("The database is hosted by Neon [Neon region: to confirm].").ok).toBe(true);
+    expect(probe("Sanctions screening is not connected either.").ok).toBe(true);
+
+    const web = path.resolve(import.meta.dirname, "../../web");
+    const faq = readFileSync(path.join(web, "faq.html"), "utf8");
+    const home = readFileSync(path.join(web, "index.html"), "utf8");
+    const compliance = readFileSync(path.join(web, "compliance.html"), "utf8");
+    const legal = readFileSync(path.join(web, "legal.html"), "utf8");
+    expect(faq).toContain("Outside Canada the desk is not live.");
+    expect(faq).toContain("These dates are plans, not commitments.");
+    expect(faq).not.toContain("nine things on the desk today");
+    expect(faq).not.toContain("as a custodian, not an owner");
+    expect(home).toContain("The AI assistant is coming soon, not included yet.");
+    expect(home).not.toContain("mapped for nine more jurisdictions");
+    expect(home).not.toContain("'AI assistant'");
+    expect(compliance).toContain("No Hong Kong pack is built.");
+    expect(compliance).toContain("Money changing CDD");
+    expect(compliance).not.toContain("good for a year");
+    expect(compliance).not.toContain("We read your licence");
+    const singapore = compliance.slice(compliance.indexOf("country:'Singapore'"), compliance.indexOf("country:'Hong Kong'"));
+    const hongKong = compliance.slice(compliance.indexOf("country:'Hong Kong'"));
+    expect(singapore).not.toContain("Listed in the pack");
+    expect(hongKong).not.toContain("Listed in the pack");
+    expect(hongKong).not.toContain("Due diligence at HK$120,000.");
+    expect(faq).toContain("[Neon region: to confirm]");
+    expect(legal).toContain("[Neon region: to confirm]");
+    expect(legal).toContain("Texting is not connected, so the desk does not send messages to your clients.");
+    expect(legal).not.toContain("messages you send clients through the desk");
+    expect(legal).not.toContain("support analytics and can be declined");
   });
 });
