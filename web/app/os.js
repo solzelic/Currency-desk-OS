@@ -60857,6 +60857,8 @@ ${snap}`;
    ============================================================ */
 window.CDOS_PERSIST = (function () {
   var KEY_RE = /^(cdos_|yorkfx_)/;
+  /* The one key a new desk already has. It is not a finished desk. */
+  var OPENING_SCHEDULE_KEY = 'cdos_cheque_schedule_v1';
   var tenantId = null;
   var lastSig = '';
   var timer = null;
@@ -60904,6 +60906,17 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+  }
+
+  /* A new desk stores only the opening cheque schedule. That one key is
+     not a finished desk: the caller still writes the shop name, the cash,
+     and the thresholds. Keep whatever schedule is stored, not only the
+     default, and do not clear the other keys. A desk with no saved
+     document does not clear them either, and the rate board already in
+     this browser is one of those keys. */
+  function openingScheduleOnly(state) {
+    var names = Object.keys(state || {});
+    return names.length === 1 && names[0] === OPENING_SCHEDULE_KEY;
   }
 
   /* ---- telling somebody ------------------------------------------------
@@ -61007,8 +61020,17 @@ window.CDOS_PERSIST = (function () {
       res = await r.json();
     } catch (e) { tenantId = null; return 'offline'; }
     version = (res && res.version) || 0;
-    if (res && res.state && Object.keys(res.state).length) {
-      applyState(res.state);
+    var state = res && res.state;
+    if (state && openingScheduleOnly(state)) {
+      var kept = state[OPENING_SCHEDULE_KEY];
+      if (kept != null) localStorage.setItem(OPENING_SCHEDULE_KEY, kept);
+      baseline = {};
+      if (kept != null) baseline[OPENING_SCHEDULE_KEY] = localStorage.getItem(OPENING_SCHEDULE_KEY);
+      lastSig = '';
+      return 'empty';
+    }
+    if (state && Object.keys(state).length) {
+      applyState(state);
       baseline = snapshot();
       lastSig = JSON.stringify(baseline);
       return 'restored';

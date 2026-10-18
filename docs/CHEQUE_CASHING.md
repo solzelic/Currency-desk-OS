@@ -219,7 +219,7 @@ silently drop the scans.
 
 ## A desk is not left without a schedule
 
-Migration 045 writes the default schedule where `cdos_cheque_schedule_v1` is missing. Missing means the key is absent, the value is null, the text is empty, the text is `[]`, or the text is not a non-empty JSON array. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one `audit_events` row, actor `system migration`, action `cheque.schedule_backfill`, with `before` and `after`. A second run changes nothing and writes no audit row. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write the same default when the desk is created, and they do not replace a schedule that is already there.
+Migration 045 writes the default schedule where `cdos_cheque_schedule_v1` is missing. Missing means the key is absent, the value is null, the text is empty, the text is `[]`, or the text is not a non-empty JSON array. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one `audit_events` row, actor `system migration`, action `cheque.schedule_backfill`, with `before` and `after`. A second run changes nothing and writes no audit row. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write the same default when the desk is created, and they do not replace a schedule that is already there. A browser that finds only that schedule still opens the desk as new: it writes the shop name and the empty cash, and the first save keeps the schedule.
 
 ## What a settlement is not
 

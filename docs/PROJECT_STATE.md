@@ -523,7 +523,7 @@ cherry-pick, deterministic deletions, and documentation consolidation have
 all landed. The nine unreferenced YorkFX media files rated LOW-MED were
 deliberately retained until external hot-linking can be ruled out.
 
-- **Every desk has a cheque schedule.** Migration 045 writes the default where the desk has none. A stored null, an empty string, `[]`, or a value that is not a non-empty JSON array is missing, and the default is written. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one audit row, actor `system migration`, action `cheque.schedule_backfill`, with the value before and the value after. A second run writes none. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write that same default when the desk is created, and they do not replace a schedule that is already there.
+- **Every desk has a cheque schedule.** Migration 045 writes the default where the desk has none. A stored null, an empty string, `[]`, or a value that is not a non-empty JSON array is missing, and the default is written. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one audit row, actor `system migration`, action `cheque.schedule_backfill`, with the value before and the value after. A second run writes none. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write that same default when the desk is created, and they do not replace a schedule that is already there. A browser that finds only that schedule still opens the desk as new, writes the shop name and the empty cash, and keeps the schedule in the first save.
 
 ## Known high-priority engineering risks (unresolved)
 
