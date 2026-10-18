@@ -240,16 +240,50 @@ async function issueFirstSignIn(
   return deliverSignIn(user, deskName, temp);
 }
 
+/* Settings > Employees posts here with Content-Type: application/json and
+   no body. Fastify refuses an empty JSON body before a route runs, which
+   is why Issue a new PIN always answered "Bad Request". An empty body on
+   this one route means "issue one". Every other JSON route still refuses
+   an empty body, including POST /api/staff/pin, which needs the digits. */
+const PIN_ISSUE = /^\/api\/staff\/[^/]+\/pin$/;
+
+function isPinIssue(method: string | undefined, url: string | undefined): boolean {
+  return method === "POST" && PIN_ISSUE.test((url ?? "").split("?")[0] ?? "");
+}
+
+function allowEmptyPinIssue(app: FastifyInstance): void {
+  const parse = app.getDefaultJsonParser("error", "error");
+  /* Keep the body as a buffer. A string parser calls setEncoding on the
+     request stream, and the webhook routes that sign the raw bytes then
+     see strings instead of buffers. An empty buffer on this one route is
+     "issue a PIN"; everything else still goes through the JSON parser. */
+  app.removeContentTypeParser("application/json");
+  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (req, body, done) => {
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    if (buf.length === 0 && isPinIssue(req.method, req.url)) {
+      done(null, {});
+      return;
+    }
+    parse(req, buf.toString("utf8"), done);
+  });
+}
+
 export function registerStaffRoutes(app: FastifyInstance, db: Db) {
+  allowEmptyPinIssue(app);
   // every route here needs an authenticated manager+ session
-  const requireManager = async (req: { cookies: Record<string, string | undefined> }, reply: { code: (n: number) => { send: (b: unknown) => unknown } }): Promise<SessionUser | null> => {
+  const requireManager = async (req: { cookies: Record<string, string | undefined>; method?: string; url?: string }, reply: { code: (n: number) => { send: (b: unknown) => unknown } }): Promise<SessionUser | null> => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    const issuing = isPinIssue(req.method, req.url);
     if (!who) {
-      reply.code(401).send({ error: "unauthenticated" });
+      reply.code(401).send(issuing
+        ? { error: "unauthenticated", detail: "Sign in again, then issue the PIN." }
+        : { error: "unauthenticated" });
       return null;
     }
     if (ROLE_RANK[who.role] < ROLE_RANK.branch_manager) {
-      reply.code(403).send({ error: "forbidden" });
+      reply.code(403).send(issuing
+        ? { error: "forbidden", detail: "Only the owner or a manager can issue a PIN." }
+        : { error: "forbidden" });
       return null;
     }
     return who;
@@ -506,10 +540,10 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     if (!who) return;
     const { staffId } = req.params as { staffId: string };
     const target = await findTarget(who.tenantId, staffId);
-    if (!target) return reply.code(404).send({ error: "not_found" });
-    if (!canManage(who, target.role)) return reply.code(403).send({ error: "role_exceeds_yours" });
+    if (!target) return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
+    if (!canManage(who, target.role)) return reply.code(403).send({ error: "role_exceeds_yours", detail: "You can't issue a PIN for that person." });
     // your own PIN changes via /api/staff/pin, which asks for the current one
-    if (target.id === who.id) return reply.code(403).send({ error: "use_set_pin" });
+    if (target.id === who.id) return reply.code(403).send({ error: "use_set_pin", detail: "Set your own PIN from My account." });
 
     const pin = generatePin();
     await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date(), pinMustChange: true }).where(eq(schema.staffUsers.id, target.id));
@@ -522,6 +556,6 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
       action: "staff.pin_reset",
       detail: { staffId: target.staffId },
     });
-    return { ok: true, pin };
+    return { ok: true, pin, mustChange: true };
   });
 }

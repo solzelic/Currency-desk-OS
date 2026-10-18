@@ -5318,6 +5318,23 @@
   const APPS = [['rates', 'Rate Board'], ['ledger', 'Ledger'], ['transfers', 'Transfers'], ['cheques', 'Cheques'], ['clients', 'Clients · KYC'], ['compliance', 'Compliance'], ['dashboard', 'Dashboard'], ['till', 'Till & Drawer'], ['vault', 'Vault'], ['branches', 'Branches'], ['tagged', 'Tagged'], ['audit', 'Audit Trail']];
   const DEF_APPS = ['rates', 'ledger', 'clients', 'till'];
   const EMP_ROLES = ['Owner', 'Manager', 'Senior teller', 'Cashier', 'Trainee'];
+
+  /* Issue a new PIN posts JSON and no body. Whatever comes back is said in
+     a sentence. "Bad Request", a bare status, and a machine code are not. */
+  function pinIssueFailure(status, body) {
+    const detail = body && typeof body.detail === 'string' ? body.detail.trim() : '';
+    if (detail && detail !== 'Bad Request') return detail;
+    const code = body && typeof body.error === 'string' ? body.error : '';
+    if (code === 'forbidden') return 'Only the owner or a manager can issue a PIN.';
+    if (code === 'unauthenticated') return 'Sign in again, then issue the PIN.';
+    if (code === 'not_found') return 'That person is not on this desk.';
+    if (code === 'role_exceeds_yours') return "You can't issue a PIN for that person.";
+    if (code === 'use_set_pin') return 'Set your own PIN from My account.';
+    if (status === 404) return 'That person is not on this desk.';
+    if (status === 403) return 'Only the owner or a manager can issue a PIN.';
+    if (status === 401) return 'Sign in again, then issue the PIN.';
+    return 'The PIN was not issued. Try again.';
+  }
   const inSty = {
     border: `1px solid ${CD.line}`,
     background: 'var(--cd-panel)',
@@ -6656,28 +6673,36 @@
       /* A PIN somebody else issued is a way back in, not an identity — say so
          plainly until they've picked their own. */
       const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
-      const label = done ? 'PIN updated' : mustChange ? 'Issued to you — pick your own' : hasPin ? 'PIN set' : 'No PIN yet';
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : 'No PIN yet';
+      const toneInk = !hasPin && !done && !mustChange;
       return /*#__PURE__*/React.createElement("div", {
-        className: "flex items-center gap-2"
+        className: "flex items-center gap-2",
+        style: {
+          flexWrap: 'wrap'
+        }
       }, /*#__PURE__*/React.createElement("span", {
         className: "text-[12px] flex items-center gap-1.5",
         style: {
-          color: tone
+          color: toneInk ? CD.ink : tone
         }
       }, /*#__PURE__*/React.createElement(Ic, {
         n: mustChange ? 'alert' : done || hasPin ? 'checkcircle' : 'lock',
         s: 13,
-        c: done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.faint
+        c: toneInk ? CD.ink : done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.ink
       }), label), /*#__PURE__*/React.createElement("button", {
+        type: "button",
         onClick: () => {
           setDone(false);
           setOpen(true);
         },
-        className: "text-[12px] px-2.5 py-1.5 font-semibold",
+        className: "text-[13px] font-semibold",
         style: {
+          minHeight: 44,
+          padding: '0 14px',
           border: `1px solid ${mustChange ? CD.amber : CD.line}`,
           borderRadius: 8,
-          color: CD.ink
+          color: CD.ink,
+          background: CD.panel
         }
       }, hasPin ? 'Change PIN' : 'Set PIN'));
     }
@@ -8151,14 +8176,15 @@
         fontFamily: 'Space Mono, monospace'
       }
     }, "Security"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start justify-between gap-4 py-3",
+      className: "flex items-start justify-between gap-3 py-3",
       style: {
-        borderTop: `1px solid ${CD.lineSoft}`
+        borderTop: `1px solid ${CD.lineSoft}`,
+        flexWrap: 'wrap'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "min-w-0 flex-none",
+      className: "min-w-0",
       style: {
-        maxWidth: 230
+        flex: '1 1 220px'
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm",
@@ -8166,18 +8192,22 @@
         color: CD.ink
       }
     }, "Transaction PIN"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-0.5",
+      className: "text-[12px] mt-0.5",
       style: {
-        color: CD.mute
+        color: CD.ink,
+        lineHeight: 1.45
       }
-    }, "A 4-digit PIN for quick in-app checks (switching accounts, taking a till, voiding). Separate from your sign-in password. Everyone starts at 0000.")), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 flex justify-end"
+    }, "A 4-digit PIN for switching accounts, taking a till, and voiding a deal. It is separate from your sign-in password. A manager issues your first one. You change it the first time you use it.")), /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-end",
+      style: {
+        flex: '1 1 180px'
+      }
     }, myEmp ? /*#__PURE__*/React.createElement(PinSetter, {
       onSave: setMyPin
     }) : /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+      className: "text-[12px]",
       style: {
-        color: CD.faint
+        color: CD.ink
       }
     }, "Available once your account is set up"))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-start justify-between gap-4 py-3",
@@ -10208,16 +10238,42 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               color: CD.faint
             }
           }, "Shown once \u2014 it can\u2019t be looked up again.")));
-        })(), /*#__PURE__*/React.createElement(Row, {
-          title: "Transaction PIN",
-          desc: "The 4-digit PIN this person enters to take a till, switch accounts and confirm sensitive actions. It can\u2019t be looked up \u2014 issue a new one if they\u2019ve forgotten it."
-        }, /*#__PURE__*/React.createElement("span", {
-          className: "flex items-center gap-2.5"
+        })(), /*#__PURE__*/React.createElement("div", {
+          className: "py-3",
+          style: {
+            borderTop: `1px solid ${CD.lineSoft}`
+          }
+        }, /*#__PURE__*/React.createElement("div", {
+          className: "flex items-start justify-between gap-3",
+          style: {
+            flexWrap: 'wrap'
+          }
+        }, /*#__PURE__*/React.createElement("div", {
+          className: "min-w-0",
+          style: {
+            flex: '1 1 220px'
+          }
+        }, /*#__PURE__*/React.createElement("div", {
+          className: "text-sm",
+          style: {
+            color: CD.ink
+          }
+        }, "Transaction PIN"), /*#__PURE__*/React.createElement("div", {
+          className: "text-[12px] mt-0.5",
+          style: {
+            color: CD.ink,
+            lineHeight: 1.45
+          }
+        }, "The 4-digit PIN this person enters to take a till, switch accounts, and confirm sensitive actions. It cannot be looked up. Issue a new one if they have forgotten it.")), /*#__PURE__*/React.createElement("div", {
+          className: "flex items-center gap-2.5",
+          style: {
+            flexWrap: 'wrap'
+          }
         }, newPin[e.id] && newPin[e.id].pin ? /*#__PURE__*/React.createElement("span", {
           className: "text-[15px] font-bold tracking-[0.3em]",
           style: {
             fontFamily: 'Space Mono, monospace',
-            color: CD.green
+            color: CD.ink
           }
         }, newPin[e.id].pin) : /*#__PURE__*/React.createElement("span", {
           className: "text-[13px] font-bold tracking-[0.3em]",
@@ -10226,51 +10282,77 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.faint
           }
         }, "\u2022\u2022\u2022\u2022"), loginAcct ? /*#__PURE__*/React.createElement("button", {
+          type: "button",
+          disabled: !!(newPin[e.id] && newPin[e.id].busy),
           onClick: async () => {
             setNewPin(m => ({
               ...m,
-              [e.id]: null
+              [e.id]: {
+                busy: true
+              }
             }));
             try {
-              const d = await srvCall('POST', '/api/staff/' + encodeURIComponent(loginId) + '/pin');
+              const res = await fetch('/api/staff/' + encodeURIComponent(loginId) + '/pin', {
+                method: 'POST',
+                headers: {
+                  'content-type': 'application/json'
+                },
+                credentials: 'same-origin'
+              });
+              const d = await res.json().catch(() => null);
+              if (!res.ok || !d || typeof d.pin !== 'string' || !/^\d{4}$/.test(d.pin)) {
+                setNewPin(m => ({
+                  ...m,
+                  [e.id]: {
+                    err: pinIssueFailure(res.status, d)
+                  }
+                }));
+                return;
+              }
               setNewPin(m => ({
                 ...m,
                 [e.id]: {
                   pin: d.pin
                 }
               }));
-              log('Transaction PIN', `${e.name} · new PIN issued`);
+              log('Transaction PIN', e.name + ' · new PIN issued');
             } catch (x) {
+              const raw = String(x && x.message || x || '');
+              const said = !raw || raw === 'Failed to fetch' || raw === 'Bad Request' || /^HTTP \d+$/.test(raw) ? 'No connection. The PIN was not issued.' : raw;
               setNewPin(m => ({
                 ...m,
                 [e.id]: {
-                  err: String(x.message || x)
+                  err: said
                 }
               }));
             }
           },
-          className: "text-[11px] px-2 py-1",
+          className: "text-[13px] font-semibold",
           style: {
+            minHeight: 44,
+            padding: '0 14px',
             border: `1px solid ${CD.line}`,
-            borderRadius: 7,
+            borderRadius: 8,
+            color: CD.ink,
+            background: CD.panel
+          }
+        }, newPin[e.id] && newPin[e.id].busy ? 'Issuing…' : 'Issue a new PIN') : /*#__PURE__*/React.createElement("span", {
+          className: "text-[12px]",
+          style: {
             color: CD.ink
           }
-        }, "Issue a new PIN") : /*#__PURE__*/React.createElement("span", {
-          className: "text-[11px]",
-          style: {
-            color: CD.faint
-          }
-        }, "Create their sign-in first"), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("span", {
-          className: "text-[11px]",
+        }, "Create their sign-in first"))), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("div", {
+          className: "text-[13px] mt-2",
           style: {
             color: CD.flag
           }
-        }, newPin[e.id].err))), newPin[e.id] && newPin[e.id].pin && /*#__PURE__*/React.createElement("div", {
-          className: "text-[11px] -mt-1 mb-1",
+        }, newPin[e.id].err), newPin[e.id] && newPin[e.id].pin && /*#__PURE__*/React.createElement("div", {
+          className: "text-[13px] mt-2",
           style: {
-            color: CD.mute
+            color: CD.ink,
+            lineHeight: 1.45
           }
-        }, "Read this to ", e.name, " now \u2014 it is shown once and cannot be looked up again."), /*#__PURE__*/React.createElement(Row, {
+        }, "Read this to ", e.name, " now. It is shown once and cannot be looked up again. They change it the first time they use it.")), /*#__PURE__*/React.createElement(Row, {
           title: "Require PIN",
           desc: "When on, this person enters their PIN to switch to their account, take a till, and void a deal."
         }, /*#__PURE__*/React.createElement(Sw, {
@@ -10344,11 +10426,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         s: 11,
         c: CD.faint
       }), " PIN security"), /*#__PURE__*/React.createElement("div", {
-        className: "text-[10.5px] mb-1",
+        className: "text-[12px] mb-1",
         style: {
-          color: CD.mute
+          color: CD.ink,
+          lineHeight: 1.45
         }
-      }, "The PIN is a quick in-app check \u2014 sign-in still uses each person\u2019s password. Everyone\u2019s PIN starts at ", /*#__PURE__*/React.createElement("b", null, "0000"), "."), /*#__PURE__*/React.createElement("label", {
+      }, "The PIN is a quick in-app check. Sign-in still uses each person's password. A manager issues a PIN, and that person changes it the first time they use it."), /*#__PURE__*/React.createElement("label", {
         className: "flex items-center justify-between gap-3 py-1.5",
         style: {
           borderTop: `1px solid ${CD.lineSoft}`
