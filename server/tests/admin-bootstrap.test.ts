@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { ensurePlatformAdmin, PLATFORM_TENANT } from "../src/admin-bootstrap.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
 
 let handle: DbHandle;
@@ -38,6 +39,8 @@ describe("ensurePlatformAdmin", () => {
     expect(await verifyPassword(BOOTSTRAP, user!.passwordHash)).toBe(true);
 
     expect((await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, PLATFORM_TENANT))).length).toBe(1);
+    const opened = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, PLATFORM_TENANT)))[0];
+    expect(opened?.state.cdos_cheque_schedule_v1).toBe(JSON.stringify(DEFAULT_CHEQUE_SCHEDULE));
     expect((await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.id, "le-platform"))).length).toBe(1);
     expect((await handle.db.select().from(schema.branches).where(eq(schema.branches.id, "br-platform"))).length).toBe(1);
     expect((await handle.db.select().from(schema.workspaces).where(eq(schema.workspaces.id, "ws-platform-till"))).length).toBe(1);

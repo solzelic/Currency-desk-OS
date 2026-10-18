@@ -60857,8 +60857,9 @@ ${snap}`;
    ============================================================ */
 window.CDOS_PERSIST = (function () {
   var KEY_RE = /^(cdos_|yorkfx_)/;
-  /* The one key a new desk already has. It is not a finished desk. */
-  var OPENING_SCHEDULE_KEY = 'cdos_cheque_schedule_v1';
+  /* A desk is new until this key holds the shop. The schedule and a
+     tour flag are not that. */
+  var SETTINGS_KEY = 'cdos_settings';
   var tenantId = null;
   var lastSig = '';
   var timer = null;
@@ -60908,15 +60909,12 @@ window.CDOS_PERSIST = (function () {
     });
   }
 
-  /* A new desk stores only the opening cheque schedule. That one key is
-     not a finished desk: the caller still writes the shop name, the cash,
-     and the thresholds. Keep whatever schedule is stored, not only the
-     default, and do not clear the other keys. A desk with no saved
-     document does not clear them either, and the rate board already in
-     this browser is one of those keys. */
-  function openingScheduleOnly(state) {
-    var names = Object.keys(state || {});
-    return names.length === 1 && names[0] === OPENING_SCHEDULE_KEY;
+  /* Missing, null, or blank settings means the shop has not been saved.
+     Any other value is a finished desk. */
+  function hasSavedSettings(state) {
+    if (!state || !Object.prototype.hasOwnProperty.call(state, SETTINGS_KEY)) return false;
+    var value = state[SETTINGS_KEY];
+    return value != null && value !== '';
   }
 
   /* ---- telling somebody ------------------------------------------------
@@ -61021,23 +61019,23 @@ window.CDOS_PERSIST = (function () {
     } catch (e) { tenantId = null; return 'offline'; }
     version = (res && res.version) || 0;
     var state = res && res.state;
-    if (state && openingScheduleOnly(state)) {
-      var kept = state[OPENING_SCHEDULE_KEY];
-      if (kept != null) localStorage.setItem(OPENING_SCHEDULE_KEY, kept);
-      baseline = {};
-      if (kept != null) baseline[OPENING_SCHEDULE_KEY] = localStorage.getItem(OPENING_SCHEDULE_KEY);
+    /* No saved shop yet. Keep every stored key, including the schedule,
+       and leave the rate board already in this browser alone. Clearing
+       here is what opened the desk as York and then saved that. */
+    if (!hasSavedSettings(state)) {
+      Object.keys(state || {}).forEach(function (k) {
+        if (KEY_RE.test(k) && state[k] != null) {
+          localStorage.setItem(k, state[k]);
+          baseline[k] = localStorage.getItem(k);
+        }
+      });
       lastSig = '';
       return 'empty';
     }
-    if (state && Object.keys(state).length) {
-      applyState(state);
-      baseline = snapshot();
-      lastSig = JSON.stringify(baseline);
-      return 'restored';
-    }
-    baseline = {};
-    lastSig = ''; // empty — the caller seeds a fresh (or demo) desk, then save()
-    return 'empty';
+    applyState(state);
+    baseline = snapshot();
+    lastSig = JSON.stringify(baseline);
+    return 'restored';
   }
 
   async function save() {

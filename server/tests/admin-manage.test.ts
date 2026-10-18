@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
@@ -67,6 +68,8 @@ describe("admin control actions", () => {
     expect(create.statusCode).toBe(201);
     expect((await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-manualco"))).length).toBe(1);
     expect((await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, "max@manual.co"))).length).toBe(1);
+    const opened = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, "tnt-manualco")))[0];
+    expect(opened?.state.cdos_cheque_schedule_v1).toBe(JSON.stringify(DEFAULT_CHEQUE_SCHEDULE));
 
     // deletion is gated: a desk must be suspended first (retention safety)
     const tooSoon = await app.inject({ method: "DELETE", url: "/api/admin/tenants/tnt-manualco", ...as() });
