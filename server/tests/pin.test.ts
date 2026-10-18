@@ -488,6 +488,7 @@ describe("a snapshot PIN cannot open someone else's account", () => {
       method: "PUT", url: "/api/tenant/state", cookies: costaCookie, payload: { state: desk() },
     });
     expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(1);
 
     const back = (await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie })).json();
     const saved = back.state.cdos_settings.employees as Record<string, unknown>[];
@@ -516,23 +517,34 @@ describe("a snapshot PIN cannot open someone else's account", () => {
     expect(JSON.stringify(hit)).not.toContain("4821");
   });
 
-  it("a teller cannot set another teller's PIN through /api/staff/pin", async () => {
+  it("a teller naming another staff id gets 403 and no PIN is written", async () => {
     await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, "m.costa"));
     await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, "s.iqbal"));
     const set = await app.inject({
       method: "POST", url: "/api/staff/pin", cookies: costaCookie,
       payload: { pin: "5566", staffId: "s.iqbal" },
     });
-    expect(set.statusCode, set.body).toBe(200);
+    expect(set.statusCode, set.body).toBe(403);
+    expect(set.json().detail).toBe("You can only set your own PIN. Ask a manager.");
     expect((await staffRow("s.iqbal")).pinHash).toBeFalsy();
-    const other = await app.inject({
-      method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie,
-      payload: { staffId: "s.iqbal", pin: "5566" },
+    expect((await staffRow("m.costa")).pinHash).toBeFalsy();
+  });
+
+  it("a manager can set someone else's PIN, and that stays must-change", async () => {
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, "s.iqbal"));
+    const haddad = cookieOf(await signIn("r.haddad"));
+    const set = await app.inject({
+      method: "POST", url: "/api/staff/pin", cookies: haddad,
+      payload: { pin: "5566", staffId: "s.iqbal" },
     });
-    expect(other.statusCode, other.body).toBe(409);
-    expect(other.json().error).toBe("no_pin");
-    expect((await app.inject({
-      method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "5566" },
-    })).statusCode).toBe(200);
+    expect(set.statusCode, set.body).toBe(200);
+    expect(set.body).not.toContain("5566");
+    const row = await staffRow("s.iqbal");
+    expect(row.pinHash).toBeTruthy();
+    expect(row.pinMustChange).toBe(true);
+    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "pin.set"));
+    const hit = audits.find((event) => (event.detail as { staffId?: string }).staffId === "s.iqbal");
+    expect(hit).toBeTruthy();
+    expect(JSON.stringify(hit)).not.toContain("5566");
   });
 });

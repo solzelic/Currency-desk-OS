@@ -405,6 +405,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       updatedAt: now.toISOString(),
       version,
       bytes,
+      pinsIgnored: ignoredPins.count,
       ...(bytes > WARN_AT_BYTES ? { nearingLimit: true, limit: MAX_STATE_BYTES } : {}),
     };
   });
