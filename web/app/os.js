@@ -5328,7 +5328,7 @@
     if (code === 'forbidden') return 'Only the owner or a manager can issue a PIN.';
     if (code === 'unauthenticated') return 'Sign in again, then issue the PIN.';
     if (code === 'not_found') return 'That person is not on this desk.';
-    if (code === 'role_exceeds_yours') return "You can't issue a PIN for that person.";
+    if (code === 'role_exceeds_yours') return 'You can only issue a PIN for someone below your role.';
     if (code === 'use_set_pin') return 'Set your own PIN from My account.';
     if (status === 404) return 'That person is not on this desk.';
     if (status === 403) return 'Only the owner or a manager can issue a PIN.';
@@ -8176,16 +8176,12 @@
         fontFamily: 'Space Mono, monospace'
       }
     }, "Security"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start justify-between gap-3 py-3",
+      className: "pin-issue-row py-3",
       style: {
-        borderTop: `1px solid ${CD.lineSoft}`,
-        flexWrap: 'wrap'
+        borderTop: `1px solid ${CD.lineSoft}`
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "min-w-0",
-      style: {
-        flex: '1 1 220px'
-      }
+      className: "pin-issue-copy"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm",
       style: {
@@ -8197,11 +8193,8 @@
         color: CD.ink,
         lineHeight: 1.45
       }
-    }, "A 4-digit PIN for switching accounts, taking a till, and voiding a deal. It is separate from your sign-in password. A manager issues your first one. You change it the first time you use it.")), /*#__PURE__*/React.createElement("div", {
-      className: "flex justify-end",
-      style: {
-        flex: '1 1 180px'
-      }
+    }, "A 4-digit PIN to take a till, switch accounts, and void a deal. It is separate from your sign-in password. A manager issues your first one. You change it the first time you use it.")), /*#__PURE__*/React.createElement("div", {
+      className: "pin-issue-actions"
     }, myEmp ? /*#__PURE__*/React.createElement(PinSetter, {
       onSave: setMyPin
     }) : /*#__PURE__*/React.createElement("span", {
@@ -10244,15 +10237,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             borderTop: `1px solid ${CD.lineSoft}`
           }
         }, /*#__PURE__*/React.createElement("div", {
-          className: "flex items-start justify-between gap-3",
-          style: {
-            flexWrap: 'wrap'
-          }
+          className: "pin-issue-row"
         }, /*#__PURE__*/React.createElement("div", {
-          className: "min-w-0",
-          style: {
-            flex: '1 1 220px'
-          }
+          className: "pin-issue-copy"
         }, /*#__PURE__*/React.createElement("div", {
           className: "text-sm",
           style: {
@@ -10264,11 +10251,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.ink,
             lineHeight: 1.45
           }
-        }, "The 4-digit PIN this person enters to take a till, switch accounts, and confirm sensitive actions. It cannot be looked up. Issue a new one if they have forgotten it.")), /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center gap-2.5",
-          style: {
-            flexWrap: 'wrap'
-          }
+        }, "The 4-digit PIN this person enters to take a till, switch accounts, and void a deal. It cannot be looked up. Issue a new one if they have forgotten it.")), /*#__PURE__*/React.createElement("div", {
+          className: "pin-issue-actions"
         }, newPin[e.id] && newPin[e.id].pin ? /*#__PURE__*/React.createElement("span", {
           className: "text-[15px] font-bold tracking-[0.3em]",
           style: {

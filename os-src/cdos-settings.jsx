@@ -34,7 +34,7 @@
     if (code === 'forbidden') return 'Only the owner or a manager can issue a PIN.';
     if (code === 'unauthenticated') return 'Sign in again, then issue the PIN.';
     if (code === 'not_found') return 'That person is not on this desk.';
-    if (code === 'role_exceeds_yours') return "You can't issue a PIN for that person.";
+    if (code === 'role_exceeds_yours') return 'You can only issue a PIN for someone below your role.';
     if (code === 'use_set_pin') return 'Set your own PIN from My account.';
     if (status === 404) return 'That person is not on this desk.';
     if (status === 403) return 'Only the owner or a manager can issue a PIN.';
@@ -1408,9 +1408,9 @@
           </div>
           <div className="mt-5 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
             <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
-            <div className="flex items-start justify-between gap-3 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}`, flexWrap: 'wrap' }}>
-              <div className="min-w-0" style={{ flex: '1 1 220px' }}><div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink, lineHeight: 1.45 }}>A 4-digit PIN for switching accounts, taking a till, and voiding a deal. It is separate from your sign-in password. A manager issues your first one. You change it the first time you use it.</div></div>
-              <div className="flex justify-end" style={{ flex: '1 1 180px' }}>{myEmp ? <PinSetter onSave={setMyPin} /> :<span className="text-[12px]" style={{ color: CD.ink }}>Available once your account is set up</span>}</div>
+            <div className="pin-issue-row py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+              <div className="pin-issue-copy"><div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink, lineHeight: 1.45 }}>A 4-digit PIN to take a till, switch accounts, and void a deal. It is separate from your sign-in password. A manager issues your first one. You change it the first time you use it.</div></div>
+              <div className="pin-issue-actions">{myEmp ? <PinSetter onSave={setMyPin} /> :<span className="text-[12px]" style={{ color: CD.ink }}>Available once your account is set up</span>}</div>
             </div>
             <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
               <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Sign-in password</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>What you type at the staff sign-in. Only you know it — changing it signs out your other devices.</div></div>
@@ -1912,12 +1912,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 not even here. Forgotten means reissued: one fresh code, shown
                 once, which also clears any lockout. They change it on first use. */}
             <div className="py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <div className="flex items-start justify-between gap-3" style={{ flexWrap: 'wrap' }}>
-                <div className="min-w-0" style={{ flex: '1 1 220px' }}>
+              <div className="pin-issue-row">
+                <div className="pin-issue-copy">
                   <div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div>
-                  <div className="text-[12px] mt-0.5" style={{ color: CD.ink, lineHeight: 1.45 }}>The 4-digit PIN this person enters to take a till, switch accounts, and confirm sensitive actions. It cannot be looked up. Issue a new one if they have forgotten it.</div>
+                  <div className="text-[12px] mt-0.5" style={{ color: CD.ink, lineHeight: 1.45 }}>The 4-digit PIN this person enters to take a till, switch accounts, and void a deal. It cannot be looked up. Issue a new one if they have forgotten it.</div>
                 </div>
-                <div className="flex items-center gap-2.5" style={{ flexWrap: 'wrap' }}>
+                <div className="pin-issue-actions">
                   {newPin[e.id] && newPin[e.id].pin
                     ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{newPin[e.id].pin}</span>
                     : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}

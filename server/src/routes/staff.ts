@@ -541,7 +541,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     const { staffId } = req.params as { staffId: string };
     const target = await findTarget(who.tenantId, staffId);
     if (!target) return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
-    if (!canManage(who, target.role)) return reply.code(403).send({ error: "role_exceeds_yours", detail: "You can't issue a PIN for that person." });
+    if (!canManage(who, target.role)) return reply.code(403).send({ error: "role_exceeds_yours", detail: "You can only issue a PIN for someone below your role." });
     // your own PIN changes via /api/staff/pin, which asks for the current one
     if (target.id === who.id) return reply.code(403).send({ error: "use_set_pin", detail: "Set your own PIN from My account." });
 

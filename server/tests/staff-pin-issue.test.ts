@@ -105,7 +105,7 @@ describe("issuing a PIN from the Employees screen", () => {
     });
     expect(above.statusCode, above.body).toBe(403);
     expect(above.body).not.toContain("Bad Request");
-    expect(above.json().detail).toBe("You can't issue a PIN for that person.");
+    expect(above.json().detail).toBe("You can only issue a PIN for someone below your role.");
 
     /* Setting your own PIN still needs a body. This route is the exception. */
     const own = await app.inject({
