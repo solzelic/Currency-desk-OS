@@ -39843,25 +39843,73 @@ var CDOS_CHEQUE_FEE = (function () {
 
   /* What the Fee % field may hold while someone is typing.
      At most 6 digits, then an optional point and at most 2 digits.
-     "2." is still being typed. "2.123" is not a fee percent. */
+     "" is an empty field. "2." is still being typed. "2.123" is not a fee percent. */
   function feePctText(value) {
     var text = String(value);
     if (text === "") return "";
     return /^\d{0,6}(?:\.\d{0,2})?$/.test(text) ? text : null;
   }
 
-  /* True when a percent already has more than 2 digits after the point.
-     Trailing zeros do not count: "2.120" is 2.12.
-     An unreadable figure is not this case. Booking refuses that itself. */
+  /* The digits of a percent or a money figure, with an exponent expanded.
+     1e-7 is 0.0000001. 1e2 is 100. This is string arithmetic, not a float compare. */
+  function plainDecimal(value) {
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return null;
+      return expandDecimal(String(value));
+    }
+    if (typeof value === "string") return expandDecimal(value.trim());
+    return null;
+  }
+
+  function expandDecimal(text) {
+    var sci = /^([+-]?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+    if (sci) {
+      var exp = Number(sci[4]);
+      if (!Number.isSafeInteger(exp)) return null;
+      var digits = sci[2] + (sci[3] || "");
+      var point = sci[2].length + exp;
+      var sign = sci[1] === "-" ? "-" : "";
+      if (point <= 0) return sign + "0." + "0".repeat(-point) + digits;
+      if (point >= digits.length) return sign + digits + "0".repeat(point - digits.length);
+      return sign + digits.slice(0, point) + "." + digits.slice(point);
+    }
+    return /^[+-]?\d+(?:\.\d+)?$/.test(text) ? text : null;
+  }
+
+  /* How many digits sit after the point, once trailing zeros are gone.
+     Null when the figure is not a decimal. That is not "more than 2". */
+  function fractionalDigits(value) {
+    var plain = plainDecimal(value);
+    if (plain == null) return null;
+    var body = plain.replace(/^[+-]/, "");
+    return (body.split(".")[1] || "").replace(/0+$/, "").length;
+  }
+
   function feePercentOverTwo(value) {
-    var text = null;
-    if (typeof value === "number" && Number.isFinite(value)) text = String(value);
-    else if (typeof value === "string") text = value.trim();
-    if (text == null || /e/i.test(text)) return false;
-    var match = /^(\d{1,6})(?:\.(\d+))?$/.exec(text);
-    if (!match) return false;
-    var frac = (match[2] || "").replace(/0+$/, "");
-    return frac.length > 2;
+    var digits = fractionalDigits(value);
+    return digits != null && digits > 2;
+  }
+
+  function moneyOverTwo(value) {
+    var digits = fractionalDigits(value);
+    return digits != null && digits > 2;
+  }
+
+  /* The percent the table shows and the edit state keeps. 2.125 is 2.13,
+     the same half-up figure booking uses. */
+  function feePctShown(value) {
+    var plain = plainDecimal(value);
+    if (plain == null) return null;
+    var neg = plain.charAt(0) === "-";
+    var body = neg ? plain.slice(1) : plain;
+    var match = /^(\d+)(?:\.(\d+))?$/.exec(body);
+    if (!match) return null;
+    var hundredths = percentHundredths(match[1], (match[2] || "").replace(/0+$/, ""));
+    if (hundredths == null) return null;
+    var whole = Math.floor(hundredths / 100);
+    var frac = hundredths % 100;
+    var text = frac === 0 ? String(whole) : (frac % 10 === 0 ? whole + "." + (frac / 10) : whole + "." + String(frac).padStart(2, "0"));
+    return neg ? "-" + text : text;
   }
 
   return {
@@ -39872,6 +39920,8 @@ var CDOS_CHEQUE_FEE = (function () {
     centsText: centsText,
     feePctText: feePctText,
     feePercentOverTwo: feePercentOverTwo,
+    moneyOverTwo: moneyOverTwo,
+    feePctShown: feePctShown,
   };
 })();
 
@@ -41454,7 +41504,7 @@ var CDOS_CHEQUE_FEE = (function () {
   const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
   const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
   const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
-  const FEE_PLACES = 'A fee percent can have at most 2 decimal places.';
+  const FEE_PLACES = "That change didn't save. A fee % can have up to 2 decimals, like 2.25.";
   /* Two decimals while a digit is still being typed. */
   function money2(n) {
     if (typeof n === 'string' && /^\d*\.\d{0,1}$/.test(n)) return n;
@@ -41467,15 +41517,22 @@ var CDOS_CHEQUE_FEE = (function () {
     me
   }) {
     const mayEdit = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
-    const [draft, setDraft] = useState(schedule);
+    const shownSchedule = list => Array.isArray(list) ? list.map(row => {
+      const shown = row && window.CDOS_CHEQUE_FEE.feePctShown(row.feePct);
+      return shown == null ? row : {
+        ...row,
+        feePct: shown
+      };
+    }) : list;
+    const [draft, setDraft] = useState(() => shownSchedule(schedule));
     const [refused, setRefused] = useState(false);
-    const [places, setPlaces] = useState(false);
+    const [places, setPlaces] = useState('');
     const [conflict, setConflict] = useState(false);
     const [trouble, setTrouble] = useState(false);
     const [saved, setSaved] = useState(false);
     const [busy, setBusy] = useState(false);
     useEffect(() => {
-      setDraft(schedule);
+      setDraft(shownSchedule(schedule));
     }, [schedule]);
     const set = (id, k, v) => {
       setSaved(false);
@@ -41484,7 +41541,7 @@ var CDOS_CHEQUE_FEE = (function () {
         [k]: v
       } : t));
     };
-    const rows = mayEdit ? draft : schedule;
+    const rows = mayEdit ? draft : shownSchedule(schedule);
     const save = async () => {
       setBusy(true);
       try {
@@ -41492,7 +41549,13 @@ var CDOS_CHEQUE_FEE = (function () {
         const snap = persist && persist.snapshot ? persist.snapshot() : {};
         const version = persist && persist.status ? persist.status().version : 0;
         const clean = draft.map(row => {
-          const text = String(row.feePct).replace(/\.$/, '');
+          const saved = (schedule || []).find(item => item.id === row.id);
+          let pct = row.feePct;
+          if (String(pct).trim() === '' && saved) {
+            const shown = window.CDOS_CHEQUE_FEE.feePctShown(saved.feePct);
+            pct = shown == null ? saved.feePct : shown;
+          }
+          const text = String(pct).replace(/\.$/, '');
           return /^\d{1,6}(?:\.\d{1,2})?$/.test(text) ? {
             ...row,
             feePct: Number(text)
@@ -41519,7 +41582,7 @@ var CDOS_CHEQUE_FEE = (function () {
         if (res.status === 409) {
           setConflict(true);
           setRefused(false);
-          setPlaces(false);
+          setPlaces('');
           setTrouble(false);
           setSaved(false);
           return;
@@ -41527,13 +41590,13 @@ var CDOS_CHEQUE_FEE = (function () {
         if (res.status === 403) {
           setRefused(true);
           setConflict(false);
-          setPlaces(false);
+          setPlaces('');
           setTrouble(false);
           setSaved(false);
           return;
         }
-        if (res.status === 400 && body && body.error === 'fee_percent_places') {
-          setPlaces(true);
+        if (res.status === 400 && body && body.error === 'fee_places') {
+          setPlaces(body.detail || FEE_PLACES);
           setRefused(false);
           setConflict(false);
           setTrouble(false);
@@ -41546,7 +41609,7 @@ var CDOS_CHEQUE_FEE = (function () {
         setDraft(clean);
         setSchedule(clean);
         setRefused(false);
-        setPlaces(false);
+        setPlaces('');
         setConflict(false);
         setTrouble(false);
         setSaved(true);
@@ -41554,7 +41617,7 @@ var CDOS_CHEQUE_FEE = (function () {
         setTrouble(true);
         setConflict(false);
         setRefused(false);
-        setPlaces(false);
+        setPlaces('');
         setSaved(false);
       } finally {
         setBusy(false);
@@ -41656,12 +41719,19 @@ var CDOS_CHEQUE_FEE = (function () {
       }, rt.t)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
       }, mayEdit ? /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        step: "0.01",
+        type: "text",
+        inputMode: "decimal",
+        "data-testid": "fee-pct",
         value: t.feePct,
         onChange: e => {
           const next = window.CDOS_CHEQUE_FEE.feePctText(e.target.value);
-          if (next != null && next !== '') set(t.id, 'feePct', next);
+          if (next != null) set(t.id, 'feePct', next);
+        },
+        onBlur: () => {
+          if (String(t.feePct).trim() !== '') return;
+          const saved = (schedule || []).find(row => row.id === t.id);
+          const shown = saved ? window.CDOS_CHEQUE_FEE.feePctShown(saved.feePct) : null;
+          set(t.id, 'feePct', shown == null ? saved ? saved.feePct : '' : shown);
         },
         className: "fee-field w-16 text-right px-2 py-1 outline-none",
         style: {
@@ -41671,11 +41741,12 @@ var CDOS_CHEQUE_FEE = (function () {
         }
       }) : /*#__PURE__*/React.createElement("span", {
         style: cell
-      }, t.feePct)), /*#__PURE__*/React.createElement("td", {
+      }, window.CDOS_CHEQUE_FEE.feePctShown(t.feePct) || t.feePct)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
       }, mayEdit ? /*#__PURE__*/React.createElement("input", {
         type: "text",
         inputMode: "decimal",
+        "data-testid": "fee-min",
         value: money2(t.feeMin),
         onChange: e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, '')),
         onBlur: e => set(t.id, 'feeMin', money2(e.target.value)),
@@ -41736,7 +41807,11 @@ var CDOS_CHEQUE_FEE = (function () {
         background: CD.amberSoft,
         borderRadius: 8
       }
-    }, FEE_PLACES), trouble && /*#__PURE__*/React.createElement("p", {
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 13,
+      c: CD.amber
+    }), " ", places), trouble && /*#__PURE__*/React.createElement("p", {
       role: "alert",
       "data-testid": "fee-schedule-error",
       className: "fee-lock fee-banner mb-2 px-3 py-2 text-[12px]",
@@ -41766,7 +41841,7 @@ var CDOS_CHEQUE_FEE = (function () {
           if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
           const raw = body && body.state ? body.state[SKEY] : null;
           const next = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : schedule;
-          setDraft(next);
+          setDraft(shownSchedule(next));
           setSchedule(next);
           setConflict(false);
           setTrouble(false);

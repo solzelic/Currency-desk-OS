@@ -8,11 +8,14 @@ import { createContext, runInContext } from "node:vm";
 type FeeFn = (face: unknown, feePct: unknown, feeMin: unknown) => string | null;
 type TextFn = (value: unknown) => string | null;
 type OverFn = (value: unknown) => boolean;
+type ShownFn = (value: unknown) => string | null;
 
 type FeeBox = {
   chequeScheduleFee?: FeeFn;
   feePctText?: TextFn;
   feePercentOverTwo?: OverFn;
+  moneyOverTwo?: OverFn;
+  feePctShown?: ShownFn;
 };
 
 const sandbox = createContext({}) as { CDOS_CHEQUE_FEE?: FeeBox };
@@ -41,4 +44,17 @@ export function feePercentOverTwo(value: unknown): boolean {
   const fn = box().feePercentOverTwo;
   if (typeof fn !== "function") throw new Error("cheque fee helper missing");
   return fn(value) === true;
+}
+
+export function moneyOverTwo(value: unknown): boolean {
+  const fn = box().moneyOverTwo;
+  if (typeof fn !== "function") throw new Error("cheque fee helper missing");
+  return fn(value) === true;
+}
+
+export function feePctShown(value: unknown): string | null {
+  const fn = box().feePctShown;
+  if (typeof fn !== "function") throw new Error("cheque fee helper missing");
+  const out = fn(value);
+  return out == null ? null : String(out);
 }

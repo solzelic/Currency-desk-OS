@@ -63,25 +63,73 @@ var CDOS_CHEQUE_FEE = (function () {
 
   /* What the Fee % field may hold while someone is typing.
      At most 6 digits, then an optional point and at most 2 digits.
-     "2." is still being typed. "2.123" is not a fee percent. */
+     "" is an empty field. "2." is still being typed. "2.123" is not a fee percent. */
   function feePctText(value) {
     var text = String(value);
     if (text === "") return "";
     return /^\d{0,6}(?:\.\d{0,2})?$/.test(text) ? text : null;
   }
 
-  /* True when a percent already has more than 2 digits after the point.
-     Trailing zeros do not count: "2.120" is 2.12.
-     An unreadable figure is not this case. Booking refuses that itself. */
+  /* The digits of a percent or a money figure, with an exponent expanded.
+     1e-7 is 0.0000001. 1e2 is 100. This is string arithmetic, not a float compare. */
+  function plainDecimal(value) {
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return null;
+      return expandDecimal(String(value));
+    }
+    if (typeof value === "string") return expandDecimal(value.trim());
+    return null;
+  }
+
+  function expandDecimal(text) {
+    var sci = /^([+-]?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+    if (sci) {
+      var exp = Number(sci[4]);
+      if (!Number.isSafeInteger(exp)) return null;
+      var digits = sci[2] + (sci[3] || "");
+      var point = sci[2].length + exp;
+      var sign = sci[1] === "-" ? "-" : "";
+      if (point <= 0) return sign + "0." + "0".repeat(-point) + digits;
+      if (point >= digits.length) return sign + digits + "0".repeat(point - digits.length);
+      return sign + digits.slice(0, point) + "." + digits.slice(point);
+    }
+    return /^[+-]?\d+(?:\.\d+)?$/.test(text) ? text : null;
+  }
+
+  /* How many digits sit after the point, once trailing zeros are gone.
+     Null when the figure is not a decimal. That is not "more than 2". */
+  function fractionalDigits(value) {
+    var plain = plainDecimal(value);
+    if (plain == null) return null;
+    var body = plain.replace(/^[+-]/, "");
+    return (body.split(".")[1] || "").replace(/0+$/, "").length;
+  }
+
   function feePercentOverTwo(value) {
-    var text = null;
-    if (typeof value === "number" && Number.isFinite(value)) text = String(value);
-    else if (typeof value === "string") text = value.trim();
-    if (text == null || /e/i.test(text)) return false;
-    var match = /^(\d{1,6})(?:\.(\d+))?$/.exec(text);
-    if (!match) return false;
-    var frac = (match[2] || "").replace(/0+$/, "");
-    return frac.length > 2;
+    var digits = fractionalDigits(value);
+    return digits != null && digits > 2;
+  }
+
+  function moneyOverTwo(value) {
+    var digits = fractionalDigits(value);
+    return digits != null && digits > 2;
+  }
+
+  /* The percent the table shows and the edit state keeps. 2.125 is 2.13,
+     the same half-up figure booking uses. */
+  function feePctShown(value) {
+    var plain = plainDecimal(value);
+    if (plain == null) return null;
+    var neg = plain.charAt(0) === "-";
+    var body = neg ? plain.slice(1) : plain;
+    var match = /^(\d+)(?:\.(\d+))?$/.exec(body);
+    if (!match) return null;
+    var hundredths = percentHundredths(match[1], (match[2] || "").replace(/0+$/, ""));
+    if (hundredths == null) return null;
+    var whole = Math.floor(hundredths / 100);
+    var frac = hundredths % 100;
+    var text = frac === 0 ? String(whole) : (frac % 10 === 0 ? whole + "." + (frac / 10) : whole + "." + String(frac).padStart(2, "0"));
+    return neg ? "-" + text : text;
   }
 
   return {
@@ -92,5 +140,7 @@ var CDOS_CHEQUE_FEE = (function () {
     centsText: centsText,
     feePctText: feePctText,
     feePercentOverTwo: feePercentOverTwo,
+    moneyOverTwo: moneyOverTwo,
+    feePctShown: feePctShown,
   };
 })();

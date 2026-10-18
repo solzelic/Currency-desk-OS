@@ -8,7 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { CHEQUE_FEE_SCHEDULE_KEY, DEFAULT_CHEQUE_SCHEDULE, FEE_PERCENT_PLACES } from "../src/routes/tenantState.js";
+import { CHEQUE_FEE_SCHEDULE_KEY, DEFAULT_CHEQUE_SCHEDULE, FEE_MAX_PLACES, FEE_MIN_PLACES, FEE_PERCENT_PLACES } from "../src/routes/tenantState.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -106,6 +106,14 @@ postgres("cheque fee rounding on the route", () => {
     expect(row.rows[0].fee_amount).toBe("20.01");
   });
 
+  it("books 20.01 for a face of 1000.5 at 2%", async () => {
+    await desk();
+    const cashed = await cash(teller, "1000.5", "round-1000-5");
+    expect(cashed.statusCode, cashed.body).toBe(201);
+    expect(cashed.json().cheque.feeAmount).toBe("20.01");
+    expect(cashed.json().cheque.netAmount).toBe("980.49");
+  });
+
   it("refuses a figure the helper cannot read and books nothing at 0.00", async () => {
     await desk("nope", 5);
     const refused = await cash(teller, "1000.00", "round-unreadable");
@@ -117,20 +125,56 @@ postgres("cheque fee rounding on the route", () => {
     expect(till.rows[0].available_amount).toBe("5000.00");
   });
 
+  async function savedSchedule() {
+    const row = await pool.query("SELECT state->>$2 AS schedule FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId, CHEQUE_FEE_SCHEDULE_KEY]);
+    return row.rows[0].schedule as string;
+  }
+
+  function putSchedule(body: string) {
+    return app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: owner,
+      payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: body }, version: 1 },
+    });
+  }
+
   it("refuses to save a fee percent of 2.12345", async () => {
     await desk();
-    const before = (await pool.query("SELECT state->>$2 AS schedule FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId, CHEQUE_FEE_SCHEDULE_KEY])).rows[0].schedule;
-    const saved = await app.inject({
-      method: "PUT",
-      url: "/api/tenant/state",
-      cookies: owner,
-      payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: schedule(2.12345, 5) }, version: 1 },
-    });
+    const before = await savedSchedule();
+    const saved = await putSchedule(schedule(2.12345, 5));
     expect(saved.statusCode, saved.body).toBe(400);
-    expect(saved.json()).toEqual({ error: "fee_percent_places", detail: FEE_PERCENT_PLACES });
-    const after = (await pool.query("SELECT state->>$2 AS schedule FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId, CHEQUE_FEE_SCHEDULE_KEY])).rows[0].schedule;
-    expect(after).toBe(before);
-    expect(after).not.toContain("2.12345");
+    expect(saved.json()).toEqual({ error: "fee_places", field: "feePct", detail: FEE_PERCENT_PLACES });
+    expect(await savedSchedule()).toBe(before);
+  });
+
+  it("refuses to save a minimum of 4.005 and names feeMin", async () => {
+    await desk();
+    const before = await savedSchedule();
+    const saved = await putSchedule(schedule(2, 4.005));
+    expect(saved.statusCode, saved.body).toBe(400);
+    expect(saved.json()).toEqual({ error: "fee_places", field: "feeMin", detail: FEE_MIN_PLACES });
+    expect(await savedSchedule()).toBe(before);
+  });
+
+  it("refuses to save a maximum of 4.005 and names feeMax", async () => {
+    await desk();
+    const before = await savedSchedule();
+    const withMax = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) => row.id === "payroll" ? { ...row, feeMax: 4.005 } : row));
+    const saved = await putSchedule(withMax);
+    expect(saved.statusCode, saved.body).toBe(400);
+    expect(saved.json()).toEqual({ error: "fee_places", field: "feeMax", detail: FEE_MAX_PLACES });
+    expect(await savedSchedule()).toBe(before);
+  });
+
+  it("refuses a fee percent of 1e-7 and still saves 1e2", async () => {
+    await desk();
+    const before = await savedSchedule();
+    const refused = await putSchedule(schedule(1e-7, 5));
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.json()).toEqual({ error: "fee_places", field: "feePct", detail: FEE_PERCENT_PLACES });
+    expect(await savedSchedule()).toBe(before);
+    const saved = await putSchedule(schedule(1e2, 5));
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(await savedSchedule()).toContain('"feePct":100');
   });
 
   it("rounds a stored percent of 2.125 half up to 2.13 and still books", async () => {

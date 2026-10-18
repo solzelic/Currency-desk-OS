@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+import path from "node:path";
 /* The fee notice is a sentence with the lock in the first line.
    On a 360px phone that line has to wrap. A row that runs off the
    screen is the notice cut off, which is what this check refuses. */
@@ -62,7 +64,7 @@ async function feeColumn(page: Page, editable: boolean) {
   expect(over).toBe(0);
   const inputs = page.getByTestId("fee-schedule").locator("input");
   if (editable) {
-    const mins = page.getByTestId("fee-schedule").locator("input[inputmode='decimal']");
+    const mins = page.getByTestId("fee-min");
     const count = await mins.count();
     expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i++) await expect(mins.nth(i)).toHaveValue(/\d+\.\d{2}/);
@@ -149,7 +151,7 @@ test("a conflict keeps Fee % and a 44px Reload", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await signInAtDesk(page, "j.masri");
   await openFees(page);
-  const min = page.getByTestId("fee-schedule").locator("input[inputmode='decimal']").first();
+  const min = page.getByTestId("fee-min").first();
   await min.fill("4.50");
   await min.blur();
   await page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
@@ -232,8 +234,8 @@ test("a failed save shows the error line and keeps the typed fee", async ({ page
   await signInAtDesk(page, "r.haddad");
   await openFees(page);
   const fee = page.getByTestId("fee-schedule");
-  const pct = fee.locator("input[type='number']").first();
-  const min = fee.locator("input[inputmode='decimal']").first();
+  const pct = fee.getByTestId("fee-pct").first();
+  const min = fee.getByTestId("fee-min").first();
   const banner = page.getByTestId("fee-schedule-error");
   const save = () => page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
 
@@ -264,4 +266,93 @@ test("a failed save shows the error line and keeps the typed fee", async ({ page
   await expect(banner).toContainText("That change didn't save. Try again.");
   await expect(pct).toHaveValue("3.5");
   await expect(min).toHaveValue("7.10");
+});
+
+/* Fee % is text. An empty field stays empty while it is being edited.
+   Leaving it empty puts the saved percent back. "2." is not an error. */
+test("clearing Fee % can be retyped, and blur restores the saved percent", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await signInAtDesk(page, "j.masri");
+  await openFees(page);
+  const pct = page.getByTestId("fee-pct").nth(1);
+  await expect(pct).toHaveValue("2");
+  await pct.fill("");
+  await expect(pct).toHaveValue("");
+  await pct.fill("2.25");
+  await expect(pct).toHaveValue("2.25");
+  await pct.fill("2.");
+  await expect(pct).toHaveValue("2.");
+  await expect(page.getByTestId("fee-schedule-places")).toHaveCount(0);
+  await pct.fill("");
+  await pct.blur();
+  await expect(pct).toHaveValue("2");
+});
+
+test("too many decimals shows the amber line above Save", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await signInAtDesk(page, "j.masri");
+  await openFees(page);
+  const detail = "That change didn't save. A fee % can have up to 2 decimals, like 2.25.";
+  await page.route("**/api/tenant/state", (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "fee_places", field: "feePct", detail }) });
+  });
+  await page.getByTestId("fee-min").first().fill("4.50");
+  await page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
+  const banner = page.getByTestId("fee-schedule-places");
+  await expect(banner).toContainText(detail);
+  await expect(banner.locator("svg")).toBeVisible();
+});
+
+/* York's screen reads the schedule from this browser. The SQL row is
+   the stored schedule, planted here because the save API refuses 2.125.
+   Load shows 2.13. Editing a different row then saves that 2.13. */
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as {
+  Pool: new (config: { connectionString: string }) => {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ state: Record<string, unknown> }> }>;
+    end: () => Promise<void>;
+  };
+};
+
+test("a stored 2.125 shows as 2.13, and editing another row saves 2.13", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await signInAtDesk(page, "j.masri");
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  const found = await pool.query("SELECT state FROM tenant_state WHERE tenant_id=$1", ["tnt-yorkfx"]);
+  const state = found.rows[0].state;
+  const key = "cdos_cheque_schedule_v1";
+  const raw = state[key];
+  const rows = typeof raw === "string" ? JSON.parse(raw) as Array<{ id: string; feePct: number }> : raw as Array<{ id: string; feePct: number }>;
+  const planted = rows.map((row) => row.id === "payroll" ? { ...row, feePct: 2.125 } : row);
+  const next = { ...state, [key]: JSON.stringify(planted) };
+  await pool.query("UPDATE tenant_state SET state=$2::jsonb WHERE tenant_id=$1", ["tnt-yorkfx", JSON.stringify(next)]);
+  await page.evaluate(({ storageKey, list }) => {
+    localStorage.setItem(storageKey, JSON.stringify(list));
+  }, { storageKey: key, list: planted });
+  try {
+    await page.reload();
+    await landOnDesktop(page);
+    await openFees(page);
+    await page.evaluate(async () => {
+      const res = await fetch("/api/tenant/state", { credentials: "same-origin" });
+      const body = await res.json();
+      const persist = window.CDOS_PERSIST;
+      if (persist && persist.noteVersion && typeof body.version === "number") persist.noteVersion(body.version);
+    });
+    const payroll = page.getByTestId("fee-pct").nth(1);
+    await expect(payroll).toHaveValue("2.13");
+    const min = page.getByTestId("fee-min").first();
+    await min.fill("4.50");
+    await min.blur();
+    await page.getByTestId("fee-schedule-save").evaluate((el: HTMLElement) => el.click());
+    await expect(page.getByTestId("fee-schedule-saved")).toBeVisible();
+    const again = await pool.query("SELECT state FROM tenant_state WHERE tenant_id=$1", ["tnt-yorkfx"]);
+    const stored = again.rows[0].state[key];
+    const list = typeof stored === "string" ? JSON.parse(stored) as Array<{ id: string; feePct: number }> : stored as Array<{ id: string; feePct: number }>;
+    expect(String(list.find((row) => row.id === "payroll")!.feePct)).toBe("2.13");
+  } finally {
+    await pool.query("UPDATE tenant_state SET state=$2::jsonb WHERE tenant_id=$1", ["tnt-yorkfx", JSON.stringify(state)]);
+    await pool.end();
+  }
 });
