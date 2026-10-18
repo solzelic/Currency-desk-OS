@@ -50,6 +50,8 @@ export const migrations: readonly Migration[] = [
   ["044_signin_rate_limit", "src/db/migrations/044_signin_rate_limit.sql"],
   /* 045 is the default cheque schedule. Deleting this entry fails the backfill test. */
   ["045_cheque_fee_schedule", "src/db/migrations/045_cheque_fee_schedule.sql"],
+  /* 046 is the work email on a staff account, and the case-folded staff id index. */
+  ["046_staff_contact_email", "src/db/migrations/046_staff_contact_email.sql"],
 ] as const;
 
 export async function runMigrations(

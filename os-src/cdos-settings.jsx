@@ -67,6 +67,55 @@
   const Money = ({ k }) => { const { settings, set, base } = React.useContext(SettingsCtx); return (<div className="flex items-center" style={inSty}><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{base}</span><input type="number" value={settings[k] ?? ''} onChange={e => set(k, +e.target.value)} className="text-sm px-2 py-2 outline-none text-right bg-transparent" style={{ width: 110, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} /></div>); };
   const Inp = ({ k, placeholder, type }) => { const { settings, set } = React.useContext(SettingsCtx); return <input type={type || 'text'} value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} />; };
 
+  /* ---------- the username (server-picked) ----------
+     amir.yorkfx: their first name and the shop. The server picks it, because
+     it has to be free on every desk and only the server can see the others
+     (server/src/auth/username.ts). While the box holds the server's
+     suggestion it follows the name as it is typed. Once the manager types in
+     the box it is theirs, and the server is asked whether it is free
+     instead. Once the sign-in exists it is fixed: the server knows the
+     person by it. Module scope for the same reason as the controls above. */
+  const isWorkEmail = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s || '').trim());
+  function UsernameField({ name, code, typed, email, locked, online, onChange }) {
+    const [check, setCheck] = useState(null);   // { available, detail } for what is in the box
+    useEffect(() => {
+      const n = (name || '').trim();
+      if (locked || typed || !online || !n || n === 'New employee') return;
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?name=' + encodeURIComponent(n), { credentials: 'same-origin' })
+          .then(r => (r.ok ? r.json() : null))
+          .then(d => { if (live && d && d.suggestion) { onChange(d.suggestion, false); setCheck({ available: true, detail: null }); } })
+          .catch(() => {});
+      }, 300);
+      return () => { live = false; clearTimeout(t); };
+    }, [name, typed, locked, online]);
+    useEffect(() => {
+      const c = (code || '').trim();
+      if (locked || !typed || !online) return;
+      if (!c) { setCheck(null); return; }
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?check=' + encodeURIComponent(c), { credentials: 'same-origin' })
+          .then(r => (r.ok ? r.json() : null))
+          .then(d => { if (live && d && d.check) setCheck({ available: d.check.available, detail: d.check.detail }); })
+          .catch(() => {});
+      }, 300);
+      return () => { live = false; clearTimeout(t); };
+    }, [code, typed, locked, online]);
+    const note = locked
+      ? 'What they type to sign in. It stays the same once their sign-in exists.'
+      : isWorkEmail(email)
+        ? 'We’ll email their username and a temporary password to ' + email.trim() + '.'
+        : 'Add a work email and we’ll email them their username and a temporary password.';
+    return (<label className="block">
+      <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Staff ID / username</div>
+      <input value={code || ''} readOnly={locked} onChange={ev => onChange(ev.target.value.toLowerCase().replace(/\s+/g, ''), true)} placeholder="Fills in from their name" autoComplete="off" spellCheck={false} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace', ...(locked ? { color: CD.mute, background: CD.lineSoft } : {}) }} />
+      {!locked && check && <div className="text-[10.5px] mt-1" style={{ color: check.available ? CD.green : CD.flag }}>{check.available ? 'Available' : check.detail}</div>}
+      <div className="text-[10.5px] mt-1" style={{ color: CD.faint }}>{note}</div>
+    </label>);
+  }
+
   /* ---------- cost basis method (server-backed, NOT a saved preference) ----------
      Every other control on this screen writes the shared `settings` object the
      browser persists. This one does not, and must not: it decides how the
@@ -696,6 +745,8 @@
     const [empSel, setEmpSel] = useState(null);   // selected employee id — master/detail view
     // a PIN the owner has just issued, shown once so it can be read out
     const [newPin, setNewPin] = useState({});         // employee id → { pin } | { err }
+    // what creating a sign-in did: where it was sent, or a temporary password to read out once
+    const [newSignIn, setNewSignIn] = useState({});   // employee id → { detail, temp }
     // ---- server sign-in accounts (per-employee credentials) ----
     const [srvStaff, setSrvStaff] = useState(null);       // staffId → server account
     const [srvState, setSrvState] = useState('loading');  // loading | ok | offline | forbidden
@@ -1435,7 +1486,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           // ---- full account / profile editor ----
           const empDetail = (e) => {
             const asg = assignmentOf(e.name); const apps = Array.isArray(e.apps) ? e.apps : null; const isOwner = e.role === 'Owner'; const blocked = e.active === false;
-            const worksAt = e.branches === '*' || isOwner ? 'Whole network' : (Array.isArray(e.branches) && e.branches.length ? e.branches.map(id => { const b = (branches || []).find(x => x.id === id); return (b ? b.code : id) + (e.home === id ? ' ★' : ''); }).join(' · ') : 'Not assigned yet');
+            // their server sign-in, if it exists — the username is fixed from then on
+            const loginId = (e.code || '').trim(); const loginAcct = loginId && srvStaff ? srvStaff[loginId] : null;
+            // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
+            const syncEmail = () => {
+              if (!loginAcct) return;
+              const v = (e.email || '').trim();
+              if (v === (loginAcct.email || '') || (v && !isWorkEmail(v))) return;
+              srvCall('PATCH', '/api/staff/' + encodeURIComponent(loginId), { email: v })
+                .then(() => { log('Work email', e.name + ' · ' + (v || 'cleared')); srvReload(); })
+                .catch(err => setSrvMsg(String(err.message || err)));
+            };
+            const worksAt =e.branches === '*' || isOwner ? 'Whole network' : (Array.isArray(e.branches) && e.branches.length ? e.branches.map(id => { const b = (branches || []).find(x => x.id === id); return (b ? b.code : id) + (e.home === id ? ' ★' : ''); }).join(' · ') : 'Not assigned yet');
             return (<div>
               <button onClick={() => setEmpSel(null)} className="flex items-center gap-1.5 text-[12px] mb-3" style={{ color: CD.mute }}><span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><Ic n="chev" s={14} c={CD.mute} /></span> All employees</button>
               <div className="flex items-center gap-3.5 mb-4 p-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 14, background: CD.panel }}>
@@ -1448,9 +1510,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <div className="grid grid-cols-2 gap-2.5">
                 <Field label="Full name"><input value={e.name} onChange={ev => setEmp(e.id, { name: ev.target.value })} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
                 <Field label="Role"><select value={e.role} onChange={ev => applyPreset(e, ev.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{EMP_ROLES.map(r => <option key={r}>{r}</option>)}</select></Field>
-                <Field label="Work email"><input value={e.email || ''} onChange={ev => setEmp(e.id, { email: ev.target.value })} placeholder="name@business.com" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
+                <Field label="Work email"><input value={e.email || ''} onChange={ev => setEmp(e.id, { email: ev.target.value })} onBlur={syncEmail} placeholder="name@business.com" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
                 <Field label="Mobile phone"><input value={e.phone || ''} onChange={ev => setEmp(e.id, { phone: ev.target.value })} placeholder="(416) 555-0000" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-                <Field label="Staff ID / sign-in" desc="What they type to sign in."><input value={e.code || ''} onChange={ev => setEmp(e.id, { code: ev.target.value })} placeholder="e.g. a.singh" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} /></Field>
+                {/* codeAuto marks a username the server suggested; anything else in the box (typed, or saved before this existed) is never replaced */}
+                <UsernameField key={e.id} name={e.name} code={e.code} typed={e.codeAuto === false || (!!e.code && e.codeAuto !== true)} email={e.email} locked={!!loginAcct || isOwner} online={srvState === 'ok'}
+                  onChange={(v, typed) => setEmp(e.id, { code: v, codeAuto: !typed })} />
                 <div className="col-span-2"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Works at</div>
                   {isOwner ? <div className="text-sm px-2.5 py-2" style={{ ...inSty, color: CD.mute }}>Whole network — every branch &amp; till</div> : (
                   <div className="p-2.5" style={{ ...inSty }}>
@@ -1496,13 +1560,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
               <div className="text-[10px] uppercase tracking-widest mb-1.5 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
               {(() => {
-                const sid = (e.code || '').trim();
-                const acct = sid && srvStaff ? srvStaff[sid] : null;
+                const sid = loginId;
+                const acct = loginAcct;
+                const mailTo = isWorkEmail(e.email) ? e.email.trim() : null;
+                /* No password from the manager: the server issues a temporary one
+                   and emails it to the work email, or hands it back to be read out
+                   once when there is no address. They pick their own on the way in. */
                 const doCreate = () => {
-                  if (srvPw.length < 8) { setSrvMsg('Temporary password needs at least 8 characters.'); return; }
-                  setSrvBusy(true); setSrvMsg('');
-                  srvCall('POST', '/api/staff', { staffId: sid, name: e.name, role: SRV_ROLE[e.role] || 'teller', password: srvPw })
-                    .then(() => { log('Sign-in created', e.name + ' \u00b7 ' + sid); setSrvPw(''); srvReload(); })
+                  setSrvBusy(true); setSrvMsg(''); setNewSignIn(m => ({ ...m, [e.id]: null }));
+                  srvCall('POST', '/api/staff', { staffId: sid, name: e.name, role: SRV_ROLE[e.role] || 'teller', ...(mailTo ? { email: mailTo } : {}) })
+                    .then(d => {
+                      const s = (d && d.signIn) || {};
+                      setNewSignIn(m => ({ ...m, [e.id]: { detail: s.detail || '', temp: s.tempPassword || null } }));
+                      log('Sign-in created', e.name + ' \u00b7 ' + sid + (s.delivered === 'sent' ? ' \u00b7 emailed' : ''));
+                      srvReload();
+                    })
                     .catch(err => setSrvMsg(String(err.message || err)))
                     .then(() => setSrvBusy(false));
                 };
@@ -1530,8 +1602,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                           {srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' :
                             srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' :
                             srvState === 'loading' ? 'Checking the server…' :
-                            !sid ? 'Give them a Staff ID above first — that’s their username.' :
-                            !acct ? 'No server account yet — issue a temporary password and hand it to them privately.' :
+                            !sid ? 'Type their name above — their username fills in by itself.' :
+                            !acct ? (mailTo ? 'No sign-in yet. Create it and we’ll email their username and a temporary password to ' + mailTo + '.' : 'No sign-in yet. Create it and you’ll get a temporary password to give them in person.') :
                             !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' :
                             acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' :
                             'Password set by the employee — only they know it. Reset issues a new temporary one.'}
@@ -1541,16 +1613,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     </div>
                     {srvState === 'ok' && sid && (
                       <div className="flex items-center gap-2 mt-2.5" style={{ opacity: srvBusy ? 0.5 : 1, pointerEvents: srvBusy ? 'none' : 'auto' }}>
-                        <input type="text" value={srvPw} onChange={ev => setSrvPw(ev.target.value)} placeholder="temporary password · min 8 chars" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
                         {!acct
-                          ? <button onClick={doCreate} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Create sign-in</button>
+                          ? <button onClick={doCreate} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>{mailTo ? 'Create sign-in & email it' : 'Create sign-in'}</button>
                           : (<React.Fragment>
+                              <input type="text" value={srvPw} onChange={ev => setSrvPw(ev.target.value)} placeholder="temporary password · min 8 chars" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
                               <button onClick={doReset} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Reset password</button>
                               <button onClick={doToggle} className="text-[11.5px] px-2.5 py-1.5 flex-none" style={{ border: `1px solid ${acct.active ? CD.flagSoft : CD.line}`, background: acct.active ? CD.flagSoft : 'transparent', color: acct.active ? CD.flag : CD.ink, borderRadius: 8 }}>{acct.active ? 'Disable' : 'Enable'}</button>
                             </React.Fragment>)}
                       </div>
                     )}
                     {srvMsg && <div className="text-[11px] mt-1.5" style={{ color: CD.flag }}>{srvMsg}</div>}
+                    {newSignIn[e.id] && (<div className="text-[11px] mt-2" style={{ color: CD.mute }}>
+                      {newSignIn[e.id].detail}
+                      {newSignIn[e.id].temp && <div className="mt-1.5 text-[15px] font-bold tracking-[0.12em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.green }}>{newSignIn[e.id].temp}</div>}
+                      {newSignIn[e.id].temp && <div className="mt-1" style={{ color: CD.faint }}>Shown once — it can’t be looked up again.</div>}
+                    </div>)}
                   </div>
                 );
               })()}

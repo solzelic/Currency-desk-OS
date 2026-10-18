@@ -76,6 +76,35 @@ New agent pull requests are frozen until the repository owner pushes a commit to
 
 - **Cheque fees are the owner's or a manager's.** Sol's rule: the owner and a manager may set the fee, including 0%. A teller, a senior teller, a trainee, and an auditor may not. Who may write `cdos_cheque_schedule_v1` is `canWriteSetting`. Today's default allows a branch manager and a compliance officer. The owner is always allowed, so they cannot be locked out. The table is not stored yet and there is no screen for it. A numeric version that is not current is 409 before the fee refusal. Anyone else gets 403: "Only the owner or a manager can change cheque fees. Ask a manager to make this change." A platform row does not take the save away. A teller's document cannot replace the fee key. A save with no version that would change the fee is 409, with no write and no refusal row. The refusal is `settings.cheque_fee_refused`. A save that lands is `settings.cheque_fee_changed`, with who, when, and the old and new price of each cheque type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is grey, with the lock at the start of that sentence and the sentence wrapped, and no inputs and no Save, for a teller and for a cashier, before any Save. The phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals and the example is the body colour, and its header is $2,000.00. A grouped list for the phone is a later change and is not here. The owner and a manager see the table and Save. The header names whoever is signed in now. A refused Save keeps the typed values and shows one amber line above Save. A stale second save shows a conflict line that stays on screen, with darker text, a 44px Reload, and the typed values kept until Reload loads the server schedule and its version. The Risk select is 44px. A save that lands shows Saved. A low-fee notice is not here.
 
+- **A new person's username has the shop in it.** On the Employees
+  screen, typing a name fills Staff ID / username with the first name
+  and the shop's handle: amir.yorkfx. The handle is the shop's site
+  handle, or its name, letters and digits only. If that is taken, the
+  last initial is added (amirs.yorkfx), then a number (amir2.yorkfx).
+  The server picks it and checks it against every desk, not only this
+  one (`GET /api/staff/username`, `server/src/auth/username.ts`). The
+  manager can type a different one. The screen says whether it is free,
+  and the create route checks it again: a username another desk holds
+  is 409 with the next free one, and one in the shape of a CurrencyDesk
+  ID is 400. Once the sign-in exists the username is fixed on the
+  screen. A person can have a work email on file (`staff_users.email`,
+  migration 046). It is a contact, not a sign-in name. Creating a
+  sign-in no longer asks the manager for a password. The server issues
+  a temporary one and emails it to the work email, with the username
+  and the sign-in link. With no work email, the temporary password is
+  shown once to be read out. A work email edited after the sign-in
+  exists is saved on the server, and the next invitation goes there.
+  Before this, a name-style id at any desk but York could not sign in:
+  the sign-in screen does not name a desk, and the server looked in
+  York. Sign-in now looks at that desk first and then on every desk.
+  Only a name that exists once signs in, so an older id that two desks
+  both hold signs in nowhere. York's older ids, like a.singh, keep
+  working. A username sign-in is still password-only; the work email
+  does not add an emailed code. Reset password on the screen still
+  takes a password the manager types. Forgot password does not use the
+  work email yet. The owner authorised this pull request during the
+  freeze, on 2026-10-18.
+
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
   shows the shop name, whether the till is open, and the profile
@@ -563,6 +592,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-18**, usernames and the work email. A new username is the first name and the shop handle, picked by the server and free on every desk. A taken one is 409 with the next free one; a CurrencyDesk-ID shape is 400. Creating a sign-in emails a temporary password to the work email with the username and the link, or shows it once when there is no address. Sign-in finds a username on any desk when exactly one desk holds it. Migration 046. 041 is claimed by open drafts #96, #110, #120, and #132, 042 by #130, and 043 by #138.
 
 **2026-10-17**, cheque fees. The owner and a manager can change the cheque fee schedule, including to 0%. A teller, a senior teller, a trainee, and an auditor cannot. Who may write it is `canWriteSetting`. Today's default allows a branch manager and a compliance officer, and the owner is always allowed. That table is not stored and has no screen. A stale numeric version is 409 before the fee refusal. A platform row does not remove the save. A teller's document cannot replace the fee key. A refusal is 403, the stored schedule is unchanged, and the audit action is `settings.cheque_fee_refused`. A save that lands writes `settings.cheque_fee_changed` with who, when, and the old and new price of each type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is read-only for a teller and for a cashier, with no inputs before any Save, the sentence wraps, and the phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals, the example is the body colour, and its header is $2,000.00. A grouped list for the phone follows in its own change. The header names the person signed in now. A second save against a newer version keeps the typed values until Reload, which loads the server schedule and its version. The conflict line stays on screen, its text is darker than the amber token, Reload and the Risk select are 44px, and a save with no version that would change the fee is 409 with no write and no refusal row.
 
