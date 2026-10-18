@@ -1,8 +1,9 @@
 /* ============================================================
    Staff administration — managers run the roster from inside the OS.
      GET    /api/staff                     → roster (no hashes)
+     GET    /api/staff/username            → suggest a username / check one is free
      POST   /api/staff                     → create an employee sign-in
-     PATCH  /api/staff/:staffId            → name / role / active
+     PATCH  /api/staff/:staffId            → name / role / active / work email
      POST   /api/staff/:staffId/invite     → issue their first sign-in
      POST   /api/staff/:staffId/password   → reset to a temporary password
      POST   /api/staff/:staffId/pin        → issue a new till PIN
@@ -42,6 +43,9 @@ import { hashPassword, temporaryPassword } from "../auth/password.js";
 import { resolveSession, revokeAllSessions, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { sendEmail, type EmailStatus } from "../email.js";
+import { esc } from "../emails/design.js";
+import { looksLikeCdId } from "../auth/cdid.js";
+import { suggestUsername, usernameTaken } from "../auth/username.js";
 import { clearPinAttempts, generatePin, hashPin } from "./pin.js";
 
 export const ROLE_RANK: Record<SessionUser["role"], number> = {
@@ -61,11 +65,12 @@ const canManage = (actor: SessionUser, targetRole: SessionUser["role"]): boolean
 };
 
 /* Two kinds of sign-in name, because the product has always had two: the
-   short one a teller types at the counter ("a.singh"), and an email
-   address, which is what an owner and anybody hired through onboarding
-   uses — and the only kind that can be sent an invitation. The create
-   route rejected the second outright, which is part of why the screen that
-   collects an employee's email never called it. */
+   short one a teller types at the counter, and an email address, which is
+   what an owner and anybody hired through onboarding uses. The short one
+   is now a username with the shop in it (amir.yorkfx, auth/username.ts),
+   free on every desk, so it finds its desk without being told. A person
+   with a username can still have a work email on file — that is where
+   their invitation goes. */
 const staffIdShape = z
   .string()
   .trim()
@@ -77,11 +82,19 @@ const staffIdShape = z
   );
 const passwordShape = z.string().min(8, "password: at least 8 characters").max(512);
 const roleShape = z.enum(["teller", "supervisor", "compliance_officer", "branch_manager", "administrator", "auditor"]);
+const workEmailShape = z
+  .string()
+  .trim()
+  .max(254)
+  .refine((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s), "work email: not an email address");
 
 const createBody = z.object({
   staffId: staffIdShape,
   name: z.string().min(1).max(120),
   role: roleShape,
+  /* Where the invitation goes when the staff id is a username. Ignored as a
+     destination when the staff id is itself an address. */
+  email: workEmailShape.optional(),
   /* Optional on purpose — see the header. Send one to set it yourself;
      leave it out and the desk issues a temporary one it can actually
      deliver. */
@@ -95,8 +108,10 @@ const patchBody = z
     name: z.string().min(1).max(120).optional(),
     role: roleShape.optional(),
     active: z.boolean().optional(),
+    // "" clears it
+    email: z.union([workEmailShape, z.literal("")]).optional(),
   })
-  .refine((b) => b.name !== undefined || b.role !== undefined || b.active !== undefined, { message: "empty patch" });
+  .refine((b) => b.name !== undefined || b.role !== undefined || b.active !== undefined || b.email !== undefined, { message: "empty patch" });
 
 const resetBody = z.object({ password: passwordShape });
 
@@ -104,6 +119,7 @@ const publicUser = (u: typeof schema.staffUsers.$inferSelect) => ({
   staffId: u.staffId,
   cdId: u.cdId,
   name: u.name,
+  email: u.email,
   role: u.role,
   branchId: u.branchId,
   authorizedBranchIds: u.authorizedBranchIds,
@@ -120,22 +136,32 @@ const publicUser = (u: typeof schema.staffUsers.$inferSelect) => ({
 
 const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 
+const signInUrl = () => `${(process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "")}/login`;
+
 /* The desk's own invitation, which is not the platform's password reset.
    "We reset your password at your request" is the wrong sentence to send
    somebody who never had one and did not ask for anything — they were
-   hired. Kept short: the thing to do with it is sign in. */
-function firstSignInEmail(o: { name: string; deskName: string; signInId: string; tempPassword: string }) {
+   hired. Kept short: the username, the password, and where to sign in.
+   Names and desk names are typed by people, so the HTML escapes them. */
+export function firstSignInEmail(o: { name: string; deskName: string; signInId: string; tempPassword: string }) {
+  const url = signInUrl();
   const subject = `Your sign-in for ${o.deskName}`;
   const text =
     `${o.name}, you have been added to ${o.deskName} on CurrencyDesk.\n\n` +
-    `Sign in as ${o.signInId} with this temporary password: ${o.tempPassword}\n\n` +
+    `Your username: ${o.signInId}\n` +
+    `Temporary password: ${o.tempPassword}\n\n` +
+    `Sign in at ${url}\n\n` +
     `You will be asked to pick your own password straight away. If you were not expecting this, tell whoever runs the desk.`;
   const html =
     `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:440px;margin:0 auto;color:#0a0a0a">` +
     `<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a8a;margin-bottom:18px">CurrencyDesk</div>` +
-    `<div style="font-size:15px;line-height:1.6;color:#444">${o.name}, you have been added to <b style="color:#0a0a0a">${o.deskName}</b>. Sign in as <b style="color:#0a0a0a">${o.signInId}</b> with this temporary password:</div>` +
-    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:26px;font-weight:700;letter-spacing:.12em;margin:20px 0;padding:16px 0;text-align:center;background:#f4f3f0;border-radius:12px">${o.tempPassword}</div>` +
-    `<div style="font-size:13px;color:#8a8a8a;line-height:1.6">You will pick your own straight away. If you were not expecting this, tell whoever runs the desk.</div>` +
+    `<div style="font-size:15px;line-height:1.6;color:#444">${esc(o.name)}, you have been added to <b style="color:#0a0a0a">${esc(o.deskName)}</b>.</div>` +
+    `<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8a8a8a;margin:22px 0 6px">Your username</div>` +
+    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:20px;font-weight:700">${esc(o.signInId)}</div>` +
+    `<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8a8a8a;margin:18px 0 6px">Temporary password</div>` +
+    `<div style="font-family:'Space Mono',ui-monospace,monospace;font-size:26px;font-weight:700;letter-spacing:.12em;padding:16px 0;text-align:center;background:#f4f3f0;border-radius:12px">${esc(o.tempPassword)}</div>` +
+    `<div style="margin:22px 0"><a href="${url}" style="display:inline-block;background:#17140F;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 20px;border-radius:10px">Sign in</a></div>` +
+    `<div style="font-size:13px;color:#8a8a8a;line-height:1.6">You will pick your own password straight away. If you were not expecting this, tell whoever runs the desk.</div>` +
     `</div>`;
   return { subject, text, html };
 }
@@ -161,36 +187,38 @@ export interface FirstSignIn {
    caller in words what their first sign-in is. Says nothing about how the
    password was stored — the two callers differ there. */
 async function deliverSignIn(
-  user: Pick<typeof schema.staffUsers.$inferSelect, "staffId" | "cdId" | "name">,
+  user: Pick<typeof schema.staffUsers.$inferSelect, "staffId" | "cdId" | "name" | "email">,
   deskName: string,
   temp: string,
 ): Promise<FirstSignIn> {
   const signInId = user.cdId || user.staffId;
-  if (!isEmail(user.staffId)) {
+  // an address they sign in with, or else the work email on file
+  const address = isEmail(user.staffId) ? user.staffId : user.email || null;
+  if (!address) {
     return {
       staffId: user.staffId,
       mustChangePassword: true,
       delivered: "no_address",
       sentTo: null,
       tempPassword: temp,
-      detail: `${user.name} signs in as ${signInId} and has no email address, so there is nowhere to send this. Read it to them — they pick their own password on the way in.`,
+      detail: `${user.name} signs in as ${signInId} and has no work email on file, so there is nowhere to send this. Read it to them — they pick their own password on the way in.`,
     };
   }
 
   const mail = firstSignInEmail({ name: user.name, deskName, signInId, tempPassword: temp });
-  const delivered = await sendEmail(user.staffId, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
+  const delivered = await sendEmail(address, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
   return {
     staffId: user.staffId,
     mustChangePassword: true,
     delivered,
-    sentTo: user.staffId,
+    sentTo: address,
     ...(delivered === "sent" ? {} : { tempPassword: temp }),
     detail:
       delivered === "sent"
-        ? `Sent to ${user.staffId}. They sign in as ${signInId} and pick their own password straight away.`
+        ? `Sent to ${address}. They sign in as ${signInId} and pick their own password straight away.`
         : delivered === "simulated"
           ? `Email is not connected on this deployment, so nothing was sent. Give them this password yourself — they sign in as ${signInId} and pick their own straight away.`
-          : `The email to ${user.staffId} did not go. Give them this password yourself, or try again once mail is working.`,
+          : `The email to ${address} did not go. Give them this password yourself, or try again once mail is working.`,
   };
 }
 
@@ -243,6 +271,39 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     return { staff: rows.map(publicUser) };
   });
 
+  /* The username the screen offers while the manager types a name, and
+     whether one they typed instead is free. The server answers both,
+     because "free" means free on every desk and the browser cannot see
+     the other desks. The create route checks again: this is advice. */
+  const usernameQuery = z.object({
+    name: z.string().trim().max(120).optional(),
+    check: z.string().trim().max(120).optional(),
+  });
+  app.get("/api/staff/username", async (req, reply) => {
+    const who = await requireManager(req, reply);
+    if (!who) return;
+    const parsed = usernameQuery.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const { name, check } = parsed.data;
+
+    const suggestion = name ? await suggestUsername(db, who.tenantId, name) : null;
+    let checked: { staffId: string; available: boolean; detail: string | null } | null = null;
+    if (check) {
+      const shape = staffIdShape.safeParse(check);
+      const detail = !shape.success
+        ? "Letters, digits, dots, dashes and underscores only."
+        : looksLikeCdId(check)
+          ? "That looks like a CurrencyDesk ID. Pick a different username."
+          : (await usernameTaken(db, check))
+            ? isEmail(check)
+              ? "That email already signs in to a CurrencyDesk desk."
+              : "Already taken on CurrencyDesk."
+            : null;
+      checked = { staffId: check, available: detail === null, detail };
+    }
+    return { suggestion, check: checked };
+  });
+
   app.post("/api/staff", async (req, reply) => {
     const who = await requireManager(req, reply);
     if (!who) return;
@@ -260,6 +321,20 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     if (isEmail(b.staffId)) {
       const elsewhere = (await db.select({ tenantId: schema.staffUsers.tenantId }).from(schema.staffUsers).where(eq(schema.staffUsers.staffId, b.staffId)).limit(1))[0];
       if (elsewhere) return reply.code(409).send({ error: "email_in_use", detail: "That email already signs in to a CurrencyDesk desk." });
+    } else {
+      /* Sign-in reads CD-YORK-0042 as a CurrencyDesk ID before anything
+         else, so a username in that shape could never be signed in with. */
+      if (looksLikeCdId(b.staffId)) {
+        return reply.code(400).send({ error: "invalid_request", detail: "That looks like a CurrencyDesk ID. Pick a different username." });
+      }
+      /* Free on every desk, not only this one — that is what lets sign-in
+         find the desk from the name alone (auth/username.ts). */
+      if (await usernameTaken(db, b.staffId)) {
+        return reply.code(409).send({
+          error: "staff_id_taken",
+          detail: `${b.staffId} is already taken on CurrencyDesk. Try ${await suggestUsername(db, who.tenantId, b.name)}.`,
+        });
+      }
     }
 
     const branchId = b.branchId ?? who.branchId;
@@ -289,6 +364,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
       legalEntityId: who.legalEntityId,
       branchId,
       staffId: b.staffId,
+      email: b.email ?? null,
       name: b.name,
       role: b.role,
       authorizedBranchIds: authorized,
@@ -298,7 +374,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     });
 
     const desk = (await db.select({ name: schema.tenants.name }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0];
-    const person = { staffId: b.staffId, cdId: null, name: b.name };
+    const person = { staffId: b.staffId, cdId: null, name: b.name, email: b.email ?? null };
     const signIn: FirstSignIn = b.password
       ? {
           staffId: b.staffId,
@@ -374,6 +450,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     if (b.name !== undefined && b.name !== target.name) changes.name = b.name;
     if (b.role !== undefined && b.role !== target.role) changes.role = b.role;
     if (b.active !== undefined && b.active !== target.active) changes.active = b.active;
+    if (b.email !== undefined && (b.email || null) !== target.email) changes.email = b.email || null;
     if (Object.keys(changes).length > 0) {
       await db.update(schema.staffUsers).set(changes).where(eq(schema.staffUsers.id, target.id));
       if (changes.active === false) await revokeAllSessions(db, target.id);

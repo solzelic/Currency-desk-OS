@@ -5,6 +5,7 @@
    The frontend maps these staff roles to its own labels (SRV2OS in
    os-src/cdos-signin.jsx and os-src/cdos-os.jsx).
    ============================================================ */
+import { sql } from "drizzle-orm";
 import { boolean, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const staffRole = pgEnum("staff_role", [
@@ -313,6 +314,10 @@ export const staffUsers = pgTable(
        without first asking which desk. Null until issued — every account
        created before the scheme existed keeps working on its staff id. */
     cdId: text("cd_id"),
+    /* Where the welcome goes when the staff id is a username rather than an
+       address. A contact, not a sign-in name: not unique, and sign-in never
+       looks it up. Null for anyone added before it existed. */
+    email: text("email"),
     name: text("name").notNull(),
     role: staffRole("role").notNull(),
     authorizedBranchIds: jsonb("authorized_branch_ids").$type<string[]>().notNull().default([]),
@@ -333,7 +338,12 @@ export const staffUsers = pgTable(
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("staff_tenant_staffid_idx").on(t.tenantId, t.staffId), uniqueIndex("staff_cd_id_idx").on(t.cdId)],
+  (t) => [
+    uniqueIndex("staff_tenant_staffid_idx").on(t.tenantId, t.staffId),
+    uniqueIndex("staff_cd_id_idx").on(t.cdId),
+    // a username is free on every desk, so it is looked up across tenants
+    index("staff_users_staff_id_lower_idx").on(sql`lower(${t.staffId})`),
+  ],
 );
 
 /* A password reset in flight.
