@@ -87,7 +87,11 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   and the create route checks it again: a username another desk holds
   is 409 with the next free one, and one in the shape of a CurrencyDesk
   ID is 400. Once the sign-in exists the username is fixed on the
-  screen. A person can have a work email on file (`staff_users.email`,
+  screen. A username typed on a profile that already belongs to
+  somebody else does not make their account this person's: the profile
+  shows no sign-in, and offers no reset, disable, block, or PIN for
+  that other account. An account is the profile's once its sign-in was
+  created from that profile, or when the profile predates usernames. A person can have a work email on file (`staff_users.email`,
   migration 046). It is a contact, not a sign-in name. Creating a
   sign-in no longer asks the manager for a password. The server issues
   a temporary one and emails it to the work email, with the username

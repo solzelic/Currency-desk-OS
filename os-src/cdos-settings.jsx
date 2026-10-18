@@ -1486,8 +1486,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           // ---- full account / profile editor ----
           const empDetail = (e) => {
             const asg = assignmentOf(e.name); const apps = Array.isArray(e.apps) ? e.apps : null; const isOwner = e.role === 'Owner'; const blocked = e.active === false;
-            // their server sign-in, if it exists — the username is fixed from then on
-            const loginId = (e.code || '').trim(); const loginAcct = loginId && srvStaff ? srvStaff[loginId] : null;
+            /* Their server sign-in. A profile finds its account by username, so a
+               username typed here that already belongs to somebody else would read
+               as this person's — with that person's reset, disable, block and PIN
+               buttons. It is theirs only once the sign-in was created from this
+               profile (codeLinked), or when the profile predates the username
+               flow (codeAuto was never set). From then on the username is fixed. */
+            const loginId = (e.code || '').trim(); const found = loginId && srvStaff ? srvStaff[loginId] : null;
+            const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
             // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
             const syncEmail = () => {
               if (!loginAcct) return;
@@ -1572,6 +1578,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     .then(d => {
                       const s = (d && d.signIn) || {};
                       setNewSignIn(m => ({ ...m, [e.id]: { detail: s.detail || '', temp: s.tempPassword || null } }));
+                      setEmp(e.id, { codeLinked: true });
                       log('Sign-in created', e.name + ' \u00b7 ' + sid + (s.delivered === 'sent' ? ' \u00b7 emailed' : ''));
                       srvReload();
                     })
@@ -1639,14 +1646,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 {newPin[e.id] && newPin[e.id].pin
                   ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.green }}>{newPin[e.id].pin}</span>
                   : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}
-                <button onClick={async () => {
+                {loginAcct ? <button onClick={async () => {
                   setNewPin(m => ({ ...m, [e.id]: null }));
                   try {
-                    const d = await srvCall('POST', '/api/staff/' + encodeURIComponent((e.code || '').trim()) + '/pin');
+                    const d = await srvCall('POST', '/api/staff/' + encodeURIComponent(loginId) + '/pin');
                     setNewPin(m => ({ ...m, [e.id]: { pin: d.pin } }));
                     log('Transaction PIN', `${e.name} · new PIN issued`);
                   } catch (x) { setNewPin(m => ({ ...m, [e.id]: { err: String(x.message || x) } })); }
                 }} className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Issue a new PIN</button>
+                  : <span className="text-[11px]" style={{ color: CD.faint }}>Create their sign-in first</span>}
                 {newPin[e.id] && newPin[e.id].err && <span className="text-[11px]" style={{ color: CD.flag }}>{newPin[e.id].err}</span>}
               </span></Row>
             {newPin[e.id] && newPin[e.id].pin && <div className="text-[11px] -mt-1 mb-1" style={{ color: CD.mute }}>Read this to {e.name} now — it is shown once and cannot be looked up again.</div>}
@@ -1654,8 +1662,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
               <div className="flex items-center justify-between mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
                 {isOwner ? <span className="text-[11px]" style={{ color: CD.faint }}>The owner account can’t be blocked or removed here.</span> : (<>
-                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={blocked} click={() => { setEmp(e.id, { active: blocked }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`); srvSetActive(e.code, blocked); }} /> Block this account</label>
-                  <button onClick={() => { srvSetActive(e.code, false); removeEmp(e.id, e.name); setEmpSel(null); }} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
+                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={blocked} click={() => { setEmp(e.id, { active: blocked }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`); if (loginAcct) srvSetActive(e.code, blocked); }} /> Block this account</label>
+                  <button onClick={() => { if (loginAcct) srvSetActive(e.code, false); removeEmp(e.id, e.name); setEmpSel(null); }} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
                 </>)}
               </div>
             </div>);

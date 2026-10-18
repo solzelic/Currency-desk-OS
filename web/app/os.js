@@ -8685,9 +8685,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const apps = Array.isArray(e.apps) ? e.apps : null;
         const isOwner = e.role === 'Owner';
         const blocked = e.active === false;
-        // their server sign-in, if it exists — the username is fixed from then on
+        /* Their server sign-in. A profile finds its account by username, so a
+           username typed here that already belongs to somebody else would read
+           as this person's — with that person's reset, disable, block and PIN
+           buttons. It is theirs only once the sign-in was created from this
+           profile (codeLinked), or when the profile predates the username
+           flow (codeAuto was never set). From then on the username is fixed. */
         const loginId = (e.code || '').trim();
-        const loginAcct = loginId && srvStaff ? srvStaff[loginId] : null;
+        const found = loginId && srvStaff ? srvStaff[loginId] : null;
+        const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
         // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
         const syncEmail = () => {
           if (!loginAcct) return;
@@ -9051,6 +9057,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   temp: s.tempPassword || null
                 }
               }));
+              setEmp(e.id, {
+                codeLinked: true
+              });
               log('Sign-in created', e.name + ' \u00b7 ' + sid + (s.delivered === 'sent' ? ' \u00b7 emailed' : ''));
               srvReload();
             }).catch(err => setSrvMsg(String(err.message || err))).then(() => setSrvBusy(false));
@@ -9189,14 +9198,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontFamily: 'Space Mono, monospace',
             color: CD.faint
           }
-        }, "\u2022\u2022\u2022\u2022"), /*#__PURE__*/React.createElement("button", {
+        }, "\u2022\u2022\u2022\u2022"), loginAcct ? /*#__PURE__*/React.createElement("button", {
           onClick: async () => {
             setNewPin(m => ({
               ...m,
               [e.id]: null
             }));
             try {
-              const d = await srvCall('POST', '/api/staff/' + encodeURIComponent((e.code || '').trim()) + '/pin');
+              const d = await srvCall('POST', '/api/staff/' + encodeURIComponent(loginId) + '/pin');
               setNewPin(m => ({
                 ...m,
                 [e.id]: {
@@ -9219,7 +9228,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             borderRadius: 7,
             color: CD.ink
           }
-        }, "Issue a new PIN"), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("span", {
+        }, "Issue a new PIN") : /*#__PURE__*/React.createElement("span", {
+          className: "text-[11px]",
+          style: {
+            color: CD.faint
+          }
+        }, "Create their sign-in first"), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("span", {
           className: "text-[11px]",
           style: {
             color: CD.flag
@@ -9258,11 +9272,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             setEmp(e.id, {
               active: blocked
             }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`);
-            srvSetActive(e.code, blocked);
+            if (loginAcct) srvSetActive(e.code, blocked);
           }
         }), " Block this account"), /*#__PURE__*/React.createElement("button", {
           onClick: () => {
-            srvSetActive(e.code, false);
+            if (loginAcct) srvSetActive(e.code, false);
             removeEmp(e.id, e.name);
             setEmpSel(null);
           },
