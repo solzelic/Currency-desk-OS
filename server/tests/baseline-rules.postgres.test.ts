@@ -171,7 +171,7 @@ postgres("the international baseline", () => {
         customerId: desk.customerId,
         chequeNumber: key,
         maker: "Walk In",
-        chequeType: "personal",
+        chequeType: "walk-in",
         typeLabel: "Personal",
         currency: desk === usd ? "USD" : "GBP",
         faceAmount: amount,

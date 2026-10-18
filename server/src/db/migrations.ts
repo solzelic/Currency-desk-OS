@@ -5,7 +5,7 @@ import type pg from "pg";
 
 export type Migration = readonly [migrationId: string, path: string];
 
-const migrations: readonly Migration[] = [
+export const migrations: readonly Migration[] = [
   ["001_ledger", "src/ledger/migration.sql"],
   ["002_quote_service", "src/db/migrations/002_quote_service.sql"],
   ["003_quote_transaction_lineage", "src/db/migrations/003_quote_transaction_lineage.sql"],
@@ -48,6 +48,8 @@ const migrations: readonly Migration[] = [
   ["039_live_cheque_paper", "src/db/migrations/039_live_cheque_paper.sql"],
   ["040_till_balance_generation", "src/db/migrations/040_till_balance_generation.sql"],
   ["044_signin_rate_limit", "src/db/migrations/044_signin_rate_limit.sql"],
+  /* 045 is the default cheque schedule. Deleting this entry fails the backfill test. */
+  ["045_cheque_fee_schedule", "src/db/migrations/045_cheque_fee_schedule.sql"],
 ] as const;
 
 export async function runMigrations(

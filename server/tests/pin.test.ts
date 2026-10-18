@@ -8,6 +8,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { generatePin } from "../src/routes/pin.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -173,6 +174,7 @@ describe("PINs are checked by the server", () => {
     // a desk arriving from before PINs were held here: nothing on the records
     await handle.db.update(schema.staffUsers).set({ pinHash: null });
     const state = {
+      cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE),
       cdos_settings: {
         deskName: "Desk 1",
         employees: [
@@ -203,7 +205,7 @@ describe("PINs are checked by the server", () => {
   it("a stale snapshot cannot roll a PIN back to an old one", async () => {
     const singh = await staffRow("a.singh");
     const current = (await app.inject({ method: "POST", url: `/api/admin/staff/${singh.id}/reset-pin`, cookies: adminCookie })).json().pin as string;
-    const stale = { cdos_settings: { employees: [{ id: "e3", name: "Amrit Singh", code: "a.singh", pin: "7391" }] } };
+    const stale = { cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE), cdos_settings: { employees: [{ id: "e3", name: "Amrit Singh", code: "a.singh", pin: "7391" }] } };
     await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: costaCookie, payload: { state: stale } as Record<string, unknown> });
 
     const singhCookie = cookieOf(await signIn("a.singh"));

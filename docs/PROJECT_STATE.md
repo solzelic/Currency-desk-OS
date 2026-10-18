@@ -523,6 +523,8 @@ cherry-pick, deterministic deletions, and documentation consolidation have
 all landed. The nine unreferenced YorkFX media files rated LOW-MED were
 deliberately retained until external hot-linking can be ruled out.
 
+- **Every desk has a cheque schedule.** Migration 045 writes the default where the desk has none. A stored null, an empty string, `[]`, or a value that is not a non-empty JSON array is missing, and the default is written. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one audit row, actor `system migration`, action `cheque.schedule_backfill`, with the value before and the value after. A second run writes none. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write that same default when the desk is created, and they do not replace a schedule that is already there. A boot that fills a missing schedule writes one audit row, actor `system seed`, action `cheque.schedule_backfill`, with the value before and the value after. A boot that finds a schedule already stored writes none. A browser opens the desk as new only when `cdos_settings` is missing and there are no rows and no clients. A blank `cdos_settings` is missing. The schedule and a tour flag do not count as records. It writes the shop name and the empty cash, keeps the stored keys, and leaves the rate board in place. A desk that has rows, clients, or a saved `cdos_settings` opens as the saved desk, so those records are not replaced with empty.
+
 ## Known high-priority engineering risks (unresolved)
 
 1. **Resend API key rotation** (issue #32) — the key passed through chat;
@@ -589,6 +591,8 @@ left a server-side marker. A wrong code says "That code isn't right.
 Check your email." Production without `RESEND_API_KEY` or
 `EMAIL_FROM` does not send and does not log the code. Migration 044. 041 is claimed by open drafts
 #96, #110, #120, and #132, 042 by #130, and 043 by #138.
+
+**2026-10-18**, cheque schedule on every desk. Migration 045 writes the default schedule where none is stored. A stored null, an empty string, `[]`, or a value that is not a non-empty JSON array is missing, and the default is written. A schedule already stored, including 0%, is left byte for byte. One audit row per desk that changes, actor `system migration`, with the value before and the value after. A second run writes none. A desk created afterwards, including signup, onboarding, an admin, the platform tenant, and the York FX seed, is given that default at creation.
 
 **2026-10-12**, serialization retry. A post that Postgres aborts with 40001 is run
 again, up to six times. The aborted attempt wrote nothing. The same

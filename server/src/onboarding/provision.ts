@@ -29,6 +29,7 @@ import {
 } from "../ledger/jurisdiction.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
+import { ensureDefaultChequeSchedule } from "../state/defaultChequeSchedule.js";
 import { landApplicantStatedPhone } from "./applicant-phone.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
 
@@ -469,6 +470,7 @@ export async function provisionDesk(
     staffCreated++;
   }
 
+  await ensureDefaultChequeSchedule(db, tenantId);
   await audit(db, {
     tenantId, legalEntityId, branchId, actorId: ownerId,
     action: "tenant.created",
