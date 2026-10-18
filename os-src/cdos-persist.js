@@ -30,6 +30,11 @@
    ============================================================ */
 window.CDOS_PERSIST = (function () {
   var KEY_RE = /^(cdos_|yorkfx_)/;
+  /* A desk is new only when the shop is unsaved and it has no records.
+     The schedule and a tour flag are not records. */
+  var SETTINGS_KEY = 'cdos_settings';
+  var ROWS_KEY = 'cdos_rows_v1';
+  var CLIENTS_KEY = 'cdos_clients_v1';
   var tenantId = null;
   var lastSig = '';
   var timer = null;
@@ -104,6 +109,30 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+  }
+
+  /* Missing, null, or "" is not a saved shop. */
+  function settingsMissing(state) {
+    if (!state || !Object.prototype.hasOwnProperty.call(state, SETTINGS_KEY)) return true;
+    var value = state[SETTINGS_KEY];
+    return value == null || value === '';
+  }
+
+  /* No key, null, "", "[]", and "{}" are not records. Anything else is
+     a desk that already has rows or clients, and opening it as new
+     would replace those with empty. */
+  function hasRecords(value) {
+    if (value == null || value === '' || value === '[]' || value === '{}') return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return true;
+  }
+
+  /* New only when the shop is unsaved and there are no rows and no clients. */
+  function opensAsNew(state) {
+    if (!settingsMissing(state)) return false;
+    if (state && (hasRecords(state[ROWS_KEY]) || hasRecords(state[CLIENTS_KEY]))) return false;
+    return true;
   }
 
   /* ---- telling somebody ------------------------------------------------
@@ -207,15 +236,26 @@ window.CDOS_PERSIST = (function () {
       res = await r.json();
     } catch (e) { tenantId = null; return 'offline'; }
     version = (res && res.version) || 0;
-    if (res && res.state && Object.keys(res.state).length) {
-      applyState(res.state);
-      baseline = snapshot();
-      lastSig = JSON.stringify(baseline);
-      return 'restored';
+    var state = res && res.state;
+    /* No saved shop and no records yet. Keep every stored key, including
+       the schedule, and leave the rate board already in this browser
+       alone. Clearing here is what opened the desk as York and then
+       saved that. A desk that already has rows or clients is not new:
+       seeding would replace those with empty. */
+    if (opensAsNew(state)) {
+      Object.keys(state || {}).forEach(function (k) {
+        if (KEY_RE.test(k) && state[k] != null) {
+          localStorage.setItem(k, state[k]);
+          baseline[k] = localStorage.getItem(k);
+        }
+      });
+      lastSig = '';
+      return 'empty';
     }
-    baseline = {};
-    lastSig = ''; // empty — the caller seeds a fresh (or demo) desk, then save()
-    return 'empty';
+    applyState(state);
+    baseline = snapshot();
+    lastSig = JSON.stringify(baseline);
+    return 'restored';
   }
 
   async function save(opts) {
@@ -272,6 +312,31 @@ window.CDOS_PERSIST = (function () {
       return;
     }
 
+    /* Two refusals share 403. The body says which one this is. An
+       owner-only setting is "forbidden" and is handled below. Anything
+       else, including the cheque fee refusal, stops here. */
+    var denied = null;
+    var deniedRaw = '';
+    if (r.status === 403) {
+      deniedRaw = await r.text();
+      if (deniedRaw) {
+        try { denied = JSON.parse(deniedRaw); } catch (e) { if (!(e instanceof SyntaxError)) throw e; }
+      }
+    }
+
+    /* A refusal is the answer. Sending the same document again writes
+       another refusal row and does not save anything. The keys stay
+       in this browser. */
+    if (r.status === 403 && !(denied && denied.error === 'forbidden')) {
+      lastSig = sig;
+      health = 'stopped';
+      return announce({
+        level: 'stopped',
+        code: 'permission_denied',
+        detail: 'That change was refused. Recent work on this screen is still here.',
+      });
+    }
+
     /* Over the limit. The next attempt is the same size as this one, so
        retrying is a loop, not resilience. Stop, and say so in words that
        point at a person rather than at a button. */
@@ -292,21 +357,10 @@ window.CDOS_PERSIST = (function () {
        typed and says so itself. This path must not toast, and it must
        not put an error code on screen. */
     if (r.status === 403) {
-      var raw = await r.text();
       var keepTyped = !!(opts && opts.keepTyped);
       if (!keepTyped) {
-        /* The refusal names the rule. A body that is not JSON is shown
-           as written, so a failure to parse is not dropped. */
-        var detail = 'Only the owner can change that setting. Nothing was saved.';
-        if (raw) {
-          try {
-            var denied = JSON.parse(raw);
-            detail = (denied && (denied.detail || denied.message)) || detail;
-          } catch (e) {
-            if (!(e instanceof SyntaxError)) throw e;
-            detail = raw;
-          }
-        }
+        /* The refusal names the rule. */
+        var detail = (denied && (denied.detail || denied.message)) || 'Only the owner can change that setting. Nothing was saved.';
         announce({
           level: 'retrying', code: 'settings_forbidden',
           detail: detail,
@@ -396,8 +450,12 @@ window.CDOS_PERSIST = (function () {
     snapshot: snapshot, applyState: applyState, clearKeys: clearKeys,
     markClean: markClean, tenant: function () { return tenantId; },
     setOwner: setOwner, onReloaded: onReloaded,
+    /* The document a save sends, for a screen that saves on its own
+       (the Fee schedule). It leaves out what a non-owner must not upload. */
+    outgoing: outgoing,
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
+    noteVersion: function (v) { if (typeof v === 'number') version = v; },
     /* Exposed because it is the one piece of logic in this file worth
        testing on its own: pure, and the thing standing between two tellers
        and a lost afternoon. See server/tests/state-merge.test.ts. */

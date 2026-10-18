@@ -7,6 +7,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { resetSignupThrottle, signupIpMax } from "../src/routes/signup.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -77,6 +78,11 @@ describe("signup", () => {
     expect((await handle.db.select().from(schema.pendingSignups).where(eq(schema.pendingSignups.email, "dana@maplefx.ca"))).length).toBe(0);
     const actions = (await handle.db.select().from(schema.auditEvents)).map((e) => e.action);
     expect(actions).toContain("tenant.created");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const maple = await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, "tnt-maplefx"));
+    expect(maple[0]?.state.cdos_cheque_schedule_v1).toBe(schedule);
+    const york = await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, "tnt-yorkfx"));
+    expect(york[0]?.state.cdos_cheque_schedule_v1).toBe(schedule);
   });
 
   it("the new owner can then log in to THEIR tenant", async () => {

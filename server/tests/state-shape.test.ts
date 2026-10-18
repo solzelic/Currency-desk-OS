@@ -176,10 +176,11 @@ describe("the shape of a desk, from the panel", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("says so plainly when a desk has never saved", async () => {
+  it("reports the cheque schedule the seed stored", async () => {
     const res = await app.inject({ method: "GET", url: "/api/admin/tenants/tnt-yorkfx/state-shape", cookies: admin });
     expect(res.statusCode).toBe(200);
-    expect(res.json().saved).toBe(false);
+    expect(res.json().saved).toBe(true);
+    expect(res.json().report.keys.map((k: { key: string }) => k.key)).toContain("cdos_cheque_schedule_v1");
   });
 
   it("reports sizes and shapes once there is something to report", async () => {
@@ -237,7 +238,7 @@ describe("a document nothing understands is still saved", () => {
       cdos_rows_v1: JSON.stringify({ definitely: "not an array" }),
       cdos_clients_v1: "{ not even json",
     };
-    const res = await app.inject({ method: "PUT", url: "/api/tenant/state", cookies, payload: { state: nonsense } });
+    const res = await app.inject({ method: "PUT", url: "/api/tenant/state", cookies, payload: { state: nonsense, version: 0 } });
     expect(res.statusCode).toBe(200);
 
     const got = await app.inject({ method: "GET", url: "/api/tenant/state", cookies });

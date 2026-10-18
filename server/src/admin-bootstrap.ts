@@ -12,6 +12,7 @@ import { schema } from "./db/index.js";
 import { requirePackForCountry } from "./ledger/jurisdiction.js";
 import type { Db } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
+import { ensureDefaultChequeSchedule } from "./state/defaultChequeSchedule.js";
 
 // the operator's own tenant — hidden from the customer desk list
 export const PLATFORM_TENANT = "tnt-platform";
@@ -22,6 +23,7 @@ export async function ensurePlatformAdmin(db: Db, email: string, password: strin
   const branchId = "br-platform";
   const workspaceId = "ws-platform-till";
   await db.insert(schema.tenants).values({ id: tenantId, name: "CurrencyDesk Platform", plan: "premium", siteSlug: "platform" }).onConflictDoNothing();
+  await ensureDefaultChequeSchedule(db, tenantId);
   const canada = requirePackForCountry("CA");
   await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: "CurrencyDesk", homeCurrency: canada.homeCurrency, jurisdictionPackId: canada.packId, jurisdictionPackVersion: canada.version, jurisdiction: "FINTRAC" }).onConflictDoNothing();
   await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "HQ" }).onConflictDoNothing();

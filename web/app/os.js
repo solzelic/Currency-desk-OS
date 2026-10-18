@@ -41403,19 +41403,125 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }, "Cash a cheque to start tracking it."))));
   }
 
-  /* ===================== FEE SCHEDULE ===================== */
+  /* ===================== FEE SCHEDULE =====================
+     The fee is the price of cash the desk has not yet collected.
+     The owner and a manager can change it, including to 0%. A teller cannot. The
+     server is the check. This screen only stops inviting the edit.
+     The table follows who is signed in now. A cashier sees the lock
+     and the read-only figures, with no inputs, before any Save.
+     The lock sits in that sentence, and the sentence wraps. */
+  const FEE_SENTENCE = 'Only the owner or a manager can change cheque fees. Ask a manager to make this change.';
+  const FEE_BANNER = "That change didn't save. Only the owner or a manager can change cheque fees.";
+  const FEE_CONFLICT = "That change didn't save. Someone changed these fees. Reload to see the latest, then try again.";
+  /* Two decimals while a digit is still being typed. */
+  function money2(n) {
+    if (typeof n === 'string' && /^\d*\.\d{0,1}$/.test(n)) return n;
+    const x = Number(n);
+    return Number.isFinite(x) ? x.toFixed(2) : '';
+  }
   function FeeSchedule({
     schedule,
     setSchedule,
-    log
+    me
   }) {
-    const set = (id, k, v) => setSchedule(list => list.map(t => t.id === id ? {
-      ...t,
-      [k]: v
-    } : t));
+    const mayEdit = !!(me && (me.role === 'Owner' || me.role === 'Manager'));
+    const [draft, setDraft] = useState(schedule);
+    const [refused, setRefused] = useState(false);
+    const [conflict, setConflict] = useState(false);
+    const [trouble, setTrouble] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [busy, setBusy] = useState(false);
+    useEffect(() => {
+      setDraft(schedule);
+    }, [schedule]);
+    const set = (id, k, v) => {
+      setSaved(false);
+      setDraft(list => list.map(t => t.id === id ? {
+        ...t,
+        [k]: v
+      } : t));
+    };
+    const rows = mayEdit ? draft : schedule;
+    const save = async () => {
+      setBusy(true);
+      try {
+        const persist = window.CDOS_PERSIST;
+        /* The same document the autosave sends. A manager's copy of the
+           role presets and billing plan is derived on sign-in and is not
+           theirs to upload; sending it is an owner-only change. */
+        const snap = persist && persist.outgoing ? persist.outgoing() : persist && persist.snapshot ? persist.snapshot() : {};
+        const version = persist && persist.status ? persist.status().version : 0;
+        snap[SKEY] = JSON.stringify(draft);
+        const res = await fetch('/api/tenant/state', {
+          method: 'PUT',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            state: snap,
+            version: version
+          })
+        });
+        let body = null;
+        try {
+          body = await res.json();
+        } catch (e) {
+          body = null;
+        }
+        if (res.status === 409) {
+          setConflict(true);
+          setRefused(false);
+          setTrouble(false);
+          setSaved(false);
+          return;
+        }
+        if (res.status === 403) {
+          setRefused(true);
+          setConflict(false);
+          setTrouble(false);
+          setSaved(false);
+          return;
+        }
+        if (!res.ok || !body) throw new Error('The fee schedule was not saved.');
+        if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
+        localStorage.setItem(SKEY, JSON.stringify(draft));
+        setSchedule(draft);
+        setRefused(false);
+        setConflict(false);
+        setTrouble(false);
+        setSaved(true);
+      } catch (e) {
+        setTrouble(true);
+        setConflict(false);
+        setRefused(false);
+        setSaved(false);
+      } finally {
+        setBusy(false);
+      }
+    };
+    const cell = {
+      color: mayEdit ? CD.ink : CD.mute,
+      fontVariantNumeric: 'tabular-nums'
+    };
     return /*#__PURE__*/React.createElement("div", {
-      className: "p-4"
-    }, /*#__PURE__*/React.createElement("div", {
+      className: "p-4",
+      "data-testid": "fee-schedule",
+      style: {
+        minWidth: 0,
+        maxWidth: '100%'
+      }
+    }, !mayEdit && /*#__PURE__*/React.createElement("p", {
+      "data-testid": "fee-schedule-lock",
+      className: "fee-lock mb-3 text-[12px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 14,
+      c: CD.mute
+    }), " ", FEE_SENTENCE), /*#__PURE__*/React.createElement("div", {
       className: "mb-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold",
@@ -41427,8 +41533,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       style: {
         color: CD.mute
       }
-    }, "Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk \u2014 wider on riskier paper.")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+    }, "Fee is the greater of the percentage or the minimum. Hold days set how long the cash is at risk. Wider on riskier paper.")), /*#__PURE__*/React.createElement("div", {
+      className: "fee-schedule-card overflow-hidden",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -41454,7 +41560,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       className: "px-3 py-2 text-right"
     }, "Hold days"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
-    }, "e.g. $2,000"))), /*#__PURE__*/React.createElement("tbody", null, schedule.map(t => {
+    }, "e.g. $2,000.00"))), /*#__PURE__*/React.createElement("tbody", null, rows.map(t => {
       const rt = RISK_TONE[t.risk] || RISK_TONE.low;
       const eg = feeFor(2000, t);
       return /*#__PURE__*/React.createElement("tr", {
@@ -41465,14 +41571,14 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 font-medium",
         style: {
-          color: CD.ink
+          color: mayEdit ? CD.ink : CD.mute
         }
       }, t.label), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2"
-      }, /*#__PURE__*/React.createElement("select", {
+      }, mayEdit ? /*#__PURE__*/React.createElement("select", {
         value: t.risk,
         onChange: e => set(t.id, 'risk', e.target.value),
-        className: "text-[12px] px-2 py-1 outline-none",
+        className: "fee-field text-[12px] px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
@@ -41482,56 +41588,142 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       }, ['low', 'medium', 'high'].map(r => /*#__PURE__*/React.createElement("option", {
         key: r,
         value: r
-      }, RISK_TONE[r].t)))), /*#__PURE__*/React.createElement("td", {
+      }, RISK_TONE[r].t))) : /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px]",
+        style: {
+          color: CD.mute
+        }
+      }, rt.t)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("input", {
+      }, mayEdit ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         step: "0.1",
         value: t.feePct,
         onChange: e => set(t.id, 'feePct', +e.target.value),
-        className: "w-16 text-right px-2 py-1 outline-none",
+        className: "fee-field w-16 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
           fontVariantNumeric: 'tabular-nums'
         }
-      })), /*#__PURE__*/React.createElement("td", {
+      }) : /*#__PURE__*/React.createElement("span", {
+        style: cell
+      }, t.feePct)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        value: t.feeMin,
-        onChange: e => set(t.id, 'feeMin', +e.target.value),
-        className: "w-16 text-right px-2 py-1 outline-none",
+      }, mayEdit ? /*#__PURE__*/React.createElement("input", {
+        type: "text",
+        inputMode: "decimal",
+        value: money2(t.feeMin),
+        onChange: e => set(t.id, 'feeMin', e.target.value.replace(/[^\d.]/g, '')),
+        onBlur: e => set(t.id, 'feeMin', money2(e.target.value)),
+        className: "fee-field w-20 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
           fontVariantNumeric: 'tabular-nums'
         }
-      })), /*#__PURE__*/React.createElement("td", {
+      }) : /*#__PURE__*/React.createElement("span", {
+        style: cell
+      }, money2(t.feeMin))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("input", {
+      }, mayEdit ? /*#__PURE__*/React.createElement("input", {
         type: "number",
         value: t.holdDays,
         onChange: e => set(t.id, 'holdDays', +e.target.value),
-        className: "w-14 text-right px-2 py-1 outline-none",
+        className: "fee-field w-14 text-right px-2 py-1 outline-none",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 6,
           fontVariantNumeric: 'tabular-nums'
         }
-      })), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right font-semibold",
+      }) : /*#__PURE__*/React.createElement("span", {
+        style: cell
+      }, t.holdDays)), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right",
+        "data-testid": "fee-example",
         style: {
-          color: CD.green,
+          color: CD.ink,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, fmt(eg, homeCcy())));
+      }, money2(eg), " ", homeCcy()));
     })))), /*#__PURE__*/React.createElement("p", {
       className: "mt-2 text-[11px]",
       style: {
         color: CD.faint
       }
-    }, "Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce."));
+    }, "Government and certified cheques clear fast and cheap; personal cheques carry the longest hold and the widest fee because they're the most likely to bounce."), mayEdit && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3"
+    }, refused && /*#__PURE__*/React.createElement("p", {
+      role: "alert",
+      "data-testid": "fee-schedule-refused",
+      className: "fee-lock fee-banner mb-2 px-3 py-2 text-[12px]",
+      style: {
+        background: CD.amberSoft,
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 13,
+      c: CD.amber
+    }), " ", FEE_BANNER), trouble && /*#__PURE__*/React.createElement("p", {
+      role: "alert",
+      "data-testid": "fee-schedule-error",
+      className: "fee-lock fee-banner mb-2 px-3 py-2 text-[12px]",
+      style: {
+        background: CD.amberSoft,
+        borderRadius: 8
+      }
+    }, "That change didn't save. Try again."), conflict && /*#__PURE__*/React.createElement("p", {
+      role: "alert",
+      "data-testid": "fee-schedule-conflict",
+      className: "fee-lock fee-banner fee-conflict mb-2 px-3 py-2 text-[12px]",
+      style: {
+        background: CD.amberSoft,
+        borderRadius: 8
+      }
+    }, FEE_CONFLICT, " ", /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "fee-schedule-reload",
+      onClick: async () => {
+        try {
+          const res = await fetch('/api/tenant/state', {
+            credentials: 'same-origin'
+          });
+          if (!res.ok) throw new Error('reload');
+          const body = await res.json();
+          const persist = window.CDOS_PERSIST;
+          if (persist && persist.noteVersion && body && typeof body.version === 'number') persist.noteVersion(body.version);
+          const raw = body && body.state ? body.state[SKEY] : null;
+          const next = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : schedule;
+          setDraft(next);
+          setSchedule(next);
+          setConflict(false);
+          setTrouble(false);
+        } catch (e) {
+          setTrouble(true);
+        }
+      },
+      className: "fee-reload"
+    }, "Reload")), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "fee-schedule-save",
+      onClick: save,
+      disabled: busy,
+      className: "fee-save px-3.5 py-2 text-sm font-semibold text-white",
+      style: {
+        background: CD.ink,
+        borderRadius: 9,
+        opacity: busy ? 0.6 : 1
+      }
+    }, "Save"), saved && /*#__PURE__*/React.createElement("span", {
+      "data-testid": "fee-schedule-saved",
+      className: "text-[12px] font-semibold",
+      style: {
+        color: CD.green
+      }
+    }, "Saved"))));
   }
 
   /* ===================== ROOT ===================== */
@@ -41665,7 +41857,10 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         }
       }, badge));
     }))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto"
+      className: "flex-1 overflow-auto",
+      style: {
+        minWidth: 0
+      }
     }, tab === 'clearing' && /*#__PURE__*/React.createElement(Clearing, {
       cheques: cheques,
       onOpen: setDetailId,
@@ -41673,7 +41868,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     }), tab === 'schedule' && /*#__PURE__*/React.createElement(FeeSchedule, {
       schedule: schedule,
       setSchedule: setSchedule,
-      log: log
+      me: me
     })), modal && /*#__PURE__*/React.createElement(CaptureModal, {
       rows,
       setRows,
@@ -60724,6 +60919,11 @@ ${snap}`;
    ============================================================ */
 window.CDOS_PERSIST = (function () {
   var KEY_RE = /^(cdos_|yorkfx_)/;
+  /* A desk is new only when the shop is unsaved and it has no records.
+     The schedule and a tour flag are not records. */
+  var SETTINGS_KEY = 'cdos_settings';
+  var ROWS_KEY = 'cdos_rows_v1';
+  var CLIENTS_KEY = 'cdos_clients_v1';
   var tenantId = null;
   var lastSig = '';
   var timer = null;
@@ -60798,6 +60998,30 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+  }
+
+  /* Missing, null, or "" is not a saved shop. */
+  function settingsMissing(state) {
+    if (!state || !Object.prototype.hasOwnProperty.call(state, SETTINGS_KEY)) return true;
+    var value = state[SETTINGS_KEY];
+    return value == null || value === '';
+  }
+
+  /* No key, null, "", "[]", and "{}" are not records. Anything else is
+     a desk that already has rows or clients, and opening it as new
+     would replace those with empty. */
+  function hasRecords(value) {
+    if (value == null || value === '' || value === '[]' || value === '{}') return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return true;
+  }
+
+  /* New only when the shop is unsaved and there are no rows and no clients. */
+  function opensAsNew(state) {
+    if (!settingsMissing(state)) return false;
+    if (state && (hasRecords(state[ROWS_KEY]) || hasRecords(state[CLIENTS_KEY]))) return false;
+    return true;
   }
 
   /* ---- telling somebody ------------------------------------------------
@@ -60901,15 +61125,26 @@ window.CDOS_PERSIST = (function () {
       res = await r.json();
     } catch (e) { tenantId = null; return 'offline'; }
     version = (res && res.version) || 0;
-    if (res && res.state && Object.keys(res.state).length) {
-      applyState(res.state);
-      baseline = snapshot();
-      lastSig = JSON.stringify(baseline);
-      return 'restored';
+    var state = res && res.state;
+    /* No saved shop and no records yet. Keep every stored key, including
+       the schedule, and leave the rate board already in this browser
+       alone. Clearing here is what opened the desk as York and then
+       saved that. A desk that already has rows or clients is not new:
+       seeding would replace those with empty. */
+    if (opensAsNew(state)) {
+      Object.keys(state || {}).forEach(function (k) {
+        if (KEY_RE.test(k) && state[k] != null) {
+          localStorage.setItem(k, state[k]);
+          baseline[k] = localStorage.getItem(k);
+        }
+      });
+      lastSig = '';
+      return 'empty';
     }
-    baseline = {};
-    lastSig = ''; // empty — the caller seeds a fresh (or demo) desk, then save()
-    return 'empty';
+    applyState(state);
+    baseline = snapshot();
+    lastSig = JSON.stringify(baseline);
+    return 'restored';
   }
 
   async function save(opts) {
@@ -60966,6 +61201,31 @@ window.CDOS_PERSIST = (function () {
       return;
     }
 
+    /* Two refusals share 403. The body says which one this is. An
+       owner-only setting is "forbidden" and is handled below. Anything
+       else, including the cheque fee refusal, stops here. */
+    var denied = null;
+    var deniedRaw = '';
+    if (r.status === 403) {
+      deniedRaw = await r.text();
+      if (deniedRaw) {
+        try { denied = JSON.parse(deniedRaw); } catch (e) { if (!(e instanceof SyntaxError)) throw e; }
+      }
+    }
+
+    /* A refusal is the answer. Sending the same document again writes
+       another refusal row and does not save anything. The keys stay
+       in this browser. */
+    if (r.status === 403 && !(denied && denied.error === 'forbidden')) {
+      lastSig = sig;
+      health = 'stopped';
+      return announce({
+        level: 'stopped',
+        code: 'permission_denied',
+        detail: 'That change was refused. Recent work on this screen is still here.',
+      });
+    }
+
     /* Over the limit. The next attempt is the same size as this one, so
        retrying is a loop, not resilience. Stop, and say so in words that
        point at a person rather than at a button. */
@@ -60986,21 +61246,10 @@ window.CDOS_PERSIST = (function () {
        typed and says so itself. This path must not toast, and it must
        not put an error code on screen. */
     if (r.status === 403) {
-      var raw = await r.text();
       var keepTyped = !!(opts && opts.keepTyped);
       if (!keepTyped) {
-        /* The refusal names the rule. A body that is not JSON is shown
-           as written, so a failure to parse is not dropped. */
-        var detail = 'Only the owner can change that setting. Nothing was saved.';
-        if (raw) {
-          try {
-            var denied = JSON.parse(raw);
-            detail = (denied && (denied.detail || denied.message)) || detail;
-          } catch (e) {
-            if (!(e instanceof SyntaxError)) throw e;
-            detail = raw;
-          }
-        }
+        /* The refusal names the rule. */
+        var detail = (denied && (denied.detail || denied.message)) || 'Only the owner can change that setting. Nothing was saved.';
         announce({
           level: 'retrying', code: 'settings_forbidden',
           detail: detail,
@@ -61090,8 +61339,12 @@ window.CDOS_PERSIST = (function () {
     snapshot: snapshot, applyState: applyState, clearKeys: clearKeys,
     markClean: markClean, tenant: function () { return tenantId; },
     setOwner: setOwner, onReloaded: onReloaded,
+    /* The document a save sends, for a screen that saves on its own
+       (the Fee schedule). It leaves out what a non-owner must not upload. */
+    outgoing: outgoing,
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
+    noteVersion: function (v) { if (typeof v === 'number') version = v; },
     /* Exposed because it is the one piece of logic in this file worth
        testing on its own: pure, and the thing standing between two tellers
        and a lost afternoon. See server/tests/state-merge.test.ts. */
@@ -65826,6 +66079,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     useEffect(() => {
       settingsRef.current = settings;
     }, [settings]);
+    const meRef = useRef(me);
+    useEffect(() => {
+      meRef.current = me;
+    }, [me]);
     const routeAfterAuth = rec => {
       if (!rec) {
         setStage('lock');
@@ -65879,7 +66136,34 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         fetch('/api/auth/me', {
           credentials: 'same-origin'
         }).then(r => {
-          if (r.status === 401) relock();
+          if (r.status === 401) {
+            relock();
+            return null;
+          }
+          if (!r.ok) return null;
+          return r.json();
+        }).then(d => {
+          if (!alive || !d || !d.user || !d.user.id) return;
+          /* The header has to name whoever the cookie is now. A switch,
+             or a change of role, does not reload the desk. The open Fee
+             schedule follows that role, so a cashier sees the lock and
+             the read-only figures, with no inputs. */
+          if (stageRef.current !== 'desktop') return;
+          const u = d.user;
+          const role = SRV2OS[u.role] || 'Cashier';
+          const name = u.name || u.id;
+          const cur = meRef.current;
+          if (cur && cur.name === name && cur.role === role) return;
+          srvUserRef.current = u;
+          setSrvUser(u);
+          setUser(u.id);
+          setMe({
+            name,
+            role
+          });
+          /* The save bridge follows the same role, so an owner's save
+             keeps the role presets and a teller's leaves them out. */
+          markPersistRole(role);
         }).catch(() => {}); // offline: leave the desk alone
       };
 

@@ -266,6 +266,8 @@ postgres("cheque cashing on the ledger", () => {
     await runMigrations(pool);
     handle = await createDb();
     await seed(handle.db);
+    /* This file books the fee in the payload. The seed's schedule would replace it. */
+    await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
     app = await buildApp(handle.db);
   });
 
