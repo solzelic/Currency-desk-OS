@@ -292,14 +292,14 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
        0.7223. The board field is a different figure. A fifth decimal,
        or that board rate in place of 0.7223, fails this. A server
        quote of 2,166.31 shows 0.7221; that pair is in the rate unit test. */
-    const kicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
+    const rateKicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
     await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.75");
-    await expect(kicker).toHaveText("1 CAD = 0.7223 USD");
-    await expect(kicker).not.toContainText(/\d\.\d{5}/);
+    await expect(rateKicker).toHaveText("1 CAD = 0.7223 USD");
+    await expect(rateKicker).not.toContainText(/\d\.\d{5}/);
     await expect(page.locator(".cd-tx-ticket")).toContainText("1 CAD = 0.7223 USD");
     await expect(page.locator(".cd-tx-ticket")).not.toContainText(/\d\.\d{5}/);
     const board = await page.locator(".cd-tx-rate").inputValue();
-    expect(await kicker.innerText(), `board rate next to the payout at ${width}`).not.toBe(`1 CAD = ${board} USD`);
+    expect(await rateKicker.innerText(), `board rate next to the payout at ${width}`).not.toBe(`1 CAD = ${board} USD`);
     await expect(page.getByText("Board rate").first()).toBeVisible();
     await expect(page.locator(".cd-tx")).not.toContainText("Published rate");
     await expect(page.locator(".cd-tx-rate-line")).not.toContainText("rounded");
