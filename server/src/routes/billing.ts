@@ -26,6 +26,23 @@ const bool = (value: unknown): boolean => value === true;
 const unixDate = (value: unknown): Date | null => typeof value === "number" && Number.isFinite(value) ? new Date(value * 1000) : null;
 const plan = (value: unknown): TenantPlan | null => typeof value === "string" && (TENANT_PLANS as readonly string[]).includes(value) ? value as TenantPlan : null;
 
+/* The plan an invoice charged for: the last line with a positive amount
+   whose price is one of ours. A plan change in the portal invoices a
+   credit for the old plan (negative) and a charge for the new one, so
+   the new plan is the positive line. */
+function invoicePlan(config: StripeBillingConfig, invoice: StripeObject): TenantPlan | null {
+  const lines = object(invoice.lines).data;
+  if (!Array.isArray(lines)) return null;
+  let found: TenantPlan | null = null;
+  for (const raw of lines) {
+    const line = object(raw);
+    if ((integer(line.amount) ?? 0) <= 0) continue;
+    const priceId = string(object(object(line.pricing).price_details).price) ?? string(object(line.price).id);
+    found = planForPrice(config, priceId) ?? found;
+  }
+  return found;
+}
+
 function subscriptionId(invoice: StripeObject): string | null {
   const direct = string(invoice.subscription);
   if (direct) return direct;
@@ -77,7 +94,11 @@ async function upsertSubscription(db: Db, config: StripeBillingConfig, tenantId:
   if (!id || !customerId) return;
   const metadata = object(data.metadata);
   const priceId = subscriptionPrice(data);
-  const selectedPlan = plan(metadata.currencydesk_plan) ?? planForPrice(config, priceId);
+  /* The price on the subscription is the plan. The checkout label in the
+     metadata is stamped once, at checkout, and is stale after a plan
+     change in the Stripe portal. It is only read when the price is not
+     one of ours. */
+  const selectedPlan = planForPrice(config, priceId) ?? plan(metadata.currencydesk_plan);
   const now = new Date();
   await db.insert(schema.stripeSubscriptions).values({
     stripeSubscriptionId: id, tenantId, stripeCustomerId: customerId, priceId, plan: selectedPlan,
@@ -126,9 +147,15 @@ async function applyEvent(db: Db, config: StripeBillingConfig, event: StripeObje
     if (type === "invoice.paid") {
       const subscription = subscriptionId(data);
       if (subscription) {
-        const rows = await db.select({ plan: schema.stripeSubscriptions.plan }).from(schema.stripeSubscriptions)
-          .where(and(eq(schema.stripeSubscriptions.stripeSubscriptionId, subscription), eq(schema.stripeSubscriptions.tenantId, tenantId))).limit(1);
-        if (rows[0]?.plan) await db.update(schema.tenants).set({ plan: rows[0].plan }).where(eq(schema.tenants.id, tenantId));
+        /* What the paid invoice charged for, so the plan does not depend
+           on whether customer.subscription.updated arrived first. */
+        let paidPlan = invoicePlan(config, data);
+        if (!paidPlan) {
+          const rows = await db.select({ plan: schema.stripeSubscriptions.plan }).from(schema.stripeSubscriptions)
+            .where(and(eq(schema.stripeSubscriptions.stripeSubscriptionId, subscription), eq(schema.stripeSubscriptions.tenantId, tenantId))).limit(1);
+          paidPlan = plan(rows[0]?.plan);
+        }
+        if (paidPlan) await db.update(schema.tenants).set({ plan: paidPlan }).where(eq(schema.tenants.id, tenantId));
       }
     }
   }

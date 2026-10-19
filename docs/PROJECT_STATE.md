@@ -712,6 +712,8 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-19**, plan changes in the Stripe portal. The plan on a subscription is read from its price; the `currencydesk_plan` label stamped at checkout is only a fallback, because it is stale after a portal upgrade or downgrade. A paid invoice sets the shop's plan from the price it charged for (the positive line), so it no longer depends on `customer.subscription.updated` arriving first.
+
 **2026-10-19**, subscriptions in US dollars. Every plan is billed in USD: Rates US$299, Full System US$599 and AI Bundle US$749 a month, with annual at 10% off, all tax-exclusive. `render.yaml` names the six live USD price IDs. The Billing & plan screen and its invoice show USD, and the site FAQ says US$. The live Stripe key and webhook secret are set in Render.
 
 **2026-10-19**, Settings → Accepted IDs. The owner switches catalogue ID types on and off per shop; NULL follows the pack, and every type the catalogue accepts is on by default in every pack. Packs lock types in code (`server/src/ledger/id-type-rules.ts`); the health card is locked everywhere, with Canada's FINTRAC and Ontario note. The route is every role's to read and the owner's to change; a locked type and a list with no photo ID are 422, and a change is an audit row with no document number. A switched-off type is refused on add and on change (`ID_TYPE_NOT_ACCEPTED_HERE`); one already on file reads in full with its status and a quiet notice. The pickers follow the list. Migration 047. 041 is still claimed by open draft #132, 042 by #130, and 043 by #138.

@@ -24,6 +24,8 @@ beforeAll(async () => {
   process.env.STRIPE_SECRET_KEY = "sk_test_currencydesk";
   process.env.STRIPE_WEBHOOK_SECRET = webhookSecret;
   process.env.STRIPE_PRICE_PRO_MONTHLY = "price_pro_month";
+  process.env.STRIPE_PRICE_BASIC_MONTHLY = "price_basic_month";
+  process.env.STRIPE_PRICE_PREMIUM_MONTHLY = "price_premium_month";
   handle = await createDb();
   await seed(handle.db);
   app = await buildApp(handle.db);
@@ -35,6 +37,8 @@ afterAll(async () => {
   delete process.env.STRIPE_SECRET_KEY;
   delete process.env.STRIPE_WEBHOOK_SECRET;
   delete process.env.STRIPE_PRICE_PRO_MONTHLY;
+  delete process.env.STRIPE_PRICE_BASIC_MONTHLY;
+  delete process.env.STRIPE_PRICE_PREMIUM_MONTHLY;
 });
 
 describe("Stripe billing webhooks", () => {
@@ -72,5 +76,37 @@ describe("Stripe billing webhooks", () => {
     const events = await handle.db.select().from(schema.stripeEvents);
     expect(events).toHaveLength(3);
     expect(events.every((row) => row.processedAt instanceof Date)).toBe(true);
+  });
+
+  it("takes a plan change in the Stripe portal from the price, whichever event arrives first", async () => {
+    /* Checkout stamped "basic" in the metadata. The owner then moved to
+       AI Bundle in the portal. Stripe invoices a credit for the unused
+       basic time and a charge for premium, and here that invoice lands
+       before the subscription update. */
+    const checkout = event("evt_checkout_upgrade", "checkout.session.completed", { id: "cs_upgrade", client_reference_id: DEMO.tenantId, customer: "cus_upgrade" });
+    expect((await send(checkout)).statusCode).toBe(200);
+
+    const upgradeInvoice = event("evt_invoice_upgrade", "invoice.paid", {
+      id: "in_upgrade", customer: "cus_upgrade", status: "paid", currency: "usd", amount_due: 0, amount_paid: 0,
+      parent: { type: "subscription_details", subscription_details: { subscription: "sub_upgrade" } },
+      lines: { data: [
+        { amount: -29900, pricing: { price_details: { price: "price_basic_month" } } },
+        { amount: 74900, pricing: { price_details: { price: "price_premium_month" } } },
+      ] },
+    });
+    expect((await send(upgradeInvoice)).statusCode).toBe(200);
+    let tenant = (await handle.db.select().from(schema.tenants)).find((row) => row.id === DEMO.tenantId);
+    expect(tenant?.plan).toBe("premium");
+
+    const updated = event("evt_subscription_upgrade", "customer.subscription.updated", {
+      id: "sub_upgrade", customer: "cus_upgrade", status: "active", cancel_at_period_end: false,
+      current_period_end: 1_800_000_000, metadata: { currencydesk_plan: "basic" },
+      items: { data: [{ price: { id: "price_premium_month" } }] },
+    });
+    expect((await send(updated)).statusCode).toBe(200);
+    const subscription = (await handle.db.select().from(schema.stripeSubscriptions)).find((row) => row.stripeSubscriptionId === "sub_upgrade");
+    expect(subscription?.plan).toBe("premium");
+    tenant = (await handle.db.select().from(schema.tenants)).find((row) => row.id === DEMO.tenantId);
+    expect(tenant?.plan).toBe("premium");
   });
 });
