@@ -76,7 +76,7 @@ var SELL_MARGIN = SPREAD;    // we sell this far OVER mid-market
 var RATE_CONFIG = null;      // last published config, if any
 
 /* ---------- apply the staff-published rate board (localStorage) ----------
-   Written by the Rate Editor (YorkFX Staff.html). Shape:
+   Written by the Rate Editor (YorkFX Rate Board.html + yorkfx-staff.js). Shape:
    { buyMargin, sellMargin, rows: { USD:{ mid, show }, ... }, publishedAt, publishedBy }
    `mid` is CAD per 1 unit of the currency.                                  */
 (function applyRateConfig() {

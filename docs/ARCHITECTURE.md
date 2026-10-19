@@ -177,17 +177,55 @@ without invalidating anyone. Session tokens are stored as SHA-256 — a
 database leak cannot be replayed as a login. One-time codes are hashed and
 compared in constant time. Till PINs were once in the state blob the browser
 downloads whole; they live hashed on the staff record now, and the write path
-strips them on every save so an older client cannot put one back.
+strips them on every save so an older client cannot put one back. A guess is
+reserved before that hash is checked. It is given back once the current PIN
+or password checks out, so a later refusal does not count and a burst of
+guesses cannot all pass the lock. The lock still lives in memory
+on this process.
 
 **Sessions die on command.** Opaque tokens in an httpOnly cookie, not JWTs. A
 JWT stays valid until it expires no matter what happened in between, and at a
 cash desk the interesting event is somebody being let go at 4pm. Every
 credential change revokes every other session.
 
+**Taking the desk is a new session.** `POST /api/auth/switch` proves the next
+person's PIN, revokes the live cookie, and issues one for them. Only one of
+two switches from that cookie succeeds. The avatar menu used to change only
+the name on screen, so the book kept stamping whoever had typed the password.
+A missing PIN, and a PIN a manager issued that its owner has not replaced,
+are refused in that person's name (initial and surname). `0000` is refused
+as too easy to guess, and it does not count as a wrong try. The same easy
+PINs are refused when a person sets their own. Too many wrong tries locks
+the keypad for 5 minutes, then it clears on its own. The till belongs to
+whoever counted it. Switching in does not take it. A manager, an auditor,
+or compliance may keep the workspace to look or to approve. A teller or a
+supervisor keeps it only when they are the one who counted it. A deal
+and a cash movement on someone else's count are refused until a handover
+count. A manager may approve, not move cash. A mid-day count is only for
+the holder, and the reply to anyone else carries no expected amount. The
+handover closes that session, writes the variance on it, records the
+person who counted as the closer and the counter, and opens one they
+counted. The
+audit row is `auth.switch` with `{from, to}`. The first-run tour stays
+closed on a switch and on a handover.
+
 **Nothing enumerable.** Whether an account exists is not public. The reset
 route answers identically for a stranger and a customer, in the same words —
 and the rate limit answers identically too, because a throttle that only
-fires for real accounts is a slower way of asking the same question.
+fires for real accounts is a slower way of asking the same question. The
+emailed-code step does the same: an unknown staff id and a wrong code are
+one answer, and the code is not compared unless this browser already proved
+the password. Shop sign-in counts five wrong passwords per account and
+twenty per address, in Postgres (`server/src/auth/signin-guard.ts`), and
+locks both the real id and the unknown one with the same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
+socket is a published Cloudflare address, or when the socket is a
+private address and the rightmost forwarded hop is Cloudflare. A
+missing or invalid header counts the socket and logs a warning. The
+first request logs header names only. Otherwise a private socket
+counts the rightmost hop, or the socket when nothing is in front.
+IPv6 /64 rotation is accepted for now and is a follow-up. The count is the number the insert
+returned, so a correct password past that count is still refused. An
+owner or a manager can clear the account counter.
 
 **The record of who did what is append-only.** `audit_events` gets a row for
 every credential action and every privileged act. Issuing somebody's sign-in
@@ -215,6 +253,25 @@ unset and use a fixed development pepper. Desk tills stay password-only.
 **Least privilege on our own side.** Support does not need the permission
 that suspends a desk. The default for a new platform capability is "the role
 that obviously needs it", not "admin".
+
+A write in `server/src/routes/admin.ts` passes that permission to `gate`.
+Omitting it would open the route to every platform role, including the
+read-only auditor. A route that asks for two permissions has to hold both,
+and it does not write until both checks pass. On
+`PATCH /api/admin/tenants/:id` the need is taken from the fields that
+are present and checked before the body is validated, so a caller who
+does not hold it gets 403 even when the body is bad. Reads stay open
+to any platform role. The owner holds every permission. Support does
+not suspend or delete a desk. That is the rule.
+
+| Write | Need | Roles |
+| --- | --- | --- |
+| Suspend or restore a desk (`PATCH /api/admin/tenants/:id` with `suspended`) | `security:manage` | owner, security |
+| Change a desk's plan (same route, with `plan`) | `billing:write` | owner, billing |
+| Delete a desk (`DELETE /api/admin/tenants/:id`) | `security:manage` | owner, security |
+| Create a desk by hand (`POST /api/admin/tenants`) | `desks:write` | owner, support, security |
+| Block a person, reset a password, reset a PIN, issue a CD-ID | `people:write` | owner, support, security |
+| Invite a desk, edit an application (notes, status, answered, labels, rotate the code) | `applications:write` | owner, support |
 
 **Host secrets live in the host environment. Never the repo, never the
 browser, never the panel.** Stripe keys, the Resend key, the database URL.
@@ -350,11 +407,14 @@ still pulls the CDN.)
 
 **Now**
 
-1. **In-process state assumes exactly one server.** Cooldown and sign-in
-   maps (e.g. `server/src/cooldown.ts`) live in process memory — no
-   horizontal scale, and every deploy drops in-flight sign-ins. Platform
-   MFA challenges are the exception: they are rows, so a sleep during
-   enrollment does not eat the setup.
+1. **In-process state assumes exactly one server.** The two-minute gap
+   between one-time codes (`server/src/cooldown.ts`) lives in process
+   memory. A restart forgets that somebody asked ninety seconds ago;
+   that gap is not the lockout. Shop sign-in failure counts and the
+   emailed-code marker are Postgres rows (migration 044), so a restart
+   does not hand back five more guesses and does not let a code be
+   checked without the password step. Platform MFA challenges are rows
+   too.
 
 Issue **#33** (platform MFA) is closed: `/admin` requires TOTP after
 enrollment, with one-time backup codes. Desk `/login` is unchanged.

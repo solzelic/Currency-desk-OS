@@ -82,7 +82,7 @@ async function reset(options: { openTill?: boolean; cad?: number } = {}) {
     .where(eq(schema.staffUsers.id, `${DEMO.tenantId}:a.singh`));
   /* Verified, because the identification gate is a real gate on this path
      too — cashing a cheque for somebody the desk cannot name is exactly
-     what it exists for. `unverified-walkin` is here for the one test that
+     what it exists for. `customer-walkin` is here for the one test that
      needs the other answer. */
   await pool.query(
     `INSERT INTO ledger_customers VALUES
@@ -159,6 +159,60 @@ const settle = (
     cookies,
   });
 
+/* The deal reversal route. It must refuse a cheque row. On main it
+   posts the reversal, which is the failure these tests exist to catch. */
+const dealReversal = (
+  cookies: Record<string, string>,
+  transactionId: string,
+  key: string,
+) =>
+  app.inject({
+    method: "POST",
+    url: `/api/ledger/transactions/${transactionId}/reversal`,
+    cookies,
+    payload: { idempotencyKey: key, reason: "Wrong cheque" },
+  });
+
+async function expectDealReversalRefused(
+  cookies: Record<string, string>,
+  transactionId: string,
+  key: string,
+) {
+  const generic = await dealReversal(cookies, transactionId, key);
+  expect(generic.statusCode, generic.body).toBe(422);
+  expect(generic.json()).toEqual({
+    code: "REVERSAL_NOT_ALLOWED",
+    message:
+      "Reverse this cheque through POST /api/ledger/cheques/:chequeId/reversal.",
+  });
+  expect(
+    (await pool.query("SELECT count(*)::int AS n FROM ledger_reversals")).rows[0].n,
+  ).toBe(0);
+  expect(
+    (await pool.query("SELECT count(*)::int AS n FROM ledger_reversal_entries")).rows[0].n,
+  ).toBe(0);
+}
+
+const chequeStatus = async (chequeId: string) =>
+  (
+    await pool.query("SELECT status FROM ledger_cheques WHERE cheque_id=$1", [chequeId])
+  ).rows[0].status as string;
+
+const chequeEventStatuses = async (chequeId: string) =>
+  (
+    await pool.query(
+      "SELECT status FROM ledger_cheque_events WHERE cheque_id=$1 ORDER BY created_at, event_id",
+      [chequeId],
+    )
+  ).rows.map((row) => String(row.status));
+
+const dealKindOf = async (transactionId: string) =>
+  (
+    await pool.query("SELECT deal_kind FROM ledger_transactions WHERE transaction_id=$1", [
+      transactionId,
+    ])
+  ).rows[0].deal_kind as string;
+
 const tillCad = async () =>
   (
     await pool.query(
@@ -212,6 +266,8 @@ postgres("cheque cashing on the ledger", () => {
     await runMigrations(pool);
     handle = await createDb();
     await seed(handle.db);
+    /* This file books the fee in the payload. The seed's schedule would replace it. */
+    await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
     app = await buildApp(handle.db);
   });
 
@@ -641,6 +697,62 @@ postgres("cheque cashing on the ledger", () => {
        should attempt. */
     expect(late.statusCode).toBe(409);
     expect(late.json().code).toBe("CHEQUE_NOT_HELD");
+  });
+
+  /* The deal reversal route knows an exchange. It does not know a
+     cheque. On main it reverses the row, leaves the cheque held (or
+     cleared, or returned), writes no cheque event, and a later call to
+     the cheque route is refused forever with REVERSAL_ALREADY_EXISTS
+     when the row was the cashing. */
+  it("refuses the deal reversal route for a cheque cashing, and the cheque route still works", async () => {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    expect(await dealKindOf(cashed.transactionId)).toBe("cheque_cashing");
+    await expectDealReversalRefused(cookies, cashed.transactionId, "block-cashing");
+    expect(await tillCad()).toBe("4035.00");
+    expect(await chequeStatus(cashed.cheque.chequeId)).toBe("held");
+    expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held"]);
+
+    const proper = await settle(cookies, cashed.cheque.chequeId, "reversal", {
+      reason: "Wrong customer",
+    });
+    expect(proper.statusCode, proper.body).toBe(201);
+    expect(proper.json().status).toBe("reversed");
+    expect(proper.json().code).not.toBe("REVERSAL_ALREADY_EXISTS");
+    expect(await chequeStatus(cashed.cheque.chequeId)).toBe("reversed");
+    expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held", "reversed"]);
+    expect(await tillCad()).toBe("5000.00");
+  });
+
+  it("refuses the deal reversal route for a cheque clearing and leaves the cheque cleared", async () => {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    const cleared = await settle(cookies, cashed.cheque.chequeId, "clearance");
+    expect(cleared.statusCode, cleared.body).toBe(201);
+    const settlementId = String(cleared.json().transactionId);
+    expect(await dealKindOf(settlementId)).toBe("cheque_clearing");
+    const till = await tillCad();
+    await expectDealReversalRefused(cookies, settlementId, "block-clearing");
+    expect(await tillCad()).toBe(till);
+    expect(await chequeStatus(cashed.cheque.chequeId)).toBe("cleared");
+    expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held", "cleared"]);
+  });
+
+  it("refuses the deal reversal route for a cheque return and leaves the cheque returned", async () => {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    const bounced = await settle(cookies, cashed.cheque.chequeId, "return", {
+      reason: "NSF",
+      nsf: true,
+    });
+    expect(bounced.statusCode, bounced.body).toBe(201);
+    const settlementId = String(bounced.json().transactionId);
+    expect(await dealKindOf(settlementId)).toBe("cheque_return");
+    const till = await tillCad();
+    await expectDealReversalRefused(cookies, settlementId, "block-return");
+    expect(await tillCad()).toBe(till);
+    expect(await chequeStatus(cashed.cheque.chequeId)).toBe("returned");
+    expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held", "returned"]);
   });
 
   /* ------------------------------------------------------------------

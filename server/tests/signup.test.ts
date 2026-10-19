@@ -7,6 +7,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { resetSignupThrottle, signupIpMax } from "../src/routes/signup.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -37,6 +38,11 @@ const codeFromLog = (): string => {
 const cookieOf = (res: { cookies: { name: string; value: string }[] }) => {
   const c = res.cookies.find((x) => x.name === "cdos_session");
   return c ? { cdos_session: c.value } : {};
+};
+const proofCookie = (res: { cookies: { name: string; value: string }[] }): Record<string, string> => {
+  const value = res.cookies.find((x) => x.name === "cdos_login_proof")?.value;
+  if (!value) return {};
+  return { cdos_login_proof: value };
 };
 
 describe("signup", () => {
@@ -72,6 +78,11 @@ describe("signup", () => {
     expect((await handle.db.select().from(schema.pendingSignups).where(eq(schema.pendingSignups.email, "dana@maplefx.ca"))).length).toBe(0);
     const actions = (await handle.db.select().from(schema.auditEvents)).map((e) => e.action);
     expect(actions).toContain("tenant.created");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const maple = await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, "tnt-maplefx"));
+    expect(maple[0]?.state.cdos_cheque_schedule_v1).toBe(schedule);
+    const york = await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, "tnt-yorkfx"));
+    expect(york[0]?.state.cdos_cheque_schedule_v1).toBe(schedule);
   });
 
   it("the new owner can then log in to THEIR tenant", async () => {
@@ -81,7 +92,7 @@ describe("signup", () => {
     expect(start.statusCode).toBe(200);
     expect(start.json()).toMatchObject({ needsCode: true });
 
-    const login = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "dana@maplefx.ca", code: codeFromLog() } });
+    const login = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "dana@maplefx.ca", code: codeFromLog() }, cookies: proofCookie(start) });
     expect(login.statusCode).toBe(200);
     expect(login.json().user).toMatchObject({ id: "dana@maplefx.ca", tenantId: "tnt-maplefx", role: "administrator" });
   });

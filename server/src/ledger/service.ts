@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import pg from "pg";
+import { pinDeskName } from "../auth/desk-name.js";
 import {
   hasBackendPermission,
   type BackendPermission,
@@ -177,9 +178,10 @@ const fixed = (value: Decimal, places = 2) =>
 export async function requireOpenTill(
   client: pg.PoolClient,
   actor: LedgerActor,
+  opts?: { held?: boolean },
 ) {
   const session = await client.query(
-    `SELECT status
+    `SELECT status, opened_by
        FROM ledger_till_sessions
       WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
         AND workspace_id=$4 AND till_id=$5
@@ -194,6 +196,22 @@ export async function requireOpenTill(
       "Open the till before posting transactions.",
     );
   }
+  const opener = String(session.rows[0].opened_by ?? "");
+  /* A reversal puts money back. It is not a new deal, and a manager may
+     approve it without counting the till. */
+  if (opts?.held === false || opener === actor.userId) return;
+  await refuseTillHeld(client, opener);
+}
+
+/* Cash in, cash out, and a mid-day count use the same sentence as a deal.
+   A manager may approve. They may not move the cash. */
+export async function refuseTillHeld(client: pg.PoolClient, opener: string): Promise<never> {
+  const named = await client.query(`SELECT name FROM staff_users WHERE id=$1`, [opener]);
+  const who = pinDeskName(String(named.rows[0]?.name ?? ""));
+  throw new LedgerError(
+    "TILL_HELD",
+    `Count the till to take it over from ${who || "the person who counted it"}.`,
+  );
 }
 
 /* ---- the identification gate ----
@@ -643,11 +661,10 @@ export class LedgerService {
     return requireIdentification(client, actor, pack, amountHome, idStatus, deal);
   }
 
-  /* Retried on a serialization failure, like every other write here. A
-     post takes the till's balance rows and the session at SERIALIZABLE, so
-     it aborts whenever anything else touches the same drawer — including
-     the screen behind the teller refreshing. Nothing is committed when it
-     does, and the idempotency key makes a second attempt safe. */
+  /* A serialization failure stays Postgres 40001, so withSerializationRetry
+     runs this post again. The aborted transaction wrote nothing, and the
+     idempotency key makes the next attempt the same post. A key already
+     saved with no stored answer is posted once. */
   postFrozenQuote(actor: LedgerActor, quote: FrozenQuote, idempotencyKey: string) {
     return withSerializationRetry(() =>
       this.postFrozenQuoteOnce(actor, quote, idempotencyKey));
@@ -682,6 +699,18 @@ export class LedgerService {
           "Quote is outside the active scope.",
         );
       const row = authoritativeQuote.rows[0];
+      /* A serialization retry can arrive after the other attempt has posted
+         this quote. The stored answer is that post. Refusing because the
+         quote is no longer active would drop the answer the key already has. */
+      const already = await client.query(
+        "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='quote-post' AND idempotency_key=$6 FOR UPDATE",
+        [...scope(actor), idempotencyKey],
+      );
+      if (already.rowCount && already.rows[0].response) {
+        await client.query("COMMIT");
+        committed = true;
+        return already.rows[0].response;
+      }
       /* What currency is this desk's book kept in, and may it trade this
          pair at all? Asked of the jurisdiction pack, not assumed. This
          used to demand that CAD be one side of every exchange, which is
@@ -1227,15 +1256,13 @@ export class LedgerService {
       return response;
     } catch (error) {
       if (!committed) await client.query("ROLLBACK");
-      if ((error as { code?: string }).code === "40001") {
-        throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Retry the idempotent request.");
-      }
       throw error;
     } finally {
       client.release();
     }
   }
 
+  /* Same contract as postFrozenQuote: 40001 is retried. A saved key with no stored answer posts once. */
   post(actor: LedgerActor, request: PostRequest) {
     return withSerializationRetry(() => this.postOnce(actor, request));
   }
@@ -1590,18 +1617,6 @@ export class LedgerService {
       return response;
     } catch (error) {
       if (!committed) await client.query("ROLLBACK");
-      if ((error as { code?: string }).code === "40001") {
-        const replay = await this.pool.query(
-          "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='post' AND idempotency_key=$6",
-          [...scope(actor), request.idempotencyKey],
-        );
-        if (replay.rowCount && replay.rows[0].response)
-          return replay.rows[0].response;
-        throw new LedgerError(
-          "IDEMPOTENCY_IN_PROGRESS",
-          "Retry the idempotent request.",
-        );
-      }
       throw error;
     } finally {
       client.release();
@@ -1680,6 +1695,23 @@ export class LedgerService {
         throw new LedgerError(
           "REVERSAL_NOT_ALLOWED",
           "This deal left an obligation on the book, so it is reversed through the obligation path — see docs/OBLIGATION_LINES.md.",
+        );
+      /* A cheque is the same kind of hole. This path would mirror the
+         journal and the till, write ledger_reversals, and leave
+         ledger_cheques.status and ledger_cheque_events untouched. The
+         cashing then cannot be reversed on its own route: that route
+         sees the reversal and refuses forever with
+         REVERSAL_ALREADY_EXISTS, while the cheque stays held. A
+         clearance and a return are the same mistake on their own rows.
+         All three go to the cheque reversal route. */
+      if (
+        ["cheque_cashing", "cheque_clearing", "cheque_return"].includes(
+          transaction.rows[0].deal_kind,
+        )
+      )
+        throw new LedgerError(
+          "REVERSAL_NOT_ALLOWED",
+          "Reverse this cheque through POST /api/ledger/cheques/:chequeId/reversal.",
         );
       const existing = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",

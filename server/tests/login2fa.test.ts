@@ -40,6 +40,11 @@ function codeFromLog(): string {
   return m[1]!;
 }
 const cookieOf = (res: { cookies: { name: string; value: string }[] }) => res.cookies.find((x) => x.name === "cdos_session");
+const proofCookie = (res: { cookies: { name: string; value: string }[] }): Record<string, string> => {
+  const value = res.cookies.find((x) => x.name === "cdos_login_proof")?.value;
+  if (!value) return {};
+  return { cdos_login_proof: value };
+};
 
 describe("email-verified login", () => {
   it("email identity: password emails a code, the code grants the session", async () => {
@@ -50,10 +55,10 @@ describe("email-verified login", () => {
     expect(cookieOf(start)).toBeUndefined(); // NO session until the code is verified
 
     const code = codeFromLog();
-    const wrong = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "sam@twofa.ca", code: "000000" } });
+    const wrong = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "sam@twofa.ca", code: "000000" }, cookies: proofCookie(start) });
     expect(wrong.statusCode).toBe(401);
 
-    const ok = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "sam@twofa.ca", code } });
+    const ok = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "sam@twofa.ca", code }, cookies: proofCookie(start) });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user).toMatchObject({ id: "sam@twofa.ca", tenantId: "tnt-twofa", role: "administrator" });
     expect(cookieOf(ok)).toBeTruthy();

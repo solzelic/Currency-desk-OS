@@ -1,9 +1,10 @@
 /* ============================================================
    Platform admin — the back office for whoever runs CurrencyDesk.
-   Cross-tenant, read-only views so the operator can see every desk that
-   signed up, look one up to help a customer, and read the audit trail.
-   Gated to PLATFORM_ADMIN_EMAILS (comma-separated) — a regular tenant
-   owner can NOT reach these; only the platform operator can.
+   Cross-tenant views and support actions so the operator can see every
+   desk that signed up, look one up to help a customer, and read the audit
+   trail. Gated to members of the platform team (platform_users, see
+   src/platform/team.ts); PLATFORM_ADMIN_EMAILS only seeds that team on
+   first boot. A regular tenant owner can NOT reach these.
      GET /api/admin/tenants          → every desk + its owner
      GET /api/admin/tenants/:id      → one desk in detail
      GET /api/admin/audit            → recent events across all desks
@@ -25,6 +26,7 @@ import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js
 import { forgetClaimedCount } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
+import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
 import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
@@ -112,15 +114,14 @@ const createTenantBody = z.object({
    ignored afterwards — see src/platform/team.ts for why that matters. */
 // the operator's own tenant is not a customer desk — hide it from the lists
 const PLATFORM_TENANT = "tnt-platform";
-/* Kept sync and callback-shaped because registerOnboardingRoutes takes it
-   that way; it answers from a cache the gate refreshes on every request, so
+/* Kept sync: it answers from a cache the gate refreshes on every request, so
    a member removed in the panel stops being one on their next call. */
 const memberCache = new Map<string, PlatformRole>();
 export const isPlatformAdmin = (email: string | undefined): boolean =>
   !!email && memberCache.has(email.toLowerCase());
 
-/* Readable aloud and hard to mistype: no vowels to form a word by accident,
-   no characters that look like each other down a phone line. */
+/* Readable aloud and hard to mistype: no i, l, o, 0 or 1, the characters
+   that get confused for each other down a phone line. */
 function tempPassword(): string {
   const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
   const bytes = new Uint8Array(14);
@@ -311,10 +312,11 @@ function platformSession(resolved: SessionState) {
 export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // resolve the session and confirm platform-admin; returns the user or null
   // (having already sent 401/403).
-  /* `need` is the permission this route requires. Omitting it means "any
-     member of the platform team", which is right for the read-only shell
-     around everything else. */
-  async function gate(req: any, reply: any, need?: Permission) {
+  /* `need` is the permission this route requires. A write can require
+     more than one, and every one of them has to hold. Omitting it means
+     "any member of the platform team", which is right for the read-only
+     shell and wrong for a write. */
+  async function gate(req: any, reply: any, need?: Permission | readonly Permission[]) {
     const who = platformSession(await resolveSessionState(db, req.cookies[SESSION_COOKIE]));
     if (!who) {
       reply.code(401).send({ error: "unauthenticated" });
@@ -349,9 +351,12 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       reply.code(401).send({ error: "mfa_required", detail: "Enter the code from your authenticator." });
       return null;
     }
-    if (need && !can(me.role as PlatformRole, need)) {
-      reply.code(403).send({ error: "permission_denied", detail: `Your role (${me.role}) cannot ${need.replace(":", " ")}.` });
-      return null;
+    const needs: readonly Permission[] = need == null ? [] : typeof need === "string" ? [need] : need;
+    for (const n of needs) {
+      if (!can(me.role as PlatformRole, n)) {
+        reply.code(403).send({ error: "permission_denied", detail: `Your role (${me.role}) cannot ${n.replace(":", " ")}.` });
+        return null;
+      }
     }
     (who as any).platform = me;
     return who;
@@ -642,7 +647,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   });
 
   app.patch<{ Params: { id: string } }>("/api/admin/enquiries/:id", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const parsed = patchEnquiryBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -685,7 +690,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
   /* Labels — what an application is like, as opposed to where it is. */
   app.put<{ Params: { id: string } }>("/api/admin/enquiries/:id/labels", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const parsed = labelsBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -715,7 +720,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      and they need a different one. The old reference dies with it, so
      anybody holding it gets the same nothing as a stranger. */
   app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/rotate", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
     if (!row) return reply.code(404).send({ error: "not_found" });
@@ -1292,8 +1297,11 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     };
   });
 
+  /* Blocking a person, resetting a password or a PIN, and issuing a CD-ID
+     are people:write. Support holds that. Suspending the desk is a
+     different job and is not decided here. */
   app.patch<{ Params: { id: string } }>("/api/admin/staff/:id", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const parsed = z.object({ active: z.boolean() }).safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "active is required" });
@@ -1316,7 +1324,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      force a change at next sign-in, sign every device out, and email it. The
      operator never sees it, so it cannot be read back out of this panel. */
   app.post<{ Params: { id: string } }>("/api/admin/staff/:id/reset-password", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
     if (!p) return reply.code(404).send({ error: "not_found" });
@@ -1347,7 +1355,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      an email address — and a PIN is a local confirmation, not a credential
      that opens the desk on its own. */
   app.post<{ Params: { id: string } }>("/api/admin/staff/:id/reset-pin", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
     if (!p) return reply.code(404).send({ error: "not_found" });
@@ -1364,7 +1372,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
   // issue a CurrencyDesk ID, or replace one that has been given out too widely
   app.post<{ Params: { id: string } }>("/api/admin/staff/:id/cd-id", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "people:write");
     if (!who) return;
     const p = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, req.params.id)).limit(1))[0];
     if (!p) return reply.code(404).send({ error: "not_found" });
@@ -1386,10 +1394,35 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     return { ok: true, cdId, previous, delivered };
   });
 
-  // block/unblock a desk, or change its plan
+  /* Block or unblock a desk, or change its plan. Those are different
+     jobs: a suspension is security:manage, and support does not hold
+     it. A plan change is billing:write. A body that asks for both has
+     to hold both, and neither write happens until both checks pass.
+     Which fields are present decides the need, and that check runs
+     before the body is validated. A caller who does not hold it is
+     refused with 403, including when the body is bad. */
   app.patch<{ Params: { id: string } }>("/api/admin/tenants/:id", async (req, reply) => {
-    const who = await gate(req, reply);
+    const raw = req.body;
+    const record = raw !== null && typeof raw === "object" && !Array.isArray(raw)
+      ? raw as Record<string, unknown>
+      : {};
+    const needs: Permission[] = [];
+    if ("suspended" in record) needs.push("security:manage");
+    if ("plan" in record) needs.push("billing:write");
+    const who = await gate(req, reply, needs.length ? needs : undefined);
     if (!who) return;
+    /* No field names a job. This is still a write, so someone who holds
+       neither permission learns nothing about the shape. */
+    if (!needs.length) {
+      const role = ((who as any).platform as { role: PlatformRole }).role;
+      if (!can(role, "security:manage") && !can(role, "billing:write")) {
+        reply.code(403).send({
+          error: "permission_denied",
+          detail: `Your role (${role}) cannot security manage or billing write.`,
+        });
+        return;
+      }
+    }
     const parsed = patchTenantBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const id = req.params.id;
@@ -1415,7 +1448,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      somebody's behalf, so a shop signed up at the counter and a shop that
      found the website arrive at exactly the same screen. */
   app.post("/api/admin/onboarding/invite", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "applications:write");
     if (!who) return;
     const parsed = inviteBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -1486,7 +1519,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // create a desk by hand, skipping onboarding entirely. Kept for the cases
   // that genuinely need it; the panel's "add a desk" invites instead.
   app.post("/api/admin/tenants", async (req, reply) => {
-    const who = await gate(req, reply);
+    const who = await gate(req, reply, "desks:write");
     if (!who) return;
     const parsed = createTenantBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
@@ -1495,6 +1528,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if ((await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.staffId, b.ownerEmail)).limit(1)).length) return reply.code(409).send({ error: "email_in_use", detail: "That email already owns a desk." });
     const tenantId = "tnt-" + b.slug, legalEntityId = "le-" + b.slug, branchId = "br-" + b.slug + "-main", workspaceId = "ws-" + b.slug + "-till-01";
     await db.insert(schema.tenants).values({ id: tenantId, name: b.businessName, plan: b.plan, siteSlug: b.slug }).onConflictDoNothing();
+    await ensureDefaultChequeSchedule(db, tenantId);
     const canada = requirePackForCountry("CA");
     await db.insert(schema.legalEntities).values({ id: legalEntityId, tenantId, name: b.businessName, homeCurrency: canada.homeCurrency, jurisdictionPackId: canada.packId, jurisdictionPackVersion: canada.version, jurisdiction: "FINTRAC" }).onConflictDoNothing();
     await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
@@ -1512,7 +1546,9 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
 
   // permanently delete a desk and ALL its data (cascade, FK-safe order)
   app.delete<{ Params: { id: string } }>("/api/admin/tenants/:id", async (req, reply) => {
-    const who = await gate(req, reply);
+    /* Deletion follows a suspension, and it uses the same permission.
+       desks:write would hand it to support, who cannot suspend. */
+    const who = await gate(req, reply, "security:manage");
     if (!who) return;
     const id = req.params.id;
     const t = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, id)).limit(1))[0];

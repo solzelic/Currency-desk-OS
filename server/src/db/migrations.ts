@@ -5,7 +5,7 @@ import type pg from "pg";
 
 export type Migration = readonly [migrationId: string, path: string];
 
-const migrations: readonly Migration[] = [
+export const migrations: readonly Migration[] = [
   ["001_ledger", "src/ledger/migration.sql"],
   ["002_quote_service", "src/db/migrations/002_quote_service.sql"],
   ["003_quote_transaction_lineage", "src/db/migrations/003_quote_transaction_lineage.sql"],
@@ -42,9 +42,16 @@ const migrations: readonly Migration[] = [
   ["036_pack_ae_v2", "src/db/migrations/036_pack_ae_v2.sql"],
   ["037_pack_in_v1", "src/db/migrations/037_pack_in_v1.sql"],
   ["038_pack_ph_v1", "src/db/migrations/038_pack_ph_v1.sql"],
-  /* 039 is the live-cheque index, now on main. 040 is the till mark. */
+  /* 039 is the live-cheque index, now on main. 040 is the till mark.
+     041 is claimed by open draft #132. 042 is #130.
+     043 is #138. 044 is shop sign-in failure counts and the emailed-code marker. */
   ["039_live_cheque_paper", "src/db/migrations/039_live_cheque_paper.sql"],
   ["040_till_balance_generation", "src/db/migrations/040_till_balance_generation.sql"],
+  ["044_signin_rate_limit", "src/db/migrations/044_signin_rate_limit.sql"],
+  /* 045 is the default cheque schedule. Deleting this entry fails the backfill test. */
+  ["045_cheque_fee_schedule", "src/db/migrations/045_cheque_fee_schedule.sql"],
+  /* 046 is the work email on a staff account, and the case-folded staff id index. */
+  ["046_staff_contact_email", "src/db/migrations/046_staff_contact_email.sql"],
 ] as const;
 
 export async function runMigrations(

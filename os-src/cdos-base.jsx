@@ -761,8 +761,8 @@
      unconditionally at start-up, and deleting them would black-screen the
      desk rather than fix it:
 
-       os-src/cdos-os.jsx:769-770  — the `baseline` / `receipts` state
-       os-src/cdos-os.jsx:1799-1800, 1869 — the same on tenant switch/reset
+       os-src/cdos-os.jsx:869-870  — the `baseline` / `receipts` state
+       os-src/cdos-os.jsx:2099-2100, 2195 — the same on tenant switch/reset
 
      Those states, and every prop threading them down to the Till, the
      Vault, Reports and Compliance, are the remaining work. They now carry
@@ -772,29 +772,21 @@
   /* Deriving stock from transactions is the second book, so there is no
      derivation left to call. It answers null — "the ledger has no figure
      here" — rather than a number, because null is the one answer a screen
-     cannot mistake for money. One caller in a file this change does not
-     own still reaches for it:
-
-       os-src/cdos-till.jsx:485 — the drawer's `expectedOf` in the
-       standalone (no-server) mode. It should read
-
-         const expectedOf = (c) => serverBalances &&
-           Object.prototype.hasOwnProperty.call(serverBalances, c)
-             ? Number(serverBalances[c]) : null;
-
-       and render null as "—". A desk that cannot reach the ledger has no
-       expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
-       there is no offline mode, and an invented expected figure is what a
-       teller reconciles a real drawer against. */
+     cannot mistake for money. Nothing calls it any more: the drawer's
+     `expectedOf` (os-src/cdos-till.jsx) reads the server balance and
+     renders null as "—". A desk that cannot reach the ledger has no
+     expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
+     there is no offline mode, and an invented expected figure is what a
+     teller reconciles a real drawer against. */
   const holdings = () => null;
 
   /* ============================================================
      TWO-SIDED PRICING — the defining act of the desk, one pure function
      A real desk publishes a BUY rate and a SELL rate per currency; the
      gap between them (the spread) is the margin. priceDeal() is the single
-     source of truth both the Ledger (quoting) and Reports (earnings) call,
-     so the spread shown at the counter is the exact spread booked — never
-     a back-estimate. The desk RECEIVES the pay-in currency (buys it, under
+     quoting call for the Ledger, New Transaction and Transfers, so the
+     spread shown at the counter is the spread quoted — never a
+     back-estimate. Reports' earnings come from the ledger summary. The desk RECEIVES the pay-in currency (buys it, under
      mid) and GIVES the pay-out currency (sells it, over mid); a foreign→
      foreign cross pays spread on both legs.
 
@@ -925,9 +917,9 @@
      posted shows nothing posted, which is both true and the thing an
      owner needs to see on their first morning.
 
-     Both survive as empty because cdos-os.jsx:714-715 calls them to
-     initialise its `rows` and `clients` state before any server round
-     trip. Empty is the correct starting value for that state. */
+     Both survive as empty only because cdos-os.jsx still imports them
+     (line 10); nothing calls them. Its `rows` and `clients` state starts
+     from the desk's saved state, or empty. */
   const seedRows = () => [];
   const seedClients = () => ({});
 
@@ -1078,24 +1070,23 @@
      browser-only until somebody intervened. A teller doing exactly their
      job could stop the shop saving anything.
 
-     So there is one way in, and it downscales. Sixteen hundred pixels on
-     the long edge is comfortably enough to read a document number off a
-     passport — the thing the image is FOR — and re-encoding at 0.6 takes a
-     four-megabyte photograph to something in the low hundreds of
-     kilobytes. Anything that is still too big afterwards is refused, out
-     loud, rather than accepted and silently lost.
+     So there is one way in, and it downscales — to 1200 pixels on the long
+     edge at quality 0.55 (see below), which takes a four-megabyte
+     photograph to something in the low hundreds of kilobytes. Anything
+     that is still too big afterwards is refused, out loud, rather than
+     accepted and silently lost.
 
-     This is a ceiling, not a cure. Scans belong in object storage with a
-     row pointing at them, not in the desk's state document at all — see
-     docs/BROWSER_STORES.md. Until they move, this keeps one photograph
-     from stopping a shop. */
+     This is a ceiling, not a cure. Client ID scans now live on the server
+     (`desk_client_images`, docs/CLIENT_RECORDS.md); cheque images and the
+     logo still come through here, so this still keeps one photograph from
+     stopping a shop. */
   /* 1200 on the long edge is about 150 DPI across a passport, which reads
      a document number comfortably and is what the image is FOR. It was
      1600 first; measured against a worst-case scan that came out at 240 KB
      apiece, which is only sixteen clients before a desk is at its saving
      limit. This is the honest trade — a scan you can read, small enough
      that a shop gets through a working week — and it is still a stopgap.
-     Scans belong in object storage; see docs/BROWSER_STORES.md. */
+     Client scans are on the server now; see docs/CLIENT_RECORDS.md. */
   const ID_IMAGE_MAX_EDGE = 1200;
   const ID_IMAGE_QUALITY = 0.55;
   /* Refused above this AFTER downscaling. A scan that will not come under
@@ -1184,9 +1175,9 @@
   // ---- client risk rating (staff-set compliance tier; light V1) ----------------
   // Every contact carries one tier. Staff set it in the profile's Edit mode; it feeds
   // the recommendation engine (High -> enhanced due diligence) and the auto-tag rules.
-  // FUTURE (mapped, not built): tiers sync across the branch network so a High flag
-  // raised at one store surfaces on a customer's file at every store during a check.
-  // Kept on-device for now — see the roadmap in docs/.
+  // Saved on the server as `desk_clients.risk_rating`, scoped to the legal entity,
+  // so a High flag raised at one store is on the customer's file at every store
+  // (docs/CLIENT_RECORDS.md).
   const RISK_TIERS = ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = (v) => {
     const s = String(v == null ? '' : v).trim().toLowerCase();
@@ -1206,22 +1197,66 @@
   /* ---- shared 4-digit PIN gate: reused at account switch, till switch, void.
      A proper mandatory-PIN screen — dot indicators + on-screen keypad, and the
      physical keyboard works too. ---- */
-  function PinPrompt({ title, sub, name, staffId, expected, onOk, onCancel }) {
+  function PinPrompt({ title, sub, name, staffId, expected, purpose, onOk, onCancel }) {
     const [pin, setPin] = React.useState('');
     const [err, setErr] = React.useState('');
     const [shake, setShake] = React.useState(false);
+    const [lockedOut, setLockedOut] = React.useState(false);
+    const lockedRef = React.useRef(false);
     const exp = String(expected == null ? '0000' : expected);
     const ini = (nm) => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     React.useEffect(() => {
       if (!document.getElementById('cdos-pin-kf')) { const s = document.createElement('style'); s.id = 'cdos-pin-kf'; s.textContent = '@keyframes cdosPinShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}'; document.head.appendChild(s); }
     }, []);
     const fail = (msg) => { setErr(msg || 'Incorrect PIN'); setShake(true); setTimeout(() => setShake(false), 420); setTimeout(() => { setPin(''); }, 260); };
+    const lockOut = (msg) => {
+      lockedRef.current = true;
+      setLockedOut(true);
+      setErr(msg || 'Too many wrong tries.');
+      setShake(true);
+      setTimeout(() => setShake(false), 420);
+      setPin('');
+    };
     /* The server decides. Holding the expected PIN in the browser and
        comparing it here made this gate decorative — it could be read out of
        devtools, or stepped over entirely. A desk whose PINs have not been set
        on the server yet answers 409, and only then do we fall back to the old
        local check so nothing breaks mid-migration. */
+    const readBody = async (res) => {
+      try { return await res.json(); }
+      catch (e) { return null; }
+    };
+    /* Account switch is a new sign-in. A 409 used to fall through to
+       comparing 0000 in this browser, which made the keypad optional.
+       A missing PIN is said in words. It is not treated as 0000. */
+    const submitSwitch = async (val) => {
+      if (!staffId) { fail('This account has no staff id.'); return; }
+      let res;
+      try {
+        res = await fetch('/api/auth/switch', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ staffId: staffId, pin: val }),
+        });
+      } catch (e) {
+        fail('Could not reach the desk to switch accounts.');
+        return;
+      }
+      const data = await readBody(res);
+      if (data == null) { fail('The desk answered, but not in a way this screen could read.'); return; }
+      if (res.ok) { onOk && onOk(data); return; }
+      if (res.status === 429 || (res.status === 401 && data.locked)) {
+        lockOut(data.detail);
+        return;
+      }
+      if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+        fail(data.detail);
+        return;
+      }
+      if (res.status === 401) { fail(); return; }
+      fail(data.detail || 'Could not switch to that account.');
+    };
     const submit = async (val) => {
+      if (purpose === 'switch') { await submitSwitch(val); return; }
       try {
         const res = await fetch('/api/staff/pin/verify', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
@@ -1234,25 +1269,28 @@
       } catch (e) { /* offline: the local check is all there is */ }
       if (val === exp) { onOk && onOk(); } else { fail(); }
     };
-    const press = (dgt) => { setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
-    const back = () => { setErr(''); setPin(p => p.slice(0, -1)); };
+    const press = (dgt) => { if (lockedRef.current) return; setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
+    const back = () => { if (lockedRef.current) return; setErr(''); setPin(p => p.slice(0, -1)); };
     React.useEffect(() => {
       const h = (e) => {
         if (e.key === 'Escape') { onCancel && onCancel(); return; }
+        if (lockedRef.current) return;
         if (e.key === 'Backspace') { e.preventDefault(); back(); return; }
         if (/^[0-9]$/.test(e.key)) { e.preventDefault(); press(e.key); }
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
     }, []);
-    const keyBtn = (label, onClick, kind) => (
-      <button key={label + kind} onClick={onClick} style={{ height: 56, borderRadius: 13, border: kind === 'ghost' ? '0' : `1px solid ${CD.line}`, background: kind === 'ghost' ? 'transparent' : 'var(--cd-panel)', fontSize: 22, fontWeight: 600, fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', transition: 'background .1s, transform .05s', WebkitTapHighlightColor: 'transparent' }}
+    const keyBtn = (label, onClick, kind, face) => {
+      const word = face === 'word';
+      return (
+      <button key={String(label) + kind} onClick={onClick} style={{ height: 56, borderRadius: 13, border: kind === 'ghost' ? '0' : `1px solid ${CD.line}`, background: kind === 'ghost' ? 'transparent' : 'var(--cd-panel)', fontSize: word ? 15 : 22, fontWeight: 600, fontFamily: word ? 'var(--f-display, Archivo, system-ui, sans-serif)' : 'Space Mono, monospace', color: CD.ink, cursor: 'pointer', display: 'grid', placeItems: 'center', transition: 'background .1s, transform .05s', WebkitTapHighlightColor: 'transparent' }}
         onMouseDown={e => { e.currentTarget.style.background = CD.hover; e.currentTarget.style.transform = 'scale(0.97)'; }}
         onMouseUp={e => { e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)'; e.currentTarget.style.transform = 'none'; }}
         onMouseLeave={e => { e.currentTarget.style.background = kind === 'ghost' ? 'transparent' : 'var(--cd-panel)'; e.currentTarget.style.transform = 'none'; }}>
         {label}
       </button>
-    );
+    ); };
     return ReactDOM.createPortal(
       <div style={{ position: 'fixed', inset: 0, background: 'var(--cd-scrim)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onMouseDown={() => onCancel && onCancel()}>
         <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 18, boxShadow: '0 30px 70px var(--cd-scrim)', padding: '24px 22px 18px', textAlign: 'center', animation: shake ? 'cdosPinShake .42s' : 'none' }}>
@@ -1263,13 +1301,17 @@
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', margin: '18px 0 6px' }}>
             {[0, 1, 2, 3].map(i => { const filled = i < pin.length; return <span key={i} style={{ width: 14, height: 14, borderRadius: '50%', background: filled ? (err ? CD.flag : CD.ink) : 'transparent', border: `2px solid ${err ? CD.flag : (filled ? CD.ink : CD.line)}`, transition: 'background .12s, border-color .12s' }} />; })}
           </div>
-          <div style={{ fontSize: 11.5, color: CD.flag, minHeight: 18, marginBottom: 8 }}>{err}</div>
+          <div style={{ fontSize: 11.5, color: CD.flag, minHeight: 18, marginBottom: 8, lineHeight: 1.35 }}>{err}</div>
+          {lockedOut ? (
+            <button type="button" onClick={() => onCancel && onCancel()} style={{ height: 44, width: '100%', borderRadius: 12, border: `1px solid ${CD.ink}`, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 15, fontWeight: 600, fontFamily: 'var(--f-display, Archivo, system-ui, sans-serif)', cursor: 'pointer' }}>OK</button>
+          ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => keyBtn(k, () => press(k)))}
-            {keyBtn('Cancel', () => onCancel && onCancel(), 'ghost')}
+            {keyBtn('Cancel', () => onCancel && onCancel(), 'ghost', 'word')}
             {keyBtn('0', () => press('0'))}
             {keyBtn(<Ic n="arrowleft" s={20} c={CD.mute} />, back, 'ghost')}
           </div>
+          )}
         </div>
       </div>, document.body);
   }

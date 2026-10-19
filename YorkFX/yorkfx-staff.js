@@ -1,11 +1,12 @@
 /* ============================================================
    YORK FX — Staff Rate Editor logic
    Requires yorkfx-converter.js (CUR, BY, cadValue, fmtCad) loaded first.
-   Publishes to localStorage('yorkfx_rates_v1'); the public boards read it.
+   Publishes to /api/rates/publish and caches the result in
+   localStorage('yorkfx_rates_v1').
 
    Features: global spread + per-row spread override, live data-feed
-   status with auto-pull countdown, per-row change arrows, an optional
-   member-rate column, and amber highlighting for unsaved manual edits.
+   status with auto-pull countdown, per-row change arrows, and amber
+   highlighting for unsaved manual edits.
    ============================================================ */
 (function () {
   'use strict';
@@ -83,7 +84,7 @@
   var draft = readDraft();
   var published = readPublished();
 
-  /* simulated upstream market feed (runtime only) */
+  /* upstream market feed, mirrored from window.MARKET.mids by doPull() (runtime only) */
   var market = {};      // latest pulled market mid, per code
   var pullDelta = {};   // change applied on the most recent pull, per code
   LIST.forEach(function (c) { market[c.code] = draft.rows[c.code].mid; pullDelta[c.code] = 0; });

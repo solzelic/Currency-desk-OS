@@ -6,8 +6,7 @@ try {
   /* no .env — fine */
 }
 
-import { and, eq } from "drizzle-orm";
-import { createDb, schema } from "./db/index.js";
+import { createDb } from "./db/index.js";
 import { seed, DEMO } from "./seed.js";
 import {
   ensureDemoStaff,
@@ -19,9 +18,7 @@ import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
 import { syncMarketRatesIfStale } from "./rates/market.js";
 import { refreshSiteDomains } from "./sites.js";
-import { hashPassword } from "./auth/password.js";
-import { revokeAllSessions } from "./auth/sessions.js";
-import { audit } from "./audit.js";
+import { applyResetStaffPassword } from "./auth/break-glass.js";
 
 for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVERRIDE_MAX_DEVIATION"] as const) {
   const value = process.env[key];
@@ -43,36 +40,7 @@ await seedOwner(handle.db);
 // out — set it in the Render dashboard, sign in, then REMOVE the env var:
 // while it is set, every boot repeats the reset.
 if (process.env.RESET_STAFF_PASSWORD) {
-  const [staffId, ...rest] = process.env.RESET_STAFF_PASSWORD.split(":");
-  const password = rest.join(":");
-  if (staffId && password.length >= 8) {
-    const rows = await handle.db
-      .select()
-      .from(schema.staffUsers)
-      .where(and(eq(schema.staffUsers.tenantId, DEMO.tenantId), eq(schema.staffUsers.staffId, staffId)))
-      .limit(1);
-    const user = rows[0];
-    if (user) {
-      await handle.db
-        .update(schema.staffUsers)
-        .set({ passwordHash: await hashPassword(password), mustChangePassword: true, passwordUpdatedAt: new Date(), active: true })
-        .where(eq(schema.staffUsers.id, user.id));
-      await revokeAllSessions(handle.db, user.id);
-      await audit(handle.db, {
-        tenantId: user.tenantId,
-        legalEntityId: user.legalEntityId,
-        branchId: user.branchId,
-        actorId: null,
-        action: "staff.password_reset",
-        detail: { staffId, via: "RESET_STAFF_PASSWORD env (break-glass)" },
-      });
-      console.warn(`[break-glass] password reset for ${staffId} — REMOVE the RESET_STAFF_PASSWORD env var now`);
-    } else {
-      console.warn(`[break-glass] RESET_STAFF_PASSWORD set but staff id "${staffId}" not found`);
-    }
-  } else {
-    console.warn("[break-glass] RESET_STAFF_PASSWORD malformed — expected staffId:password (password ≥ 8 chars)");
-  }
+  await applyResetStaffPassword(handle.db, process.env.RESET_STAFF_PASSWORD);
 }
 
 // platform-admin bootstrap: PLATFORM_ADMIN_BOOTSTRAP="email:password" creates

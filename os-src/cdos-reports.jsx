@@ -2,8 +2,9 @@
    CurrencyDesk OS — Reports
    One-touch report generation off the live ledger. Pick a period,
    tap a report, and a formatted, print-ready document is built
-   instantly: Period Summary, the desk's large-cash compliance pack,
-   Revenue & Earnings, Transaction Register, Client & KYC Register.
+   instantly: End-of-Day Sign-Off, Period Summary, Profit & Loss, the
+   desk's large-cash compliance pack, Revenue & Earnings, Transaction
+   Register, Client & KYC Register.
    Print / Save-PDF and CSV export on every report.
 
    THESE ARE DOCUMENTS SOMEBODY SIGNS. The rule they follow is written
@@ -523,13 +524,14 @@
           ...names.map(n => { const c = clients[n] || {}; const tx = data.live.filter(r => r.customer === n);
             const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
             const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-            const st = (!c.idType || !c.idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified');
-            return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
+            const idNum = kycIdNumber(c);
+            const st = (!c.idType || !idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'ID on file');
+            return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
       }
       return [];
     };
 
-    /* ---------- the five documents ---------- */
+    /* ---------- the documents ---------- */
     const renderDoc = (id) => {
       const book = periodBook.summary;
       /* Why a figure on this document is a dash, in one short line. The
@@ -784,7 +786,7 @@
       }
       if (id === 'fintrac') {
         /* The pack names this document, because "FINTRAC / LCTR" is a
-           Canadian answer and this product is sold in six jurisdictions. A
+           Canadian answer and this product runs in many jurisdictions. A
            desk whose pack has not arrived gets a neutral title rather than
            somebody else's regulator on the letterhead. */
         const packTitle = regime.authority && regime.largeCode
@@ -822,7 +824,7 @@
                 </div>))}
             </Card>
             <Card><SecTitle n={`${data.kycGaps.length}`}>KYC / ID exceptions</SecTitle>
-              {data.kycGaps.length === 0 ? <div style={{ fontSize: 12, color: CD.faint }}>All active clients verified.</div>
+              {data.kycGaps.length === 0 ? <div style={{ fontSize: 12, color: CD.faint }}>Every deal that needed an ID has one on file.</div>
                 : data.kycGaps.map(k => (<div key={k.customer} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div style={{ fontSize: 13, color: CD.ink, fontWeight: 500 }}>{k.customer}</div>
                   <span style={{ fontSize: 10, fontWeight: 700, color: CD.flag, background: CD.flagSoft, padding: '2px 7px', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{k.issue.toUpperCase()}</span>
@@ -936,7 +938,7 @@
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
-        const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['verified', CD.green, CD.greenSoft]; };
+        const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !kycIdNumber(c)) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['ID on file', CD.green, CD.greenSoft]; };
         return (<div>
           <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
           <Card pad={0}>
@@ -950,8 +952,8 @@
                 const v = !parts.length || parts.some(p => p == null) ? null : parts.reduce((s, p) => s + p, 0);
                 return (<tr key={n}>
                 <td style={{ ...tdS, fontWeight: 500 }}>{n}</td>
-                <td style={{ ...tdS, color: CD.mute }}>{c.idType || '—'}</td>
-                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{c.idNum || '—'}</td>
+                <td style={{ ...tdS, color: CD.mute }}>{kycIdType(c) || '—'}</td>
+                <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute }}>{kycIdNumber(c) || '—'}</td>
                 <td style={{ ...tdS, color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute }}>{c.idExpiry || '—'}</td>
                 <td style={{ ...tdS, textAlign: 'center' }}><span style={{ fontSize: 10, fontWeight: 700, color: col, background: bg, padding: '2px 7px', borderRadius: 5, fontFamily: 'Space Mono, monospace' }}>{st.toUpperCase()}</span></td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tx.length}</td>
@@ -1274,5 +1276,16 @@
      localStorage. See docs/GENERATED_DOCUMENTS.md.
      ============================================================ */
 
+  /* The ID cells of the Client & KYC Register, shared by the sheet and
+     the CSV so the two cannot differ. A health card is named as not
+     accepted and its number is never in either. */
+  function kycIdType(client) {
+    return window.CDOS.idTypes().shownIdType((client || {}).idType);
+  }
+  function kycIdNumber(client) {
+    const c = client || {};
+    if (window.CDOS.idTypes().isHealthCardType(c.idType)) return '';
+    return c.idNum || '';
+  }
   window.CDOS = Object.assign(window.CDOS || {}, { Reports, ReportHistory });
 })();

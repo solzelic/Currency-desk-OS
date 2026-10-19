@@ -45,19 +45,19 @@ administrator, and the application closed itself to `accepted`.
 
 ## The build
 
-`CurrencyDesk Onboarding.html` (repo root, the design's standalone dc
-bundle) → `scripts/build-onboarding.mjs` → `web/onboarding.html`.
+`design/onboarding/currencydesk-onboarding.html` (the design's standalone
+dc bundle) → `scripts/build-onboarding.mjs` → `web/onboarding.html`.
 
 Wired into `npm run build`, into the Render `buildCommand`, and CI fails if
 the committed page is stale (`git diff --exit-code web/onboarding.html`).
 
 The build parses the design out of the bundle's `__bundler/template` JSON,
 patches the **real source**, and re-serializes — reproducing the bundler's
-`</` → `</` escaping, without which the page truncates at the design's
+`</` → `<\u002F` escaping, without which the page truncates at the design's
 own closing script tag. That means every anchor is readable rather than
 written in escaped form.
 
-**18 anchors, every one asserted with an expected occurrence count.** A
+**50 anchors, every one asserted with an expected occurrence count.** A
 re-export that moves one fails the build loudly. The count matters as much
 as the match: two call sites where we thought there was one means half the
 page kept the old behaviour — which is exactly how the "start over" button

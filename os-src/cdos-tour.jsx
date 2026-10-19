@@ -314,7 +314,7 @@
     };
   }
 
-  function FirstRun({ role, staffId, apps, clients, openApp, openClient, paused }) {
+  function FirstRun({ role, staffId, apps, clients, openApp, openClient, paused, arrival }) {
     const tour = api();
     const [run, setRun] = useState(null);   // null until read; false once declined or empty
     const [box, setBox] = useState(null);
@@ -346,7 +346,10 @@
         sawRef.current = false;
         setBox(null);
       }
-      if (!tour || !tour.shouldShow(tour.read(window.localStorage), staffId)) {
+      if (!tour) { setRun(false); return; }
+      var book = tour.read(window.localStorage);
+      var open = tour.shouldOpen ? tour.shouldOpen(book, staffId, arrival) : tour.shouldShow(book, staffId);
+      if (!open) {
         setRun(false);
         return;
       }
@@ -370,7 +373,7 @@
         }
         return { steps: steps, index: 0 };
       });
-    }, [staffId, role, appsKey, clientReady]);
+    }, [staffId, role, appsKey, clientReady, arrival]);
 
     const step = run && run.steps ? run.steps[run.index] : null;
 

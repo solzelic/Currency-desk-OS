@@ -1,13 +1,15 @@
 /* Public storefront APIs — task #11. Contact/hours published from the OS
    hydrate the hosted site, and "Get a live quote" becomes an SMS rate
    hold priced off the same published board the desk runs on. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { clientIp } from "../src/auth/client-ip.js";
+import { clearRateBuckets, rateBucketKeys, rateSweptAt } from "../src/routes/public-site.js";
 import { moneyFixed, priceStorefrontHold } from "../src/sites/storefront-hold.js";
 
 let handle: DbHandle;
@@ -72,9 +74,8 @@ describe("SMS rate holds", () => {
     });
     expect(res.statusCode).toBe(201);
     const q = res.json().quote;
+    expect(Object.keys(q).sort()).toEqual(["amount", "expiresAt", "from", "receive", "ref", "status", "to"]);
     expect(q.status).toBe("held");
-    expect(q.smsStatus).toBe("simulated");
-    expect(q.phone).toBe("+16475550134");
     expect(q.expiresAt).toBeGreaterThan(Date.now() + 25 * 60 * 1000);
 
     // desk math: selling USD at mid*(1+sellMargin) — seed board USD mid & 1.5%
@@ -91,9 +92,10 @@ describe("SMS rate holds", () => {
     });
     expect(q.receive).toBe(Number(expected.receiveAmount.toFixed(2)));
     expect(q.amount).toBe(1000);
-    expect(q.rate).toBe(Number(expected.quotedRate.toDecimalPlaces(12).toFixed(12)));
 
     const row = (await handle.db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, q.ref)))[0]!;
+    expect(row.phone).toBe("+16475550134");
+    expect(row.smsStatus).toBe("simulated");
     expect(row.smsText).toContain(q.ref);
     expect(row.smsText).toContain("held for 30 min");
     expect(row.smsText).toContain("Reply STOP to opt out");
@@ -152,5 +154,228 @@ describe("SMS rate holds", () => {
     expect(res.json().quotes.length).toBeGreaterThanOrEqual(5);
     const unauth = await app.inject({ method: "GET", url: "/api/quotes" });
     expect(unauth.statusCode).toBe(401);
+  });
+});
+
+/* A stranger who can guess Q- plus four digits must not learn who asked,
+   and must not be able to confirm the whole board in one burst. */
+const CONFIRM_MAX = 30;
+
+const confirm = (
+  slug: string,
+  ref: string,
+  remoteAddress: string,
+  headers?: Record<string, string>,
+) => app.inject({
+  method: "POST",
+  url: `/api/sites/${slug}/quotes/${ref}/confirm`,
+  remoteAddress,
+  headers,
+});
+
+describe("public site responses do not carry a customer's phone or name", () => {
+  it("no public /api/sites or /api/site response contains that phone or name", async () => {
+    const phone = "5875550142";
+    const name = "Lioramek Voss";
+    const normalized = "+15875550142";
+    const created = await app.inject({ method: "POST", url: "/api/sites/yorkfx/quotes", remoteAddress: "203.0.113.15", payload: { phone, name, from: "CAD", to: "USD", amount: 40 } });
+    expect(created.statusCode).toBe(201);
+    expect(Object.keys(created.json().quote).sort()).toEqual(["amount", "expiresAt", "from", "receive", "ref", "status", "to"]);
+    const ref = created.json().quote.ref as string;
+
+    const admin = await login("j.masri");
+    const domain = await app.inject({ method: "PATCH", url: "/api/tenant", cookies: cookieOf(admin), remoteAddress: "203.0.113.15", payload: { siteDomain: "quotes-leak.example" } });
+    expect(domain.statusCode).toBe(200);
+
+    const calls: { url: string; run: Promise<{ statusCode: number; body: string; json: () => unknown }> }[] = [
+      { url: "/api/sites/yorkfx/quotes", run: Promise.resolve(created) },
+      { url: `/api/sites/yorkfx/quotes/${ref}/confirm`, run: confirm("yorkfx", ref, "203.0.113.16") },
+      { url: "/api/sites/yorkfx/quotes/Q-9999/confirm", run: confirm("yorkfx", "Q-9999", "203.0.113.17") },
+      { url: "/api/sites/yorkfx/config", run: app.inject({ method: "GET", url: "/api/sites/yorkfx/config" }) },
+      { url: "/api/sites/yorkfx/rates", run: app.inject({ method: "GET", url: "/api/sites/yorkfx/rates" }) },
+      { url: "/api/sites/no-such-shop/config", run: app.inject({ method: "GET", url: "/api/sites/no-such-shop/config" }) },
+      { url: "/api/sites/no-such-shop/rates", run: app.inject({ method: "GET", url: "/api/sites/no-such-shop/rates" }) },
+      { url: "/api/site/config", run: app.inject({ method: "GET", url: "/api/site/config", headers: { host: "quotes-leak.example" } }) },
+      { url: "/api/site/rates", run: app.inject({ method: "GET", url: "/api/site/rates", headers: { host: "quotes-leak.example" } }) },
+      { url: "/api/site/config", run: app.inject({ method: "GET", url: "/api/site/config" }) },
+      { url: "/api/site/rates", run: app.inject({ method: "GET", url: "/api/site/rates" }) },
+      { url: "/api/site/early-access", run: app.inject({ method: "GET", url: "/api/site/early-access" }) },
+    ];
+    const responses = await Promise.all(calls.map(async (call) => {
+      const res = await call.run;
+      return { url: call.url, statusCode: res.statusCode, body: res.body, json: () => res.json() };
+    }));
+
+    for (const res of responses) for (const bit of [name, "Lioramek", "Voss", normalized, phone]) expect(res.body).not.toContain(bit);
+
+    const confirmed = responses[1]!.json() as { quote: Record<string, unknown> };
+    expect(responses[1]!.statusCode).toBe(200);
+    expect(confirmed.quote).toEqual({ ref, status: "confirmed", expiresAt: expect.any(Number) });
+    expect(Object.keys(confirmed.quote).sort()).toEqual(["expiresAt", "ref", "status"]);
+
+    const allow = {
+      create: ["quote", "ref", "status", "expiresAt", "from", "to", "amount", "receive"],
+      confirm: ["quote", "ref", "status", "expiresAt"],
+      config: ["site", "name", "slug", "phone", "email", "address", "city", "region", "postal", "hours", "days", "updatedAt"],
+      rates: ["published", "publishedAt", "currencies", "rates", "code", "buy", "sell", "board", "buyMargin", "sellMargin", "rows", "order", "mid", "spread", "show"],
+      early: ["claimed", "cap", "remaining", "full"],
+      error: ["error"],
+    };
+    const shape = (url: string, status: number) => {
+      if (status >= 400) return allow.error;
+      if (url.endsWith("/quotes")) return allow.create;
+      if (url.includes("/confirm")) return allow.confirm;
+      if (url.endsWith("/config")) return allow.config;
+      if (url.endsWith("/rates")) return allow.rates;
+      return allow.early;
+    };
+    /* `board.rows` is a map keyed by currency code. Those codes are data,
+       so they are not fields. The row objects under them still are. */
+    const keys = (value: unknown, out = new Set<string>()): Set<string> => {
+      if (Array.isArray(value)) { for (const item of value) keys(item, out); return out; }
+      if (!value || typeof value !== "object") return out;
+      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+        out.add(key);
+        if (key === "rows" && child && typeof child === "object" && !Array.isArray(child)) {
+          for (const row of Object.values(child as Record<string, unknown>)) keys(row, out);
+        } else {
+          keys(child, out);
+        }
+      }
+      return out;
+    };
+    for (const res of responses) {
+      const extra = [...keys(res.json())].filter((key) => !shape(res.url, res.statusCode).includes(key));
+      expect(extra, res.url).toEqual([]);
+    }
+  });
+});
+
+describe("confirm rate limit", () => {
+  it("limits confirm to 30 a minute for one slug, with the same body for every ref", async () => {
+    const phone = "5875550143";
+    const name = "Sluglimit Probe";
+    const created = await app.inject({ method: "POST", url: "/api/sites/yorkfx/quotes", remoteAddress: "203.0.113.50", payload: { phone, name, from: "CAD", to: "USD", amount: 25 } });
+    expect(created.statusCode).toBe(201);
+    const ref = created.json().quote.ref as string;
+    clearRateBuckets();
+    const slug = "yorkfx";
+
+    for (let n = 1; n <= CONFIRM_MAX; n++) {
+      const res = await confirm(slug, "Q-1000", `192.0.2.${n}`);
+      expect(res.statusCode, `confirm ${n}`).toBe(404);
+    }
+    const missing = await confirm(slug, "Q-1000", "192.0.2.40");
+    const real = await confirm(slug, ref, "192.0.2.41");
+    expect(missing.statusCode).toBe(429);
+    expect(real.statusCode).toBe(429);
+    expect(real.body).toBe(missing.body);
+    expect(missing.json()).toEqual({ error: "slow_down", detail: "Too many tries. Wait a minute and try again." });
+    for (const body of [missing.body, real.body]) {
+      expect(body).not.toContain(phone);
+      expect(body).not.toContain(name);
+    }
+    expect(real.body).not.toContain(ref);
+  });
+
+  it("gives two client addresses separate limits, through clientIp", async () => {
+    const first = "198.51.100.10";
+    const second = "198.51.100.11";
+    expect(clientIp({ ip: first, headers: {} })).toBe(first);
+    expect(clientIp({ ip: second, headers: {} })).toBe(second);
+
+    for (let n = 1; n <= CONFIRM_MAX; n++) {
+      const res = await confirm("ip-limit-a", "Q-2000", first);
+      expect(res.statusCode, `first ${n}`).toBe(404);
+    }
+    const blocked = await confirm("ip-limit-b", "Q-2000", first);
+    const open = await confirm("ip-limit-b", "Q-2000", second);
+    expect(blocked.statusCode).toBe(429);
+    expect(open.statusCode).toBe(404);
+  });
+
+  it("ignores a spoofed CF-Connecting-IP from a non-Cloudflare hop, through clientIp", async () => {
+    const socket = "203.0.113.80";
+    const other = "203.0.113.81";
+    const headersFor = (n: number) => ({ "cf-connecting-ip": `198.51.100.${n}` });
+    expect(clientIp({ ip: socket, headers: headersFor(1) })).toBe(socket);
+    expect(clientIp({ ip: socket, headers: headersFor(1) })).not.toBe("198.51.100.1");
+
+    for (let n = 1; n <= CONFIRM_MAX; n++) {
+      const res = await confirm(`spoof-${n}`, "Q-3000", socket, headersFor(n));
+      expect(res.statusCode, `spoof ${n}`).toBe(404);
+    }
+    const blocked = await confirm("spoof-extra", "Q-3001", socket, { "cf-connecting-ip": "198.51.100.200" });
+    const separate = await confirm("spoof-other", "Q-3002", other, { "cf-connecting-ip": "198.51.100.200" });
+    expect(blocked.statusCode).toBe(429);
+    expect(separate.statusCode).toBe(404);
+    expect(clientIp({ ip: other, headers: { "cf-connecting-ip": "198.51.100.200" } })).toBe(other);
+  });
+
+  it("does not rate limit a slug that is not a real site", async () => {
+    for (let n = 1; n <= 40; n++) {
+      const res = await confirm("ghost-slug", "Q-1", `203.0.113.${100 + n}`);
+      expect(res.statusCode, `ghost ${n}`).toBe(404);
+    }
+  });
+
+  it("returns a plain error when the client address is missing", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/sites/yorkfx/quotes/Q-4040/confirm",
+      remoteAddress: " ",
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).not.toContain("Sign-in");
+    expect(res.body).not.toContain("client address");
+    expect(res.json()).toEqual({ error: "invalid_request", detail: "Try again in a bit, or call the desk." });
+  });
+
+  it("sweeps once a minute, and drops a bucket once that window has passed", async () => {
+    clearRateBuckets();
+    vi.useFakeTimers();
+    try {
+      const start = Date.parse("2026-10-19T12:00:00Z");
+      vi.setSystemTime(start);
+      expect((await confirm("ghost-old", "Q-1", "203.0.113.180")).statusCode).toBe(404);
+      expect(rateBucketKeys()).toContain("confirm-ip:203.0.113.180");
+      expect(rateBucketKeys().some((key) => key.startsWith("confirm-slug:"))).toBe(false);
+      expect(rateSweptAt()).toBe(start);
+      /* Inside the minute the walk does not run, so the old key stays. */
+      vi.setSystemTime(start + 30_000);
+      expect((await confirm("ghost-mid", "Q-3", "203.0.113.182")).statusCode).toBe(404);
+      expect(rateSweptAt()).toBe(start);
+      expect(rateBucketKeys()).toContain("confirm-ip:203.0.113.180");
+      vi.setSystemTime(start + 61_000);
+      expect((await confirm("yorkfx", "Q-2", "203.0.113.181")).statusCode).toBe(404);
+      expect(rateSweptAt()).toBe(start + 61_000);
+      expect(rateBucketKeys()).not.toContain("confirm-ip:203.0.113.180");
+      expect(rateBucketKeys()).toContain("confirm-ip:203.0.113.181");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("texts only the first confirm", async () => {
+    clearRateBuckets();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/sites/yorkfx/quotes",
+      remoteAddress: "203.0.113.70",
+      payload: { phone: "5875550191", from: "CAD", to: "USD", amount: 30 },
+    });
+    expect(created.statusCode).toBe(201);
+    const ref = created.json().quote.ref as string;
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => { logs.push(args.map(String).join(" ")); });
+    try {
+      const first = await confirm("yorkfx", ref, "203.0.113.71");
+      const second = await confirm("yorkfx", ref, "203.0.113.72");
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+      expect(logs.filter((line) => line.includes("confirmed") && line.includes(ref))).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

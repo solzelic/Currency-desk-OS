@@ -4,8 +4,9 @@
      A1 CurrencyDesk ID  →  A2 Password  →  A3 email-code keypad
    then the existing station picker / desktop. The shared on-screen
    keypad also powers desk-lock unlock (B) and operator handover (C).
-   Backend auth is unchanged: the ID resolves a staff record, the
-   password calls /api/auth/login, the code step is the (simulated) 2FA.
+   Backend auth: the ID resolves a staff record, the password calls
+   /api/auth/login/start, which emails a code to an email sign-in; the
+   code step checks it at /api/auth/login/verify.
    Tokens mirror the design exactly (ink #17140F, primary #1D6B45, …).
    ============================================================ */
 (function () {
@@ -106,14 +107,53 @@
        BEFORE the await. React state does not update synchronously, so
        `disabled` alone loses the race against a double-click — the second
        press lands while the first render is still pending. A ref cannot. */
-    const [cool, setCool] = useState(0);
+    const [coolUntil, setCoolUntil] = useState(0);
+    const [now, setNow] = useState(0);
+    const cool = coolUntil > now ? Math.ceil((coolUntil - now) / 1000) : 0;
+    /* A lock is not a resend cooldown. retryAfter on a lock is how
+       long the counter lasts (fifteen minutes). Feeding that into the
+       countdown turned the button into "Another code in 900s" and hid
+       the time the desk can actually try again. */
+    const [locked, setLocked] = useState(false);
+    const [lockUntil, setLockUntil] = useState('');
+    const [lockAt, setLockAt] = useState(0);
     const sending = useRef(false);
     useEffect(() => {
-      if (cool <= 0) return;
-      const t = setTimeout(() => setCool(c => c - 1), 1000);
-      return () => clearTimeout(t);
-    }, [cool]);
-    const startCooldown = (secs) => setCool(Math.max(1, Math.round(secs || 120)));
+      if (coolUntil <= Date.now()) return undefined;
+      setNow(Date.now());
+      const t = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(t);
+    }, [coolUntil]);
+    /* The lock ends when the server's time passes. The page clock is
+       what the button watches, so a wait on this screen is enough.
+       There is no reload. */
+    useEffect(() => {
+      if (!locked || !lockAt) return undefined;
+      const tick = () => {
+        if (Date.now() < lockAt) return;
+        setLocked(false);
+        setLockUntil('');
+        setLockAt(0);
+      };
+      tick();
+      const t = setInterval(tick, 1000);
+      return () => clearInterval(t);
+    }, [locked, lockAt]);
+    const startCooldown = (secs) => setCoolUntil(Date.now() + Math.max(1, Math.round(secs || 120)) * 1000);
+    const applyLock = (d) => {
+      if (!d || d.error !== 'too_many_attempts') return false;
+      const at = typeof d.retryAt === 'string' ? Date.parse(d.retryAt) : NaN;
+      setLocked(true);
+      setLockUntil(typeof d.until === 'string' ? d.until : '');
+      setLockAt(Number.isFinite(at) ? at : 0);
+      setErr('');
+      return true;
+    };
+    const clearLock = () => { setLocked(false); setLockUntil(''); setLockAt(0); };
+    /* The hour is the shop's own clock. Naming the zone repeats it. */
+    const lockSentence = !locked ? ''
+      : !lockUntil ? 'Too many tries. Try again in a few minutes.'
+      : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
     // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
@@ -162,15 +202,17 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId, password: pw }),
         });
-        if (res && res.status === 401) { sending.current = false; setBusy(false); setErr('That password doesn’t match this ID. Try again — or reset it below.'); return; }
+        if (res && res.status === 401) { sending.current = false; setBusy(false); clearLock(); setErr('That password doesn\'t match this ID. Try again, or reset it below.'); return; }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
           sending.current = false; setBusy(false);
+          if (applyLock(d)) return;
           startCooldown(d && d.retryAfter);
-          setErr((d && d.detail) || 'A code went out moments ago — check your email.');
+          setErr((d && d.detail) || 'A code went out moments ago. Check your email.');
           return;
         }
-        if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + ') — try again in a moment.'); return; }
+        if (res && res.status === 503) { sending.current = false; setBusy(false); setErr('Sign-in is having trouble. Try again in a minute.'); return; }
+        if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + '). Try again in a moment.'); return; }
         const data = await res.json().catch(() => null);
         const u = (data && data.user) || null;
         const srvPlan = (u && u.plan) || null;
@@ -262,7 +304,7 @@
           body: JSON.stringify({ staffId: a.staffId, tenantId: a.tenantId, code: codeVal }),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok) { setVerifying(false); setCode(''); setErr((data && data.detail) || 'That code isn’t right — check your email.'); return; }
+        if (!res.ok) { setVerifying(false); setCode(''); setErr((data && data.detail) || 'That code isn\'t right. Check your email.'); return; }
         const u = (data && data.user) || a.srvUser;
         onComplete(a.rec, (u && u.plan) || a.srvPlan, u);
       } catch (_) { setVerifying(false); setErr('Network error — try again.'); }
@@ -276,7 +318,17 @@
       try {
         const res = await fetch('/api/auth/login/start', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ staffId: a.staffId, password: pw }) });
         const d = await res.json().catch(() => null);
-        if (res.status === 429) { startCooldown(d && d.retryAfter); setNote((d && d.detail) || 'A code went out moments ago.'); return; }
+        if (res.status === 429) {
+          if (d && d.error === 'too_many_attempts') {
+            setNote(d && d.until
+              ? 'Too many tries. Try again at ' + d.until + '.'
+              : 'Too many tries. Try again in a few minutes.');
+            return;
+          }
+          startCooldown(d && d.retryAfter);
+          setNote((d && d.detail) || 'A code went out moments ago.');
+          return;
+        }
         setNote('A new code is on its way.'); setCode(''); startCooldown(120);
       } catch (_) { setNote('Couldn’t resend — try again.'); }
       finally { sending.current = false; }
@@ -312,7 +364,7 @@
         <div style={{ position: 'absolute', top: 26, left: 30, display: 'flex', alignItems: 'center', gap: 10 }}>
           <Mark w={30} h={21} cut="#e7e4dd" />
           <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 13, letterSpacing: '0.12em' }}>CURRENCYDESK</span>
-          <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.2em', color: 'var(--si-faint)' }}>OS</span>
+          <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.2em', color: 'var(--si-mute)' }}>OS</span>
         </div>
         {children}
       </div>
@@ -367,34 +419,50 @@
 
     // ---- A2 · Password -------------------------------------------------
     if (step === 'password') {
-      const first = firstOf(known ? known.name : '');
+      const displayName = known && known.name ? String(known.name) : '';
+      /* A staff id with no @ has no mailbox. The button signs them in.
+         It does not offer to send a code, before the lock or after it. */
+      const passwordOnly = idInput.indexOf('@') < 0;
+      const canSend = !busy && !(locked && lockUntil) && pw.length >= 4 && (passwordOnly || cool === 0);
+      const sentenceBtn = {
+        width: '100%', height: 48, marginTop: 16, borderRadius: 12, border: 'none',
+        cursor: canSend ? 'pointer' : 'not-allowed',
+        background: canSend ? 'var(--si-primary)' : 'rgba(23,20,15,0.07)',
+        color: canSend ? '#fff' : 'var(--si-ink)',
+        fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 700,
+        letterSpacing: 0, textTransform: 'none',
+      };
       return shell(card(<form onSubmit={submitPassword}>
         <div style={{ display: 'grid', placeItems: 'center', marginBottom: 12 }}>
           <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--si-ink)', color: '#fff', display: 'grid', placeItems: 'center', fontFamily: MONO, fontSize: 19, fontWeight: 700 }}>{initialsOf(known ? known.name : idInput)}</div>
         </div>
-        <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{first ? 'Welcome back, ' + first : 'Welcome back'}</h1>
+        <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{displayName ? 'Welcome back, ' + displayName : 'Welcome back'}</h1>
         <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--si-mute)', marginBottom: 18 }}>
-          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
+          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); clearLock(); }} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px', background: 'none', border: 'none', color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
         </div>
         <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>PASSWORD</div>
         <div style={{ position: 'relative' }}>
           <input type={showPw ? 'text' : 'password'} value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} autoFocus placeholder="••••••••" autoComplete="current-password"
-            style={{ width: '100%', boxSizing: 'border-box', padding: '13px 62px 13px 14px', fontSize: 15, border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }}
+            style={{ width: '100%', boxSizing: 'border-box', minHeight: 56, padding: '6px 88px 6px 14px', fontSize: 15, border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }}
             onFocus={e => { e.target.style.borderColor = 'var(--si-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(29,107,69,0.14)'; }}
             onBlur={e => { e.target.style.borderColor = 'var(--si-line)'; e.target.style.boxShadow = 'none'; }} />
-          <button type="button" onClick={() => setShowPw(s => !s)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--si-mute)', background: 'var(--si-soft)', border: 'none', borderRadius: 7, padding: '5px 9px', cursor: 'pointer' }}>{showPw ? 'HIDE' : 'SHOW'}</button>
+          <button type="button" onClick={() => setShowPw(s => !s)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', height: 44, minWidth: 44, padding: '0 12px', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--si-ink)', background: 'var(--si-soft)', border: 'none', borderRadius: 7, cursor: 'pointer' }}>{showPw ? 'HIDE' : 'SHOW'}</button>
         </div>
-        <div style={{ fontSize: 11.5, color: 'var(--si-faint)', marginTop: 8 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--si-mute)', marginTop: 8 }}>
           Forgot it?{' '}
           <button type="button" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); }}
-            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 11.5 }}>
+            style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 4px', background: 'none', border: 'none', color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>
             Send yourself a reset code</button>.
         </div>
-        {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
-        <button type="submit" disabled={busy || cool > 0 || pw.length < 4} style={{ ...primaryBtn(!busy && cool === 0 && pw.length >= 4), marginTop: 16 }}>
-          {busy ? 'Checking…' : cool > 0 ? 'Another code in ' + cool + 's' : 'Send my code'}</button>
-        <div style={{ textAlign: 'center', fontSize: 11.5, color: note ? 'var(--si-primary)' : 'var(--si-mute)', marginTop: 14, fontWeight: note ? 700 : 400 }}>
-          {note || "We'll email a fresh code to confirm it's you."}</div>
+        {locked && <div style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--si-ink)', marginTop: 16, lineHeight: 1.35 }}>{lockSentence}</div>}
+        {err && !locked && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
+        <button type="submit" disabled={!canSend} style={(locked || passwordOnly) ? sentenceBtn : { ...primaryBtn(canSend), marginTop: 16 }}>
+          {busy ? 'Checking…' : locked && lockUntil ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, textTransform: 'none', letterSpacing: 0, fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15 }}> <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sign in</span> : locked ? 'Try again' : !passwordOnly && cool > 0 ? 'Another code in ' + cool + 's' : passwordOnly ? 'Sign in' : 'Send my code'}</button>
+        {/* A staff id with no @ has nowhere to send a code. Saying we
+            will email one tells them the wrong next step, and it is
+            worse on a lock, where the button is not going to send. */}
+        {idInput.indexOf('@') >= 0 && !locked && <div style={{ textAlign: 'center', fontSize: 11.5, color: note ? 'var(--si-primary)' : 'var(--si-mute)', marginTop: 14, fontWeight: note ? 700 : 400 }}>
+          {note || "We'll email a fresh code to confirm it's you."}</div>}
       </form>));
     }
 
@@ -476,7 +544,7 @@
       <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: err ? 'var(--si-flag)' : 'var(--si-faint)', margin: '4px 0 14px' }}>{err ? err.toUpperCase() : verifying ? 'VERIFYING…' : 'TAP THE CODE IN BELOW'}</div>
       <Keypad value={code} max={6} onDigit={pushDigit} onBack={backDigit}
         leftLabel={cool > 0 ? cool + 's' : 'Resend'} onLeft={cool > 0 ? null : resendCode} verifying={verifying} />
-      <div style={{ fontSize: 11, color: 'var(--si-faint)', marginTop: 16 }}>{note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'}</div>
+      <div style={{ fontSize: note && note.indexOf('Too many tries.') === 0 ? 22 : 11, fontWeight: note && note.indexOf('Too many tries.') === 0 ? 800 : 400, color: note && note.indexOf('Too many tries.') === 0 ? 'var(--si-ink)' : 'var(--si-faint)', marginTop: 16, lineHeight: 1.35 }}>{note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'}</div>
       <button type="button" onClick={() => { setStep('password'); setCode(''); }} style={{ background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>← Back</button>
     </div>));
   }
@@ -523,13 +591,15 @@
   function Handover({ operators, current, onCancel, onConfirm }) {
     const [pick, setPick] = useState(null);
     const [pin, setPin] = useState(''); const [verifying, setVerifying] = useState(false);
+    const [err, setErr] = useState('');
+    const [lockedOut, setLockedOut] = useState(false);
     const others = (operators || []).filter(o => o.active !== false);
     if (!pick) {
       return (<div style={Scrim}><style>{cdKeyframes}</style>
         <div style={{ ...PinCard, width: 448, textAlign: 'left', padding: '28px 30px' }}>
           <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--si-plum)', marginBottom: 8 }}>Handover · on the record</div>
           <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 6 }}>Who's taking the desk?</div>
-          <div style={{ fontSize: 13, color: 'var(--si-mute)', marginBottom: 16, lineHeight: 1.6 }}>The live session and the open drawer pass to the next operator. Every handover is logged with who, when, and which till.</div>
+          <div style={{ fontSize: 13, color: 'var(--si-mute)', marginBottom: 16, lineHeight: 1.6 }}>The next person signs in here. The till stays with whoever counted it until they count it to take it over. The switch is logged.</div>
           <div style={{ display: 'grid', gap: 8, maxHeight: 260, overflow: 'auto' }}>
             {others.map(o => {
               const isCur = current && o.name === current.name;
@@ -538,7 +608,7 @@
                 <Avatar name={o.name} size={38} />
                 <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>{o.name}</span><span style={{ display: 'block', fontSize: 12, color: 'var(--si-mute)' }}>{o.role || 'Staff'}</span></span>
                 {isCur ? <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.1em', color: 'var(--si-faint)', textTransform: 'uppercase' }}>On the desk now</span>
-                  : <button type="button" onClick={() => { setPick(o); setPin(''); }} style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--si-primary)', background: 'rgba(29,107,69,0.08)', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>Take over</button>}
+                  : <button type="button" onClick={() => { setPick(o); setPin(''); setErr(''); setLockedOut(false); }} style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--si-primary)', background: 'rgba(29,107,69,0.08)', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>Take over</button>}
               </div>);
             })}
           </div>
@@ -548,15 +618,60 @@
         </div>
       </div>);
     }
-    const push = (d) => { if (verifying || pin.length >= 4) return; const n = (pin + d).slice(0, 4); setPin(n); if (n.length === 4) { setVerifying(true); setTimeout(() => onConfirm(pick), 850); } };
+    const push = (d) => {
+      if (lockedOut || verifying || pin.length >= 4) return;
+      const n = (pin + d).slice(0, 4);
+      setPin(n);
+      if (n.length !== 4) return;
+      setVerifying(true);
+      setErr('');
+      if (!pick.code) {
+        setVerifying(false);
+        setPin('');
+        setErr('This account has no staff id.');
+        return;
+      }
+      fetch('/api/auth/switch', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+        body: JSON.stringify({ staffId: pick.code, pin: n }),
+      }).then(async (res) => {
+        let data = null;
+        try { data = await res.json(); }
+        catch (e) { data = null; }
+        if (data == null) {
+          setVerifying(false); setPin('');
+          setErr('The desk answered, but not in a way this screen could read.');
+          return;
+        }
+        if (res.ok) { onConfirm(pick, data); return; }
+        setVerifying(false); setPin('');
+        if (res.status === 429 || (res.status === 401 && data.locked)) {
+          setLockedOut(true);
+          setErr(data.detail || 'Too many wrong tries.');
+          return;
+        }
+        if (data.detail && (data.error === 'no_pin' || data.error === 'weak_pin')) {
+          setErr(data.detail);
+          return;
+        }
+        if (res.status === 401) { setErr('Incorrect PIN'); return; }
+        setErr(data.detail || 'Could not switch to that account.');
+      }).catch(() => {
+        setVerifying(false); setPin('');
+        setErr('Could not reach the desk to switch accounts.');
+      });
+    };
     return (<div style={Scrim}><style>{cdKeyframes}</style>
       <div style={PinCard}>
         <Pill>PIN required</Pill>
         <Avatar name={pick.name} />
         <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 4 }}>Confirm it's you</div>
         <div style={{ fontSize: 13.5, color: 'var(--si-mute)', marginBottom: 4 }}>{firstOf(pick.name)}, enter your PIN to take this drawer.</div>
+        {err ? <div style={{ fontSize: 12.5, color: 'var(--si-flag)', margin: '8px 0', lineHeight: 1.35 }}>{err}</div> : null}
         <Dots n={4} filled={pin.length} />
-        <Keypad value={pin} max={4} onDigit={push} onBack={() => { if (!verifying) setPin(pin.slice(0, -1)); }} leftLabel="Cancel" onLeft={() => { setPick(null); setPin(''); }} verifying={verifying} />
+        {lockedOut
+          ? <button type="button" onClick={onCancel} style={{ height: 44, width: '100%', borderRadius: 12, border: 'none', background: 'var(--si-ink)', color: '#fff', fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>OK</button>
+          : <Keypad value={pin} max={4} onDigit={push} onBack={() => { if (!verifying) setPin(pin.slice(0, -1)); }} leftLabel="Cancel" onLeft={() => { setPick(null); setPin(''); setErr(''); setLockedOut(false); }} verifying={verifying} />}
       </div>
     </div>);
   }

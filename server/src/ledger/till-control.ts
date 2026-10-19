@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { civilDate, civilToday } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
-import { LedgerError, type LedgerActor } from "./service.js";
+import { LedgerError, refuseTillHeld, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
 import {
   applyVaultLeg,
@@ -67,10 +68,11 @@ const fixed = (value: Decimal.Value) =>
 const sessionJson = (row: Record<string, unknown>) => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
-  businessDate:
-    row.business_date instanceof Date
-      ? row.business_date.toISOString().slice(0, 10)
-      : String(row.business_date),
+  businessDate: (() => {
+    const day = civilDate(row.business_date);
+    if (!day) throw new Error("Till session is missing its business date");
+    return day;
+  })(),
   status: row.status,
   openedBy: row.opened_by,
   openedAt: new Date(row.opened_at as string | Date).toISOString(),
@@ -170,7 +172,7 @@ export class TillControlService {
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workspace_id)
               workspace_id,till_id,session_id,session_number,status,
-              opened_by,opened_at,closed_by,closed_at
+              business_date,opened_by,opened_at,closed_by,closed_at
          FROM ledger_till_sessions
         WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
         ORDER BY workspace_id,session_number DESC`,
@@ -313,7 +315,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            now.toISOString().slice(0, 10),
+            civilToday(now),
             actor.userId,
             now,
           ],
@@ -353,6 +355,9 @@ export class TillControlService {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "till:count");
       const session = await this.openSession(client, actor);
+      if (String(session.opened_by) !== actor.userId) {
+        await refuseTillHeld(client, String(session.opened_by));
+      }
       const existing = await client.query(
         `SELECT batch_id
            FROM ledger_till_count_batches
@@ -579,6 +584,99 @@ export class TillControlService {
     }
   }
 
+  /* A blind count. The person taking the till does not see the expected
+     figures. The variance stays on the old session. The closer and the
+     counter are the person who counted. A new session opens in their name. */
+  handover(actor: LedgerActor, idempotencyKey: string, counts: Counts) {
+    return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts));
+  }
+
+  private async handoverOnce(actor: LedgerActor, idempotencyKey: string, counts: Counts) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      await authorizeLedgerActor(client, actor, "till:count");
+      const session = await this.openSession(client, actor);
+      if (session.opened_by === actor.userId) {
+        const response = await this.currentWithClient(client, actor);
+        await client.query("COMMIT");
+        return response;
+      }
+      const balances = await this.lockBalances(client, actor);
+      const have = balances.map((row) => row.currency.trim()).sort().join(",");
+      const gave = Object.keys(counts).sort().join(",");
+      if (!have || have !== gave) {
+        throw new LedgerError(
+          "INCOMPLETE_TILL_COUNT",
+          "Every authoritative till currency must be counted before closing.",
+        );
+      }
+      const opener = session.opened_by as string;
+      const batchId = `till_close_${randomUUID()}`;
+      const now = new Date();
+      await client.query(
+        `INSERT INTO ledger_till_count_batches
+          (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+           till_id,count_kind,actor_id,idempotency_key,counted_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'close',$8,$9,$10)`,
+        [batchId, session.session_id, ...scope(actor), actor.userId, idempotencyKey, now],
+      );
+      for (const row of balances) {
+        const currency = row.currency.trim() as Currency;
+        const expected = fixed(row.available_amount);
+        const counted = fixed(counts[currency]!);
+        await client.query(
+          `INSERT INTO ledger_till_counts
+            (batch_id,currency,expected_amount,counted_amount,variance_amount)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [batchId, currency, expected, counted, fixed(new Decimal(counted).minus(expected))],
+        );
+        await client.query(
+          `UPDATE ledger_till_balances SET available_amount=$1
+            WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4
+              AND workspace_id=$5 AND till_id=$6 AND currency=$7`,
+          [counted, ...scope(actor), currency],
+        );
+      }
+      await client.query(
+        `UPDATE ledger_till_sessions
+            SET status='closed', closed_by=$1, closed_at=$2, close_note='Handover count'
+          WHERE session_id=$3`,
+        [actor.userId, now, session.session_id],
+      );
+      const next = await client.query(
+        `SELECT COALESCE(max(session_number),0)+1 AS session_number
+           FROM ledger_till_sessions
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5`,
+        scope(actor),
+      );
+      const sessionId = `till_session_${randomUUID()}`;
+      await client.query(
+        `INSERT INTO ledger_till_sessions
+          (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+           session_number,business_date,status,opened_by,opened_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10)`,
+        [
+          sessionId, ...scope(actor), next.rows[0].session_number,
+          now.toISOString().slice(0, 10), actor.userId, now,
+        ],
+      );
+      await this.audit(client, actor, "till.session.handover", sessionId, `from=${opener}`, now);
+      const response = await this.currentWithClient(client, actor);
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if ((error as { code?: string }).code === "23505") {
+        throw new LedgerError("IDEMPOTENCY_CONFLICT", "That till operation was already recorded.");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   /* Retried, because SERIALIZABLE asks callers to. The cash rail is the
      most contended thing on the desk — a float, a top-up and the screen
      refreshing its balances all touch the same rows — and an abort here
@@ -612,6 +710,9 @@ export class TillControlService {
         return response;
       }
       const session = await this.openSession(client, actor);
+      if (String(session.opened_by) !== actor.userId) {
+        await refuseTillHeld(client, String(session.opened_by));
+      }
       const balance = await client.query(
         `SELECT available_amount
            FROM ledger_till_balances

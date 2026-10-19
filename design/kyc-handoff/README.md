@@ -30,10 +30,9 @@ browser. No npm, no bundler.
 - Open `CurrencyDesk OS.html` from a local static server (any: `python -m http.server`,
   VS Code Live Server, etc.). Opening via `file://` works for most browsers but a server
   is safer for the font/CDN preconnects.
-- **Sign in:** any staff ID from the seed (`a.singh`, etc.), password anything, 2FA is
-  pre-filled `000000`. Pick a branch/till → workspace.
-- State persists to **localStorage** (keys prefixed `cdos_`). To reset the demo cast:
-  Settings → Business → *Reset demo data*, or clear `cdos_*` keys.
+- **Sign in:** run the server (`cd server && npm run dev:prototype`) and use the seeded
+  owner `j.masri` / `yorkville`. Pick a branch/till → workspace.
+- State persists to **localStorage** (keys prefixed `cdos_`).
 
 ## 3. Architecture
 

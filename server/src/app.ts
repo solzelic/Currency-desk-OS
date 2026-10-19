@@ -19,7 +19,7 @@ import { registerStaffRoutes } from "./routes/staff.js";
 import { registerDeskRoutes } from "./routes/desk.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerTenantStateRoutes } from "./routes/tenantState.js";
-import { registerAdminRoutes, isPlatformAdmin } from "./routes/admin.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminMfaRoutes } from "./routes/admin-mfa.js";
 import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
@@ -80,14 +80,20 @@ const isPhone = (ua: string | undefined): boolean =>
 
    One file under os-src/ is still part of the compiled desk.
    web/app/index.html links os-src/york-os.css, and /login and /app fetch
-   it. That stylesheet stays public either way. */
+   it. That stylesheet stays public either way.
+
+   shared/id-document-types.js is the ID-type catalogue the server also
+   reads. The uncompiled shell loads it as a script, so it is on the list
+   for that fallback and hidden with os-src once the compiled desk, which
+   carries it inside os.js, is on disk. Nothing else under shared/ is. */
+const UNCOMPILED_SHARED = "/shared/id-document-types.js";
 const retiredUncompiledDesk = (
   pathname: string,
   compiled: { os: boolean; admin: boolean },
 ): boolean => {
   const file = pathname.startsWith("/") ? pathname : `/${pathname}`;
   if (file === "/os-src/york-os.css") return false;
-  if (compiled.os && (file === "/CurrencyDesk OS.html" || file.startsWith("/os-src/"))) {
+  if (compiled.os && (file === "/CurrencyDesk OS.html" || file.startsWith("/os-src/") || file === UNCOMPILED_SHARED)) {
     return true;
   }
   if (compiled.admin && file === "/admin.html") return true;
@@ -106,6 +112,7 @@ const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean
     file === "/yorkfx-converter.js" ||
     file.startsWith("/assets/") ||
     file.startsWith("/os-src/") ||
+    file === UNCOMPILED_SHARED ||
     /* The Rate Board, which the OS embeds in an iframe, and the storefront
        pages beside it. Public design content — no server source, no config.
        Without this the iframe asks for a file the static handler refuses and
@@ -233,7 +240,7 @@ export async function buildApp(
     registerClientRoutes(app, db, ledgerDatabaseUrl);
   }
 
-  // serve the built frontend (vite build → dist) when configured
+  // serve the frontend from STATIC_DIR (compiled web/app shells, else the buildless OS) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
   if (staticDir && existsSync(staticDir)) {
     /* Which HTML is the app shell. There used to be two — a Vite build at
@@ -340,8 +347,8 @@ export async function buildApp(
         app.get("/onboarding/:code", (_req, reply) => reply.sendFile(SITE_PAGES["/onboarding"]));
       }
     }
-    // the platform control panel — served whether prod ships the vite build or
-    // the prototype, as long as admin.html is in the static dir (repo root)
+    // the platform control panel — the compiled web/app/admin.html, else the
+    // hand-written admin.html in the static dir (repo root)
     const adminFile = compiled("web/app/admin.html", "admin.html");
     if (existsSync(path.join(staticDir, adminFile))) {
       app.get("/admin", (_req, reply) => reply.sendFile(adminFile));
