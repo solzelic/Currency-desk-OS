@@ -11,7 +11,7 @@
 (function () {
   const { useState, useMemo, useRef, useEffect, useSyncExternalStore } = React;
   const {
-    CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, currencyPlaces, effectiveRate, ROUNDED_NOTE, mkRef, nowTime, newTx,
+    CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, currencyPlaces, effectiveRate, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
   } = window.CDOS;
   const deskHome = () => {
@@ -44,20 +44,18 @@
     const per = boardHomePerUnit(ccy);
     return per == null ? null : n * per;
   }
-  /* The editable field keeps the published rate, at four places.
-     The figure that multiplies out to the payout is the effective
-     rate. EXACT_RATE_PLACES and ROUNDED_RATE_PLACES live in
-     effective-rate.js, which is where Design changes them. */
+  /* The editable field keeps the board rate, at the precision it
+     already had. The line next to the payout is the rate that payout
+     came from, at DISPLAY_RATE_PLACES. */
   const publishedRate = (r) => (r > 0 && isFinite(r)) ? Number(r).toFixed(4) : '';
   const pricedRate = (amount, payout, ccy) => {
-    if (typeof effectiveRate !== 'function') return { text: '', rounded: false };
-    return effectiveRate(amount, payout, currencyPlaces(ccy)) || { text: '', rounded: false };
+    if (typeof effectiveRate !== 'function') return { text: '' };
+    return effectiveRate(amount, payout, currencyPlaces(ccy)) || { text: '' };
   };
   const dealRateLine = (from, to, amount, payout) => {
     const rate = pricedRate(amount, payout, to);
     if (!rate.text) return 'Rate unavailable';
-    const note = rate.rounded ? (' ' + (ROUNDED_NOTE || 'rounded')) : '';
-    return 'Effective rate 1 ' + from + ' = ' + rate.text + ' ' + to + note;
+    return '1 ' + from + ' = ' + rate.text + ' ' + to;
   };
   const phoneMoney = (n, ccy) => {
     const fn = window.CDOS.formatPhoneMoney;
@@ -1162,7 +1160,7 @@
                   <Lbl>Customer receives</Lbl>
                   <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Published rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (publishedRate(rateN) || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(publishedRate(pricing.deskRate)); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (publishedRate(rateN) || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(publishedRate(pricing.deskRate)); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>

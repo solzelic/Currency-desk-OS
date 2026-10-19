@@ -105,14 +105,17 @@ directions. `parseMoney` asks the currency: **there is no such thing as
 ¥1,234.56**, and a payout quoted that way is not a rounding nicety, it is a
 figure a teller cannot count out.
 
-The rate on the sheet, the summary, and the receipt is the shortest
-rate that multiplies back to the payout, at that currency's places.
-`EXACT_RATE_PLACES` is 6 and `ROUNDED_RATE_PLACES` is 4, both in
-`os-src/effective-rate.js`. When six places still miss the cents, the
-screen shows the true rate rounded to four with the word `rounded`,
-and the payout stays the ledger figure. Head of Design has not
-confirmed those two caps. The published rate stays in the editable
-field. The rate stored on the deal stays 12 places.
+The rate on the sheet, the summary, the receipt, and the booked deal
+is the rate the payout came from, rounded half up to four places.
+`DISPLAY_RATE_PLACES` is 4, in `os-src/effective-rate.js`. A figure
+never shows more than four places, and the board rate is not the
+figure next to a payout. The editable field is labeled Board rate and
+keeps its own precision. The receipt adds one quiet line under the
+rate: "Rate rounded to 4 places. The amounts above are exact." The
+sheet does not say rounded. The payout stays the ledger figure. The
+rate stored on the deal stays 12 places. 100 CAD to 10,825 JPY shows
+`1 CAD = 108.2500 JPY`. 3,000.00 CAD to 2,166.31 USD shows
+`1 CAD = 0.7221 USD`.
 
 **Three-decimal currencies are refused, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then

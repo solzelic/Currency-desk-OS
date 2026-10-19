@@ -1,19 +1,16 @@
-/* The rate a person can check by hand.
-   The payout on the deal is the figure that is true. This finds the
-   shortest rate whose product rounds back to that payout, at the
-   currency's own places. It stops at EXACT_RATE_PLACES. When that
-   many places still miss the cents, it shows the true rate rounded
-   to ROUNDED_RATE_PLACES and sets rounded, and the payout stays.
-   Head of Design has not confirmed these two caps. Change them here.
-   Display only. It does not change the rate stored on the deal. */
+/* The rate shown next to a payout.
+   The payout is the figure of record. This is the rate that payout
+   came from, rounded half up to DISPLAY_RATE_PLACES. It never shows
+   more places than that, and it is not the board rate.
+   Change DISPLAY_RATE_PLACES here. The receipt sentence uses it.
+   Display only. The stored rate and the payout stay as they are. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) root.CDOS = Object.assign(root.CDOS || {}, api);
 })(typeof window !== "undefined" ? window : globalThis, function () {
-  var EXACT_RATE_PLACES = 6;
-  var ROUNDED_RATE_PLACES = 4;
-  var ROUNDED_NOTE = "rounded";
+  var DISPLAY_RATE_PLACES = 4;
+  var RECEIPT_RATE_NOTE = "Rate rounded to " + DISPLAY_RATE_PLACES + " places. The amounts above are exact.";
 
   function decimalsOf(text) {
     var s = String(text);
@@ -43,27 +40,11 @@
     return sign * (rem * 2n >= ad ? q + 1n : q);
   }
 
-  function halfUp(n, fromScale, toScale) {
-    if (toScale >= fromScale) return n * (10n ** BigInt(toScale - fromScale));
-    var div = 10n ** BigInt(fromScale - toScale);
-    var sign = n < 0n ? -1n : 1n;
-    var abs = n < 0n ? -n : n;
-    var q = abs / div;
-    var rem = abs % div;
-    var rounded = rem * 2n >= div ? q + 1n : q;
-    return sign * rounded;
-  }
-
   function scaledText(n, scale) {
     var neg = n < 0n;
     var abs = (neg ? -n : n).toString().padStart(scale + 1, "0");
     var body = scale === 0 ? abs : abs.slice(0, abs.length - scale) + "." + abs.slice(abs.length - scale);
     return (neg ? "-" : "") + body;
-  }
-
-  function trimZeros(text) {
-    if (text.indexOf(".") < 0) return text;
-    return text.replace(/0+$/, "").replace(/\.$/, "");
   }
 
   function moneyText(value) {
@@ -74,74 +55,35 @@
     return "";
   }
 
-  function productText(amountText, rateText, outPlaces) {
-    var aScale = decimalsOf(amountText);
-    var rScale = decimalsOf(rateText);
-    var prod = scaled(amountText, aScale) * scaled(rateText, rScale);
-    return scaledText(halfUp(prod, aScale + rScale, outPlaces), outPlaces);
-  }
-
-  function payoutText(payout, places) {
-    var raw = moneyText(payout);
-    if (!raw || raw === "-" || raw === ".") return "";
-    var scale = decimalsOf(raw);
-    return scaledText(halfUp(scaled(raw, scale), scale, places), places);
-  }
-
   function knownPlaces(minorPlaces) {
     return Number.isInteger(minorPlaces) && minorPlaces >= 0 && minorPlaces <= 8;
   }
 
-  function blank() {
-    return { text: "", rounded: false };
-  }
-
   function effectiveRate(amount, payout, minorPlaces) {
-    if (!knownPlaces(minorPlaces)) return blank();
+    if (!knownPlaces(minorPlaces)) return { text: "" };
     var amountText = moneyText(amount);
-    var places = minorPlaces;
-    var target = payoutText(payout, places);
-    if (!amountText || scaled(amountText, decimalsOf(amountText)) === 0n || !target) return blank();
-    var pRaw = moneyText(payout);
-    var pInt = scaled(pRaw, decimalsOf(pRaw));
-    var aInt = scaled(amountText, decimalsOf(amountText));
-    var pScale = decimalsOf(pRaw);
+    var payoutRaw = moneyText(payout);
+    if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "" };
     var aScale = decimalsOf(amountText);
-    for (var d = 0; d <= EXACT_RATE_PLACES; d++) {
-      var num = pInt * (10n ** BigInt(aScale + d));
-      var den = aInt * (10n ** BigInt(pScale));
-      var rounded = halfUpDiv(num, den);
-      if (rounded == null) return blank();
-      var shown = trimZeros(scaledText(rounded, d));
-      if (decimalsOf(shown) <= EXACT_RATE_PLACES && productText(amountText, shown, places) === target) {
-        return { text: shown, rounded: false };
-      }
-    }
-    var fallbackNum = pInt * (10n ** BigInt(aScale + ROUNDED_RATE_PLACES));
-    var fallbackDen = aInt * (10n ** BigInt(pScale));
-    var fallback = halfUpDiv(fallbackNum, fallbackDen);
-    if (fallback == null) return blank();
-    return { text: scaledText(fallback, ROUNDED_RATE_PLACES), rounded: true };
+    var pScale = decimalsOf(payoutRaw);
+    var aInt = scaled(amountText, aScale);
+    if (aInt === 0n) return { text: "" };
+    var pInt = scaled(payoutRaw, pScale);
+    var num = pInt * (10n ** BigInt(aScale + DISPLAY_RATE_PLACES));
+    var den = aInt * (10n ** BigInt(pScale));
+    var rounded = halfUpDiv(num, den);
+    if (rounded == null) return { text: "" };
+    return { text: scaledText(rounded, DISPLAY_RATE_PLACES) };
   }
 
   function effectiveRateText(amount, payout, minorPlaces) {
     return effectiveRate(amount, payout, minorPlaces).text;
   }
 
-  function rateMultiplies(rateText, amount, payout, minorPlaces) {
-    var text = String(rateText == null ? "" : rateText).trim();
-    if (!knownPlaces(minorPlaces)) return false;
-    var amountText = moneyText(amount);
-    if (!text || decimalsOf(text) > EXACT_RATE_PLACES || !amountText) return false;
-    return productText(amountText, text, minorPlaces) === payoutText(payout, minorPlaces);
-  }
-
   return {
-    EXACT_RATE_PLACES: EXACT_RATE_PLACES,
-    ROUNDED_RATE_PLACES: ROUNDED_RATE_PLACES,
-    ROUNDED_NOTE: ROUNDED_NOTE,
+    DISPLAY_RATE_PLACES: DISPLAY_RATE_PLACES,
+    RECEIPT_RATE_NOTE: RECEIPT_RATE_NOTE,
     effectiveRate: effectiveRate,
     effectiveRateText: effectiveRateText,
-    rateMultiplies: rateMultiplies,
   };
 });
