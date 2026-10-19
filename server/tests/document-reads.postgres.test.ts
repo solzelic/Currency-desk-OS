@@ -175,6 +175,16 @@ postgres("the reads a signed document is built from", () => {
   });
 
   afterAll(async () => {
+    /* The last test leaves York FX on the British pack. The next file
+       in this shared database cashes a Canadian cheque against the
+       seed pack. Put that pack back. No cheque source is changed. */
+    await pool.query(
+      `UPDATE legal_entities
+          SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1',
+              jurisdiction_pack_version=1
+        WHERE id=$1`,
+      [DEMO.legalEntityId],
+    );
     await app.close();
     await handle.close();
     await pool.end();

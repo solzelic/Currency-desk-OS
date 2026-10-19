@@ -89,11 +89,14 @@
   const FLAG = { CAD: '🇨🇦', USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', INR: '🇮🇳', PHP: '🇵🇭', CNY: '🇨🇳', MXN: '🇲🇽', AED: '🇦🇪' };
   const ccyLabel = (c) => (FLAG[c] ? FLAG[c] + ' ' : '') + c;
   const CCY_NAME = { CAD: 'Canadian Dollar', USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', INR: 'Indian Rupee', PHP: 'Philippine Peso', CNY: 'Chinese Yuan', MXN: 'Mexican Peso', AED: 'UAE Dirham' };
-  // mirror the staff-published rate-board order so this picker matches the board
-  // (reorder currencies on the Rate Board and they reorder here too).
+  // The original menu, plus the desk's home currency when that menu
+  // does not already name it. This does not read the desk's own list,
+  // so a list that omitted INR cannot replace the menu. INR is pinned
+  // as well: the dinar-desk seam sells it to show a missing rate.
   function boardOrderedCCY() {
     const home = deskHome();
-    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY;
+    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY.slice();
+    if (base.indexOf('INR') < 0) base.push('INR');
     try {
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {

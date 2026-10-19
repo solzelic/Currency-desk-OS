@@ -724,6 +724,8 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-19**, test isolation. The document-reads suite's last case leaves York FX on the British pack. It now puts the seed pack back (`CAD`, `pack-ca-v1`) before the file ends, so the next suite is not booking in GBP. No cheque source changes. The new-transaction menu stays the original list plus the home currency when that list does not name it. It does not switch to the desk's own list, which is how a dinar desk lost INR. INR is pinned on that menu.
+
 **2026-10-19**, menubar clock. The header uses the Audit Trail clock, in `settings.timezone`. A 12-hour desk reads 16:05 as 4:05 pm. A 24-hour desk still reads 16:05. The 12-hour box is the width of `12:45 pm`. The 24-hour box is the width of `23:59`. A stored zone the clock cannot read falls back to the browser zone, then UTC, and the menubar still shows a time.
 
 **2026-10-19**, a few em dashes. Branch Network says "Drag someone onto a branch to assign them, or onto a till to post them to that drawer." The employee password line is unchanged from the period form. The offline line and the empty-name line use a period. The Visit title uses a vertical bar, the description says "Unit 102, footsteps", and the lede keeps one sentence through "directly across". Getting here says Bloor-Yonge. The quote text and the confirm text drop the em dash in their own commit. The confirm clock and the period after a.m. are unchanged. Each file's count must match its baseline exactly. Settings is 101, including 18 dashes in the business-profile copy that are not reworded here. web/app/os.js is 779.
