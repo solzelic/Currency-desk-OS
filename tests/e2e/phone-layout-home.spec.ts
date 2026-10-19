@@ -63,6 +63,17 @@ test("stacks the desktop page below 640 and keeps tap targets at 44px", async ({
   note(!!card && card.x >= -1 && card.x + card.width <= 361, "sample rates card misses the 360 width: " + JSON.stringify(card));
   const chromeVisible = await page.locator("[data-hero-rates='card']").getByText("app.currencydeskos.com").isVisible();
   note(!chromeVisible, "hero window chrome still visible at 360");
+  const fileNote = await page.locator("[data-hero-stage]").getByText("The desk does not file", { exact: true }).evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = [...range.getClientRects()];
+    const tops = new Set(rects.map((r) => Math.round(r.top)));
+    const card = el.closest("[data-hero-note]") ?? el.parentElement?.parentElement?.parentElement;
+    const edge = card ? card.getBoundingClientRect().right : window.innerWidth;
+    const cut = rects.some((r) => r.right > edge + 1 || r.right > window.innerWidth + 1);
+    return { text: el.textContent, lines: tops.size, cut };
+  });
+  note(fileNote.text === "The desk does not file" && fileNote.lines > 1 && !fileNote.cut, "hero file line does not wrap inside the card: " + JSON.stringify(fileNote));
 
   const rail = page.locator("[data-rail]", { hasText: "Cheque cashing" });
   await rail.click();
