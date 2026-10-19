@@ -459,14 +459,17 @@ button { font-family: inherit; }
 }
 .dock-wx b { font-family: var(--f-mono); font-size: 12px; font-weight: 700; color: var(--ink); }
 .dock-wx span { font-family: var(--f-mono); font-size: 7px; letter-spacing: 0.1em; color: var(--faint); margin-top: 2px; }
-.mb-ops .mb-clock b { color: var(--ink); font-variant-numeric: tabular-nums; }
+/* '12:45 pm' is eight mono characters, the widest 12-hour reading.
+   The box stays that wide all day, so the icons do not jump when
+   9:59 am becomes 10:00 am. */
+.mb-ops .mb-clock b { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 8ch; text-align: right; }
 .mb-item {
   font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.04em;
   color: var(--soft); display: inline-flex; align-items: center; gap: 7px;
   background: none; border: 0; cursor: pointer; padding: 0;
 }
 .mb-item:hover { color: var(--ink); }
-.mb-clock b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.mb-clock b { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 8ch; text-align: right; }
 .mb-user .av {
   width: 18px; height: 18px; border-radius: 50%; background: rgba(10,10,10,0.1);
   display: grid; place-items: center; font-size: 9px; font-weight: 700; color: var(--ink);

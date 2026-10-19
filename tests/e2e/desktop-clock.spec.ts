@@ -39,6 +39,22 @@ test("the header clock reads 4:05 pm when 12-hour is set", async ({ page }) => {
   await expect(clock).not.toContainText("16:05");
 });
 
+test("the header clock keeps the same width at 9:59 am and 12:45 pm", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-06-18T09:59:00Z") });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  const clock = page.locator(".mb-clock");
+  await expect(clock).toContainText("9:59 am");
+  const atNine = await clock.evaluate((el) => el.getBoundingClientRect().width);
+  await page.clock.setSystemTime(new Date("2026-06-18T12:45:00Z"));
+  await page.clock.runFor(1000);
+  await expect(clock).toContainText("12:45 pm");
+  const atTwelve = await clock.evaluate((el) => el.getBoundingClientRect().width);
+  const fits = await clock.locator("b").evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+  expect(fits).toBe(true);
+  expect(atNine).toBe(atTwelve);
+});
+
 test("the header clock stays 16:05 when 24-hour is set", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
   await page.setViewportSize({ width: 1280, height: 800 });
