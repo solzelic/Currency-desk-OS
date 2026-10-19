@@ -957,8 +957,10 @@ obligation. The pages also name Cloudflare, Resend,
 Stripe, Twilio, Google, Tavily, and ElevenLabs. A storefront quote
 number is used only for that quote and its confirmation, and the
 pages say the desk does not send marketing to it. Admin changes are
-logged. Admin reads are not described as logged. Texting is not
-connected. Sanctions screening is not connected. The AI copilot
+logged. Admin reads are not described as logged. A quote can be
+texted to the number given, only for that quote, when texting is
+set up. If texting is not set up, no message is sent. Sanctions
+screening is not connected. The AI copilot
 is marked coming soon, not included yet, with a neutral chip,
 and it is not in the AI
 Bundle's list of live features. FAQ 40 does not offer a full

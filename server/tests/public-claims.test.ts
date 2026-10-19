@@ -559,5 +559,41 @@ describe("public marketing claims", () => {
     expect(home).not.toContain("Clients & KYC");
     expect(legal).not.toContain("messages you send clients through the desk");
     expect(legal).not.toContain("support analytics and can be declined");
+    expect(home).toContain("A quote can be texted to the number given, only for that quote, when texting is set up.");
+    expect(home).not.toContain("Texting is not connected yet");
+    expect(faq).not.toContain("Texting is not connected yet");
+    expect(faq).toContain("If texting is not set up, no message is sent.");
   }, 20000);
+
+  it("flags the quote sentence and the four claims only the page test caught", () => {
+    const missed = [
+      "Texting is not connected yet. The desk does not send a message.",
+      "Texting is not connected, so the desk does not send messages to your clients.",
+      "The desk does not draft or send a suspicious transaction report.",
+      "A shared view across several locations is not built yet.",
+      "Not drafted or sent",
+    ];
+    expect(missed.filter((claim) => probe(claim).ok), "checker still allows these").toEqual([]);
+  });
+
+  it("keeps Worksheet only, you file it at 4.5 to 1 on the phone page", () => {
+    const html = readFileSync(path.join(path.resolve(import.meta.dirname, "../../web"), "mobile.html"), "utf8");
+    const token = html.match(/font-size: 10\.5px; color: var\(--([a-z]+)\)/)?.[1] ?? "";
+    const fg = html.match(new RegExp(`--${token}:\\s*(#[0-9A-Fa-f]{6})`))?.[1] ?? "";
+    const bg = html.match(/--panel:\s*(#[0-9A-Fa-f]{6})/)?.[1] ?? "";
+    const lum = (hex: string) => [0, 1, 2].reduce((sum, n) => {
+      const c = parseInt(hex.slice(1 + n * 2, 3 + n * 2), 16) / 255;
+      const lin = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      return sum + [0.2126, 0.7152, 0.0722][n]! * lin;
+    }, 0);
+    expect(fg && bg, `${token} ${fg} on ${bg}`).toBeTruthy();
+    expect((Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps a one-row pill clear of the 44px watermark", () => {
+    const src = readFileSync(path.resolve(import.meta.dirname, "../../design/site/CurrencyDesk Site.dc.html"), "utf8");
+    const pad = Number(src.match(/padding-right:' \+ \(tall \? '12' : '(\d+)'\)/)?.[1]);
+    const icon = Number(src.match(/bigIcon: this\.ic\(ico, tall \? 76 : (\d+)/)?.[1]);
+    expect(pad, "flat row does not reserve a side for the watermark").toBeGreaterThanOrEqual(icon + 16);
+  });
 });

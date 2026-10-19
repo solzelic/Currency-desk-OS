@@ -167,6 +167,11 @@ const phrases = [
   [/cbuae rulebook/, "CBUAE rulebook"],
   [/clients & kyc/, "Clients & KYC"],
   [/rulebook loads first/, "rulebook loads first"],
+  [/texting is not connected yet\. the desk does not send a message/, "Texting is not connected yet. The desk does not send a message."],
+  [/texting is not connected, so the desk does not send messages to your clients/, "Texting is not connected, so the desk does not send messages"],
+  [/the desk does not draft or send a suspicious transaction report/, "does not draft or send a suspicious transaction report"],
+  [/shared view across several locations is not built yet/, "shared view across several locations"],
+  [/not drafted or sent/, "Not drafted or sent"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";

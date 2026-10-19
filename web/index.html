@@ -279,7 +279,7 @@
     <div style="text-align: center; max-width: 760px; margin: 0 auto;">
       <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">The website, powered by the desk</div>
       <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.015em; margin: 14px 0 0;">Your shop, open online.</h2>
-      <p style="font-size: 15.5px; line-height: 1.62; color: var(--mute); margin: 18px auto 0; max-width: 600px;">Your rate board lives on your own website, wired to the desk. Texting is not connected yet. People can find you online, check today's rates, reserve currency, and put money aside for pickup.</p>
+      <p style="font-size: 15.5px; line-height: 1.62; color: var(--mute); margin: 18px auto 0; max-width: 600px;">Your rate board lives on your own website, wired to the desk. A quote can be texted to the number given, only for that quote, when texting is set up. People can find you online, check today's rates, reserve currency, and put money aside for pickup.</p>
     </div>
 
     <div data-story-grid="true" style="display: grid; align-items: stretch; margin-top: clamp(18px,2.6vh,34px); grid-template-rows: var(--rowh, clamp(390px,46vh,462px)); grid-template-columns: var(--lcol, 1.08fr) var(--rcol, 0.92fr); gap: var(--sgap, 34px);">
@@ -404,7 +404,7 @@
                 </div>
               </sc-if>
               <sc-if value="{{ r.flat }}">
-                <div style="position: relative; height: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 12px; box-sizing: border-box;">
+                <div style="{{ r.flatStyle }}">
                   <div aria-hidden="true" style="{{ r.wmStyle }}">{{ r.bigIcon }}</div>
                   <span style="{{ r.chipStyle }}">{{ r.icon }}</span>
                   <span style="flex: 1; min-width: 0;">
@@ -743,7 +743,7 @@ class Component extends DCLogic {
   featureDefs() {
     return [
       { icon:'board', slot:'gc-rate', src:'/web/photos/rate-board-storefront.jpg', ph:'Exchange shopfront at dusk with a lit rate board in the window', kicker:'SAMPLE FIGURE', value:'USD 1.3977', sub:'Sample rate on a sample board', chip:'Published', kind:'good', title:'Rate board', body:'Set your spread once. Your board prices every deal after that.' },
-      { icon:'chat', slot:'gc-sms', src:'/web/photos/sms-storefront.jpg', ph:'Customer reading a text on their phone outside an exchange shop, warm light', kicker:'BUSINESS TEXTING \u00B7 NOT CONNECTED', value:'Not sent', sub:'Texting is not connected yet', chip:'Not connected', kind:'good', title:'Business texting', body:'Texting is not connected yet. The desk does not send a message.' },
+      { icon:'chat', slot:'gc-sms', src:'/web/photos/sms-storefront.jpg', ph:'Customer reading a text on their phone outside an exchange shop, warm light', kicker:'QUOTE TEXT \u00B7 WHEN SET UP', value:'That quote', sub:'Only the number given', chip:'When set up', kind:'good', title:'Business texting', body:'A quote can be texted to the number given, only for that quote, when texting is set up. If texting is not set up, no message is sent.' },
       { icon:'till', slot:'gc-till', src:'/web/photos/till-float.jpg', ph:'Hands counting cash at the counter, warm light', kicker:'SAMPLE FIGURE', value:'$2,400.00', sub:'Sample ticket, USD to CAD', chip:'Float updated', kind:'good', title:'Till & float', body:'Close the day with the drawer already agreeing.' },
       { icon:'user', slot:'gc-kyc', src:'/web/photos/kyc-counter.jpg', ph:'Customer and teller at the counter, mid-conversation', kicker:'CLIENT \u00B7 ON FILE', value:'ID on file', sub:'Reused on next visit', chip:'On file', kind:'good', title:'Client files', body:'Take their details once. Verification is not connected. Every later visit can reuse the file.' },
       { icon:'shield', slot:'gc-comp', src:'/web/photos/compliance-institution.jpg', ph:'Institutional stone colonnade and bronze door', kicker:'FINTRAC \u00B7 LCTR', value:'$10,000', sub:'CAD cash threshold, not a shop total', chip:'Not sent', kind:'good', title:'Compliance', body:'The rules where you operate, carried as a pack. A large cash worksheet can be prepared. The desk does not send it.' },
@@ -757,7 +757,7 @@ class Component extends DCLogic {
   featureDetails() {
     return [
       { tag: 'PRICING', desc: 'Pull the interbank mid, add your margin per currency, and your board builds itself. Publish once and the number in your window, on your site and at the till are the same number.', points: ['Mid-market rates, refreshed regularly, your spread per currency', 'One tap publishes everywhere at once', 'Schedule a rate change before you open', 'Nobody quotes off a stale board again'] },
-      { tag: 'MESSAGING', desc: 'Texting is not connected yet. The desk does not send a message from the counter.', points: ['Texting is not connected', 'No shop number is wired in', 'Replies are not received here', 'Nothing is logged as a sent text'] },
+      { tag: 'MESSAGING', desc: 'A quote can be texted to the number given, only for that quote, when texting is set up. If texting is not set up, no message is sent.', points: ['Only that quote, and one confirmation', 'By text, or by WhatsApp when a WhatsApp sender is set', 'If texting is not set up, no message is sent', 'Replies are not received on the desk'] },
       { tag: 'CASH', desc: 'Every deal writes to the ledger the second it happens, so the drawer is right all day instead of at 6pm. Closing becomes a glance, not an hour with a calculator.', points: ['Each trade logged automatically', 'Live float per currency, per drawer', 'Low-float warning before you run dry', 'The day closes when the drawer agrees'] },
       { tag: 'CLIENTS', desc: 'Capture a client once and they are yours. The next visit reuses the file already on the desk.', points: ['Capture ID once, reuse every visit', 'Screening is not connected', 'No list is loaded', 'A document expiry reminder is not sent'] },
       { tag: 'REGULATORY', desc: 'The Canada pack watches cash thresholds on the book. The desk does not draft a regulator report on its own and does not send one.', points: ['Cash thresholds watched from the book', 'A large cash worksheet can be prepared', 'The desk does not send it', 'There is no one-click exam package'] },
@@ -772,7 +772,7 @@ class Component extends DCLogic {
   storyDefs() {
     return [
       { slot:'gc-web-1', src:'/web/assets/site-web-1.jpg', kicker:'01 \u00B7 THE WEBSITE', caption:'They find you online.', name:'Website', ph:'Comic-book editorial illustration (Adrian Tomine feel), a person at a kitchen table looking at a laptop / phone showing a small currency-exchange shop\u2019s website with a live rate board. Warm flat colour, clean ink linework, muted palette.' },
-      { slot:'gc-web-2', src:'/web/assets/site-web-2.jpg', kicker:'02 \u00B7 NOT CONNECTED', caption:'Texting is not connected.', name:'Not connected', ph:'Comic-book editorial panel, same series style, the same person on a city sidewalk glancing at a phone with a text bubble reading \u201CYour USD is ready for pickup.\u201D Warm flat colour, ink linework.' },
+      { slot:'gc-web-2', src:'/web/assets/site-web-2.jpg', kicker:'02 \u00B7 THE QUOTE', caption:'A quote, when texting is set up.', name:'The quote', ph:'Comic-book editorial panel, same series style, the same person on a city sidewalk glancing at a phone with a text bubble reading \u201CYour USD is ready for pickup.\u201D Warm flat colour, ink linework.' },
       { slot:'gc-web-3', src:'/web/assets/site-web-3.jpg', kicker:'03 \u00B7 THE VISIT', caption:'They walk in.', name:'The visit', ph:'Comic-book editorial panel, same series style, the person pushing open the glass door of the small exchange shop, teller visible behind the counter. Warm flat colour, ink linework.' },
       { slot:'gc-web-4', src:'/web/assets/site-web-4.jpg', kicker:'04 \u00B7 THE CODE', caption:'Shows the code.', name:'The code', ph:'Comic-book editorial panel, same series style, customer at the counter holding up their phone showing a pickup code / QR to a smiling teller. Warm flat colour, ink linework.' },
       { slot:'gc-web-5', src:'/web/assets/site-web-5.jpg', kicker:'05 \u00B7 THE DEAL', caption:'Everyone\u2019s a regular.', name:'The deal', ph:'Warm still illustration / photo-real editorial image, same warm palette, a busy, happy currency-exchange shop: a satisfied customer completing a deal at the counter, cash and envelope handed over, teller smiling, a small queue of friendly neighbourhood faces behind. Community, trust, momentum.' }
@@ -1320,7 +1320,7 @@ class Component extends DCLogic {
       publishTargets: ['Your website', 'Your window display', 'Your Google listing'],
       websiteFeatures: [
         { icon: this.ic('board', 16, '#1D6B45', 2), title: 'Rate board on your site', body: 'Your buy and sell rates, published from the desk.' },
-        { icon: this.ic('chat', 16, '#1D6B45', 2), title: 'Business texting', body: 'Texting is not connected yet. The desk does not message a customer.' },
+        { icon: this.ic('chat', 16, '#1D6B45', 2), title: 'Business texting', body: 'A quote can be texted to the number given, only for that quote, when texting is set up.' },
         { icon: this.ic('till', 16, '#1D6B45', 2), title: 'Reserve & set aside', body: 'Let people put currency aside for pickup.' }
       ],
       claimed: s.claimed, claimedPct: s.claimed + '%',
@@ -1382,9 +1382,10 @@ class Component extends DCLogic {
         return { slot: i, name: r.name, spec: r.spec, tag: r.tag, tall: tall, flat: !tall,
           icon: this.ic(ico, tall ? 17 : 15, acc, 1.9),
           bigIcon: this.ic(ico, tall ? 76 : 44, acc, 1.5),
-          wmStyle: 'position:absolute;top:50%;transform:translateY(-50%);right:' + (tall ? '14px' : '12px') + ';opacity:' + (tall ? '0.17' : '0.15') + ';color:currentColor;pointer-events:none;line-height:0;',
+          wmStyle: 'position:absolute;top:50%;transform:translateY(-50%);right:' + (tall ? '14px' : '8px') + ';opacity:' + (tall ? '0.17' : '0.15') + ';color:currentColor;pointer-events:none;line-height:0;z-index:0;',
+          flatStyle: 'position:relative;height:100%;display:flex;align-items:center;gap:10px;padding:9px 12px;padding-right:' + (tall ? '12' : '64') + 'px;box-sizing:border-box;',
           chipStyle: (tall ? 'width:34px;height:34px;' : 'width:28px;height:28px;') + 'border-radius:9px;display:grid;place-items:center;flex:none;background:' + this.hexA(acc, 0.14) + ';',
-          tagPill: 'font-family:var(--m);font-size:8px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:' + acc + ';background:' + this.hexA(acc, 0.1) + ';border:1px solid ' + this.hexA(acc, 0.22) + ';border-radius:999px;padding:3px 8px;flex:none;white-space:nowrap;',
+          tagPill: 'position:relative;z-index:1;font-family:var(--m);font-size:8px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;color:' + acc + ';background:' + this.hexA(acc, 0.1) + ';border:1px solid ' + this.hexA(acc, 0.22) + ';border-radius:999px;padding:3px 8px;flex:none;white-space:nowrap;',
           boxStyle: 'grid-column:span ' + sp[0] + ';grid-row:span ' + sp[1] + ';min-width:0;min-height:0;border-radius:12px;overflow:hidden;will-change:transform;background:linear-gradient(160deg,' + this.hexA(acc, 0.08) + ',' + this.hexA(acc, 0.02) + '),#FFFFFF;border:1px solid ' + this.hexA(acc, 0.26) + ';box-shadow:0 1px 2px rgba(23,20,15,0.04);' };
       }),
       jurLink: '/compliance#' + J.tag.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
