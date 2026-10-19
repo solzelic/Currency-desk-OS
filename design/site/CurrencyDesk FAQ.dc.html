@@ -37,6 +37,7 @@
       [style*="grid-template-columns: 250px"] { grid-template-columns: minmax(0, 1fr) !important; gap: 22px !important; }
       [style*="grid-template-columns: 250px"] > div:first-child { position: static !important; max-height: none !important; }
     }
+    @media (max-width: 399px) { [style*="height: 66px"] { flex-wrap: nowrap !important; } [style*="height: 66px"] a[style*="margin-left: 12px"] { display: none !important; } [style*="height: 66px"] a[style*="color: var(--mute)"] { display: none !important; } [style*="height: 66px"] a[style*="text-transform: uppercase"] { height: 44px !important; min-height: 44px !important; white-space: nowrap !important; flex: none !important; padding: 0 8px !important; letter-spacing: 0.02em !important; font-size: 9px !important; } }
   </style>
 </helmet>
 
@@ -212,7 +213,7 @@ class Component extends DCLogic {
 
       { cat:'Getting found', q:'Do I need a website already?', a:'No. The desk publishes a rate page for you, and if you want a full site we build one, $3,500, free for founding members.' },
       { cat:'Getting found', q:'What does publishing my rates do for the shop?', a:'It makes you findable. People search before they walk, and the shop they can find is the shop they visit. A rate kept off the internet mostly hides the shop, not the margin.' },
-      { cat:'Getting found', q:'Can I text clients without giving out my number?', a:'A visitor who asks for a quote on your public page can be texted that quote at the number they give, only for that quote, when texting is set up. Confirming the quote sends one more message the same way. If texting is not set up, no message is sent. Replies do not land on the desk.' },
+      { cat:'Getting found', q:'Can my public page text a quote to a visitor?', a:'A visitor who asks for a quote on your public page can be texted that quote at the number they give, only for that quote, when texting is set up. Confirming the quote sends one more message the same way. If texting is not set up, no message is sent. Replies do not land on the desk.' },
       { cat:'Getting found', q:'What can I send clients?', a:'A quote, to the number the visitor gives, only for that quote, when texting is set up. Confirming it sends one more message the same way. If texting is not set up, nothing is sent.' },
 
       { cat:'Early access', q:'What does early access actually mean?', a:'You are among the first hundred desks: founding pricing held for the life of the account, a direct line to the people building it, and real influence over what ships next. The software is in early access in Canada.' },

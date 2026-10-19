@@ -559,10 +559,7 @@ describe("public marketing claims", () => {
     expect(home).not.toContain("Clients & KYC");
     expect(legal).not.toContain("messages you send clients through the desk");
     expect(legal).not.toContain("support analytics and can be declined");
-    expect(home).toContain("A quote can be texted to the number given, only for that quote, when texting is set up.");
-    expect(home).not.toContain("Texting is not connected yet");
-    expect(faq).not.toContain("Texting is not connected yet");
-    expect(faq).toContain("If texting is not set up, no message is sent.");
+    expect(home).toContain("A quote can be texted to the number given, only for that quote, when texting is set up."); expect(home).not.toContain("Texting is not connected yet"); expect(faq).not.toContain("Texting is not connected yet"); expect(faq).toContain("If texting is not set up, no message is sent."); expect(faq).not.toContain("Can I text clients without giving out my number?"); expect(faq).toContain("Can my public page text a quote to a visitor?"); expect(home).not.toContain("ready for pickup"); expect(home).toContain("Your quote: 500 USD at 1.3712. Held for 30 minutes."); expect(probe("Held for 30 minutes.").ok).toBe(true); expect(probe("ready in 30 minutes").ok).toBe(false);
   }, 20000);
 
   it("flags the quote sentence and the four claims only the page test caught", () => {
@@ -571,7 +568,7 @@ describe("public marketing claims", () => {
       "Texting is not connected, so the desk does not send messages to your clients.",
       "The desk does not draft or send a suspicious transaction report.",
       "A shared view across several locations is not built yet.",
-      "Not drafted or sent",
+      "Not drafted or sent", "Can I text clients without giving out my number?", "Your USD is ready for pickup.",
     ];
     expect(missed.filter((claim) => probe(claim).ok), "checker still allows these").toEqual([]);
   });

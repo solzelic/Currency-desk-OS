@@ -171,7 +171,7 @@ const phrases = [
   [/texting is not connected, so the desk does not send messages to your clients/, "Texting is not connected, so the desk does not send messages"],
   [/the desk does not draft or send a suspicious transaction report/, "does not draft or send a suspicious transaction report"],
   [/shared view across several locations is not built yet/, "shared view across several locations"],
-  [/not drafted or sent/, "Not drafted or sent"],
+  [/not drafted or sent/, "Not drafted or sent"], [/can i text clients without giving out my number/, "Can I text clients without giving out my number?"], [/ready for pickup/, "ready for pickup"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";
@@ -274,7 +274,7 @@ function nearby(text, needle, other, span) {
 }
 
 function withoutAllowed(text, rel) {
-  let scanned = text.replace(/\blive rate board\b/g, " ");
+  let scanned = text.replace(/\blive rate board\b/g, " ").replaceAll("held for 30 minutes", " ");
   for (const name of HOUR_RULES) scanned = scanned.replaceAll(name, " ");
   if (!REGULATOR_PAGES.has(rel)) return scanned;
   for (const phrase of REGULATOR_CLAUSES) {

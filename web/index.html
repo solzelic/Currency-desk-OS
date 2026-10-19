@@ -279,7 +279,7 @@
     <div style="text-align: center; max-width: 760px; margin: 0 auto;">
       <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">The website, powered by the desk</div>
       <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.015em; margin: 14px 0 0;">Your shop, open online.</h2>
-      <p style="font-size: 15.5px; line-height: 1.62; color: var(--mute); margin: 18px auto 0; max-width: 600px;">Your rate board lives on your own website, wired to the desk. A quote can be texted to the number given, only for that quote, when texting is set up. People can find you online, check today's rates, reserve currency, and put money aside for pickup.</p>
+      <p style="font-size: 15.5px; line-height: 1.62; color: var(--mute); margin: 18px auto 0; max-width: 600px;">Your rate board lives on your own website, wired to the desk. A quote can be texted to the number given, only for that quote, when texting is set up. People can find you online, check today's rates, reserve currency, and put money aside.</p>
     </div>
 
     <div data-story-grid="true" style="display: grid; align-items: stretch; margin-top: clamp(18px,2.6vh,34px); grid-template-rows: var(--rowh, clamp(390px,46vh,462px)); grid-template-columns: var(--lcol, 1.08fr) var(--rcol, 0.92fr); gap: var(--sgap, 34px);">
@@ -772,9 +772,9 @@ class Component extends DCLogic {
   storyDefs() {
     return [
       { slot:'gc-web-1', src:'/web/assets/site-web-1.jpg', kicker:'01 \u00B7 THE WEBSITE', caption:'They find you online.', name:'Website', ph:'Comic-book editorial illustration (Adrian Tomine feel), a person at a kitchen table looking at a laptop / phone showing a small currency-exchange shop\u2019s website with a live rate board. Warm flat colour, clean ink linework, muted palette.' },
-      { slot:'gc-web-2', src:'/web/assets/site-web-2.jpg', kicker:'02 \u00B7 THE QUOTE', caption:'A quote, when texting is set up.', name:'The quote', ph:'Comic-book editorial panel, same series style, the same person on a city sidewalk glancing at a phone with a text bubble reading \u201CYour USD is ready for pickup.\u201D Warm flat colour, ink linework.' },
+      { slot:'gc-web-2', src:'/web/assets/site-web-2.jpg', kicker:'02 \u00B7 THE QUOTE', caption:'A quote, when texting is set up.', name:'The quote', ph:'Comic-book editorial panel, same series style, the same person on a city sidewalk glancing at a phone with a text bubble reading \u201CYour quote: 500 USD at 1.3712. Held for 30 minutes.\u201D Warm flat colour, ink linework.' },
       { slot:'gc-web-3', src:'/web/assets/site-web-3.jpg', kicker:'03 \u00B7 THE VISIT', caption:'They walk in.', name:'The visit', ph:'Comic-book editorial panel, same series style, the person pushing open the glass door of the small exchange shop, teller visible behind the counter. Warm flat colour, ink linework.' },
-      { slot:'gc-web-4', src:'/web/assets/site-web-4.jpg', kicker:'04 \u00B7 THE CODE', caption:'Shows the code.', name:'The code', ph:'Comic-book editorial panel, same series style, customer at the counter holding up their phone showing a pickup code / QR to a smiling teller. Warm flat colour, ink linework.' },
+      { slot:'gc-web-4', src:'/web/assets/site-web-4.jpg', kicker:'04 \u00B7 THE CODE', caption:'Shows the code.', name:'The code', ph:'Comic-book editorial panel, same series style, customer at the counter holding up their phone showing a code / QR to a smiling teller. Warm flat colour, ink linework.' },
       { slot:'gc-web-5', src:'/web/assets/site-web-5.jpg', kicker:'05 \u00B7 THE DEAL', caption:'Everyone\u2019s a regular.', name:'The deal', ph:'Warm still illustration / photo-real editorial image, same warm palette, a busy, happy currency-exchange shop: a satisfied customer completing a deal at the counter, cash and envelope handed over, teller smiling, a small queue of friendly neighbourhood faces behind. Community, trust, momentum.' }
     ];
   }
@@ -1321,7 +1321,7 @@ class Component extends DCLogic {
       websiteFeatures: [
         { icon: this.ic('board', 16, '#1D6B45', 2), title: 'Rate board on your site', body: 'Your buy and sell rates, published from the desk.' },
         { icon: this.ic('chat', 16, '#1D6B45', 2), title: 'Business texting', body: 'A quote can be texted to the number given, only for that quote, when texting is set up.' },
-        { icon: this.ic('till', 16, '#1D6B45', 2), title: 'Reserve & set aside', body: 'Let people put currency aside for pickup.' }
+        { icon: this.ic('till', 16, '#1D6B45', 2), title: 'Reserve & set aside', body: 'Let people put currency aside.' }
       ],
       claimed: s.claimed, claimedPct: s.claimed + '%',
       features, activeTitle: defs[s.feat].title,
