@@ -2,8 +2,9 @@
    CurrencyDesk OS — Reports
    One-touch report generation off the live ledger. Pick a period,
    tap a report, and a formatted, print-ready document is built
-   instantly: Period Summary, the desk's large-cash compliance pack,
-   Revenue & Earnings, Transaction Register, Client & KYC Register.
+   instantly: End-of-Day Sign-Off, Period Summary, Profit & Loss, the
+   desk's large-cash compliance pack, Revenue & Earnings, Transaction
+   Register, Client & KYC Register.
    Print / Save-PDF and CSV export on every report.
 
    THESE ARE DOCUMENTS SOMEBODY SIGNS. The rule they follow is written
@@ -530,7 +531,7 @@
       return [];
     };
 
-    /* ---------- the five documents ---------- */
+    /* ---------- the documents ---------- */
     const renderDoc = (id) => {
       const book = periodBook.summary;
       /* Why a figure on this document is a dash, in one short line. The
@@ -785,7 +786,7 @@
       }
       if (id === 'fintrac') {
         /* The pack names this document, because "FINTRAC / LCTR" is a
-           Canadian answer and this product is sold in six jurisdictions. A
+           Canadian answer and this product runs in many jurisdictions. A
            desk whose pack has not arrived gets a neutral title rather than
            somebody else's regulator on the letterhead. */
         const packTitle = regime.authority && regime.largeCode

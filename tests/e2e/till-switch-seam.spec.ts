@@ -22,9 +22,8 @@
    FIXTURE, AND WHY IT IS SHAPED THIS WAY
 
    The defect needs a branch with two tills, and the seeded desk has one. The
-   second workspace is inserted here and REMOVED afterwards, because the other
-   seam suites call the ledger without a workspace header and the server
-   rightly refuses that once a branch has two tills. The ledger rows the test
+   second workspace is inserted here and REMOVED afterwards, so the seeded
+   branch is left as this file found it. The ledger rows the test
    writes to the second till are left where they are: this book is append-only
    on purpose, and a test that deleted from it would be rehearsing the one
    thing the product must never do. So nothing here asserts on a count being

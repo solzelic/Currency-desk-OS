@@ -6,7 +6,7 @@
      payout php                 → pay-out side is Philippine pesos
      received usd               → pay-in side is US dollars
      philippine dollars         → either side is PHP (denomination word ignored)
-     remittance send aran       → Remittance-Send for customer Brooke
+     remittance send aran       → Remittance-Send for customer Aran
      fee > 50                   → fee over $50
      payout > 5000              → pay-out amount over 5000
      amount 1000..5000          → either amount between 1k and 5k

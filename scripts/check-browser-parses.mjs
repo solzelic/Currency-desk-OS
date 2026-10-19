@@ -11,8 +11,8 @@
    block, so fifty lines stayed live and a stray `*​/` ended the file —
    cdos-settings.jsx stopped parsing, and the whole screen was simply
    gone. Nothing noticed, because nothing was looking: the shipped
-   browser code is plain .jsx and .html compiled by Babel in the visitor's
-   browser, so there is no compiler between writing it and a customer
+   browser code was plain .jsx and .html compiled by Babel in the visitor's
+   browser, so there was no compiler between writing it and a customer
    opening it.
 
    This is that compiler, run early. It is not a test — it proves nothing
@@ -24,9 +24,10 @@
      os-src/*.jsx, *.js   the OS itself
      shared/id-document-types.js
                           the ID-type catalogue the OS and the server share
+     web/app/*.js         the compiled OS and panel
      admin.html           the platform panel, JSX inside a script tag
-     web/*.html           the built public pages, including the two
-                          compiled from designs
+     CurrencyDesk OS.html the OS shell
+     web/*.html           the built public pages, all compiled from designs
      yorkfx-converter.js  the storefront's rate script
      YorkFX/*.html        the customer storefront pages
 

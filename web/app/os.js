@@ -960,8 +960,8 @@
      two call sites in files this change does not own invoke them
      unconditionally at start-up, and deleting them would black-screen the
      desk rather than fix it:
-        os-src/cdos-os.jsx:769-770  — the `baseline` / `receipts` state
-       os-src/cdos-os.jsx:1799-1800, 1869 — the same on tenant switch/reset
+        os-src/cdos-os.jsx:869-870  — the `baseline` / `receipts` state
+       os-src/cdos-os.jsx:2099-2100, 2195 — the same on tenant switch/reset
       Those states, and every prop threading them down to the Till, the
      Vault, Reports and Compliance, are the remaining work. They now carry
      nothing, so nothing reads a cash figure out of them. */
@@ -978,26 +978,21 @@
   /* Deriving stock from transactions is the second book, so there is no
      derivation left to call. It answers null — "the ledger has no figure
      here" — rather than a number, because null is the one answer a screen
-     cannot mistake for money. One caller in a file this change does not
-     own still reaches for it:
-        os-src/cdos-till.jsx:485 — the drawer's `expectedOf` in the
-       standalone (no-server) mode. It should read
-          const expectedOf = (c) => serverBalances &&
-           Object.prototype.hasOwnProperty.call(serverBalances, c)
-             ? Number(serverBalances[c]) : null;
-        and render null as "—". A desk that cannot reach the ledger has no
-       expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
-       there is no offline mode, and an invented expected figure is what a
-       teller reconciles a real drawer against. */
+     cannot mistake for money. Nothing calls it any more: the drawer's
+     `expectedOf` (os-src/cdos-till.jsx) reads the server balance and
+     renders null as "—". A desk that cannot reach the ledger has no
+     expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
+     there is no offline mode, and an invented expected figure is what a
+     teller reconciles a real drawer against. */
   const holdings = () => null;
 
   /* ============================================================
      TWO-SIDED PRICING — the defining act of the desk, one pure function
      A real desk publishes a BUY rate and a SELL rate per currency; the
      gap between them (the spread) is the margin. priceDeal() is the single
-     source of truth both the Ledger (quoting) and Reports (earnings) call,
-     so the spread shown at the counter is the exact spread booked — never
-     a back-estimate. The desk RECEIVES the pay-in currency (buys it, under
+     quoting call for the Ledger, New Transaction and Transfers, so the
+     spread shown at the counter is the spread quoted — never a
+     back-estimate. Reports' earnings come from the ledger summary. The desk RECEIVES the pay-in currency (buys it, under
      mid) and GIVES the pay-out currency (sells it, over mid); a foreign→
      foreign cross pays spread on both legs.
          unit CAD (mid)   = crossRate(code,'CAD')           // CAD per 1 unit
@@ -1177,9 +1172,9 @@
      is GET /api/ledger/transactions and nothing else; a desk with nothing
      posted shows nothing posted, which is both true and the thing an
      owner needs to see on their first morning.
-      Both survive as empty because cdos-os.jsx:714-715 calls them to
-     initialise its `rows` and `clients` state before any server round
-     trip. Empty is the correct starting value for that state. */
+      Both survive as empty only because cdos-os.jsx still imports them
+     (line 10); nothing calls them. Its `rows` and `clients` state starts
+     from the desk's saved state, or empty. */
   const seedRows = () => [];
   const seedClients = () => ({});
 
@@ -1400,23 +1395,22 @@
      Every client, every filing and every setting after it was then
      browser-only until somebody intervened. A teller doing exactly their
      job could stop the shop saving anything.
-      So there is one way in, and it downscales. Sixteen hundred pixels on
-     the long edge is comfortably enough to read a document number off a
-     passport — the thing the image is FOR — and re-encoding at 0.6 takes a
-     four-megabyte photograph to something in the low hundreds of
-     kilobytes. Anything that is still too big afterwards is refused, out
-     loud, rather than accepted and silently lost.
-      This is a ceiling, not a cure. Scans belong in object storage with a
-     row pointing at them, not in the desk's state document at all — see
-     docs/BROWSER_STORES.md. Until they move, this keeps one photograph
-     from stopping a shop. */
+      So there is one way in, and it downscales — to 1200 pixels on the long
+     edge at quality 0.55 (see below), which takes a four-megabyte
+     photograph to something in the low hundreds of kilobytes. Anything
+     that is still too big afterwards is refused, out loud, rather than
+     accepted and silently lost.
+      This is a ceiling, not a cure. Client ID scans now live on the server
+     (`desk_client_images`, docs/CLIENT_RECORDS.md); cheque images and the
+     logo still come through here, so this still keeps one photograph from
+     stopping a shop. */
   /* 1200 on the long edge is about 150 DPI across a passport, which reads
      a document number comfortably and is what the image is FOR. It was
      1600 first; measured against a worst-case scan that came out at 240 KB
      apiece, which is only sixteen clients before a desk is at its saving
      limit. This is the honest trade — a scan you can read, small enough
      that a shop gets through a working week — and it is still a stopgap.
-     Scans belong in object storage; see docs/BROWSER_STORES.md. */
+     Client scans are on the server now; see docs/CLIENT_RECORDS.md. */
   const ID_IMAGE_MAX_EDGE = 1200;
   const ID_IMAGE_QUALITY = 0.55;
   /* Refused above this AFTER downscaling. A scan that will not come under
@@ -1561,9 +1555,9 @@
   // ---- client risk rating (staff-set compliance tier; light V1) ----------------
   // Every contact carries one tier. Staff set it in the profile's Edit mode; it feeds
   // the recommendation engine (High -> enhanced due diligence) and the auto-tag rules.
-  // FUTURE (mapped, not built): tiers sync across the branch network so a High flag
-  // raised at one store surfaces on a customer's file at every store during a check.
-  // Kept on-device for now — see the roadmap in docs/.
+  // Saved on the server as `desk_clients.risk_rating`, scoped to the legal entity,
+  // so a High flag raised at one store is on the customer's file at every store
+  // (docs/CLIENT_RECORDS.md).
   const RISK_TIERS = ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = v => {
     const s = String(v == null ? '' : v).trim().toLowerCase();
@@ -3539,8 +3533,9 @@
     /* The 24h window comes from the active jurisdiction pack (regime) so the
        same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
         The LINE itself comes from reportingLimit(), which is one answer for
-       the whole product: the owner's setting, else the jurisdiction pack
-       the server states, in the desk's own currency. It used to fall back
+       the whole product: the desk's line on the ledger, else the
+       jurisdiction pack, else the owner's saved setting, in the desk's own
+       currency. It used to fall back
        to a hardcoded 10,000 Canadian dollars, which is how this engine and
        the Ledger's own row flags came to disagree on the same desk.
         A null limit means no line has been stated. Nothing is flagged then,
@@ -5186,7 +5181,8 @@
    identity, localization, compliance thresholds, rate/fee defaults,
    receipt content, staff permissions and the ticker tape. Everything
    reads/writes the shared `settings` object (persisted by the shell)
-   except permissions (perms) and the ticker (tickerCfg).
+   except permissions (perms), the ticker (tickerCfg), and the rows the
+   server owns (cost method, thresholds, currencies, sign-ins).
    ============================================================ */
 (function () {
   const {
@@ -14267,7 +14263,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        is read from the pack and every total on this screen is labelled with
        it. A desk whose pack has not arrived says the currency is unknown
        rather than assuming one; see docs/ABSENT_FIGURES.md.
-        `dayEarned` is the trading day's earnings from GET /api/ledger/summary
+        `dayBook.summary.earningsHome` is the trading day's earnings from GET /api/ledger/summary
        — commission plus the margin each disposal actually booked. The close
        used to compute this here, as `(mid - paid)` against a live market
        rate, and store it on the day summary: on a desk with one voided deal
@@ -14822,10 +14818,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const isCounted = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) > 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
     const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
     const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
-
-    // expected float per currency — DERIVED from the one shared source of truth
-    // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
-    // Identical to the figure the Vault shows because both call position().
     const serverBalancesReady = !serverBacked || serverBalances !== null;
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
@@ -14843,7 +14835,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        ledger gets to make it. A currency the ledger has never heard of, and
        a desk running with no ledger at all, both have no expected float —
        and a count sheet that prints 0.00 there invites a teller to write a
-       variance against a number nobody stood behind. See ABSENT_FIGURES.md. */
+       variance against a number nobody stood behind. See docs/ABSENT_FIGURES.md. */
     const expectedOf = c => serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : null;
     // reveal + read out the expected float (audible cue for a blind / hands-busy count)
     const announceExpected = c => {
@@ -14996,7 +14988,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     // counted here but not carried by the server ledger — recorded locally only,
     // and deliberately kept out of the close so it can't disturb a real balance
     const offLedgerCcys = serverBacked ? countedCcys.filter(c => !serverCcys.includes(c)) : [];
-    // a drawer is "off" only when its CAD variance exceeds the owner's tolerance (Settings › Cash drawer)
     const tolHome = Math.max(0, +(settings && settings.tillVarianceTol) || 0);
     /* A drawer is "off" when its variance exceeds the owner's tolerance,
        measured in the desk's own money. Where this screen cannot express the
@@ -15010,7 +15001,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
-    // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     /* Cross-currency totals for the reconcile footer. Null where any row
        cannot be expressed in the desk's own money — a total quietly missing
        two of nine currencies looks complete and is not. */
@@ -17138,10 +17128,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
      The desk's own currency belongs on that list wherever the desk is; the
      other three are a starting suggestion the owner edits. */
   const DEFAULT_FC = () => Array.from(new Set([homeCcy(), 'USD', 'EUR', 'GBP']));
-  /* What a wholesale order can be placed in. The ledger carries these four
-     today (see the scope limits in docs/CASH_OWNERSHIP_INVARIANTS.md), and
-     offering the other five would let somebody record a delivery the book
-     cannot take. The nine-currency list this replaced was the demo seed's. */
+  /* What a wholesale order offers by default: the same starting list as a
+     float. The ledger itself takes any currency the desk trades
+     (docs/DESK_CURRENCIES.md). The nine-currency list this replaced was the
+     demo seed's. */
   /* Evaluated per render, not once at module load: the pack arrives from
      the server after this file has been parsed, so a constant captured here
      would freeze whatever the fallback said. */
@@ -19923,12 +19913,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     CNY: CD.brass
   };
 
-  /* ---- station model: branches → tills ----------------------------------
-     Each till carries TWO people fields:
-       teller   — who's POSTED here (management: their default drawer, set on
-                  the Team board). Sticky.
-       operator — who's ON it right now (a live session: set by sign-in /
-                  till switch, cleared by sign-out). One operator per till. */
   /* ---- station model: branches → vault + tills ---------------------------
      Each branch carries a VAULT (its cash account; `main: true` marks the
      main vault). Each till carries TWO people fields:
@@ -27084,7 +27068,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      payout php                 → pay-out side is Philippine pesos
      received usd               → pay-in side is US dollars
      philippine dollars         → either side is PHP (denomination word ignored)
-     remittance send aran       → Remittance-Send for customer Brooke
+     remittance send aran       → Remittance-Send for customer Aran
      fee > 50                   → fee over $50
      payout > 5000              → pay-out amount over 5000
      amount 1000..5000          → either amount between 1k and 5k
@@ -28346,7 +28330,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (lock && lock.until <= nowMs) setLock(null);
     }, [nowMs, lock]);
 
-    // THE pricing call — one source of truth (also drives Reports' earnings)
+    // THE pricing call — one source of truth for the quote
     const pricing = useMemo(() => priceDeal({
       inCcy,
       outCcy,
@@ -28410,7 +28394,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const lockSecsLeft = lockLive ? Math.max(0, Math.round((lockLive.until - nowMs) / 1000)) : 0;
     const lockClock = `${Math.floor(lockSecsLeft / 60)}:${String(lockSecsLeft % 60).padStart(2, '0')}`;
 
-    // live compliance preview (in CAD-equivalent for the threshold test)
+    // live compliance preview (in the desk's own money for the threshold test)
     /* The deal's size in the desk's own money — what the reporting line is
        stated in, and therefore what it must be tested against. Null when
        this desk's books are kept in a currency the rate board cannot
@@ -32059,7 +32043,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       };
     }, [rows, client, flags, range]);
 
-    // live summary of exactly what's on screen (CAD-equivalent)
+    // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {
       let vol = 0,
         fees = 0,
@@ -33128,9 +33112,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
    A single counter flow that reshapes itself to the job: exchange,
    remittance, cheque, money order, bill payment. The right rail is a
    live "before you post" checklist + deal ticket, so a teller trained
-   once just fills until everything turns green. Compliance (ID at $3k,
-   LCTR at $10k, structuring, purpose/source capture) is part of the
-   checklist, not an afterthought.
+   once just fills until everything turns green. Compliance (the pack's
+   identification and reporting lines, structuring, purpose/source
+   capture) is part of the checklist, not an afterthought.
    Exposed as window.CDOS.TxModal — the Ledger prefers it when present.
    ============================================================ */
 (function () {
@@ -36906,8 +36890,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
      • Cross-border EFT report (FINTRAC EFTR) — the international
        electronic-funds-transfer filing the majors keep getting fined
        for missing.
-   FX on every transfer is priced through the shared two-sided engine
-   (priceDeal), so the spread booked here lands in Revenue & Earnings.
+   FX on a transfer is quoted through the shared two-sided engine
+   (priceDeal), but the ledger books no spread on a remittance — only the
+   fee is earned (docs/OBLIGATION_LINES.md).
    ============================================================ */
 (function () {
   const {
@@ -39560,7 +39545,7 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
 <div class="meta"><b>${esc(biz)}</b><div>${esc(settings.msbNumber || '')}</div><div>Generated ${esc(stamp())}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
 <div class="note">${authority() ? `<b>${esc(authority())} cross-border reporting</b> — international electronic funds transfers at or above this desk's reporting line must be reported to ${esc(authority())}. Confirm the deadline and the exact form in ${esc(authority())}'s own guidance; this desk does not assert it.` : `<b>Cross-border reporting</b> — this desk's regulator is not stated on its jurisdiction pack, so no reporting obligation is asserted here. Install the pack for the country you operate in.`}
 ${threshold == null ? ' No reporting line has been set for this desk, so nothing on this page is flagged as reportable.' : ` The line used below is ${esc(fmtHome(threshold))}.`}</div>
-<div class="note" style="background:#f1efe7;border-color:#ddd;color:#555"><b>Not from the ledger.</b> Money transfers do not post to the server ledger yet (see docs/CASH_OWNERSHIP_INVARIANTS.md, "known scope limits"), so every figure on this page comes from this desk's own transfer records. It is not reconciled against the book and must not be treated as if it were.</div>
+<div class="note" style="background:#f1efe7;border-color:#ddd;color:#555"><b>Not from the ledger.</b> Transfers post to the server ledger, but this page is built from this desk's own transfer records rather than read from the book. It is not reconciled against the book and must not be treated as if it were.</div>
 <div class="kpis"><div class="kpi"><div class="l">Reportable transfers</div><div class="v">${threshold == null ? '—' : eft.length}</div></div><div class="kpi"><div class="l">Total value${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(total))}</div></div><div class="kpi"><div class="l">Reporting line</div><div class="v">${threshold == null ? '— not set' : esc(fmtHome(threshold))}</div></div></div>
 <table><thead><tr><th>Ref</th><th>Date</th><th>Sender</th><th>Beneficiary</th><th>Destination</th><th>Partner</th><th class="r">${esc(homeCcy() || 'Local')} value</th><th class="r">Payout</th><th>Purpose</th></tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:14px;color:#999">No reportable transfers in this period.</td></tr>'}</tbody></table>
 <div class="ft">Generated by CurrencyDesk OS${threshold == null ? '' : `. Cross-border transfers ≥ ${esc(fmtHome(threshold))}`}${wireReport() ? ` (${esc(wireReport())})` : ''}. Retain per record-retention policy.</div>
@@ -47231,38 +47216,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     }
   };
 
-  // What the provider reads off the ID document and hands back to us (deterministic per name so it's stable).
-  function extractIdentity(name) {
-    let h = 0;
-    const s = String(name || '');
-    for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) >>> 0;
-    const pick = arr => arr[h % arr.length];
-    const streets = ['Bathurst St', 'Dundas St W', 'Bloor St E', 'Eglinton Ave', 'Lakeshore Blvd', 'Yonge St', 'King St W', 'Queen St E'];
-    const cities = [['Toronto', 'ON', 'M5V 2T6'], ['Mississauga', 'ON', 'L5B 4M1'], ['Markham', 'ON', 'L3R 0B8'], ['Vaughan', 'ON', 'L4K 3N1'], ['Brampton', 'ON', 'L6Y 1M5']];
-    const idTypes = ["Driver's Licence", 'Passport', 'Provincial ID'];
-    const [city, province, postal] = pick(cities);
-    const num = 100 + h % 8900;
-    const idType = pick(idTypes);
-    const idNum = idType === 'Passport' ? 'P' + String(1000000 + h % 8999999) : 'DL ' + String(1000 + h % 8999) + '-' + String(100 + h % 899);
-    const yr = 1972 + h % 32,
-      mo = 1 + h % 12,
-      da = 1 + h % 27;
-    const pad = n => String(n).padStart(2, '0');
-    return {
-      address: `${num} ${pick(streets)}`,
-      city,
-      province,
-      postal,
-      country: 'Canada',
-      dob: `${yr}-${pad(mo)}-${pad(da)}`,
-      idType,
-      idNum,
-      idIssued: `20${20 + h % 4}-${pad(mo)}-${pad(da)}`,
-      idExpiry: `20${30 + h % 5}-${pad(mo)}-${pad(da)}`,
-      email: (s.toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').trim().split(/\s+/).slice(0, 2).join('.') || 'contact') + '@email.com'
-    };
-  }
-
   // A sent check used to copy a hit off the sample watchlist. That list
   // is gone, so a check does not report a sanctions result.
   function resolve(check) {
@@ -48632,8 +48585,8 @@ ${(filing.map || []).map(blockHTML).join('')}
   /* ====================================================================
      NEW CONTACT FLOW — scan ID → name & phone → verify → auto-fill
      A guided onboarding: capture the ID, capture name + phone (creates
-     the contact), run Persona, then write the extracted address / DOB /
-     ID details back onto the contact.
+     the contact). Persona is not connected, so no check runs and nothing
+     is read off the ID.
      ==================================================================== */
   function NewContactFlow({
     initialName,
@@ -50325,8 +50278,9 @@ ${snap}`;
    CurrencyDesk OS — Reports
    One-touch report generation off the live ledger. Pick a period,
    tap a report, and a formatted, print-ready document is built
-   instantly: Period Summary, the desk's large-cash compliance pack,
-   Revenue & Earnings, Transaction Register, Client & KYC Register.
+   instantly: End-of-Day Sign-Off, Period Summary, Profit & Loss, the
+   desk's large-cash compliance pack, Revenue & Earnings, Transaction
+   Register, Client & KYC Register.
    Print / Save-PDF and CSV export on every report.
 
    THESE ARE DOCUMENTS SOMEBODY SIGNS. The rule they follow is written
@@ -51320,7 +51274,7 @@ ${snap}`;
       return [];
     };
 
-    /* ---------- the five documents ---------- */
+    /* ---------- the documents ---------- */
     const renderDoc = id => {
       const book = periodBook.summary;
       /* Why a figure on this document is a dash, in one short line. The
@@ -52053,7 +52007,7 @@ ${snap}`;
       }
       if (id === 'fintrac') {
         /* The pack names this document, because "FINTRAC / LCTR" is a
-           Canadian answer and this product is sold in six jurisdictions. A
+           Canadian answer and this product runs in many jurisdictions. A
            desk whose pack has not arrived gets a neutral title rather than
            somebody else's regulator on the letterhead. */
         const packTitle = regime.authority && regime.largeCode ? `${regime.authority} / ${regime.largeCode} Compliance Pack` : 'Large-Cash Compliance Pack';
@@ -53879,7 +53833,7 @@ ${snap}`;
 
 /* ---- os-src/cdos-pricing.jsx ---- */
 /* ============================================================
-   CurrencyDesk OS — Pricing Console  (roadmap #5)
+   CurrencyDesk OS — Pricing Console
    The owner's profit lever in one place. Reads & writes the SAME
    settings keys the Ledger prices from (settings.spreads, defaultSpread,
    defaultFee, marginFloor/Target/Enforce, payoutRound*, rateProvider) —
@@ -59585,8 +59539,9 @@ ${snap}`;
      A1 CurrencyDesk ID  →  A2 Password  →  A3 email-code keypad
    then the existing station picker / desktop. The shared on-screen
    keypad also powers desk-lock unlock (B) and operator handover (C).
-   Backend auth is unchanged: the ID resolves a staff record, the
-   password calls /api/auth/login, the code step is the (simulated) 2FA.
+   Backend auth: the ID resolves a staff record, the password calls
+   /api/auth/login/start, which emails a code to an email sign-in; the
+   code step checks it at /api/auth/login/verify.
    Tokens mirror the design exactly (ink #17140F, primary #1D6B45, …).
    ============================================================ */
 (function () {
@@ -61727,9 +61682,9 @@ window.CDOS_PERSIST = (function () {
      theirs is lost. `cdos_rows_v1` is one key holding every transaction, so
      two tellers trading at once is exactly that case. The merge does not
      save us there and is not pretending to: the real answer is that
-     transactions belong in a table, one row each, which is why promoting
-     them is the next piece of work (docs/ARCHITECTURE.md §3). This makes
-     the common case safe and makes the remaining one smaller. */
+     transactions are already a table in the ledger (docs/ARCHITECTURE.md
+     §3), and `cdos_rows_v1` is a stale second copy. This makes the common
+     case safe and makes the remaining one smaller. */
   function merge(base, mine, theirs) {
     var out = {}, all = {};
     [base, mine, theirs].forEach(function (o) {
@@ -65295,7 +65250,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        has posted nothing shows nothing, rather than 38 invented deals and 18
        invented customers that a new owner has to recognise as fiction before
        they can trust anything else on the screen. What is here is filled from
-       the ledger — see `loadLedger` below. */
+       the ledger — see `loadLedger` in cdos-backend.js, called by the Ledger app. */
     const [rows, setRows] = useState(() => {
       try {
         const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null');
@@ -65481,11 +65436,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return def;
       }
     });
-    // ---- ONE shared opening baseline + ONE shared wholesale-receipts store ----
-    // both the Vault (position) and the Till (expected) derive from these via
-    // window.CDOS.position(); receipts are kept OUT of the customer ledger so a
-    // wholesale purchase never trips a compliance flag, yet the till still
-    // counts against them. Edited in the Till's reconcile, read by the Vault.
+    // ---- legacy opening baseline + wholesale-receipts stores ----
+    // Both are empty now and nothing reads cash from them: cash comes from the
+    // ledger (see the headstone above `defaultBaseline` in cdos-base.jsx).
     const [baseline, setBaseline] = useState(() => {
       try {
         const r = localStorage.getItem('cdos_baseline_v1');
@@ -67617,10 +67570,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          ledger and the Ledger app's own fetch of it. Reseating it wholesale
          raced that fetch and won: the Ledger showed one record while the
          ledger held two. So anything already carrying a server id is kept —
-         the book is the book — and the blob supplies only what the ledger has
-         never heard of, which today is every deal type that does not post
-         yet: cheques, remittances, money orders, bill payments. When those
-         post, this whole store goes. */
+         the book is the book — and the blob supplies only rows the ledger has
+         never heard of (a desk with no ledger). Every deal type now posts —
+         docs/CASH_OWNERSHIP_INVARIANTS.md, Known scope limits. */
       setRows(current => {
         const saved = rd('cdos_rows_v1', []);
         if (!Array.isArray(saved)) return current;

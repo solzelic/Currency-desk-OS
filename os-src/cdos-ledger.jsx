@@ -297,7 +297,7 @@
     const lockLive = lock && lock.until > nowMs ? lock : null;
     useEffect(() => { if (lock && lock.until <= nowMs) setLock(null); }, [nowMs, lock]);
 
-    // THE pricing call — one source of truth (also drives Reports' earnings)
+    // THE pricing call — one source of truth for the quote
     const pricing = useMemo(() => priceDeal({
       inCcy, outCcy, inAmt: amtN, settings,
       lockedRate: lockLive && !override ? lockLive.rate : null,
@@ -334,7 +334,7 @@
     const lockSecsLeft = lockLive ? Math.max(0, Math.round((lockLive.until - nowMs) / 1000)) : 0;
     const lockClock = `${Math.floor(lockSecsLeft / 60)}:${String(lockSecsLeft % 60).padStart(2, '0')}`;
 
-    // live compliance preview (in CAD-equivalent for the threshold test)
+    // live compliance preview (in the desk's own money for the threshold test)
     /* The deal's size in the desk's own money — what the reporting line is
        stated in, and therefore what it must be tested against. Null when
        this desk's books are kept in a currency the rate board cannot
@@ -1577,7 +1577,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: feesKnown ? src.reduce((s, x) => s + (+x.fee || 0), 0) : null, rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
     }, [rows, client, flags, range]);
 
-    // live summary of exactly what's on screen (CAD-equivalent)
+    // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {
       let vol = 0, fees = 0, posted = 0;
       const liveRows = filtered.filter(r => r.status !== 'void');

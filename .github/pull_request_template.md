@@ -13,7 +13,7 @@
 
 - [ ] `docs/PROJECT_STATE.md` updated in this PR
 - [ ] PROJECT_STATE reviewed — no change required
-- [ ] Architecture/repository docs updated in this PR (`docs/REPOSITORY_MAP.md`, `docs/ARCHITECTURE.md`, `README.md`, `CONTRIBUTING.md`)
+- [ ] Architecture/repository docs updated in this PR (`docs/REPOSITORY_MAP.md`, `docs/ARCHITECTURE.md`, `docs/ROAD_TO_DEPLOYMENT.md`, `README.md`, `CONTRIBUTING.md`)
 - [ ] Architecture docs reviewed — no change required
 
 ## Problem

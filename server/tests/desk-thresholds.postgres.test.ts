@@ -355,10 +355,9 @@ const gateScope = [
 /* Two packs, both with a tradeable home currency, carrying the figures
    this is really about.
 
-   `post()`'s currency type is still the pilot's four codes, so a desk
-   whose book is kept in dirhams cannot be driven through it. Rather than
-   widen the enum for a test, the UAE's FIGURES ride on a GBP book: what
-   is being proved is that the gate uses the pack's number rather than
+   These fixtures predate migration 020, when `post()` took only the
+   pilot's four codes, so the UAE's FIGURES ride on a GBP book: what is
+   being proved is that the gate uses the pack's number rather than
    3,000, and the number is the interesting half. That the currency comes
    from the pack too is proved above, against the real AE pack. */
 const PACKS = `

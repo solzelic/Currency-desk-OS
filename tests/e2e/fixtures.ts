@@ -9,7 +9,10 @@ import path from "node:path";
 
    REACT COMES FROM DISK, NOT FROM unpkg
 
-   Both the OS and the panel load React and Babel from a CDN at runtime.
+   The uncompiled shells (`CurrencyDesk OS.html`, `admin.html`) load React
+   and Babel from unpkg. The built public pages name the same unpkg
+   addresses but map them to /web/vendor, and the compiled web/app pages
+   load /web/vendor directly; neither fetches from unpkg.
    That is fine in a browser and wrong in a test: a CDN hiccup would fail
    the build for a reason that has nothing to do with the change, and in
    a sandboxed runner the request may not leave at all. The same versions

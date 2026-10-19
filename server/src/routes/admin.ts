@@ -1,9 +1,10 @@
 /* ============================================================
    Platform admin — the back office for whoever runs CurrencyDesk.
-   Cross-tenant, read-only views so the operator can see every desk that
-   signed up, look one up to help a customer, and read the audit trail.
-   Gated to PLATFORM_ADMIN_EMAILS (comma-separated) — a regular tenant
-   owner can NOT reach these; only the platform operator can.
+   Cross-tenant views and support actions so the operator can see every
+   desk that signed up, look one up to help a customer, and read the audit
+   trail. Gated to members of the platform team (platform_users, see
+   src/platform/team.ts); PLATFORM_ADMIN_EMAILS only seeds that team on
+   first boot. A regular tenant owner can NOT reach these.
      GET /api/admin/tenants          → every desk + its owner
      GET /api/admin/tenants/:id      → one desk in detail
      GET /api/admin/audit            → recent events across all desks
@@ -25,7 +26,7 @@ import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js
 import { forgetClaimedCount } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
-import { ensureDefaultChequeSchedule } from "../state/defaultChequeSchedule.js";
+import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite } from "../sites.js";
 import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
@@ -113,15 +114,14 @@ const createTenantBody = z.object({
    ignored afterwards — see src/platform/team.ts for why that matters. */
 // the operator's own tenant is not a customer desk — hide it from the lists
 const PLATFORM_TENANT = "tnt-platform";
-/* Kept sync and callback-shaped because registerOnboardingRoutes takes it
-   that way; it answers from a cache the gate refreshes on every request, so
+/* Kept sync: it answers from a cache the gate refreshes on every request, so
    a member removed in the panel stops being one on their next call. */
 const memberCache = new Map<string, PlatformRole>();
 export const isPlatformAdmin = (email: string | undefined): boolean =>
   !!email && memberCache.has(email.toLowerCase());
 
-/* Readable aloud and hard to mistype: no vowels to form a word by accident,
-   no characters that look like each other down a phone line. */
+/* Readable aloud and hard to mistype: no i, l, o, 0 or 1, the characters
+   that get confused for each other down a phone line. */
 function tempPassword(): string {
   const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
   const bytes = new Uint8Array(14);

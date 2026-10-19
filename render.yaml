@@ -1,7 +1,8 @@
 # Render blueprint — one web service: the CurrencyDesk OS prototype + API,
 # same origin, auto-deployed on every push to main.
 #
-# One-time setup in the Render dashboard (each marked sync:false below):
+# One-time setup in the Render dashboard (each marked sync:false below,
+# except RESET_STAFF_PASSWORD, which is added only when needed):
 #   DATABASE_URL  — Neon Postgres connection string (neon.tech, free tier)
 #   OXR_APP_ID    — openexchangerates.org App ID (hourly market rates)
 #   SEED_PASSWORD — FIRST-BOOT bootstrap only: the initial password for the
@@ -36,7 +37,7 @@ services:
     # free tier: $0, sleeps after ~15 idle minutes (~30s wake on next visit).
     # switch to "starter" ($7/mo) for always-on once customers rely on it.
     plan: free
-    # The onboarding page is compiled from the design bundle in the repo root.
+    # The onboarding page is compiled from the design bundle in design/onboarding/.
     # It is committed too, but building it here means a deploy can never serve
     # a page older than the design sitting next to it. No dependencies — it is
     # plain node against node:fs.
@@ -53,8 +54,9 @@ services:
       # that output is present — this variable must not override it.
       - key: STATIC_INDEX
         value: CurrencyDesk OS.html
-      # the public marketing site — the front door at /. Remove this (or the
-      # file) and the OS takes the root again.
+      # the public marketing site — the front door at /. The server defaults
+      # to web/index.html, so removing this alone changes nothing; the OS
+      # takes the root again only when the file is missing.
       - key: SITE_INDEX
         value: web/index.html
       - key: DATABASE_URL
@@ -64,7 +66,8 @@ services:
       - key: SEED_PASSWORD
         sync: false
       # transactional email (signup verification codes) — Resend. Set both in
-      # the Render dashboard; until they're set, codes are logged, not emailed.
+      # the Render dashboard; until they're set, nothing is sent and the code
+      # is not logged.
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
@@ -75,7 +78,9 @@ services:
       # inbox somebody actually reads.
       - key: REPLY_TO
         sync: false
-      # comma-separated emails allowed into the cross-tenant Admin Console
+      # comma-separated: seeds the platform team on first boot (first = owner,
+      # unless PLATFORM_ADMIN_BOOTSTRAP names one) and receives enquiry
+      # alerts; ignored for access afterwards
       - key: PLATFORM_ADMIN_EMAILS
         sync: false
       # first-run operator login "email:password"; remove after signing in

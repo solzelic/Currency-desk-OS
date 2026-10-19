@@ -1,9 +1,10 @@
 /* ============================================================
    Sessions — opaque random tokens in an httpOnly cookie.
    The DB stores only SHA-256(token): a database leak cannot be
-   replayed as a login. Sliding 12h expiry, hard revocation on
-   logout. No JWTs — sessions for a teller desk should be
-   individually revocable the moment someone is let go.
+   replayed as a login. Fixed 12h expiry from sign-in
+   (SESSION_TTL_MS), hard revocation on logout. No JWTs — sessions
+   for a teller desk should be individually revocable the moment
+   someone is let go.
    ============================================================ */
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull, ne } from "drizzle-orm";

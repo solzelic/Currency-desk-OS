@@ -13,7 +13,7 @@
 #              and the built desk bundle names no sanctions list.
 #   browser-seam — the full Playwright suite against the real server AND a
 #              real PostgreSQL. Without a database the ledger routes never
-#              register, 13 of 17 specs skip themselves, and the deployment
+#              register, 28 of 40 spec files skip themselves, and the deployment
 #              gate goes green having proved nothing — that is how every
 #              serious cash defect here survived CI. The ephemeral service
 #              below is the fix, and scripts/check-seam-ran.mjs fails the job
@@ -110,8 +110,8 @@ jobs:
           echo "::error::Chromium install failed after 3 attempts"
           exit 1
 
-      # One customer from the public site to a working desk, then every
-      # browser↔ledger seam, then the day-long shift that is the deployment
+      # One customer from the public site to a working desk, every
+      # browser↔ledger seam, and the day-long shift that is the deployment
       # gate. The database exists only for this run; the server provisions
       # it at boot (DDL + checksummed migrations), exactly as a fresh
       # deployment would. The suite deliberately leaves ledger state behind

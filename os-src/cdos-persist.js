@@ -209,9 +209,9 @@ window.CDOS_PERSIST = (function () {
      theirs is lost. `cdos_rows_v1` is one key holding every transaction, so
      two tellers trading at once is exactly that case. The merge does not
      save us there and is not pretending to: the real answer is that
-     transactions belong in a table, one row each, which is why promoting
-     them is the next piece of work (docs/ARCHITECTURE.md §3). This makes
-     the common case safe and makes the remaining one smaller. */
+     transactions are already a table in the ledger (docs/ARCHITECTURE.md
+     §3), and `cdos_rows_v1` is a stale second copy. This makes the common
+     case safe and makes the remaining one smaller. */
   function merge(base, mine, theirs) {
     var out = {}, all = {};
     [base, mine, theirs].forEach(function (o) {

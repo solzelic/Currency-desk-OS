@@ -19,7 +19,7 @@ import { registerStaffRoutes } from "./routes/staff.js";
 import { registerDeskRoutes } from "./routes/desk.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
 import { registerTenantStateRoutes } from "./routes/tenantState.js";
-import { registerAdminRoutes, isPlatformAdmin } from "./routes/admin.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminMfaRoutes } from "./routes/admin-mfa.js";
 import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
@@ -240,7 +240,7 @@ export async function buildApp(
     registerClientRoutes(app, db, ledgerDatabaseUrl);
   }
 
-  // serve the built frontend (vite build → dist) when configured
+  // serve the frontend from STATIC_DIR (compiled web/app shells, else the buildless OS) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;
   if (staticDir && existsSync(staticDir)) {
     /* Which HTML is the app shell. There used to be two — a Vite build at
@@ -347,8 +347,8 @@ export async function buildApp(
         app.get("/onboarding/:code", (_req, reply) => reply.sendFile(SITE_PAGES["/onboarding"]));
       }
     }
-    // the platform control panel — served whether prod ships the vite build or
-    // the prototype, as long as admin.html is in the static dir (repo root)
+    // the platform control panel — the compiled web/app/admin.html, else the
+    // hand-written admin.html in the static dir (repo root)
     const adminFile = compiled("web/app/admin.html", "admin.html");
     if (existsSync(path.join(staticDir, adminFile))) {
       app.get("/admin", (_req, reply) => reply.sendFile(adminFile));

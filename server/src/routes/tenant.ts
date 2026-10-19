@@ -1,12 +1,14 @@
 /* ============================================================
    Tenant routes — the purchased tier lives on the TENANT, not the
    device. The OS reads it at sign-in and unlocks apps accordingly;
-   API-side, plan gates (see requirePlan) refuse endpoints the tier
-   doesn't include.
+   API-side, plan gates (tenantPlan → plan_denied) refuse endpoints the
+   tier doesn't include.
      GET   /api/tenant  → { tenant: { id, name, plan } }
-     PATCH /api/tenant  { plan } — administrator only, audited.
-   In production the plan changes when billing clears a payment;
-   until that pipe exists the owner account is the switch.
+     PATCH /api/tenant  { siteDomain?, siteConfig? } — domain: administrator;
+                        contact and hours: administrator or branch manager.
+                        Audited.
+   The plan is not set here. Stripe webhooks set it (routes/billing.ts);
+   the platform team can also change it (routes/admin.ts).
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
