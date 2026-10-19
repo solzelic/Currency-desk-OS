@@ -305,6 +305,7 @@ test("tightening the line in Settings is what the ledger then refuses at", async
   await signInAtDesk(page, OWNER);
   expect(await followThePack(page)).toBe(200);
   const taken = { by: null as string | null, opened: false };
+  let testError: unknown;
   try {
     await deskCanTrade(page, taken);
     const walkIn = await walkInCustomer(page);
@@ -340,20 +341,35 @@ test("tightening the line in Settings is what the ledger then refuses at", async
 
     // put the desk back where it shipped
     expect(await followThePack(page)).toBe(200);
+  } catch (error) {
+    testError = error;
   } finally {
-    if (taken.by) {
-      const api = await playwright.request.newContext({ baseURL });
-      try {
-        const back = await returnTill(api, taken.by);
-        expect(back, back).toBe("returned");
-      } finally {
-        await api.dispose();
+    /* A throw from the hand-back or the close replaces whatever the test
+       already threw. Keep that test error. Log the cleanup failure beside
+       it. The cleanup error stands only when the test itself passed. */
+    let cleanupError: unknown;
+    try {
+      if (taken.by) {
+        const api = await playwright.request.newContext({ baseURL });
+        try {
+          const back = await returnTill(api, taken.by);
+          expect(back, back).toBe("returned");
+        } finally {
+          await api.dispose();
+        }
       }
+      if (taken.opened) {
+        const closed = await closeOpenedTill(page);
+        expect(closed, closed).toBe("closed");
+      }
+    } catch (error) {
+      cleanupError = error;
     }
-    if (taken.opened) {
-      const closed = await closeOpenedTill(page);
-      expect(closed, closed).toBe("closed");
+    if (testError) {
+      if (cleanupError) console.error("till cleanup failed after the test error", cleanupError);
+      throw testError;
     }
+    if (cleanupError) throw cleanupError;
   }
 });
 
