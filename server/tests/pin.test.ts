@@ -191,14 +191,19 @@ describe("PINs are checked by the server", () => {
     expect(saved.every((e) => !("pin" in e))).toBe(true);
     expect(JSON.stringify(back)).not.toContain("4913");
 
-    // the chosen one moved to the staff record and now works
-    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "4913" } })).statusCode).toBe(200);
-    // but the placeholder everyone ships with was dropped, not adopted, so the
-    // panel keeps saying "no PIN" — which is the truth
+    // a PIN in the snapshot is not stored on the staff record
+    expect((await staffRow("m.costa")).pinHash).toBeFalsy();
+    const ignored = await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "4913" } });
+    expect(ignored.statusCode).toBe(409);
+    expect(ignored.json().error).toBe("no_pin");
+    // the placeholder everyone ships with was dropped, not adopted, so the
+    // panel keeps saying "no PIN", which is the truth
     const haddad = await staffRow("r.haddad");
     await handle.db.update(schema.staffUsers).set({ pinHash: null }).where(eq(schema.staffUsers.id, haddad.id));
     await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: costaCookie, payload: { state } as Record<string, unknown> });
     expect((await staffRow("r.haddad")).pinHash).toBeFalsy();
+    // later cases read M. Costa's own PIN. It is set here, not from the snapshot.
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin", cookies: costaCookie, payload: { pin: "4913" } })).statusCode).toBe(200);
   });
 
   it("a stale snapshot cannot roll a PIN back to an old one", async () => {
@@ -466,5 +471,433 @@ describe("PINs are checked by the server", () => {
     expect((await app.inject({
       method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: current },
     })).statusCode).toBe(200);
+  });
+});
+
+describe("a snapshot PIN cannot open someone else's account", () => {
+  const desk = () => ({
+    cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE),
+    cdos_settings: {
+      employees: [{ id: "e-owner", name: "J. Masri", code: "j.masri", pin: "4821" }],
+    },
+  });
+
+  it("a teller cannot plant the owner's PIN through the desk snapshot, then switch in", async () => {
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie, payload: { state: desk() },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(1);
+
+    const back = (await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie })).json();
+    const saved = back.state.cdos_settings.employees as Record<string, unknown>[];
+    expect(saved.find((e) => e.code === "j.masri")).toBeTruthy();
+    expect(saved.every((e) => !("pin" in e))).toBe(true);
+    expect(JSON.stringify(back)).not.toContain("4821");
+    expect((await staffRow("j.masri")).pinHash).toBeFalsy();
+
+    const switched = await app.inject({
+      method: "POST", url: "/api/auth/switch", cookies: costaCookie,
+      payload: { staffId: "j.masri", pin: "4821" },
+    });
+    expect(switched.statusCode, switched.body).toBe(409);
+    expect(switched.json().error).toBe("no_pin");
+    expect(switched.body).not.toContain("4821");
+    const me = await app.inject({ method: "GET", url: "/api/auth/me", cookies: costaCookie });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().user.id).toBe("m.costa");
+
+    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const hit = audits.find((row) => {
+      const detail = row.detail as { codes?: string[]; count?: number };
+      return Array.isArray(detail.codes) && detail.codes.includes("j.masri");
+    });
+    expect(hit).toBeTruthy();
+    expect(JSON.stringify(hit)).not.toContain("4821");
+  });
+
+  it("a teller naming another staff id gets 403 and no PIN is written", async () => {
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, "m.costa"));
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, "s.iqbal"));
+    const set = await app.inject({
+      method: "POST", url: "/api/staff/pin", cookies: costaCookie,
+      payload: { pin: "5566", staffId: "s.iqbal" },
+    });
+    expect(set.statusCode, set.body).toBe(403);
+    expect(set.json().detail).toBe("You can only set your own PIN. Ask a manager.");
+    expect((await staffRow("s.iqbal")).pinHash).toBeFalsy();
+    expect((await staffRow("m.costa")).pinHash).toBeFalsy();
+  });
+
+  it("a manager can set someone else's PIN, and that stays must-change", async () => {
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, "s.iqbal"));
+    const haddad = cookieOf(await signIn("r.haddad"));
+    const set = await app.inject({
+      method: "POST", url: "/api/staff/pin", cookies: haddad,
+      payload: { pin: "5566", staffId: "s.iqbal" },
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    expect(set.body).not.toContain("5566");
+    const row = await staffRow("s.iqbal");
+    expect(row.pinHash).toBeTruthy();
+    expect(row.pinMustChange).toBe(true);
+    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "pin.set"));
+    const hit = audits.find((event) => (event.detail as { staffId?: string }).staffId === "s.iqbal");
+    expect(hit).toBeTruthy();
+    expect(JSON.stringify(hit)).not.toContain("5566");
+  });
+
+  it("a manager cannot set an admin's PIN or another manager's PIN", async () => {
+    const haddadRow = await staffRow("r.haddad");
+    await handle.db.insert(schema.staffUsers).values({
+      id: `${haddadRow.tenantId}:n.khan`, tenantId: haddadRow.tenantId, legalEntityId: haddadRow.legalEntityId,
+      branchId: haddadRow.branchId, staffId: "n.khan", name: "N. Khan", role: "branch_manager",
+      authorizedBranchIds: haddadRow.authorizedBranchIds, passwordHash: haddadRow.passwordHash,
+    }).onConflictDoNothing();
+    for (const staffId of ["j.masri", "n.khan", "r.haddad"]) {
+      await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, staffId));
+    }
+    const haddad = cookieOf(await signIn("r.haddad"));
+    for (const staffId of ["j.masri", "n.khan"]) {
+      const set = await app.inject({ method: "POST", url: "/api/staff/pin", cookies: haddad, payload: { pin: "5566", staffId } });
+      expect(set.statusCode, set.body).toBe(403);
+      expect((await staffRow(staffId)).pinHash).toBeFalsy();
+    }
+    expect((await staffRow("r.haddad")).pinHash).toBeFalsy();
+  });
+
+  it("a weak PIN for someone else is refused and nothing is stored", async () => {
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.staffId, "s.iqbal"));
+    const haddad = cookieOf(await signIn("r.haddad"));
+    for (const pin of ["1234", "0000"]) {
+      const set = await app.inject({ method: "POST", url: "/api/staff/pin", cookies: haddad, payload: { pin, staffId: "s.iqbal" } });
+      expect(set.statusCode, set.body).toBe(422);
+      expect(set.json().error).toBe("weak_pin");
+      expect((await staffRow("s.iqbal")).pinHash).toBeFalsy();
+    }
+  });
+
+  it("a manager cannot write the same staff code on another desk", async () => {
+    const home = await staffRow("s.iqbal");
+    await handle.db.insert(schema.tenants).values({ id: "a-desk", name: "A Desk", siteSlug: "a-desk" }).onConflictDoNothing();
+    await handle.db.insert(schema.legalEntities).values({ id: "le-a-desk", tenantId: "a-desk", name: "A Desk", homeCurrency: "CAD", jurisdictionPackId: "pack-ca-v1", jurisdictionPackVersion: 1 }).onConflictDoNothing();
+    await handle.db.insert(schema.branches).values({ id: "br-a-desk", tenantId: "a-desk", legalEntityId: "le-a-desk", name: "Main" }).onConflictDoNothing();
+    await handle.db.insert(schema.staffUsers).values({
+      id: "a-desk:s.iqbal", tenantId: "a-desk", legalEntityId: "le-a-desk", branchId: "br-a-desk",
+      staffId: "s.iqbal", name: "S. Iqbal", role: "teller", authorizedBranchIds: ["br-a-desk"],
+      passwordHash: home.passwordHash, pinHash: null,
+    }).onConflictDoNothing();
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.id, home.id));
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false }).where(eq(schema.staffUsers.id, "a-desk:s.iqbal"));
+    const set = await app.inject({
+      method: "POST", url: "/api/staff/pin", cookies: cookieOf(await signIn("r.haddad")),
+      payload: { pin: "6677", staffId: "s.iqbal" },
+    });
+    expect(set.statusCode, set.body).toBe(200);
+    const rows = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, "s.iqbal"));
+    expect(rows.find((row) => row.id === home.id)?.pinHash).toBeTruthy();
+    expect(rows.find((row) => row.id === "a-desk:s.iqbal")?.pinHash).toBeFalsy();
+    expect(set.body).not.toContain("6677");
+  });
+
+  it("strips 0000 and does not count it or write an audit row", async () => {
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false });
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const before = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: schedule, cdos_settings: { employees: { one: { code: "j.masri", pin: "0000" }, two: { code: "m.costa", pinHash: "0000" } } } } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(0);
+    const held = (await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie })).json();
+    expect(JSON.stringify(held.state.cdos_settings)).not.toContain("0000");
+    expect("pin" in held.state.cdos_settings.employees.one).toBe(false);
+    expect("pinHash" in held.state.cdos_settings.employees.two).toBe(false);
+    expect((await staffRow("j.masri")).pinHash).toBeFalsy();
+    expect((await staffRow("m.costa")).pinHash).toBeFalsy();
+    const after = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    expect(after).toHaveLength(before.length);
+  });
+
+  it("strips a real PIN from settings saved as a JSON string and counts it", async () => {
+    await handle.db.update(schema.staffUsers).set({ pinHash: null, pinSetAt: null, pinMustChange: false });
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const objectForm = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: schedule, cdos_settings: { employees: { one: { code: "j.masri", pin: "1111" }, two: { code: "not-on-this-desk", pin: "1111" } } } } },
+    });
+    expect(objectForm.statusCode, objectForm.body).toBe(200);
+    expect(objectForm.json().pinsIgnored).toBe(2);
+    const held = (await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie })).json();
+    expect(JSON.stringify(held.state.cdos_settings)).not.toContain("1111");
+    const ignored = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const objectAudit = ignored.find((row) => {
+      const detail = row.detail as { count?: number; codes?: string[] };
+      return detail.count === 2 && detail.codes?.includes("j.masri");
+    });
+    expect(objectAudit?.detail).toMatchObject({ count: 2, codes: ["j.masri"] });
+    expect(JSON.stringify(objectAudit)).not.toContain("not-on-this-desk");
+    expect(JSON.stringify(objectAudit)).not.toContain("1111");
+
+    const packed = JSON.stringify({ employees: [{ code: "m.costa", pin: "4821", note: { PIN: "6677" } }, { code: "not-on-this-desk", pinHash: "0000" }] });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: schedule, cdos_settings: packed } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(2);
+    const back = (await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie })).json();
+    expect(typeof back.state.cdos_settings).toBe("string");
+    expect(back.state.cdos_settings).not.toContain("4821");
+    expect(back.state.cdos_settings).not.toContain("6677");
+    expect(back.state.cdos_settings).not.toContain("0000");
+    expect(JSON.parse(back.state.cdos_settings).employees[0].note).toEqual({});
+    expect((await staffRow("m.costa")).pinHash).toBeFalsy();
+    expect((await staffRow("j.masri")).pinHash).toBeFalsy();
+    const after = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const stringAudit = after.find((row) => {
+      const detail = row.detail as { count?: number; codes?: string[] };
+      return detail.count === 2 && detail.codes?.includes("m.costa");
+    });
+    expect(stringAudit?.detail).toMatchObject({ count: 2, codes: ["m.costa"] });
+    expect(JSON.stringify(stringAudit)).not.toContain("4821");
+    expect(JSON.stringify(stringAudit)).not.toContain("0000");
+  });
+
+  it("caps pinsIgnored and the named codes at 40", async () => {
+    const costa = await staffRow("m.costa");
+    const employees: { code: string; pin: string }[] = [];
+    for (let i = 0; i <= 40; i++) {
+      const staffId = `cap.${String(i).padStart(2, "0")}`;
+      await handle.db.insert(schema.staffUsers).values({
+        id: `${costa.tenantId}:${staffId}`, tenantId: costa.tenantId, legalEntityId: costa.legalEntityId,
+        branchId: costa.branchId, staffId, name: staffId, role: "teller",
+        authorizedBranchIds: costa.authorizedBranchIds, passwordHash: costa.passwordHash,
+      }).onConflictDoNothing();
+      employees.push({ code: staffId, pin: "4821" });
+    }
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE), cdos_settings: { employees } } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(40);
+    const ignored = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const hit = ignored.find((row) => {
+      const detail = row.detail as { codes?: string[] };
+      return detail.codes?.includes("cap.00");
+    });
+    const codes = (hit?.detail as { codes?: string[] } | undefined)?.codes ?? [];
+    expect(codes.length).toBeLessThanOrEqual(40);
+    expect(codes).toHaveLength(40);
+    expect(codes).toContain("cap.00");
+    expect(codes).not.toContain("cap.40");
+    expect(JSON.stringify(hit)).not.toContain("4821");
+  });
+
+  it("keeps a real staff id named after the padding", async () => {
+    const employees: { code: string; pin: string }[] = [];
+    for (let i = 0; i < 40; i++) employees.push({ code: `pad.${String(i).padStart(2, "0")}`, pin: "1111" });
+    employees.push({ code: "j.masri", pin: "4821" }, { code: "j.masri", pin: "4821" });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE), cdos_settings: { employees } } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(40);
+    const ignored = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const hit = ignored.find((row) => {
+      const detail = row.detail as { count?: number; codes?: string[] };
+      return detail.count === 40 && detail.codes?.includes("j.masri") && !detail.codes.includes("cap.00");
+    });
+    expect((hit?.detail as { codes?: string[] } | undefined)?.codes).toEqual(["j.masri"]);
+    expect(JSON.stringify(hit)).not.toContain("4821");
+    expect(JSON.stringify(hit)).not.toContain("pad.");
+  });
+
+  it("strips a legacy PIN copied back when a non-owner leaves settings out", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      cdos_settings: { employees: [{ code: "j.masri", pin: "4821" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const before = await handle.db.select({ id: schema.auditEvents.id }).from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const beforeIds = new Set(before.map((row) => row.id));
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: schedule } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(1);
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(stored?.state)).not.toContain("4821");
+    const after = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const added = after.filter((row) => !beforeIds.has(row.id));
+    expect(added).toHaveLength(1);
+    expect(JSON.stringify(added[0])).not.toContain("4821");
+  });
+
+  it("hides a stored PIN on read, including a top-level pin, and a save still strips and counts it", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      pin: "4821",
+      cdos_settings: { employees: [{ code: "j.masri", pin: "5566" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const got = await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie });
+    expect(got.statusCode, got.body).toBe(200);
+    expect(got.body).not.toContain("4821");
+    expect(got.body).not.toContain("5566");
+    const unread = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(unread?.state)).toContain("4821");
+    expect(JSON.stringify(unread?.state)).toContain("5566");
+
+    const before = await handle.db.select({ id: schema.auditEvents.id }).from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const beforeIds = new Set(before.map((row) => row.id));
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: legacy },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(2);
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(stored?.state)).not.toContain("4821");
+    expect(JSON.stringify(stored?.state)).not.toContain("5566");
+    const after = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const added = after.filter((row) => !beforeIds.has(row.id));
+    expect(added).toHaveLength(1);
+    expect(added[0]?.detail).toMatchObject({ count: 2, codes: ["j.masri"] });
+    expect(JSON.stringify(added[0])).not.toContain("4821");
+    expect(JSON.stringify(added[0])).not.toContain("5566");
+  });
+
+  it("scrubs a health number on read and on save while it still strips the till PIN", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      pin: "4821",
+      cdos_clients_v1: JSON.stringify({
+        "Hana Health": {
+          idType: "OHIP",
+          idNum: "HN-PRIV-9",
+          ids: [{ type: "Passport", num: "PA-KEEP-9" }],
+        },
+      }),
+      cdos_settings: { employees: [{ code: "j.masri", pin: "5566" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const got = await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie });
+    expect(got.statusCode, got.body).toBe(200);
+    expect(got.body).not.toContain("HN-PRIV-9");
+    expect(got.body).not.toContain("4821");
+    expect(got.body).not.toContain("5566");
+    expect(got.body).toContain("PA-KEEP-9");
+    const unread = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(unread?.state)).toContain("HN-PRIV-9");
+    expect(JSON.stringify(unread?.state)).toContain("4821");
+    expect(JSON.stringify(unread?.state)).toContain("5566");
+
+    const before = await handle.db.select({ id: schema.auditEvents.id }).from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const beforeIds = new Set(before.map((row) => row.id));
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: legacy },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(2);
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    const saved = JSON.stringify(stored?.state);
+    expect(saved).not.toContain("HN-PRIV-9");
+    expect(saved).not.toContain("4821");
+    expect(saved).not.toContain("5566");
+    expect(saved).toContain("PA-KEEP-9");
+    const after = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const added = after.filter((row) => !beforeIds.has(row.id));
+    expect(added).toHaveLength(1);
+    expect(added[0]?.detail).toMatchObject({ count: 2, codes: ["j.masri"] });
+    expect(JSON.stringify(added[0])).not.toContain("HN-PRIV-9");
+    expect(JSON.stringify(added[0])).not.toContain("4821");
+  });
+
+  it("does not hand a stored PIN back on a stale 409", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      pin: "4821",
+      cdos_settings: { employees: [{ code: "j.masri", pin: "5566" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: schedule }, version: 0 },
+    });
+    expect(put.statusCode, put.body).toBe(409);
+    expect(put.body).not.toContain("4821");
+    expect(put.body).not.toContain("5566");
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(stored?.state)).toContain("4821");
+    expect(JSON.stringify(stored?.state)).toContain("5566");
+    expect(stored?.version).toBe(1);
+  });
+
+  it("does not hand a stored PIN back when a save with no version changes the fee", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const changed = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) =>
+      row.id === "payroll" ? { ...row, feePct: 2.5 } : row,
+    ));
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      pin: "4821",
+      cdos_settings: { employees: [{ code: "j.masri", pin: "5566" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: changed } },
+    });
+    expect(put.statusCode, put.body).toBe(409);
+    expect(put.body).not.toContain("4821");
+    expect(put.body).not.toContain("5566");
+    expect(put.body).not.toMatch(/"pin(hash)?"\s*:/i);
+    const body = put.json();
+    expect(body.version).toBe(1);
+    expect(body.state?.cdos_cheque_schedule_v1).toBe(schedule);
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(stored?.state).toEqual(legacy);
+    expect(stored?.version).toBe(1);
   });
 });
