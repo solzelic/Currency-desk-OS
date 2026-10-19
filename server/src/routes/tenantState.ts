@@ -112,6 +112,13 @@ function sentVersion(body: Record<string, unknown> | null): number | undefined {
 }
 
 function stateConflict(row: { state: unknown; version: number } | undefined) {
+  /* A copy. The browser merges this reply into local storage. A PIN on
+     that copy is not sent back. The stored row is not written. */
+  if (row?.state && typeof row.state === "object" && !Array.isArray(row.state)) {
+    const copy = structuredClone(row.state as Record<string, unknown>);
+    stripSnapshotPins(copy);
+    row = { ...row, state: copy };
+  }
   return {
     error: "state_conflict",
     detail: "Somebody else saved this desk while you were working. Merging.",
@@ -422,8 +429,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       const fresh = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
       return reply.code(409).send(stateConflict(fresh));
     }
-    /* A change that landed. Who, when (`at` on the row), and the
-       price of each cheque type before and after. */
+    /* A till PIN this save dropped. The count and the staff ids, no digits. */
     if (ignoredPins.count > 0) {
       const roster = await db.select({ staffId: schema.staffUsers.staffId }).from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, who.tenantId));
       const known = new Set(roster.map((row) => row.staffId));
@@ -436,6 +442,8 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         detail: { count: pinsIgnored, codes: cappedStaffCodes(ignoredPins.codes, known) },
       });
     }
+    /* A change that landed. Who, when (`at` on the row), and the
+       price of each cheque type before and after. */
     if (changingFees) {
       const prev = asRecord(current?.state);
       await audit(db, {
