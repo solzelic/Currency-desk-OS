@@ -62,9 +62,10 @@ const followThePack = (page: Page) =>
    forgets is how a swallowed 500 passes for a passing test. */
 /* The till belongs to whoever counted it. An earlier file may have left
    it open under someone else. Trading means a handover count, and the
-   caller hands it back so the next file still finds that person. */
-async function deskCanTrade(page: Page, taken: { by: string | null }) {
-  const report = await page.evaluate(async (): Promise<{ notes: string[]; heldBy: string | null }> => {
+   caller hands it back so the next file still finds that person. When
+   no session is open, this file opens one, and the caller closes it. */
+async function deskCanTrade(page: Page, taken: { by: string | null; opened: boolean }) {
+  const report = await page.evaluate(async (): Promise<{ notes: string[]; heldBy: string | null; opened: boolean }> => {
     const notes: string[] = [];
     const me = await fetch("/api/auth/me").then((r) => r.json());
     const staffId = String(me.user?.id ?? "");
@@ -72,12 +73,14 @@ async function deskCanTrade(page: Page, taken: { by: string | null }) {
     const opener = String(current.session?.openedBy ?? "");
     const mine = opener === staffId || opener.endsWith(`:${staffId}`);
     let heldBy: string | null = null;
+    let openedByUs = false;
     if (current.session?.status !== "open") {
       const opened = await fetch("/api/ledger/till-sessions/open", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",
       });
+      openedByUs = opened.ok;
       notes.push(opened.ok ? "session:open" : `session:${opened.status} ${await opened.text()}`);
     } else if (!mine) {
       heldBy = opener;
@@ -112,7 +115,7 @@ async function deskCanTrade(page: Page, taken: { by: string | null }) {
       });
       notes.push(answer.ok ? `${currency}:ok` : `${currency}:${answer.status} ${await answer.text()}`);
     }
-    return { notes, heldBy };
+    return { notes, heldBy, opened: openedByUs };
   });
   /* Every step is asserted, not merely attempted. A drawer that failed to
      fill turns the deal below into a refusal for INSUFFICIENT_TILL_LIQUIDITY
@@ -120,6 +123,7 @@ async function deskCanTrade(page: Page, taken: { by: string | null }) {
      prove, and would pass. A fixture that fires and forgets is worse than
      no fixture. */
   taken.by = report.heldBy;
+  taken.opened = report.opened;
   const failed = report.notes.filter((note) => !/:ok$|:open$/.test(note));
   expect(failed, `the desk could not be made ready: ${report.notes.join(" · ")}`).toEqual([]);
   await page.reload();
@@ -149,6 +153,38 @@ async function returnTill(request: APIRequestContext, opener: string): Promise<s
   const openedBy = String(next.session?.openedBy ?? "");
   const back = openedBy === opener || openedBy.endsWith(`:${staffId}`);
   return back ? "returned" : `still ${openedBy}`;
+}
+
+/* Close a till this file opened, on the same sign-in that opened it.
+   The counts are the ledger's own balances, so the close is not a
+   variance and the session does not stay held. */
+async function closeOpenedTill(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const heldResponse = await fetch("/api/ledger/till-balances");
+    if (!heldResponse.ok) return `balances ${heldResponse.status} ${await heldResponse.text()}`;
+    const held = await heldResponse.json();
+    const currentResponse = await fetch("/api/ledger/till-session");
+    if (!currentResponse.ok) return `session ${currentResponse.status} ${await currentResponse.text()}`;
+    const current = await currentResponse.json();
+    if (current.session?.status !== "open") return `status ${current.session?.status ?? "none"}`;
+    const counts: Record<string, string> = {};
+    for (const [currency, amount] of Object.entries(held.balances ?? {})) {
+      counts[currency] = Number(amount).toFixed(2);
+    }
+    const closed = await fetch(`/api/ledger/till-sessions/${current.session.sessionId}/close`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: `thr-close-${Date.now()}`,
+        counts,
+        balanceGeneration: String(held.balanceGeneration ?? "0"),
+        note: "Threshold seam close",
+      }),
+    });
+    if (!closed.ok) return `close ${closed.status} ${await closed.text()}`;
+    const body = await closed.json();
+    return body.session?.status === "closed" ? "closed" : `still ${body.session?.status ?? "none"}`;
+  });
 }
 
 /* A customer nobody has identified. The identification gate is about
@@ -268,7 +304,7 @@ test("the rows show the ledger's lines, not a local default", async ({ page }) =
 test("tightening the line in Settings is what the ledger then refuses at", async ({ page, playwright, baseURL }) => {
   await signInAtDesk(page, OWNER);
   expect(await followThePack(page)).toBe(200);
-  const taken = { by: null as string | null };
+  const taken = { by: null as string | null, opened: false };
   try {
     await deskCanTrade(page, taken);
     const walkIn = await walkInCustomer(page);
@@ -313,6 +349,10 @@ test("tightening the line in Settings is what the ledger then refuses at", async
       } finally {
         await api.dispose();
       }
+    }
+    if (taken.opened) {
+      const closed = await closeOpenedTill(page);
+      expect(closed, closed).toBe("closed");
     }
   }
 });

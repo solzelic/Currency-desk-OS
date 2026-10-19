@@ -803,11 +803,12 @@
       /* A PIN somebody else issued is a way back in, not an identity — say so
          plainly until they've picked their own. */
       const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
-      const label = done ? 'PIN updated' : mustChange ? 'Issued to you — pick your own' : hasPin ? 'PIN set' : 'No PIN yet';
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : 'No PIN yet';
+      const toneInk = !hasPin && !done && !mustChange;
       return (
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] flex items-center gap-1.5" style={{ color: tone }}><Ic n={mustChange ? 'alert' : (done || hasPin) ? 'checkcircle' : 'lock'} s={13} c={done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.faint} />{label}</span>
-          <button onClick={() => { setDone(false); setOpen(true); }} className="text-[12px] px-2.5 py-1.5 font-semibold" style={{ border: `1px solid ${mustChange ? CD.amber : CD.line}`, borderRadius: 8, color: CD.ink }}>{hasPin ? 'Change PIN' : 'Set PIN'}</button>
+        <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
+          <span className="text-[12px] flex items-center gap-1.5" style={{ color: toneInk ? CD.ink : tone }}><Ic n={mustChange ? 'alert' : (done || hasPin) ? 'checkcircle' : 'lock'} s={13} c={toneInk ? CD.ink : (done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.ink)} />{label}</span>
+          <button type="button" onClick={() => { setDone(false); setOpen(true); }} className="text-[13px] font-semibold" style={{ minHeight: 44, padding: '0 14px', border: `1px solid ${mustChange ? CD.amber : CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}>{hasPin ? 'Change PIN' : 'Set PIN'}</button>
         </div>
       );
     }
@@ -959,7 +960,7 @@
     </div>);
   }
 
-  function SettingsView({ perms, setPerms, settings, setSettings, me, serverRole, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
+  function SettingsView({ perms, setPerms, settings, setSettings, me, serverRole, serverStaffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
@@ -1390,12 +1391,12 @@
           </div>
           <div className="mt-5 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
             <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
-            <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>A 4-digit PIN for quick in-app checks (switching accounts, taking a till, voiding). Separate from your sign-in password. Everyone starts at 0000.</div></div>
-              <div className="flex-1 flex justify-end">{myEmp ? <PinSetter onSave={setMyPin} /> :<span className="text-[11px]" style={{ color: CD.faint }}>Available once your account is set up</span>}</div>
+            <div className="pin-issue-row py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+              <div className="pin-issue-copy"><div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink, lineHeight: 1.45 }}>A 4-digit PIN to take a till, switch accounts, and void a deal. It is separate from your sign-in password. A manager issues your first one. You change it the first time you use it.</div></div>
+              <div className="pin-issue-actions">{myEmp ? <PinSetter onSave={setMyPin} /> :<span className="text-[12px]" style={{ color: CD.ink }}>Available once your account is set up</span>}</div>
             </div>
             <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Sign-in password</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>What you type at the staff sign-in. Only you know it — changing it signs out your other devices.</div></div>
+              <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Sign-in password</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>Only you know it. Changing it signs out your other devices.</div></div>
               <div className="flex-1 flex justify-end">
                 {!pwForm ? (
                   <button onClick={() => setPwForm({ cur: '', a: '', b: '', msg: '', busy: false })} className="text-xs px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Change password…</button>
@@ -1746,6 +1747,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                flow (codeAuto was never set). From then on the username is fixed. */
             const loginId = (e.code || '').trim(); const found = loginId && srvStaff ? srvStaff[loginId] : null;
             const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
+            const hideStaffBtn = pinIssueAbove(serverRole || me.role, (loginAcct && loginAcct.role) || e.role, !!(serverStaffId && loginId === serverStaffId));
             // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
             const syncEmail = () => {
               if (!loginAcct) return;
@@ -1890,26 +1892,34 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   </div>
                 );
               })()}
-            {/* The PIN is held on the server, hashed — nobody can read it back,
+            {/* The PIN is held on the server, hashed. Nobody can read it back,
                 not even here. Forgotten means reissued: one fresh code, shown
-                once, which also clears any lockout. */}
-            <Row title="Transaction PIN" desc="The 4-digit PIN this person enters to take a till, switch accounts and confirm sensitive actions. It can’t be looked up — issue a new one if they’ve forgotten it.">
-              <span className="flex items-center gap-2.5">
-                {newPin[e.id] && newPin[e.id].pin
-                  ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.green }}>{newPin[e.id].pin}</span>
-                  : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}
-                {loginAcct ? <button onClick={async () => {
-                  setNewPin(m => ({ ...m, [e.id]: null }));
-                  try {
-                    const d = await srvCall('POST', '/api/staff/' + encodeURIComponent(loginId) + '/pin');
-                    setNewPin(m => ({ ...m, [e.id]: { pin: d.pin } }));
-                    log('Transaction PIN', `${e.name} · new PIN issued`);
-                  } catch (x) { setNewPin(m => ({ ...m, [e.id]: { err: String(x.message || x) } })); }
-                }} className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Issue a new PIN</button>
-                  : <span className="text-[11px]" style={{ color: CD.faint }}>Create their sign-in first</span>}
-                {newPin[e.id] && newPin[e.id].err && <span className="text-[11px]" style={{ color: CD.flag }}>{newPin[e.id].err}</span>}
-              </span></Row>
-            {newPin[e.id] && newPin[e.id].pin && <div className="text-[11px] -mt-1 mb-1" style={{ color: CD.mute }}>Read this to {e.name} now — it is shown once and cannot be looked up again.</div>}
+                once, which also clears any lockout. They change it on first use. */}
+            <div className="py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+              <div className="pin-issue-row">
+                <div className="pin-issue-copy">
+                  <div className="text-sm" style={{ color: CD.ink }}>Transaction PIN</div>
+                  <div className="text-[12px] mt-0.5" style={{ color: CD.ink, lineHeight: 1.45 }}>The 4-digit PIN this person enters to take a till, switch accounts, and void a deal. It cannot be looked up. Issue a new one if they have forgotten it.</div>
+                </div>
+                <div className="pin-issue-actions">
+                  {newPin[e.id] && newPin[e.id].pin
+                    ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{newPin[e.id].pin}</span>
+                    : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}
+                  {loginAcct && !hideStaffBtn ? <button type="button" disabled={!!(newPin[e.id] && newPin[e.id].busy)} onClick={async () => {
+                    setNewPin(m => ({ ...m, [e.id]: { busy: true } }));
+                    const out = await issueStaffPin(loginId);
+                    if (!out.ok) { setNewPin(m => ({ ...m, [e.id]: { err: out.err } })); return; }
+                    setNewPin(m => ({ ...m, [e.id]: { pin: out.pin } }));
+                    log('Transaction PIN', e.name + ' · new PIN issued');
+                  }} className="text-[13px] font-semibold" style={{ minHeight: 44, padding: '0 14px', border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}>{newPin[e.id] && newPin[e.id].busy ? 'Issuing…' : 'Issue a new PIN'}</button>
+                    : loginAcct ? null
+                    : <span className="text-[12px]" style={{ color: CD.ink }}>Create their sign-in first</span>}
+                </div>
+              </div>
+              {loginAcct && hideStaffBtn && pinIssueRank(serverRole || me.role) >= pinIssueRank("branch_manager") && !(serverStaffId && loginId === serverStaffId) && <div className="text-[13px] mt-2" style={{ color: CD.ink, lineHeight: 1.45 }}>{PIN_ISSUE_COPY.role_exceeds_yours}</div>}
+              {newPin[e.id] && newPin[e.id].err && <div className="text-[13px] mt-2" style={{ color: CD.flag }}>{newPin[e.id].err}</div>}
+              {newPin[e.id] && newPin[e.id].pin && <div className="text-[13px] mt-2" style={{ color: CD.ink, lineHeight: 1.45 }}>Read this to {e.name} now. It is shown once and cannot be looked up again. They change it the first time they use it.</div>}
+            </div>
               <Row title="Require PIN" desc="When on, this person enters their PIN to switch to their account, take a till, and void a deal."><Sw on={e.requirePin !== false} click={() => setEmp(e.id, { requirePin: e.requirePin === false }, `${e.name} · PIN ${e.requirePin === false ? 'required' : 'optional'}`)} /></Row>
 
               <div className="flex items-center justify-between mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
@@ -1926,7 +1936,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             <SectionTitle icon="users" title="Employees" sub="Everyone with an account. Click a person to open their profile, set what they can do, and manage access." />
             <div className="mb-4 p-3.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: 'var(--cd-chip)' }}>
               <div className="text-[10px] uppercase tracking-widest mb-1.5 flex items-center gap-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.faint} /> PIN security</div>
-              <div className="text-[10.5px] mb-1" style={{ color: CD.mute }}>The PIN is a quick in-app check — sign-in still uses each person’s password. Everyone’s PIN starts at <b>0000</b>.</div>
+              <div className="text-[12px] mb-1" style={{ color: CD.ink, lineHeight: 1.45 }}>The PIN is a quick in-app check. Sign-in still uses each person's password. A manager issues a PIN, and that person changes it the first time they use it.</div>
               <label className="flex items-center justify-between gap-3 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span className="min-w-0"><span className="block text-[12.5px]" style={{ color: CD.ink }}>Require PIN to switch account</span><span className="block text-[10.5px]" style={{ color: CD.mute }}>Prove it’s them before loading another person’s desk.</span></span><Sw on={settings.pinOnSwitch !== false} click={() => toggleSet('pinOnSwitch', 'PIN on account switch')} /></label>
               <label className="flex items-center justify-between gap-3 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span className="min-w-0"><span className="block text-[12.5px]" style={{ color: CD.ink }}>Require PIN to take a till</span><span className="block text-[10.5px]" style={{ color: CD.mute }}>Entering or taking over a drawer asks for the operator’s PIN.</span></span><Sw on={settings.pinOnTill !== false} click={() => toggleSet('pinOnTill', 'PIN on till switch')} /></label>
               <label className="flex items-center justify-between gap-3 py-1.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><span className="min-w-0"><span className="block text-[12.5px]" style={{ color: CD.ink }}>Require PIN to void a transaction</span><span className="block text-[10.5px]" style={{ color: CD.mute }}>Reversing a posted deal asks the operator to confirm with their PIN.</span></span><Sw on={settings.pinOnVoid !== false} click={() => toggleSet('pinOnVoid', 'PIN on void')} /></label>
