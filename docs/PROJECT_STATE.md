@@ -712,7 +712,7 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-19**, plan changes in the Stripe portal. The plan on a subscription is read from its price; the `currencydesk_plan` label stamped at checkout is only a fallback, because it is stale after a portal upgrade or downgrade. A paid invoice sets the shop's plan from the price it charged for (the positive line), so it no longer depends on `customer.subscription.updated` arriving first.
+**2026-10-19**, plan changes in the Stripe portal. The plan on a subscription is read from its price; the `currencydesk_plan` label stamped at checkout is only a fallback, because it is stale after a portal upgrade or downgrade. A paid invoice sets the shop's plan from the price it charged for (the positive line), so it no longer depends on `customer.subscription.updated` arriving first. A subscription update that is `active` (or `trialing`) with no `pending_update` also sets the shop's plan: the portal does not move the price until an upgrade is paid.
 
 **2026-10-19**, subscriptions in US dollars. Every plan is billed in USD: Rates US$299, Full System US$599 and AI Bundle US$749 a month, with annual at 10% off, all tax-exclusive. `render.yaml` names the six live USD price IDs. The Billing & plan screen and its invoice show USD, and the site FAQ says US$. The live Stripe key and webhook secret are set in Render.
 

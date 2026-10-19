@@ -108,6 +108,12 @@ async function upsertSubscription(db: Db, config: StripeBillingConfig, tenantId:
     target: schema.stripeSubscriptions.stripeSubscriptionId,
     set: { tenantId, stripeCustomerId: customerId, priceId, plan: selectedPlan, status: string(data.status) ?? "unknown", cancelAtPeriodEnd: bool(data.cancel_at_period_end), currentPeriodEnd: unixDate(data.current_period_end), updatedAt: now },
   });
+  /* An active subscription with no pending update is paid up for its
+     price: the portal holds an unpaid upgrade in `pending_update` and
+     does not move the price until it is paid. So the shop's plan follows
+     it here too, not only on the next paid invoice. */
+  const paidUp = (data.status === "active" || data.status === "trialing") && data.pending_update == null;
+  if (paidUp && selectedPlan) await db.update(schema.tenants).set({ plan: selectedPlan }).where(eq(schema.tenants.id, tenantId));
 }
 
 async function upsertInvoice(db: Db, tenantId: string, data: StripeObject) {

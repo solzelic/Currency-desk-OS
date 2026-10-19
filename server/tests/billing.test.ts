@@ -109,4 +109,24 @@ describe("Stripe billing webhooks", () => {
     tenant = (await handle.db.select().from(schema.tenants)).find((row) => row.id === DEMO.tenantId);
     expect(tenant?.plan).toBe("premium");
   });
+
+  it("moves the shop to the subscription's plan when Stripe reports it active, and not while an upgrade is unpaid", async () => {
+    const checkout = event("evt_checkout_active", "checkout.session.completed", { id: "cs_active", client_reference_id: DEMO.tenantId, customer: "cus_active" });
+    expect((await send(checkout)).statusCode).toBe(200);
+    const subscription = (id: string, status: string, priceId: string, pendingUpdate: unknown = null) => event(id, "customer.subscription.updated", {
+      id: "sub_active", customer: "cus_active", status, cancel_at_period_end: false, current_period_end: 1_800_000_000,
+      metadata: { currencydesk_plan: "basic" }, pending_update: pendingUpdate,
+      items: { data: [{ price: { id: priceId } }] },
+    });
+    const plan = async () => (await handle.db.select().from(schema.tenants)).find((row) => row.id === DEMO.tenantId)?.plan;
+
+    expect((await send(subscription("evt_active_basic", "active", "price_basic_month"))).statusCode).toBe(200);
+    expect(await plan()).toBe("basic");
+    expect((await send(subscription("evt_active_pending", "active", "price_basic_month", { expires_at: 1_800_000_000 }))).statusCode).toBe(200);
+    expect(await plan()).toBe("basic");
+    expect((await send(subscription("evt_past_due", "past_due", "price_premium_month"))).statusCode).toBe(200);
+    expect(await plan()).toBe("basic");
+    expect((await send(subscription("evt_active_premium", "active", "price_premium_month"))).statusCode).toBe(200);
+    expect(await plan()).toBe("premium");
+  });
 });
