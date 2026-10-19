@@ -370,7 +370,7 @@
         className="p-3 mb-3" style={{ background: CD.panel, border: `1.5px ${over === 'pool' ? 'dashed' : 'solid'} ${over === 'pool' ? CD.flag : CD.line}`, borderRadius: 12 }}>
         <div className="flex items-baseline justify-between mb-2">
           <span className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Team · {roster.length}</span>
-          <span className="text-[10.5px]" style={{ color: over === 'pool' ? CD.flag : CD.faint }}>{over === 'pool' ? `Drop to take ${dragEmp ? dragEmp.name : ''} off ${codeOf(drag.src)}` : 'Drag someone onto a branch to assign them — onto a till to post them to that drawer'}</span>
+          <span className="text-[10.5px]" style={{ color: over === 'pool' ? CD.flag : CD.faint }}>{over === 'pool' ? `Drop to take ${dragEmp ? dragEmp.name : ''} off ${codeOf(drag.src)}` : 'Drag someone onto a branch to assign them, or onto a till to post them to that drawer'}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {roster.map(e => {

@@ -10222,7 +10222,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             style: {
               color: CD.mute
             }
-          }, srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' : srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' : srvState === 'loading' ? 'Checking the server…' : !sid ? 'Type their name above — their username fills in by itself.' : !acct ? mailTo ? 'No sign-in yet. Create it and we’ll email their username and a temporary password to ' + mailTo + '.' : 'No sign-in yet. Create it and you’ll get a temporary password to give them in person.' : !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' : acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' : 'Password set by the employee — only they know it. Reset issues a new temporary one.')), acct && /*#__PURE__*/React.createElement("span", {
+          }, srvState === 'offline' ? 'Server unavailable. Passwords are managed on the live desk.' : srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' : srvState === 'loading' ? 'Checking the server…' : !sid ? 'Type their name above. Their username fills in by itself.' : !acct ? mailTo ? 'No sign-in yet. Create it and we’ll email their username and a temporary password to ' + mailTo + '.' : 'No sign-in yet. Create it and you’ll get a temporary password to give them in person.' : !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' : acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' : 'Password set by the employee. Only they know it. Reset issues a new temporary one.')), acct && /*#__PURE__*/React.createElement("span", {
             className: "text-[9px] px-1.5 py-0.5 font-semibold flex-none",
             style: {
               background: acct.active ? CD.greenSoft : CD.flagSoft,
@@ -21559,7 +21559,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: over === 'pool' ? CD.flag : CD.faint
       }
-    }, over === 'pool' ? `Drop to take ${dragEmp ? dragEmp.name : ''} off ${codeOf(drag.src)}` : 'Drag someone onto a branch to assign them — onto a till to post them to that drawer')), /*#__PURE__*/React.createElement("div", {
+    }, over === 'pool' ? `Drop to take ${dragEmp ? dragEmp.name : ''} off ${codeOf(drag.src)}` : 'Drag someone onto a branch to assign them, or onto a till to post them to that drawer')), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-2"
     }, roster.map(e => {
       const net = isNet(e);

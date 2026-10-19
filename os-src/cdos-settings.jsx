@@ -1860,14 +1860,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                       <div className="min-w-0">
                         <div className="text-sm font-medium" style={{ color: CD.ink }}>Sign-in password</div>
                         <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>
-                          {srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' :
+                          {srvState === 'offline' ? 'Server unavailable. Passwords are managed on the live desk.' :
                             srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' :
                             srvState === 'loading' ? 'Checking the server…' :
-                            !sid ? 'Type their name above — their username fills in by itself.' :
+                            !sid ? 'Type their name above. Their username fills in by itself.' :
                             !acct ? (mailTo ? 'No sign-in yet. Create it and we’ll email their username and a temporary password to ' + mailTo + '.' : 'No sign-in yet. Create it and you’ll get a temporary password to give them in person.') :
                             !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' :
                             acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' :
-                            'Password set by the employee — only they know it. Reset issues a new temporary one.'}
+                            'Password set by the employee. Only they know it. Reset issues a new temporary one.'}
                         </div>
                       </div>
                       {acct && <span className="text-[9px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: acct.active ? CD.greenSoft : CD.flagSoft, color: acct.active ? CD.green : CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{acct.active ? (acct.mustChangePassword ? 'TEMP ISSUED' : 'ACTIVE') : 'DISABLED'}</span>}

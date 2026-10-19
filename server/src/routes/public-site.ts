@@ -281,7 +281,7 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
     // auto-handles the STOP keyword, so no unsubscribe list to maintain here
     const smsText =
       `${t.name}: ${fmtAmount(priced.haveAmount, b.from)} → ${fmtAmount(priced.receiveAmount, b.to)}. ` +
-      `Rate held for ${HOLD_MINUTES} min (until ${fmtTime(expiresAt)}). Ref ${ref} — show this text at the desk. Reply STOP to opt out.`;
+      `Rate held for ${HOLD_MINUTES} min (until ${fmtTime(expiresAt)}). Ref ${ref}. Show this text at the desk. Reply STOP to opt out.`;
     const smsStatus = await sendSms(phone, smsText);
 
     await db.insert(schema.rateQuotes).values({
@@ -332,7 +332,7 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
     if (q.expiresAt.getTime() < Date.now()) return reply.code(410).send({ error: "expired" });
     if (q.status === "held") {
       await db.update(schema.rateQuotes).set({ status: "confirmed", confirmedAt: new Date() }).where(eq(schema.rateQuotes.id, ref));
-      void sendSms(q.phone, `${t.name}: Ref ${ref} confirmed — ${fmtAmount(q.receiveAmount, q.wantCcy)} set aside until ${fmtTime(q.expiresAt)}. See you soon.`);
+      void sendSms(q.phone, `${t.name}: Ref ${ref} confirmed. ${fmtAmount(q.receiveAmount, q.wantCcy)} set aside until ${fmtTime(q.expiresAt)}. See you soon.`);
     }
     const fresh = (await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1))[0]!;
     const status = fresh.status === "held" && fresh.expiresAt.getTime() < Date.now() ? "expired" : fresh.status;
