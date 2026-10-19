@@ -25,23 +25,6 @@
   const DEF_APPS = ['rates', 'ledger', 'clients', 'till'];
   const EMP_ROLES = ['Owner', 'Manager', 'Senior teller', 'Cashier', 'Trainee'];
 
-  /* Issue a new PIN posts JSON and no body. Whatever comes back is said in
-     a sentence. "Bad Request", a bare status, and a machine code are not. */
-  function pinIssueFailure(status, body) {
-    const detail = body && typeof body.detail === 'string' ? body.detail.trim() : '';
-    if (detail && detail !== 'Bad Request') return detail;
-    const code = body && typeof body.error === 'string' ? body.error : '';
-    if (code === 'forbidden') return 'Only the owner or a manager can issue a PIN.';
-    if (code === 'unauthenticated') return 'Sign in again, then issue the PIN.';
-    if (code === 'not_found') return 'That person is not on this desk.';
-    if (code === 'role_exceeds_yours') return 'You can only issue a PIN for someone below your role.';
-    if (code === 'use_set_pin') return 'Set your own PIN from My account.';
-    if (status === 404) return 'That person is not on this desk.';
-    if (status === 403) return 'Only the owner or a manager can issue a PIN.';
-    if (status === 401) return 'Sign in again, then issue the PIN.';
-    return 'The PIN was not issued. Try again.';
-  }
-
   const inSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8 };
 
   /* FINTRAC is Canada's regulator. A baseline desk, and any desk whose
@@ -1925,7 +1908,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     setNewPin(m => ({ ...m, [e.id]: { busy: true } }));
                     try {
                       const res = await fetch('/api/staff/' + encodeURIComponent(loginId) + '/pin', {
-                        method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+                        method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: '{}',
                       });
                       const d = await res.json().catch(() => null);
                       if (!res.ok || !d || typeof d.pin !== 'string' || !/^\d{4}$/.test(d.pin)) {
@@ -1934,12 +1917,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                       }
                       setNewPin(m => ({ ...m, [e.id]: { pin: d.pin } }));
                       log('Transaction PIN', e.name + ' · new PIN issued');
-                    } catch (x) {
-                      const raw = String((x && x.message) || x || '');
-                      const said = !raw || raw === 'Failed to fetch' || raw === 'Bad Request' || /^HTTP \d+$/.test(raw)
-                        ? 'No connection. The PIN was not issued.'
-                        : raw;
-                      setNewPin(m => ({ ...m, [e.id]: { err: said } }));
+                    } catch {
+                      setNewPin(m => ({ ...m, [e.id]: { err: 'No connection. The PIN was not issued.' } }));
                     }
                   }} className="text-[13px] font-semibold" style={{ minHeight: 44, padding: '0 14px', border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}>{newPin[e.id] && newPin[e.id].busy ? 'Issuing…' : 'Issue a new PIN'}</button>
                     : <span className="text-[12px]" style={{ color: CD.ink }}>Create their sign-in first</span>}

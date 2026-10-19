@@ -5268,6 +5268,21 @@
   });
 })();
 
+/* ---- os-src/pin-issue-message.js ---- */
+/* Sentences for Issue a new PIN. The screen never repeats the server's
+   words. A code we know becomes one of these sentences. Anything else,
+   including Bad Request and a database error, is the same fallback. */
+function pinIssueFailure(status, body) {
+  const code = body && typeof body.error === "string" ? body.error : "";
+  if (code === "role_exceeds_yours") return "You can only issue a PIN for someone below your role.";
+  if (code === "use_set_pin") return "Set your own PIN from My account.";
+  if (code === "not_found" || status === 404) return "That person is not on this desk.";
+  if (code === "unauthenticated" || status === 401) return "Sign in again, then issue the PIN.";
+  if (code === "forbidden" || status === 403) return "Only the owner or a manager can issue a PIN.";
+  return "The PIN was not issued. Try again.";
+}
+
+
 /* ---- os-src/cdos-settings.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Settings
@@ -5318,23 +5333,6 @@
   const APPS = [['rates', 'Rate Board'], ['ledger', 'Ledger'], ['transfers', 'Transfers'], ['cheques', 'Cheques'], ['clients', 'Clients · KYC'], ['compliance', 'Compliance'], ['dashboard', 'Dashboard'], ['till', 'Till & Drawer'], ['vault', 'Vault'], ['branches', 'Branches'], ['tagged', 'Tagged'], ['audit', 'Audit Trail']];
   const DEF_APPS = ['rates', 'ledger', 'clients', 'till'];
   const EMP_ROLES = ['Owner', 'Manager', 'Senior teller', 'Cashier', 'Trainee'];
-
-  /* Issue a new PIN posts JSON and no body. Whatever comes back is said in
-     a sentence. "Bad Request", a bare status, and a machine code are not. */
-  function pinIssueFailure(status, body) {
-    const detail = body && typeof body.detail === 'string' ? body.detail.trim() : '';
-    if (detail && detail !== 'Bad Request') return detail;
-    const code = body && typeof body.error === 'string' ? body.error : '';
-    if (code === 'forbidden') return 'Only the owner or a manager can issue a PIN.';
-    if (code === 'unauthenticated') return 'Sign in again, then issue the PIN.';
-    if (code === 'not_found') return 'That person is not on this desk.';
-    if (code === 'role_exceeds_yours') return 'You can only issue a PIN for someone below your role.';
-    if (code === 'use_set_pin') return 'Set your own PIN from My account.';
-    if (status === 404) return 'That person is not on this desk.';
-    if (status === 403) return 'Only the owner or a manager can issue a PIN.';
-    if (status === 401) return 'Sign in again, then issue the PIN.';
-    return 'The PIN was not issued. Try again.';
-  }
   const inSty = {
     border: `1px solid ${CD.line}`,
     background: 'var(--cd-panel)',
@@ -10281,7 +10279,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 headers: {
                   'content-type': 'application/json'
                 },
-                credentials: 'same-origin'
+                credentials: 'same-origin',
+                body: '{}'
               });
               const d = await res.json().catch(() => null);
               if (!res.ok || !d || typeof d.pin !== 'string' || !/^\d{4}$/.test(d.pin)) {
@@ -10300,13 +10299,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 }
               }));
               log('Transaction PIN', e.name + ' · new PIN issued');
-            } catch (x) {
-              const raw = String(x && x.message || x || '');
-              const said = !raw || raw === 'Failed to fetch' || raw === 'Bad Request' || /^HTTP \d+$/.test(raw) ? 'No connection. The PIN was not issued.' : raw;
+            } catch {
               setNewPin(m => ({
                 ...m,
                 [e.id]: {
-                  err: said
+                  err: 'No connection. The PIN was not issued.'
                 }
               }));
             }

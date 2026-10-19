@@ -1,8 +1,8 @@
 /* Issue a new PIN from Settings > Employees.
 
-   The screen posts JSON (`content-type: application/json`) and no body.
-   Fastify refuses that before the route runs, and the button shows the
-   raw "Bad Request". This is that request. */
+   The screen posts JSON with a body of {}. An empty body and a JSON
+   content type is still refused before the route runs. That refusal
+   is asserted here so a parser change cannot hide it. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
@@ -29,7 +29,9 @@ const signIn = (staffId: string) =>
 const staffRow = (staffId: string) =>
   handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, staffId)).limit(1).then((r) => r[0]!);
 
-/* What the Employees screen sends: a JSON content type and an empty body. */
+/* What the Employees screen sends: JSON, and a body of {}. */
+const jsonBody = { headers: { "content-type": "application/json" }, payload: {} as const };
+/* The request that used to leave the button. It must stay a 400. */
 const emptyJson = { headers: { "content-type": "application/json" }, payload: "" as const };
 
 beforeAll(async () => {
@@ -49,9 +51,15 @@ afterAll(async () => {
 });
 
 describe("issuing a PIN from the Employees screen", () => {
-  it("accepts the empty JSON body the Issue a new PIN button sends", async () => {
-    const owner = await app.inject({
+  it("issues a PIN for {} and still refuses an empty JSON body", async () => {
+    const refused = await app.inject({
       method: "POST", url: "/api/staff/a.singh/pin", cookies: ownerCookie, ...emptyJson,
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.body).toContain("Body cannot be empty");
+
+    const owner = await app.inject({
+      method: "POST", url: "/api/staff/a.singh/pin", cookies: ownerCookie, ...jsonBody,
     });
     expect(owner.statusCode, owner.body).toBe(200);
     expect(owner.body).not.toContain("Bad Request");
@@ -70,38 +78,29 @@ describe("issuing a PIN from the Employees screen", () => {
     expect(proved.json().mustChange).toBe(true);
 
     const manager = await app.inject({
-      method: "POST", url: "/api/staff/m.costa/pin", cookies: managerCookie, ...emptyJson,
+      method: "POST", url: "/api/staff/m.costa/pin", cookies: managerCookie, ...jsonBody,
     });
     expect(manager.statusCode, manager.body).toBe(200);
     expect(manager.json().pin).toMatch(/^\d{4}$/);
     expect(manager.json().mustChange).toBe(true);
     expect((await staffRow("m.costa")).pinMustChange).toBe(true);
 
-    /* No payload at all, only the JSON header. That is the same fetch. */
-    const headerOnly = await app.inject({
-      method: "POST", url: "/api/staff/s.iqbal/pin", cookies: ownerCookie,
-      headers: { "content-type": "application/json" },
-    });
-    expect(headerOnly.statusCode, headerOnly.body).toBe(200);
-    expect(headerOnly.body).not.toContain("Bad Request");
-    expect((await staffRow("s.iqbal")).pinMustChange).toBe(true);
-
     const teller = await app.inject({
-      method: "POST", url: "/api/staff/a.singh/pin", cookies: tellerCookie, ...emptyJson,
+      method: "POST", url: "/api/staff/a.singh/pin", cookies: tellerCookie, ...jsonBody,
     });
     expect(teller.statusCode, teller.body).toBe(403);
     expect(teller.body).not.toContain("Bad Request");
     expect(teller.json().detail).toBe("Only the owner or a manager can issue a PIN.");
 
     const self = await app.inject({
-      method: "POST", url: "/api/staff/j.masri/pin", cookies: ownerCookie, ...emptyJson,
+      method: "POST", url: "/api/staff/j.masri/pin", cookies: ownerCookie, ...jsonBody,
     });
     expect(self.statusCode, self.body).toBe(403);
     expect(self.body).not.toContain("Bad Request");
     expect(self.json().detail).toBe("Set your own PIN from My account.");
 
     const above = await app.inject({
-      method: "POST", url: "/api/staff/j.masri/pin", cookies: managerCookie, ...emptyJson,
+      method: "POST", url: "/api/staff/j.masri/pin", cookies: managerCookie, ...jsonBody,
     });
     expect(above.statusCode, above.body).toBe(403);
     expect(above.body).not.toContain("Bad Request");

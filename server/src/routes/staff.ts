@@ -240,36 +240,16 @@ async function issueFirstSignIn(
   return deliverSignIn(user, deskName, temp);
 }
 
-/* Settings > Employees posts here with Content-Type: application/json and
-   no body. Fastify refuses an empty JSON body before a route runs, which
-   is why Issue a new PIN always answered "Bad Request". An empty body on
-   this one route means "issue one". Every other JSON route still refuses
-   an empty body, including POST /api/staff/pin, which needs the digits. */
+/* The Employees button posts {} . An empty body with a JSON content
+   type is still refused, here and on every other route. The parser is
+   the one Fastify registered. Webhooks sign those raw bytes. */
 const PIN_ISSUE = /^\/api\/staff\/[^/]+\/pin$/;
 
 function isPinIssue(method: string | undefined, url: string | undefined): boolean {
   return method === "POST" && PIN_ISSUE.test((url ?? "").split("?")[0] ?? "");
 }
 
-function allowEmptyPinIssue(app: FastifyInstance): void {
-  const parse = app.getDefaultJsonParser("error", "error");
-  /* Keep the body as a buffer. A string parser calls setEncoding on the
-     request stream, and the webhook routes that sign the raw bytes then
-     see strings instead of buffers. An empty buffer on this one route is
-     "issue a PIN"; everything else still goes through the JSON parser. */
-  app.removeContentTypeParser("application/json");
-  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (req, body, done) => {
-    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
-    if (buf.length === 0 && isPinIssue(req.method, req.url)) {
-      done(null, {});
-      return;
-    }
-    parse(req, buf.toString("utf8"), done);
-  });
-}
-
 export function registerStaffRoutes(app: FastifyInstance, db: Db) {
-  allowEmptyPinIssue(app);
   // every route here needs an authenticated manager+ session
   const requireManager = async (req: { cookies: Record<string, string | undefined>; method?: string; url?: string }, reply: { code: (n: number) => { send: (b: unknown) => unknown } }): Promise<SessionUser | null> => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
