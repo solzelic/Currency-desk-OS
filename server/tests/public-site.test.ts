@@ -178,24 +178,13 @@ describe("public site responses do not carry a customer's phone or name", () => 
     const phone = "5875550142";
     const name = "Lioramek Voss";
     const normalized = "+15875550142";
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/sites/yorkfx/quotes",
-      remoteAddress: "203.0.113.15",
-      payload: { phone, name, from: "CAD", to: "USD", amount: 40 },
-    });
+    const created = await app.inject({ method: "POST", url: "/api/sites/yorkfx/quotes", remoteAddress: "203.0.113.15", payload: { phone, name, from: "CAD", to: "USD", amount: 40 } });
     expect(created.statusCode).toBe(201);
     expect(Object.keys(created.json().quote).sort()).toEqual(["amount", "expiresAt", "from", "receive", "ref", "status", "to"]);
     const ref = created.json().quote.ref as string;
 
     const admin = await login("j.masri");
-    const domain = await app.inject({
-      method: "PATCH",
-      url: "/api/tenant",
-      cookies: cookieOf(admin),
-      remoteAddress: "203.0.113.15",
-      payload: { siteDomain: "quotes-leak.example" },
-    });
+    const domain = await app.inject({ method: "PATCH", url: "/api/tenant", cookies: cookieOf(admin), remoteAddress: "203.0.113.15", payload: { siteDomain: "quotes-leak.example" } });
     expect(domain.statusCode).toBe(200);
 
     const calls: { url: string; run: Promise<{ statusCode: number; body: string; json: () => unknown }> }[] = [
@@ -217,26 +206,16 @@ describe("public site responses do not carry a customer's phone or name", () => 
       return { url: call.url, statusCode: res.statusCode, body: res.body, json: () => res.json() };
     }));
 
-    for (const res of responses) {
-      expect(res.body).not.toContain(name);
-      expect(res.body).not.toContain("Lioramek");
-      expect(res.body).not.toContain("Voss");
-      expect(res.body).not.toContain(normalized);
-      expect(res.body).not.toContain(phone);
-    }
+    for (const res of responses) for (const bit of [name, "Lioramek", "Voss", normalized, phone]) expect(res.body).not.toContain(bit);
 
     const confirmed = responses[1]!.json() as { quote: Record<string, unknown> };
     expect(responses[1]!.statusCode).toBe(200);
-    expect(confirmed.quote).toEqual({
-      ref,
-      status: "confirmed",
-      expiresAt: expect.any(Number),
-    });
-    expect(Object.keys(confirmed.quote).sort()).toEqual(["expiresAt", "ref", "status"]);
+    expect(confirmed.quote).toEqual({ ref, status: "confirmed", expiresAt: expect.any(Number), textSent: true });
+    expect(Object.keys(confirmed.quote).sort()).toEqual(["expiresAt", "ref", "status", "textSent"]);
 
     const allow = {
       create: ["quote", "ref", "status", "expiresAt", "from", "to", "amount", "receive"],
-      confirm: ["quote", "ref", "status", "expiresAt"],
+      confirm: ["quote", "ref", "status", "expiresAt", "textSent"],
       config: ["site", "name", "slug", "phone", "email", "address", "city", "region", "postal", "hours", "days", "updatedAt"],
       rates: ["published", "publishedAt", "currencies", "rates", "code", "buy", "sell", "board", "buyMargin", "sellMargin", "rows", "order", "mid", "spread", "show"],
       early: ["claimed", "cap", "remaining", "full"],
@@ -276,12 +255,7 @@ describe("confirm rate limit", () => {
   it("limits confirm to 30 a minute for one slug, with the same body for every ref", async () => {
     const phone = "5875550143";
     const name = "Sluglimit Probe";
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/sites/yorkfx/quotes",
-      remoteAddress: "203.0.113.50",
-      payload: { phone, name, from: "CAD", to: "USD", amount: 25 },
-    });
+    const created = await app.inject({ method: "POST", url: "/api/sites/yorkfx/quotes", remoteAddress: "203.0.113.50", payload: { phone, name, from: "CAD", to: "USD", amount: 25 } });
     expect(created.statusCode).toBe(201);
     const ref = created.json().quote.ref as string;
     clearRateBuckets();
@@ -296,14 +270,11 @@ describe("confirm rate limit", () => {
     expect(missing.statusCode).toBe(429);
     expect(real.statusCode).toBe(429);
     expect(real.body).toBe(missing.body);
-    expect(missing.json()).toEqual({
-      error: "slow_down",
-      detail: "Too many tries. Wait a minute and try again.",
-    });
-    expect(missing.body).not.toContain(phone);
-    expect(missing.body).not.toContain(name);
-    expect(real.body).not.toContain(phone);
-    expect(real.body).not.toContain(name);
+    expect(missing.json()).toEqual({ error: "slow_down", detail: "Too many tries. Wait a minute and try again." });
+    for (const body of [missing.body, real.body]) {
+      expect(body).not.toContain(phone);
+      expect(body).not.toContain(name);
+    }
     expect(real.body).not.toContain(ref);
   });
 
@@ -370,6 +341,7 @@ describe("confirm rate limit", () => {
       expect(rateBucketKeys().some((key) => key.startsWith("confirm-slug:"))).toBe(false);
       vi.setSystemTime(new Date("2026-10-19T12:01:01Z"));
       expect((await confirm("yorkfx", "Q-2", "203.0.113.181")).statusCode).toBe(404);
+      /* Cleanup runs at most once a minute. 61s is past both the window and that pause. */
       expect(rateBucketKeys()).not.toContain("confirm-ip:203.0.113.180");
       expect(rateBucketKeys()).toContain("confirm-ip:203.0.113.181");
     } finally {
@@ -390,11 +362,38 @@ describe("confirm rate limit", () => {
     const logs: string[] = [];
     const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => { logs.push(args.map(String).join(" ")); });
     try {
-      expect((await confirm("yorkfx", ref, "203.0.113.71")).statusCode).toBe(200);
-      expect((await confirm("yorkfx", ref, "203.0.113.72")).statusCode).toBe(200);
+      const first = await confirm("yorkfx", ref, "203.0.113.71");
+      const second = await confirm("yorkfx", ref, "203.0.113.72");
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+      expect(first.json().quote.textSent).toBe(true);
+      expect(second.json().quote.textSent).toBe(false);
       expect(logs.filter((line) => line.includes("confirmed") && line.includes(ref))).toHaveLength(1);
     } finally {
       spy.mockRestore();
+    }
+  });
+
+  it("reports textSent false when the text fails", async () => {
+    clearRateBuckets();
+    const keys = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM", "TWILIO_MESSAGING_SERVICE_SID", "TWILIO_WHATSAPP_FROM"];
+    const saved = keys.map((key) => [key, process.env[key]] as const);
+    const realFetch = globalThis.fetch;
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token";
+    process.env.TWILIO_FROM = "+15555550100";
+    delete process.env.TWILIO_MESSAGING_SERVICE_SID;
+    delete process.env.TWILIO_WHATSAPP_FROM;
+    globalThis.fetch = () => Promise.reject(new Error("twilio down"));
+    try {
+      const created = await app.inject({ method: "POST", url: "/api/sites/yorkfx/quotes", remoteAddress: "203.0.113.74", payload: { phone: "5875550193", from: "CAD", to: "USD", amount: 20 } });
+      expect(created.statusCode).toBe(201);
+      const res = await confirm("yorkfx", created.json().quote.ref as string, "203.0.113.75");
+      expect(res.json().quote.textSent).toBe(false);
+      expect(res.body).not.toContain("5875550193");
+    } finally {
+      globalThis.fetch = realFetch;
+      for (const [key, value] of saved) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     }
   });
 });
