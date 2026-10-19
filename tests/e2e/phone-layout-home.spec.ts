@@ -74,6 +74,19 @@ test("stacks the desktop page below 640 and keeps tap targets at 44px", async ({
     return { text: el.textContent, lines: tops.size, cut };
   });
   note(fileNote.text === "The desk does not file" && fileNote.lines > 1 && !fileNote.cut, "hero file line does not wrap inside the card: " + JSON.stringify(fileNote));
+  const fileOverlap = await page.locator("[data-hero-stage]").getByText("The desk does not file", { exact: true }).evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = [...range.getClientRects()];
+    const note = el.closest("[data-hero-note]");
+    const stage = el.closest("[data-hero-stage]");
+    const cards = [...stage.children].filter((n) => n !== note && n.getAttribute("data-hero-rates") !== "card" && (n.textContent || "").trim());
+    return cards.filter((card) => {
+      const b = card.getBoundingClientRect();
+      return rects.some((r) => r.left < b.right - 1 && r.right > b.left + 1 && r.top < b.bottom - 1 && r.bottom > b.top + 1);
+    }).map((card) => (card.textContent || "").replace(/\s+/g, " ").trim().slice(0, 24));
+  });
+  note(fileOverlap.length === 0, "hero file line overlaps a card: " + JSON.stringify(fileOverlap));
 
   const rail = page.locator("[data-rail]", { hasText: "Cheque cashing" });
   await rail.click();
