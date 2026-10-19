@@ -265,7 +265,7 @@ test("the rows show the ledger's lines, not a local default", async ({ page }) =
   await expect(page.getByText(/Following FINTRAC \(\$?10,000/i).first()).toBeVisible();
 });
 
-test("tightening the line in Settings is what the ledger then refuses at", async ({ page, playwright }) => {
+test("tightening the line in Settings is what the ledger then refuses at", async ({ page, playwright, baseURL }) => {
   await signInAtDesk(page, OWNER);
   expect(await followThePack(page)).toBe(200);
   const taken = { by: null as string | null };
@@ -306,7 +306,7 @@ test("tightening the line in Settings is what the ledger then refuses at", async
     expect(await followThePack(page)).toBe(200);
   } finally {
     if (taken.by) {
-      const api = await playwright.request.newContext({ baseURL: "http://127.0.0.1:4173" });
+      const api = await playwright.request.newContext({ baseURL });
       try {
         const back = await returnTill(api, taken.by);
         expect(back, back).toBe("returned");
