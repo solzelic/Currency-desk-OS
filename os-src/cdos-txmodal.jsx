@@ -46,11 +46,12 @@
   }
   /* The editable field keeps the board rate, at the precision it
      already had. The line next to the payout is the rate that payout
-     came from, at DISPLAY_RATE_PLACES. */
+     came from: at least four places, five or six only when exact. */
+  const RATE_NOTE = (window.CDOS && window.CDOS.RATE_NOTE) || 'Rate rounded. The amounts are exact.';
   const publishedRate = (r) => (r > 0 && isFinite(r)) ? Number(r).toFixed(4) : '';
   const pricedRate = (amount, payout, ccy) => {
-    if (typeof effectiveRate !== 'function') return { text: '' };
-    return effectiveRate(amount, payout, currencyPlaces(ccy)) || { text: '' };
+    if (typeof effectiveRate !== 'function') return { text: '', rounded: false };
+    return effectiveRate(amount, payout, currencyPlaces(ccy)) || { text: '', rounded: false };
   };
   const dealRateLine = (from, to, amount, payout) => {
     const rate = pricedRate(amount, payout, to);
@@ -1152,10 +1153,13 @@
                   <div data-req-field="amt" className={missField === 'amt' ? 'cd-tx-missing' : undefined}>
                   <Money value={inAmt} onChange={setInAmt} ccy={inCcy} onCcy={(v) => { setInCcy(v); resetPricing(); }} big autoFocus />
                   </div>
-                  <div className="cd-tx-rate-line flex items-center justify-center gap-2 py-2">
-                    <span data-side={pricing.side || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
-                    <span className="cd-tx-kicker cd-tx-quiet text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{rateShown(inCcy, outCcy, amtN, out.amt)}</span>
-                    <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
+                  <div className="py-2">
+                    <div className="cd-tx-rate-line flex items-center justify-center gap-2">
+                      <span data-side={pricing.side || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
+                      <span className="cd-tx-kicker cd-tx-quiet text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{rateShown(inCcy, outCcy, amtN, out.amt)}</span>
+                      <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
+                    </div>
+                    {pricedRate(amtN, out.amt, outCcy).rounded ? <div className="cd-rate-note text-center" style={{ fontSize: 11, lineHeight: '14px', color: '#6B6760', marginTop: 2 }}>{RATE_NOTE}</div> : null}
                   </div>
                   <Lbl>Customer receives</Lbl>
                   <Money value={out.amt ? num(out.amt) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
@@ -1212,7 +1216,10 @@
                   <div className="p-3.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                     <Lbl>Customer pays ({home})</Lbl>
                     <Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus />
-                    <div className="flex items-center justify-center gap-2 py-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> {rateShown(home, payoutCcy, amtN, out.amt)}</div>
+                    <div className="py-2">
+                      <div className="flex items-center justify-center gap-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><Ic n="arrowdown" s={13} c={CD.faint} /> {rateShown(home, payoutCcy, amtN, out.amt)}</div>
+                      {pricedRate(amtN, out.amt, payoutCcy).rounded ? <div className="cd-rate-note text-center" style={{ fontSize: 11, lineHeight: '14px', color: '#6B6760', marginTop: 2 }}>{RATE_NOTE}</div> : null}
+                    </div>
                     <Lbl>{benName || 'Beneficiary'} receives</Lbl>
                     <Money value={out.amt ? num(out.amt) : '—'} ccy={payoutCcy} readOnly accent={CD.green} big />
                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1341,9 +1348,12 @@
                     <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'}</div>
                     <div className="cd-tx-ticket-get" style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : <>{out.amt ? num(out.amt) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
                   </div>
-                  <div className="flex items-center justify-between" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
-                    <span className="cd-tx-kicker">{(isExchange || isSend) ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
-                    <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
+                  <div style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
+                    <div className="flex items-center justify-between">
+                      <span className="cd-tx-kicker">{(isExchange || isSend) ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                      <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
+                    </div>
+                    {(isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'rgba(255,255,255,0.62)', marginTop: 4 }}>{RATE_NOTE}</div> : null}
                   </div>
                 </div>
 

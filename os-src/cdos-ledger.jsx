@@ -13,7 +13,7 @@
     CD, Ic, TYPES, CCY, crossRate, perCadLive, fmt, num, mkRef, nowTime, newTx,
     computeFlags, dDiff, makeSearch, SEARCH_EXAMPLES, priceDeal, spreadOf, dealMargin, CommitBtn,
     Absent, businessDate, reportingLimit, useDeskFacts, deskPack, sumDealHome,
-    currencyPlaces, effectiveRate
+    currencyPlaces, effectiveRate, RATE_NOTE
   } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY, ONCE.
@@ -684,12 +684,22 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   // split a "Name · Place" beneficiary string
   function benParts(b) { const s = String(b || ''); const i = s.indexOf('·'); return i < 0 ? { name: s.trim(), place: '' } : { name: s.slice(0, i).trim(), place: s.slice(i + 1).trim() }; }
   /* The stored rate is the quote at 12 places. The figure on the deal
-     is the rate the payout came from, at four places. */
+     is the rate the payout came from. The note follows only when that
+     rate was rounded. */
+  function dealRate(row) {
+    if (!row || !row.inCcy || row.inCcy === row.outCcy || typeof effectiveRate !== 'function') return null;
+    return effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy));
+  }
   function shownDealRate(row) {
     if (!row || !row.inCcy || row.inCcy === row.outCcy) return String(row && row.rate != null ? row.rate : '');
-    const rate = typeof effectiveRate === 'function' ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy)) : null;
+    const rate = dealRate(row);
     if (!rate || !rate.text) return 'Rate unavailable';
     return `1 ${row.inCcy} = ${rate.text} ${row.outCcy}`;
+  }
+  function RateNote({ row }) {
+    const rate = dealRate(row);
+    if (!rate || !rate.rounded) return null;
+    return <div className="cd-rate-note text-[11px]" style={{ color: '#6B6760', lineHeight: '14px', marginTop: -2, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div>;
   }
   function TxFlow({ row }) {
     const t = row.type, ben = benParts(row.beneficiary), fee = +row.fee || 0;
@@ -737,6 +747,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       title = 'Exchange';
       rows = [custRow,
         <DRow k="Rate" v={shownDealRate(row)} mono />,
+        <RateNote row={row} />,
         row.side && <DRow k="Priced" v={`${row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross deal'}${row.priced === 'override' ? ' · hand-priced' : row.priced === 'locked' ? ' · rate locked' : ''}`} />,
         row.midRate && <DRow k="Spot at deal" v={`${row.midRate} ${row.outCcy}/${row.inCcy}`} mono />,
         row.quoteRef && <DRow k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} mono />];
@@ -747,6 +758,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         ben.place && <DRow k="Destination" v={ben.place} />,
         <DRow k="Beneficiary gets" v={`${num(row.outAmt)} ${row.outCcy}`} mono accent={CD.green} />,
         <DRow k="Rate" v={shownDealRate(row)} mono />,
+        <RateNote row={row} />,
         row.notes && <DRow k="Purpose" v={row.notes} />];
     } else if (t === 'Remittance — Receive') {
       title = 'Remittance — inbound';
@@ -754,6 +766,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         <DRow k="Received" v={`${num(row.inAmt)} ${row.inCcy}`} mono />,
         <DRow k="Paid to recipient" v={`${num(row.outAmt)} ${row.outCcy}`} mono accent={CD.green} />,
         <DRow k="Rate" v={shownDealRate(row)} mono />,
+        <RateNote row={row} />,
         row.notes && <DRow k="Source / note" v={row.notes} />];
     } else if (t === 'Cheque Cashing') {
       title = 'Cheque';

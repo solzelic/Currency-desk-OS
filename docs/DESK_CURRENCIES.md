@@ -106,16 +106,18 @@ directions. `parseMoney` asks the currency: **there is no such thing as
 figure a teller cannot count out.
 
 The rate on the sheet, the summary, the receipt, and the booked deal
-is the rate the payout came from, rounded half up to four places.
-`DISPLAY_RATE_PLACES` is 4, in `os-src/effective-rate.js`. A figure
-never shows more than four places, and the board rate is not the
-figure next to a payout. The editable field is labeled Board rate and
-keeps its own precision. The receipt adds one quiet line under the
-rate: "Rate rounded to 4 places. The amounts above are exact." The
-sheet does not say rounded. The payout stays the ledger figure. The
-rate stored on the deal stays 12 places. 100 CAD to 10,825 JPY shows
-`1 CAD = 108.2500 JPY`. 3,000.00 CAD to 2,166.31 USD shows
-`1 CAD = 0.7221 USD`.
+is the rate the payout came from. It always shows at least four
+places, and five or six only when that rate times the amount equals
+the payout with nothing left over (`MIN_RATE_PLACES` and
+`MAX_RATE_PLACES` in `os-src/effective-rate.js`). Otherwise it shows
+four places and the note "Rate rounded. The amounts are exact." The
+note is small and grey under the rate on the sheet, and one line on
+the receipt. It appears only when the rate was rounded. The board
+rate is not the figure next to a payout. The editable field is labeled
+Board rate and keeps its own precision. The payout stays the ledger
+figure. The rate stored on the deal stays 12 places. 100 CAD to
+10,825 JPY shows `1 CAD = 108.2500 JPY` with no note. 3,000.00 CAD to
+2,166.31 USD shows `1 CAD = 0.7221 USD` and the note.
 
 **Three-decimal currencies are refused, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then

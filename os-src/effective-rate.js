@@ -1,16 +1,18 @@
 /* The rate shown next to a payout.
    The payout is the figure of record. This is the rate that payout
-   came from, rounded half up to DISPLAY_RATE_PLACES. It never shows
-   more places than that, and it is not the board rate.
-   Change DISPLAY_RATE_PLACES here. The receipt sentence uses it.
+   came from. It always shows at least MIN_RATE_PLACES. It shows five
+   or six only when that rate times the amount equals the payout with
+   nothing left over. Otherwise it shows four places and the note.
+   It is not the board rate.
    Display only. The stored rate and the payout stay as they are. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) root.CDOS = Object.assign(root.CDOS || {}, api);
 })(typeof window !== "undefined" ? window : globalThis, function () {
-  var DISPLAY_RATE_PLACES = 4;
-  var RECEIPT_RATE_NOTE = "Rate rounded to " + DISPLAY_RATE_PLACES + " places. The amounts above are exact.";
+  var MIN_RATE_PLACES = 4;
+  var MAX_RATE_PLACES = 6;
+  var RATE_NOTE = "Rate rounded. The amounts are exact.";
 
   function decimalsOf(text) {
     var s = String(text);
@@ -59,21 +61,51 @@
     return Number.isInteger(minorPlaces) && minorPlaces >= 0 && minorPlaces <= 8;
   }
 
-  function effectiveRate(amount, payout, minorPlaces) {
-    if (!knownPlaces(minorPlaces)) return { text: "" };
-    var amountText = moneyText(amount);
-    var payoutRaw = moneyText(payout);
-    if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "" };
+  /* The candidate at `places`, half up from the true ratio. */
+  function rateAt(amountText, payoutRaw, places) {
     var aScale = decimalsOf(amountText);
     var pScale = decimalsOf(payoutRaw);
     var aInt = scaled(amountText, aScale);
-    if (aInt === 0n) return { text: "" };
-    var pInt = scaled(payoutRaw, pScale);
-    var num = pInt * (10n ** BigInt(aScale + DISPLAY_RATE_PLACES));
+    if (aInt === 0n) return "";
+    var num = scaled(payoutRaw, pScale) * (10n ** BigInt(aScale + places));
     var den = aInt * (10n ** BigInt(pScale));
     var rounded = halfUpDiv(num, den);
-    if (rounded == null) return { text: "" };
-    return { text: scaledText(rounded, DISPLAY_RATE_PLACES) };
+    if (rounded == null) return "";
+    return scaledText(rounded, places);
+  }
+
+  /* True when rate × amount is the payout, with no leftover fraction. */
+  function multipliesExactly(amountText, rateText, payoutRaw) {
+    if (!rateText) return false;
+    var aScale = decimalsOf(amountText);
+    var rScale = decimalsOf(rateText);
+    var pScale = decimalsOf(payoutRaw);
+    var prod = scaled(amountText, aScale) * scaled(rateText, rScale);
+    var prodScale = aScale + rScale;
+    var payout = scaled(payoutRaw, pScale);
+    if (prodScale >= pScale) {
+      var div = 10n ** BigInt(prodScale - pScale);
+      return prod % div === 0n && prod / div === payout;
+    }
+    return prod * (10n ** BigInt(pScale - prodScale)) === payout;
+  }
+
+  function effectiveRate(amount, payout, minorPlaces) {
+    if (!knownPlaces(minorPlaces)) return { text: "", rounded: false };
+    var amountText = moneyText(amount);
+    var payoutRaw = moneyText(payout);
+    if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "", rounded: false };
+    var exact = "";
+    var places = MIN_RATE_PLACES;
+    for (; places <= MAX_RATE_PLACES; places += 1) {
+      var candidate = rateAt(amountText, payoutRaw, places);
+      if (multipliesExactly(amountText, candidate, payoutRaw)) {
+        exact = candidate;
+        break;
+      }
+    }
+    if (exact) return { text: exact, rounded: false };
+    return { text: rateAt(amountText, payoutRaw, MIN_RATE_PLACES), rounded: true };
   }
 
   function effectiveRateText(amount, payout, minorPlaces) {
@@ -81,8 +113,9 @@
   }
 
   return {
-    DISPLAY_RATE_PLACES: DISPLAY_RATE_PLACES,
-    RECEIPT_RATE_NOTE: RECEIPT_RATE_NOTE,
+    MIN_RATE_PLACES: MIN_RATE_PLACES,
+    MAX_RATE_PLACES: MAX_RATE_PLACES,
+    RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
     effectiveRateText: effectiveRateText,
   };
