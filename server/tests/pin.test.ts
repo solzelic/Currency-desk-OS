@@ -745,4 +745,45 @@ describe("a snapshot PIN cannot open someone else's account", () => {
     expect(added).toHaveLength(1);
     expect(JSON.stringify(added[0])).not.toContain("4821");
   });
+
+  it("hides a stored PIN on read, including a top-level pin, and a save still strips and counts it", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      pin: "4821",
+      cdos_settings: { employees: [{ code: "j.masri", pin: "5566" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const got = await app.inject({ method: "GET", url: "/api/tenant/state", cookies: costaCookie });
+    expect(got.statusCode, got.body).toBe(200);
+    expect(got.body).not.toContain("4821");
+    expect(got.body).not.toContain("5566");
+    const unread = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(unread?.state)).toContain("4821");
+    expect(JSON.stringify(unread?.state)).toContain("5566");
+
+    const before = await handle.db.select({ id: schema.auditEvents.id }).from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const beforeIds = new Set(before.map((row) => row.id));
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: legacy },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(2);
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(stored?.state)).not.toContain("4821");
+    expect(JSON.stringify(stored?.state)).not.toContain("5566");
+    const after = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const added = after.filter((row) => !beforeIds.has(row.id));
+    expect(added).toHaveLength(1);
+    expect(added[0]?.detail).toMatchObject({ count: 2, codes: ["j.masri"] });
+    expect(JSON.stringify(added[0])).not.toContain("4821");
+    expect(JSON.stringify(added[0])).not.toContain("5566");
+  });
 });

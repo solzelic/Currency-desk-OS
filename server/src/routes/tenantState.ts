@@ -175,11 +175,13 @@ const putBody = z.object({
    still send an object. Either form is stripped before the save.
 
    This removes pin, PIN, and pinHash on cdos_settings.employees, including
-   a nested one of those names. Matching ignores case. 0000 is the old no-PIN default: it is
-   stripped and never stored, and it is not counted. Nothing here is copied
-   onto a staff record. Each other four-digit value is counted. The route
-   then keeps staff ids from this desk, drops duplicates, and caps the count
-   and that list at 40. The digits are not in the audit row. */
+   a nested one of those names, and the same keys on the document itself.
+   Matching ignores case. 0000 is the old no-PIN default: it is stripped and
+   never stored, and it is not counted. Nothing here is copied onto a staff
+   record. Each other four-digit value is counted. The route then keeps staff
+   ids from this desk, drops duplicates, and caps the count and that list at
+   40. The digits are not in the audit row. A read returns a copy with those
+   keys removed and does not write. */
 const PIN_FIELD = /^pin(hash)?$/i;
 const PIN_CAP = 40;
 
@@ -208,6 +210,13 @@ function employeeList(employees: unknown): Record<string, unknown>[] {
 }
 
 function stripSnapshotPins(state: Record<string, unknown>): { count: number; codes: string[] } {
+  let count = 0;
+  const codes: string[] = [];
+  for (const key of Object.keys(state)) {
+    if (!PIN_FIELD.test(key)) continue;
+    if (offeredPin(state[key])) count += 1;
+    delete state[key];
+  }
   const raw = state.cdos_settings;
   let settings: Record<string, unknown> | null = null;
   let asString = false;
@@ -217,13 +226,11 @@ function stripSnapshotPins(state: Record<string, unknown>): { count: number; cod
       const parsed = JSON.parse(raw) as unknown;
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) settings = parsed as Record<string, unknown>;
     } catch (error) {
-      if (error instanceof SyntaxError) return { count: 0, codes: [] };
+      if (error instanceof SyntaxError) return { count, codes };
       throw error;
     }
   } else if (raw && typeof raw === "object" && !Array.isArray(raw)) settings = raw as Record<string, unknown>;
-  if (!settings) return { count: 0, codes: [] };
-  let count = 0;
-  const codes: string[] = [];
+  if (!settings) return { count, codes };
   for (const entry of employeeList(settings.employees)) {
     const found = stripPinFields(entry);
     if (!found) continue;
@@ -258,8 +265,12 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!row) return { state: null, updatedAt: null, version: 0, settingsRows };
     /* A snapshot saved before health cards were refused can still hold a
        health number. It is not sent, so the next save cannot carry it
-       back. The stored row is cleaned by the next save, not here. */
-    return { state: scrubHealthNumbers(row.state), updatedAt: row.updatedAt, version: row.version, settingsRows };
+       back. The stored row is cleaned by the next save, not here.
+       A copy. The stored blob can still hold a PIN from before this strip
+       existed. The read hides it. Cleaning those rows is a separate change. */
+    const state = structuredClone(scrubHealthNumbers(row.state));
+    stripSnapshotPins(state);
+    return { state, updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
