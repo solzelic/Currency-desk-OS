@@ -1,20 +1,136 @@
-/* The menubar clock is a clock. It follows the browser's zone.
-   This spec freezes 15:02 UTC and pins the browser to UTC, so the
-   same assertion holds when the suite itself is running under
-   Asia/Jerusalem, America/Toronto, or Pacific/Auckland.
+/* The menubar clock is a clock. It follows the desk timezone
+   (settings.timezone, America/Toronto unless the desk changed it)
+   and the desk's time format, which defaults to 12-hour.
+   It does not follow the browser zone.
 
-   Drop the timezoneId pin and run under Asia/Jerusalem: that instant
-   renders 18:02 and this test goes red. A calendar day (an ID expiry,
-   a sign-off day) is not pinned this way. Those stay on the civil day.
+   Most of these tests pin the browser to UTC and set the desk zone
+   to UTC, so a frozen instant is the wall time under test wherever
+   the suite itself is running. The Auckland test leaves the browser
+   in Pacific/Auckland and the desk in America/Toronto.
 */
-import { test, expect, signInAtDesk } from "./fixtures";
+import { test, expect, signInAtDesk, landOnDesktop, type Page } from "./fixtures";
 
 test.use({ timezoneId: "UTC" });
 
-test("the desktop clock reads 15:02 in the pinned zone", async ({ page }) => {
+async function setDeskClock(page: Page, fields: { timeFormat?: string; timezone?: string }): Promise<void> {
+  await page.evaluate((next) => {
+    const raw = JSON.parse(localStorage.getItem("cdos_settings") || "{}");
+    Object.assign(raw, next);
+    localStorage.setItem("cdos_settings", JSON.stringify(raw));
+  }, fields);
+  await page.reload();
+  await landOnDesktop(page);
+}
+
+test("the desktop clock reads 3:02 pm in the pinned zone", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-06-18T15:02:00Z") });
   await page.setViewportSize({ width: 1280, height: 800 });
   await signInAtDesk(page);
+  await setDeskClock(page, { timeFormat: "12h", timezone: "UTC" });
   await expect(page.locator("#menubar")).toBeVisible();
-  await expect(page.locator(".mb-clock")).toContainText("15:02");
+  await expect(page.locator(".mb-clock")).toContainText("3:02 pm");
+});
+
+/* 16:05 with the desk on 12-hour. Main prints 16:05. The header
+   should read 4:05 pm, the same shape as the public hold time. */
+test("the header clock reads 4:05 pm when 12-hour is set", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  await setDeskClock(page, { timeFormat: "12h", timezone: "UTC" });
+  await expect(page.locator("#menubar")).toBeVisible();
+  const clock = page.locator(".mb-clock");
+  await expect(clock).toContainText("4:05 pm");
+  await expect(clock).not.toContainText("16:05");
+});
+
+test("the header clock keeps the same width at 9:59 am and 12:45 pm", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-06-18T09:59:00Z") });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  await setDeskClock(page, { timeFormat: "12h", timezone: "UTC" });
+  const clock = page.locator(".mb-clock");
+  await expect(clock).toContainText("9:59 am");
+  const atNine = await clock.evaluate((el) => el.getBoundingClientRect().width);
+  await page.clock.setSystemTime(new Date("2026-06-18T12:45:00Z"));
+  await page.clock.runFor(1000);
+  await expect(clock).toContainText("12:45 pm");
+  const atTwelve = await clock.evaluate((el) => el.getBoundingClientRect().width);
+  const fits = await clock.locator("b").evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+  expect(fits).toBe(true);
+  expect(atNine).toBe(atTwelve);
+});
+
+test("the header clock stays 16:05 when 24-hour is set", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  await setDeskClock(page, { timeFormat: "24h", timezone: "UTC" });
+  const clock = page.locator(".mb-clock");
+  await expect(clock).toContainText("16:05");
+  await expect(clock).not.toContainText("pm");
+});
+
+/* 16:05 UTC is 12:05 pm in Toronto and 4:05 am in Auckland.
+   The browser is Auckland. The desk zone is Toronto. */
+test.describe("the desk zone, not the browser", () => {
+  test.use({ timezoneId: "Pacific/Auckland" });
+
+  test("the header clock reads the desk timezone when the browser is somewhere else", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page);
+    await setDeskClock(page, { timeFormat: "12h", timezone: "America/Toronto" });
+    const clock = page.locator(".mb-clock");
+    await expect(clock).toContainText("12:05 pm");
+    await expect(clock).not.toContainText("4:05 am");
+  });
+});
+
+/* 16:05 UTC is 4:05 am in Auckland. Mars/Olympus is not a zone.
+   Without a fallback the menubar throws and renders nothing.
+   The browser zone is the fallback, so the header reads 4:05 am. */
+test.describe("a stored zone the clock cannot read", () => {
+  test.use({ timezoneId: "Pacific/Auckland" });
+
+  test("an invalid desk timezone still leaves a time on the menubar", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page);
+    await setDeskClock(page, { timeFormat: "12h", timezone: "Mars/Olympus" });
+    await expect(page.locator("#menubar")).toBeVisible();
+    const clock = page.locator(".mb-clock");
+    await expect(clock).toBeVisible();
+    await expect(clock).toContainText("4:05 am");
+    expect(errors.join("\n")).not.toMatch(/RangeError/);
+  });
+});
+
+test("the audit trail opens in 12-hour and 24-hour with no console error", async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  page.on("console", (msg) => {
+    if (msg.type() !== "error") return;
+    const text = msg.text();
+    /* A missing asset is a 404 in the network log. It is not a
+       desk error. A real page error, and any other console error,
+       still fails this test. */
+    if (/Failed to load resource/i.test(text) && /\b404\b/.test(text)) return;
+    errors.push(text);
+  });
+  await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  for (const timeFormat of ["12h", "24h"] as const) {
+    errors.length = 0;
+    await setDeskClock(page, { timeFormat, timezone: "UTC" });
+    await page.evaluate(() => window.CDOS.openApp("audit"));
+    const trail = page.locator(".win.show.active").getByText("Audit Trail").first();
+    const opened = await trail.waitFor({ state: "visible", timeout: 5_000 }).then(() => true, () => false);
+    expect(errors, timeFormat).toEqual([]);
+    expect(opened, timeFormat).toBe(true);
+  }
 });

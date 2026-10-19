@@ -3624,6 +3624,72 @@
     const pack = window.CDOS.deskPack();
     return pack && pack.homeCurrency || (window.CDOS.reportingLimit(null) || {}).currency || null;
   };
+
+  /* The desk's one clock. Settings → Time format is 12-hour unless the
+     desk picked 24-hour. The Audit Trail already used this rule. The
+     menubar calls the same function, so a 12-hour desk reads 16:05 as
+     4:05 pm, the same shape as a held quote.
+      timeZone is settings.timezone, the zone the localization screen
+     stores and the receipt settings travel with. The menubar passes
+     it, so the header is the desk's hour, not the browser's. Omit it
+     for a reading that is already wall time: the Audit Trail stores
+     minutes, then builds a local date from those minutes.
+      A zone Intl will not read (Mars/Olympus in a saved desk) throws.
+     That throw used to unmount the menubar. The fallback is the same
+     order as tzOffset in cdos-lctr.jsx: this browser's zone, then UTC. */
+  function hourMinute(date, timeZone) {
+    const opts = {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    };
+    if (timeZone) opts.timeZone = timeZone;
+    const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(date);
+    let h = NaN,
+      m = NaN;
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].type === 'hour') h = +parts[i].value;else if (parts[i].type === 'minute') m = +parts[i].value;
+    }
+    if (h === 24) h = 0;
+    if (!isFinite(h) || !isFinite(m)) return null;
+    return {
+      h: h,
+      m: m
+    };
+  }
+  function deskTime(date, timeFormat, timeZone) {
+    let hm = null;
+    try {
+      hm = hourMinute(date, timeZone);
+    } catch (e) {
+      hm = null;
+    }
+    if (!hm) {
+      try {
+        hm = {
+          h: date.getHours(),
+          m: date.getMinutes()
+        };
+      } catch (e) {
+        hm = null;
+      }
+    }
+    if (!hm || !isFinite(hm.h) || !isFinite(hm.m)) {
+      hm = {
+        h: date.getUTCHours(),
+        m: date.getUTCMinutes()
+      };
+    }
+    const h = hm.h,
+      m = hm.m;
+    if ((timeFormat || '12h') !== '24h') {
+      const ap = h < 12 ? 'am' : 'pm';
+      let hh = h % 12;
+      if (hh === 0) hh = 12;
+      return hh + ':' + String(m).padStart(2, '0') + ' ' + ap;
+    }
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -4087,17 +4153,7 @@
     };
     const inits = n => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     const use12 = (settings && settings.timeFormat || '12h') !== '24h';
-    const hhmm = min => {
-      const h = Math.floor(min / 60),
-        m = min % 60;
-      if (use12) {
-        const ap = h < 12 ? 'AM' : 'PM';
-        let hh = h % 12;
-        if (hh === 0) hh = 12;
-        return hh + ':' + String(m).padStart(2, '0') + ' ' + ap;
-      }
-      return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-    };
+    const hhmm = min => deskTime(new Date(2000, 0, 1, Math.floor(min / 60), min % 60), settings && settings.timeFormat);
     const items = useMemo(() => audit.map((a, i) => ({
       ...a,
       i,
@@ -5268,7 +5324,8 @@
     computeAlerts,
     Audit,
     Calc,
-    ReceiptModal
+    ReceiptModal,
+    deskTime
   });
 })();
 
@@ -69598,11 +69655,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "clock",
       s: 12
-    }), " ", /*#__PURE__*/React.createElement("b", null, clock.toLocaleTimeString('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }))), /*#__PURE__*/React.createElement("span", {
+    }), " ", /*#__PURE__*/React.createElement("b", null, /*#__PURE__*/React.createElement("span", {
+      className: "mb-clock-face"
+    }, window.CDOS.deskTime(clock, settings.timeFormat, settings.timezone || 'America/Toronto')), /*#__PURE__*/React.createElement("span", {
+      className: "mb-clock-sizer",
+      "aria-hidden": "true"
+    }, (settings.timeFormat || '12h') === '24h' ? '23:59' : '12:45 pm'))), /*#__PURE__*/React.createElement("span", {
       className: "mb-op-div"
     }), profileButton('desk'), /*#__PURE__*/React.createElement("div", {
       className: "mb-power-wrap",
