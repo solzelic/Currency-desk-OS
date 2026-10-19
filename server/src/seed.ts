@@ -1,5 +1,5 @@
 /* ============================================================
-   Demo seed — mirrors src/domain/seed.ts on the frontend
+   Demo seed — mirrors the STAFF list in os-src/cdos-base.jsx
    (Yorkville Desk, till-01, j.masri / r.haddad / a.singh) so the
    two sides agree on day one.
    Idempotent: safe to run repeatedly. Passwords are per-employee
@@ -11,7 +11,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { seedWalkthrough } from "./onboarding/walkthrough.js";
 import { createDb, schema } from "./db/index.js";
 import { hashPassword } from "./auth/password.js";
-import { ensureDefaultChequeSchedule } from "./state/defaultChequeSchedule.js";
+import { ensureDefaultChequeSchedule } from "./state/default-cheque-schedule.js";
 
 export const DEMO = {
   tenantId: "tnt-yorkfx",

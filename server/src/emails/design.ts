@@ -17,11 +17,12 @@
    The design draws two things we cannot honestly send yet.
 
    The FOUNDING CODE box — "enter it at the payment step and the first
-   three months come to zero" — describes a promo code that does not
-   exist against a checkout that does not exist. Setup does not currently
-   end at a payment step at all, so nobody is charged anything; printing
-   a code that works nowhere is the exact failure this codebase keeps
-   refusing elsewhere.
+   three months come to zero" — describes a code the email cannot
+   honestly print: founding offers are customer-restricted Stripe
+   promotion codes (routes/billing.ts). Setup's payment screen does not
+   hand off to Stripe Checkout yet, so nobody is charged during setup;
+   printing a code that does not work where the email says to enter it
+   is the exact failure this codebase keeps refusing elsewhere.
 
    The SAVE YOUR CARD link needs the charter card rendered server-side to
    a PNG. It is drawn in the browser at the end of setup today, so there

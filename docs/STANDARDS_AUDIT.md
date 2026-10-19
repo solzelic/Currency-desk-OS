@@ -97,7 +97,7 @@ The book itself meets the standard. Two adjacent money paths do not.
 | --- | --- |
 | `server/src/ledger/migration.sql` | Amounts are `numeric(24,2)` / rates `numeric(24,12)`. No float on till, vault, journal, or transaction rows. |
 | `server/src/ledger/*.ts` + `decimal.js` | Arithmetic is Decimal. Rounding is `toDecimalPlaces(2)` / `ROUND_HALF_UP`, set once (`quotes/terms.ts`, `quotes/service.ts`). |
-| Frozen quote terms | `ledger_quotes` stores `market_mid`, `customer_rate`, amounts; posting consumes the stored rate (`docs/QUOTE_INVARIANTS.md`). |
+| Frozen quote terms | `quotes` stores `market_mid`, `customer_rate`, amounts; posting consumes the stored rate (`docs/QUOTE_INVARIANTS.md`). |
 | Append-only | No `UPDATE`/`DELETE` of `ledger_transactions`. Reversals are new rows that reference the original. `ledger_audit_events` is the trail. |
 | Currency in the type | Ledger amounts travel with a `char(3)` currency. Three-decimal currencies are refused out loud (`server/src/ledger/currencies.ts`) rather than truncated. |
 | One book | `docs/CASH_OWNERSHIP_INVARIANTS.md`. Browser `position()` is a headstone (`os-src/cdos-base.jsx` ~628). |
@@ -154,17 +154,17 @@ priced. Several deploy-time holes remain.
 | Tenant scope | Session-derived. A caller-supplied tenant id is not a read scope (`docs/ARCHITECTURE.md` §4). |
 | Browser React/Babel | Pinned exactly in root `package.json` (comment explains why). |
 | `server/package.json` | Server runtime deps use carets (`fastify`, `pg`, `decimal.js`, `drizzle-orm`, `stripe`). Not pinned. No `npm audit` / secret-scan job in CI. |
-| No MFA on `/admin` | Search of `server/src/` finds no TOTP/WebAuthn. Desk users whose staff id is an email get an emailed code (`login/start`); platform operators do not have a second factor. Issue **#33**. |
-| `server/src/admin-bootstrap.ts:30–31` | While `PLATFORM_ADMIN_BOOTSTRAP` is set, every boot **overwrites** the operator password and clears `mustChangePassword`. Issue **#31**. |
+| No MFA on `/admin` | **Closed.** `/admin` requires TOTP after enrollment (`server/src/routes/admin-mfa.ts`). |
+| `server/src/admin-bootstrap.ts` | **Closed (#31).** One-shot: an existing operator's password is never overwritten. |
 | Issue **#32** | Resend key passed through chat. Cannot be verified from the repo. Ops-only; stays open until an operator confirms rotation. |
-| `server/src/app.ts:66–85` | Public allow-list still serves `/CurrencyDesk OS.html`, `/admin.html`, and `/os-src/*` (Babel + `react.development` + the entire OS source). Product routes `/login` and `/app` do not use these; they remain fetchable. |
-| `render.yaml:39` | Render’s probe is `GET /api/health` — process-alive only (see §9). |
+| `server/src/app.ts:66–85` | Served only as a fallback when `web/app/index.html` / `web/app/admin.html` are missing; otherwise 404 (`retiredUncompiledDesk`). |
+| `render.yaml:39` | Render’s probe is `GET /api/health` — 503 when the database read fails (see §9). |
 | Least privilege | Platform roles exist (`server/src/platform/team.ts`) and are least-privilege by default. The app connection string’s role on Neon is not declared in-repo (likely the DB owner on a free Neon project). |
 
 ### §7 Tests — Partial
 
 The things that can hurt money are tested. One named flake is tolerated.
-CI does not run on `main` after merge.
+CI re-runs on push to `main` (Server, Browser, Civil dates).
 
 | Evidence | Why |
 | --- | --- |
@@ -173,9 +173,9 @@ CI does not run on `main` after merge.
 | `server/tests/auth.test.ts`, `login2fa.test.ts`, `forgot-password.test.ts`, `admin.test.ts` | Auth boundaries. |
 | `server/tests/migrations.postgres.test.ts` | Checksum drift and partial-failure rollback. |
 | `playwright.config.ts:24` | `retries: 1` in CI. Issue **#36** documents a cash-seam click-stability flake absorbed by that retry. Standard: a flake is deleted or fixed the day it is noticed. |
-| `tests/e2e/zz-a-day-at-the-desk.spec.ts` | File order is load-bearing because of #34. Documented workaround, not a flake, but it means the suite is not isolated. |
+| `tests/e2e/a-day-at-the-desk.spec.ts` | **Closed (#34).** Trades on its own till; file order is no longer load-bearing. |
 | `docs/DEVELOPMENT.md` | “Assert deltas, not absolutes” — the suite still shares one demo tenant. Deterministic only if you know the order. |
-| Missing | No eslint/format gate. No test that `/api/health` fails when Neon is down (because it does not). |
+| Missing | No eslint/format gate. |
 
 ### §8 Review and CI — Partial
 
@@ -192,7 +192,7 @@ CI does not run on `main` after merge.
 | Evidence | Why |
 | --- | --- |
 | `docs/PROJECT_STATE.md`, `docs/REPOSITORY_MAP.md`, `docs/ARCHITECTURE.md` | In-repo state exists and is CI-gated. Notion is a mirror (`docs/PROJECT_STATE.md` is the living one). |
-| `server/src/app.ts:151` | `GET /api/health` → `{ ok: true, service: "currencydesk-server" }`. No DB ping. Render `healthCheckPath` (`render.yaml:39`) uses this. **Process-alive. Neon can be down and the probe stays green.** |
+| `server/src/app.ts` | **Closed (Slice D).** `GET /api/health` runs a trivial database read (`server/src/platform/health.ts`) and answers 503 `{ ok: false, error: "database" }` when it fails. Render `healthCheckPath` (`render.yaml`) uses this. |
 | `server/src/platform/health.ts` | The *real* dependency check (DB read + latency, email, Stripe, rates, storefronts) lives at `GET /api/admin/health` and requires a platform session (`server/tests/platform-ops.test.ts`). Load balancers never see it. |
 | `render.yaml:31` | Free tier; sleeps after ~15 idle minutes. Documented, not a code defect. |
 | Neon CU-hours | Ops, not code. Not declared as a budget in-repo. |
@@ -215,9 +215,9 @@ the standard’s process:
 
 Notion §11 already listed CurrencyDesk OS on 2026-09-04. The table at
 the end of this document is the in-repo copy, with reasons taken from
-the code and durable docs. One correction to carry back to Notion: the
-public health endpoint does **not** check Neon; only `/api/admin/health`
-does.
+the code and durable docs. One correction to carry back to Notion: at
+the time of this audit the public health endpoint did **not** check
+Neon; only `/api/admin/health` did. It does now (Slice D).
 
 ---
 
@@ -226,15 +226,15 @@ does.
 | ID | Verdict in code | Notes |
 | --- | --- | --- |
 | Seed demo `j.masri` / `yorkville` → 401 | **Ops, expected on a lived-in DB.** | `server/src/seed.ts` sets `yorkville` only on **first insert** (`onConflictDoNothing`). Production *requires* `SEED_PASSWORD` (`server/src/index.ts:24`). Once the row exists, the env var is ignored. A sit-down against the live desk is the Early Access → `/admin` invite → emailed code → `/onboarding/:code` path (`docs/ONBOARDING.md`). Seeded staff ids that are not emails still password-only (`auth.ts:122–129`). |
-| #31 `PLATFORM_ADMIN_BOOTSTRAP` | **Confirmed.** | `admin-bootstrap.ts:30–31` updates `passwordHash` on every boot while the var is set. Comment tells the operator to remove it; nothing enforces that. |
+| #31 `PLATFORM_ADMIN_BOOTSTRAP` | **Closed.** | One-shot; never overwrites `passwordHash` (`server/src/admin-bootstrap.ts`). |
 | #32 Resend key | **Ops only.** | Not in the repo. Rotation cannot be proved from git. Leave open until an operator confirms. |
-| #33 Platform MFA | **Confirmed.** | No TOTP/WebAuthn in `server/src/`. `/admin` is email + password (+ emailed code only if the staff id *is* an email). Cross-tenant blast radius. |
-| #34 Multi-till `SCOPE_DENIED` | **Confirmed.** | Same fallback in `server/src/quotes/routes.ts:20`, `ledger/routes.ts:336`, `clients/routes.ts:134`: no `x-workspace-id` → “the only workspace at this branch” → `undefined` → `SCOPE_DENIED` once a second till exists. `zz-` seam prefix is the workaround. The OS *does* send the header (`os-src/cdos-backend.js`); a shop with two counters and any caller that does not is denied. |
+| #33 Platform MFA | **Closed.** | `/admin` requires TOTP after enrollment (`server/src/routes/admin-mfa.ts`). |
+| #34 Multi-till `SCOPE_DENIED` | **Closed.** | An unscoped call now uses the workspace stamped on the session (first till at the user's home branch at sign-in), so adding a till no longer denies callers (`server/src/auth/workspace-scope.ts`). The `zz-` seam prefix is gone. |
 | #36 cash-seam flake | **Confirmed as documented — reproduced on this audit’s own CI.** | `tests/e2e/cash-seam.spec.ts:85` / line 104: click on Reconcile & close timed out (90s). Locator resolved; element “not stable”; then `<div class="px-4 pt-3 flex-none">` intercepted pointer events. GitHub Actions run `33886373267` on `d72cbe1` (docs-only): 67 passed, 1 failed (this test), 1 flaky (cash-seam open-till, recovered on retry), 1 skipped. Financial assertion never ran. Playwright `retries: 1` did not absorb it. Not caused by this PR. |
 | #35 YorkFX CDN tooling | **Closed, verified gone.** | No `unpkg` / Babel / `react.development` under `YorkFX/`. |
-| Public `/CurrencyDesk OS.html`, `/admin.html` | **Confirmed still public.** | Allow-list in `app.ts:71–72`. Both load unpkg `react.development` + Babel standalone. Product routes do not. |
+| Public `/CurrencyDesk OS.html`, `/admin.html` | **Closed.** | Served only as a fallback when `web/app/index.html` / `web/app/admin.html` are missing; otherwise 404 (`retiredUncompiledDesk`). |
 | `/onboarding` unpkg | **Confirmed residual.** | `design/onboarding/currencydesk-onboarding.html` and generated `web/onboarding.html` still list unpkg React production URLs in the bundler template. Marketing pages rewrite those to `/web/vendor/`. |
-| `GET /api/health` | **Process-alive only.** | See §9. |
+| `GET /api/health` | **Closed (Slice D).** | 503 when the database read fails. See §9. |
 | PR #30 | **Park / close.** | `codex/lead-context-dossier`, title “Build a caller-safe lead dossier”. `CONFLICTING` vs `main`. Last CI 2026-08-06 (pre-governance). Conflicts include `docs/HANDOFF_GROWTH_PIPELINE.md`, deleted in #40. Outside the locked compiled-OS slice. Recommend: close as superseded / rebase-or-abandon; do not merge. Growth pipeline on `main` already has sourced research + ElevenLabs behind env flags (`docs/GROWTH_PIPELINE.md`). |
 | Render free-tier sleep / Neon CU-hours | **Ops.** | `render.yaml:29–31`. Not a code change. |
 
@@ -242,13 +242,13 @@ does.
 
 ## Top 10 gaps (severity: money / security / correctness first)
 
-1. **Platform admin is one password deep, and boot can reset that password.** (#33 + #31). One phished or still-bootstrapped credential reaches every desk. `admin-bootstrap.ts` + no TOTP.
-2. **Render health lies about Neon.** `GET /api/health` is `{ ok: true }`. A DB outage looks like a live shop until a person opens `/admin`. `app.ts:151`, `render.yaml:39`.
+1. **Platform admin is one password deep, and boot can reset that password.** **Closed (#33, #31).** One phished or still-bootstrapped credential reaches every desk. `admin-bootstrap.ts` + no TOTP.
+2. **Render health lies about Neon.** **Closed (Slice D).** `GET /api/health` is `{ ok: true }`. A DB outage looks like a live shop until a person opens `/admin`. `app.ts:151`, `render.yaml:39`.
 3. **Storefront SMS quotes and rate-board margins are floats.** **Closed (Slice F).** Columns are `numeric`; the SMS path uses Decimal. jsonb board mids remain JS numbers.
-4. **Quote-create still hard-codes CAD/USD/EUR/GBP** after the ledger learned every ISO 4217 code. A corridor the book will hold, the quote door will refuse. `quotes/routes.ts:15` vs migration 020.
-5. **Multi-till resolution denies the second workspace.** (#34). Adding a till through the product’s own route breaks callers that omit `x-workspace-id`. Seam-test order is load-bearing.
+4. **Quote-create still hard-codes CAD/USD/EUR/GBP** after the ledger learned every ISO 4217 code. **Closed (Slice E).** A corridor the book will hold, the quote door will refuse. `quotes/routes.ts:15` vs migration 020.
+5. **Multi-till resolution denies the second workspace.** **Closed (#34).** Adding a till through the product’s own route breaks callers that omit `x-workspace-id`. Seam-test order is load-bearing.
 6. **Hard-delete of a suspended desk destroys the audit trail.** `admin.ts:1415–1439` deletes `audit_events` and the 6-year record. Standard forbids this.
-7. **Uncompiled Babel shells and `os-src/` are still on the public allow-list.** Residual XSS/supply-chain surface (`react.development`, in-browser Babel, Tailwind Play CDN on the editor shell). Not the product route; still fetchable.
+7. **Uncompiled Babel shells and `os-src/` are still on the public allow-list.** **Closed.** Served only as a fallback when `web/app/index.html` / `web/app/admin.html` are missing; otherwise 404 (`retiredUncompiledDesk`).
 8. **In-process auth challenges and cooldowns.** Sign-in codes die on every Render sleep. `auth.ts:74–76`, `cooldown.ts`.
 9. **cash-seam flake tolerated by CI retry, and the retry is not enough.** (#36). This audit’s Browser job went red on the documented click-stability race (`cash-seam.spec.ts:104`). Standard says fix or delete the day it is noticed. Do not weaken the assertion. This PR does not fix it.
 10. **Two schema mechanisms + caret-ranged server deps + no secret-scan / `npm audit` job.** Drift between PGlite and Postgres; unpinned server libraries; #32 rotation still unconfirmed.

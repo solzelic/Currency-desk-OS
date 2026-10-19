@@ -12,8 +12,9 @@
      • Cross-border EFT report (FINTRAC EFTR) — the international
        electronic-funds-transfer filing the majors keep getting fined
        for missing.
-   FX on every transfer is priced through the shared two-sided engine
-   (priceDeal), so the spread booked here lands in Revenue & Earnings.
+   FX on a transfer is quoted through the shared two-sided engine
+   (priceDeal), but the ledger books no spread on a remittance — only the
+   fee is earned (docs/OBLIGATION_LINES.md).
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;

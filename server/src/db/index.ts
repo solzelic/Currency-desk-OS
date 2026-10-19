@@ -3,7 +3,8 @@
    One schema, two drivers:
      • DATABASE_URL set   → node-postgres against managed Postgres (prod)
      • DATABASE_URL unset → embedded PGlite (dev / tests, zero install)
-   Both are real Postgres, so SQL and migrations never fork.
+   Both are real Postgres, so the queries never fork; only the managed
+   path runs migrations (see the note above desk_clients).
    ============================================================ */
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";

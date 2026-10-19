@@ -20,7 +20,7 @@
    cannot split the word.
 
    "Live rate board" is the Rates plan's name. That exact phrase is
-   allowed.    "live rates" anywhere else, including a hyphen and a meta
+   allowed. "live rates" anywhere else, including a hyphen and a meta
    description, still fails. "updated every second" still fails
    beside the name. A sentence that says the board moves with the
    market still fails. The plural "live rate boards" is not the name.

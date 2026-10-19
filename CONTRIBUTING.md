@@ -67,8 +67,6 @@ not the tool that performed it.
 
 ## Pull requests
 
-New agent pull requests are frozen until the repository owner pushes a commit to main that ends the freeze, except pull requests that finish work already in progress.
-
 Use the PR template. Every PR states:
 
 - **Problem** — what is wrong or missing, in product terms.

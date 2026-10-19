@@ -82,7 +82,7 @@ async function reset(options: { openTill?: boolean; cad?: number } = {}) {
     .where(eq(schema.staffUsers.id, `${DEMO.tenantId}:a.singh`));
   /* Verified, because the identification gate is a real gate on this path
      too — cashing a cheque for somebody the desk cannot name is exactly
-     what it exists for. `unverified-walkin` is here for the one test that
+     what it exists for. `customer-walkin` is here for the one test that
      needs the other answer. */
   await pool.query(
     `INSERT INTO ledger_customers VALUES
