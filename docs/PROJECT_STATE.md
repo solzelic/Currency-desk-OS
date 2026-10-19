@@ -74,6 +74,43 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 - **Public quote replies omit the visitor's phone and name.** Creating a quote returns only the ref, the status, the expiry, and the amounts (`from`, `to`, `amount`, `receive`). Confirming returns only the ref, the status, and the expiry. After confirm the Visit page shows "Show ref <ref> at the desk.", the same line for every text status, because create no longer returns the SMS status. The footer says the held rate is honoured at the desk with this ref. The quote card heading, hint, options, buttons, held line, confirmed line, ref line, limit line, error lines, and footer have no em dash and no en dash. The page title, the meta description, and the location lede still have em dashes. That is a Head of Design follow-up and is not in this change. The customer confirm text still has an em dash and a double period. That text is its own follow-up and is not changed here. The hold time is 12-hour, like "12:22 am". A confirm inside the cleanup minute does not walk the buckets again. The next confirm after that minute does. The confirmation text goes out only on the first confirm. A shop allows 30 confirms a minute, and only a real site is counted. One client address allows 30 confirms a minute, taken from `clientIp`. Over the limit, the reply and the Visit page both say "Too many tries. Wait a minute and try again." A request with no client address gets a plain error, not an internal sentence. Old rate buckets are dropped after their window, and that walk runs at most once a minute. Production presents every request as 127.0.0.1, so that per-IP bucket is shared until loopback handling in `clientIp` changes. The smaller replies are what stop a guessed ref from revealing who asked. The short Q- ref can still be guessed. An unguessable confirm token is a later change and is not in this one.
 
+- **One ID-type catalogue, and no health card numbers.** The types a
+  desk can record are one list, `shared/id-document-types.js`. The
+  server requires it and the desk loads the same file. Person types:
+  Driver's Licence, Passport, Provincial/Territorial Photo ID, Permanent
+  Resident Card (PR Card), Citizenship Card, BC Services Card, and
+  National Identity Card. The BC Services Card is photo ID, not a
+  health card. The National Identity Card is another country's
+  government photo ID card, such as an Emirates ID, so a desk outside
+  Canada can record its own country's card. Business types:
+  Business Number, Incorporation Certificate, Master Business Licence,
+  and Articles of Incorporation. A saved type is stored as the
+  catalogue names it. Any other type is 422 `ID_TYPE_NOT_IN_CATALOGUE`,
+  and the sentence lists the accepted types. A health card is in the
+  list so a stored one still reads, and it is never accepted: adding
+  one, or changing a type to one, is 422 `HEALTH_CARD_NOT_ID`, "Health
+  cards can't be used as ID. Record a current photo ID." A stored
+  health card cannot be edited. It can be removed, and a new ID can be
+  added beside it. No read returns a health number: the key is absent
+  from one client, the list, and lookup. Search does not match it. The
+  saved desk document drops it on save, on read, and on a conflict, and
+  the desk drops it from this browser's saved copies when it loads. The
+  file, the quick card, the editors, and the printed report say "Health
+  card — not accepted as ID" with no number. The KYC register and its
+  CSV leave the number empty. LCTR and STR identifier fields fill only
+  from a type the catalogue accepts. A health card does not make a file
+  identified, and the till's counter record for a health card only is
+  `missing`. The register and the ledger say "ID on file" where they
+  said "verified". Ontario's Health Cards and Numbers Control Act, 1991
+  bars a business outside health care from collecting or using a health
+  number, and FINTRAC says not to use a health card where provincial
+  law prohibits it. The desk refuses them everywhere, which is stricter
+  than the law. Stored numbers are not blanked: that is the owner's
+  redaction tool, #134. The posting gate is #108. Per-country Accepted
+  IDs come in a later change. This replaces #157, #100, and #131. The
+  owner asked for it during the freeze, on 2026-10-19. Write-up:
+  `docs/CLIENT_RECORDS.md`.
+
 - **Cheque fees are the owner's or a manager's.** Sol's rule: the owner and a manager may set the fee, including 0%. A teller, a senior teller, a trainee, and an auditor may not. Who may write `cdos_cheque_schedule_v1` is `canWriteSetting`. Today's default allows a branch manager and a compliance officer. The owner is always allowed, so they cannot be locked out. The table is not stored yet and there is no screen for it. A numeric version that is not current is 409 before the fee refusal. Anyone else gets 403: "Only the owner or a manager can change cheque fees. Ask a manager to make this change." A platform row does not take the save away. A teller's document cannot replace the fee key. A save with no version that would change the fee is 409, with no write and no refusal row. The refusal is `settings.cheque_fee_refused`. A save that lands is `settings.cheque_fee_changed`, with who, when, and the old and new price of each cheque type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is grey, with the lock at the start of that sentence and the sentence wrapped, and no inputs and no Save, for a teller and for a cashier, before any Save. The phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals and the example is the body colour, and its header is $2,000.00. A grouped list for the phone is a later change and is not here. The owner and a manager see the table and Save. The header names whoever is signed in now. A refused Save keeps the typed values and shows one amber line above Save. A stale second save shows a conflict line that stays on screen, with darker text, a 44px Reload, and the typed values kept until Reload loads the server schedule and its version. The Risk select is 44px. A save that lands shows Saved. A low-fee notice is not here.
 
 - **A new person's username has the shop in it.** On the Employees
@@ -633,6 +670,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-19**, ID-type catalogue and health cards. One list, `shared/id-document-types.js`, loaded by the server and by the desk. A type outside it is 422 `ID_TYPE_NOT_IN_CATALOGUE`. A health card is 422 `HEALTH_CARD_NOT_ID`, "Health cards can't be used as ID. Record a current photo ID." The BC Services Card is accepted. A health number is not in any client read, search, report, register, CSV, LCTR or STR field, or the saved desk document. It does not identify a file. Stored rows are not rewritten and stored numbers are not blanked. No migration.
 
 **2026-10-18**, names and comments. Every tracked file name was checked against CONTRIBUTING, and every comment and doc line against the code. Statements the code contradicts were corrected; nothing that could not be shown wrong was changed. `server/src/state/defaultChequeSchedule.ts` is `default-cheque-schedule.ts`. `tenantState.ts` and `settingsWrite.ts` keep their names until the open pull requests that edit or import them have landed. The desk no longer carries an uncalled function that made up an address and an ID number from a name. The Cross-Border EFT report no longer says transfers do not post; it says the page is built from the Transfers app's own records. The owner ended the PR freeze.
 

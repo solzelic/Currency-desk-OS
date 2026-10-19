@@ -22,6 +22,8 @@
    WHAT IT COVERS
 
      os-src/*.jsx, *.js   the OS itself
+     shared/id-document-types.js
+                          the ID-type catalogue the OS and the server share
      web/app/*.js         the compiled OS and panel
      admin.html           the platform panel, JSX inside a script tag
      CurrencyDesk OS.html the OS shell
@@ -83,7 +85,8 @@ if (existsSync(osDir)) {
 }
 
 // ---- standalone browser scripts ---------------------------------------
-for (const f of ["yorkfx-converter.js"]) {
+// shared/id-document-types.js is loaded by the OS shell and by the server.
+for (const f of ["yorkfx-converter.js", "shared/id-document-types.js"]) {
   const p = path.join(ROOT, f);
   if (existsSync(p)) parse(readFileSync(p, "utf8"), f, false);
 }

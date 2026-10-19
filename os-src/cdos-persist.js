@@ -75,7 +75,14 @@ window.CDOS_PERSIST = (function () {
     }
     return out;
   }
+  /* A health number is not saved and is not kept. cdos-backend.js
+     removes one from this browser's copies; this runs it again before a
+     save is built and after the server's copy is written in. */
+  function scrubHealth() {
+    if (window.CDOS && typeof window.CDOS.scrubLocalHealthNumbers === 'function') window.CDOS.scrubLocalHealthNumbers();
+  }
   function snapshot() {
+    scrubHealth();
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
@@ -109,6 +116,7 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+    scrubHealth();
   }
 
   /* Missing, null, or "" is not a saved shop. */

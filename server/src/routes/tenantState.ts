@@ -25,6 +25,7 @@ import {
   ownerOnlyEdits,
   ownsSettings,
 } from "../state/owner-settings.js";
+import { scrubHealthNumbers } from "../clients/id-document-types.js";
 
 /* The cheque fee is the price of the desk's own credit. Who may write
    it lives in canWriteSetting, not in a role list at this route. */
@@ -105,7 +106,7 @@ function stateConflict(row: { state: unknown; version: number } | undefined) {
   return {
     error: "state_conflict",
     detail: "Somebody else saved this desk while you were working. Merging.",
-    state: row?.state ?? null,
+    state: scrubHealthNumbers(row?.state ?? null),
     version: row?.version ?? 0,
   };
 }
@@ -188,7 +189,10 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     const row = rows[0];
     const settingsRows = editableOwnerRows(who.role);
     if (!row) return { state: null, updatedAt: null, version: 0, settingsRows };
-    return { state: row.state, updatedAt: row.updatedAt, version: row.version, settingsRows };
+    /* A snapshot saved before health cards were refused can still hold a
+       health number. It is not sent, so the next save cannot carry it
+       back. The stored row is cleaned by the next save, not here. */
+    return { state: scrubHealthNumbers(row.state), updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
@@ -227,7 +231,10 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     }
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    let state = parsed.data.state;
+    /* No health number is stored, whichever tab sent it. Unchanged
+       values come back as the same values, so the fee key and every
+       other string is stored byte for byte as it was sent. */
+    let state = scrubHealthNumbers(parsed.data.state);
 
     const bytes = Buffer.byteLength(JSON.stringify(state));
     if (bytes > MAX_STATE_BYTES) {

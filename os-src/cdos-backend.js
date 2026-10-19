@@ -679,6 +679,53 @@
   var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
   var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
 
+  /* The ID-type catalogue is shared/id-document-types.js, loaded before
+     this file. The server reads the same file. Without it the desk would
+     not know which type is a health card, so it says so and stops. */
+  function idTypes() {
+    var catalogue = window.CDOS_ID_TYPES;
+    if (!catalogue || typeof catalogue.isHealthCardType !== "function") {
+      throw new Error("CurrencyDesk has no ID-type catalogue loaded");
+    }
+    return catalogue;
+  }
+  var isHealthCardType = function (type) { return idTypes().isHealthCardType(type); };
+
+  /* A health number this browser already holds, from before the desk
+     refused them, is removed from every saved copy here, before any
+     screen reads one. A value that cannot be read or rewritten is
+     logged and left; the next key is still cleaned. */
+  function scrubLocalHealthNumbers() {
+    var scrub = idTypes().scrubHealthNumbers;
+    var names = [];
+    var i;
+    try {
+      for (i = 0; i < localStorage.length; i++) names.push(localStorage.key(i));
+    } catch (error) {
+      console.error("[CurrencyDesk] could not list this browser's saved desk", error);
+      return;
+    }
+    names.forEach(function (name) {
+      if (!name) return;
+      var raw;
+      try { raw = localStorage.getItem(name); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not read " + name + " while removing a health number", error);
+        return;
+      }
+      if (typeof raw !== "string") return;
+      var next = scrub(raw);
+      if (next === raw) return;
+      try { localStorage.setItem(name, next); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not remove a health number from " + name, error);
+      }
+    });
+  }
+  window.CDOS.idTypes = idTypes;
+  window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
+  scrubLocalHealthNumbers();
+
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
      document flattened onto it as idType / idNum / idIssued / idExpiry.
@@ -690,7 +737,12 @@
      that is the byte weight that was stopping the desk saving. */
   function toDeskRecord(record, local) {
     local = local || {};
-    var documents = record.documents || [];
+    /* The server never sends a health card's number. This is the same
+       rule again, so a response from an older server cannot put one in
+       this browser either. */
+    var documents = (record.documents || []).map(function (d) {
+      return idTypes().scrubHealthNumbers(d);
+    });
     var primary = documents.filter(function (d) { return d.isPrimary; })[0] || null;
     var extra = documents.filter(function (d) { return !d.isPrimary; });
     var serverHasPrimaryScan = !!(primary && primary.hasScan);
@@ -727,7 +779,7 @@
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
       idType: primary ? primary.docType : "",
-      idNum: primary ? (primary.docNumber || "") : "",
+      idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
       primaryDocumentId: primary ? primary.documentId : null,
@@ -741,7 +793,7 @@
         return {
           documentId: d.documentId,
           type: d.docType,
-          num: d.docNumber || "",
+          num: isHealthCardType(d.docType) ? "" : (d.docNumber || ""),
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
           hasScan: !!d.hasScan,

@@ -117,6 +117,9 @@ const disclosureQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+/* The two refusals a document type can get. Both are 422. */
+const ID_TYPE_REFUSALS = new Set(["ID_TYPE_NOT_IN_CATALOGUE", "HEALTH_CARD_NOT_ID"]);
+
 type Resolution =
   | { kind: "authenticated"; actor: LedgerActor }
   | { kind: "unauthenticated" }
@@ -197,6 +200,17 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
               error.code === "PHOTOGRAPH_NOT_ON_FILE" ? 404
             : error.code === "SCAN_TOO_LARGE" ? 413
               : 422;
+    /* An ID type refusal also carries `error` and `detail`, the shape the
+       catalogue contract names. `code` and `message` stay, because that
+       is what the desk and every other refusal here already read. */
+    if (ID_TYPE_REFUSALS.has(error.code)) {
+      return reply.code(status).send({
+        error: error.code,
+        detail: error.message,
+        code: error.code,
+        message: error.message,
+      });
+    }
     return reply.code(status).send({ code: error.code, message: error.message });
   }
 
