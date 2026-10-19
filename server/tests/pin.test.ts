@@ -237,18 +237,24 @@ describe("PINs are checked by the server", () => {
 
   it("you can get back in on your own, with the password the owner doesn't have", async () => {
     const costa = await staffRow("m.costa");
-    await app.inject({ method: "POST", url: `/api/admin/staff/${costa.id}/reset-pin`, cookies: adminCookie });
+    const issued = (await app.inject({ method: "POST", url: `/api/admin/staff/${costa.id}/reset-pin`, cookies: adminCookie })).json().pin as string;
+    // Support's reset can hand back any ordinary four digits. The probe has
+    // to be a different code, or a verify of it passes because that is the
+    // PIN just issued, not because a wrong password stored it.
+    const chosen = issued === "7412" ? "8520" : "7412";
 
-    // a wrong password is not a way in
-    const wrongPw = await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: costaCookie, payload: { password: "not-it", pin: "7412" } });
+    // a wrong password is not a way in, and the issued PIN is still the one on file
+    const wrongPw = await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: costaCookie, payload: { password: "not-it", pin: chosen } });
     expect(wrongPw.statusCode).toBe(401);
-    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "7412" } })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: chosen } })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: issued } })).statusCode).toBe(200);
 
     // the right one is — without anybody having to be told the new PIN
-    const ok = await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: costaCookie, payload: { password: "yorkville", pin: "7412" } });
+    const ok = await app.inject({ method: "POST", url: "/api/staff/pin/reset", cookies: costaCookie, payload: { password: "yorkville", pin: chosen } });
     expect(ok.statusCode).toBe(200);
-    expect(ok.body).not.toContain("7412");
-    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: "7412" } })).statusCode).toBe(200);
+    expect(ok.body).not.toContain(chosen);
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: chosen } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: costaCookie, payload: { pin: issued } })).statusCode).toBe(401);
   });
 
   it("a PIN somebody else issued is marked temporary until its owner picks their own", async () => {
