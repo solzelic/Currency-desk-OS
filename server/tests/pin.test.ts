@@ -867,4 +867,37 @@ describe("a snapshot PIN cannot open someone else's account", () => {
     expect(JSON.stringify(stored?.state)).toContain("5566");
     expect(stored?.version).toBe(1);
   });
+
+  it("does not hand a stored PIN back when a save with no version changes the fee", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const changed = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) =>
+      row.id === "payroll" ? { ...row, feePct: 2.5 } : row,
+    ));
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      pin: "4821",
+      cdos_settings: { employees: [{ code: "j.masri", pin: "5566" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: changed } },
+    });
+    expect(put.statusCode, put.body).toBe(409);
+    expect(put.body).not.toContain("4821");
+    expect(put.body).not.toContain("5566");
+    expect(put.body).not.toMatch(/"pin(hash)?"\s*:/i);
+    const body = put.json();
+    expect(body.version).toBe(1);
+    expect(body.state?.cdos_cheque_schedule_v1).toBe(schedule);
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(stored?.state).toEqual(legacy);
+    expect(stored?.version).toBe(1);
+  });
 });
