@@ -153,6 +153,11 @@ postgres("United Arab Emirates pack version 2", () => {
   });
 
   afterAll(async () => {
+    /* ledger_customers has no foreign key to tenants, so these rows would
+       outlive the tenant. Migration 019 turns every unlinked customer into
+       a client row, and a later file that re-runs it would then fail on
+       the missing tenant. */
+    await pool.query("DELETE FROM ledger_customers WHERE tenant_id = $1", [TENANT]);
     await pool.query("DELETE FROM legal_entities WHERE id = $1", [ENTITY]);
     await pool.query("DELETE FROM tenants WHERE id = $1", [TENANT]);
     await handle.close();
