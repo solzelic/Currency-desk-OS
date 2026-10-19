@@ -263,14 +263,15 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     const row = rows[0];
     const settingsRows = editableOwnerRows(who.role);
     if (!row) return { state: null, updatedAt: null, version: 0, settingsRows };
+    /* A copy. The stored blob can still hold a PIN from before this strip
+       existed. The read hides it. Cleaning those rows is a separate change. */
+    const readable = structuredClone(row.state);
+    stripSnapshotPins(readable);
+    row.state = readable;
     /* A snapshot saved before health cards were refused can still hold a
        health number. It is not sent, so the next save cannot carry it
-       back. The stored row is cleaned by the next save, not here.
-       A copy. The stored blob can still hold a PIN from before this strip
-       existed. The read hides it. Cleaning those rows is a separate change. */
-    const state = structuredClone(scrubHealthNumbers(row.state));
-    stripSnapshotPins(state);
-    return { state, updatedAt: row.updatedAt, version: row.version, settingsRows };
+       back. The stored row is cleaned by the next save, not here. */
+    return { state: scrubHealthNumbers(row.state), updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
