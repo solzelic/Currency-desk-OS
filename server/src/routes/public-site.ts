@@ -329,16 +329,13 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
     const q = rows[0];
     if (!q || q.tenantId !== t.id) return reply.code(404).send({ error: "not_found" });
     if (q.expiresAt.getTime() < Date.now()) return reply.code(410).send({ error: "expired" });
-    /* textSent is only whether this confirm got a text out. No phone, no name. */
-    let textSent = false;
     if (q.status === "held") {
       await db.update(schema.rateQuotes).set({ status: "confirmed", confirmedAt: new Date() }).where(eq(schema.rateQuotes.id, ref));
-      const sms = await sendSms(q.phone, `${t.name}: Ref ${ref} confirmed. ${fmtAmount(q.receiveAmount, q.wantCcy)} set aside until ${fmtTime(q.expiresAt)} See you soon.`);
-      textSent = sms !== "failed";
+      void sendSms(q.phone, `${t.name}: Ref ${ref} confirmed — ${fmtAmount(q.receiveAmount, q.wantCcy)} set aside until ${fmtTime(q.expiresAt)}. See you soon.`);
     }
     const fresh = (await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1))[0]!;
     const status = fresh.status === "held" && fresh.expiresAt.getTime() < Date.now() ? "expired" : fresh.status;
-    return { quote: { ref: fresh.id, status, expiresAt: fresh.expiresAt.getTime(), textSent } };
+    return { quote: { ref: fresh.id, status, expiresAt: fresh.expiresAt.getTime() } };
   });
 
   // staff: the desk's incoming holds (any signed-in role — tellers serve them)

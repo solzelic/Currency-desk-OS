@@ -104,9 +104,9 @@
               if (res.status === 429) { cbtn.disabled = false; note.textContent = 'Too many tries. Wait a minute and try again.'; return; }
               if (res.d.quote && res.d.quote.status === 'confirmed') {
                 cbtn.style.display = 'none';
-                /* textSent is a boolean. It carries no phone and no name. */
-                var textLine = res.d.quote.textSent ? 'We texted you the details.' : 'We couldn\u2019t send the text. Show ref ' + esc(q.ref) + ' at the desk.';
-                note.innerHTML = '<b>Confirmed.</b> Your ' + fmt(q.receive, q.to) + ' is set aside until ' + until(q.expiresAt) + ', ref ' + esc(q.ref) + '.<div id="quoteTextStatus">' + textLine + '</div>';
+                /* Same line whether or not the text went out. The ref is not personal data. */
+                note.innerHTML = '<b>Confirmed.</b> Your ' + fmt(q.receive, q.to) + ' is set aside until ' + until(q.expiresAt) + '.'
+                  + '<div id="quoteRefLine">Show ref ' + esc(q.ref) + ' at the desk.</div>';
               } else { cbtn.disabled = false; note.textContent = 'Couldn’t confirm. The hold may have expired.'; }
             })
             .catch(function () { cbtn.disabled = false; });

@@ -210,12 +210,12 @@ describe("public site responses do not carry a customer's phone or name", () => 
 
     const confirmed = responses[1]!.json() as { quote: Record<string, unknown> };
     expect(responses[1]!.statusCode).toBe(200);
-    expect(confirmed.quote).toEqual({ ref, status: "confirmed", expiresAt: expect.any(Number), textSent: true });
-    expect(Object.keys(confirmed.quote).sort()).toEqual(["expiresAt", "ref", "status", "textSent"]);
+    expect(confirmed.quote).toEqual({ ref, status: "confirmed", expiresAt: expect.any(Number) });
+    expect(Object.keys(confirmed.quote).sort()).toEqual(["expiresAt", "ref", "status"]);
 
     const allow = {
       create: ["quote", "ref", "status", "expiresAt", "from", "to", "amount", "receive"],
-      confirm: ["quote", "ref", "status", "expiresAt", "textSent"],
+      confirm: ["quote", "ref", "status", "expiresAt"],
       config: ["site", "name", "slug", "phone", "email", "address", "city", "region", "postal", "hours", "days", "updatedAt"],
       rates: ["published", "publishedAt", "currencies", "rates", "code", "buy", "sell", "board", "buyMargin", "sellMargin", "rows", "order", "mid", "spread", "show"],
       early: ["claimed", "cap", "remaining", "full"],
@@ -366,34 +366,9 @@ describe("confirm rate limit", () => {
       const second = await confirm("yorkfx", ref, "203.0.113.72");
       expect(first.statusCode).toBe(200);
       expect(second.statusCode).toBe(200);
-      expect(first.json().quote.textSent).toBe(true);
-      expect(second.json().quote.textSent).toBe(false);
       expect(logs.filter((line) => line.includes("confirmed") && line.includes(ref))).toHaveLength(1);
     } finally {
       spy.mockRestore();
-    }
-  });
-
-  it("reports textSent false when the text fails", async () => {
-    clearRateBuckets();
-    const keys = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM", "TWILIO_MESSAGING_SERVICE_SID", "TWILIO_WHATSAPP_FROM"];
-    const saved = keys.map((key) => [key, process.env[key]] as const);
-    const realFetch = globalThis.fetch;
-    process.env.TWILIO_ACCOUNT_SID = "ACtest";
-    process.env.TWILIO_AUTH_TOKEN = "token";
-    process.env.TWILIO_FROM = "+15555550100";
-    delete process.env.TWILIO_MESSAGING_SERVICE_SID;
-    delete process.env.TWILIO_WHATSAPP_FROM;
-    globalThis.fetch = () => Promise.reject(new Error("twilio down"));
-    try {
-      const created = await app.inject({ method: "POST", url: "/api/sites/yorkfx/quotes", remoteAddress: "203.0.113.74", payload: { phone: "5875550193", from: "CAD", to: "USD", amount: 20 } });
-      expect(created.statusCode).toBe(201);
-      const res = await confirm("yorkfx", created.json().quote.ref as string, "203.0.113.75");
-      expect(res.json().quote.textSent).toBe(false);
-      expect(res.body).not.toContain("5875550193");
-    } finally {
-      globalThis.fetch = realFetch;
-      for (const [key, value] of saved) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     }
   });
 });
