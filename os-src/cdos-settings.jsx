@@ -1460,11 +1460,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 <div><div class="lbl">Billed to</div><div style="font-size:13px">${esc(settings.billingName || biz)}<br/><span class="mut">${esc(settings.billingEmail || settings.bizEmail || '')}</span></div></div>
 <div style="text-align:right"><div class="lbl">Issued</div><div class="mono" style="font-size:13px">${esc(date)}</div><div class="paid" style="margin-top:8px">● PAID</div></div></div>
 <table><thead><tr><th>Description</th><th class="r">Qty</th><th class="r">Amount</th></tr></thead><tbody>
-<tr><td>CurrencyDesk OS — ${esc(cur.name)} plan<br/><span class="mut">${cycle === 'annual' ? 'Annual' : 'Monthly'} subscription</span></td><td class="r">1</td><td class="r">${fmt(amt, 'CAD')}</td></tr>
+<tr><td>CurrencyDesk OS — ${esc(cur.name)} plan<br/><span class="mut">${cycle === 'annual' ? 'Annual' : 'Monthly'} subscription</span></td><td class="r">1</td><td class="r">${fmt(amt, 'USD')}</td></tr>
 </tbody></table>
-<div class="tot"><table><tr><td class="mut">Subtotal</td><td class="r">${fmt(amt, 'CAD')}</td></tr>
-<tr><td class="mut">Tax (13%)</td><td class="r">${fmt(tax, 'CAD')}</td></tr>
-<tr class="grand"><td>Total</td><td class="r">${fmt(total, 'CAD')}</td></tr></table></div>
+<div class="tot"><table><tr><td class="mut">Subtotal</td><td class="r">${fmt(amt, 'USD')}</td></tr>
+<tr><td class="mut">Tax (13%)</td><td class="r">${fmt(tax, 'USD')}</td></tr>
+<tr class="grand"><td>Total</td><td class="r">${fmt(total, 'USD')}</td></tr></table></div>
 <div class="ft">Paid via card on file · ${esc(biz)} · ${esc(settings.msbNumber || '')}<br/>Thank you for your business.</div>
 <script>setTimeout(function(){window.focus();window.print();},350)<\/script></body></html>`);
             w.document.close(); log && log('Invoice downloaded', ref);
@@ -1481,7 +1481,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           
             <div className="flex items-center justify-between p-4 mb-4" style={{ border: `1.5px solid ${CD.ink}`, borderRadius: 14, background: 'var(--cd-chip)' }}>
               <div><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Current plan</div><div className="text-xl font-bold" style={{ color: CD.ink }}>{cur.name}</div><div className="text-[12px]" style={{ color: CD.mute }}>{cur.tag} · renews {cycle === 'annual' ? 'annually · 10% annual savings' : 'monthly'} · next invoice 2026-07-01</div></div>
-              <div className="text-right"><div className="text-2xl font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{fmt(price(cur), 'CAD')}</div><div className="text-[11px]" style={{ color: CD.mute }}>per {cycle === 'annual' ? 'year' : 'month'}</div></div>
+              <div className="text-right"><div className="text-2xl font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{fmt(price(cur), 'USD')}</div><div className="text-[11px]" style={{ color: CD.mute }}>per {cycle === 'annual' ? 'year' : 'month'}</div></div>
             </div>
             <Row title="Billing cycle" desc="Pay yearly and save 10% across every CurrencyDesk plan."><Seg value={cycle} onPick={v => set('billingCycle', v, `cycle ${v}`)} opts={[['monthly', 'Monthly'], ['annual', 'Annual']]} /></Row>
             <div className="grid grid-cols-3 gap-2.5 my-4">
@@ -1489,8 +1489,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 <button key={pl.id} onClick={() => pickPlan(pl.id)} className="text-left p-3.5 relative flex flex-col" style={{ border: `1.5px solid ${on ? CD.ink : (pl.best ? CD.brass : CD.line)}`, borderRadius: 13, background: on ? 'var(--cd-chip)' : CD.panel }}>
                   {pl.best && <span className="absolute" style={{ top: -9, right: 12, background: CD.brass, color: 'var(--cd-on-ink)', fontSize: 9, fontWeight: 700, letterSpacing: '.05em', padding: '2px 7px', borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BEST VALUE</span>}
                   <div className="flex items-center justify-between"><span className="text-[14px] font-bold" style={{ color: CD.ink }}>{pl.name}</span>{on ? <span className="text-[9px] px-1.5 py-0.5 font-semibold flex items-center gap-1" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 999 }}><Ic n="check" s={10} c="var(--cd-on-ink)" /> CURRENT</span> : null}</div>
-                  <div className="mt-1"><span className="text-xl font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{fmt(price(pl), 'CAD')}</span><span className="text-[11px]" style={{ color: CD.mute }}>/{cycle === 'annual' ? 'yr' : 'mo'}</span></div>
-                  <div className="text-[10.5px] mb-2" style={{ color: cycle === 'annual' ? CD.green : CD.mute }}>{cycle === 'annual' ? `${fmt(pl.price * 0.9, 'CAD')}/mo equivalent · 10% annual savings` : pl.tag}</div>
+                  <div className="mt-1"><span className="text-xl font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{fmt(price(pl), 'USD')}</span><span className="text-[11px]" style={{ color: CD.mute }}>/{cycle === 'annual' ? 'yr' : 'mo'}</span></div>
+                  <div className="text-[10.5px] mb-2" style={{ color: cycle === 'annual' ? CD.green : CD.mute }}>{cycle === 'annual' ? `${fmt(pl.price * 0.9, 'USD')}/mo equivalent · 10% annual savings` : pl.tag}</div>
                   <div className="space-y-1 flex-1">
                     {pl.feat.map((f, i) => <div key={i} className="flex items-start gap-1.5 text-[11px]" style={{ color: CD.text }}><Ic n="check" s={12} c={CD.green} /><span>{f}</span></div>)}
                     {pl.excl.map((f, i) => <div key={'x' + i} className="flex items-start gap-1.5 text-[11px]" style={{ color: CD.faint }}><Ic n="x" s={12} c={CD.faint} /><span style={{ textDecoration: 'line-through' }}>{f}</span></div>)}

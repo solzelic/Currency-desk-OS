@@ -8382,11 +8382,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 <div><div class="lbl">Billed to</div><div style="font-size:13px">${esc(settings.billingName || biz)}<br/><span class="mut">${esc(settings.billingEmail || settings.bizEmail || '')}</span></div></div>
 <div style="text-align:right"><div class="lbl">Issued</div><div class="mono" style="font-size:13px">${esc(date)}</div><div class="paid" style="margin-top:8px">● PAID</div></div></div>
 <table><thead><tr><th>Description</th><th class="r">Qty</th><th class="r">Amount</th></tr></thead><tbody>
-<tr><td>CurrencyDesk OS — ${esc(cur.name)} plan<br/><span class="mut">${cycle === 'annual' ? 'Annual' : 'Monthly'} subscription</span></td><td class="r">1</td><td class="r">${fmt(amt, 'CAD')}</td></tr>
+<tr><td>CurrencyDesk OS — ${esc(cur.name)} plan<br/><span class="mut">${cycle === 'annual' ? 'Annual' : 'Monthly'} subscription</span></td><td class="r">1</td><td class="r">${fmt(amt, 'USD')}</td></tr>
 </tbody></table>
-<div class="tot"><table><tr><td class="mut">Subtotal</td><td class="r">${fmt(amt, 'CAD')}</td></tr>
-<tr><td class="mut">Tax (13%)</td><td class="r">${fmt(tax, 'CAD')}</td></tr>
-<tr class="grand"><td>Total</td><td class="r">${fmt(total, 'CAD')}</td></tr></table></div>
+<div class="tot"><table><tr><td class="mut">Subtotal</td><td class="r">${fmt(amt, 'USD')}</td></tr>
+<tr><td class="mut">Tax (13%)</td><td class="r">${fmt(tax, 'USD')}</td></tr>
+<tr class="grand"><td>Total</td><td class="r">${fmt(total, 'USD')}</td></tr></table></div>
 <div class="ft">Paid via card on file · ${esc(biz)} · ${esc(settings.msbNumber || '')}<br/>Thank you for your business.</div>
 <script>setTimeout(function(){window.focus();window.print();},350)<\/script></body></html>`);
         w.document.close();
@@ -8473,7 +8473,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           fontFamily: 'Space Mono, monospace'
         }
-      }, fmt(price(cur), 'CAD')), /*#__PURE__*/React.createElement("div", {
+      }, fmt(price(cur), 'USD')), /*#__PURE__*/React.createElement("div", {
         className: "text-[11px]",
         style: {
           color: CD.mute
@@ -8538,7 +8538,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.ink,
             fontFamily: 'Space Mono, monospace'
           }
-        }, fmt(price(pl), 'CAD')), /*#__PURE__*/React.createElement("span", {
+        }, fmt(price(pl), 'USD')), /*#__PURE__*/React.createElement("span", {
           className: "text-[11px]",
           style: {
             color: CD.mute
@@ -8548,7 +8548,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           style: {
             color: cycle === 'annual' ? CD.green : CD.mute
           }
-        }, cycle === 'annual' ? `${fmt(pl.price * 0.9, 'CAD')}/mo equivalent · 10% annual savings` : pl.tag), /*#__PURE__*/React.createElement("div", {
+        }, cycle === 'annual' ? `${fmt(pl.price * 0.9, 'USD')}/mo equivalent · 10% annual savings` : pl.tag), /*#__PURE__*/React.createElement("div", {
           className: "space-y-1 flex-1"
         }, pl.feat.map((f, i) => /*#__PURE__*/React.createElement("div", {
           key: i,
