@@ -87,12 +87,39 @@ test.describe("the desk zone, not the browser", () => {
   });
 });
 
+/* 16:05 UTC is 4:05 am in Auckland. Mars/Olympus is not a zone.
+   Without a fallback the menubar throws and renders nothing.
+   The browser zone is the fallback, so the header reads 4:05 am. */
+test.describe("a stored zone the clock cannot read", () => {
+  test.use({ timezoneId: "Pacific/Auckland" });
+
+  test("an invalid desk timezone still leaves a time on the menubar", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page);
+    await setDeskClock(page, { timeFormat: "12h", timezone: "Mars/Olympus" });
+    await expect(page.locator("#menubar")).toBeVisible();
+    const clock = page.locator(".mb-clock");
+    await expect(clock).toBeVisible();
+    await expect(clock).toContainText("4:05 am");
+    expect(errors.join("\n")).not.toMatch(/RangeError/);
+  });
+});
+
 test("the audit trail opens in 12-hour and 24-hour with no console error", async ({ page }) => {
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   page.on("console", (msg) => {
-    if (msg.type() === "error") errors.push(msg.text());
+    if (msg.type() !== "error") return;
+    const text = msg.text();
+    /* A missing asset is a 404 in the network log. It is not a
+       desk error. A real page error, and any other console error,
+       still fails this test. */
+    if (/Failed to load resource/i.test(text) && /\b404\b/.test(text)) return;
+    errors.push(text);
   });
   await page.clock.install({ time: new Date("2026-06-18T16:05:00Z") });
   await page.setViewportSize({ width: 1280, height: 800 });

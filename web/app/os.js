@@ -3633,26 +3633,55 @@
      stores and the receipt settings travel with. The menubar passes
      it, so the header is the desk's hour, not the browser's. Omit it
      for a reading that is already wall time: the Audit Trail stores
-     minutes, then builds a local date from those minutes. */
-  function deskTime(date, timeFormat, timeZone) {
-    let h, m;
-    if (timeZone) {
-      const parts = new Intl.DateTimeFormat('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-        timeZone: timeZone
-      }).formatToParts(date);
-      h = 0;
-      m = 0;
-      for (let i = 0; i < parts.length; i++) {
-        if (parts[i].type === 'hour') h = +parts[i].value;else if (parts[i].type === 'minute') m = +parts[i].value;
-      }
-      if (h === 24) h = 0;
-    } else {
-      h = date.getHours();
-      m = date.getMinutes();
+     minutes, then builds a local date from those minutes.
+      A zone Intl will not read (Mars/Olympus in a saved desk) throws.
+     That throw used to unmount the menubar. The fallback is the same
+     order as tzOffset in cdos-lctr.jsx: this browser's zone, then UTC. */
+  function hourMinute(date, timeZone) {
+    const opts = {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    };
+    if (timeZone) opts.timeZone = timeZone;
+    const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(date);
+    let h = NaN,
+      m = NaN;
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].type === 'hour') h = +parts[i].value;else if (parts[i].type === 'minute') m = +parts[i].value;
     }
+    if (h === 24) h = 0;
+    if (!isFinite(h) || !isFinite(m)) return null;
+    return {
+      h: h,
+      m: m
+    };
+  }
+  function deskTime(date, timeFormat, timeZone) {
+    let hm = null;
+    try {
+      hm = hourMinute(date, timeZone);
+    } catch (e) {
+      hm = null;
+    }
+    if (!hm) {
+      try {
+        hm = {
+          h: date.getHours(),
+          m: date.getMinutes()
+        };
+      } catch (e) {
+        hm = null;
+      }
+    }
+    if (!hm || !isFinite(hm.h) || !isFinite(hm.m)) {
+      hm = {
+        h: date.getUTCHours(),
+        m: date.getUTCMinutes()
+      };
+    }
+    const h = hm.h,
+      m = hm.m;
     if ((timeFormat || '12h') !== '24h') {
       const ap = h < 12 ? 'am' : 'pm';
       let hh = h % 12;
