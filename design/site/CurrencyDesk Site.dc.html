@@ -54,7 +54,6 @@
   <meta name="ext-resource-dependency" content="../photos/ai-copilot-guilloche.jpg">
   <meta name="ext-resource-dependency" content="../photos/storefront-team.jpg">
   <meta name="ext-resource-dependency" content="../assets/site-web-1.jpg">
-  <meta name="ext-resource-dependency" content="../assets/site-web-2.jpg">
   <meta name="ext-resource-dependency" content="../assets/site-web-3.jpg">
   <meta name="ext-resource-dependency" content="../assets/site-web-4.jpg">
   <meta name="ext-resource-dependency" content="../assets/site-web-5.jpg">
@@ -275,7 +274,7 @@
       <div style="display: flex; min-width: 0; margin-left: var(--bleed, 0px); margin-right: var(--bleed, 0px);">
         <div style="position: relative; width: 100%; background: #FFFDF8; padding: 17px; display: flex; mask: radial-gradient(7px at 50% 0, transparent 98%, #000) 50% 0 / 17px 100%, radial-gradient(7px at 50% 100%, transparent 98%, #000) 50% 0 / 17px 100%, radial-gradient(7px at 0 50%, transparent 98%, #000) 0 50% / 100% 17px, radial-gradient(7px at 100% 50%, transparent 98%, #000) 0 50% / 100% 17px; -webkit-mask: radial-gradient(7px at 50% 0, transparent 98%, #000) 50% 0 / 17px 100%, radial-gradient(7px at 50% 100%, transparent 98%, #000) 50% 0 / 17px 100%, radial-gradient(7px at 0 50%, transparent 98%, #000) 0 50% / 100% 17px, radial-gradient(7px at 100% 50%, transparent 98%, #000) 0 50% / 100% 17px; mask-composite: intersect; -webkit-mask-composite: source-in; filter: drop-shadow(0 30px 46px rgba(23,20,15,0.38));">
           <div style="position: relative; flex: 1; min-width: 0; overflow: hidden; border-radius: 4px; background: var(--paper2);">
-            <sc-for list="{{ panels }}" as="p" hint-placeholder-count="5">
+            <sc-for list="{{ panels }}" as="p" hint-placeholder-count="4">
               <div style="{{ p.layerStyle }}">
                 <sc-if value="{{ p.hasImg }}" hint-placeholder-val="{{ false }}">
                   <img src="{{ p.src }}" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;" />
@@ -290,7 +289,7 @@
                 </div>
               </div>
             </sc-for>
-            <div style="position: absolute; top: 14px; right: 14px; display: inline-flex; align-items: center; height: 22px; box-sizing: border-box; font-family: var(--m); font-size: 9.5px; line-height: 1; letter-spacing: 0.1em; color: #fff; background: rgba(23,20,15,0.5); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.16); border-radius: 999px; padding: 0 8px 0 9px;">{{ panelNum }} / 05</div>
+            <div style="position: absolute; top: 14px; right: 14px; display: inline-flex; align-items: center; height: 22px; box-sizing: border-box; font-family: var(--m); font-size: 9.5px; line-height: 1; letter-spacing: 0.1em; color: #fff; background: rgba(23,20,15,0.5); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.16); border-radius: 999px; padding: 0 8px 0 9px;">{{ panelNum }} / {{ panelCount }}</div>
           </div>
         </div>
       </div>
@@ -329,8 +328,8 @@
 
     <div style="position: relative; max-width: 720px; margin: clamp(26px,4vh,46px) auto 0;">
       <div aria-hidden="true" style="position: absolute; left: 10%; right: 10%; top: 13px; height: 2px; background: var(--line);"></div>
-      <div style="position: relative; display: flex; align-items: flex-start;">
-        <sc-for list="{{ storySteps }}" as="st" hint-placeholder-count="5">
+      <div data-story-steps style="position: relative; display: flex; align-items: flex-start; justify-content: center;">
+        <sc-for list="{{ storySteps }}" as="st" hint-placeholder-count="4">
           <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 9px; text-align: center;"><span style="{{ st.dot }}">{{ st.n }}</span><span style="{{ st.label }}">{{ st.name }}</span></div>
         </sc-for>
       </div>
@@ -761,10 +760,9 @@ class Component extends DCLogic {
   storyDefs() {
     return [
       { slot:'gc-web-1', src:'../assets/site-web-1.jpg', kicker:'01 \u00B7 THE WEBSITE', caption:'They find you online.', name:'Website', ph:'Comic-book editorial illustration (Adrian Tomine feel), a person at a kitchen table looking at a laptop / phone showing a small currency-exchange shop\u2019s website with a live rate board. Warm flat colour, clean ink linework, muted palette.' },
-      { slot:'gc-web-2', src:'../assets/site-web-2.jpg', kicker:'02 \u00B7 THE QUOTE', caption:'A quote, when texting is set up.', name:'The quote', ph:'Comic-book editorial panel, same series style, the same person on a city sidewalk glancing at a phone. No message bubble. Warm flat colour, ink linework.' },
-      { slot:'gc-web-3', src:'../assets/site-web-3.jpg', kicker:'03 \u00B7 THE VISIT', caption:'They walk in.', name:'The visit', ph:'Comic-book editorial panel, same series style, the person pushing open the glass door of the small exchange shop, teller visible behind the counter. Warm flat colour, ink linework.' },
-      { slot:'gc-web-4', src:'../assets/site-web-4.jpg', kicker:'04 \u00B7 THE CODE', caption:'Shows the code.', name:'The code', ph:'Comic-book editorial panel, same series style, customer at the counter holding up their phone showing a code / QR to a smiling teller. Warm flat colour, ink linework.' },
-      { slot:'gc-web-5', src:'../assets/site-web-5.jpg', kicker:'05 \u00B7 THE DEAL', caption:'Everyone\u2019s a regular.', name:'The deal', ph:'Warm still illustration / photo-real editorial image, same warm palette, a busy, happy currency-exchange shop: a satisfied customer completing a deal at the counter, cash and envelope handed over, teller smiling, a small queue of friendly neighbourhood faces behind. Community, trust, momentum.' }
+      { slot:'gc-web-3', src:'../assets/site-web-3.jpg', kicker:'02 \u00B7 THE VISIT', caption:'They walk in.', name:'The visit', ph:'Comic-book editorial panel, same series style, the person pushing open the glass door of the small exchange shop, teller visible behind the counter. Warm flat colour, ink linework.' },
+      { slot:'gc-web-4', src:'../assets/site-web-4.jpg', kicker:'03 \u00B7 THE CODE', caption:'Shows the code.', name:'The code', ph:'Comic-book editorial panel, same series style, customer at the counter holding up their phone showing a code / QR to a smiling teller. Warm flat colour, ink linework.' },
+      { slot:'gc-web-5', src:'../assets/site-web-5.jpg', kicker:'04 \u00B7 THE DEAL', caption:'Everyone\u2019s a regular.', name:'The deal', ph:'Warm still illustration / photo-real editorial image, same warm palette, a busy, happy currency-exchange shop: a satisfied customer completing a deal at the counter, cash and envelope handed over, teller smiling, a small queue of friendly neighbourhood faces behind. Community, trust, momentum.' }
     ];
   }
 
@@ -900,7 +898,7 @@ class Component extends DCLogic {
     els.forEach((el, i) => { el.style.transitionDelay = (Math.min(i % 3, 2) * 0.08) + 's'; this._io.observe(el); });
     return true;
   }
-  componentWillUnmount() { clearInterval(this._cc); clearInterval(this._ft); (this._retry || []).forEach(clearTimeout); if (this._signOff) { window.removeEventListener('scroll', this._signOff); window.removeEventListener('resize', this._signOff); } if (this._c3 && this._c3.raf) cancelAnimationFrame(this._c3.raf); if (this._ro) this._ro.disconnect(); if (this._io) this._io.disconnect(); if (this._onScroll) { window.removeEventListener('scroll', this._onScroll); window.removeEventListener('resize', this._onScroll); } if (this._scrub) { window.removeEventListener('scroll', this._scrub); window.removeEventListener('resize', this._scrub); } if (this._scrubF) { window.removeEventListener('scroll', this._scrubF); window.removeEventListener('resize', this._scrubF); } if (this._fit) { window.removeEventListener('resize', this._fit); } if (this._scrubW) { window.removeEventListener('scroll', this._scrubW); window.removeEventListener('resize', this._scrubW); } if (this._tillIO) { this._tillIO.disconnect(); } clearInterval(this._rc); if (this._jio) this._jio.disconnect(); if (this._auto) clearInterval(this._auto); clearTimeout(this._flipT); clearTimeout(this._cflipT); }
+  componentWillUnmount() { clearInterval(this._storyAuto); clearInterval(this._cc); clearInterval(this._ft); (this._retry || []).forEach(clearTimeout); if (this._signOff) { window.removeEventListener('scroll', this._signOff); window.removeEventListener('resize', this._signOff); } if (this._c3 && this._c3.raf) cancelAnimationFrame(this._c3.raf); if (this._ro) this._ro.disconnect(); if (this._io) this._io.disconnect(); if (this._onScroll) { window.removeEventListener('scroll', this._onScroll); window.removeEventListener('resize', this._onScroll); } if (this._scrub) { window.removeEventListener('scroll', this._scrub); window.removeEventListener('resize', this._scrub); } if (this._scrubF) { window.removeEventListener('scroll', this._scrubF); window.removeEventListener('resize', this._scrubF); } if (this._fit) { window.removeEventListener('resize', this._fit); } if (this._scrubW) { window.removeEventListener('scroll', this._scrubW); window.removeEventListener('resize', this._scrubW); } if (this._tillIO) { this._tillIO.disconnect(); } clearInterval(this._rc); if (this._jio) this._jio.disconnect(); if (this._auto) clearInterval(this._auto); clearTimeout(this._flipT); clearTimeout(this._cflipT); }
   fixNav() { const n = document.querySelector('[data-nav-links]'); if (!n) return false; if (window.innerWidth > 860) n.style.display = 'flex'; return true; }
   scrubInit(reduce) {
     const scene = document.querySelector('[data-scene="oldway"]');
@@ -976,7 +974,7 @@ class Component extends DCLogic {
     const grid = scene.querySelector('[data-story-grid]');
     if (!grid) return false;
     const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-    const N = 5;
+    const N = this.storyDefs().length;
     const setVars = (e) => {
       scene.style.setProperty('--lcol', (1.08 + 0.92 * e).toFixed(3) + 'fr');
       scene.style.setProperty('--rcol', (0.92 * (1 - e)).toFixed(3) + 'fr');
@@ -1017,6 +1015,12 @@ class Component extends DCLogic {
     window.addEventListener('scroll', this._scrubW, { passive: true });
     window.addEventListener('resize', this._scrubW, { passive: true });
     apply();
+    const step = (dir) => { const n = this.storyDefs().length; const panel = (this.state.panel + dir + n) % n; const vh = window.innerHeight || 800; const total = Math.max(1, scene.offsetHeight - vh); const html = document.documentElement; const prev = html.style.scrollBehavior; html.style.scrollBehavior = "auto"; html.style.scrollSnapType = "none"; window.scrollTo(0, scene.offsetTop + ((panel + 0.5) / n) * total); html.style.scrollBehavior = prev; html.style.scrollSnapType = ""; };
+    scene.__storyStep = step;
+    let sx = 0;
+    grid.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; }, { passive: true });
+    grid.addEventListener("touchend", (e) => { const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 44) step(dx < 0 ? 1 : -1); }, { passive: true });
+    if (window.matchMedia && window.matchMedia("(hover: none)").matches) this._storyAuto = setInterval(() => { const r = scene.getBoundingClientRect(); if (r.bottom > 80 && r.top < window.innerHeight - 80) step(1); }, 6500);
     return true;
   }
   startFeature(reduce) {
@@ -1315,7 +1319,7 @@ class Component extends DCLogic {
       claimed: s.claimed, claimedPct: s.claimed + '%',
       features, activeTitle: defs[s.feat].title,
       panels: this.storyDefs().map((o, i) => ({ slot: o.slot, ph: o.ph, src: o.src || '', hasImg: !!o.src, noImg: !o.src, kicker: o.kicker, caption: o.caption, layerStyle: 'position:absolute;inset:0;overflow:hidden;transition:opacity .6s ease, visibility .6s linear;' + (i === s.panel ? 'opacity:1;visibility:visible;z-index:2;' : 'opacity:0;visibility:hidden;z-index:1;pointer-events:none;') })),
-      panelNum: String(s.panel + 1).padStart(2, '0'),
+      panelNum: String(s.panel + 1).padStart(2, '0'), panelCount: String(this.storyDefs().length).padStart(2, '0'),
       storySteps: this.storyDefs().map((o, i) => { const a = i === s.panel; return { n: i + 1, name: o.name, dot: 'width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-family:var(--m);font-size:10px;font-weight:600;transition:all .3s;' + (a ? 'background:var(--green);color:#fff;' : 'background:rgba(23,20,15,0.05);color:var(--faint);border:1px solid var(--line);'), label: 'font-family:var(--m);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;' + (a ? 'color:var(--ink);font-weight:600;' : 'color:var(--faint);') }; }),
       detailOpen: s.detail !== null,
       detailNum: s.detail !== null ? String(s.detail + 1).padStart(2, '0') : '',

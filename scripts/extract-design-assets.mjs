@@ -43,7 +43,6 @@ const SLOT_TO_FILE = {
   gcVault: "photos/vault-count.jpg",
   gcAi: "photos/ai-copilot-guilloche.jpg",
   web1: "assets/site-web-1.jpg",
-  web2: "assets/site-web-2.jpg",
   web3: "assets/site-web-3.jpg",
   web4: "assets/site-web-4.jpg",
   web5: "assets/site-web-5.jpg",
