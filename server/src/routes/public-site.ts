@@ -71,6 +71,7 @@ const allow = (key: string, max: number, windowMs = HOUR_MS): boolean => {
   return true;
 };
 export const rateBucketKeys = (): string[] => [...recent.keys()];
+export const rateSweptAt = (): number => sweptAt;
 export const clearRateBuckets = (): void => { recent.clear(); sweptAt = 0; };
 
 /* 30 confirms a minute for one shop, and 30 for one client address.

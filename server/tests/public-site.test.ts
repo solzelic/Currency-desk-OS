@@ -9,7 +9,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { clientIp } from "../src/auth/client-ip.js";
-import { clearRateBuckets, rateBucketKeys } from "../src/routes/public-site.js";
+import { clearRateBuckets, rateBucketKeys, rateSweptAt } from "../src/routes/public-site.js";
 import { moneyFixed, priceStorefrontHold } from "../src/sites/storefront-hold.js";
 
 let handle: DbHandle;
@@ -331,17 +331,24 @@ describe("confirm rate limit", () => {
     expect(res.json()).toEqual({ error: "invalid_request", detail: "Try again in a bit, or call the desk." });
   });
 
-  it("drops a bucket once its window has passed", async () => {
+  it("sweeps once a minute, and drops a bucket once that window has passed", async () => {
     clearRateBuckets();
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+      const start = Date.parse("2026-10-19T12:00:00Z");
+      vi.setSystemTime(start);
       expect((await confirm("ghost-old", "Q-1", "203.0.113.180")).statusCode).toBe(404);
       expect(rateBucketKeys()).toContain("confirm-ip:203.0.113.180");
       expect(rateBucketKeys().some((key) => key.startsWith("confirm-slug:"))).toBe(false);
-      vi.setSystemTime(new Date("2026-10-19T12:01:01Z"));
+      expect(rateSweptAt()).toBe(start);
+      /* Inside the minute the walk does not run, so the old key stays. */
+      vi.setSystemTime(start + 30_000);
+      expect((await confirm("ghost-mid", "Q-3", "203.0.113.182")).statusCode).toBe(404);
+      expect(rateSweptAt()).toBe(start);
+      expect(rateBucketKeys()).toContain("confirm-ip:203.0.113.180");
+      vi.setSystemTime(start + 61_000);
       expect((await confirm("yorkfx", "Q-2", "203.0.113.181")).statusCode).toBe(404);
-      /* Cleanup runs at most once a minute. 61s is past both the window and that pause. */
+      expect(rateSweptAt()).toBe(start + 61_000);
       expect(rateBucketKeys()).not.toContain("confirm-ip:203.0.113.180");
       expect(rateBucketKeys()).toContain("confirm-ip:203.0.113.181");
     } finally {
