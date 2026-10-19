@@ -716,4 +716,33 @@ describe("a snapshot PIN cannot open someone else's account", () => {
     expect(JSON.stringify(hit)).not.toContain("4821");
     expect(JSON.stringify(hit)).not.toContain("pad.");
   });
+
+  it("strips a legacy PIN copied back when a non-owner leaves settings out", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      cdos_settings: { employees: [{ code: "j.masri", pin: "4821" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const before = await handle.db.select({ id: schema.auditEvents.id }).from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const beforeIds = new Set(before.map((row) => row.id));
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: schedule } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(1);
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(stored?.state)).not.toContain("4821");
+    const after = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const added = after.filter((row) => !beforeIds.has(row.id));
+    expect(added).toHaveLength(1);
+    expect(JSON.stringify(added[0])).not.toContain("4821");
+  });
 });

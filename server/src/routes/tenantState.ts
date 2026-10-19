@@ -175,7 +175,7 @@ const putBody = z.object({
    still send an object. Either form is stripped before the save.
 
    This removes pin, PIN, and pinHash on cdos_settings.employees, including
-   a nested one of those names. 0000 is the old no-PIN default: it is
+   a nested one of those names. Matching ignores case. 0000 is the old no-PIN default: it is
    stripped and never stored, and it is not counted. Nothing here is copied
    onto a staff record. Each other four-digit value is counted. The route
    then keeps staff ids from this desk, drops duplicates, and caps the count
