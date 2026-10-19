@@ -4102,6 +4102,7 @@
       };
     };
     const inits = n => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+    const use12 = (settings && settings.timeFormat || '12h') !== '24h';
     const hhmm = min => deskTime(new Date(2000, 0, 1, Math.floor(min / 60), min % 60), settings && settings.timeFormat);
     const items = useMemo(() => audit.map((a, i) => ({
       ...a,

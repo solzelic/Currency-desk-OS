@@ -205,6 +205,7 @@
       return { date: m[1], time: m[2] + ':' + m[3] + (m[4] ? ':' + m[4] : ''), min: (+m[2]) * 60 + (+m[3]) };
     };
     const inits = (n) => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+    const use12 = ((settings && settings.timeFormat) || '12h') !== '24h';
     const hhmm = (min) => deskTime(new Date(2000, 0, 1, Math.floor(min / 60), min % 60), settings && settings.timeFormat);
 
     const items = useMemo(() => audit.map((a, i) => ({ ...a, i, ...parse(a.ts) })), [audit]);
