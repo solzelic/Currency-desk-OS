@@ -21,7 +21,7 @@ const BASELINE: Record<string, number> = {
   "YorkFX/YorkFX Regulations.html": 8,
   "YorkFX/YorkFX Services.html": 9,
   "YorkFX/YorkFX Visit.html": 4,
-  "admin.html": 134,
+  "admin.html": 133,
   "design/emails/CurrencyDesk Emails.dc.html": 47,
   "design/kyc-handoff/kyc-verification-states.html": 26,
   "design/onboarding/currencydesk-onboarding.html": 18,
@@ -52,7 +52,7 @@ const BASELINE: Record<string, number> = {
   "os-src/cdos-pricing.jsx": 5,
   "os-src/cdos-reports.jsx": 58,
   "os-src/cdos-search.jsx": 4,
-  "os-src/cdos-settings.jsx": 101,
+  "os-src/cdos-settings.jsx": 96,
   "os-src/cdos-signin.jsx": 8,
   "os-src/cdos-telegraph.jsx": 111,
   "os-src/cdos-till.jsx": 56,
@@ -95,7 +95,7 @@ const BASELINE: Record<string, number> = {
   "server/src/routes/tenantState.ts": 2,
   "server/src/state/contract.ts": 1,
   "server/src/state/shape.ts": 10,
-  "web/app/os.js": 779,
+  "web/app/os.js": 774,
 };
 const FIXED: Array<[string, string]> = [
   ["os-src/cdos-branches.jsx", "Drag someone onto a branch to assign them, or onto a till to post them to that drawer"],
