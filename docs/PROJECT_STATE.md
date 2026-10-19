@@ -106,10 +106,48 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   number, and FINTRAC says not to use a health card where provincial
   law prohibits it. The desk refuses them everywhere, which is stricter
   than the law. Stored numbers are not blanked: that is the owner's
-  redaction tool, #134. The posting gate is #108. Per-country Accepted
-  IDs come in a later change. This replaces #157, #100, and #131. The
-  owner asked for it during the freeze, on 2026-10-19. Write-up:
-  `docs/CLIENT_RECORDS.md`.
+  redaction tool, #134. The posting gate is #108. This replaces #157,
+  #100, and #131. The owner asked for it during the freeze, on
+  2026-10-19. Write-up: `docs/CLIENT_RECORDS.md`.
+
+- **Settings → Accepted IDs, per shop.** The owner switches each
+  catalogue ID type on or off for their shop, in Person and Business
+  groups. The list is `legal_entities.accepted_id_types` (migration
+  047), catalogue codes. NULL follows the jurisdiction pack, and every
+  existing desk is NULL. A save that lands on the pack's own list
+  stores NULL again. By default every type the catalogue accepts is
+  on, in every pack. A pack can lock a type off with a short legal note
+  (`server/src/ledger/id-type-rules.ts`, keyed by the pack's
+  jurisdiction). The health card is locked in every pack; Canada's note
+  says FINTRAC says not to use a health card where provincial law
+  forbids it, and that Ontario's Health Cards and Numbers Control Act
+  bars it. `GET /api/clients/accepted-id-types` is every role's, with
+  `canChange` true only for the owner. `PUT` takes `{ accepted: codes
+  | null }` and is the owner's (`compliance:thresholds`): a manager or
+  a teller gets 403, "Only the owner can change which IDs this shop
+  accepts.", and nothing changes. Switching on a locked type is 422
+  `ID_TYPE_LOCKED` with the note. A list with no person photo ID is 422
+  `PHOTO_ID_REQUIRED`, "Keep at least one photo ID switched on."
+  Business types may all be off. A change writes
+  `desk.id_types.change` naming what went on and off and how many IDs
+  on file are a type just switched off, never a document number. Adding
+  a document of a switched-off type, or changing one to it, is 422
+  `ID_TYPE_NOT_ACCEPTED_HERE`, "This shop doesn't accept {label}. The
+  owner can change this in Settings → Accepted IDs." Sending a
+  document's own type back, and correcting its number or dates, still
+  works. "Not stated" still works. `ID_TYPE_NOT_IN_CATALOGUE` now lists
+  this shop's accepted types. A document already on file of a
+  switched-off type is not deleted or rewritten: it reads in full,
+  keeps its verification status and counter record, and carries a
+  `notice`, "This shop no longer accepts {label}. Record another ID at
+  the next visit.", which the client file shows quietly. Every ID
+  picker (client file, quick card, Record the ID, the ledger's quick
+  add) offers only this shop's types; a switched-off type on file stays
+  visible as the current value and cannot be chosen again. Locked types
+  show a padlock and their note and cannot be switched on. A manager
+  sees the list read-only with that sentence. A refused save shows the
+  server's sentence and does not say Saved. The owner asked for this on
+  2026-10-19.
 
 - **A till PIN in the desk snapshot is not a PIN.** `PUT /api/tenant/state` strips pin fields from `cdos_settings.employees` whether that value is an object or the JSON string the desk saves, including a pin nested inside an entry, and a pin key on the document itself, and does not write it onto a staff record. `GET /api/tenant/state` returns a copy with those same keys removed and does not write. A one-off clean of PINs already stored is a separate change. The save still returns 200, and the body includes `pinsIgnored` with how many were dropped, capped at 40. 0000 is the old no-PIN default: it is stripped and never stored, and it is not counted and does not write an audit row. A snapshot that carried a real PIN writes `settings.staff_pin_ignored`. The codes are staff ids on this desk, duplicates removed, then capped at 40. No digits. A teller who names someone else's `staffId` on `POST /api/staff/pin` gets 403 and nothing is written. A manager may set a PIN only for someone below them, on this desk. An administrator may set someone else's PIN. That PIN stays must-change and writes `pin.set`. A person still sets their own through the same route. `POST /api/auth/switch` still needs a server-set PIN: no hash is 409 `no_pin`, and a manager-issued PIN is 409 `must_change` until that person chooses their own.
 
@@ -673,6 +711,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-19**, Settings → Accepted IDs. The owner switches catalogue ID types on and off per shop; NULL follows the pack, and every type the catalogue accepts is on by default in every pack. Packs lock types in code (`server/src/ledger/id-type-rules.ts`); the health card is locked everywhere, with Canada's FINTRAC and Ontario note. The route is every role's to read and the owner's to change; a locked type and a list with no photo ID are 422, and a change is an audit row with no document number. A switched-off type is refused on add and on change (`ID_TYPE_NOT_ACCEPTED_HERE`); one already on file reads in full with its status and a quiet notice. The pickers follow the list. Migration 047. 041 is still claimed by open draft #132, 042 by #130, and 043 by #138.
 
 **2026-10-19**, ID-type catalogue and health cards. One list, `shared/id-document-types.js`, loaded by the server and by the desk. A type outside it is 422 `ID_TYPE_NOT_IN_CATALOGUE`. A health card is 422 `HEALTH_CARD_NOT_ID`, "Health cards can't be used as ID. Record a current photo ID." The BC Services Card is accepted. A health number is not in any client read, search, report, register, CSV, LCTR or STR field, or the saved desk document. It does not identify a file. Stored rows are not rewritten and stored numbers are not blanked. No migration.
 

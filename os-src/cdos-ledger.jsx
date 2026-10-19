@@ -57,9 +57,12 @@
   // overlays portal to the document root so the window's stacking context
   // (and the rate ticker at z-360) can't occlude them
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
-  /* The catalogue's types (shared/id-document-types.js), the list the
-     server checks a save against. A health card is not one of them. */
-  const ID_TYPES = window.CDOS.idTypes().pickerLabels('person').concat(window.CDOS.idTypes().pickerLabels('business'));
+  /* The catalogue's types (shared/id-document-types.js), less what this
+     shop has switched off in Settings → Accepted IDs. The server checks
+     a save against the same list. A health card is never one of them.
+     Read at render; TxModal subscribes so it redraws when the list
+     changes. */
+  const idTypeChoices = () => window.CDOS.acceptedHere(window.CDOS.idTypes().pickerLabels('person').concat(window.CDOS.idTypes().pickerLabels('business')));
 
   /* ---------- small shared UI ---------- */
   function StatCard({ label, value, sub, flag, active, onClick }) {
@@ -250,6 +253,7 @@
      NEW TRANSACTION MODAL — the guided "anyone can do it" flow
   ===================================================================== */
   function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques }) {
+    window.CDOS.useAcceptedIdTypes();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => {
       const s = new Set(Object.keys(clients)); live.forEach(r => r.customer && s.add(r.customer));
@@ -494,7 +498,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
               {newClient && (
                 <div className="mt-2 p-3 grid grid-cols-2 gap-2" style={{ background: 'var(--cd-panel)', border: `1px dashed ${CD.line}`, borderRadius: 10 }}>
                   <div className="col-span-2 text-[11px] flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n="id" s={13} /> New client KYC — saved to the client file on record</div>
-                  <select value={nc.idType} onChange={e => setNc(s => ({ ...s, idType: e.target.value }))} className="text-sm px-2 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-panel)' }}><option value="">ID type…</option>{ID_TYPES.map(o => <option key={o}>{o}</option>)}</select>
+                  <select value={nc.idType} onChange={e => setNc(s => ({ ...s, idType: e.target.value }))} className="text-sm px-2 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-panel)' }}><option value="">ID type…</option>{idTypeChoices().map(o => <option key={o}>{o}</option>)}</select>
                   <input value={nc.idNum} onChange={e => setNc(s => ({ ...s, idNum: e.target.value }))} placeholder="ID number" className="text-sm px-2 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }} />
                   <Field label="ID expiry"><input type="date" value={nc.idExpiry} onChange={e => setNc(s => ({ ...s, idExpiry: e.target.value }))} className="w-full text-sm px-2 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }} /></Field>
                 </div>

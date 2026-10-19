@@ -52,6 +52,8 @@ export const migrations: readonly Migration[] = [
   ["045_cheque_fee_schedule", "src/db/migrations/045_cheque_fee_schedule.sql"],
   /* 046 is the work email on a staff account, and the case-folded staff id index. */
   ["046_staff_contact_email", "src/db/migrations/046_staff_contact_email.sql"],
+  /* 047 is the ID types a shop accepts. NULL follows the pack. */
+  ["047_accepted_id_types", "src/db/migrations/047_accepted_id_types.sql"],
 ] as const;
 
 export async function runMigrations(

@@ -27,6 +27,7 @@ import { ensureLedgerPrincipal } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 import { isRetryable } from "../ledger/retry.js";
 import { ClientRecordService } from "./records.js";
+import { AcceptedIdTypeService, OWNER_ONLY } from "./accepted-id-types.js";
 
 /* An ISO calendar day or nothing. Deliberately not `z.coerce.date()`:
    "1985-13-45" is not a date and a customer record is not the place to
@@ -117,8 +118,18 @@ const disclosureQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
-/* The two refusals a document type can get. Both are 422. */
-const ID_TYPE_REFUSALS = new Set(["ID_TYPE_NOT_IN_CATALOGUE", "HEALTH_CARD_NOT_ID"]);
+/* The three refusals a document type can get. All are 422. */
+const ID_TYPE_REFUSALS = new Set([
+  "ID_TYPE_NOT_IN_CATALOGUE",
+  "HEALTH_CARD_NOT_ID",
+  "ID_TYPE_NOT_ACCEPTED_HERE",
+]);
+
+/* Settings → Accepted IDs. Catalogue codes, or null to follow the pack.
+   The catalogue has a dozen types; the bound is the transport's. */
+const acceptedIdTypesBody = z.object({
+  accepted: z.union([z.array(z.string().trim().min(1).max(120)).max(40), z.null()]),
+}).strict();
 
 type Resolution =
   | { kind: "authenticated"; actor: LedgerActor }
@@ -129,6 +140,7 @@ type Resolution =
 export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
   const records = new ClientRecordService(pool);
+  const acceptedIds = new AcceptedIdTypeService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
 
   async function resolveActor(req: FastifyRequest): Promise<Resolution> {
@@ -194,6 +206,7 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       error.code === "AUTHENTICATION_REQUIRED" ? 401
         : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
           : error.code === "CLIENT_NOT_FOUND" ||
+              error.code === "LEGAL_ENTITY_NOT_FOUND" ||
               error.code === "CLIENT_DOCUMENT_NOT_FOUND" ||
               error.code === "FILE_NOT_ON_FILE" ||
               error.code === "SCAN_NOT_ON_FILE" ||
@@ -243,6 +256,36 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       if (!query.success) return invalid(reply, query.error);
       return reply.send(await records.lookupByName(actor, query.data.name));
     } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* SETTINGS → ACCEPTED IDS. Which ID types this shop takes.
+
+     Every role reads it, because the ID picker at every counter offers
+     only these. Only the owner changes it (`compliance:thresholds`), and
+     a refusal says so in a sentence rather than naming the permission.
+     A static segment, so it is never read as a client id. */
+  app.get("/api/clients/accepted-id-types", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await acceptedIds.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.put("/api/clients/accepted-id-types", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const body = acceptedIdTypesBody.safeParse(req.body);
+      if (!body.success) return invalid(reply, body.error);
+      return reply.send(await acceptedIds.set(actor, body.data.accepted));
+    } catch (error) {
+      if (error instanceof LedgerError && error.code === "AUTHORIZATION_DENIED") {
+        return reply.code(403).send({ code: error.code, message: OWNER_ONLY });
+      }
       return failure(reply, error);
     }
   });
