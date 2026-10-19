@@ -110,7 +110,10 @@
       setBusy(true);
       try {
         const persist = window.CDOS_PERSIST;
-        const snap = persist && persist.snapshot ? persist.snapshot() : {};
+        /* The same document the autosave sends. A manager's copy of the
+           role presets and billing plan is derived on sign-in and is not
+           theirs to upload; sending it is an owner-only change. */
+        const snap = persist && persist.outgoing ? persist.outgoing() : (persist && persist.snapshot ? persist.snapshot() : {});
         const version = persist && persist.status ? persist.status().version : 0;
         const clean = draft.map(row => {
           const saved = (schedule || []).find(item => item.id === row.id);

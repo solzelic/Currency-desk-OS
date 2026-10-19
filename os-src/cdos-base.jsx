@@ -761,8 +761,8 @@
      unconditionally at start-up, and deleting them would black-screen the
      desk rather than fix it:
 
-       os-src/cdos-os.jsx:769-770  — the `baseline` / `receipts` state
-       os-src/cdos-os.jsx:1799-1800, 1869 — the same on tenant switch/reset
+       os-src/cdos-os.jsx:869-870  — the `baseline` / `receipts` state
+       os-src/cdos-os.jsx:2099-2100, 2195 — the same on tenant switch/reset
 
      Those states, and every prop threading them down to the Till, the
      Vault, Reports and Compliance, are the remaining work. They now carry
@@ -772,29 +772,21 @@
   /* Deriving stock from transactions is the second book, so there is no
      derivation left to call. It answers null — "the ledger has no figure
      here" — rather than a number, because null is the one answer a screen
-     cannot mistake for money. One caller in a file this change does not
-     own still reaches for it:
-
-       os-src/cdos-till.jsx:485 — the drawer's `expectedOf` in the
-       standalone (no-server) mode. It should read
-
-         const expectedOf = (c) => serverBalances &&
-           Object.prototype.hasOwnProperty.call(serverBalances, c)
-             ? Number(serverBalances[c]) : null;
-
-       and render null as "—". A desk that cannot reach the ledger has no
-       expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
-       there is no offline mode, and an invented expected figure is what a
-       teller reconciles a real drawer against. */
+     cannot mistake for money. Nothing calls it any more: the drawer's
+     `expectedOf` (os-src/cdos-till.jsx) reads the server balance and
+     renders null as "—". A desk that cannot reach the ledger has no
+     expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
+     there is no offline mode, and an invented expected figure is what a
+     teller reconciles a real drawer against. */
   const holdings = () => null;
 
   /* ============================================================
      TWO-SIDED PRICING — the defining act of the desk, one pure function
      A real desk publishes a BUY rate and a SELL rate per currency; the
      gap between them (the spread) is the margin. priceDeal() is the single
-     source of truth both the Ledger (quoting) and Reports (earnings) call,
-     so the spread shown at the counter is the exact spread booked — never
-     a back-estimate. The desk RECEIVES the pay-in currency (buys it, under
+     quoting call for the Ledger, New Transaction and Transfers, so the
+     spread shown at the counter is the spread quoted — never a
+     back-estimate. Reports' earnings come from the ledger summary. The desk RECEIVES the pay-in currency (buys it, under
      mid) and GIVES the pay-out currency (sells it, over mid); a foreign→
      foreign cross pays spread on both legs.
 
@@ -925,9 +917,9 @@
      posted shows nothing posted, which is both true and the thing an
      owner needs to see on their first morning.
 
-     Both survive as empty because cdos-os.jsx:714-715 calls them to
-     initialise its `rows` and `clients` state before any server round
-     trip. Empty is the correct starting value for that state. */
+     Both survive as empty only because cdos-os.jsx still imports them
+     (line 10); nothing calls them. Its `rows` and `clients` state starts
+     from the desk's saved state, or empty. */
   const seedRows = () => [];
   const seedClients = () => ({});
 
@@ -1078,24 +1070,23 @@
      browser-only until somebody intervened. A teller doing exactly their
      job could stop the shop saving anything.
 
-     So there is one way in, and it downscales. Sixteen hundred pixels on
-     the long edge is comfortably enough to read a document number off a
-     passport — the thing the image is FOR — and re-encoding at 0.6 takes a
-     four-megabyte photograph to something in the low hundreds of
-     kilobytes. Anything that is still too big afterwards is refused, out
-     loud, rather than accepted and silently lost.
+     So there is one way in, and it downscales — to 1200 pixels on the long
+     edge at quality 0.55 (see below), which takes a four-megabyte
+     photograph to something in the low hundreds of kilobytes. Anything
+     that is still too big afterwards is refused, out loud, rather than
+     accepted and silently lost.
 
-     This is a ceiling, not a cure. Scans belong in object storage with a
-     row pointing at them, not in the desk's state document at all — see
-     docs/BROWSER_STORES.md. Until they move, this keeps one photograph
-     from stopping a shop. */
+     This is a ceiling, not a cure. Client ID scans now live on the server
+     (`desk_client_images`, docs/CLIENT_RECORDS.md); cheque images and the
+     logo still come through here, so this still keeps one photograph from
+     stopping a shop. */
   /* 1200 on the long edge is about 150 DPI across a passport, which reads
      a document number comfortably and is what the image is FOR. It was
      1600 first; measured against a worst-case scan that came out at 240 KB
      apiece, which is only sixteen clients before a desk is at its saving
      limit. This is the honest trade — a scan you can read, small enough
      that a shop gets through a working week — and it is still a stopgap.
-     Scans belong in object storage; see docs/BROWSER_STORES.md. */
+     Client scans are on the server now; see docs/CLIENT_RECORDS.md. */
   const ID_IMAGE_MAX_EDGE = 1200;
   const ID_IMAGE_QUALITY = 0.55;
   /* Refused above this AFTER downscaling. A scan that will not come under
@@ -1184,9 +1175,9 @@
   // ---- client risk rating (staff-set compliance tier; light V1) ----------------
   // Every contact carries one tier. Staff set it in the profile's Edit mode; it feeds
   // the recommendation engine (High -> enhanced due diligence) and the auto-tag rules.
-  // FUTURE (mapped, not built): tiers sync across the branch network so a High flag
-  // raised at one store surfaces on a customer's file at every store during a check.
-  // Kept on-device for now — see the roadmap in docs/.
+  // Saved on the server as `desk_clients.risk_rating`, scoped to the legal entity,
+  // so a High flag raised at one store is on the customer's file at every store
+  // (docs/CLIENT_RECORDS.md).
   const RISK_TIERS = ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = (v) => {
     const s = String(v == null ? '' : v).trim().toLowerCase();

@@ -72,9 +72,116 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-New agent pull requests are frozen until the repository owner pushes a commit to main that ends the freeze, except pull requests that finish work already in progress.
+- **Public quote replies omit the visitor's phone and name.** Creating a quote returns only the ref, the status, the expiry, and the amounts (`from`, `to`, `amount`, `receive`). Confirming returns only the ref, the status, and the expiry. After confirm the Visit page shows "Show ref <ref> at the desk.", the same line for every text status, because create no longer returns the SMS status. The footer says the held rate is honoured at the desk with this ref. The quote card heading, hint, options, buttons, held line, confirmed line, ref line, limit line, error lines, and footer have no em dash and no en dash. The page title, the meta description, and the location lede still have em dashes. That is a Head of Design follow-up and is not in this change. The customer confirm text still has an em dash and a double period. That text is its own follow-up and is not changed here. The hold time is 12-hour, like "12:22 am". A confirm inside the cleanup minute does not walk the buckets again. The next confirm after that minute does. The confirmation text goes out only on the first confirm. A shop allows 30 confirms a minute, and only a real site is counted. One client address allows 30 confirms a minute, taken from `clientIp`. Over the limit, the reply and the Visit page both say "Too many tries. Wait a minute and try again." A request with no client address gets a plain error, not an internal sentence. Old rate buckets are dropped after their window, and that walk runs at most once a minute. Production presents every request as 127.0.0.1, so that per-IP bucket is shared until loopback handling in `clientIp` changes. The smaller replies are what stop a guessed ref from revealing who asked. The short Q- ref can still be guessed. An unguessable confirm token is a later change and is not in this one.
+
+- **One ID-type catalogue, and no health card numbers.** The types a
+  desk can record are one list, `shared/id-document-types.js`. The
+  server requires it and the desk loads the same file. Person types:
+  Driver's Licence, Passport, Provincial/Territorial Photo ID, Permanent
+  Resident Card (PR Card), Citizenship Card, BC Services Card, and
+  National Identity Card. The BC Services Card is photo ID, not a
+  health card. The National Identity Card is another country's
+  government photo ID card, such as an Emirates ID, so a desk outside
+  Canada can record its own country's card. Business types:
+  Business Number, Incorporation Certificate, Master Business Licence,
+  and Articles of Incorporation. A saved type is stored as the
+  catalogue names it. Any other type is 422 `ID_TYPE_NOT_IN_CATALOGUE`,
+  and the sentence lists the accepted types. A health card is in the
+  list so a stored one still reads, and it is never accepted: adding
+  one, or changing a type to one, is 422 `HEALTH_CARD_NOT_ID`, "Health
+  cards can't be used as ID. Record a current photo ID." A stored
+  health card cannot be edited. It can be removed, and a new ID can be
+  added beside it. No read returns a health number: the key is absent
+  from one client, the list, and lookup. Search does not match it. The
+  saved desk document drops it on save, on read, and on a conflict, and
+  the desk drops it from this browser's saved copies when it loads. The
+  file, the quick card, the editors, and the printed report say "Health
+  card — not accepted as ID" with no number. The KYC register and its
+  CSV leave the number empty. LCTR and STR identifier fields fill only
+  from a type the catalogue accepts. A health card does not make a file
+  identified, and the till's counter record for a health card only is
+  `missing`. The register and the ledger say "ID on file" where they
+  said "verified". Ontario's Health Cards and Numbers Control Act, 1991
+  bars a business outside health care from collecting or using a health
+  number, and FINTRAC says not to use a health card where provincial
+  law prohibits it. The desk refuses them everywhere, which is stricter
+  than the law. Stored numbers are not blanked: that is the owner's
+  redaction tool, #134. The posting gate is #108. Per-country Accepted
+  IDs come in a later change. This replaces #157, #100, and #131. The
+  owner asked for it during the freeze, on 2026-10-19. Write-up:
+  `docs/CLIENT_RECORDS.md`.
 
 - **Cheque fees are the owner's or a manager's.** Sol's rule: the owner and a manager may set the fee, including 0%. A teller, a senior teller, a trainee, and an auditor may not. Who may write `cdos_cheque_schedule_v1` is `canWriteSetting`. Today's default allows a branch manager and a compliance officer. The owner is always allowed, so they cannot be locked out. The table is not stored yet and there is no screen for it. A numeric version that is not current is 409 before the fee refusal. Anyone else gets 403: "Only the owner or a manager can change cheque fees. Ask a manager to make this change." A platform row does not take the save away. A teller's document cannot replace the fee key. A save with no version that would change the fee is 409, with no write and no refusal row. The refusal is `settings.cheque_fee_refused`. A save that lands is `settings.cheque_fee_changed`, with who, when, and the old and new price of each cheque type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is grey, with the lock at the start of that sentence and the sentence wrapped, and no inputs and no Save, for a teller and for a cashier, before any Save. The phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals and the example is the body colour, and its header is $2,000.00. A grouped list for the phone is a later change and is not here. The owner and a manager see the table and Save. The header names whoever is signed in now. A refused Save keeps the typed values and shows one amber line above Save. A stale second save shows a conflict line that stays on screen, with darker text, a 44px Reload, and the typed values kept until Reload loads the server schedule and its version. The Risk select is 44px. A save that lands shows Saved. A low-fee notice is not here. The screen and the server price a cheque fee with the same integer-cent half-up helper. Payroll at 2% of 1,000.25 is 20.01. A float multiply prints 20.00. A face of 1,000.5 is the same 20.01. Fee %, a minimum, and a maximum accept at most 2 decimal places on save. More than that is a 400 that names the field, and the schedule is unchanged. A fee % says "That change didn't save. A fee % can have up to 2 decimals, like 2.25." The check reads the number, so 1e-7 is refused and 1e2 is 100. The Fee % field is text. Clearing it and leaving the field restores the saved percent. The table and the edit state show a stored 2.125 as 2.13, the figure booking uses, so saving another row stores 2.13 for that percent. A percent already stored with more places rounds half up to 2 when the fee is read, and the cheque still books. The cheque route books a face of 1000.5 at 2% as 20.01. A figure the helper cannot read is refused on save and at booking, by the same reader, so a schedule that saves can still be priced. Nothing is booked at 0.00. Min fee "4." tidies to 4.00, and Fee % "." restores the saved percent. The teller sees "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule." The places banner is 13px, outlines the field that broke the rule, and sets aria-invalid. The phone table's sideways scroll stays until the grouped-list change.
+
+- **A new person's username has the shop in it.** On the Employees
+  screen, typing a name fills Staff ID / username with the first name
+  and the shop's handle: amir.yorkfx. The handle is the shop's site
+  handle, or its name, letters and digits only. If that is taken, the
+  last initial is added (amirs.yorkfx), then a number (amir2.yorkfx).
+  The server picks it and checks it against every desk, not only this
+  one (`GET /api/staff/username`, `server/src/auth/username.ts`). The
+  manager can type a different one. The screen says whether it is free,
+  and the create route checks it again: a username another desk holds
+  is 409 with the next free one, and one in the shape of a CurrencyDesk
+  ID is 400. Once the sign-in exists the username is fixed on the
+  screen. A username typed on a profile that already belongs to
+  somebody else does not make their account this person's: the profile
+  shows no sign-in, and offers no reset, disable, block, or PIN for
+  that other account. An account is the profile's once its sign-in was
+  created from that profile, or when the profile predates usernames. A person can have a work email on file (`staff_users.email`,
+  migration 046). It is a contact, not a sign-in name. Creating a
+  sign-in no longer asks the manager for a password. The server issues
+  a temporary one and emails it to the work email, with the username
+  and the sign-in link. With no work email, the temporary password is
+  shown once to be read out. A work email edited after the sign-in
+  exists is saved on the server, and the next invitation goes there.
+  Before this, a name-style id at any desk but York could not sign in:
+  the sign-in screen does not name a desk, and the server looked in
+  York. When the caller names no desk, sign-in now looks at York first
+  and then on every desk. A caller that names a desk gets that desk
+  only. Only a name that exists once signs in, so an older id that two
+  desks both hold signs in nowhere. York's older ids, like a.singh, keep
+  working. A username sign-in is still password-only; the work email
+  does not add an emailed code. Reset password on the screen still
+  takes a password the manager types. Forgot password does not use the
+  work email yet. The owner authorised this pull request during the
+  freeze, on 2026-10-18.
+
+- **Owner-only settings stay with the owner.** Non-owners may change
+  an allowlist of desk fields their own screens write (their account,
+  the people a sign-in adopts, and the manager's app settings). A
+  manager may also change the default spread. Every other field in
+  the desk settings (shop, compliance including the large-cash line,
+  localization, billing, hours and timezone, role presets, and the
+  handoff count) is the owner's. A teller who sends a different
+  default spread is refused, audited, and the stored spread is kept.
+  A different value on `PUT /api/tenant/state` is 403, an audit row, and
+  nothing in that save is written. An equal value, or a key the client
+  left out, is not a change: the stored value stays and the rest saves.
+  Sign-in does not upload the derived role presets or billing plan.
+  A refusal of any other save reloads the stored desk and saving
+  continues. Settings search hides the owner-only tabs. The settings
+  rail follows the signed-in role, so a manager still sees it after a
+  teller has rewritten the shared preset. Rates & fees shows a field
+  the person cannot change as a grey value with a lock, before they
+  type. The default spread stays editable for a manager and the owner,
+  and that row says a manager or the owner can change it. Every other
+  price on that screen is the owner's, and the row says only the owner
+  can change it. A teller has nothing to edit there, so there is no
+  Save. A manager sees one line: only the owner can change most of
+  these, and that they can change the default spread. A teller sees
+  one line: only the owner can change rates and fees, and to ask the
+  owner or a manager. A locked amount shows two decimals. A Rates &
+  fees save the server still refuses keeps what was typed, repeats
+  that person's line above Save, and does not toast or show an error
+  code. The stored
+  desk is put back underneath so other saves continue. A manager
+  cannot move the threshold.
+  `PUT /api/ledger/desk-thresholds` was already limited to the owner.
+  Only the owner-only refusal (`forbidden`) reloads and keeps saving.
+  A cheque fee refusal still stops the autosave. The Fee schedule Save
+  sends what the autosave sends, so a manager's fee save is not refused
+  over the role presets.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
@@ -564,6 +671,12 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-19**, ID-type catalogue and health cards. One list, `shared/id-document-types.js`, loaded by the server and by the desk. A type outside it is 422 `ID_TYPE_NOT_IN_CATALOGUE`. A health card is 422 `HEALTH_CARD_NOT_ID`, "Health cards can't be used as ID. Record a current photo ID." The BC Services Card is accepted. A health number is not in any client read, search, report, register, CSV, LCTR or STR field, or the saved desk document. It does not identify a file. Stored rows are not rewritten and stored numbers are not blanked. No migration.
+
+**2026-10-18**, names and comments. Every tracked file name was checked against CONTRIBUTING, and every comment and doc line against the code. Statements the code contradicts were corrected; nothing that could not be shown wrong was changed. `server/src/state/defaultChequeSchedule.ts` is `default-cheque-schedule.ts`. `tenantState.ts` and `settingsWrite.ts` keep their names until the open pull requests that edit or import them have landed. The desk no longer carries an uncalled function that made up an address and an ID number from a name. The Cross-Border EFT report no longer says transfers do not post; it says the page is built from the Transfers app's own records. The owner ended the PR freeze.
+
+**2026-10-18**, usernames and the work email. A new username is the first name and the shop handle, picked by the server and free on every desk. A taken one is 409 with the next free one; a CurrencyDesk-ID shape is 400. Creating a sign-in emails a temporary password to the work email with the username and the link, or shows it once when there is no address. Sign-in that names no desk finds a username on any desk when exactly one desk holds it; one that names a desk stays there. Migration 046. 041 is claimed by open draft #132, 042 by #130, and 043 by #138.
+
 **2026-10-17**, cheque fees. The owner and a manager can change the cheque fee schedule, including to 0%. A teller, a senior teller, a trainee, and an auditor cannot. Who may write it is `canWriteSetting`. Today's default allows a branch manager and a compliance officer, and the owner is always allowed. That table is not stored and has no screen. A stale numeric version is 409 before the fee refusal. A platform row does not remove the save. A teller's document cannot replace the fee key. A refusal is 403, the stored schedule is unchanged, and the audit action is `settings.cheque_fee_refused`. A save that lands writes `settings.cheque_fee_changed` with who, when, and the old and new price of each type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is read-only for a teller and for a cashier, with no inputs before any Save, the sentence wraps, and the phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals, the example is the body colour, and its header is $2,000.00. A grouped list for the phone follows in its own change. The header names the person signed in now. A second save against a newer version keeps the typed values until Reload, which loads the server schedule and its version. The conflict line stays on screen, its text is darker than the amber token, Reload and the Risk select are 44px, and a save with no version that would change the fee is 409 with no write and no refusal row. The screen and the server price a cheque fee with the same integer-cent half-up helper. Payroll at 2% of 1,000.25 is 20.01. A float multiply prints 20.00. A face of 1,000.5 is the same 20.01. Fee %, a minimum, and a maximum accept at most 2 decimal places on save. More than that is a 400 that names the field, and the schedule is unchanged. A fee % says "That change didn't save. A fee % can have up to 2 decimals, like 2.25." The check reads the number, so 1e-7 is refused and 1e2 is 100. The Fee % field is text. Clearing it and leaving the field restores the saved percent. The table and the edit state show a stored 2.125 as 2.13, the figure booking uses, so saving another row stores 2.13 for that percent. A percent already stored with more places rounds half up to 2 when the fee is read, and the cheque still books. The cheque route books a face of 1000.5 at 2% as 20.01. A figure the helper cannot read is refused on save and at booking, by the same reader, so a schedule that saves can still be priced. Nothing is booked at 0.00. Min fee "4." tidies to 4.00, and Fee % "." restores the saved percent. The teller sees "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule." The places banner is 13px, outlines the field that broke the rule, and sets aria-invalid. The phone table's sideways scroll stays until the grouped-list change.
 
 **2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
@@ -691,6 +804,23 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-17**, owner-only settings. Non-owners may change only the
+allowlist their screens write. A manager may also change the default
+spread. A teller who sends a different default spread is refused,
+audited, and the stored spread is kept. A different owner-only value,
+including the large-cash line, is refused whole and audited. Leaving a
+derived key out (role presets, billing plan) keeps the stored value
+and saves the rest. A refusal of any other save reloads the stored
+  desk and saving continues. The settings rail follows the signed-in
+  role. Rates & fees locks every price except the default spread, which
+  a manager or the owner can change. A teller gets no Save on that
+  panel. A manager's line says they can change the default spread. A
+  teller's line says to ask the owner or a manager. A locked amount
+  shows two decimals. A refused Rates & fees save keeps the typed
+  values and repeats that person's line above Save, with no toast and
+  no error code. A manager cannot move the large-cash line. The ledger
+  threshold route was already the owner's.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

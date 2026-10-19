@@ -810,7 +810,7 @@
        has posted nothing shows nothing, rather than 38 invented deals and 18
        invented customers that a new owner has to recognise as fiction before
        they can trust anything else on the screen. What is here is filled from
-       the ledger — see `loadLedger` below. */
+       the ledger — see `loadLedger` in cdos-backend.js, called by the Ledger app. */
     const [rows, setRows] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null'); return Array.isArray(r) ? r : []; } catch (e) { return []; } });
     const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
@@ -861,11 +861,9 @@
       const def = { Teller: { canDelete: true, canExport: true, canViewReports: true, canEditKYC: true, canSettings: false, canCloseDay: false } };
       try { const raw = localStorage.getItem('cdos_perms'); const p = raw ? JSON.parse(raw) : null; return p && p.Teller ? { Teller: { ...def.Teller, ...p.Teller } } : def; } catch (e) { return def; }
     });
-    // ---- ONE shared opening baseline + ONE shared wholesale-receipts store ----
-    // both the Vault (position) and the Till (expected) derive from these via
-    // window.CDOS.position(); receipts are kept OUT of the customer ledger so a
-    // wholesale purchase never trips a compliance flag, yet the till still
-    // counts against them. Edited in the Till's reconcile, read by the Vault.
+    // ---- legacy opening baseline + wholesale-receipts stores ----
+    // Both are empty now and nothing reads cash from them: cash comes from the
+    // ledger (see the headstone above `defaultBaseline` in cdos-base.jsx).
     const [baseline, setBaseline] = useState(() => { try { const r = localStorage.getItem('cdos_baseline_v1'); return r ? JSON.parse(r) : window.CDOS.defaultBaseline(); } catch (e) { return window.CDOS.defaultBaseline(); } });
     const [receipts, setReceipts] = useState(() => { try { const r = localStorage.getItem('cdos_receipts_v1'); return r ? JSON.parse(r) : window.CDOS.defaultReceipts(); } catch (e) { return window.CDOS.defaultReceipts(); } });
     useEffect(() => { try { localStorage.setItem('cdos_baseline_v1', JSON.stringify(baseline)); } catch (e) {} }, [baseline]);
@@ -1498,7 +1496,14 @@
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null);   // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null);   // { title, sub, name, expected, onOk } when a PIN is being asked
+    /* The bridge must know the role before hydrate, because the first
+       save can run inside it. A missing bridge is a boot failure. */
+    const markPersistRole = (role) => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.setOwner) throw new Error('desk save bridge is not loaded');
+      window.CDOS_PERSIST.setOwner(role === 'Owner');
+    };
     const applyRole = (s) => {
+      markPersistRole(s.role);
       setMe({ name: s.name, role: s.role });
       if (s.role === 'Owner') { setMeApps(null); }
       else { const caps = s.caps || ROLE_CAPS[s.role] || {}; setPerms(p => ({ ...p, Teller: { ...caps } })); setMeApps(Array.isArray(s.apps) ? s.apps : null); }
@@ -1663,6 +1668,9 @@
             setSrvUser(u);
             setUser(u.id);
             setMe({ name, role });
+            /* The save bridge follows the same role, so an owner's save
+               keeps the role presets and a teller's leaves them out. */
+            markPersistRole(role);
           })
           .catch(() => {});   // offline: leave the desk alone
       };
@@ -1693,7 +1701,9 @@
             const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
             const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
             if (!known) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-            if (u.plan) setSettings(s => ({ ...s, billingPlan: u.plan }));
+            /* The plan is the owner's field. Copying it for anyone else is a settings write. */
+            if (u.plan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: u.plan }));
+            markPersistRole(rec.role);
             srvUserRef.current = u; setSrvUser(u);
             setUser(rec.code || rec.name); setAuthRec(rec);
             await hydrateTenant();
@@ -2080,10 +2090,9 @@
          ledger and the Ledger app's own fetch of it. Reseating it wholesale
          raced that fetch and won: the Ledger showed one record while the
          ledger held two. So anything already carrying a server id is kept —
-         the book is the book — and the blob supplies only what the ledger has
-         never heard of, which today is every deal type that does not post
-         yet: cheques, remittances, money orders, bill payments. When those
-         post, this whole store goes. */
+         the book is the book — and the blob supplies only rows the ledger has
+         never heard of (a desk with no ledger). Every deal type now posts —
+         docs/CASH_OWNERSHIP_INVARIANTS.md, Known scope limits. */
       setRows(current => {
         const saved = rd('cdos_rows_v1', []);
         if (!Array.isArray(saved)) return current;
@@ -2104,6 +2113,10 @@
       setSubs(rd('cdos_submissions_v1', {}));
       setTimeout(() => { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1' })); } catch (e) {} }, 0);
     };
+    useEffect(() => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.onReloaded) return;
+      return window.CDOS_PERSIST.onReloaded(function () { reseatFromStorage(); });
+    }, []);
     // A brand-new desk starts CLEAN (no demo transactions/clients), seeded from
     // the onboarding answers: business identity, home currency, ID threshold,
     // one branch named for the business, the owner as the sole employee.
@@ -2271,13 +2284,15 @@
       onSignup={() => setStage('signup')}
       onMustChange={(rec, temp, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-        if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
         setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage('setpass');
       }}
       onComplete={async (rec, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-        if (srvPlan) setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
         setUser(rec.code || rec.name); setAuthRec(rec);
         await hydrateTenant(); routeAfterAuth(rec);
@@ -2291,10 +2306,11 @@
       const u = (newDesk && newDesk.user) || {};
       const rec = { id: 'e_owner_' + Date.now(), code: u.id, name: u.name || 'Owner', role: 'Owner', active: true, branches: '*', home: null };
       setSettings(s => ({ ...s, employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec] }));
+      markPersistRole('Owner');
       srvUserRef.current = (u && u.tenantId) ? u : null; setSrvUser(u && u.tenantId ? u : null); setUser(rec.code); setAuthRec(rec);
       await hydrateTenant(); routeAfterAuth(rec);
     }} />;
-    if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={async () => { setPwTemp(null); await hydrateTenant(); routeAfterAuth(authRec); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
+    if (stage === 'setpass') return <SetPassword staffId={user} current={pwTemp && pwTemp.current} onDone={async () => { setPwTemp(null); markPersistRole(authRec && authRec.role); await hydrateTenant(); routeAfterAuth(authRec); }} onBack={() => { setPwTemp(null); setStage('lock'); }} />;
     if (stage === 'noassign') { const mgr = (settings.employees || []).find(e => e.role === 'Manager' && e.active !== false) || (settings.employees || []).find(e => e.role === 'Owner'); return <NoAssign rec={authRec} manager={mgr && mgr.name} onBack={() => setStage('lock')} />; }
     if (stage === 'station') return <StationPicker branches={branches} station={station} rec={authRec} onBack={() => setStage('lock')} onPick={(st) => { setStation(st); enterDesktop(); }} />;
 
@@ -2326,6 +2342,8 @@
       if (meApps && id !== 'settings' && !meApps.includes(id)) return false;
       if (id === 'dashboard' || id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
       if (id === 'till') return can('canViewReports') || can('canCloseDay');
+      /* Settings stays off a teller's dock. They open Rates & fees from
+         their profile. The panel locks what they cannot change. */
       if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;
     };
@@ -2365,7 +2383,7 @@
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
-        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
+        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, serverRole: srvUser && srvUser.role, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
         case 'calc': return <Calc settings={settings} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;

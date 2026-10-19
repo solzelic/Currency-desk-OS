@@ -60,10 +60,10 @@
   const ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/avif'];
 
   // ── Shared sidecar store ────────────────────────────────────────────────
-  // One fetch + immediate write-on-change for every <image-slot> on the
-  // page. Reads via fetch() so viewing works anywhere the HTML and sidecar
-  // are served together; writes go through window.omelette.writeFile, which
-  // the host allowlists to *.state.json basenames only.
+  // One store + immediate write-on-change for every <image-slot> on the
+  // page. Writes go through window.omelette.writeFile, which the host
+  // allowlists to *.state.json basenames only; the read is disabled in this
+  // copy (see load()).
   const subs = new Set();
   let slots = {};
   // ids explicitly cleared before the sidecar fetch resolved — otherwise

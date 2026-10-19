@@ -960,8 +960,8 @@
      two call sites in files this change does not own invoke them
      unconditionally at start-up, and deleting them would black-screen the
      desk rather than fix it:
-        os-src/cdos-os.jsx:769-770  — the `baseline` / `receipts` state
-       os-src/cdos-os.jsx:1799-1800, 1869 — the same on tenant switch/reset
+        os-src/cdos-os.jsx:869-870  — the `baseline` / `receipts` state
+       os-src/cdos-os.jsx:2099-2100, 2195 — the same on tenant switch/reset
       Those states, and every prop threading them down to the Till, the
      Vault, Reports and Compliance, are the remaining work. They now carry
      nothing, so nothing reads a cash figure out of them. */
@@ -978,26 +978,21 @@
   /* Deriving stock from transactions is the second book, so there is no
      derivation left to call. It answers null — "the ledger has no figure
      here" — rather than a number, because null is the one answer a screen
-     cannot mistake for money. One caller in a file this change does not
-     own still reaches for it:
-        os-src/cdos-till.jsx:485 — the drawer's `expectedOf` in the
-       standalone (no-server) mode. It should read
-          const expectedOf = (c) => serverBalances &&
-           Object.prototype.hasOwnProperty.call(serverBalances, c)
-             ? Number(serverBalances[c]) : null;
-        and render null as "—". A desk that cannot reach the ledger has no
-       expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
-       there is no offline mode, and an invented expected figure is what a
-       teller reconciles a real drawer against. */
+     cannot mistake for money. Nothing calls it any more: the drawer's
+     `expectedOf` (os-src/cdos-till.jsx) reads the server balance and
+     renders null as "—". A desk that cannot reach the ledger has no
+     expected float; docs/CASH_OWNERSHIP_INVARIANTS.md is explicit that
+     there is no offline mode, and an invented expected figure is what a
+     teller reconciles a real drawer against. */
   const holdings = () => null;
 
   /* ============================================================
      TWO-SIDED PRICING — the defining act of the desk, one pure function
      A real desk publishes a BUY rate and a SELL rate per currency; the
      gap between them (the spread) is the margin. priceDeal() is the single
-     source of truth both the Ledger (quoting) and Reports (earnings) call,
-     so the spread shown at the counter is the exact spread booked — never
-     a back-estimate. The desk RECEIVES the pay-in currency (buys it, under
+     quoting call for the Ledger, New Transaction and Transfers, so the
+     spread shown at the counter is the spread quoted — never a
+     back-estimate. Reports' earnings come from the ledger summary. The desk RECEIVES the pay-in currency (buys it, under
      mid) and GIVES the pay-out currency (sells it, over mid); a foreign→
      foreign cross pays spread on both legs.
          unit CAD (mid)   = crossRate(code,'CAD')           // CAD per 1 unit
@@ -1177,9 +1172,9 @@
      is GET /api/ledger/transactions and nothing else; a desk with nothing
      posted shows nothing posted, which is both true and the thing an
      owner needs to see on their first morning.
-      Both survive as empty because cdos-os.jsx:714-715 calls them to
-     initialise its `rows` and `clients` state before any server round
-     trip. Empty is the correct starting value for that state. */
+      Both survive as empty only because cdos-os.jsx still imports them
+     (line 10); nothing calls them. Its `rows` and `clients` state starts
+     from the desk's saved state, or empty. */
   const seedRows = () => [];
   const seedClients = () => ({});
 
@@ -1400,23 +1395,22 @@
      Every client, every filing and every setting after it was then
      browser-only until somebody intervened. A teller doing exactly their
      job could stop the shop saving anything.
-      So there is one way in, and it downscales. Sixteen hundred pixels on
-     the long edge is comfortably enough to read a document number off a
-     passport — the thing the image is FOR — and re-encoding at 0.6 takes a
-     four-megabyte photograph to something in the low hundreds of
-     kilobytes. Anything that is still too big afterwards is refused, out
-     loud, rather than accepted and silently lost.
-      This is a ceiling, not a cure. Scans belong in object storage with a
-     row pointing at them, not in the desk's state document at all — see
-     docs/BROWSER_STORES.md. Until they move, this keeps one photograph
-     from stopping a shop. */
+      So there is one way in, and it downscales — to 1200 pixels on the long
+     edge at quality 0.55 (see below), which takes a four-megabyte
+     photograph to something in the low hundreds of kilobytes. Anything
+     that is still too big afterwards is refused, out loud, rather than
+     accepted and silently lost.
+      This is a ceiling, not a cure. Client ID scans now live on the server
+     (`desk_client_images`, docs/CLIENT_RECORDS.md); cheque images and the
+     logo still come through here, so this still keeps one photograph from
+     stopping a shop. */
   /* 1200 on the long edge is about 150 DPI across a passport, which reads
      a document number comfortably and is what the image is FOR. It was
      1600 first; measured against a worst-case scan that came out at 240 KB
      apiece, which is only sixteen clients before a desk is at its saving
      limit. This is the honest trade — a scan you can read, small enough
      that a shop gets through a working week — and it is still a stopgap.
-     Scans belong in object storage; see docs/BROWSER_STORES.md. */
+     Client scans are on the server now; see docs/CLIENT_RECORDS.md. */
   const ID_IMAGE_MAX_EDGE = 1200;
   const ID_IMAGE_QUALITY = 0.55;
   /* Refused above this AFTER downscaling. A scan that will not come under
@@ -1561,9 +1555,9 @@
   // ---- client risk rating (staff-set compliance tier; light V1) ----------------
   // Every contact carries one tier. Staff set it in the profile's Edit mode; it feeds
   // the recommendation engine (High -> enhanced due diligence) and the auto-tag rules.
-  // FUTURE (mapped, not built): tiers sync across the branch network so a High flag
-  // raised at one store surfaces on a customer's file at every store during a check.
-  // Kept on-device for now — see the roadmap in docs/.
+  // Saved on the server as `desk_clients.risk_rating`, scoped to the legal entity,
+  // so a High flag raised at one store is on the customer's file at every store
+  // (docs/CLIENT_RECORDS.md).
   const RISK_TIERS = ['Normal', 'Low', 'Medium', 'High'];
   const normalizeRisk = v => {
     const s = String(v == null ? '' : v).trim().toLowerCase();
@@ -2032,6 +2026,327 @@
     dealMargin
   });
 })();
+
+/* ---- shared/id-document-types.js ---- */
+/* ============================================================
+   The ID-document catalogue. One list, loaded by the server and by the
+   desk.
+
+   The server loads this file with `require` (server/src/clients/
+   id-document-types.ts). The desk shell loads it as a plain script
+   before cdos-backend.js, and scripts/build-os.mjs puts it in
+   web/app/os.js. Neither side keeps a copy of these names.
+
+   Each type has:
+     code           stable id. Never shown.
+     label          what the desk shows and what the server stores.
+     kind           'person' or 'business'.
+     photo          the document carries the holder's photograph.
+     mayLackExpiry  a blank expiry is normal for this document.
+     acceptedAsId   false only for the health card.
+     aliases        other names that mean the same document.
+
+   A name matches the whole type after the same fold on both sides:
+   lower case, apostrophes removed, every run of anything that is not
+   a-z or 0-9 turned into one space. "healthcare" is not "health card".
+   "mspaint" is not "MSP".
+
+   HEALTH CARDS. The row is here so a health card already stored still
+   resolves to a type. It is not accepted as ID. Ontario's Health Cards
+   and Numbers Control Act, 1991 bars a business outside health care
+   from collecting or using a health number, and FINTRAC says not to use
+   a health card where provincial law prohibits it. The desk refuses a
+   new one everywhere and never shows, searches, or sends the number.
+
+   The BC Services Card is NOT a health card here. The photo version is
+   a provincial government photo ID, and FINTRAC accepts it. A bare
+   "Medicare" is not an alias, and neither is "Medicare card": both are
+   also the name of Australia's card.
+
+   "Not stated" is not a type. It is the placeholder the desk writes
+   when a document row exists before anybody has picked its type.
+   ============================================================ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) root.CDOS_ID_TYPES = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var HEALTH_CARD = "health_card";
+  var NOT_STATED = "Not stated";
+  var HEALTH_CARD_REFUSAL = "Health cards can't be used as ID. Record a current photo ID.";
+  var HEALTH_CARD_SHOWN = "Health card — not accepted as ID";
+
+  var TYPES = [
+    {
+      code: "drivers_licence", label: "Driver's Licence", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["Driver's License", "Drivers Licence", "Drivers License", "Driver Licence", "Driver License", "Driving Licence"],
+    },
+    {
+      code: "passport", label: "Passport", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: [],
+    },
+    {
+      code: "provincial_photo_id", label: "Provincial/Territorial Photo ID", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["Provincial ID", "Territorial ID", "Provincial Photo ID", "Territorial Photo ID", "Provincial or Territorial Photo ID", "Ontario Photo Card"],
+    },
+    {
+      code: "permanent_resident_card", label: "Permanent Resident Card", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["PR Card"],
+    },
+    {
+      /* The card IRCC issued until 2012 carried a photograph and no
+         expiry. The paper certificate issued since is not this type. */
+      code: "citizenship_card", label: "Citizenship Card", kind: "person",
+      photo: true, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["Canadian Citizenship Card"],
+    },
+    {
+      code: "bc_services_card", label: "BC Services Card", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["BC Services Card with photo"],
+    },
+    {
+      /* A government photo ID card from another country, such as an
+         Emirates ID or a German Personalausweis. FINTRAC accepts a
+         foreign government's photo ID, and desks outside Canada record
+         their own country's card here. */
+      code: "national_id_card", label: "National Identity Card", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["National ID", "National ID Card", "National Identity Document", "Identity Card", "ID Card", "Emirates ID"],
+    },
+    {
+      code: HEALTH_CARD, label: "Health Card", kind: "person",
+      photo: false, mayLackExpiry: false, acceptedAsId: false,
+      aliases: [
+        "Health Insurance Card",
+        "Provincial Health Card",
+        "OHIP",
+        "OHIP card",
+        "Ontario Health Insurance Plan",
+        "Ontario Health Card",
+        "Carte d'assurance maladie",
+        "Carte soleil",
+        "RAMQ",
+        "RAMQ card",
+        "Régie de l'assurance maladie du Québec",
+        "Regie de l'assurance maladie du Quebec",
+        "MSP",
+        "MSP card",
+        "Medical Services Plan",
+        "Care Card",
+        "BC Care Card",
+        "Alberta Health",
+        "Alberta Health Card",
+        "Alberta Health Care",
+        "Alberta Health Care Insurance Plan",
+        "New Brunswick Medicare",
+        "NB Medicare",
+        "Manitoba Health",
+        "Manitoba Health Card",
+        "Saskatchewan Health Card",
+        "Saskatchewan Health Services Card",
+        "Nova Scotia Health Card",
+        "MSI",
+        "Medical Services Insurance",
+        "PEI Health Card",
+        "Prince Edward Island Health Card",
+        "Newfoundland and Labrador Medical Care Plan",
+        "MCP",
+        "Medical Care Plan",
+        "Northwest Territories Health Care Card",
+        "NWT Health Care Card",
+        "Nunavut Health Care Card",
+        "Yukon Health Care Card",
+        "Yukon Health Care Insurance Plan",
+      ],
+    },
+    {
+      code: "business_number", label: "Business Number", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["BN"],
+    },
+    {
+      code: "incorporation_certificate", label: "Incorporation Certificate", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["Certificate of Incorporation"],
+    },
+    {
+      code: "master_business_licence", label: "Master Business Licence", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["Master Business License"],
+    },
+    {
+      code: "articles_of_incorporation", label: "Articles of Incorporation", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: [],
+    },
+  ];
+
+  function typeKey(value) {
+    return String(value == null ? "" : value)
+      .toLowerCase()
+      .replace(/['‘’]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  /* Every name, folded, to its row. Two rows may never share a name. */
+  var BY_KEY = Object.create(null);
+  TYPES.forEach(function (row) {
+    Object.freeze(row.aliases);
+    [row.code, row.label].concat(row.aliases).forEach(function (name) {
+      var key = typeKey(name);
+      if (!key) throw new Error("An ID type name folds to nothing: " + name);
+      if (BY_KEY[key] && BY_KEY[key] !== row) {
+        throw new Error("Two ID types share the name " + name);
+      }
+      BY_KEY[key] = row;
+    });
+    Object.freeze(row);
+  });
+  Object.freeze(TYPES);
+  var NOT_STATED_KEY = typeKey(NOT_STATED);
+  if (BY_KEY[NOT_STATED_KEY]) throw new Error("\"Not stated\" cannot be an ID type");
+
+  /* The row a name means, or null. */
+  function resolveIdType(value) {
+    var key = typeKey(value);
+    return key ? (BY_KEY[key] || null) : null;
+  }
+
+  function isNotStated(value) {
+    return typeKey(value) === NOT_STATED_KEY;
+  }
+
+  function isHealthCardType(value) {
+    var row = resolveIdType(value);
+    return !!(row && row.code === HEALTH_CARD);
+  }
+
+  /* In the catalogue and accepted as ID. */
+  function isAcceptedIdType(value) {
+    var row = resolveIdType(value);
+    return !!(row && row.acceptedAsId);
+  }
+
+  /* What a picker offers for a new document of this kind. */
+  function pickerLabels(kind) {
+    return TYPES.filter(function (row) {
+      return row.acceptedAsId && (!kind || row.kind === kind);
+    }).map(function (row) { return row.label; });
+  }
+
+  /* The words a screen shows for a stored type. A health card says it
+     is not accepted. Anything else is shown as it was stored. */
+  function shownIdType(value) {
+    if (isHealthCardType(value)) return HEALTH_CARD_SHOWN;
+    return value == null ? "" : String(value);
+  }
+
+  function listInWords(labels) {
+    if (labels.length <= 1) return labels.join("");
+    return labels.slice(0, -1).join(", ") + ", or " + labels[labels.length - 1];
+  }
+
+  var NOT_IN_CATALOGUE =
+    "That ID type isn't on this desk's list. Use one of: " + listInWords(pickerLabels()) + ".";
+
+  /* What a write may store. Either the catalogue label, the placeholder,
+     or a refusal with its code and sentence. */
+  function normaliseForWrite(value) {
+    if (isNotStated(value)) return { ok: true, label: NOT_STATED };
+    var row = resolveIdType(value);
+    if (!row) return { ok: false, code: "ID_TYPE_NOT_IN_CATALOGUE", detail: NOT_IN_CATALOGUE };
+    if (!row.acceptedAsId) return { ok: false, code: "HEALTH_CARD_NOT_ID", detail: HEALTH_CARD_REFUSAL };
+    return { ok: true, label: row.label, code: row.code };
+  }
+
+  /* ---- health numbers in a stored copy -------------------------------
+
+     A saved desk document, a localStorage value, or a cached client
+     record can still hold a health number written before this list
+     existed. This walks any JSON value. An object whose type field names
+     a health card loses its number field. A string that is JSON is read,
+     cleaned, and written back as a string. Anything that needed no
+     change comes back as the same value, so a caller can compare with
+     === and not rewrite what was already clean. */
+  var NUMBER_FIELDS = { docNumber: 1, doc_number: 1, idNum: 1, num: 1, number: 1 };
+  var TYPE_FIELDS = ["docType", "doc_type", "idType", "type"];
+
+  function namesHealthCard(value) {
+    for (var i = 0; i < TYPE_FIELDS.length; i++) {
+      if (isHealthCardType(value[TYPE_FIELDS[i]])) return true;
+    }
+    return false;
+  }
+
+  function scrubHealthNumbers(value) {
+    if (typeof value === "string") {
+      var first = value.charAt(0);
+      if (first !== "{" && first !== "[") return value;
+      var parsed;
+      try { parsed = JSON.parse(value); } catch (error) { return value; }
+      var cleaned = scrubHealthNumbers(parsed);
+      return cleaned === parsed ? value : JSON.stringify(cleaned);
+    }
+    if (Array.isArray(value)) {
+      var changed = false;
+      var items = value.map(function (item) {
+        var next = scrubHealthNumbers(item);
+        if (next !== item) changed = true;
+        return next;
+      });
+      return changed ? items : value;
+    }
+    if (!value || typeof value !== "object") return value;
+    var drop = namesHealthCard(value);
+    var touched = false;
+    var out = {};
+    Object.keys(value).forEach(function (key) {
+      if (drop && NUMBER_FIELDS[key]) { touched = true; return; }
+      var next = scrubHealthNumbers(value[key]);
+      if (next !== value[key]) touched = true;
+      out[key] = next;
+    });
+    return touched ? out : value;
+  }
+
+  /* The same fold as typeKey(), in Postgres. Any letter outside a-z is
+     a space on both sides, so the two always agree. */
+  function typeKeySql(expr) {
+    return "btrim(regexp_replace(regexp_replace(lower(" + expr + "), '[''‘’]', '', 'g'), '[^a-z0-9]+', ' ', 'g'))";
+  }
+
+  /* Every folded name that means a health card, for a query parameter. */
+  var HEALTH_CARD_KEYS = Object.keys(BY_KEY).filter(function (key) {
+    return BY_KEY[key].code === HEALTH_CARD;
+  });
+
+  return {
+    ID_DOCUMENT_TYPES: TYPES,
+    HEALTH_CARD: HEALTH_CARD,
+    NOT_STATED: NOT_STATED,
+    HEALTH_CARD_REFUSAL: HEALTH_CARD_REFUSAL,
+    HEALTH_CARD_SHOWN: HEALTH_CARD_SHOWN,
+    NOT_IN_CATALOGUE: NOT_IN_CATALOGUE,
+    HEALTH_CARD_KEYS: HEALTH_CARD_KEYS,
+    typeKey: typeKey,
+    resolveIdType: resolveIdType,
+    isNotStated: isNotStated,
+    isHealthCardType: isHealthCardType,
+    isAcceptedIdType: isAcceptedIdType,
+    pickerLabels: pickerLabels,
+    shownIdType: shownIdType,
+    normaliseForWrite: normaliseForWrite,
+    scrubHealthNumbers: scrubHealthNumbers,
+    typeKeySql: typeKeySql,
+  };
+});
+
 
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
@@ -2715,6 +3030,53 @@
   var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
   var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
 
+  /* The ID-type catalogue is shared/id-document-types.js, loaded before
+     this file. The server reads the same file. Without it the desk would
+     not know which type is a health card, so it says so and stops. */
+  function idTypes() {
+    var catalogue = window.CDOS_ID_TYPES;
+    if (!catalogue || typeof catalogue.isHealthCardType !== "function") {
+      throw new Error("CurrencyDesk has no ID-type catalogue loaded");
+    }
+    return catalogue;
+  }
+  var isHealthCardType = function (type) { return idTypes().isHealthCardType(type); };
+
+  /* A health number this browser already holds, from before the desk
+     refused them, is removed from every saved copy here, before any
+     screen reads one. A value that cannot be read or rewritten is
+     logged and left; the next key is still cleaned. */
+  function scrubLocalHealthNumbers() {
+    var scrub = idTypes().scrubHealthNumbers;
+    var names = [];
+    var i;
+    try {
+      for (i = 0; i < localStorage.length; i++) names.push(localStorage.key(i));
+    } catch (error) {
+      console.error("[CurrencyDesk] could not list this browser's saved desk", error);
+      return;
+    }
+    names.forEach(function (name) {
+      if (!name) return;
+      var raw;
+      try { raw = localStorage.getItem(name); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not read " + name + " while removing a health number", error);
+        return;
+      }
+      if (typeof raw !== "string") return;
+      var next = scrub(raw);
+      if (next === raw) return;
+      try { localStorage.setItem(name, next); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not remove a health number from " + name, error);
+      }
+    });
+  }
+  window.CDOS.idTypes = idTypes;
+  window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
+  scrubLocalHealthNumbers();
+
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
      document flattened onto it as idType / idNum / idIssued / idExpiry.
@@ -2726,7 +3088,12 @@
      that is the byte weight that was stopping the desk saving. */
   function toDeskRecord(record, local) {
     local = local || {};
-    var documents = record.documents || [];
+    /* The server never sends a health card's number. This is the same
+       rule again, so a response from an older server cannot put one in
+       this browser either. */
+    var documents = (record.documents || []).map(function (d) {
+      return idTypes().scrubHealthNumbers(d);
+    });
     var primary = documents.filter(function (d) { return d.isPrimary; })[0] || null;
     var extra = documents.filter(function (d) { return !d.isPrimary; });
     var serverHasPrimaryScan = !!(primary && primary.hasScan);
@@ -2763,7 +3130,7 @@
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
       idType: primary ? primary.docType : "",
-      idNum: primary ? (primary.docNumber || "") : "",
+      idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
       primaryDocumentId: primary ? primary.documentId : null,
@@ -2777,7 +3144,7 @@
         return {
           documentId: d.documentId,
           type: d.docType,
-          num: d.docNumber || "",
+          num: isHealthCardType(d.docType) ? "" : (d.docNumber || ""),
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
           hasScan: !!d.hasScan,
@@ -3166,8 +3533,9 @@
     /* The 24h window comes from the active jurisdiction pack (regime) so the
        same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
         The LINE itself comes from reportingLimit(), which is one answer for
-       the whole product: the owner's setting, else the jurisdiction pack
-       the server states, in the desk's own currency. It used to fall back
+       the whole product: the desk's line on the ledger, else the
+       jurisdiction pack, else the owner's saved setting, in the desk's own
+       currency. It used to fall back
        to a hardcoded 10,000 Canadian dollars, which is how this engine and
        the Ledger's own row flags came to disagree on the same desk.
         A null limit means no line has been stated. Nothing is flagged then,
@@ -4813,7 +5181,8 @@
    identity, localization, compliance thresholds, rate/fee defaults,
    receipt content, staff permissions and the ticker tape. Everything
    reads/writes the shared `settings` object (persisted by the shell)
-   except permissions (perms) and the ticker (tickerCfg).
+   except permissions (perms), the ticker (tickerCfg), and the rows the
+   server owns (cost method, thresholds, currencies, sign-ins).
    ============================================================ */
 (function () {
   const {
@@ -5085,6 +5454,107 @@
       style: inSty
     });
   };
+
+  /* ---------- the username (server-picked) ----------
+     amir.yorkfx: their first name and the shop. The server picks it, because
+     it has to be free on every desk and only the server can see the others
+     (server/src/auth/username.ts). While the box holds the server's
+     suggestion it follows the name as it is typed. Once the manager types in
+     the box it is theirs, and the server is asked whether it is free
+     instead. Once the sign-in exists it is fixed: the server knows the
+     person by it. Module scope for the same reason as the controls above. */
+  const isWorkEmail = s => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s || '').trim());
+  function UsernameField({
+    name,
+    code,
+    typed,
+    email,
+    locked,
+    online,
+    onChange
+  }) {
+    const [check, setCheck] = useState(null); // { available, detail } for what is in the box
+    useEffect(() => {
+      const n = (name || '').trim();
+      if (locked || typed || !online || !n || n === 'New employee') return;
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?name=' + encodeURIComponent(n), {
+          credentials: 'same-origin'
+        }).then(r => r.ok ? r.json() : null).then(d => {
+          if (live && d && d.suggestion) {
+            onChange(d.suggestion, false);
+            setCheck({
+              available: true,
+              detail: null
+            });
+          }
+        }).catch(() => {});
+      }, 300);
+      return () => {
+        live = false;
+        clearTimeout(t);
+      };
+    }, [name, typed, locked, online]);
+    useEffect(() => {
+      const c = (code || '').trim();
+      if (locked || !typed || !online) return;
+      if (!c) {
+        setCheck(null);
+        return;
+      }
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?check=' + encodeURIComponent(c), {
+          credentials: 'same-origin'
+        }).then(r => r.ok ? r.json() : null).then(d => {
+          if (live && d && d.check) setCheck({
+            available: d.check.available,
+            detail: d.check.detail
+          });
+        }).catch(() => {});
+      }, 300);
+      return () => {
+        live = false;
+        clearTimeout(t);
+      };
+    }, [code, typed, locked, online]);
+    const note = locked ? 'What they type to sign in. It stays the same once their sign-in exists.' : isWorkEmail(email) ? 'We’ll email their username and a temporary password to ' + email.trim() + '.' : 'Add a work email and we’ll email them their username and a temporary password.';
+    return /*#__PURE__*/React.createElement("label", {
+      className: "block"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "Staff ID / username"), /*#__PURE__*/React.createElement("input", {
+      value: code || '',
+      readOnly: locked,
+      onChange: ev => onChange(ev.target.value.toLowerCase().replace(/\s+/g, ''), true),
+      placeholder: "Fills in from their name",
+      autoComplete: "off",
+      spellCheck: false,
+      className: "w-full text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        fontFamily: 'Space Mono, monospace',
+        ...(locked ? {
+          color: CD.mute,
+          background: CD.lineSoft
+        } : {})
+      }
+    }), !locked && check && /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mt-1",
+      style: {
+        color: check.available ? CD.green : CD.flag
+      }
+    }, check.available ? 'Available' : check.detail), /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mt-1",
+      style: {
+        color: CD.faint
+      }
+    }, note));
+  }
 
   /* ---------- cost basis method (server-backed, NOT a saved preference) ----------
      Every other control on this screen writes the shared `settings` object the
@@ -6094,12 +6564,367 @@
       c: "var(--cd-on-ink)"
     }), " ", busy ? 'Saving…' : 'Save PIN')));
   }
+
+  /* Rates & fees. A default spread from anyone but a manager or the owner
+     is refused, so that box is not offered to them. Every other price on
+     this panel is the owner's on screen: a grey pill and a lock, not a
+     field they type and then get refused. A manager still edits the
+     default spread. Save is absent when nothing here is editable. A save
+     the server still refuses keeps the typed numbers and repeats that
+     person's line above Save. No toast, no error code. */
+  const RATES_TELLER_LINE = 'Only the owner can change rates and fees. Ask the owner or a manager.';
+  const RATES_MANAGER_LINE = 'Only the owner can change most of these. You can change the default spread.';
+  const RATES_FIELD = 'Only the owner can change this.';
+  const RATES_SPREAD = 'A manager or the owner can change this.';
+  const rates2 = n => Number.isFinite(+n) ? (+n).toFixed(2) : '0.00';
+  function LockedValue({
+    field,
+    children
+  }) {
+    /* Pill text uses the body ink. Mute grey on the disabled chip is under 4.5:1. */
+    return /*#__PURE__*/React.createElement("span", {
+      "data-rates-locked": "1",
+      "data-rates-field": field,
+      className: "inline-flex items-center gap-1.5 text-sm px-2 py-1.5",
+      style: {
+        color: CD.text,
+        background: 'var(--cd-disabled)',
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 12,
+      c: CD.text
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }, children));
+  }
+  function RatesFees({
+    me,
+    serverRole,
+    settings,
+    setSettings
+  }) {
+    const owner = serverRole ? serverRole === 'administrator' : me.role === 'Owner';
+    const spreadOn = owner || (serverRole ? serverRole === 'branch_manager' : me.role === 'Manager');
+    const [draft, setDraft] = useState(null);
+    const [note, setNote] = useState('');
+    const rates = draft || settings;
+    const quoteHome = (() => {
+      const p = window.CDOS.deskPack && window.CDOS.deskPack();
+      return p && p.homeCurrency || 'CAD';
+    })();
+    useEffect(() => {
+      const onRefuse = () => setNote('refused');
+      window.addEventListener('cdos-rates-refused', onRefuse);
+      return () => window.removeEventListener('cdos-rates-refused', onRefuse);
+    }, []);
+    const setKey = (k, v) => {
+      setDraft({
+        ...rates,
+        [k]: v
+      });
+      setNote('');
+    };
+    const save = async () => {
+      const next = {
+        ...settings,
+        ...rates
+      };
+      setSettings(next);
+      try {
+        localStorage.setItem('cdos_settings', JSON.stringify(next));
+      } catch (e) {
+        throw e;
+      }
+      const bridge = window.CDOS_PERSIST;
+      if (!bridge || !bridge.save) throw new Error('desk save bridge is not loaded');
+      setNote((await bridge.save({
+        keepTyped: true
+      })) === 'refused' ? 'refused' : 'saved');
+    };
+    const num = (field, value, unit, onChange) => /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": field,
+      className: "flex items-center",
+      style: inSty
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      step: "0.1",
+      value: value ?? '',
+      onChange: e => onChange(+e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
+      style: {
+        width: 90,
+        fontVariantNumeric: 'tabular-nums'
+      }
+    }), unit && /*#__PURE__*/React.createElement("span", {
+      className: "px-2 text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, unit));
+    const pick = (field, value, onChange, opts, width) => /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": field
+    }, /*#__PURE__*/React.createElement("select", {
+      value: value,
+      onChange: e => onChange(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none",
+      style: {
+        ...inSty,
+        width
+      }
+    }, opts.map(([v, l]) => /*#__PURE__*/React.createElement("option", {
+      key: v,
+      value: v
+    }, l))));
+    const shown = (field, text) => /*#__PURE__*/React.createElement(LockedValue, {
+      field: field
+    }, text);
+    const providers = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
+    const roundTo = [['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']];
+    const canSave = owner || spreadOn;
+    const line = owner ? '' : spreadOn ? RATES_MANAGER_LINE : RATES_TELLER_LINE;
+    return /*#__PURE__*/React.createElement("div", {
+      "data-rates-panel": true
+    }, /*#__PURE__*/React.createElement(SectionTitle, {
+      icon: "coins",
+      title: "Rates & fees",
+      sub: "Two-sided pricing. The desk buys under mid and sells over mid. The gap is your margin."
+    }), !owner && /*#__PURE__*/React.createElement("div", {
+      "data-rates-owner-line": true,
+      className: "text-[12.5px] mb-4",
+      style: {
+        color: CD.ink
+      }
+    }, line), /*#__PURE__*/React.createElement(Row, {
+      title: "Rate feed provider",
+      desc: owner ? "Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads and margins are applied on top." : RATES_FIELD
+    }, owner ? pick('rateProvider', rates.rateProvider || providers[0], v => {
+      setKey('rateProvider', v);
+      try {
+        localStorage.setItem('yorkfx_rate_provider', v);
+      } catch (e) {
+        throw e;
+      }
+    }, providers.map(p => [p, p]), 230) : shown('rateProvider', rates.rateProvider || providers[0])), /*#__PURE__*/React.createElement(Row, {
+      title: "Default spread",
+      desc: RATES_SPREAD
+    }, spreadOn ? num('defaultSpread', rates.defaultSpread, '%', v => setKey('defaultSpread', v)) : shown('defaultSpread', rates2(rates.defaultSpread) + '%')), note === 'refused' && line && /*#__PURE__*/React.createElement("div", {
+      "data-rates-refusal": true,
+      role: "status",
+      className: "mt-3 p-3 text-[12.5px]",
+      style: {
+        background: 'var(--cd-chip)',
+        color: CD.ink,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9
+      }
+    }, line), canSave && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3 flex items-center justify-end gap-3"
+    }, note === 'saved' && /*#__PURE__*/React.createElement("span", {
+      "data-rates-saved": true,
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Saved"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-rates-save": true,
+      onClick: save,
+      className: "text-[12px] px-3.5 py-2 font-semibold",
+      style: {
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        borderRadius: 8
+      }
+    }, "Save")), /*#__PURE__*/React.createElement(Row, {
+      title: "Default commission",
+      desc: owner ? 'Suggested flat fee pre-filled on a new deal.' : RATES_FIELD
+    }, owner ? num('defaultFee', rates.defaultFee, settings.baseCurrency || 'CAD', v => setKey('defaultFee', v)) : shown('defaultFee', rates2(rates.defaultFee) + ' ' + (settings.baseCurrency || 'CAD'))), /*#__PURE__*/React.createElement("div", {
+      className: "mt-5 mb-1 text-sm font-medium flex items-center gap-1.5",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "activity",
+      s: 15,
+      c: CD.ink
+    }), " Margin floor"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-1",
+      style: {
+        color: CD.mute
+      }
+    }, "The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override."), /*#__PURE__*/React.createElement(Row, {
+      title: "Target margin",
+      desc: owner ? 'At or above this, the meter reads green.' : RATES_FIELD
+    }, owner ? num('marginTargetPct', rates.marginTargetPct ?? 1, '%', v => setKey('marginTargetPct', v)) : shown('marginTargetPct', rates2(rates.marginTargetPct ?? 1) + '%')), /*#__PURE__*/React.createElement(Row, {
+      title: "Minimum floor",
+      desc: owner ? 'Below this, the deal is flagged red.' : RATES_FIELD
+    }, owner ? num('marginFloorPct', rates.marginFloorPct ?? 0.5, '%', v => setKey('marginFloorPct', v)) : shown('marginFloorPct', rates2(rates.marginFloorPct ?? 0.5) + '%')), /*#__PURE__*/React.createElement(Row, {
+      title: "Below the floor",
+      desc: owner ? 'Warn lets the teller post anyway (logged). Require override blocks the post until they confirm with a reason.' : RATES_FIELD
+    }, owner ? /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": "marginEnforce"
+    }, /*#__PURE__*/React.createElement(Seg, {
+      value: rates.marginEnforce || 'block',
+      onPick: v => setKey('marginEnforce', v),
+      opts: [['warn', 'Warn only'], ['block', 'Require override']]
+    })) : shown('marginEnforce', (rates.marginEnforce || 'block') === 'warn' ? 'Warn only' : 'Require override')), /*#__PURE__*/React.createElement("div", {
+      className: "mt-5"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Spread by currency"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-0.5 mb-2",
+      style: {
+        color: owner ? CD.mute : CD.ink
+      }
+    }, owner ? 'Tight on liquid pairs, wider on exotics. Blank uses the default. We buy and sell are previewed live.' : RATES_FIELD), /*#__PURE__*/React.createElement("div", {
+      className: "overflow-hidden",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      className: "w-full text-sm border-collapse"
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: 'var(--cd-chip)',
+        color: CD.mute
+      },
+      className: "text-[10.5px] uppercase tracking-wide text-left"
+    }, /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2"
+    }, "Currency"), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "Spot \xB7 ", quoteHome), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "Spread %"), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "We buy"), /*#__PURE__*/React.createElement("th", {
+      className: "px-3 py-2 text-right"
+    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== quoteHome).map(c => {
+      const spreads = rates.spreads || {};
+      const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
+      const custom = spreads[c] != null && spreads[c] !== '';
+      return /*#__PURE__*/React.createElement("tr", {
+        key: c,
+        style: {
+          borderTop: `1px solid ${CD.lineSoft}`
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 font-medium",
+        style: {
+          color: CD.ink
+        }
+      }, c), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right",
+        style: {
+          fontFamily: 'Space Mono, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: CD.mute
+        }
+      }, mid.toFixed(4)), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right"
+      }, owner ? /*#__PURE__*/React.createElement("span", {
+        "data-rates-field": 'spread-' + c,
+        className: "inline-flex items-center",
+        style: {
+          border: `1px solid ${custom ? CD.ink : CD.line}`,
+          borderRadius: 7,
+          overflow: 'hidden'
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "number",
+        step: "0.1",
+        value: spreads[c] ?? '',
+        onChange: e => {
+          const v = e.target.value;
+          setDraft({
+            ...rates,
+            spreads: {
+              ...(rates.spreads || {}),
+              [c]: v === '' ? '' : +v
+            }
+          });
+          setNote('');
+        },
+        placeholder: String(+rates.defaultSpread || 1.5),
+        className: "text-sm px-2 py-1.5 outline-none text-right bg-transparent",
+        style: {
+          width: 64,
+          fontVariantNumeric: 'tabular-nums'
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "px-1.5 text-[11px]",
+        style: {
+          color: CD.faint
+        }
+      }, "%")) : shown('spread-' + c, rates2(custom ? spreads[c] : +rates.defaultSpread || 1.5) + '%')), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right",
+        style: {
+          fontFamily: 'Space Mono, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: CD.flag
+        }
+      }, buyUnitCad(c, rates).toFixed(4)), /*#__PURE__*/React.createElement("td", {
+        className: "px-3 py-2 text-right",
+        style: {
+          fontFamily: 'Space Mono, monospace',
+          fontVariantNumeric: 'tabular-nums',
+          color: CD.green
+        }
+      }, sellUnitCad(c, rates).toFixed(4)));
+    }))))), /*#__PURE__*/React.createElement("div", {
+      className: "mt-5 mb-2 text-sm font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Pay-out rounding"), /*#__PURE__*/React.createElement(Row, {
+      title: "Round the customer pay-out",
+      desc: owner ? 'Cash desks rarely hand out odd cents. Applied to the amount the customer receives.' : RATES_FIELD
+    }, owner ? /*#__PURE__*/React.createElement("span", {
+      "data-rates-field": "payoutRound",
+      className: "flex items-center gap-2"
+    }, /*#__PURE__*/React.createElement(Seg, {
+      value: rates.payoutRoundMode || 'nearest',
+      onPick: v => setKey('payoutRoundMode', v),
+      opts: [['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]
+    }), pick('payoutRoundTo', rates.payoutRoundTo ?? 0.01, v => setKey('payoutRoundTo', +v), roundTo, 116)) : shown('payoutRound', (rates.payoutRoundMode || 'nearest') + ' ' + rates2(rates.payoutRoundTo ?? 0.01))), /*#__PURE__*/React.createElement(Row, {
+      title: "Rate-lock duration",
+      desc: owner ? 'How long a customer quote holds the quoted rate before it must be re-priced.' : RATES_FIELD
+    }, owner ? pick('rateLockMins', rates.rateLockMins || 15, v => setKey('rateLockMins', +v), [5, 10, 15, 30, 60].map(m => [m, m + ' minutes']), 130) : shown('rateLockMins', (rates.rateLockMins || 15) + ' minutes')), /*#__PURE__*/React.createElement("div", {
+      className: "mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2",
+      style: {
+        background: CD.lineSoft,
+        color: CD.mute,
+        borderRadius: 9
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "coins",
+      s: 13,
+      c: CD.mute
+    }), /*#__PURE__*/React.createElement("span", null, "These prices drive every new deal in the Ledger. The spread booked at the counter is the spread that lands in ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink
+      }
+    }, "Revenue & Earnings"), ". Mid rates come from the ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink
+      }
+    }, "Rate Board"), ".")));
+  }
   function SettingsView({
     perms,
     setPerms,
     settings,
     setSettings,
     me,
+    serverRole,
     log,
     tickerCfg,
     setTicker,
@@ -6120,7 +6945,9 @@
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
-    const canSys = me.role === 'Owner' || perms.Teller.canSettings;
+    /* A teller sign-in rewrites the shared preset. The rail follows the
+       signed-in role, so a manager still sees their tabs after that. */
+    const canSys = me.role === 'Owner' || me.role === 'Manager' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [packRev, setPackRev] = useState(0);
     const [addingLoc, setAddingLoc] = useState(false); // enterprise Add-location modal (shared with Branch Network's rail)
@@ -6136,6 +6963,8 @@
     const [empSel, setEmpSel] = useState(null); // selected employee id — master/detail view
     // a PIN the owner has just issued, shown once so it can be read out
     const [newPin, setNewPin] = useState({}); // employee id → { pin } | { err }
+    // what creating a sign-in did: where it was sent, or a temporary password to read out once
+    const [newSignIn, setNewSignIn] = useState({}); // employee id → { detail, temp }
     // ---- server sign-in accounts (per-employee credentials) ----
     const [srvStaff, setSrvStaff] = useState(null); // staffId → server account
     const [srvState, setSrvState] = useState('loading'); // loading | ok | offline | forbidden
@@ -6302,7 +7131,9 @@
         // (York FX this week, another next week) shows THEIR live details,
         // not a stale local copy. Only fill blanks \u2014 never clobber unsaved edits.
         const cfg = d.tenant.siteConfig;
-        if (cfg) setSettings(s => {
+        /* Filling a blank shop field from the public site is a settings
+           write. Only the owner may do that. */
+        if (cfg && me.role === 'Owner') setSettings(s => {
           const patch = {};
           ['phone:bizPhone', 'email:bizEmail', 'address:bizAddress', 'city:bizCity', 'region:bizRegion', 'postal:bizPostal'].forEach(pair => {
             const [src, dst] = pair.split(':');
@@ -6314,7 +7145,7 @@
             ...patch
           } : s;
         });
-      }).catch(() => {});
+      });
     }, []);
     // business hours: a template until the shop edits them; the editor and the
     // publisher both read this fallback so a fresh shop still ships sane hours
@@ -6737,7 +7568,27 @@
     const toggleCcy = code => setT({
       hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code]
     }, code);
-    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [];
+
+    /* Shop, compliance, localization, billing, payment, and role presets
+       are the owner's. Search does not offer them to anyone else. The
+       server still refuses the write. */
+    const ownerDesk = me.role === 'Owner';
+    const ownerOnlyTab = {
+      business: 1,
+      localization: 1,
+      compliance: 1,
+      billing: 1,
+      payment: 1,
+      permissions: 1
+    };
+    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [
+    /* A cashier does not get the rest of this rail. They can open
+       Rates & fees and read the locked prices. */
+    ['App settings', [['rates', 'Rates & fees', 'percent']]]];
+    const visibleNav = NAV_GROUPS.map(([group, items]) => [group, items.filter(([id]) => ownerDesk || !ownerOnlyTab[id])]).filter(([, items]) => items.length);
+    useEffect(() => {
+      if (!ownerDesk && ownerOnlyTab[tab]) setTab('account');
+    }, [tab, ownerDesk]);
     return /*#__PURE__*/React.createElement(SettingsCtx.Provider, {
       value: ctxVal
     }, /*#__PURE__*/React.createElement("div", {
@@ -6811,7 +7662,7 @@
       n: "x",
       s: 13,
       c: CD.faint
-    }))), NAV_GROUPS.map(([group, items]) => {
+    }))), visibleNav.map(([group, items]) => {
       const shownItems = items.filter(([id, label]) => navMatch(id, label));
       if (!shownItems.length) return null;
       return /*#__PURE__*/React.createElement("div", {
@@ -6838,7 +7689,7 @@
         s: 15,
         c: tab === id ? 'var(--cd-on-ink)' : CD.mute
       }), " ", label)));
-    }), canSys && navQ.trim() && !NAV_GROUPS.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && /*#__PURE__*/React.createElement("div", {
+    }), canSys && navQ.trim() && !visibleNav.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] px-2 py-3 text-center",
       style: {
         color: CD.faint
@@ -8244,15 +9095,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement(Sw, {
       on: !!settings.requireCountOnClose,
       click: () => toggleSet('requireCountOnClose', 'Require count on close')
-    })), /*#__PURE__*/React.createElement("div", {
+    })), ownerDesk && /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1 mt-6",
       style: {
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Handoffs"), /*#__PURE__*/React.createElement(Row, {
+    }, "Handoffs"), ownerDesk && /*#__PURE__*/React.createElement(Row, {
       title: "Require a count when the drawer changes hands",
-      desc: "When one teller hands the drawer to another, count it first and record any variance against the outgoing operator."
+      desc: "When one teller hands the drawer to another, count it first and record any variance against the outgoing operator. The owner sets this."
     }, /*#__PURE__*/React.createElement(Sw, {
       on: !!settings.requireCountOnHandoff,
       click: () => toggleSet('requireCountOnHandoff', 'Require count on handoff')
@@ -8569,7 +9420,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           style: {
             color: CD.faint
           }
-        }, "unposted"), /*#__PURE__*/React.createElement(Ic, {
+        }, "No till"), /*#__PURE__*/React.createElement(Ic, {
           n: "chev",
           s: 15,
           c: CD.faint
@@ -8582,6 +9433,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const apps = Array.isArray(e.apps) ? e.apps : null;
         const isOwner = e.role === 'Owner';
         const blocked = e.active === false;
+        /* Their server sign-in. A profile finds its account by username, so a
+           username typed here that already belongs to somebody else would read
+           as this person's — with that person's reset, disable, block and PIN
+           buttons. It is theirs only once the sign-in was created from this
+           profile (codeLinked), or when the profile predates the username
+           flow (codeAuto was never set). From then on the username is fixed. */
+        const loginId = (e.code || '').trim();
+        const found = loginId && srvStaff ? srvStaff[loginId] : null;
+        const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
+        // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
+        const syncEmail = () => {
+          if (!loginAcct) return;
+          const v = (e.email || '').trim();
+          if (v === (loginAcct.email || '') || v && !isWorkEmail(v)) return;
+          srvCall('PATCH', '/api/staff/' + encodeURIComponent(loginId), {
+            email: v
+          }).then(() => {
+            log('Work email', e.name + ' · ' + (v || 'cleared'));
+            srvReload();
+          }).catch(err => setSrvMsg(String(err.message || err)));
+        };
         const worksAt = e.branches === '*' || isOwner ? 'Whole network' : Array.isArray(e.branches) && e.branches.length ? e.branches.map(id => {
           const b = (branches || []).find(x => x.id === id);
           return (b ? b.code : id) + (e.home === id ? ' ★' : '');
@@ -8681,6 +9553,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           onChange: ev => setEmp(e.id, {
             email: ev.target.value
           }),
+          onBlur: syncEmail,
           placeholder: "name@business.com",
           className: "w-full text-sm px-2.5 py-2 outline-none",
           style: inSty
@@ -8694,21 +9567,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           placeholder: "(416) 555-0000",
           className: "w-full text-sm px-2.5 py-2 outline-none",
           style: inSty
-        })), /*#__PURE__*/React.createElement(Field, {
-          label: "Staff ID / sign-in",
-          desc: "What they type to sign in."
-        }, /*#__PURE__*/React.createElement("input", {
-          value: e.code || '',
-          onChange: ev => setEmp(e.id, {
-            code: ev.target.value
-          }),
-          placeholder: "e.g. a.singh",
-          className: "w-full text-sm px-2.5 py-2 outline-none",
-          style: {
-            ...inSty,
-            fontFamily: 'Space Mono, monospace'
-          }
-        })), /*#__PURE__*/React.createElement("div", {
+        })), /*#__PURE__*/React.createElement(UsernameField, {
+          key: e.id,
+          name: e.name,
+          code: e.code,
+          typed: e.codeAuto === false || !!e.code && e.codeAuto !== true,
+          email: e.email,
+          locked: !!loginAcct || isOwner,
+          online: srvState === 'ok',
+          onChange: (v, typed) => setEmp(e.id, {
+            code: v,
+            codeAuto: !typed
+          })
+        }), /*#__PURE__*/React.createElement("div", {
           className: "col-span-2"
         }, /*#__PURE__*/React.createElement("div", {
           className: "text-[11px] mb-1",
@@ -8776,7 +9647,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           onChange: ev => {
             if (!ev.target.value) {
               assignEmp(e.name, null, null);
-              log(`${e.name} · unposted`, '');
+              log(`${e.name} · no till`, '');
               return;
             }
             const parts = ev.target.value.split('|');
@@ -8905,23 +9776,39 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontFamily: 'Space Mono, monospace'
           }
         }, "Security"), (() => {
-          const sid = (e.code || '').trim();
-          const acct = sid && srvStaff ? srvStaff[sid] : null;
+          const sid = loginId;
+          const acct = loginAcct;
+          const mailTo = isWorkEmail(e.email) ? e.email.trim() : null;
+          /* No password from the manager: the server issues a temporary one
+             and emails it to the work email, or hands it back to be read out
+             once when there is no address. They pick their own on the way in. */
           const doCreate = () => {
-            if (srvPw.length < 8) {
-              setSrvMsg('Temporary password needs at least 8 characters.');
-              return;
-            }
             setSrvBusy(true);
             setSrvMsg('');
+            setNewSignIn(m => ({
+              ...m,
+              [e.id]: null
+            }));
             srvCall('POST', '/api/staff', {
               staffId: sid,
               name: e.name,
               role: SRV_ROLE[e.role] || 'teller',
-              password: srvPw
-            }).then(() => {
-              log('Sign-in created', e.name + ' \u00b7 ' + sid);
-              setSrvPw('');
+              ...(mailTo ? {
+                email: mailTo
+              } : {})
+            }).then(d => {
+              const s = d && d.signIn || {};
+              setNewSignIn(m => ({
+                ...m,
+                [e.id]: {
+                  detail: s.detail || '',
+                  temp: s.tempPassword || null
+                }
+              }));
+              setEmp(e.id, {
+                codeLinked: true
+              });
+              log('Sign-in created', e.name + ' \u00b7 ' + sid + (s.delivered === 'sent' ? ' \u00b7 emailed' : ''));
               srvReload();
             }).catch(err => setSrvMsg(String(err.message || err))).then(() => setSrvBusy(false));
           };
@@ -8971,7 +9858,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             style: {
               color: CD.mute
             }
-          }, srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' : srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' : srvState === 'loading' ? 'Checking the server…' : !sid ? 'Give them a Staff ID above first — that’s their username.' : !acct ? 'No server account yet — issue a temporary password and hand it to them privately.' : !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' : acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' : 'Password set by the employee — only they know it. Reset issues a new temporary one.')), acct && /*#__PURE__*/React.createElement("span", {
+          }, srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' : srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' : srvState === 'loading' ? 'Checking the server…' : !sid ? 'Type their name above — their username fills in by itself.' : !acct ? mailTo ? 'No sign-in yet. Create it and we’ll email their username and a temporary password to ' + mailTo + '.' : 'No sign-in yet. Create it and you’ll get a temporary password to give them in person.' : !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' : acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' : 'Password set by the employee — only they know it. Reset issues a new temporary one.')), acct && /*#__PURE__*/React.createElement("span", {
             className: "text-[9px] px-1.5 py-0.5 font-semibold flex-none",
             style: {
               background: acct.active ? CD.greenSoft : CD.flagSoft,
@@ -8985,7 +9872,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               opacity: srvBusy ? 0.5 : 1,
               pointerEvents: srvBusy ? 'none' : 'auto'
             }
-          }, /*#__PURE__*/React.createElement("input", {
+          }, !acct ? /*#__PURE__*/React.createElement("button", {
+            onClick: doCreate,
+            className: "text-[11.5px] px-2.5 py-1.5 font-semibold flex-none",
+            style: {
+              background: CD.ink,
+              color: 'var(--cd-on-ink)',
+              borderRadius: 8
+            }
+          }, mailTo ? 'Create sign-in & email it' : 'Create sign-in') : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
             type: "text",
             value: srvPw,
             onChange: ev => setSrvPw(ev.target.value),
@@ -8995,15 +9890,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               ...inSty,
               fontFamily: 'Space Mono, monospace'
             }
-          }), !acct ? /*#__PURE__*/React.createElement("button", {
-            onClick: doCreate,
-            className: "text-[11.5px] px-2.5 py-1.5 font-semibold flex-none",
-            style: {
-              background: CD.ink,
-              color: 'var(--cd-on-ink)',
-              borderRadius: 8
-            }
-          }, "Create sign-in") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+          }), /*#__PURE__*/React.createElement("button", {
             onClick: doReset,
             className: "text-[11.5px] px-2.5 py-1.5 font-semibold flex-none",
             style: {
@@ -9025,7 +9912,23 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             style: {
               color: CD.flag
             }
-          }, srvMsg));
+          }, srvMsg), newSignIn[e.id] && /*#__PURE__*/React.createElement("div", {
+            className: "text-[11px] mt-2",
+            style: {
+              color: CD.mute
+            }
+          }, newSignIn[e.id].detail, newSignIn[e.id].temp && /*#__PURE__*/React.createElement("div", {
+            className: "mt-1.5 text-[15px] font-bold tracking-[0.12em]",
+            style: {
+              fontFamily: 'Space Mono, monospace',
+              color: CD.green
+            }
+          }, newSignIn[e.id].temp), newSignIn[e.id].temp && /*#__PURE__*/React.createElement("div", {
+            className: "mt-1",
+            style: {
+              color: CD.faint
+            }
+          }, "Shown once \u2014 it can\u2019t be looked up again.")));
         })(), /*#__PURE__*/React.createElement(Row, {
           title: "Transaction PIN",
           desc: "The 4-digit PIN this person enters to take a till, switch accounts and confirm sensitive actions. It can\u2019t be looked up \u2014 issue a new one if they\u2019ve forgotten it."
@@ -9043,14 +9946,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontFamily: 'Space Mono, monospace',
             color: CD.faint
           }
-        }, "\u2022\u2022\u2022\u2022"), /*#__PURE__*/React.createElement("button", {
+        }, "\u2022\u2022\u2022\u2022"), loginAcct ? /*#__PURE__*/React.createElement("button", {
           onClick: async () => {
             setNewPin(m => ({
               ...m,
               [e.id]: null
             }));
             try {
-              const d = await srvCall('POST', '/api/staff/' + encodeURIComponent((e.code || '').trim()) + '/pin');
+              const d = await srvCall('POST', '/api/staff/' + encodeURIComponent(loginId) + '/pin');
               setNewPin(m => ({
                 ...m,
                 [e.id]: {
@@ -9073,7 +9976,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             borderRadius: 7,
             color: CD.ink
           }
-        }, "Issue a new PIN"), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("span", {
+        }, "Issue a new PIN") : /*#__PURE__*/React.createElement("span", {
+          className: "text-[11px]",
+          style: {
+            color: CD.faint
+          }
+        }, "Create their sign-in first"), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("span", {
           className: "text-[11px]",
           style: {
             color: CD.flag
@@ -9112,11 +10020,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             setEmp(e.id, {
               active: blocked
             }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`);
-            srvSetActive(e.code, blocked);
+            if (loginAcct) srvSetActive(e.code, blocked);
           }
         }), " Block this account"), /*#__PURE__*/React.createElement("button", {
           onClick: () => {
-            srvSetActive(e.code, false);
+            if (loginAcct) srvSetActive(e.code, false);
             removeEmp(e.id, e.name);
             setEmpSel(null);
           },
@@ -10636,332 +11544,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink
         }
       }, "Compliance"), " desk. Sanctions screening is not connected yet. Aggregation and fileable submissions follow the active pack."))));
-    })(), tab === 'rates' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
-      icon: "coins",
-      title: "Rates & fees",
-      sub: "Two-sided pricing \u2014 the desk buys under mid and sells over mid. The gap is your margin."
-    }), /*#__PURE__*/React.createElement(Row, {
-      title: "Rate feed provider",
-      desc: "Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads & margins are applied on top."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "fp-set",
-      style: {
-        position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("select", {
-      value: settings.rateProvider || 'OANDA · fxTrade rates',
-      onChange: e => {
-        set('rateProvider', e.target.value, `rate provider ${e.target.value}`);
-        try {
-          localStorage.setItem('yorkfx_rate_provider', e.target.value);
-        } catch (_) {}
-      },
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 230,
-        appearance: 'none',
-        WebkitAppearance: 'none',
-        paddingRight: 28
-      }
-    }, ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'].map(p => /*#__PURE__*/React.createElement("option", {
-      key: p,
-      value: p
-    }, p))), /*#__PURE__*/React.createElement("span", {
-      style: {
-        position: 'absolute',
-        right: 10,
-        pointerEvents: 'none',
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 13,
-      c: CD.faint
-    })))), /*#__PURE__*/React.createElement(Row, {
-      title: "Default spread",
-      desc: "Buy/sell margin over the spot rate, applied to any currency without its own spread below."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
-      style: inSty
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: settings.defaultSpread ?? '',
-      onChange: e => set('defaultSpread', +e.target.value),
-      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
-      style: {
-        width: 90,
-        fontVariantNumeric: 'tabular-nums'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2 text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, "%"))), /*#__PURE__*/React.createElement(Row, {
-      title: "Default commission",
-      desc: "Suggested flat fee pre-filled on a new deal."
-    }, /*#__PURE__*/React.createElement(Money, {
-      k: "defaultFee"
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5 mb-1 text-sm font-medium flex items-center gap-1.5",
-      style: {
-        color: CD.ink
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "activity",
-      s: 15,
-      c: CD.ink
-    }), " Margin floor"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mb-1",
-      style: {
-        color: CD.mute
-      }
-    }, "The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override."), /*#__PURE__*/React.createElement(Row, {
-      title: "Target margin",
-      desc: "At or above this, the meter reads green."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
-      style: inSty
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: settings.marginTargetPct ?? 1.0,
-      onChange: e => set('marginTargetPct', +e.target.value, `margin target ${e.target.value}%`),
-      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
-      style: {
-        width: 90,
-        fontVariantNumeric: 'tabular-nums'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2 text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, "%"))), /*#__PURE__*/React.createElement(Row, {
-      title: "Minimum floor",
-      desc: "Below this, the deal is flagged red."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center",
-      style: inSty
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: settings.marginFloorPct ?? 0.5,
-      onChange: e => set('marginFloorPct', +e.target.value, `margin floor ${e.target.value}%`),
-      className: "text-sm px-2.5 py-2 outline-none text-right bg-transparent",
-      style: {
-        width: 90,
-        fontVariantNumeric: 'tabular-nums'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2 text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, "%"))), /*#__PURE__*/React.createElement(Row, {
-      title: "Below the floor",
-      desc: "Warn lets the teller post anyway (logged); Require override blocks the post until they confirm with a reason."
-    }, /*#__PURE__*/React.createElement(Seg, {
-      value: settings.marginEnforce || 'block',
-      onPick: v => set('marginEnforce', v, `margin enforce ${v}`),
-      opts: [['warn', 'Warn only'], ['block', 'Require override']]
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between mb-2"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-sm font-medium",
-      style: {
-        color: CD.ink
-      }
-    }, "Spread by currency"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-0.5",
-      style: {
-        color: CD.mute
-      }
-    }, "Tight on liquid pairs, wider on exotics. Blank = use the default. We buy and sell are previewed live."))), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 10
-      }
-    }, /*#__PURE__*/React.createElement("table", {
-      className: "w-full text-sm border-collapse"
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-      style: {
-        background: 'var(--cd-chip)',
-        color: CD.mute
-      },
-      className: "text-[10.5px] uppercase tracking-wide text-left"
-    }, /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2"
-    }, "Currency"), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "Spot \xB7 ", quoteHome), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "Spread %"), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "We buy"), /*#__PURE__*/React.createElement("th", {
-      className: "px-3 py-2 text-right"
-    }, "We sell"))), /*#__PURE__*/React.createElement("tbody", null, (CCY || []).filter(c => c !== quoteHome).map(c => {
-      const spreads = settings.spreads || {};
-      const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : window.CDOS.homePerUnit && window.CDOS.homePerUnit(c) || 0;
-      const eff = spreadOf(c, settings) * 100;
-      const custom = spreads[c] != null && spreads[c] !== '';
-      return /*#__PURE__*/React.createElement("tr", {
-        key: c,
-        style: {
-          borderTop: `1px solid ${CD.lineSoft}`
-        }
-      }, /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 font-medium",
-        style: {
-          color: CD.ink
-        }
-      }, c), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right",
-        style: {
-          fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums',
-          color: CD.mute
-        }
-      }, mid.toFixed(4)), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "inline-flex items-center",
-        style: {
-          border: `1px solid ${custom ? CD.ink : CD.line}`,
-          borderRadius: 7,
-          overflow: 'hidden'
-        }
-      }, /*#__PURE__*/React.createElement("input", {
-        type: "number",
-        step: "0.1",
-        value: spreads[c] ?? '',
-        onChange: e => {
-          const v = e.target.value;
-          setSettings(s => ({
-            ...s,
-            spreads: {
-              ...(s.spreads || {}),
-              [c]: v === '' ? '' : +v
-            }
-          }));
-        },
-        placeholder: (+settings.defaultSpread || 1.5).toString(),
-        className: "text-sm px-2 py-1.5 outline-none text-right bg-transparent",
-        style: {
-          width: 64,
-          fontVariantNumeric: 'tabular-nums'
-        }
-      }), /*#__PURE__*/React.createElement("span", {
-        className: "px-1.5 text-[11px]",
-        style: {
-          color: CD.faint
-        }
-      }, "%"))), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right",
-        style: {
-          fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums',
-          color: CD.flag
-        }
-      }, buyUnitCad(c, settings).toFixed(4)), /*#__PURE__*/React.createElement("td", {
-        className: "px-3 py-2 text-right",
-        style: {
-          fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums',
-          color: CD.green
-        }
-      }, sellUnitCad(c, settings).toFixed(4)));
-    })))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-1.5 flex items-center gap-3",
-      style: {
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "flex items-center gap-1"
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 8,
-        height: 8,
-        borderRadius: 2,
-        background: CD.flag,
-        display: 'inline-block'
-      }
-    }), " We buy = what we pay the customer"), /*#__PURE__*/React.createElement("span", {
-      className: "flex items-center gap-1"
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 8,
-        height: 8,
-        borderRadius: 2,
-        background: CD.green,
-        display: 'inline-block'
-      }
-    }), " We sell = what we charge"))), /*#__PURE__*/React.createElement("div", {
-      className: "mt-5 mb-2 text-sm font-medium",
-      style: {
-        color: CD.ink
-      }
-    }, "Pay-out rounding"), /*#__PURE__*/React.createElement(Row, {
-      title: "Round the customer pay-out",
-      desc: "Cash desks rarely hand out odd cents. Applied to the amount the customer receives."
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2"
-    }, /*#__PURE__*/React.createElement(Seg, {
-      value: settings.payoutRoundMode || 'nearest',
-      onPick: v => set('payoutRoundMode', v, `rounding ${v}`),
-      opts: [['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]
-    }), /*#__PURE__*/React.createElement("select", {
-      value: settings.payoutRoundTo ?? 0.01,
-      onChange: e => set('payoutRoundTo', +e.target.value),
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 116
-      }
-    }, [['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
-      key: v,
-      value: v
-    }, l))))), /*#__PURE__*/React.createElement(Row, {
-      title: "Rate-lock duration",
-      desc: "How long a customer quote holds the quoted rate before it must be re-priced."
-    }, /*#__PURE__*/React.createElement("select", {
-      value: settings.rateLockMins || 15,
-      onChange: e => set('rateLockMins', +e.target.value, `rate lock ${e.target.value}m`),
-      className: "text-sm px-2.5 py-2 outline-none",
-      style: {
-        ...inSty,
-        width: 130
-      }
-    }, [5, 10, 15, 30, 60].map(m => /*#__PURE__*/React.createElement("option", {
-      key: m,
-      value: m
-    }, m, " minutes")))), /*#__PURE__*/React.createElement("div", {
-      className: "mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2",
-      style: {
-        background: CD.lineSoft,
-        color: CD.mute,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "coins",
-      s: 13,
-      c: CD.mute
-    }), /*#__PURE__*/React.createElement("span", null, "These prices drive every new deal in the Ledger \u2014 the spread booked at the counter is the spread that lands in ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, "Revenue & Earnings"), ". Mid rates come from the ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, "Rate Board"), "."))), tab === 'receipts' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+    })(), tab === 'rates' && /*#__PURE__*/React.createElement(RatesFees, {
+      me: me,
+      serverRole: serverRole,
+      settings: settings,
+      setSettings: setSettings
+    }), tab === 'receipts' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "receipt",
       title: "Receipts",
       sub: "What prints on the customer's exchange receipt."
@@ -13675,7 +14263,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        is read from the pack and every total on this screen is labelled with
        it. A desk whose pack has not arrived says the currency is unknown
        rather than assuming one; see docs/ABSENT_FIGURES.md.
-        `dayEarned` is the trading day's earnings from GET /api/ledger/summary
+        `dayBook.summary.earningsHome` is the trading day's earnings from GET /api/ledger/summary
        — commission plus the margin each disposal actually booked. The close
        used to compute this here, as `(mid - paid)` against a live market
        rate, and store it on the day summary: on a desk with one voided deal
@@ -14230,10 +14818,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const isCounted = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) > 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
     const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
     const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
-
-    // expected float per currency — DERIVED from the one shared source of truth
-    // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
-    // Identical to the figure the Vault shows because both call position().
     const serverBalancesReady = !serverBacked || serverBalances !== null;
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
@@ -14251,7 +14835,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        ledger gets to make it. A currency the ledger has never heard of, and
        a desk running with no ledger at all, both have no expected float —
        and a count sheet that prints 0.00 there invites a teller to write a
-       variance against a number nobody stood behind. See ABSENT_FIGURES.md. */
+       variance against a number nobody stood behind. See docs/ABSENT_FIGURES.md. */
     const expectedOf = c => serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : null;
     // reveal + read out the expected float (audible cue for a blind / hands-busy count)
     const announceExpected = c => {
@@ -14404,7 +14988,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     // counted here but not carried by the server ledger — recorded locally only,
     // and deliberately kept out of the close so it can't disturb a real balance
     const offLedgerCcys = serverBacked ? countedCcys.filter(c => !serverCcys.includes(c)) : [];
-    // a drawer is "off" only when its CAD variance exceeds the owner's tolerance (Settings › Cash drawer)
     const tolHome = Math.max(0, +(settings && settings.tillVarianceTol) || 0);
     /* A drawer is "off" when its variance exceeds the owner's tolerance,
        measured in the desk's own money. Where this screen cannot express the
@@ -14418,7 +15001,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
     const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
-    // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     /* Cross-currency totals for the reconcile footer. Null where any row
        cannot be expressed in the desk's own money — a total quietly missing
        two of nine currencies looks complete and is not. */
@@ -16546,10 +17128,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
      The desk's own currency belongs on that list wherever the desk is; the
      other three are a starting suggestion the owner edits. */
   const DEFAULT_FC = () => Array.from(new Set([homeCcy(), 'USD', 'EUR', 'GBP']));
-  /* What a wholesale order can be placed in. The ledger carries these four
-     today (see the scope limits in docs/CASH_OWNERSHIP_INVARIANTS.md), and
-     offering the other five would let somebody record a delivery the book
-     cannot take. The nine-currency list this replaced was the demo seed's. */
+  /* What a wholesale order offers by default: the same starting list as a
+     float. The ledger itself takes any currency the desk trades
+     (docs/DESK_CURRENCIES.md). The nine-currency list this replaced was the
+     demo seed's. */
   /* Evaluated per render, not once at module load: the pack arrives from
      the server after this file has been parsed, so a constant captured here
      would freeze whatever the fallback said. */
@@ -19331,12 +19913,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     CNY: CD.brass
   };
 
-  /* ---- station model: branches → tills ----------------------------------
-     Each till carries TWO people fields:
-       teller   — who's POSTED here (management: their default drawer, set on
-                  the Team board). Sticky.
-       operator — who's ON it right now (a live session: set by sign-in /
-                  till switch, cleared by sign-out). One operator per till. */
   /* ---- station model: branches → vault + tills ---------------------------
      Each branch carries a VAULT (its cash account; `main: true` marks the
      main vault). Each till carries TWO people fields:
@@ -22109,6 +22685,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     return p && p.homeCurrency || (reportingLimit(null) || {}).currency || null;
   };
   const computeFlags = window.CDOS.computeFlags;
+  /* The ID-type catalogue the server also checks against. A health card
+     is in it so a stored one can be named, and is never accepted as ID:
+     its number is not shown, searched, or sent. */
+  const IDT = window.CDOS.idTypes();
+  const isHealthType = type => IDT.isHealthCardType(type);
   // render overlays at the document root so the window's stacking context
   // (and the rate ticker at z-360) can never occlude them
   const Portal = ({
@@ -22208,6 +22789,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const client = api();
       if (!client || !clientId) return;
       if (!rec || !rec.idType && !rec.idNum && !rec.photo) return;
+      /* A health card is not ID and the server refuses one. A copy this
+         browser still holds is not sent. */
+      if (isHealthType(rec.idType)) return;
       await client.addDocument(clientId, {
         docType: rec.idType || 'Not stated',
         docNumber: rec.idNum || null,
@@ -22345,18 +22929,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        till sees the old one. */
     const send = run => Promise.resolve().then(run).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
     const extraDoc = i => (rec.ids || [])[i] || {};
+    /* A health card as the primary is not edited: the server refuses
+       that. Typing an ID on such a file adds a new primary document and
+       the health card stays on the file beside it, not accepted. */
+    const healthPrimary = isHealthType(rec.idType);
+    const primaryId = healthPrimary ? null : rec.primaryDocumentId;
+    const typeOnFile = healthPrimary ? '' : rec.idType;
     function field(k, v) {
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
         const patch = {};
         patch[DOC[k]] = v || null;
-        if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, patch));
+        if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
         /* Typing a document's details when the file has none is how a
            document gets created — the same gesture the old flat editor
            made, landing in the right table. */
         return send(() => api.addDocument(clientId, Object.assign({
-          docType: k === 'idType' ? v || 'Not stated' : rec.idType || 'Not stated',
+          docType: k === 'idType' ? v || 'Not stated' : typeOnFile || 'Not stated',
           isPrimary: true
         }, k === 'idType' ? {} : patch)));
       }
@@ -22471,11 +23061,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }
     function scan(dataUrl) {
       if (!onServer) return localSet('photo', dataUrl);
-      if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, {
+      if (primaryId) return send(() => api.updateDocument(clientId, primaryId, {
         scanDataUrl: dataUrl
       }));
       return send(() => api.addDocument(clientId, {
-        docType: rec.idType || 'Not stated',
+        docType: typeOnFile || 'Not stated',
         isPrimary: true,
         scanDataUrl: dataUrl
       }));
@@ -22833,8 +23423,34 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }), " Capture")))))));
   }
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
-  const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
+
+  /* The pickers are the catalogue's (shared/id-document-types.js), the
+     same list the server checks a save against. A health card is not
+     offered. */
+  const ID_TYPES_IND = IDT.pickerLabels('person');
+  const ID_TYPES_CORP = IDT.pickerLabels('business');
+  /* A type already on the file that the picker does not offer stays
+     visible in the select. A health card says it is not accepted and
+     cannot be chosen again. */
+  function keptTypeOption(current, types) {
+    if (!current || types.indexOf(current) >= 0) return null;
+    if (isHealthType(current)) return /*#__PURE__*/React.createElement("option", {
+      key: current,
+      value: current,
+      disabled: true
+    }, IDT.HEALTH_CARD_SHOWN);
+    return /*#__PURE__*/React.createElement("option", {
+      key: current,
+      value: current
+    }, current);
+  }
+  /* Said under a health card wherever it is edited. */
+  const HealthCardNote = () => /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] mt-1.5",
+    style: {
+      color: CD.flag
+    }
+  }, IDT.HEALTH_CARD_REFUSAL);
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
   const COUNTRIES = ['Canada', 'United States', 'Other'];
@@ -23233,7 +23849,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    /* A health card on file: no number, nothing to edit on it. Picking a
+       type records a new ID. */
+    const health = isHealthType(rec.idType);
+    const editDoc = canEdit && !health;
     return /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(EditField, {
@@ -23246,11 +23865,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), stated && /*#__PURE__*/React.createElement("option", {
-      key: stated
-    }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), keptTypeOption(rec.idType, types), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null)), !health && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Business / document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23261,7 +23878,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Issued"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: rec.idIssued || '',
       onChange: e => set('idIssued', e.target.value),
@@ -23270,7 +23887,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Expiry"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: rec.idExpiry || '',
       onChange: e => set('idExpiry', e.target.value),
@@ -23288,7 +23905,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hasScan: rec.primaryHasScan,
       height: 64,
       who: who,
-      what: rec.idType || 'primary ID',
+      what: IDT.shownIdType(rec.idType) || 'primary ID',
       log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => set('photo', null),
@@ -23310,7 +23927,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       type: "file",
       accept: "image/*",
       className: "hidden",
-      disabled: !canEdit,
+      disabled: !editDoc,
       onChange: e => e.target.files[0] && onUpload('photo', e.target.files[0])
     }))));
   }
@@ -23329,7 +23946,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    /* A health card can be removed. It cannot be edited or retyped. */
+    const health = isHealthType(doc.type);
+    const editDoc = canEdit && !health;
     return /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
@@ -23357,18 +23976,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document type' : 'ID type'
     }, /*#__PURE__*/React.createElement("select", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       value: doc.type || '',
       onChange: e => setId(i, 'type', e.target.value),
       className: inCls,
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), stated && /*#__PURE__*/React.createElement("option", {
-      key: stated
-    }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), keptTypeOption(doc.type, types), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null)), !health && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23379,7 +23996,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Issued"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: doc.issued || '',
       onChange: e => setId(i, 'issued', e.target.value),
@@ -23388,7 +24005,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Expiry"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: doc.expiry || '',
       onChange: e => setId(i, 'expiry', e.target.value),
@@ -23406,7 +24023,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hasScan: doc.hasScan,
       height: 64,
       who: who,
-      what: doc.type || "additional ID",
+      what: IDT.shownIdType(doc.type) || "additional ID",
       log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -23429,7 +24046,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       type: "file",
       accept: "image/*",
       className: "hidden",
-      disabled: !canEdit,
+      disabled: !editDoc,
       onChange: e => e.target.files[0] && uploadId(i, e.target.files[0])
     })))));
   }
@@ -23630,7 +24247,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
-<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
+<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', IDT.shownIdType(rec.idType))}${row('Number', isHealthType(rec.idType) ? '' : rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
 <div class="card"><div class="ct">Activity</div><table class="kv">${row('First seen', mine.length ? mine[mine.length - 1].date : '')}${row('Last seen', st.last)}${row('Status', stat)}</table>${rec.notes ? `<div style="margin-top:8px;font-size:11.5px;color:#555;"><b>Notes:</b> ${esc(rec.notes)}</div>` : ''}</div>
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
@@ -23814,9 +24431,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), (corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), keptTypeOption(rec.idType, corp ? ID_TYPES_CORP : ID_TYPES_IND), (corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t))), isHealthType(rec.idType) && /*#__PURE__*/React.createElement(HealthCardNote, null)), !isHealthType(rec.idType) && /*#__PURE__*/React.createElement(EditField, {
       label: corp ? 'Number' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23827,7 +24444,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Expiry"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !canEdit || isHealthType(rec.idType),
       type: "date",
       value: rec.idExpiry || '',
       onChange: e => setField('idExpiry', e.target.value),
@@ -25396,8 +26013,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, " \xB7 ", 1 + (rec.ids || []).length, " on file")), /*#__PURE__*/React.createElement(KV, {
       icon: "id",
       label: corp ? 'Document' : 'ID type',
-      value: rec.idType
-    }), /*#__PURE__*/React.createElement(KV, {
+      value: IDT.shownIdType(rec.idType)
+    }), !isHealthType(rec.idType) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
       value: rec.idNum,
@@ -25432,8 +26049,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, "Additional ID ", i + 1), /*#__PURE__*/React.createElement(KV, {
       icon: "id",
       label: "Type",
-      value: d.type
-    }), /*#__PURE__*/React.createElement(KV, {
+      value: IDT.shownIdType(d.type)
+    }), !isHealthType(d.type) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
       value: d.num,
@@ -25751,7 +26368,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
+      /* A health number is never searched, even one still cached. */
+      const idNum = isHealthType(r.idType) ? '' : r.idNum || '';
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${idNum} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
     const onClick = name => {
@@ -26133,12 +26752,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }) {
     const [phase, setPhase] = useState('loading');
     const [file, setFile] = useState(rec || {});
+    const startsFresh = !!(rec && isHealthType(rec.idType));
     const [draft, setDraft] = useState({
-      idType: rec && rec.idType || '',
-      idNum: rec && rec.idNum || '',
-      idIssued: rec && rec.idIssued || '',
-      idExpiry: rec && rec.idExpiry || '',
-      photo: rec && rec.photo || null
+      idType: !startsFresh && rec && rec.idType || '',
+      idNum: !startsFresh && rec && rec.idNum || '',
+      idIssued: !startsFresh && rec && rec.idIssued || '',
+      idExpiry: !startsFresh && rec && rec.idExpiry || '',
+      photo: !startsFresh && rec && rec.photo || null
     });
     const [err, setErr] = useState('');
     const [leaving, setLeaving] = useState(false);
@@ -26197,12 +26817,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             });
             setClients(prev => shared.project(prev));
             setFile(desk);
+            /* A health card on file is not the ID being recorded. Its
+               dates are not carried into the new one. */
+            const fresh = isHealthType(desk.idType);
             setDraft({
-              idType: desk.idType || '',
-              idNum: desk.idNum || '',
-              idIssued: desk.idIssued || '',
-              idExpiry: desk.idExpiry || '',
-              photo: desk.photo || null
+              idType: fresh ? '' : desk.idType || '',
+              idNum: fresh ? '' : desk.idNum || '',
+              idIssued: fresh ? '' : desk.idIssued || '',
+              idExpiry: fresh ? '' : desk.idExpiry || '',
+              photo: fresh ? null : desk.photo || null
             });
           } else {
             setFile(rec || {});
@@ -26225,6 +26848,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setErr('Type, number, and expiry are required.');
         return;
       }
+      if (isHealthType(draft.idType)) {
+        setErr(IDT.HEALTH_CARD_REFUSAL);
+        return;
+      }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -26245,7 +26872,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             const created = await shared.open(name, payload);
             if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
             clientId = created.clientId;
-          } else if (file.primaryDocumentId && api) {
+          } else if (file.primaryDocumentId && api && !isHealthType(file.idType)) {
             await api.updateDocument(clientId, file.primaryDocumentId, {
               docType: payload.idType,
               docNumber: payload.idNum,
@@ -26363,7 +26990,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.flag
       }
-    }, err), phase === 'edit' && /*#__PURE__*/React.createElement(KycEditor, {
+    }, err), phase === 'edit' && isHealthType(file && file.idType) && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mb-3",
+      style: {
+        color: CD.ink
+      }
+    }, IDT.HEALTH_CARD_SHOWN, ". ", IDT.HEALTH_CARD_REFUSAL), phase === 'edit' && /*#__PURE__*/React.createElement(KycEditor, {
       rec: shown,
       set: set,
       kind: file && file.kind || 'individual',
@@ -26436,7 +27068,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      payout php                 → pay-out side is Philippine pesos
      received usd               → pay-in side is US dollars
      philippine dollars         → either side is PHP (denomination word ignored)
-     remittance send aran       → Remittance-Send for customer Brooke
+     remittance send aran       → Remittance-Send for customer Aran
      fee > 50                   → fee over $50
      payout > 5000              → pay-out amount over 5000
      amount 1000..5000          → either amount between 1k and 5k
@@ -26995,7 +27627,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
-  const ID_TYPES = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Business Number'];
+  /* The catalogue's types (shared/id-document-types.js), the list the
+     server checks a save against. A health card is not one of them. */
+  const ID_TYPES = window.CDOS.idTypes().pickerLabels('person').concat(window.CDOS.idTypes().pickerLabels('business'));
 
   /* ---------- small shared UI ---------- */
   function StatCard({
@@ -27314,8 +27948,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const idExpired = rec && rec.idExpiry && rec.idExpiry < businessDate();
     const idOk = !idMissing && !idExpired;
     const idTone = idOk ? CD.green : CD.flag;
-    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID verified';
-    const maskedId = rec && rec.idNum ? '••••' + String(rec.idNum).slice(-3) : '';
+    /* Papers on file, not a verification: nothing on this desk checks
+       an ID with a provider. A health number is never shown, even masked. */
+    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID on file';
+    const maskedId = rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? '••••' + String(rec.idNum).slice(-3) : '';
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -27694,7 +28330,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (lock && lock.until <= nowMs) setLock(null);
     }, [nowMs, lock]);
 
-    // THE pricing call — one source of truth (also drives Reports' earnings)
+    // THE pricing call — one source of truth for the quote
     const pricing = useMemo(() => priceDeal({
       inCcy,
       outCcy,
@@ -27758,7 +28394,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const lockSecsLeft = lockLive ? Math.max(0, Math.round((lockLive.until - nowMs) / 1000)) : 0;
     const lockClock = `${Math.floor(lockSecsLeft / 60)}:${String(lockSecsLeft % 60).padStart(2, '0')}`;
 
-    // live compliance preview (in CAD-equivalent for the threshold test)
+    // live compliance preview (in the desk's own money for the threshold test)
     /* The deal's size in the desk's own money — what the reporting line is
        stated in, and therefore what it must be tested against. Null when
        this desk's books are kept in a currency the rate board cannot
@@ -28075,8 +28711,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         zIndex: 20
       }
     }, shownNames.map(n => {
-      const st = !clients[n] || !clients[n].idType ? 'missing ID' : clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'verified';
-      const ok = st === 'verified';
+      const st = !clients[n] || !clients[n].idType || !clients[n].idNum ? 'missing ID' : clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'ID on file';
+      const ok = st === 'ID on file';
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onClick: () => pickClient(n),
@@ -31407,7 +32043,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       };
     }, [rows, client, flags, range]);
 
-    // live summary of exactly what's on screen (CAD-equivalent)
+    // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {
       let vol = 0,
         fees = 0,
@@ -32476,9 +33112,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
    A single counter flow that reshapes itself to the job: exchange,
    remittance, cheque, money order, bill payment. The right rail is a
    live "before you post" checklist + deal ticket, so a teller trained
-   once just fills until everything turns green. Compliance (ID at $3k,
-   LCTR at $10k, structuring, purpose/source capture) is part of the
-   checklist, not an afterthought.
+   once just fills until everything turns green. Compliance (the pack's
+   identification and reporting lines, structuring, purpose/source
+   capture) is part of the checklist, not an afterthought.
    Exposed as window.CDOS.TxModal — the Ledger prefers it when present.
    ============================================================ */
 (function () {
@@ -36254,8 +36890,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
      • Cross-border EFT report (FINTRAC EFTR) — the international
        electronic-funds-transfer filing the majors keep getting fined
        for missing.
-   FX on every transfer is priced through the shared two-sided engine
-   (priceDeal), so the spread booked here lands in Revenue & Earnings.
+   FX on a transfer is quoted through the shared two-sided engine
+   (priceDeal), but the ledger books no spread on a remittance — only the
+   fee is earned (docs/OBLIGATION_LINES.md).
    ============================================================ */
 (function () {
   const {
@@ -38908,7 +39545,7 @@ table{border-collapse:collapse;width:100%}th{text-align:left;font-size:9.5px;tex
 <div class="meta"><b>${esc(biz)}</b><div>${esc(settings.msbNumber || '')}</div><div>Generated ${esc(stamp())}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
 <div class="note">${authority() ? `<b>${esc(authority())} cross-border reporting</b> — international electronic funds transfers at or above this desk's reporting line must be reported to ${esc(authority())}. Confirm the deadline and the exact form in ${esc(authority())}'s own guidance; this desk does not assert it.` : `<b>Cross-border reporting</b> — this desk's regulator is not stated on its jurisdiction pack, so no reporting obligation is asserted here. Install the pack for the country you operate in.`}
 ${threshold == null ? ' No reporting line has been set for this desk, so nothing on this page is flagged as reportable.' : ` The line used below is ${esc(fmtHome(threshold))}.`}</div>
-<div class="note" style="background:#f1efe7;border-color:#ddd;color:#555"><b>Not from the ledger.</b> Money transfers do not post to the server ledger yet (see docs/CASH_OWNERSHIP_INVARIANTS.md, "known scope limits"), so every figure on this page comes from this desk's own transfer records. It is not reconciled against the book and must not be treated as if it were.</div>
+<div class="note" style="background:#f1efe7;border-color:#ddd;color:#555"><b>Not from the ledger.</b> Transfers post to the server ledger, but this page is built from this desk's own transfer records rather than read from the book. It is not reconciled against the book and must not be treated as if it were.</div>
 <div class="kpis"><div class="kpi"><div class="l">Reportable transfers</div><div class="v">${threshold == null ? '—' : eft.length}</div></div><div class="kpi"><div class="l">Total value${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(total))}</div></div><div class="kpi"><div class="l">Reporting line</div><div class="v">${threshold == null ? '— not set' : esc(fmtHome(threshold))}</div></div></div>
 <table><thead><tr><th>Ref</th><th>Date</th><th>Sender</th><th>Beneficiary</th><th>Destination</th><th>Partner</th><th class="r">${esc(homeCcy() || 'Local')} value</th><th class="r">Payout</th><th>Purpose</th></tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:14px;color:#999">No reportable transfers in this period.</td></tr>'}</tbody></table>
 <div class="ft">Generated by CurrencyDesk OS${threshold == null ? '' : `. Cross-border transfers ≥ ${esc(fmtHome(threshold))}`}${wireReport() ? ` (${esc(wireReport())})` : ''}. Retain per record-retention policy.</div>
@@ -41579,7 +42216,10 @@ var CDOS_CHEQUE_FEE = (function () {
       setBusy(true);
       try {
         const persist = window.CDOS_PERSIST;
-        const snap = persist && persist.snapshot ? persist.snapshot() : {};
+        /* The same document the autosave sends. A manager's copy of the
+           role presets and billing plan is derived on sign-in and is not
+           theirs to upload; sending it is an owner-only change. */
+        const snap = persist && persist.outgoing ? persist.outgoing() : persist && persist.snapshot ? persist.snapshot() : {};
         const version = persist && persist.status ? persist.status().version : 0;
         const clean = draft.map(row => {
           const saved = (schedule || []).find(item => item.id === row.id);
@@ -43021,6 +43661,30 @@ var CDOS_CHEQUE_FEE = (function () {
      country line. */
   const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== homeCountry() ? rec.country : ''].filter(Boolean).join(', ');
 
+  /* The identifier a filing may start from: the client's ID, only when
+     its type is one the catalogue (shared/id-document-types.js) accepts
+     as ID and it has a number. A health card is never copied, and
+     neither is a type the catalogue does not list. Otherwise the three
+     identifier fields are left empty for the filer to type from the
+     document in front of them. */
+  function filingIdentifier(rec) {
+    rec = rec || {};
+    const num = String(rec.idNum || '').trim();
+    if (!num || !window.CDOS.idTypes().isAcceptedIdType(rec.idType)) return {
+      type: '',
+      num: '',
+      jurisdiction: ''
+    };
+    const jurisdiction = rec.province ? `${rec.province}, ${rec.country || homeCountry()}` : rec.country || '';
+    return {
+      type: rec.idType,
+      num,
+      jurisdiction
+    };
+  }
+  const ID_TYPE_HINT = 'Never a SIN. Never a health card.';
+  const ID_NUMBER_HINT = 'Document number. Never a SIN, never a health number.';
+
   /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
      each field: { id, label, cat, source, value, prompt, hint, missing } */
@@ -43069,7 +43733,7 @@ var CDOS_CHEQUE_FEE = (function () {
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : subj.country || '';
+      const subjId = filingIdentifier(subj);
       const win = settings && +settings.structuringDays || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
@@ -43088,11 +43752,11 @@ var CDOS_CHEQUE_FEE = (function () {
         hint: 'YYYY-MM-DD'
       }), F('su_occ', 'Occupation (descriptive)', '*', 'KYC', subj.occupation, {
         hint: 'e.g. "retail store manager"'
-      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), F('su_idtype', 'Identifier type', '*', 'KYC', subj.idType, {
-        hint: 'Never a SIN'
-      }), F('su_idnum', 'Identifier number', '*', 'KYC', subj.idNum, {
-        hint: 'Document number — never a SIN'
-      }), F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjJur, {
+      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), F('su_idtype', 'Identifier type', '*', 'KYC', subjId.type, {
+        hint: ID_TYPE_HINT
+      }), F('su_idnum', 'Identifier number', '*', 'KYC', subjId.num, {
+        hint: ID_NUMBER_HINT
+      }), F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjId.jurisdiction, {
         hint: 'Province / state + country that issued the ID'
       }), F('su_tel', 'Telephone', '', 'KYC', subj.phone), F('su_rel', 'Relationship to your business', '', 'PROMPT', '', {
         prompt: true,
@@ -43194,7 +43858,7 @@ var CDOS_CHEQUE_FEE = (function () {
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : cond.country || '';
+      const condId = filingIdentifier(cond);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [F('sa_amount', 'Amount (starting action)', '*', 'LEDGER', num(r.inAmt)), F('sa_currency', 'Currency — report ORIGINAL, do not convert', '*', 'LEDGER', r.inCcy), F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)), F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : {
@@ -43222,11 +43886,11 @@ var CDOS_CHEQUE_FEE = (function () {
           hint: 'YYYY-MM-DD'
         }), F('cd_occ', 'Occupation (descriptive)', '*', 'KYC', cond.occupation, {
           hint: 'e.g. "retail store manager"'
-        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), F('cd_idtype', 'Identifier type', '*', 'KYC', cond.idType, {
-          hint: 'Never a SIN'
-        }), F('cd_idnum', 'Identifier number', '*', 'KYC', cond.idNum, {
-          hint: 'Document number — never a SIN'
-        }), F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', idJur, {
+        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), F('cd_idtype', 'Identifier type', '*', 'KYC', condId.type, {
+          hint: ID_TYPE_HINT
+        }), F('cd_idnum', 'Identifier number', '*', 'KYC', condId.num, {
+          hint: ID_NUMBER_HINT
+        }), F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', condId.jurisdiction, {
           hint: 'Province / state + country that issued the ID'
         }), F('cd_tel', 'Telephone', '', 'KYC', cond.phone), {
           divider: 'Third party — acting on behalf of someone else?'
@@ -46819,38 +47483,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     }
   };
 
-  // What the provider reads off the ID document and hands back to us (deterministic per name so it's stable).
-  function extractIdentity(name) {
-    let h = 0;
-    const s = String(name || '');
-    for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) >>> 0;
-    const pick = arr => arr[h % arr.length];
-    const streets = ['Bathurst St', 'Dundas St W', 'Bloor St E', 'Eglinton Ave', 'Lakeshore Blvd', 'Yonge St', 'King St W', 'Queen St E'];
-    const cities = [['Toronto', 'ON', 'M5V 2T6'], ['Mississauga', 'ON', 'L5B 4M1'], ['Markham', 'ON', 'L3R 0B8'], ['Vaughan', 'ON', 'L4K 3N1'], ['Brampton', 'ON', 'L6Y 1M5']];
-    const idTypes = ["Driver's Licence", 'Passport', 'Provincial ID'];
-    const [city, province, postal] = pick(cities);
-    const num = 100 + h % 8900;
-    const idType = pick(idTypes);
-    const idNum = idType === 'Passport' ? 'P' + String(1000000 + h % 8999999) : 'DL ' + String(1000 + h % 8999) + '-' + String(100 + h % 899);
-    const yr = 1972 + h % 32,
-      mo = 1 + h % 12,
-      da = 1 + h % 27;
-    const pad = n => String(n).padStart(2, '0');
-    return {
-      address: `${num} ${pick(streets)}`,
-      city,
-      province,
-      postal,
-      country: 'Canada',
-      dob: `${yr}-${pad(mo)}-${pad(da)}`,
-      idType,
-      idNum,
-      idIssued: `20${20 + h % 4}-${pad(mo)}-${pad(da)}`,
-      idExpiry: `20${30 + h % 5}-${pad(mo)}-${pad(da)}`,
-      email: (s.toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').trim().split(/\s+/).slice(0, 2).join('.') || 'contact') + '@email.com'
-    };
-  }
-
   // A sent check used to copy a hit off the sample watchlist. That list
   // is gone, so a check does not report a sanctions result.
   function resolve(check) {
@@ -48220,8 +48852,8 @@ ${(filing.map || []).map(blockHTML).join('')}
   /* ====================================================================
      NEW CONTACT FLOW — scan ID → name & phone → verify → auto-fill
      A guided onboarding: capture the ID, capture name + phone (creates
-     the contact), run Persona, then write the extracted address / DOB /
-     ID details back onto the contact.
+     the contact). Persona is not connected, so no check runs and nothing
+     is read off the ID.
      ==================================================================== */
   function NewContactFlow({
     initialName,
@@ -49913,8 +50545,9 @@ ${snap}`;
    CurrencyDesk OS — Reports
    One-touch report generation off the live ledger. Pick a period,
    tap a report, and a formatted, print-ready document is built
-   instantly: Period Summary, the desk's large-cash compliance pack,
-   Revenue & Earnings, Transaction Register, Client & KYC Register.
+   instantly: End-of-Day Sign-Off, Period Summary, Profit & Loss, the
+   desk's large-cash compliance pack, Revenue & Earnings, Transaction
+   Register, Client & KYC Register.
    Print / Save-PDF and CSV export on every report.
 
    THESE ARE DOCUMENTS SOMEBODY SIGNS. The rule they follow is written
@@ -50900,14 +51533,15 @@ ${snap}`;
           const tx = data.live.filter(r => r.customer === n);
           const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
           const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-          const st = !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified';
-          return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, csvMoney(v)];
+          const idNum = kycIdNumber(c);
+          const st = !c.idType || !idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'ID on file';
+          return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
       }
       return [];
     };
 
-    /* ---------- the five documents ---------- */
+    /* ---------- the documents ---------- */
     const renderDoc = id => {
       const book = periodBook.summary;
       /* Why a figure on this document is a dash, in one short line. The
@@ -51640,7 +52274,7 @@ ${snap}`;
       }
       if (id === 'fintrac') {
         /* The pack names this document, because "FINTRAC / LCTR" is a
-           Canadian answer and this product is sold in six jurisdictions. A
+           Canadian answer and this product runs in many jurisdictions. A
            desk whose pack has not arrived gets a neutral title rather than
            somebody else's regulator on the letterhead. */
         const packTitle = regime.authority && regime.largeCode ? `${regime.authority} / ${regime.largeCode} Compliance Pack` : 'Large-Cash Compliance Pack';
@@ -51792,7 +52426,7 @@ ${snap}`;
             fontSize: 12,
             color: CD.faint
           }
-        }, "All active clients verified.") : data.kycGaps.map(k => /*#__PURE__*/React.createElement("div", {
+        }, "Every deal that needed an ID has one on file.") : data.kycGaps.map(k => /*#__PURE__*/React.createElement("div", {
           key: k.customer,
           style: {
             display: 'flex',
@@ -52139,9 +52773,9 @@ ${snap}`;
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = n => {
           const c = clients[n] || {};
-          if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft];
+          if (!c.idType || !kycIdNumber(c)) return ['missing ID', CD.flag, CD.flagSoft];
           if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft];
-          return ['verified', CD.green, CD.greenSoft];
+          return ['ID on file', CD.green, CD.greenSoft];
         };
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Client & KYC Register",
@@ -52194,14 +52828,14 @@ ${snap}`;
               ...tdS,
               color: CD.mute
             }
-          }, c.idType || '—'), /*#__PURE__*/React.createElement("td", {
+          }, kycIdType(c) || '—'), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               fontFamily: 'Space Mono, monospace',
               fontSize: 11,
               color: CD.mute
             }
-          }, c.idNum || '—'), /*#__PURE__*/React.createElement("td", {
+          }, kycIdNumber(c) || '—'), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute
@@ -53447,6 +54081,17 @@ ${snap}`;
      localStorage. See docs/GENERATED_DOCUMENTS.md.
      ============================================================ */
 
+  /* The ID cells of the Client & KYC Register, shared by the sheet and
+     the CSV so the two cannot differ. A health card is named as not
+     accepted and its number is never in either. */
+  function kycIdType(client) {
+    return window.CDOS.idTypes().shownIdType((client || {}).idType);
+  }
+  function kycIdNumber(client) {
+    const c = client || {};
+    if (window.CDOS.idTypes().isHealthCardType(c.idType)) return '';
+    return c.idNum || '';
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Reports,
     ReportHistory
@@ -53455,7 +54100,7 @@ ${snap}`;
 
 /* ---- os-src/cdos-pricing.jsx ---- */
 /* ============================================================
-   CurrencyDesk OS — Pricing Console  (roadmap #5)
+   CurrencyDesk OS — Pricing Console
    The owner's profit lever in one place. Reads & writes the SAME
    settings keys the Ledger prices from (settings.spreads, defaultSpread,
    defaultFee, marginFloor/Target/Enforce, payoutRound*, rateProvider) —
@@ -59161,8 +59806,9 @@ ${snap}`;
      A1 CurrencyDesk ID  →  A2 Password  →  A3 email-code keypad
    then the existing station picker / desktop. The shared on-screen
    keypad also powers desk-lock unlock (B) and operator handover (C).
-   Backend auth is unchanged: the ID resolves a staff record, the
-   password calls /api/auth/login, the code step is the (simulated) 2FA.
+   Backend auth: the ID resolves a staff record, the password calls
+   /api/auth/login/start, which emails a code to an email sign-in; the
+   code step checks it at /api/auth/login/verify.
    Tokens mirror the design exactly (ink #17140F, primary #1D6B45, …).
    ============================================================ */
 (function () {
@@ -61148,6 +61794,10 @@ window.CDOS_PERSIST = (function () {
      losing everything. */
   var version = 0;
   var baseline = {};
+  /* False until the signed-in person is the owner. A teller must not
+     upload the two keys the shell derives on the way in. */
+  var savesOwnerSettings = false;
+  var reloaded = null;
 
   var SAVE_EVERY_MS = 4000;
   /* Back off rather than hammer a server that is already unhappy, but never
@@ -61165,10 +61815,40 @@ window.CDOS_PERSIST = (function () {
     }
     return out;
   }
+  /* A health number is not saved and is not kept. cdos-backend.js
+     removes one from this browser's copies; this runs it again before a
+     save is built and after the server's copy is written in. */
+  function scrubHealth() {
+    if (window.CDOS && typeof window.CDOS.scrubLocalHealthNumbers === 'function') window.CDOS.scrubLocalHealthNumbers();
+  }
   function snapshot() {
+    scrubHealth();
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
+  }
+  /* What actually goes to the server. Owners send the desk as it stands.
+     Everyone else leaves out cdos_perms and billingPlan. Those two are
+     rewritten on sign-in from the role and the plan the server already
+     has. Sending them looked like a change and the save was refused. */
+  function outgoing() {
+    var snap = snapshot();
+    if (savesOwnerSettings) return snap;
+    delete snap.cdos_perms;
+    if (typeof snap.cdos_settings === 'string') {
+      try {
+        var parsed = JSON.parse(snap.cdos_settings);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          delete parsed.billingPlan;
+          snap.cdos_settings = JSON.stringify(parsed);
+        }
+      } catch (e) {
+        /* A string that is not JSON is sent as stored. A real change in
+           it is still refused. Any other failure is a bug. */
+        if (!(e instanceof SyntaxError)) throw e;
+      }
+    }
+    return snap;
   }
   function clearKeys() { keys().forEach(function (k) { localStorage.removeItem(k); }); }
   function applyState(obj) {
@@ -61176,6 +61856,7 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+    scrubHealth();
   }
 
   /* Missing, null, or "" is not a saved shop. */
@@ -61268,9 +61949,9 @@ window.CDOS_PERSIST = (function () {
      theirs is lost. `cdos_rows_v1` is one key holding every transaction, so
      two tellers trading at once is exactly that case. The merge does not
      save us there and is not pretending to: the real answer is that
-     transactions belong in a table, one row each, which is why promoting
-     them is the next piece of work (docs/ARCHITECTURE.md §3). This makes
-     the common case safe and makes the remaining one smaller. */
+     transactions are already a table in the ledger (docs/ARCHITECTURE.md
+     §3), and `cdos_rows_v1` is a stale second copy. This makes the common
+     case safe and makes the remaining one smaller. */
   function merge(base, mine, theirs) {
     var out = {}, all = {};
     [base, mine, theirs].forEach(function (o) {
@@ -61325,11 +62006,11 @@ window.CDOS_PERSIST = (function () {
     return 'restored';
   }
 
-  async function save() {
+  async function save(opts) {
     if (!tenantId) return;
     if (health === 'stopped') return;           // a person has to clear this
     if (Date.now() < nextAttemptAt) return;     // backing off
-    var snap = snapshot();
+    var snap = outgoing();
     var sig = JSON.stringify(snap);
     if (sig === lastSig) return; // unchanged since the last successful save
 
@@ -61379,10 +62060,22 @@ window.CDOS_PERSIST = (function () {
       return;
     }
 
+    /* Two refusals share 403. The body says which one this is. An
+       owner-only setting is "forbidden" and is handled below. Anything
+       else, including the cheque fee refusal, stops here. */
+    var denied = null;
+    var deniedRaw = '';
+    if (r.status === 403) {
+      deniedRaw = await r.text();
+      if (deniedRaw) {
+        try { denied = JSON.parse(deniedRaw); } catch (e) { if (!(e instanceof SyntaxError)) throw e; }
+      }
+    }
+
     /* A refusal is the answer. Sending the same document again writes
        another refusal row and does not save anything. The keys stay
        in this browser. */
-    if (r.status === 403) {
+    if (r.status === 403 && !(denied && denied.error === 'forbidden')) {
       lastSig = sig;
       health = 'stopped';
       return announce({
@@ -61403,6 +62096,47 @@ window.CDOS_PERSIST = (function () {
         level: 'stopped', code: 'state_too_large',
         detail: (over && over.detail) || "This desk's records are too large to save. Nothing is being saved. Contact CurrencyDesk.",
       });
+    }
+
+    /* A real change to an owner-only setting. Put the stored document
+       back and keep saving. Stopping here used to freeze every later
+       customer and day-state write for the rest of the session.
+       keepTyped is the Rates & fees Save: the panel keeps what was
+       typed and says so itself. This path must not toast, and it must
+       not put an error code on screen. */
+    if (r.status === 403) {
+      var keepTyped = !!(opts && opts.keepTyped);
+      if (!keepTyped) {
+        /* The refusal names the rule. */
+        var detail = (denied && (denied.detail || denied.message)) || 'Only the owner can change that setting. Nothing was saved.';
+        announce({
+          level: 'retrying', code: 'settings_forbidden',
+          detail: detail,
+        });
+      }
+      var again;
+      try {
+        again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
+      } catch (e) {
+        return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      }
+      if (!again.ok) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      var fresh = await again.json();
+      if (!fresh || !fresh.state) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      applyState(fresh.state);
+      if (typeof reloaded === 'function') reloaded();
+      version = typeof fresh.version === 'number' ? fresh.version : version;
+      baseline = snapshot();
+      lastSig = JSON.stringify(outgoing());
+      if (keepTyped) {
+        /* The bottom strip is the toast. This refusal does not use it. */
+        var toast = document.getElementById('cdos-persist-banner');
+        if (toast) toast.remove();
+        if (typeof window.dispatchEvent !== 'function') throw new Error('desk save bridge is not loaded');
+        window.dispatchEvent(new CustomEvent('cdos-rates-refused'));
+        return 'refused';
+      }
+      return;
     }
 
     /* Session gone. Retrying cannot fix it either; the OS handles the
@@ -61427,7 +62161,7 @@ window.CDOS_PERSIST = (function () {
     timer = setInterval(save, SAVE_EVERY_MS);
     window.addEventListener('beforeunload', function () {
       if (!tenantId || health === 'stopped') return;
-      var snap = snapshot();
+      var snap = outgoing();
       if (JSON.stringify(snap) === lastSig) return;
       try {
         /* Carries the version like any other save. There is no chance to
@@ -61456,10 +62190,17 @@ window.CDOS_PERSIST = (function () {
   // (after seeding a fresh desk we save() explicitly, which sets this)
   function markClean() { baseline = snapshot(); lastSig = JSON.stringify(baseline); }
 
+  function setOwner(isOwner) { savesOwnerSettings = !!isOwner; }
+  function onReloaded(fn) { reloaded = typeof fn === 'function' ? fn : null; return function () { if (reloaded === fn) reloaded = null; }; }
+
   return {
     begin: begin, save: save, end: end, startAutosave: startAutosave,
     snapshot: snapshot, applyState: applyState, clearKeys: clearKeys,
     markClean: markClean, tenant: function () { return tenantId; },
+    setOwner: setOwner, onReloaded: onReloaded,
+    /* The document a save sends, for a screen that saves on its own
+       (the Fee schedule). It leaves out what a non-owner must not upload. */
+    outgoing: outgoing,
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
     noteVersion: function (v) { if (typeof v === 'number') version = v; },
@@ -64776,7 +65517,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        has posted nothing shows nothing, rather than 38 invented deals and 18
        invented customers that a new owner has to recognise as fiction before
        they can trust anything else on the screen. What is here is filled from
-       the ledger — see `loadLedger` below. */
+       the ledger — see `loadLedger` in cdos-backend.js, called by the Ledger app. */
     const [rows, setRows] = useState(() => {
       try {
         const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null');
@@ -64962,11 +65703,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return def;
       }
     });
-    // ---- ONE shared opening baseline + ONE shared wholesale-receipts store ----
-    // both the Vault (position) and the Till (expected) derive from these via
-    // window.CDOS.position(); receipts are kept OUT of the customer ledger so a
-    // wholesale purchase never trips a compliance flag, yet the till still
-    // counts against them. Edited in the Till's reconcile, read by the Vault.
+    // ---- legacy opening baseline + wholesale-receipts stores ----
+    // Both are empty now and nothing reads cash from them: cash comes from the
+    // ledger (see the headstone above `defaultBaseline` in cdos-base.jsx).
     const [baseline, setBaseline] = useState(() => {
       try {
         const r = localStorage.getItem('cdos_baseline_v1');
@@ -66045,7 +66784,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null); // null = all apps; array = allowlist for the signed-in employee
     const [pinGate, setPinGate] = useState(null); // { title, sub, name, expected, onOk } when a PIN is being asked
+    /* The bridge must know the role before hydrate, because the first
+       save can run inside it. A missing bridge is a boot failure. */
+    const markPersistRole = role => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.setOwner) throw new Error('desk save bridge is not loaded');
+      window.CDOS_PERSIST.setOwner(role === 'Owner');
+    };
     const applyRole = s => {
+      markPersistRole(s.role);
       setMe({
         name: s.name,
         role: s.role
@@ -66272,6 +67018,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             name,
             role
           });
+          /* The save bridge follows the same role, so an owner's save
+             keeps the role presets and a teller's leaves them out. */
+          markPersistRole(role);
         }).catch(() => {}); // offline: leave the desk alone
       };
 
@@ -66315,10 +67064,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
               _adopted: undefined
             }]
           }));
-          if (u.plan) setSettings(s => ({
+          /* The plan is the owner's field. Copying it for anyone else is a settings write. */
+          if (u.plan && rec.role === 'Owner') setSettings(s => ({
             ...s,
             billingPlan: u.plan
           }));
+          markPersistRole(rec.role);
           srvUserRef.current = u;
           setSrvUser(u);
           setUser(rec.code || rec.name);
@@ -67086,10 +67837,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          ledger and the Ledger app's own fetch of it. Reseating it wholesale
          raced that fetch and won: the Ledger showed one record while the
          ledger held two. So anything already carrying a server id is kept —
-         the book is the book — and the blob supplies only what the ledger has
-         never heard of, which today is every deal type that does not post
-         yet: cheques, remittances, money orders, bill payments. When those
-         post, this whole store goes. */
+         the book is the book — and the blob supplies only rows the ledger has
+         never heard of (a desk with no ledger). Every deal type now posts —
+         docs/CASH_OWNERSHIP_INVARIANTS.md, Known scope limits. */
       setRows(current => {
         const saved = rd('cdos_rows_v1', []);
         if (!Array.isArray(saved)) return current;
@@ -67123,6 +67873,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         } catch (e) {}
       }, 0);
     };
+    useEffect(() => {
+      if (!window.CDOS_PERSIST || !window.CDOS_PERSIST.onReloaded) return;
+      return window.CDOS_PERSIST.onReloaded(function () {
+        reseatFromStorage();
+      });
+    }, []);
     // A brand-new desk starts CLEAN (no demo transactions/clients), seeded from
     // the onboarding answers: business identity, home currency, ID threshold,
     // one branch named for the business, the owner as the sole employee.
@@ -67380,10 +68136,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             _adopted: undefined
           }]
         }));
-        if (srvPlan) setSettings(s => ({
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({
           ...s,
           billingPlan: srvPlan
         }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
         setUser(rec.code || rec.name);
@@ -67399,10 +68156,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             _adopted: undefined
           }]
         }));
-        if (srvPlan) setSettings(s => ({
+        if (srvPlan && rec.role === 'Owner') setSettings(s => ({
           ...s,
           billingPlan: srvPlan
         }));
+        markPersistRole(rec.role);
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
         setUser(rec.code || rec.name);
@@ -67448,6 +68206,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           ...s,
           employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec]
         }));
+        markPersistRole('Owner');
         srvUserRef.current = u && u.tenantId ? u : null;
         setSrvUser(u && u.tenantId ? u : null);
         setUser(rec.code);
@@ -67461,6 +68220,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       current: pwTemp && pwTemp.current,
       onDone: async () => {
         setPwTemp(null);
+        markPersistRole(authRec && authRec.role);
         await hydrateTenant();
         routeAfterAuth(authRec);
       },
@@ -67522,6 +68282,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (meApps && id !== 'settings' && !meApps.includes(id)) return false;
       if (id === 'dashboard' || id === 'reports' || id === 'vault' || id === 'branches') return can('canViewReports');
       if (id === 'till') return can('canViewReports') || can('canCloseDay');
+      /* Settings stays off a teller's dock. They open Rates & fees from
+         their profile. The panel locks what they cannot change. */
       if (id === 'settings') return me.role === 'Owner' || perms.Teller.canSettings;
       return true;
     };
@@ -67810,6 +68572,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             settings,
             setSettings,
             me,
+            serverRole: srvUser && srvUser.role,
             log,
             tickerCfg,
             setTicker,

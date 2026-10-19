@@ -4,7 +4,8 @@
    identity, localization, compliance thresholds, rate/fee defaults,
    receipt content, staff permissions and the ticker tape. Everything
    reads/writes the shared `settings` object (persisted by the shell)
-   except permissions (perms) and the ticker (tickerCfg).
+   except permissions (perms), the ticker (tickerCfg), and the rows the
+   server owns (cost method, thresholds, currencies, sign-ins).
    ============================================================ */
 (function () {
   const { useState, useEffect } = React;
@@ -66,6 +67,55 @@
   const Txt = ({ k, placeholder, w = 220 }) => { const { settings, set } = React.useContext(SettingsCtx); return <input value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, width: w }} />; };
   const Money = ({ k }) => { const { settings, set, base } = React.useContext(SettingsCtx); return (<div className="flex items-center" style={inSty}><span className="px-2 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{base}</span><input type="number" value={settings[k] ?? ''} onChange={e => set(k, +e.target.value)} className="text-sm px-2 py-2 outline-none text-right bg-transparent" style={{ width: 110, fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${CD.line}` }} /></div>); };
   const Inp = ({ k, placeholder, type }) => { const { settings, set } = React.useContext(SettingsCtx); return <input type={type || 'text'} value={settings[k] || ''} onChange={e => set(k, e.target.value)} placeholder={placeholder} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} />; };
+
+  /* ---------- the username (server-picked) ----------
+     amir.yorkfx: their first name and the shop. The server picks it, because
+     it has to be free on every desk and only the server can see the others
+     (server/src/auth/username.ts). While the box holds the server's
+     suggestion it follows the name as it is typed. Once the manager types in
+     the box it is theirs, and the server is asked whether it is free
+     instead. Once the sign-in exists it is fixed: the server knows the
+     person by it. Module scope for the same reason as the controls above. */
+  const isWorkEmail = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((s || '').trim());
+  function UsernameField({ name, code, typed, email, locked, online, onChange }) {
+    const [check, setCheck] = useState(null);   // { available, detail } for what is in the box
+    useEffect(() => {
+      const n = (name || '').trim();
+      if (locked || typed || !online || !n || n === 'New employee') return;
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?name=' + encodeURIComponent(n), { credentials: 'same-origin' })
+          .then(r => (r.ok ? r.json() : null))
+          .then(d => { if (live && d && d.suggestion) { onChange(d.suggestion, false); setCheck({ available: true, detail: null }); } })
+          .catch(() => {});
+      }, 300);
+      return () => { live = false; clearTimeout(t); };
+    }, [name, typed, locked, online]);
+    useEffect(() => {
+      const c = (code || '').trim();
+      if (locked || !typed || !online) return;
+      if (!c) { setCheck(null); return; }
+      let live = true;
+      const t = setTimeout(() => {
+        fetch('/api/staff/username?check=' + encodeURIComponent(c), { credentials: 'same-origin' })
+          .then(r => (r.ok ? r.json() : null))
+          .then(d => { if (live && d && d.check) setCheck({ available: d.check.available, detail: d.check.detail }); })
+          .catch(() => {});
+      }, 300);
+      return () => { live = false; clearTimeout(t); };
+    }, [code, typed, locked, online]);
+    const note = locked
+      ? 'What they type to sign in. It stays the same once their sign-in exists.'
+      : isWorkEmail(email)
+        ? 'We’ll email their username and a temporary password to ' + email.trim() + '.'
+        : 'Add a work email and we’ll email them their username and a temporary password.';
+    return (<label className="block">
+      <div className="text-[11px] mb-1" style={{ color: CD.mute }}>Staff ID / username</div>
+      <input value={code || ''} readOnly={locked} onChange={ev => onChange(ev.target.value.toLowerCase().replace(/\s+/g, ''), true)} placeholder="Fills in from their name" autoComplete="off" spellCheck={false} className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace', ...(locked ? { color: CD.mute, background: CD.lineSoft } : {}) }} />
+      {!locked && check && <div className="text-[10.5px] mt-1" style={{ color: check.available ? CD.green : CD.flag }}>{check.available ? 'Available' : check.detail}</div>}
+      <div className="text-[10.5px] mt-1" style={{ color: CD.faint }}>{note}</div>
+    </label>);
+  }
 
   /* ---------- cost basis method (server-backed, NOT a saved preference) ----------
      Every other control on this screen writes the shared `settings` object the
@@ -680,11 +730,140 @@
     );
   }
 
-  function SettingsView({ perms, setPerms, settings, setSettings, me, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
+  /* Rates & fees. A default spread from anyone but a manager or the owner
+     is refused, so that box is not offered to them. Every other price on
+     this panel is the owner's on screen: a grey pill and a lock, not a
+     field they type and then get refused. A manager still edits the
+     default spread. Save is absent when nothing here is editable. A save
+     the server still refuses keeps the typed numbers and repeats that
+     person's line above Save. No toast, no error code. */
+  const RATES_TELLER_LINE = 'Only the owner can change rates and fees. Ask the owner or a manager.';
+  const RATES_MANAGER_LINE = 'Only the owner can change most of these. You can change the default spread.';
+  const RATES_FIELD = 'Only the owner can change this.';
+  const RATES_SPREAD = 'A manager or the owner can change this.';
+  const rates2 = (n) => (Number.isFinite(+n) ? (+n).toFixed(2) : '0.00');
+  function LockedValue({ field, children }) {
+    /* Pill text uses the body ink. Mute grey on the disabled chip is under 4.5:1. */
+    return (
+      <span data-rates-locked="1" data-rates-field={field} className="inline-flex items-center gap-1.5 text-sm px-2 py-1.5" style={{ color: CD.text, background: 'var(--cd-disabled)', borderRadius: 8 }}>
+        <Ic n="lock" s={12} c={CD.text} /><span style={{ fontVariantNumeric: 'tabular-nums' }}>{children}</span>
+      </span>
+    );
+  }
+  function RatesFees({ me, serverRole, settings, setSettings }) {
+    const owner = serverRole ? serverRole === 'administrator' : me.role === 'Owner';
+    const spreadOn = owner || (serverRole ? serverRole === 'branch_manager' : me.role === 'Manager');
+    const [draft, setDraft] = useState(null);
+    const [note, setNote] = useState('');
+    const rates = draft || settings;
+    const quoteHome = (() => { const p = window.CDOS.deskPack && window.CDOS.deskPack(); return (p && p.homeCurrency) || 'CAD'; })();
+    useEffect(() => {
+      const onRefuse = () => setNote('refused');
+      window.addEventListener('cdos-rates-refused', onRefuse);
+      return () => window.removeEventListener('cdos-rates-refused', onRefuse);
+    }, []);
+    const setKey = (k, v) => { setDraft({ ...rates, [k]: v }); setNote(''); };
+    const save = async () => {
+      const next = { ...settings, ...rates };
+      setSettings(next);
+      try { localStorage.setItem('cdos_settings', JSON.stringify(next)); }
+      catch (e) { throw e; }
+      const bridge = window.CDOS_PERSIST;
+      if (!bridge || !bridge.save) throw new Error('desk save bridge is not loaded');
+      setNote((await bridge.save({ keepTyped: true })) === 'refused' ? 'refused' : 'saved');
+    };
+    const num = (field, value, unit, onChange) => (
+      <span data-rates-field={field} className="flex items-center" style={inSty}>
+        <input type="number" step="0.1" value={value ?? ''} onChange={e => onChange(+e.target.value)} className="text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ width: 90, fontVariantNumeric: 'tabular-nums' }} />
+        {unit && <span className="px-2 text-[11px]" style={{ color: CD.mute }}>{unit}</span>}
+      </span>
+    );
+    const pick = (field, value, onChange, opts, width) => (
+      <span data-rates-field={field}>
+        <select value={value} onChange={e => onChange(e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width }}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+      </span>
+    );
+    const shown = (field, text) => <LockedValue field={field}>{text}</LockedValue>;
+    const providers = ['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'];
+    const roundTo = [['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']];
+    const canSave = owner || spreadOn;
+    const line = owner ? '' : (spreadOn ? RATES_MANAGER_LINE : RATES_TELLER_LINE);
+    return (<div data-rates-panel>
+      <SectionTitle icon="coins" title="Rates & fees" sub="Two-sided pricing. The desk buys under mid and sells over mid. The gap is your margin." />
+      {!owner && <div data-rates-owner-line className="text-[12.5px] mb-4" style={{ color: CD.ink }}>{line}</div>}
+      <Row title="Rate feed provider" desc={owner ? "Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads and margins are applied on top." : RATES_FIELD}>
+        {owner ? pick('rateProvider', rates.rateProvider || providers[0], (v) => { setKey('rateProvider', v); try { localStorage.setItem('yorkfx_rate_provider', v); } catch (e) { throw e; } }, providers.map(p => [p, p]), 230) : shown('rateProvider', rates.rateProvider || providers[0])}
+      </Row>
+      <Row title="Default spread" desc={RATES_SPREAD}>
+        {spreadOn ? num('defaultSpread', rates.defaultSpread, '%', v => setKey('defaultSpread', v)) : shown('defaultSpread', rates2(rates.defaultSpread) + '%')}
+      </Row>
+      {note === 'refused' && line && <div data-rates-refusal role="status" className="mt-3 p-3 text-[12.5px]" style={{ background: 'var(--cd-chip)', color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9 }}>{line}</div>}
+      {canSave && <div className="mt-3 flex items-center justify-end gap-3">
+        {note === 'saved' && <span data-rates-saved className="text-[12px]" style={{ color: CD.mute }}>Saved</span>}
+        <button type="button" data-rates-save onClick={save} className="text-[12px] px-3.5 py-2 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Save</button>
+      </div>}
+      <Row title="Default commission" desc={owner ? 'Suggested flat fee pre-filled on a new deal.' : RATES_FIELD}>
+        {owner ? num('defaultFee', rates.defaultFee, settings.baseCurrency || 'CAD', v => setKey('defaultFee', v)) : shown('defaultFee', rates2(rates.defaultFee) + ' ' + (settings.baseCurrency || 'CAD'))}
+      </Row>
+      <div className="mt-5 mb-1 text-sm font-medium flex items-center gap-1.5" style={{ color: CD.ink }}><Ic n="activity" s={15} c={CD.ink} /> Margin floor</div>
+      <div className="text-[11px] mb-1" style={{ color: CD.mute }}>The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override.</div>
+      <Row title="Target margin" desc={owner ? 'At or above this, the meter reads green.' : RATES_FIELD}>
+        {owner ? num('marginTargetPct', rates.marginTargetPct ?? 1, '%', v => setKey('marginTargetPct', v)) : shown('marginTargetPct', rates2(rates.marginTargetPct ?? 1) + '%')}
+      </Row>
+      <Row title="Minimum floor" desc={owner ? 'Below this, the deal is flagged red.' : RATES_FIELD}>
+        {owner ? num('marginFloorPct', rates.marginFloorPct ?? 0.5, '%', v => setKey('marginFloorPct', v)) : shown('marginFloorPct', rates2(rates.marginFloorPct ?? 0.5) + '%')}
+      </Row>
+      <Row title="Below the floor" desc={owner ? 'Warn lets the teller post anyway (logged). Require override blocks the post until they confirm with a reason.' : RATES_FIELD}>
+        {owner ? <span data-rates-field="marginEnforce"><Seg value={rates.marginEnforce || 'block'} onPick={v => setKey('marginEnforce', v)} opts={[['warn', 'Warn only'], ['block', 'Require override']]} /></span> : shown('marginEnforce', (rates.marginEnforce || 'block') === 'warn' ? 'Warn only' : 'Require override')}
+      </Row>
+      <div className="mt-5">
+        <div className="text-sm font-medium" style={{ color: CD.ink }}>Spread by currency</div>
+        <div className="text-[11px] mt-0.5 mb-2" style={{ color: owner ? CD.mute : CD.ink }}>{owner ? 'Tight on liquid pairs, wider on exotics. Blank uses the default. We buy and sell are previewed live.' : RATES_FIELD}</div>
+        <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
+          <table className="w-full text-sm border-collapse">
+            <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
+              <th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">Spot · {quoteHome}</th><th className="px-3 py-2 text-right">Spread %</th><th className="px-3 py-2 text-right">We buy</th><th className="px-3 py-2 text-right">We sell</th>
+            </tr></thead>
+            <tbody>{(CCY || []).filter(c => c !== quoteHome).map(c => {
+              const spreads = rates.spreads || {};
+              const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : ((window.CDOS.homePerUnit && window.CDOS.homePerUnit(c)) || 0);
+              const custom = spreads[c] != null && spreads[c] !== '';
+              return (<tr key={c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+                <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}>{c}</td>
+                <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{mid.toFixed(4)}</td>
+                <td className="px-3 py-2 text-right">
+                  {owner ? <span data-rates-field={'spread-' + c} className="inline-flex items-center" style={{ border: `1px solid ${custom ? CD.ink : CD.line}`, borderRadius: 7, overflow: 'hidden' }}>
+                    <input type="number" step="0.1" value={spreads[c] ?? ''} onChange={e => { const v = e.target.value; setDraft({ ...rates, spreads: { ...(rates.spreads || {}), [c]: v === '' ? '' : +v } }); setNote(''); }} placeholder={String(+rates.defaultSpread || 1.5)} className="text-sm px-2 py-1.5 outline-none text-right bg-transparent" style={{ width: 64, fontVariantNumeric: 'tabular-nums' }} />
+                    <span className="px-1.5 text-[11px]" style={{ color: CD.faint }}>%</span>
+                  </span> : shown('spread-' + c, rates2(custom ? spreads[c] : (+rates.defaultSpread || 1.5)) + '%')}
+                </td>
+                <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.flag }}>{buyUnitCad(c, rates).toFixed(4)}</td>
+                <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.green }}>{sellUnitCad(c, rates).toFixed(4)}</td>
+              </tr>); })}</tbody>
+          </table>
+        </div>
+      </div>
+      <div className="mt-5 mb-2 text-sm font-medium" style={{ color: CD.ink }}>Pay-out rounding</div>
+      <Row title="Round the customer pay-out" desc={owner ? 'Cash desks rarely hand out odd cents. Applied to the amount the customer receives.' : RATES_FIELD}>
+        {owner ? <span data-rates-field="payoutRound" className="flex items-center gap-2">
+          <Seg value={rates.payoutRoundMode || 'nearest'} onPick={v => setKey('payoutRoundMode', v)} opts={[['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]} />
+          {pick('payoutRoundTo', rates.payoutRoundTo ?? 0.01, v => setKey('payoutRoundTo', +v), roundTo, 116)}
+        </span> : shown('payoutRound', (rates.payoutRoundMode || 'nearest') + ' ' + rates2(rates.payoutRoundTo ?? 0.01))}
+      </Row>
+      <Row title="Rate-lock duration" desc={owner ? 'How long a customer quote holds the quoted rate before it must be re-priced.' : RATES_FIELD}>
+        {owner ? pick('rateLockMins', rates.rateLockMins || 15, v => setKey('rateLockMins', +v), [5, 10, 15, 30, 60].map(m => [m, m + ' minutes']), 130) : shown('rateLockMins', (rates.rateLockMins || 15) + ' minutes')}
+      </Row>
+      <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="coins" s={13} c={CD.mute} /><span>These prices drive every new deal in the Ledger. The spread booked at the counter is the spread that lands in <b style={{ color: CD.ink }}>Revenue &amp; Earnings</b>. Mid rates come from the <b style={{ color: CD.ink }}>Rate Board</b>.</span></div>
+    </div>);
+  }
+
+  function SettingsView({ perms, setPerms, settings, setSettings, me, serverRole, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
-    const canSys = me.role === 'Owner' || perms.Teller.canSettings;
+    /* A teller sign-in rewrites the shared preset. The rail follows the
+       signed-in role, so a manager still sees their tabs after that. */
+    const canSys = me.role === 'Owner' || me.role === 'Manager' || perms.Teller.canSettings;
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [packRev, setPackRev] = useState(0);
     const [addingLoc, setAddingLoc] = useState(false);   // enterprise Add-location modal (shared with Branch Network's rail)
@@ -696,6 +875,8 @@
     const [empSel, setEmpSel] = useState(null);   // selected employee id — master/detail view
     // a PIN the owner has just issued, shown once so it can be read out
     const [newPin, setNewPin] = useState({});         // employee id → { pin } | { err }
+    // what creating a sign-in did: where it was sent, or a temporary password to read out once
+    const [newSignIn, setNewSignIn] = useState({});   // employee id → { detail, temp }
     // ---- server sign-in accounts (per-employee credentials) ----
     const [srvStaff, setSrvStaff] = useState(null);       // staffId → server account
     const [srvState, setSrvState] = useState('loading');  // loading | ok | offline | forbidden
@@ -800,7 +981,9 @@
           // (York FX this week, another next week) shows THEIR live details,
           // not a stale local copy. Only fill blanks \u2014 never clobber unsaved edits.
           const cfg = d.tenant.siteConfig;
-          if (cfg) setSettings(s => {
+          /* Filling a blank shop field from the public site is a settings
+             write. Only the owner may do that. */
+          if (cfg && me.role === 'Owner') setSettings(s => {
             const patch = {};
             ['phone:bizPhone', 'email:bizEmail', 'address:bizAddress', 'city:bizCity', 'region:bizRegion', 'postal:bizPostal'].forEach(pair => {
               const [src, dst] = pair.split(':');
@@ -809,8 +992,7 @@
             if (Array.isArray(cfg.hours) && cfg.hours.length && !(Array.isArray(s.hours) && s.hours.length)) patch.hours = cfg.hours;
             return Object.keys(patch).length ? { ...s, ...patch } : s;
           });
-        })
-        .catch(() => {});
+        });
     }, []);
     // business hours: a template until the shop edits them; the editor and the
     // publisher both read this fallback so a fresh shop still ships sane hours
@@ -987,6 +1169,11 @@
     const setT = (patch, note) => { setTicker(t => ({ ...t, ...patch })); if (note) log('Ticker updated', note); };
     const toggleCcy = (code) => setT({ hidden: hidden.includes(code) ? hidden.filter(c => c !== code) : [...hidden, code] }, code);
 
+    /* Shop, compliance, localization, billing, payment, and role presets
+       are the owner's. Search does not offer them to anyone else. The
+       server still refuses the write. */
+    const ownerDesk = me.role === 'Owner';
+    const ownerOnlyTab = { business: 1, localization: 1, compliance: 1, billing: 1, payment: 1, permissions: 1 };
     const NAV_GROUPS = canSys ? [
       ['Business', [
         ['business', 'Business profile', 'building'],
@@ -1013,7 +1200,17 @@
       ['Access', [
         ['permissions', 'Role presets', 'id'],
       ]],
-    ] : [];
+    ] : [
+      /* A cashier does not get the rest of this rail. They can open
+         Rates & fees and read the locked prices. */
+      ['App settings', [
+        ['rates', 'Rates & fees', 'percent'],
+      ]],
+    ];
+    const visibleNav = NAV_GROUPS
+      .map(([group, items]) => [group, items.filter(([id]) => ownerDesk || !ownerOnlyTab[id])])
+      .filter(([, items]) => items.length);
+    useEffect(() => { if (!ownerDesk && ownerOnlyTab[tab]) setTab('account'); }, [tab, ownerDesk]);
 
     return (<SettingsCtx.Provider value={ctxVal}><div className="flex settings-shell" style={{ height: '100%' }}>
       {/* nav rail */}
@@ -1030,7 +1227,7 @@
           <input value={navQ} onChange={e => setNavQ(e.target.value)} placeholder="Search settings…" className="outline-none text-[12.5px] bg-transparent w-full" />
           {navQ && <button onClick={() => setNavQ('')} className="grid place-items-center flex-none" style={{ color: CD.faint }}><Ic n="x" s={13} c={CD.faint} /></button>}
         </div>}
-        {NAV_GROUPS.map(([group, items]) => {
+        {visibleNav.map(([group, items]) => {
           const shownItems = items.filter(([id, label]) => navMatch(id, label));
           if (!shownItems.length) return null;
           return (
@@ -1043,7 +1240,7 @@
             ))}
           </div>
         ); })}
-        {canSys && navQ.trim() && !NAV_GROUPS.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && <div className="text-[11px] px-2 py-3 text-center" style={{ color: CD.faint }}>Nothing matches “{navQ.trim()}”.</div>}
+        {canSys && navQ.trim() && !visibleNav.some(([, items]) => items.some(([id, label]) => navMatch(id, label))) && <div className="text-[11px] px-2 py-3 text-center" style={{ color: CD.faint }}>Nothing matches “{navQ.trim()}”.</div>}
       </div>
 
       {/* panels */}
@@ -1363,10 +1560,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <Row title="Require a count before closing the day" desc="Every currency drawer must be counted before the trading day can be locked.">
             <Sw on={!!settings.requireCountOnClose} click={() => toggleSet('requireCountOnClose', 'Require count on close')} />
           </Row>
-          <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Handoffs</div>
-          <Row title="Require a count when the drawer changes hands" desc="When one teller hands the drawer to another, count it first and record any variance against the outgoing operator.">
+          {ownerDesk && <div className="text-[10px] uppercase tracking-widest mb-1 mt-6" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Handoffs</div>}
+          {ownerDesk && <Row title="Require a count when the drawer changes hands" desc="When one teller hands the drawer to another, count it first and record any variance against the outgoing operator. The owner sets this.">
             <Sw on={!!settings.requireCountOnHandoff} click={() => toggleSet('requireCountOnHandoff', 'Require count on handoff')} />
-          </Row>
+          </Row>}
           <p className="mt-6 text-[11px]" style={{ color: CD.faint }}>The opening float is issued by the vault and is never editable in the Till — these settings govern only how the physical count is taken and checked against it.</p>
         </div>)}
 
@@ -1427,7 +1624,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             return (<button key={e.id} onClick={() => setEmpSel(e.id)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: CD.panel, marginBottom: 8, opacity: blocked ? 0.62 : 1 }}>
               <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: blocked ? CD.lineSoft : CD.ink, color: blocked ? CD.mute : 'var(--cd-on-ink)', fontSize: 11.5, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(e.name)}</span>
               <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-semibold truncate" style={{ color: CD.ink }}>{e.name}</span><span className="block text-[11px] truncate" style={{ color: CD.faint }}>{e.role}{e.email ? ' · ' + e.email : ''}</span></span>
-              {blocked ? <span className="text-[9px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BLOCKED</span> : asg ? <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 6 }}>{asg.t.name.replace(/\s+—.*/, '')}</span> : <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ color: CD.faint }}>unposted</span>}
+              {blocked ? <span className="text-[9px] px-1.5 py-0.5 font-semibold flex-none" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>BLOCKED</span> : asg ? <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 6 }}>{asg.t.name.replace(/\s+—.*/, '')}</span> : <span className="text-[10px] px-1.5 py-0.5 flex-none" style={{ color: CD.faint }}>No till</span>}
               <Ic n="chev" s={15} c={CD.faint} />
             </button>);
           };
@@ -1435,7 +1632,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           // ---- full account / profile editor ----
           const empDetail = (e) => {
             const asg = assignmentOf(e.name); const apps = Array.isArray(e.apps) ? e.apps : null; const isOwner = e.role === 'Owner'; const blocked = e.active === false;
-            const worksAt = e.branches === '*' || isOwner ? 'Whole network' : (Array.isArray(e.branches) && e.branches.length ? e.branches.map(id => { const b = (branches || []).find(x => x.id === id); return (b ? b.code : id) + (e.home === id ? ' ★' : ''); }).join(' · ') : 'Not assigned yet');
+            /* Their server sign-in. A profile finds its account by username, so a
+               username typed here that already belongs to somebody else would read
+               as this person's — with that person's reset, disable, block and PIN
+               buttons. It is theirs only once the sign-in was created from this
+               profile (codeLinked), or when the profile predates the username
+               flow (codeAuto was never set). From then on the username is fixed. */
+            const loginId = (e.code || '').trim(); const found = loginId && srvStaff ? srvStaff[loginId] : null;
+            const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
+            // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
+            const syncEmail = () => {
+              if (!loginAcct) return;
+              const v = (e.email || '').trim();
+              if (v === (loginAcct.email || '') || (v && !isWorkEmail(v))) return;
+              srvCall('PATCH', '/api/staff/' + encodeURIComponent(loginId), { email: v })
+                .then(() => { log('Work email', e.name + ' · ' + (v || 'cleared')); srvReload(); })
+                .catch(err => setSrvMsg(String(err.message || err)));
+            };
+            const worksAt =e.branches === '*' || isOwner ? 'Whole network' : (Array.isArray(e.branches) && e.branches.length ? e.branches.map(id => { const b = (branches || []).find(x => x.id === id); return (b ? b.code : id) + (e.home === id ? ' ★' : ''); }).join(' · ') : 'Not assigned yet');
             return (<div>
               <button onClick={() => setEmpSel(null)} className="flex items-center gap-1.5 text-[12px] mb-3" style={{ color: CD.mute }}><span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><Ic n="chev" s={14} c={CD.mute} /></span> All employees</button>
               <div className="flex items-center gap-3.5 mb-4 p-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 14, background: CD.panel }}>
@@ -1448,9 +1662,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <div className="grid grid-cols-2 gap-2.5">
                 <Field label="Full name"><input value={e.name} onChange={ev => setEmp(e.id, { name: ev.target.value })} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
                 <Field label="Role"><select value={e.role} onChange={ev => applyPreset(e, ev.target.value)} className="w-full text-sm px-2.5 py-2 outline-none" style={inSty}>{EMP_ROLES.map(r => <option key={r}>{r}</option>)}</select></Field>
-                <Field label="Work email"><input value={e.email || ''} onChange={ev => setEmp(e.id, { email: ev.target.value })} placeholder="name@business.com" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
+                <Field label="Work email"><input value={e.email || ''} onChange={ev => setEmp(e.id, { email: ev.target.value })} onBlur={syncEmail} placeholder="name@business.com" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
                 <Field label="Mobile phone"><input value={e.phone || ''} onChange={ev => setEmp(e.id, { phone: ev.target.value })} placeholder="(416) 555-0000" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></Field>
-                <Field label="Staff ID / sign-in" desc="What they type to sign in."><input value={e.code || ''} onChange={ev => setEmp(e.id, { code: ev.target.value })} placeholder="e.g. a.singh" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} /></Field>
+                {/* codeAuto marks a username the server suggested; anything else in the box (typed, or saved before this existed) is never replaced */}
+                <UsernameField key={e.id} name={e.name} code={e.code} typed={e.codeAuto === false || (!!e.code && e.codeAuto !== true)} email={e.email} locked={!!loginAcct || isOwner} online={srvState === 'ok'}
+                  onChange={(v, typed) => setEmp(e.id, { code: v, codeAuto: !typed })} />
                 <div className="col-span-2"><div className="text-[11px] mb-1" style={{ color: CD.mute }}>Works at</div>
                   {isOwner ? <div className="text-sm px-2.5 py-2" style={{ ...inSty, color: CD.mute }}>Whole network — every branch &amp; till</div> : (
                   <div className="p-2.5" style={{ ...inSty }}>
@@ -1464,7 +1680,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     </div>
                     <div className="flex items-center gap-2 mt-2.5">
                       <span className="text-[11px] flex-none" style={{ color: CD.mute }}>Posted to</span>
-                      <select value={asg ? asg.b.id + '|' + asg.t.id : ''} onChange={ev => { if (!ev.target.value) { assignEmp(e.name, null, null); log(`${e.name} · unposted`, ''); return; } const parts = ev.target.value.split('|'); assignEmp(e.name, parts[0], parts[1]); log(`${e.name} · posted`, ev.target.options[ev.target.selectedIndex].text); }} className="flex-1 text-sm px-2.5 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }}>
+                      <select value={asg ? asg.b.id + '|' + asg.t.id : ''} onChange={ev => { if (!ev.target.value) { assignEmp(e.name, null, null); log(`${e.name} · no till`, ''); return; } const parts = ev.target.value.split('|'); assignEmp(e.name, parts[0], parts[1]); log(`${e.name} · posted`, ev.target.options[ev.target.selectedIndex].text); }} className="flex-1 text-sm px-2.5 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: 'var(--cd-panel)' }}>
                         <option value="">Not posted to a till</option>
                         {(branches || []).filter(b => Array.isArray(e.branches) && e.branches.includes(b.id)).map(b => (b.tills || []).map(t => <option key={b.id + t.id} value={b.id + '|' + t.id}>{b.code} · {t.name.replace(/\s+—.*/, '')}</option>))}
                       </select>
@@ -1496,13 +1712,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
               <div className="text-[10px] uppercase tracking-widest mb-1.5 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Security</div>
               {(() => {
-                const sid = (e.code || '').trim();
-                const acct = sid && srvStaff ? srvStaff[sid] : null;
+                const sid = loginId;
+                const acct = loginAcct;
+                const mailTo = isWorkEmail(e.email) ? e.email.trim() : null;
+                /* No password from the manager: the server issues a temporary one
+                   and emails it to the work email, or hands it back to be read out
+                   once when there is no address. They pick their own on the way in. */
                 const doCreate = () => {
-                  if (srvPw.length < 8) { setSrvMsg('Temporary password needs at least 8 characters.'); return; }
-                  setSrvBusy(true); setSrvMsg('');
-                  srvCall('POST', '/api/staff', { staffId: sid, name: e.name, role: SRV_ROLE[e.role] || 'teller', password: srvPw })
-                    .then(() => { log('Sign-in created', e.name + ' \u00b7 ' + sid); setSrvPw(''); srvReload(); })
+                  setSrvBusy(true); setSrvMsg(''); setNewSignIn(m => ({ ...m, [e.id]: null }));
+                  srvCall('POST', '/api/staff', { staffId: sid, name: e.name, role: SRV_ROLE[e.role] || 'teller', ...(mailTo ? { email: mailTo } : {}) })
+                    .then(d => {
+                      const s = (d && d.signIn) || {};
+                      setNewSignIn(m => ({ ...m, [e.id]: { detail: s.detail || '', temp: s.tempPassword || null } }));
+                      setEmp(e.id, { codeLinked: true });
+                      log('Sign-in created', e.name + ' \u00b7 ' + sid + (s.delivered === 'sent' ? ' \u00b7 emailed' : ''));
+                      srvReload();
+                    })
                     .catch(err => setSrvMsg(String(err.message || err)))
                     .then(() => setSrvBusy(false));
                 };
@@ -1530,8 +1755,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                           {srvState === 'offline' ? 'Server unavailable — passwords are managed on the live desk.' :
                             srvState === 'forbidden' ? 'Only a manager or the owner can manage sign-ins.' :
                             srvState === 'loading' ? 'Checking the server…' :
-                            !sid ? 'Give them a Staff ID above first — that’s their username.' :
-                            !acct ? 'No server account yet — issue a temporary password and hand it to them privately.' :
+                            !sid ? 'Type their name above — their username fills in by itself.' :
+                            !acct ? (mailTo ? 'No sign-in yet. Create it and we’ll email their username and a temporary password to ' + mailTo + '.' : 'No sign-in yet. Create it and you’ll get a temporary password to give them in person.') :
                             !acct.active ? 'Sign-in disabled — they can’t get in until it’s re-enabled.' :
                             acct.mustChangePassword ? 'Temporary password issued — they’ll set their own at first sign-in.' :
                             'Password set by the employee — only they know it. Reset issues a new temporary one.'}
@@ -1541,16 +1766,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     </div>
                     {srvState === 'ok' && sid && (
                       <div className="flex items-center gap-2 mt-2.5" style={{ opacity: srvBusy ? 0.5 : 1, pointerEvents: srvBusy ? 'none' : 'auto' }}>
-                        <input type="text" value={srvPw} onChange={ev => setSrvPw(ev.target.value)} placeholder="temporary password · min 8 chars" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
                         {!acct
-                          ? <button onClick={doCreate} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Create sign-in</button>
+                          ? <button onClick={doCreate} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>{mailTo ? 'Create sign-in & email it' : 'Create sign-in'}</button>
                           : (<React.Fragment>
+                              <input type="text" value={srvPw} onChange={ev => setSrvPw(ev.target.value)} placeholder="temporary password · min 8 chars" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
                               <button onClick={doReset} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Reset password</button>
                               <button onClick={doToggle} className="text-[11.5px] px-2.5 py-1.5 flex-none" style={{ border: `1px solid ${acct.active ? CD.flagSoft : CD.line}`, background: acct.active ? CD.flagSoft : 'transparent', color: acct.active ? CD.flag : CD.ink, borderRadius: 8 }}>{acct.active ? 'Disable' : 'Enable'}</button>
                             </React.Fragment>)}
                       </div>
                     )}
                     {srvMsg && <div className="text-[11px] mt-1.5" style={{ color: CD.flag }}>{srvMsg}</div>}
+                    {newSignIn[e.id] && (<div className="text-[11px] mt-2" style={{ color: CD.mute }}>
+                      {newSignIn[e.id].detail}
+                      {newSignIn[e.id].temp && <div className="mt-1.5 text-[15px] font-bold tracking-[0.12em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.green }}>{newSignIn[e.id].temp}</div>}
+                      {newSignIn[e.id].temp && <div className="mt-1" style={{ color: CD.faint }}>Shown once — it can’t be looked up again.</div>}
+                    </div>)}
                   </div>
                 );
               })()}
@@ -1562,14 +1792,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 {newPin[e.id] && newPin[e.id].pin
                   ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.green }}>{newPin[e.id].pin}</span>
                   : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}
-                <button onClick={async () => {
+                {loginAcct ? <button onClick={async () => {
                   setNewPin(m => ({ ...m, [e.id]: null }));
                   try {
-                    const d = await srvCall('POST', '/api/staff/' + encodeURIComponent((e.code || '').trim()) + '/pin');
+                    const d = await srvCall('POST', '/api/staff/' + encodeURIComponent(loginId) + '/pin');
                     setNewPin(m => ({ ...m, [e.id]: { pin: d.pin } }));
                     log('Transaction PIN', `${e.name} · new PIN issued`);
                   } catch (x) { setNewPin(m => ({ ...m, [e.id]: { err: String(x.message || x) } })); }
                 }} className="text-[11px] px-2 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Issue a new PIN</button>
+                  : <span className="text-[11px]" style={{ color: CD.faint }}>Create their sign-in first</span>}
                 {newPin[e.id] && newPin[e.id].err && <span className="text-[11px]" style={{ color: CD.flag }}>{newPin[e.id].err}</span>}
               </span></Row>
             {newPin[e.id] && newPin[e.id].pin && <div className="text-[11px] -mt-1 mb-1" style={{ color: CD.mute }}>Read this to {e.name} now — it is shown once and cannot be looked up again.</div>}
@@ -1577,8 +1808,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
               <div className="flex items-center justify-between mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
                 {isOwner ? <span className="text-[11px]" style={{ color: CD.faint }}>The owner account can’t be blocked or removed here.</span> : (<>
-                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={blocked} click={() => { setEmp(e.id, { active: blocked }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`); srvSetActive(e.code, blocked); }} /> Block this account</label>
-                  <button onClick={() => { srvSetActive(e.code, false); removeEmp(e.id, e.name); setEmpSel(null); }} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
+                  <label className="flex items-center gap-2 text-[12px]" style={{ color: CD.ink }}><Sw on={blocked} click={() => { setEmp(e.id, { active: blocked }, `${e.name} · ${blocked ? 'unblocked' : 'blocked'}`); if (loginAcct) srvSetActive(e.code, blocked); }} /> Block this account</label>
+                  <button onClick={() => { if (loginAcct) srvSetActive(e.code, false); removeEmp(e.id, e.name); setEmpSel(null); }} className="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="trash" s={13} c={CD.flag} /> Remove</button>
                 </>)}
               </div>
             </div>);
@@ -1989,67 +2220,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>{pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : <>These rules drive the live flags in the Ledger and the <b style={{ color: CD.ink }}>Compliance</b> desk. Sanctions screening is not connected yet. Aggregation and fileable submissions follow the active pack.</>}</span></div>
         </div>); })()}
 
-        {tab === 'rates' && (<div>
-          <SectionTitle icon="coins" title="Rates & fees" sub="Two-sided pricing — the desk buys under mid and sells over mid. The gap is your margin." />
-
-          <Row title="Rate feed provider" desc="Where the desk's live spot prices stream from. Shown on the Rate Board; your spreads & margins are applied on top."><div className="fp-set" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}><select value={settings.rateProvider || 'OANDA · fxTrade rates'} onChange={e => { set('rateProvider', e.target.value, `rate provider ${e.target.value}`); try { localStorage.setItem('yorkfx_rate_provider', e.target.value); } catch (_) {} }} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 230, appearance: 'none', WebkitAppearance: 'none', paddingRight: 28 }}>{['OANDA · fxTrade rates', 'XE Currency Data', 'Refinitiv (Reuters) FX', 'European Central Bank', 'Wise rates'].map(p => <option key={p} value={p}>{p}</option>)}</select><span style={{ position: 'absolute', right: 10, pointerEvents: 'none', color: CD.faint }}><Ic n="chev" s={13} c={CD.faint} /></span></div></Row>
-
-          <Row title="Default spread" desc="Buy/sell margin over the spot rate, applied to any currency without its own spread below."><div className="flex items-center" style={inSty}><input type="number" step="0.1" value={settings.defaultSpread ?? ''} onChange={e => set('defaultSpread', +e.target.value)} className="text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ width: 90, fontVariantNumeric: 'tabular-nums' }} /><span className="px-2 text-[11px]" style={{ color: CD.mute }}>%</span></div></Row>
-          <Row title="Default commission" desc="Suggested flat fee pre-filled on a new deal."><Money k="defaultFee" /></Row>
-
-          {/* margin floor — protects the spread at the counter */}
-          <div className="mt-5 mb-1 text-sm font-medium flex items-center gap-1.5" style={{ color: CD.ink }}><Ic n="activity" s={15} c={CD.ink} /> Margin floor</div>
-          <div className="text-[11px] mb-1" style={{ color: CD.mute }}>The New Transaction screen shows a live margin meter (FX spread + fee as a % of pay-in). Set the healthy target and the floor below which a teller must override.</div>
-          <Row title="Target margin" desc="At or above this, the meter reads green."><div className="flex items-center" style={inSty}><input type="number" step="0.1" value={settings.marginTargetPct ?? 1.0} onChange={e => set('marginTargetPct', +e.target.value, `margin target ${e.target.value}%`)} className="text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ width: 90, fontVariantNumeric: 'tabular-nums' }} /><span className="px-2 text-[11px]" style={{ color: CD.mute }}>%</span></div></Row>
-          <Row title="Minimum floor" desc="Below this, the deal is flagged red."><div className="flex items-center" style={inSty}><input type="number" step="0.1" value={settings.marginFloorPct ?? 0.5} onChange={e => set('marginFloorPct', +e.target.value, `margin floor ${e.target.value}%`)} className="text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ width: 90, fontVariantNumeric: 'tabular-nums' }} /><span className="px-2 text-[11px]" style={{ color: CD.mute }}>%</span></div></Row>
-          <Row title="Below the floor" desc="Warn lets the teller post anyway (logged); Require override blocks the post until they confirm with a reason."><Seg value={settings.marginEnforce || 'block'} onPick={v => set('marginEnforce', v, `margin enforce ${v}`)} opts={[['warn', 'Warn only'], ['block', 'Require override']]} /></Row>
-
-          {/* per-currency spread — the heart of two-sided pricing */}
-          <div className="mt-5">
-            <div className="flex items-center justify-between mb-2">
-              <div><div className="text-sm font-medium" style={{ color: CD.ink }}>Spread by currency</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>Tight on liquid pairs, wider on exotics. Blank = use the default. We buy and sell are previewed live.</div></div>
-            </div>
-            <div className="overflow-hidden" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
-              <table className="w-full text-sm border-collapse">
-                <thead><tr style={{ background: 'var(--cd-chip)', color: CD.mute }} className="text-[10.5px] uppercase tracking-wide text-left">
-                  <th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right">Spot · {quoteHome}</th><th className="px-3 py-2 text-right">Spread %</th><th className="px-3 py-2 text-right">We buy</th><th className="px-3 py-2 text-right">We sell</th>
-                </tr></thead>
-                <tbody>{(CCY || []).filter(c => c !== quoteHome).map(c => {
-                  const spreads = settings.spreads || {};
-                  const mid = quoteHome === 'CAD' ? crossRate(c, 'CAD') : ((window.CDOS.homePerUnit && window.CDOS.homePerUnit(c)) || 0);
-                  const eff = (spreadOf(c, settings) * 100);
-                  const custom = spreads[c] != null && spreads[c] !== '';
-                  return (<tr key={c} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                    <td className="px-3 py-2 font-medium" style={{ color: CD.ink }}>{c}</td>
-                    <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{mid.toFixed(4)}</td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="inline-flex items-center" style={{ border: `1px solid ${custom ? CD.ink : CD.line}`, borderRadius: 7, overflow: 'hidden' }}>
-                        <input type="number" step="0.1" value={spreads[c] ?? ''} onChange={e => { const v = e.target.value; setSettings(s => ({ ...s, spreads: { ...(s.spreads || {}), [c]: v === '' ? '' : +v } })); }} placeholder={(+settings.defaultSpread || 1.5).toString()} className="text-sm px-2 py-1.5 outline-none text-right bg-transparent" style={{ width: 64, fontVariantNumeric: 'tabular-nums' }} />
-                        <span className="px-1.5 text-[11px]" style={{ color: CD.faint }}>%</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.flag }}>{buyUnitCad(c, settings).toFixed(4)}</td>
-                    <td className="px-3 py-2 text-right" style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color: CD.green }}>{sellUnitCad(c, settings).toFixed(4)}</td>
-                  </tr>); })}</tbody>
-              </table>
-            </div>
-            <div className="text-[11px] mt-1.5 flex items-center gap-3" style={{ color: CD.faint }}>
-              <span className="flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: CD.flag, display: 'inline-block' }}></span> We buy = what we pay the customer</span>
-              <span className="flex items-center gap-1"><span style={{ width: 8, height: 8, borderRadius: 2, background: CD.green, display: 'inline-block' }}></span> We sell = what we charge</span>
-            </div>
-          </div>
-
-          <div className="mt-5 mb-2 text-sm font-medium" style={{ color: CD.ink }}>Pay-out rounding</div>
-          <Row title="Round the customer pay-out" desc="Cash desks rarely hand out odd cents. Applied to the amount the customer receives."><div className="flex items-center gap-2">
-            <Seg value={settings.payoutRoundMode || 'nearest'} onPick={v => set('payoutRoundMode', v, `rounding ${v}`)} opts={[['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]} />
-            <select value={settings.payoutRoundTo ?? 0.01} onChange={e => set('payoutRoundTo', +e.target.value)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 116 }}>
-              {[['0.01', '0.01'], ['0.05', '0.05'], ['0.25', '0.25'], ['1', '1'], ['5', '5'], ['10', '10']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </div></Row>
-          <Row title="Rate-lock duration" desc="How long a customer quote holds the quoted rate before it must be re-priced."><select value={settings.rateLockMins || 15} onChange={e => set('rateLockMins', +e.target.value, `rate lock ${e.target.value}m`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }}>{[5, 10, 15, 30, 60].map(m => <option key={m} value={m}>{m} minutes</option>)}</select></Row>
-
-          <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="coins" s={13} c={CD.mute} /><span>These prices drive every new deal in the Ledger — the spread booked at the counter is the spread that lands in <b style={{ color: CD.ink }}>Revenue &amp; Earnings</b>. Mid rates come from the <b style={{ color: CD.ink }}>Rate Board</b>.</span></div>
-        </div>)}
+        {tab === 'rates' && <RatesFees me={me} serverRole={serverRole} settings={settings} setSettings={setSettings} />}
 
         {tab === 'receipts' && (<div>
           <SectionTitle icon="receipt" title="Receipts" sub="What prints on the customer's exchange receipt." />

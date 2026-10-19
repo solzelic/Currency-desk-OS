@@ -2,7 +2,9 @@
    A teller who can save payroll at 0% cashes the next cheque for nothing.
    Real Postgres: the write is refused, the schedule stays, the cheque pays the old fee.
    A stale numeric version is a conflict before it is a refusal.
-   A teller's copy cannot replace a fee the owner just saved. */
+   A teller's copy cannot replace a fee the owner just saved.
+   A teller's ordinary save here writes receiptFooter, a field a teller
+   may change. The shop name is the owner's, so it is not used. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -49,6 +51,13 @@ async function storedSchedule(): Promise<string | null> {
 }
 
 async function desk() {
+  /* The demo entity is shared. document-reads.postgres.test.ts ends with
+     it on the UK pack in GBP, and a CAD cheque on a GBP desk is refused,
+     so the book is put back in CAD on the Canada pack here. */
+  await pool.query(
+    "UPDATE legal_entities SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1', jurisdiction_pack_version=1 WHERE id=$1 AND tenant_id=$2",
+    [DEMO.legalEntityId, DEMO.tenantId],
+  );
   await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
   await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_sessions,ledger_till_balances,ledger_customers,ledger_audit_events,audit_events CASCADE");
   await pool.query("INSERT INTO tenant_state (tenant_id, state, version) VALUES ($1, $2::jsonb, 1)", [DEMO.tenantId, JSON.stringify({ [CHEQUE_FEE_SCHEDULE_KEY]: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE) })]);
@@ -148,7 +157,7 @@ postgres("cheque fee schedule is owner or manager", () => {
   it("still lets a teller save a state that does not change the schedule", async () => {
     await desk();
     const before = await storedSchedule();
-    const res = await put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { deskName: "Yorkville" } });
+    const res = await put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { receiptFooter: "Yorkville" } });
     expect(res.statusCode).toBe(200);
     expect(await storedSchedule()).toBe(before);
   });
@@ -188,7 +197,7 @@ postgres("cheque fee schedule is owner or manager", () => {
       const original = await storedSchedule();
       const [ownerRes, tellerRes] = await Promise.all([
         put(session("j.masri"), payroll(7, 5), 1),
-        put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { deskName: "Yorkville" } }, 1),
+        put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { receiptFooter: "Yorkville" } }, 1),
       ]);
       expect([200, 409]).toContain(ownerRes.statusCode);
       expect([200, 409]).toContain(tellerRes.statusCode);
@@ -207,7 +216,7 @@ postgres("cheque fee schedule is owner or manager", () => {
     expect(bare.statusCode).toBe(409);
     expect(await storedSchedule()).toBe(before);
     expect((await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_refused'")).rowCount).toBe(0);
-    expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { deskName: "York" } } } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { receiptFooter: "York" } } } })).statusCode).toBe(200);
     expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: payroll(0, 0) } })).statusCode).toBe(409);
     expect(await storedSchedule()).toBe(before);
     for (let n = 0; n < 15; n++) {
@@ -215,7 +224,7 @@ postgres("cheque fee schedule is owner or manager", () => {
       const original = await storedSchedule();
       const [ownerRes] = await Promise.all([
         put(session("j.masri"), payroll(7, 5), 1),
-        app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { n } } } }),
+        app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { receiptFooter: `r${n}` } } } }),
       ]);
       const feePct = (JSON.parse((await storedSchedule()) ?? "[]") as { id: string; feePct: number }[]).find((row) => row.id === "payroll")?.feePct;
       if (ownerRes.statusCode === 200) expect(feePct).toBe(7);

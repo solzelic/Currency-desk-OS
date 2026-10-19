@@ -54,10 +54,13 @@ import {
 const loginBody = z.object({
   staffId: z.string().min(1).max(120),
   password: z.string().min(1).max(512),
-  // multi-tenant login: which house. Defaults to the demo tenant for now;
-  // production resolves this from the subdomain / device enrolment.
-  tenantId: z.string().min(1).max(120).default("tnt-yorkfx"),
+  /* Which house. The desk's sign-in screen does not say: then the name is
+     looked up at the demo desk and, failing that, on every desk, because a
+     username carries its shop (auth/login-user.ts). A caller that names a
+     desk gets that desk only. */
+  tenantId: z.string().min(1).max(120).optional(),
 });
+const DEFAULT_LOGIN_TENANT = "tnt-yorkfx";
 
 const switchBody = z.object({
   staffId: z.string().min(1).max(120),
@@ -175,9 +178,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request" });
     }
-    const { staffId, password, tenantId } = parsed.data;
+    const { staffId, password } = parsed.data;
+    const tenantId = parsed.data.tenantId ?? DEFAULT_LOGIN_TENANT;
 
-    const user = await findStaffForLogin(db, staffId, tenantId);
+    const user = await findStaffForLogin(db, staffId, tenantId, { anywhere: !parsed.data.tenantId });
     const decision = await judgeSignIn(db, {
       password,
       storedHash: user?.passwordHash ?? null,
@@ -241,8 +245,8 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   // resolve a staff user by staff id — shared with the platform-admin door
   // so the two cannot drift into two different people. Case folds the same
   // way the failure counter does.
-  async function findLoginUser(staffId: string, tenantId: string) {
-    return findStaffForLogin(db, staffId, tenantId);
+  async function findLoginUser(staffId: string, tenantId: string, anywhere = false) {
+    return findStaffForLogin(db, staffId, tenantId, { anywhere });
   }
 
   /* An owner or a manager clears the account counter. A teller does not.
@@ -277,8 +281,9 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   app.post("/api/auth/login/start", async (req, reply) => {
     const parsed = loginBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
-    const { staffId, password, tenantId } = parsed.data;
-    const user = await findLoginUser(staffId, tenantId);
+    const { staffId, password } = parsed.data;
+    const tenantId = parsed.data.tenantId ?? DEFAULT_LOGIN_TENANT;
+    const user = await findLoginUser(staffId, tenantId, !parsed.data.tenantId);
     const decision = await judgeSignIn(db, {
       password,
       storedHash: user?.passwordHash ?? null,

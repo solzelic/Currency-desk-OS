@@ -19,6 +19,14 @@ import { audit } from "../audit.js";
 import { hashPin } from "./pin.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
+import {
+  editableOwnerRows,
+  keepOwnerFields,
+  OWNER_ONLY_REFUSAL,
+  ownerOnlyEdits,
+  ownsSettings,
+} from "../state/owner-settings.js";
+import { scrubHealthNumbers } from "../clients/id-document-types.js";
 
 /* The cheque fee is the price of the desk's own credit. Who may write
    it lives in canWriteSetting, not in a role list at this route. */
@@ -108,7 +116,7 @@ function stateConflict(row: { state: unknown; version: number } | undefined) {
   return {
     error: "state_conflict",
     detail: "Somebody else saved this desk while you were working. Merging.",
-    state: row?.state ?? null,
+    state: scrubHealthNumbers(row?.state ?? null),
     version: row?.version ?? 0,
   };
 }
@@ -217,8 +225,12 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const rows = await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1);
     const row = rows[0];
-    if (!row) return { state: null, updatedAt: null, version: 0 };
-    return { state: row.state, updatedAt: row.updatedAt, version: row.version };
+    const settingsRows = editableOwnerRows(who.role);
+    if (!row) return { state: null, updatedAt: null, version: 0, settingsRows };
+    /* A snapshot saved before health cards were refused can still hold a
+       health number. It is not sent, so the next save cannot carry it
+       back. The stored row is cleaned by the next save, not here. */
+    return { state: scrubHealthNumbers(row.state), updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
@@ -261,7 +273,10 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     }
     const parsed = putBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
-    const state = parsed.data.state;
+    /* No health number is stored, whichever tab sent it. Unchanged
+       values come back as the same values, so the fee key and every
+       other string is stored byte for byte as it was sent. */
+    let state = scrubHealthNumbers(parsed.data.state);
 
     const bytes = Buffer.byteLength(JSON.stringify(state));
     if (bytes > MAX_STATE_BYTES) {
@@ -294,6 +309,32 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       const stored = asRecord(current?.state);
       if (stored && CHEQUE_FEE_SCHEDULE_KEY in stored) state[CHEQUE_FEE_SCHEDULE_KEY] = stored[CHEQUE_FEE_SCHEDULE_KEY];
       else delete state[CHEQUE_FEE_SCHEDULE_KEY];
+    }
+
+    /* A real change to an owner-only field refuses the whole save.
+       Checked after the version conflict so a stale save still merges,
+       and before any write so a teller cannot move the large-cash line
+       by sending it beside an ordinary key. An echo, or a key the client
+       left out, is not a change: the stored value stays and the rest
+       saves. The field is not dropped to hide a change. */
+    const storedState = (current?.state ?? null) as Record<string, unknown> | null;
+    if (!ownsSettings(who.role)) {
+      const edits = ownerOnlyEdits(storedState, state, who.role);
+      if (edits.length) {
+        await audit(db, {
+          tenantId: who.tenantId,
+          legalEntityId: who.legalEntityId,
+          branchId: who.branchId,
+          actorId: who.id,
+          action: "settings.owner_only_refused",
+          detail: {
+            groups: [...new Set(edits.map((edit) => edit.group))],
+            fields: edits.map((edit) => edit.field),
+          },
+        });
+        return reply.code(403).send({ error: "forbidden", detail: OWNER_ONLY_REFUSAL });
+      }
+      state = keepOwnerFields(storedState, state, who.role);
     }
 
     /* Describe what is being saved. This NEVER refuses — the browser holds

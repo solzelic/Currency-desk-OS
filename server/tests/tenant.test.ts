@@ -1,6 +1,6 @@
 /* Tenant plan (purchased tier) — task #9. The tier lives on the tenant:
-   login/me expose it, only an administrator changes it (audited), and
-   API plan-gates refuse what the tier doesn't include. */
+   login/me expose it, the desk's own sessions cannot change it (Stripe
+   webhooks do), and API plan-gates refuse what the tier doesn't include. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";

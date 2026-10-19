@@ -31,6 +31,11 @@
      absent and says so — see docs/ABSENT_FIGURES.md. */
   const homeCcy = () => { const p = deskPack(); return (p && p.homeCurrency) || (reportingLimit(null) || {}).currency || null; };
   const computeFlags = window.CDOS.computeFlags;
+  /* The ID-type catalogue the server also checks against. A health card
+     is in it so a stored one can be named, and is never accepted as ID:
+     its number is not shown, searched, or sent. */
+  const IDT = window.CDOS.idTypes();
+  const isHealthType = (type) => IDT.isHealthCardType(type);
   // render overlays at the document root so the window's stacking context
   // (and the rate ticker at z-360) can never occlude them
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
@@ -128,6 +133,9 @@
       const client = api();
       if (!client || !clientId) return;
       if (!rec || (!rec.idType && !rec.idNum && !rec.photo)) return;
+      /* A health card is not ID and the server refuses one. A copy this
+         browser still holds is not sent. */
+      if (isHealthType(rec.idType)) return;
       await client.addDocument(clientId, {
         docType: rec.idType || 'Not stated',
         docNumber: rec.idNum || null,
@@ -256,18 +264,24 @@
       .catch(e => onError((e && e.message) || 'CurrencyDesk could not save that change. Nothing was saved.'));
 
     const extraDoc = (i) => (rec.ids || [])[i] || {};
+    /* A health card as the primary is not edited: the server refuses
+       that. Typing an ID on such a file adds a new primary document and
+       the health card stays on the file beside it, not accepted. */
+    const healthPrimary = isHealthType(rec.idType);
+    const primaryId = healthPrimary ? null : rec.primaryDocumentId;
+    const typeOnFile = healthPrimary ? '' : rec.idType;
 
     function field(k, v) {
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
         const patch = {}; patch[DOC[k]] = v || null;
-        if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, patch));
+        if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
         /* Typing a document's details when the file has none is how a
            document gets created — the same gesture the old flat editor
            made, landing in the right table. */
         return send(() => api.addDocument(clientId, Object.assign(
-          { docType: k === 'idType' ? (v || 'Not stated') : (rec.idType || 'Not stated'), isPrimary: true },
+          { docType: k === 'idType' ? (v || 'Not stated') : (typeOnFile || 'Not stated'), isPrimary: true },
           k === 'idType' ? {} : patch)));
       }
       if (k === 'photo') {
@@ -350,10 +364,10 @@
 
     function scan(dataUrl) {
       if (!onServer) return localSet('photo', dataUrl);
-      if (rec.primaryDocumentId)
-        return send(() => api.updateDocument(clientId, rec.primaryDocumentId, { scanDataUrl: dataUrl }));
+      if (primaryId)
+        return send(() => api.updateDocument(clientId, primaryId, { scanDataUrl: dataUrl }));
       return send(() => api.addDocument(clientId, {
-        docType: rec.idType || 'Not stated', isPrimary: true, scanDataUrl: dataUrl,
+        docType: typeOnFile || 'Not stated', isPrimary: true, scanDataUrl: dataUrl,
       }));
     }
 
@@ -460,8 +474,21 @@
   }
 
 
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
-  const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
+  /* The pickers are the catalogue's (shared/id-document-types.js), the
+     same list the server checks a save against. A health card is not
+     offered. */
+  const ID_TYPES_IND = IDT.pickerLabels('person');
+  const ID_TYPES_CORP = IDT.pickerLabels('business');
+  /* A type already on the file that the picker does not offer stays
+     visible in the select. A health card says it is not accepted and
+     cannot be chosen again. */
+  function keptTypeOption(current, types) {
+    if (!current || types.indexOf(current) >= 0) return null;
+    if (isHealthType(current)) return <option key={current} value={current} disabled>{IDT.HEALTH_CARD_SHOWN}</option>;
+    return <option key={current} value={current}>{current}</option>;
+  }
+  /* Said under a health card wherever it is edited. */
+  const HealthCardNote = () => <div className="text-[12px] mt-1.5" style={{ color: CD.flag }}>{IDT.HEALTH_CARD_REFUSAL}</div>;
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
   const COUNTRIES = ['Canada', 'United States', 'Other'];
@@ -615,16 +642,19 @@
      A covered ID that crashes the profile is the worst of both. */
   function KycEditor({ rec, set, kind, onUpload, canEdit, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    /* A health card on file: no number, nothing to edit on it. Picking a
+       type records a new ID. */
+    const health = isHealthType(rec.idType);
+    const editDoc = canEdit && !health;
     return (<div className="grid grid-cols-2 gap-3">
-      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
-      <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
-      <EditField label="Issued"><input disabled={!canEdit} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
-      <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
+      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}</EditField>
+      {!health && <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
+      <EditField label="Issued"><input disabled={!editDoc} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
+      <EditField label="Expiry"><input disabled={!editDoc} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="ID document scan" full>
         {(rec.photo || rec.primaryHasScan)
-          ? <div className="flex items-center gap-3"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={64} who={who} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
-          : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload ID document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}
+          ? <div className="flex items-center gap-3"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={64} who={who} what={IDT.shownIdType(rec.idType) || 'primary ID'} log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+          : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload ID document<input type="file" accept="image/*" className="hidden" disabled={!editDoc} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}
       </EditField>
     </div>);
   }
@@ -632,18 +662,20 @@
   // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
   function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    /* A health card can be removed. It cannot be edited or retyped. */
+    const health = isHealthType(doc.type);
+    const editDoc = canEdit && !health;
     return (<div className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
       <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>{canEdit && <button type="button" onClick={() => rmId(i)} className="text-[11px] font-medium" style={{ color: CD.flag }}>Remove</button>}</div>
       <div className="grid grid-cols-2 gap-3">
-        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{stated && <option key={stated}>{stated}</option>}{types.map(t => <option key={t}>{t}</option>)}</select></EditField>
-        <EditField label={kind === 'corporate' ? 'Document #' : 'ID number'}><input disabled={!canEdit} value={doc.num || ''} onChange={e => setId(i, 'num', e.target.value)} className={inCls} style={inSty} /></EditField>
-        <EditField label="Issued"><input disabled={!canEdit} type="date" value={doc.issued || ''} onChange={e => setId(i, 'issued', e.target.value)} className={inCls} style={inSty} /></EditField>
-        <EditField label="Expiry"><input disabled={!canEdit} type="date" value={doc.expiry || ''} onChange={e => setId(i, 'expiry', e.target.value)} className={inCls} style={inSty} /></EditField>
+        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!editDoc} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(doc.type, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}</EditField>
+        {!health && <EditField label={kind === 'corporate' ? 'Document #' : 'ID number'}><input disabled={!canEdit} value={doc.num || ''} onChange={e => setId(i, 'num', e.target.value)} className={inCls} style={inSty} /></EditField>}
+        <EditField label="Issued"><input disabled={!editDoc} type="date" value={doc.issued || ''} onChange={e => setId(i, 'issued', e.target.value)} className={inCls} style={inSty} /></EditField>
+        <EditField label="Expiry"><input disabled={!editDoc} type="date" value={doc.expiry || ''} onChange={e => setId(i, 'expiry', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Document scan" full>
           {(doc.photo || doc.hasScan)
-            ? <div className="flex items-center gap-3"><IdScan src={doc.photo} clientId={clientId} documentId={doc.documentId} hasScan={doc.hasScan} height={64} who={who} what={doc.type || "additional ID"} log={log} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
-            : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload document<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && uploadId(i, e.target.files[0])} /></label>}
+            ? <div className="flex items-center gap-3"><IdScan src={doc.photo} clientId={clientId} documentId={doc.documentId} hasScan={doc.hasScan} height={64} who={who} what={IDT.shownIdType(doc.type) || "additional ID"} log={log} />{canEdit && <button type="button" onClick={() => setId(i, 'photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
+            : <label className="flex items-center justify-center gap-1.5 text-xs px-3 py-4 cursor-pointer" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={14} /> Upload document<input type="file" accept="image/*" className="hidden" disabled={!editDoc} onChange={e => e.target.files[0] && uploadId(i, e.target.files[0])} /></label>}
         </EditField>
       </div>
     </div>);
@@ -728,7 +760,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
-<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
+<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', IDT.shownIdType(rec.idType))}${row('Number', isHealthType(rec.idType) ? '' : rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
 <div class="card"><div class="ct">Activity</div><table class="kv">${row('First seen', mine.length ? mine[mine.length - 1].date : '')}${row('Last seen', st.last)}${row('Status', stat)}</table>${rec.notes ? `<div style="margin-top:8px;font-size:11.5px;color:#555;"><b>Notes:</b> ${esc(rec.notes)}</div>` : ''}</div>
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
@@ -777,9 +809,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>}
           <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{corp ? 'Document' : 'Identification'}</div>
           <div className="grid grid-cols-2 gap-2.5">
-            <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select></EditField>
-            <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>
-            <EditField label="Expiry"><input disabled={!canEdit} type="date" value={rec.idExpiry || ''} onChange={e => setField('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
+            <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, corp ? ID_TYPES_CORP : ID_TYPES_IND)}{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select>{isHealthType(rec.idType) && <HealthCardNote />}</EditField>
+            {!isHealthType(rec.idType) && <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
+            <EditField label="Expiry"><input disabled={!canEdit || isHealthType(rec.idType)} type="date" value={rec.idExpiry || ''} onChange={e => setField('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
             <EditField label="ID scan">{(rec.photo || rec.primaryHasScan) ? <div className="flex items-center gap-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={36} who={name} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
           </div>
           <div className="flex items-center gap-2 mt-4">
@@ -1304,14 +1336,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               </div>
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identification (KYC){(rec.ids || []).length > 0 && <span style={{ color: CD.mute }}> · {1 + (rec.ids || []).length} on file</span>}</div>
-                <KV icon="id" label={corp ? 'Document' : 'ID type'} value={rec.idType} />
-                <KV icon="scroll" label="Number" value={rec.idNum} mono />
+                <KV icon="id" label={corp ? 'Document' : 'ID type'} value={IDT.shownIdType(rec.idType)} />
+                {!isHealthType(rec.idType) && <KV icon="scroll" label="Number" value={rec.idNum} mono />}
                 <KV icon="calendar" label="Expiry" value={rec.idExpiry} />
                 {(rec.photo || rec.primaryHasScan) && <div className="mt-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={120} who={name} what={rec.idType || 'primary ID'} log={log} /></div>}
                 {(rec.ids || []).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>
-                  <KV icon="id" label="Type" value={d.type} />
-                  <KV icon="scroll" label="Number" value={d.num} mono />
+                  <KV icon="id" label="Type" value={IDT.shownIdType(d.type)} />
+                  {!isHealthType(d.type) && <KV icon="scroll" label="Number" value={d.num} mono />}
                   <KV icon="calendar" label="Expiry" value={d.expiry} />
                   {(d.photo || d.hasScan) && <div className="mt-2"><IdScan src={d.photo} clientId={rec.clientId} documentId={d.documentId} hasScan={d.hasScan} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
                 </div>))}
@@ -1425,7 +1457,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
+      /* A health number is never searched, even one still cached. */
+      const idNum = isHealthType(r.idType) ? '' : (r.idNum || '');
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${idNum} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
 
@@ -1565,12 +1599,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   function RecordIdSheet({ name, rec, setClients, log, onClose, onDone }) {
     const [phase, setPhase] = useState('loading');
     const [file, setFile] = useState(rec || {});
+    const startsFresh = !!(rec && isHealthType(rec.idType));
     const [draft, setDraft] = useState({
-      idType: (rec && rec.idType) || '',
-      idNum: (rec && rec.idNum) || '',
-      idIssued: (rec && rec.idIssued) || '',
-      idExpiry: (rec && rec.idExpiry) || '',
-      photo: (rec && rec.photo) || null,
+      idType: (!startsFresh && rec && rec.idType) || '',
+      idNum: (!startsFresh && rec && rec.idNum) || '',
+      idIssued: (!startsFresh && rec && rec.idIssued) || '',
+      idExpiry: (!startsFresh && rec && rec.idExpiry) || '',
+      photo: (!startsFresh && rec && rec.photo) || null,
     });
     const [err, setErr] = useState('');
     const [leaving, setLeaving] = useState(false);
@@ -1621,12 +1656,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             const desk = api && api.toDeskRecord ? api.toDeskRecord(serverRec, rec || {}) : Object.assign({}, rec || {}, { clientId: serverRec.clientId });
             setClients(prev => shared.project(prev));
             setFile(desk);
+            /* A health card on file is not the ID being recorded. Its
+               dates are not carried into the new one. */
+            const fresh = isHealthType(desk.idType);
             setDraft({
-              idType: desk.idType || '',
-              idNum: desk.idNum || '',
-              idIssued: desk.idIssued || '',
-              idExpiry: desk.idExpiry || '',
-              photo: desk.photo || null,
+              idType: fresh ? '' : (desk.idType || ''),
+              idNum: fresh ? '' : (desk.idNum || ''),
+              idIssued: fresh ? '' : (desk.idIssued || ''),
+              idExpiry: fresh ? '' : (desk.idExpiry || ''),
+              photo: fresh ? null : (desk.photo || null),
             });
           } else {
             setFile(rec || {});
@@ -1644,6 +1682,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const save = async () => {
       if (leaving || phase !== 'edit') return;
       if (!ready) { setErr('Type, number, and expiry are required.'); return; }
+      if (isHealthType(draft.idType)) { setErr(IDT.HEALTH_CARD_REFUSAL); return; }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -1664,7 +1703,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             const created = await shared.open(name, payload);
             if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
             clientId = created.clientId;
-          } else if (file.primaryDocumentId && api) {
+          } else if (file.primaryDocumentId && api && !isHealthType(file.idType)) {
             await api.updateDocument(clientId, file.primaryDocumentId, {
               docType: payload.idType,
               docNumber: payload.idNum,
@@ -1707,6 +1746,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             <div className="flex-1 overflow-auto px-5 py-4">
               {phase === 'loading' && <div className="text-[13px] py-6 text-center" style={{ color: CD.mute }}>Opening the customer file…</div>}
               {phase === 'error' && <div className="text-[13px] py-4" style={{ color: CD.flag }}>{err}</div>}
+              {phase === 'edit' && isHealthType(file && file.idType) && <div className="text-[12.5px] mb-3" style={{ color: CD.ink }}>{IDT.HEALTH_CARD_SHOWN}. {IDT.HEALTH_CARD_REFUSAL}</div>}
               {phase === 'edit' && (
                 <KycEditor rec={shown} set={set} kind={(file && file.kind) || 'individual'} onUpload={upload} canEdit={!leaving} who={name} log={log} />
               )}

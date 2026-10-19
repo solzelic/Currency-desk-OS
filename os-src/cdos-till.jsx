@@ -239,7 +239,7 @@
        it. A desk whose pack has not arrived says the currency is unknown
        rather than assuming one; see docs/ABSENT_FIGURES.md.
 
-       `dayEarned` is the trading day's earnings from GET /api/ledger/summary
+       `dayBook.summary.earningsHome` is the trading day's earnings from GET /api/ledger/summary
        — commission plus the margin each disposal actually booked. The close
        used to compute this here, as `(mid - paid)` against a live market
        rate, and store it on the day summary: on a desk with one voided deal
@@ -583,9 +583,6 @@
     const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
     const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
 
-    // expected float per currency — DERIVED from the one shared source of truth
-    // (opening baseline + wholesale receipts + posted ledger legs, void-aware).
-    // Identical to the figure the Vault shows because both call position().
     const serverBalancesReady = !serverBacked || serverBalances !== null;
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
@@ -603,7 +600,7 @@
        ledger gets to make it. A currency the ledger has never heard of, and
        a desk running with no ledger at all, both have no expected float —
        and a count sheet that prints 0.00 there invites a teller to write a
-       variance against a number nobody stood behind. See ABSENT_FIGURES.md. */
+       variance against a number nobody stood behind. See docs/ABSENT_FIGURES.md. */
     const expectedOf = (c) => serverBacked && serverBalances
       && Object.prototype.hasOwnProperty.call(serverBalances, c)
       ? Number(serverBalances[c])
@@ -688,7 +685,6 @@
     // counted here but not carried by the server ledger — recorded locally only,
     // and deliberately kept out of the close so it can't disturb a real balance
     const offLedgerCcys = serverBacked ? countedCcys.filter(c => !serverCcys.includes(c)) : [];
-    // a drawer is "off" only when its CAD variance exceeds the owner's tolerance (Settings › Cash drawer)
     const tolHome = Math.max(0, +((settings && settings.tillVarianceTol)) || 0);
     /* A drawer is "off" when its variance exceeds the owner's tolerance,
        measured in the desk's own money. Where this screen cannot express the
@@ -700,7 +696,6 @@
     const closeBlocked = serverBacked
       ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length)
       : (!!(settings && settings.requireCountOnClose) && countedN < recon.length);
-    // grand totals across all drawers, expressed in CAD, for the reconcile total row + close modal
     /* Cross-currency totals for the reconcile footer. Null where any row
        cannot be expressed in the desk's own money — a total quietly missing
        two of nine currencies looks complete and is not. */

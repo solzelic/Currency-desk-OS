@@ -2,9 +2,7 @@
 
    An auditor is on the team and can read. They cannot suspend or delete
    a desk, change a plan, create a desk, reset a credential, invite a
-   shop, or edit an application. The role that holds the need still can.
-   On main these routes call gate() with no need, so the auditor's 403
-   does not hold. */
+   shop, or edit an application. The role that holds the need still can. */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance, InjectOptions } from "fastify";
 import { eq } from "drizzle-orm";
@@ -88,9 +86,9 @@ beforeAll(async () => {
   sessions.security = await sign("security.desk", PASS);
   sessions.billing = await sign("billing.desk", PASS);
   sessions.owner = await sign("j.masri", DEMO.password);
-  /* The owner can create on main and after the gate. Later cases use
-     these desks, so an auditor denial is a 403 rather than a 404
-     left behind by an earlier failure. */
+  /* The owner can create. Later cases use these desks, so an auditor
+     denial is a 403 rather than a 404 left behind by an earlier
+     failure. */
   for (const slug of ["gatedesk", "bothdesk"]) {
     const created = await call(sessions.owner, "POST", "/api/admin/tenants", deskBody(slug, `o@${slug}.example`));
     expect(created.statusCode).toBe(201);

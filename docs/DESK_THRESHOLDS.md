@@ -243,6 +243,14 @@ every report the line creates and may not move the line that creates them.
 Anybody who wants it moved asks the owner, which is a conversation worth
 having out loud.
 
+The same line also lives in the desk snapshot (`cdos_settings.threshold`
+on `PUT /api/tenant/state`). A different value from anyone but the owner
+refuses that whole save, writes `settings.owner_only_refused`, and leaves
+the stored number. An equal value, or a key the client left out, is not
+a change. A branch manager may change the default spread on that snapshot.
+They may not move this line. A teller's different default spread is
+refused the same way, and the stored spread is kept.
+
 Everybody may **read** it, on `ledger:view`. Refusing the read would be the
 wrong lesson from refusing the write, since everybody at the counter needs
 to know when to ask for ID.

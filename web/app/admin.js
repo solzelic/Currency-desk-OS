@@ -6362,8 +6362,8 @@ function App() {
   const page = tab === 'settings' ? SETTINGS : PAGE(tab);
   const act = page.action;
   const invoicing = act && act.kind === 'invoice';
-  // Stripe is not wired up yet. Say so on the button rather than offering
-  // an action that would quietly do nothing.
+  // When Stripe is not connected on this deployment, say so on the button
+  // rather than offering an action that would quietly do nothing.
   const stripeOn = !!(health && (health.checks.find(c => c.id === 'stripe') || {}).state === 'ok');
   const doAction = () => {
     if (act.kind === 'invite') setCreating(true);else goto('#/billing');
