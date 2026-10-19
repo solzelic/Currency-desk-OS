@@ -20,6 +20,8 @@
       chip: '#f1f0ec', chipDeep: '#e3e0d8',
       line: 'rgba(10,10,10,0.14)', lineSoft: 'rgba(10,10,10,0.07)',
       text: '#0a0a0a', mute: 'rgba(10,10,10,0.55)', faint: 'rgba(10,10,10,0.4)',
+      /* 12px notes. #6b6b6b is 4.67:1 on the chip and 5.33:1 on white. */
+      pinNote: '#6b6b6b',
       hoverSoft: 'rgba(10,10,10,0.04)', hover: 'rgba(10,10,10,0.06)', hoverStrong: 'rgba(10,10,10,0.10)',
       shade: 'rgba(10,10,10,0.22)', scrim: 'rgba(10,10,10,0.5)', disabled: '#bdbcb3',
       brass: '#9a7406', brassSoft: '#f3e7c8', brassText: '#6b5119',   /* amber accent (sparingly) */
@@ -37,6 +39,8 @@
       chip: '#262521', chipDeep: '#2f2d28',
       line: 'rgba(255,255,255,0.16)', lineSoft: 'rgba(255,255,255,0.08)',
       text: '#eceae3', mute: 'rgba(236,234,227,0.58)', faint: 'rgba(236,234,227,0.4)',
+      /* 6.5:1 on the night chip. */
+      pinNote: '#aea89f',
       hoverSoft: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.07)', hoverStrong: 'rgba(255,255,255,0.12)',
       shade: 'rgba(255,255,255,0.24)', scrim: 'rgba(0,0,0,0.62)', disabled: '#514f47',
       brass: '#d9a92c', brassSoft: 'rgba(217,169,44,0.16)', brassText: '#e5c56a',
