@@ -1,7 +1,7 @@
 /* Staff PINs. The desk used to hold the expected PIN in the browser and
    compare it there, which made the gate decorative. The PIN lives here now,
    hashed, and only the server says whether one is right. */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
@@ -475,6 +475,9 @@ describe("PINs are checked by the server", () => {
 });
 
 describe("a snapshot PIN cannot open someone else's account", () => {
+  beforeEach(async () => {
+    await handle.db.delete(schema.tenantState).where(eq(schema.tenantState.tenantId, "tnt-yorkfx"));
+  });
   const desk = () => ({
     cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE),
     cdos_settings: {
@@ -641,7 +644,7 @@ describe("a snapshot PIN cannot open someone else's account", () => {
     expect(JSON.stringify(objectAudit)).not.toContain("not-on-this-desk");
     expect(JSON.stringify(objectAudit)).not.toContain("1111");
 
-    const packed = JSON.stringify({ employees: [{ code: "m.costa", pin: "4821", note: { PIN: "6677" } }, { code: "not-on-this-desk", pinHash: "0000" }] });
+    const packed = JSON.stringify({ employees: [{ code: "m.costa", pin: "4821", note: { PIN: "6677" } }, { code: "j.masri" }, { code: "not-on-this-desk", pinHash: "0000" }] });
     const put = await app.inject({
       method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
       payload: { state: { cdos_cheque_schedule_v1: schedule, cdos_settings: packed } },
