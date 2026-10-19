@@ -2984,6 +2984,28 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     letter-spacing: 0 !important;
     text-transform: none !important;
   }
+  /* The phone rule above wraps every flex row. The effective rate is
+     longer than the old four-place figure, so the swap was the item
+     that wrapped, and it sat 14px off the rate line. The rate text
+     takes the leftover width and wraps inside it. The swap stays on
+     that row, centred on the text. */
+  .cd-tx-rate-line {
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+  }
+  .cd-tx-rate-line > .cd-tx-side,
+  .cd-tx-rate-line > .cd-tx-swap {
+    flex: none;
+  }
+  .cd-tx-rate-line > .cd-tx-side {
+    white-space: nowrap;
+  }
+  .cd-tx-rate-line > .cd-tx-kicker {
+    min-width: 0;
+    /* The 430px rule sets nowrap on every span in a gap-2 row.
+       That keeps a chip on one line. This figure has to wrap. */
+    white-space: normal !important;
+  }
   .cd-tx-check-go {
     display: flex;
     flex-direction: column;
