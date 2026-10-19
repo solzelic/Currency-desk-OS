@@ -14,9 +14,14 @@ const api = async (path, opts) => {
   const init = Object.assign({
     credentials: 'same-origin'
   }, opts || {});
-  init.headers = Object.assign({
-    'content-type': 'application/json'
-  }, opts && opts.headers || {});
+  const headers = Object.assign({}, opts && opts.headers || {});
+  /* Remove a team member and delete a desk send no body. A JSON
+     content type on that empty body is refused before the route runs.
+     The header is set only when there is a body to parse. */
+  if (init.body != null && init.body !== '' && headers['content-type'] == null && headers['Content-Type'] == null) {
+    headers['content-type'] = 'application/json';
+  }
+  init.headers = headers;
   const r = await fetch(path, init);
   const body = await r.json().catch(() => null);
   if (!r.ok) throw {
@@ -4361,8 +4366,8 @@ function PersonPage({
     setBusy(label);
     setFlash(null);
     try {
-      // the shared api() always sets a JSON content-type, and Fastify rejects
-      // that with no body — so an action with nothing to say still says {}
+      // an action with nothing to say still sends {}, so the parser has
+      // a JSON body to read. A content type with no body is refused.
       const r = await api(path, {
         method: body ? 'PATCH' : 'POST',
         body: JSON.stringify(body || {})
