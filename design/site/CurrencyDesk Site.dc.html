@@ -59,6 +59,20 @@
       #product [data-sticky] { position: relative !important; height: auto !important; overflow: visible !important; }
       [data-feat-frame] { height: auto !important; min-height: 280px !important; }
       [data-feat-detail] { position: relative !important; inset: auto !important; height: auto !important; }
+      [data-payoff] { grid-template-columns: minmax(0, 1fr) !important; overflow: visible !important; }
+      [data-old-way] { grid-template-columns: minmax(0, 1fr) !important; }
+      [data-scene="oldway"] { height: auto !important; }
+      [data-scene="oldway"] [data-sticky] { position: relative !important; height: auto !important; overflow: visible !important; }
+      [data-hero-chrome] { display: none !important; }
+      [data-hero-stage] { height: auto !important; }
+      [data-hero-rates="card"] { position: relative !important; width: 100% !important; max-width: 100% !important; left: auto !important; top: auto !important; transform: none !important; animation: none !important; margin: 24px auto 0 !important; }
+      [data-founding] { grid-template-columns: minmax(0, 1fr) !important; padding: 32px 18px !important; }
+      [data-founding-cta], [data-see-demo] { white-space: nowrap !important; }
+      [data-nav-cta] { height: 44px !important; min-height: 44px !important; }
+      [data-pricing-plans] a, [data-footer-cols] a, [data-show-all], [data-term] button, [data-more] { min-height: 44px !important; box-sizing: border-box !important; }
+      [data-pricing-plans] a { display: flex !important; align-items: center !important; justify-content: center !important; }
+      [data-footer-cols] a, [data-show-all] { display: inline-flex !important; align-items: center !important; }
+      [data-rail][data-active="true"] [data-more] { max-height: 52px !important; }
     }
     @media (max-width: 399px) {
       [data-nav-row] { grid-template-columns: minmax(0, 1fr) auto !important; column-gap: 8px !important; padding-left: 12px !important; padding-right: 12px !important; }
@@ -129,12 +143,12 @@
       </div>
       <div style="display: inline-flex; align-items: center; gap: 12px; margin-top: 18px; font-family: var(--m); font-size: 11px; letter-spacing: 0.03em; color: var(--faint); animation: cdRiseIn 0.7s ease 0.44s both;"><span style="display: inline-flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: block; width: clamp(24px, 5vw, 56px); height: 1px; background: linear-gradient(90deg, transparent, var(--line));"></span><span style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; color: var(--green-deep);"><span style="width: 5px; height: 5px; border-radius: 50%; background: var(--green-bright); animation: cdLive 2s infinite;"></span>Available in Canada (early access)</span><span aria-hidden="true" style="display: block; width: clamp(24px, 5vw, 56px); height: 1px; background: linear-gradient(90deg, var(--line), transparent);"></span></span></div>
 
-      <div data-hero="rx:15;ty:-12;s:0.9" style="position: relative; height: 510px; margin: 16px auto 0; max-width: 1000px;">
+      <div data-hero-stage data-hero="rx:15;ty:-12;s:0.9" style="position: relative; height: 510px; margin: 16px auto 0; max-width: 1000px;">
         <div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 760px; height: 760px; transform: translate(-50%,-50%); border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(29,107,69,0.05) 0 1.5px, transparent 1.5px 11px); opacity: 0.5; animation: cdSpin 150s linear infinite;"></div>
         <div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 520px; height: 520px; transform: translate(-50%,-50%); border: 1px dashed rgba(23,20,15,0.1); border-radius: 50%;"></div>
 
         <div data-hero-rates="card" style="position: absolute; top: 50%; left: 50%; width: 430px; transform: translate(-50%,-50%); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: 0 50px 100px -34px rgba(23,20,15,0.6), 0 0 0 1px var(--line); animation: cdFloat 9s ease-in-out infinite;">
-          <div style="display: flex; align-items: center; gap: 7px; padding: 11px 15px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span></div>
+          <div data-hero-chrome style="display: flex; align-items: center; gap: 7px; padding: 11px 15px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span></div>
           <div style="padding: 20px 22px 22px;">
             <div style="display: flex; align-items: baseline; justify-content: space-between;"><div data-sample-label style="font-family: var(--serif); font-size: 25px; line-height: 1; color: var(--ink);">Sample rates</div></div>
             <sc-for list="{{ heroRows }}" as="r" hint-placeholder-count="5">
@@ -185,7 +199,7 @@
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.02em; margin: 16px 0 0; text-wrap: pretty;">Six logins, a whiteboard of rates, and a drawer full of receipts.</h2>
           <p style="font-size: 17.5px; line-height: 1.6; color: var(--mute); margin: 18px 0 0; max-width: 580px;">It works, until the regulator calls, a currency runs dry, or you try to open a second shop. Every one of these is a leak.</p>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 44px; border-top: 1px solid rgba(23,20,15,0.16);">
+        <div data-old-way style="display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 44px; border-top: 1px solid rgba(23,20,15,0.16);">
           <sc-for list="{{ problems }}" as="p" hint-placeholder-count="3">
             <div style="padding: 26px 26px 24px; border-right: 1px solid rgba(23,20,15,0.1);">
               <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -276,7 +290,7 @@
               <div style="flex: 1;"></div>
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hair);">
                 <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.04em; color: var(--faint);">In the desk · {{ detailKicker }}</span>
-                <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--green); color: #fff; border-radius: 11px; font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600;" style-hover="background: var(--green-deep); color: #fff;">See a demo<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+                <a data-see-demo href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--green); color: #fff; border-radius: 11px; font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; white-space: nowrap;" style-hover="background: var(--green-deep); color: #fff;">See a demo<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
               </div>
             </div>
           </sc-if>
@@ -382,7 +396,7 @@
         <div style="min-width: 0; display: flex; flex-direction: column;">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px;">
             <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">{{ selectorLabel }}</span>
-            <button type="button" onClick="{{ toggleAll }}" style="{{ showAllStyle }}">{{ showAllLabel }}</button>
+            <button type="button" data-show-all onClick="{{ toggleAll }}" style="{{ showAllStyle }}">{{ showAllLabel }}</button>
           </div>
           <div data-cards style="{{ cardsGridStyle }}">
             <sc-for list="{{ jurCards }}" as="c" hint-placeholder-count="6">
@@ -492,7 +506,7 @@
             <div style="font-family: var(--serif); font-size: 27px; line-height: 1.1; letter-spacing: -0.015em; margin-top: 7px;">More trades. Less paperwork. Here's the arithmetic.</div>
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: rgba(23,20,15,0.14); border: 1px solid rgba(23,20,15,0.14); border-radius: 16px; overflow: hidden;">
+        <div data-payoff style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: rgba(23,20,15,0.14); border: 1px solid rgba(23,20,15,0.14); border-radius: 16px; overflow: hidden;">
           <sc-for list="{{ proofPoints }}" as="pp" hint-placeholder-count="5">
             <div style="background: var(--panel); padding: 17px 19px 18px; display: flex; flex-direction: column; gap: 7px;">
               <div style="display: flex; align-items: baseline; gap: 9px;">
@@ -514,7 +528,7 @@
         <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--green); font-weight: 600;">Founding pricing</div>
         <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.018em; margin: 14px 0 0;">One flat price. The whole desk.</h2>
         <p style="font-size: 15.5px; line-height: 1.6; color: var(--mute); margin: 16px auto 0; max-width: 490px;">Early-access members lock founding rates for life. This is the price the first 100 desks will ever pay.</p>
-        <div style="display: inline-flex; gap: 6px; margin-top: 26px; padding: 5px; border-radius: 12px; background: rgba(23,20,15,0.05); border: 1px solid var(--line);">
+        <div data-term style="display: inline-flex; gap: 6px; margin-top: 26px; padding: 5px; border-radius: 12px; background: rgba(23,20,15,0.05); border: 1px solid var(--line);">
           <button type="button" onClick="{{ termMonthly }}" style="{{ segMonthly }}">Monthly</button>
           <button type="button" onClick="{{ termAnnual }}" style="{{ segAnnual }}">Annual · save 10%</button>
         </div>
@@ -550,14 +564,14 @@
   <!-- ================= FINAL CTA — FOUNDING OPERATOR ================= -->
   <div style="max-width: 1200px; margin: 0 auto; padding: 88px 28px 96px;">
     <div data-reveal="true" style="opacity: 0; transform: translateY(18px); transition: opacity 0.7s cubic-bezier(0.2,0.8,0.2,1), transform 0.7s cubic-bezier(0.2,0.8,0.2,1); position: relative; overflow: hidden; border-radius: 28px; background: linear-gradient(150deg, var(--green), var(--green-deep)); color: #fff; padding: 6px;">
-      <div style="position: relative; border-radius: 24px; overflow: hidden; display: grid; grid-template-columns: 1.3fr 0.7fr; gap: 32px; align-items: center; padding: 58px 50px;">
+      <div data-founding style="position: relative; border-radius: 24px; overflow: hidden; display: grid; grid-template-columns: 1.3fr 0.7fr; gap: 32px; align-items: center; padding: 58px 50px;">
         <div aria-hidden="true" style="position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.5px); background-size: 22px 22px;"></div>
         <div style="position: relative;">
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">Apply for early access</div>
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.02em; margin: 13px 0 0;">Become a Founding Operator.</h2>
           <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.9); margin: 16px 0 0; max-width: 450px;">Reserve your workspace, lock founding pricing, and get your charter card. No card, no commitment.</p>
           <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px;">
-            <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 9px; padding: 17px 30px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 12.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; overflow: hidden; position: relative; animation: cdPulse 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);" style-hover="transform: translateY(-2px) scale(1.02); color: var(--green-deep);"><span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: linear-gradient(90deg, transparent, rgba(29,107,69,0.16), transparent); animation: cdSheen 3.4s ease-in-out 0.8s infinite;"></span><span style="position: relative;">Get early access</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="position: relative; animation: cdNudge 2.8s ease-in-out infinite;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+            <a data-founding-cta href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 9px; padding: 17px 30px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 12.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; overflow: hidden; position: relative; white-space: nowrap; animation: cdPulse 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);" style-hover="transform: translateY(-2px) scale(1.02); color: var(--green-deep);"><span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: linear-gradient(90deg, transparent, rgba(29,107,69,0.16), transparent); animation: cdSheen 3.4s ease-in-out 0.8s infinite;"></span><span style="position: relative;">Get early access</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="position: relative; animation: cdNudge 2.8s ease-in-out infinite;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
             <div style="font-family: var(--m); font-size: 11px; color: rgba(255,255,255,0.82);">Early access is open</div>
           </div>
         </div>
