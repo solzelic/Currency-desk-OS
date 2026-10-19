@@ -16,7 +16,10 @@ management are Stripe-hosted.
    | Full System | `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_ANNUAL` |
    | AI Bundle | `STRIPE_PRICE_PREMIUM_MONTHLY`, `STRIPE_PRICE_PREMIUM_ANNUAL` |
 
-   Use immutable Price IDs (`price_…`), never client-supplied amounts. Make the
+   Every plan is priced in **US dollars**: Rates US$299, Full System
+   US$599 and AI Bundle US$749 a month, with annual at 10% off, all
+   tax-exclusive. Use immutable Price IDs (`price_…`), never
+   client-supplied amounts. Make the
    annual prices reflect the final commercial discount before a customer uses
    them.
 
