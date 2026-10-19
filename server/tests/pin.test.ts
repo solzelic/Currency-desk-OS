@@ -840,4 +840,31 @@ describe("a snapshot PIN cannot open someone else's account", () => {
     expect(JSON.stringify(added[0])).not.toContain("HN-PRIV-9");
     expect(JSON.stringify(added[0])).not.toContain("4821");
   });
+
+  it("does not hand a stored PIN back on a stale 409", async () => {
+    const costa = await staffRow("m.costa");
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+    const legacy = {
+      cdos_cheque_schedule_v1: schedule,
+      pin: "4821",
+      cdos_settings: { employees: [{ code: "j.masri", pin: "5566" }] },
+    };
+    await handle.db.insert(schema.tenantState).values({
+      tenantId: costa.tenantId, state: legacy, updatedBy: costa.id, version: 1,
+    }).onConflictDoUpdate({
+      target: schema.tenantState.tenantId,
+      set: { state: legacy, version: 1 },
+    });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: schedule }, version: 0 },
+    });
+    expect(put.statusCode, put.body).toBe(409);
+    expect(put.body).not.toContain("4821");
+    expect(put.body).not.toContain("5566");
+    const stored = (await handle.db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, costa.tenantId)).limit(1))[0];
+    expect(JSON.stringify(stored?.state)).toContain("4821");
+    expect(JSON.stringify(stored?.state)).toContain("5566");
+    expect(stored?.version).toBe(1);
+  });
 });
