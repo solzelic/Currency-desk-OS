@@ -57,7 +57,7 @@ export const ROLE_RANK: Record<SessionUser["role"], number> = {
   administrator: 4,
 };
 
-const canManage = (actor: SessionUser, targetRole: SessionUser["role"]): boolean => {
+export const canManage = (actor: SessionUser, targetRole: SessionUser["role"]): boolean => {
   const a = ROLE_RANK[actor.role];
   if (a < ROLE_RANK.branch_manager) return false;
   // admins manage everyone (incl. other admins); managers only ranks below them

@@ -3,7 +3,7 @@
    you take a drawer, switch accounts, or void a ticket.
 
      POST /api/staff/pin/verify   { staffId?, pin }  → { ok }
-     POST /api/staff/pin          { pin, currentPin? }  → set your own
+     POST /api/staff/pin          { pin, currentPin?, staffId? }  → your own, or a manager's for someone else
      POST /api/staff/pin/reset    { password, pin }     → forgot it
 
    A PIN is personal — it is how the ledger knows a drawer was taken by
@@ -29,17 +29,18 @@
    access — they would have won already.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
+import { canManage } from "./staff.js";
 
 const PIN = z.string().regex(/^\d{4}$/, "pin: four digits");
 const verifyBody = z.object({ staffId: z.string().min(1).max(120).optional(), pin: PIN });
-const setBody = z.object({ pin: PIN, currentPin: PIN.optional() });
+const setBody = z.object({ pin: PIN, currentPin: PIN.optional(), staffId: z.string().min(1).max(120).optional() });
 const resetBody = z.object({ password: z.string().min(1).max(512), pin: PIN });
 
 const MAX_TRIES = 5;
@@ -193,6 +194,38 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
 
     const me = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     if (!me) return reply.code(404).send({ error: "not_found" });
+    const named = parsed.data.staffId;
+    if (named && named !== who.staffId) {
+      if (who.role !== "administrator" && who.role !== "branch_manager") {
+        return reply.code(403).send({
+          error: "permission_denied",
+          detail: "You can only set your own PIN. Ask a manager.",
+        });
+      }
+      const target = (await db.select().from(schema.staffUsers).where(and(
+        eq(schema.staffUsers.tenantId, who.tenantId),
+        eq(schema.staffUsers.staffId, named),
+      )).orderBy(asc(schema.staffUsers.id)).limit(1))[0]; // two staff rows can match; ordering by id puts the PIN on the same row every time
+      if (!target) return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
+      if (!canManage(who, target.role)) {
+        return reply.code(403).send({
+          error: "permission_denied",
+          detail: "You can't set a PIN for that person.",
+        });
+      }
+      const weak = weakPinDetail(parsed.data.pin);
+      if (weak) return reply.code(422).send({ error: "weak_pin", detail: weak });
+      await db.update(schema.staffUsers)
+        .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: true })
+        .where(eq(schema.staffUsers.id, target.id));
+      clearPinAttempts(target.id);
+      await audit(db, {
+        tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
+        actorId: who.id, action: "pin.set",
+        detail: { staffId: target.staffId, mustChange: true },
+      });
+      return { ok: true, mustChange: true };
+    }
     if (me.pinHash) {
       if (!parsed.data.currentPin) return reply.code(400).send({ error: "current_required", detail: "Enter your current PIN." });
       if (!reservePinAttempt(me.id)) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
