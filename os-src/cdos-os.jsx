@@ -2557,7 +2557,8 @@
             <button className={'mb-op' + (locked ? ' on' : '')} title={locked ? 'Unlock rates — follow the live board' : 'Lock rates — hold at last pull'} onClick={toggleLock}><Ic n="lock" s={17} /></button>
             <button className="mb-op" title="Settings" onClick={() => openApp('settings')}><Ic n="gear" s={17} /></button>
             <span className="mb-op-div"></span>
-            <span className="mb-clock"><Ic n="clock" s={12} /> <b>{clock.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })}</b></span>
+            {/* Same clock as the Audit Trail. 12-hour unless this desk set 24-hour. */}
+            <span className="mb-clock"><Ic n="clock" s={12} /> <b>{window.CDOS.deskTime(clock, settings.timeFormat)}</b></span>
             <span className="mb-op-div"></span>
             {profileButton('desk')}
             <div className="mb-power-wrap" ref={opMenuRef}>

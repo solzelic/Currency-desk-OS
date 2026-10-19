@@ -16,6 +16,21 @@
      with no currency word rather than with the wrong one. Evaluated per
      call, because the pack lands from the server after this file parses. */
   const homeCcy = () => { const pack = window.CDOS.deskPack(); return (pack && pack.homeCurrency) || (window.CDOS.reportingLimit(null) || {}).currency || null; };
+
+  /* The desk's one clock. Settings → Time format is 12-hour unless the
+     desk picked 24-hour. The Audit Trail already used this rule. The
+     menubar calls the same function, so a 12-hour desk reads 16:05 as
+     4:05 pm, the same shape as a held quote. */
+  function deskTime(date, timeFormat) {
+    const h = date.getHours(), m = date.getMinutes();
+    if ((timeFormat || '12h') !== '24h') {
+      const ap = h < 12 ? 'am' : 'pm';
+      let hh = h % 12;
+      if (hh === 0) hh = 12;
+      return hh + ':' + String(m).padStart(2, '0') + ' ' + ap;
+    }
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -190,12 +205,7 @@
       return { date: m[1], time: m[2] + ':' + m[3] + (m[4] ? ':' + m[4] : ''), min: (+m[2]) * 60 + (+m[3]) };
     };
     const inits = (n) => (n || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
-    const use12 = ((settings && settings.timeFormat) || '12h') !== '24h';
-    const hhmm = (min) => {
-      const h = Math.floor(min / 60), m = min % 60;
-      if (use12) { const ap = h < 12 ? 'AM' : 'PM'; let hh = h % 12; if (hh === 0) hh = 12; return hh + ':' + String(m).padStart(2, '0') + ' ' + ap; }
-      return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-    };
+    const hhmm = (min) => deskTime(new Date(2000, 0, 1, Math.floor(min / 60), min % 60), settings && settings.timeFormat);
 
     const items = useMemo(() => audit.map((a, i) => ({ ...a, i, ...parse(a.ts) })), [audit]);
     const actions = useMemo(() => Array.from(new Set(items.map(a => a.action))).sort(), [items]);
@@ -457,6 +467,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    computeFlags, computeAlerts, Audit, Calc, ReceiptModal
+    computeFlags, computeAlerts, Audit, Calc, ReceiptModal, deskTime
   });
 })();

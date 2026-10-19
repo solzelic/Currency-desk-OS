@@ -62,7 +62,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers. Switching staff replaces the session. The name on a deal is that session |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
-| Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
+| Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock. It follows the browser zone and the desk's time format, 12-hour unless the desk set 24-hour. |
 
 ## Production/build surfaces
 
@@ -71,6 +71,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 · `server/API` (`/api/*`).
 
 ## Current active work
+
+- **The menubar clock follows the desk's time format.** Settings → Time format defaults to 12-hour. The header was a hard-coded 24-hour clock, so 16:05 stayed 16:05. It now uses the same clock as the Audit Trail (`deskTime`). With 12-hour set, 16:05 reads 4:05 pm. With 24-hour set, it stays 16:05. The clock still follows the browser zone. At 430px and below, the phone header replaces the menubar and that header has no clock.
 
 - **A few sentences no longer use an em dash.** Branch Network says "Drag someone onto a branch to assign them, or onto a till to post them to that drawer." A password the employee set reads "Password set by the employee. Only they know it. Reset issues a new temporary one." When the desk cannot reach the server it says "Server unavailable. Passwords are managed on the live desk." An empty name says "Type their name above. Their username fills in by itself." The Visit title is "Visit Us | Currency Exchange at 69 Yorkville Ave, Toronto | York Foreign Exchange". The description says "Unit 102, footsteps from the Four Seasons Hotel". The lede says "69 Yorkville Avenue, Unit 102, directly across from the Four Seasons Hotel". Getting here says Bloor-Yonge. The quote text and the confirm text drop the em dash in their own commit, for compliance review. The confirm clock and the period after a.m. are unchanged. Each file's count of em dashes and en dashes in visible copy must match its baseline exactly. A new dash fails, and dropping one means the baseline is updated in the same change. Settings is 101, including 18 dashes in the business-profile copy from the Desk name line through the compliance fallback. Those 18 sentences are not reworded here. The built desk at web/app/os.js has its own count, 779, with code comments skipped. This merges after the PIN queue.
 
@@ -721,6 +723,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-19**, menubar clock. The header uses the Audit Trail clock. A 12-hour desk reads 16:05 as 4:05 pm. A 24-hour desk still reads 16:05. The clock follows the browser zone.
 
 **2026-10-19**, a few em dashes. Branch Network says "Drag someone onto a branch to assign them, or onto a till to post them to that drawer." The employee password line is unchanged from the period form. The offline line and the empty-name line use a period. The Visit title uses a vertical bar, the description says "Unit 102, footsteps", and the lede keeps one sentence through "directly across". Getting here says Bloor-Yonge. The quote text and the confirm text drop the em dash in their own commit. The confirm clock and the period after a.m. are unchanged. Each file's count must match its baseline exactly. Settings is 101, including 18 dashes in the business-profile copy that are not reworded here. web/app/os.js is 779.
 
