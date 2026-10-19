@@ -341,7 +341,7 @@ window.CDOS_PERSIST = (function () {
       return announce({
         level: 'stopped',
         code: 'permission_denied',
-        detail: 'That change was refused. Recent work on this screen is still here.',
+        detail: (denied && denied.detail) || 'That change was refused. Recent work on this screen is still here.',
       });
     }
 

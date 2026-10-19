@@ -38,6 +38,8 @@
       text: '#0a0a0a',
       mute: 'rgba(10,10,10,0.55)',
       faint: 'rgba(10,10,10,0.4)',
+      /* 12px notes. #6b6b6b is 4.67:1 on the chip and 5.33:1 on white. */
+      pinNote: '#6b6b6b',
       hoverSoft: 'rgba(10,10,10,0.04)',
       hover: 'rgba(10,10,10,0.06)',
       hoverStrong: 'rgba(10,10,10,0.10)',
@@ -76,6 +78,8 @@
       text: '#eceae3',
       mute: 'rgba(236,234,227,0.58)',
       faint: 'rgba(236,234,227,0.4)',
+      /* 6.5:1 on the night chip. */
+      pinNote: '#aea89f',
       hoverSoft: 'rgba(255,255,255,0.05)',
       hover: 'rgba(255,255,255,0.07)',
       hoverStrong: 'rgba(255,255,255,0.12)',
@@ -5446,6 +5450,47 @@ if (typeof module !== "undefined" && module.exports) {
       transition: 'left .15s'
     }
   }));
+  /* The hit area is 44px. The track sits inside it. Ink on the panel clears 4.5:1. */
+  const PinSw = ({
+    on,
+    click,
+    label
+  }) => /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    "aria-label": label,
+    onClick: click,
+    className: "relative flex-none",
+    style: {
+      width: 48,
+      height: 48,
+      minWidth: 48,
+      minHeight: 48,
+      background: 'transparent',
+      border: 0,
+      padding: 0,
+      cursor: 'pointer'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "absolute",
+    style: {
+      left: 0,
+      top: 10,
+      width: 44,
+      height: 24,
+      background: on ? CD.ink : 'var(--cd-disabled)',
+      borderRadius: 999
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "absolute",
+    style: {
+      top: 2,
+      width: 20,
+      height: 20,
+      left: on ? 22 : 2,
+      background: 'var(--cd-panel)',
+      borderRadius: 999
+    }
+  })));
   const Seg = ({
     value,
     onPick,
@@ -7296,6 +7341,7 @@ if (typeof module !== "undefined" && module.exports) {
     /* A teller sign-in rewrites the shared preset. The rail follows the
        signed-in role, so a manager still sees their tabs after that. */
     const canSys = me.role === 'Owner' || me.role === 'Manager' || perms.Teller.canSettings;
+    const pinOwner = serverRole ? serverRole === 'administrator' : me.role === 'Owner';
     const [tab, setTab] = useState(canSys ? 'business' : 'account');
     const [packRev, setPackRev] = useState(0);
     const [addingLoc, setAddingLoc] = useState(false); // enterprise Add-location modal (shared with Branch Network's rail)
@@ -10386,15 +10432,42 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.ink,
             lineHeight: 1.45
           }
-        }, "Read this to ", e.name, " now. It is shown once and cannot be looked up again. They change it the first time they use it.")), /*#__PURE__*/React.createElement(Row, {
+        }, "Read this to ", e.name, " now. It is shown once and cannot be looked up again. They change it the first time they use it.")), pinOwner ? /*#__PURE__*/React.createElement(Row, {
           title: "Require PIN",
           desc: "When on, this person enters their PIN to switch to their account, take a till, and void a deal."
-        }, /*#__PURE__*/React.createElement(Sw, {
+        }, /*#__PURE__*/React.createElement(PinSw, {
+          label: 'Require PIN for ' + e.name,
           on: e.requirePin !== false,
           click: () => setEmp(e.id, {
             requirePin: e.requirePin === false
           }, `${e.name} · PIN ${e.requirePin === false ? 'required' : 'optional'}`)
-        })), /*#__PURE__*/React.createElement("div", {
+        })) : /*#__PURE__*/React.createElement("div", {
+          className: "flex items-center justify-between gap-3 py-3",
+          style: {
+            borderTop: `1px solid ${CD.lineSoft}`,
+            minHeight: 44
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          className: "min-w-0"
+        }, /*#__PURE__*/React.createElement("span", {
+          className: "block text-sm",
+          style: {
+            color: CD.ink
+          }
+        }, "Require PIN"), /*#__PURE__*/React.createElement("span", {
+          "data-pin-locked": "require",
+          className: "block text-[12px]",
+          style: {
+            color: CD.pinNote
+          }
+        }, "Only the owner can change this.")), /*#__PURE__*/React.createElement("span", {
+          "data-pin-state": "require",
+          className: "inline-flex items-center flex-none text-[12px]",
+          style: {
+            color: CD.ink,
+            minHeight: 44
+          }
+        }, e.requirePin === false ? 'Off' : 'On')), /*#__PURE__*/React.createElement("div", {
           className: "flex items-center justify-between mt-5 pt-4",
           style: {
             borderTop: `1px solid ${CD.line}`
@@ -10465,72 +10538,117 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink,
           lineHeight: 1.45
         }
-      }, "The PIN is a quick in-app check. Sign-in still uses each person's password. A manager issues a PIN, and that person changes it the first time they use it."), /*#__PURE__*/React.createElement("label", {
-        className: "flex items-center justify-between gap-3 py-1.5",
+      }, "The PIN is a quick in-app check. Sign-in still uses each person's password. A manager issues a PIN, and that person changes it the first time they use it."), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between gap-3",
         style: {
-          borderTop: `1px solid ${CD.lineSoft}`
+          borderTop: `1px solid ${CD.lineSoft}`,
+          minHeight: 44
         }
       }, /*#__PURE__*/React.createElement("span", {
         className: "min-w-0"
       }, /*#__PURE__*/React.createElement("span", {
-        className: "block text-[12.5px]",
+        className: "block text-[13px]",
         style: {
           color: CD.ink
         }
-      }, "Require PIN to switch account"), /*#__PURE__*/React.createElement("span", {
-        className: "block text-[10.5px]",
+      }, "Require PIN to switch account"), pinOwner ? /*#__PURE__*/React.createElement("span", {
+        className: "block text-[12px]",
         style: {
-          color: CD.mute
+          color: CD.ink
         }
-      }, "Prove it\u2019s them before loading another person\u2019s desk.")), /*#__PURE__*/React.createElement(Sw, {
+      }, "Prove it\u2019s them before loading another person\u2019s desk.") : /*#__PURE__*/React.createElement("span", {
+        "data-pin-locked": "switch",
+        className: "block text-[12px]",
+        style: {
+          color: CD.pinNote
+        }
+      }, "Only the owner can change this.")), pinOwner ? /*#__PURE__*/React.createElement(PinSw, {
+        label: "Require PIN to switch account",
         on: settings.pinOnSwitch !== false,
         click: () => toggleSet('pinOnSwitch', 'PIN on account switch')
-      })), /*#__PURE__*/React.createElement("label", {
-        className: "flex items-center justify-between gap-3 py-1.5",
+      }) : /*#__PURE__*/React.createElement("span", {
+        "data-pin-state": "switch",
+        className: "inline-flex items-center flex-none text-[12px]",
         style: {
-          borderTop: `1px solid ${CD.lineSoft}`
+          color: CD.ink,
+          minHeight: 44
+        }
+      }, settings.pinOnSwitch === false ? 'Off' : 'On')), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between gap-3",
+        style: {
+          borderTop: `1px solid ${CD.lineSoft}`,
+          minHeight: 44
         }
       }, /*#__PURE__*/React.createElement("span", {
         className: "min-w-0"
       }, /*#__PURE__*/React.createElement("span", {
-        className: "block text-[12.5px]",
+        className: "block text-[13px]",
         style: {
           color: CD.ink
         }
-      }, "Require PIN to take a till"), /*#__PURE__*/React.createElement("span", {
-        className: "block text-[10.5px]",
+      }, "Require PIN to take a till"), pinOwner ? /*#__PURE__*/React.createElement("span", {
+        className: "block text-[12px]",
         style: {
-          color: CD.mute
+          color: CD.ink
         }
-      }, "Entering or taking over a drawer asks for the operator\u2019s PIN.")), /*#__PURE__*/React.createElement(Sw, {
+      }, "Entering or taking over a drawer asks for the operator\u2019s PIN.") : /*#__PURE__*/React.createElement("span", {
+        "data-pin-locked": "till",
+        className: "block text-[12px]",
+        style: {
+          color: CD.pinNote
+        }
+      }, "Only the owner can change this.")), pinOwner ? /*#__PURE__*/React.createElement(PinSw, {
+        label: "Require PIN to take a till",
         on: settings.pinOnTill !== false,
         click: () => toggleSet('pinOnTill', 'PIN on till switch')
-      })), /*#__PURE__*/React.createElement("label", {
-        className: "flex items-center justify-between gap-3 py-1.5",
+      }) : /*#__PURE__*/React.createElement("span", {
+        "data-pin-state": "till",
+        className: "inline-flex items-center flex-none text-[12px]",
         style: {
-          borderTop: `1px solid ${CD.lineSoft}`
+          color: CD.ink,
+          minHeight: 44
+        }
+      }, settings.pinOnTill === false ? 'Off' : 'On')), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center justify-between gap-3",
+        style: {
+          borderTop: `1px solid ${CD.lineSoft}`,
+          minHeight: 44
         }
       }, /*#__PURE__*/React.createElement("span", {
         className: "min-w-0"
       }, /*#__PURE__*/React.createElement("span", {
-        className: "block text-[12.5px]",
+        className: "block text-[13px]",
         style: {
           color: CD.ink
         }
-      }, "Require PIN to void a transaction"), /*#__PURE__*/React.createElement("span", {
-        className: "block text-[10.5px]",
+      }, "Require PIN to void a transaction"), pinOwner ? /*#__PURE__*/React.createElement("span", {
+        className: "block text-[12px]",
         style: {
-          color: CD.mute
+          color: CD.ink
         }
-      }, "Reversing a posted deal asks the operator to confirm with their PIN.")), /*#__PURE__*/React.createElement(Sw, {
+      }, "Reversing a posted deal asks the operator to confirm with their PIN.") : /*#__PURE__*/React.createElement("span", {
+        "data-pin-locked": "void",
+        className: "block text-[12px]",
+        style: {
+          color: CD.pinNote
+        }
+      }, "Only the owner can change this.")), pinOwner ? /*#__PURE__*/React.createElement(PinSw, {
+        label: "Require PIN to void a transaction",
         on: settings.pinOnVoid !== false,
         click: () => toggleSet('pinOnVoid', 'PIN on void')
-      })), /*#__PURE__*/React.createElement("div", {
-        className: "text-[10.5px] mt-1.5",
+      }) : /*#__PURE__*/React.createElement("span", {
+        "data-pin-state": "void",
+        className: "inline-flex items-center flex-none text-[12px]",
         style: {
-          color: CD.faint
+          color: CD.ink,
+          minHeight: 44
         }
-      }, "Exempt one person from these prompts with ", /*#__PURE__*/React.createElement("b", null, "Require PIN"), " in their profile.")), window.CDOS.TeamBoard && (branches || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, settings.pinOnVoid === false ? 'Off' : 'On')), pinOwner && /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-1.5",
+        style: {
+          color: CD.ink
+        }
+      }, "Exempt one person from these prompts with Require PIN in their profile.")), window.CDOS.TeamBoard && (branches || []).length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mb-5"
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-1.5",
@@ -62525,7 +62643,7 @@ window.CDOS_PERSIST = (function () {
       return announce({
         level: 'stopped',
         code: 'permission_denied',
-        detail: 'That change was refused. Recent work on this screen is still here.',
+        detail: (denied && denied.detail) || 'That change was refused. Recent work on this screen is still here.',
       });
     }
 
