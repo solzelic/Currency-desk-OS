@@ -26,6 +26,7 @@ import {
   ownsSettings,
 } from "../state/owner-settings.js";
 import { scrubHealthNumbers } from "../clients/id-document-types.js";
+import { isSessionOwner, PIN_ROW_REMOVAL, PIN_RULE_REFUSAL, pinOwnerRefusal, ranksBelow, staffRuleChanges } from "../state/pin-rule.js";
 
 /* The cheque fee is the price of the desk's own credit. Who may write
    it lives in canWriteSetting, not in a role list at this route. */
@@ -384,6 +385,66 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       }
       state = keepOwnerFields(storedState, state, who.role);
     }
+
+    /* A non-owner cannot change Require PIN, the PIN switches, a PIN
+       hash, or pinMustChange, and cannot grant compliance:thresholds.
+       The owner is the signed-in administrator, the same check as the
+       rank rule below. The save is refused. Nothing is written. The
+       audit names the session. */
+    if (!isSessionOwner(who.role)) {
+      const pinRefusal = pinOwnerRefusal(storedState, state);
+      if (pinRefusal) {
+        await audit(db, {
+          tenantId: who.tenantId,
+          legalEntityId: who.legalEntityId,
+          branchId: who.branchId,
+          actorId: who.id,
+          action: "settings.pin_owner_refused",
+          detail: { role: who.role, staffId: who.staffId },
+        });
+        return reply.code(403).send({ error: "permission_denied", detail: pinRefusal });
+      }
+    }
+
+    /* The owner may edit their own row and anyone else's. For everyone
+       else, a role or permissions change, a removed row, a known person
+       put back, or a first copy that sets a role or a permission, on
+       someone this person does not outrank, refuses the whole save.
+       Nothing is written. The audit names the session. A removal uses
+       PIN_ROW_REMOVAL. Any other edit uses the rank sentence. The owner
+       is the signed-in administrator, not a permission. */
+    if (!isSessionOwner(who.role)) {
+      const roster = await db.select({
+        staffId: schema.staffUsers.staffId,
+        role: schema.staffUsers.role,
+      }).from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, who.tenantId));
+      const { guarded, removed } = staffRuleChanges(storedState, state, roster.map((row) => row.staffId));
+      if (guarded.length) {
+        const blocked = new Set<string>();
+        for (const row of roster) {
+          if (!ranksBelow(who.role, row.role)) blocked.add(row.staffId);
+        }
+        const blockedCodes = guarded.filter((code) => blocked.has(code));
+        if (blockedCodes.length) {
+          const removalOnly = blockedCodes.every((code) => removed.includes(code));
+          await audit(db, {
+            tenantId: who.tenantId,
+            legalEntityId: who.legalEntityId,
+            branchId: who.branchId,
+            actorId: who.id,
+            action: "settings.pin_rule_refused",
+            detail: { codes: blockedCodes, role: who.role, staffId: who.staffId },
+          });
+          return reply.code(403).send({ error: "permission_denied", detail: removalOnly ? PIN_ROW_REMOVAL : PIN_RULE_REFUSAL });
+        }
+      }
+    }
+
+    /* Who acted is the session. A name the client puts on the document
+       is not that person, so it is not stored. */
+    delete state.actingUser;
+    delete state.actorId;
+    delete state.performedBy;
 
     /* Any till PIN in the blob is removed here, before the document is
        described or stored. It is not copied onto a staff record. The
