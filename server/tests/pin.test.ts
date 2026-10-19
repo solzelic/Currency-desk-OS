@@ -636,4 +636,55 @@ describe("a snapshot PIN cannot open someone else's account", () => {
     expect((await staffRow("m.costa")).pinHash).toBeFalsy();
     expect((await staffRow("j.masri")).pinHash).toBeFalsy();
   });
+
+  it("caps pinsIgnored and the named codes at 40", async () => {
+    const costa = await staffRow("m.costa");
+    const employees: { code: string; pin: string }[] = [];
+    for (let i = 0; i <= 40; i++) {
+      const staffId = `cap.${String(i).padStart(2, "0")}`;
+      await handle.db.insert(schema.staffUsers).values({
+        id: `${costa.tenantId}:${staffId}`, tenantId: costa.tenantId, legalEntityId: costa.legalEntityId,
+        branchId: costa.branchId, staffId, name: staffId, role: "teller",
+        authorizedBranchIds: costa.authorizedBranchIds, passwordHash: costa.passwordHash,
+      }).onConflictDoNothing();
+      employees.push({ code: staffId, pin: "4821" });
+    }
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE), cdos_settings: { employees } } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(40);
+    const ignored = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const hit = ignored.find((row) => {
+      const detail = row.detail as { codes?: string[] };
+      return detail.codes?.includes("cap.00");
+    });
+    const codes = (hit?.detail as { codes?: string[] } | undefined)?.codes ?? [];
+    expect(codes.length).toBeLessThanOrEqual(40);
+    expect(codes).toHaveLength(40);
+    expect(codes).toContain("cap.00");
+    expect(codes).not.toContain("cap.40");
+    expect(JSON.stringify(hit)).not.toContain("4821");
+  });
+
+  it("keeps a real staff id named after the padding", async () => {
+    const employees: { code: string; pin: string }[] = [];
+    for (let i = 0; i < 40; i++) employees.push({ code: `pad.${String(i).padStart(2, "0")}`, pin: "1111" });
+    employees.push({ code: "j.masri", pin: "4821" }, { code: "j.masri", pin: "4821" });
+    const put = await app.inject({
+      method: "PUT", url: "/api/tenant/state", cookies: costaCookie,
+      payload: { state: { cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE), cdos_settings: { employees } } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+    expect(put.json().pinsIgnored).toBe(40);
+    const ignored = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.staff_pin_ignored"));
+    const hit = ignored.find((row) => {
+      const detail = row.detail as { count?: number; codes?: string[] };
+      return detail.count === 40 && detail.codes?.includes("j.masri") && !detail.codes.includes("cap.00");
+    });
+    expect((hit?.detail as { codes?: string[] } | undefined)?.codes).toEqual(["j.masri"]);
+    expect(JSON.stringify(hit)).not.toContain("4821");
+    expect(JSON.stringify(hit)).not.toContain("pad.");
+  });
 });

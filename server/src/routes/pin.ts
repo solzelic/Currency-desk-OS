@@ -205,7 +205,7 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       const target = (await db.select().from(schema.staffUsers).where(and(
         eq(schema.staffUsers.tenantId, who.tenantId),
         eq(schema.staffUsers.staffId, named),
-      )).orderBy(asc(schema.staffUsers.id)).limit(1))[0];
+      )).orderBy(asc(schema.staffUsers.id)).limit(1))[0]; // orderBy keeps B9 deterministic
       if (!target) return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
       if (!canManage(who, target.role)) {
         return reply.code(403).send({

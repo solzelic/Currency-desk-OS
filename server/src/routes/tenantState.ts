@@ -174,11 +174,11 @@ const putBody = z.object({
    The browser stores cdos_settings as a JSON string. An older client may
    still send an object. Either form is stripped before the save.
 
-   A pin field anywhere inside an employee entry is removed, including
-   0000, and is never copied onto a staff record. Each one that was a
-   four-digit PIN is counted. The audit row names only staff ids that
-   exist on this desk, and both the count and that list are capped.
-   The digits are not in the row. The rest of the document is still saved. */
+   This removes pin, PIN, and pinHash on cdos_settings.employees, including
+   a nested one of those names. 0000 is included. Nothing here is copied
+   onto a staff record. Each four-digit value is counted. The route then
+   keeps staff ids from this desk, drops duplicates, and caps the count
+   and that list at 40. The digits are not in the audit row. */
 const PIN_FIELD = /^pin(hash)?$/i;
 const PIN_CAP = 40;
 
@@ -229,7 +229,21 @@ function stripSnapshotPins(state: Record<string, unknown>): { count: number; cod
     if (typeof entry.code === "string" && entry.code) codes.push(entry.code.slice(0, 80));
   }
   if (asString) state.cdos_settings = JSON.stringify(settings);
-  return { count: Math.min(count, PIN_CAP), codes: codes.slice(0, PIN_CAP) };
+  return { count, codes };
+}
+
+/* Real staff ids on this desk, then duplicates, then the cap. Capping
+   first hides the person who was named after the padding. */
+function cappedStaffCodes(codes: string[], known: Set<string>): string[] {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const code of codes) {
+    if (!known.has(code) || seen.has(code)) continue;
+    seen.add(code);
+    kept.push(code);
+    if (kept.length === PIN_CAP) break;
+  }
+  return kept;
 }
 
 export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
@@ -354,6 +368,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        described or stored. It is not copied onto a staff record. The
        audit row is written only when this save lands. */
     const ignoredPins = stripSnapshotPins(state);
+    const pinsIgnored = Math.min(ignoredPins.count, PIN_CAP);
 
     /* Describe what is being saved. This NEVER refuses — the browser holds
        the only copy, so rejecting a document we merely find surprising
@@ -404,7 +419,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         branchId: who.branchId,
         actorId: who.id,
         action: "settings.staff_pin_ignored",
-        detail: { count: ignoredPins.count, codes: ignoredPins.codes.filter((code) => known.has(code)) },
+        detail: { count: pinsIgnored, codes: cappedStaffCodes(ignoredPins.codes, known) },
       });
     }
     if (changingFees) {
@@ -431,7 +446,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
       updatedAt: now.toISOString(),
       version,
       bytes,
-      pinsIgnored: ignoredPins.count,
+      pinsIgnored,
       ...(bytes > WARN_AT_BYTES ? { nearingLimit: true, limit: MAX_STATE_BYTES } : {}),
     };
   });
