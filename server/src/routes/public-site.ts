@@ -19,6 +19,7 @@ import Decimal from "decimal.js";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
+import { clientIp } from "../auth/client-ip.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { normalizePhone, sendSms } from "../sms.js";
 import { SITES, siteSlugForHost } from "../sites.js";
@@ -42,16 +43,27 @@ const quoteBody = z.object({
   amount: z.number().positive().max(1_000_000),
 }).refine((b) => b.from !== b.to, { message: "currencies must differ" });
 
-// simple abuse brake: a phone gets 3 quotes an hour, an IP gets 10
+// simple abuse brake: a phone gets 3 quotes an hour, an IP gets 10.
+// Confirm passes its own window. Quote calls keep the hour.
+const HOUR_MS = 60 * 60 * 1000;
 const recent = new Map<string, number[]>();
-const allow = (key: string, max: number): boolean => {
+const allow = (key: string, max: number, windowMs = HOUR_MS): boolean => {
   const now = Date.now();
-  const hits = (recent.get(key) ?? []).filter((t) => now - t < 60 * 60 * 1000);
+  const hits = (recent.get(key) ?? []).filter((t) => now - t < windowMs);
   if (hits.length >= max) return false;
   hits.push(now);
   recent.set(key, hits);
   return true;
 };
+
+/* 30 confirms a minute for one shop, and 30 for one client address.
+   A normal desk stays under that. The address comes from confirmClientIp
+   so a later change of source is one line. */
+const CONFIRM_MAX = 30;
+const CONFIRM_WINDOW_MS = 60 * 1000;
+function confirmClientIp(req: { ip?: string; headers: { [name: string]: unknown } }): string {
+  return clientIp(req);
+}
 
 async function tenantForSlug(db: Db, slug: string) {
   if (!SITES[slug]) return null;
@@ -272,6 +284,11 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
 
   app.post("/api/sites/:slug/quotes/:ref/confirm", async (req, reply) => {
     const { slug, ref } = req.params as { slug: string; ref: string };
+    /* Count before the lookup. Over the limit, the body is the same
+       whether or not this ref belongs to the slug. */
+    if (!allow("confirm-ip:" + confirmClientIp(req), CONFIRM_MAX, CONFIRM_WINDOW_MS) || !allow("confirm-slug:" + slug, CONFIRM_MAX, CONFIRM_WINDOW_MS)) {
+      return reply.code(429).send({ error: "slow_down", detail: "Too many confirmations. Try again in a bit, or call the desk." });
+    }
     const t = await tenantForSlug(db, slug);
     if (!t) return reply.code(404).send({ error: "not_found" });
     const rows = await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1);
@@ -282,8 +299,9 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
       await db.update(schema.rateQuotes).set({ status: "confirmed", confirmedAt: new Date() }).where(eq(schema.rateQuotes.id, ref));
       void sendSms(q.phone, `${t.name}: Ref ${ref} confirmed — ${fmtAmount(q.receiveAmount, q.wantCcy)} set aside until ${fmtTime(q.expiresAt)}. See you soon.`);
     }
-    const fresh = await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1);
-    return { quote: quoteJson(fresh[0]!) };
+    const fresh = (await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1))[0]!;
+    const status = fresh.status === "held" && fresh.expiresAt.getTime() < Date.now() ? "expired" : fresh.status;
+    return { quote: { ref: fresh.id, status, expiresAt: fresh.expiresAt.getTime() } };
   });
 
   // staff: the desk's incoming holds (any signed-in role — tellers serve them)

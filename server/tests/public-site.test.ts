@@ -8,6 +8,7 @@ import Decimal from "decimal.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { clientIp } from "../src/auth/client-ip.js";
 import { moneyFixed, priceStorefrontHold } from "../src/sites/storefront-hold.js";
 
 let handle: DbHandle;
@@ -152,5 +153,147 @@ describe("SMS rate holds", () => {
     expect(res.json().quotes.length).toBeGreaterThanOrEqual(5);
     const unauth = await app.inject({ method: "GET", url: "/api/quotes" });
     expect(unauth.statusCode).toBe(401);
+  });
+});
+
+/* A stranger who can guess Q- plus four digits must not learn who asked,
+   and must not be able to confirm the whole board in one burst. */
+const CONFIRM_MAX = 30;
+
+const confirm = (
+  slug: string,
+  ref: string,
+  remoteAddress: string,
+  headers?: Record<string, string>,
+) => app.inject({
+  method: "POST",
+  url: `/api/sites/${slug}/quotes/${ref}/confirm`,
+  remoteAddress,
+  headers,
+});
+
+describe("public site responses do not carry a customer's phone or name", () => {
+  it("no public /api/sites or /api/site response contains that phone or name", async () => {
+    const phone = "5875550142";
+    const name = "Lioramek Voss";
+    const normalized = "+15875550142";
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/sites/yorkfx/quotes",
+      remoteAddress: "203.0.113.15",
+      payload: { phone, name, from: "CAD", to: "USD", amount: 40 },
+    });
+    expect(created.statusCode).toBe(201);
+    const ref = created.json().quote.ref as string;
+
+    const admin = await login("j.masri");
+    const domain = await app.inject({
+      method: "PATCH",
+      url: "/api/tenant",
+      cookies: cookieOf(admin),
+      remoteAddress: "203.0.113.15",
+      payload: { siteDomain: "quotes-leak.example" },
+    });
+    expect(domain.statusCode).toBe(200);
+
+    const responses = await Promise.all([
+      confirm("yorkfx", ref, "203.0.113.16"),
+      confirm("yorkfx", "Q-9999", "203.0.113.17"),
+      app.inject({ method: "GET", url: "/api/sites/yorkfx/config" }),
+      app.inject({ method: "GET", url: "/api/sites/yorkfx/rates" }),
+      app.inject({ method: "GET", url: "/api/sites/no-such-shop/config" }),
+      app.inject({ method: "GET", url: "/api/sites/no-such-shop/rates" }),
+      app.inject({ method: "GET", url: "/api/site/config", headers: { host: "quotes-leak.example" } }),
+      app.inject({ method: "GET", url: "/api/site/rates", headers: { host: "quotes-leak.example" } }),
+      app.inject({ method: "GET", url: "/api/site/config" }),
+      app.inject({ method: "GET", url: "/api/site/rates" }),
+      app.inject({ method: "GET", url: "/api/site/early-access" }),
+    ]);
+
+    for (const res of responses) {
+      expect(res.body).not.toContain(name);
+      expect(res.body).not.toContain("Lioramek");
+      expect(res.body).not.toContain("Voss");
+      expect(res.body).not.toContain(normalized);
+      expect(res.body).not.toContain(phone);
+    }
+
+    const confirmed = responses[0]!.json();
+    expect(responses[0]!.statusCode).toBe(200);
+    expect(confirmed.quote).toEqual({
+      ref,
+      status: "confirmed",
+      expiresAt: expect.any(Number),
+    });
+    expect(Object.keys(confirmed.quote).sort()).toEqual(["expiresAt", "ref", "status"]);
+  });
+});
+
+describe("confirm rate limit", () => {
+  it("limits confirm to 30 a minute for one slug, with the same body for every ref", async () => {
+    const phone = "5875550143";
+    const name = "Sluglimit Probe";
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/sites/yorkfx/quotes",
+      remoteAddress: "203.0.113.50",
+      payload: { phone, name, from: "CAD", to: "USD", amount: 25 },
+    });
+    expect(created.statusCode).toBe(201);
+    const ref = created.json().quote.ref as string;
+    const slug = "slug-limit-shop";
+
+    for (let n = 1; n <= CONFIRM_MAX; n++) {
+      const res = await confirm(slug, "Q-1000", `192.0.2.${n}`);
+      expect(res.statusCode, `confirm ${n}`).toBe(404);
+    }
+    const missing = await confirm(slug, "Q-1000", "192.0.2.40");
+    const real = await confirm(slug, ref, "192.0.2.41");
+    expect(missing.statusCode).toBe(429);
+    expect(real.statusCode).toBe(429);
+    expect(real.body).toBe(missing.body);
+    expect(missing.json()).toEqual({
+      error: "slow_down",
+      detail: "Too many confirmations. Try again in a bit, or call the desk.",
+    });
+    expect(missing.body).not.toContain(phone);
+    expect(missing.body).not.toContain(name);
+    expect(real.body).not.toContain(phone);
+    expect(real.body).not.toContain(name);
+    expect(real.body).not.toContain(ref);
+  });
+
+  it("gives two client addresses separate limits, through clientIp", async () => {
+    const first = "198.51.100.10";
+    const second = "198.51.100.11";
+    expect(clientIp({ ip: first, headers: {} })).toBe(first);
+    expect(clientIp({ ip: second, headers: {} })).toBe(second);
+
+    for (let n = 1; n <= CONFIRM_MAX; n++) {
+      const res = await confirm("ip-limit-a", "Q-2000", first);
+      expect(res.statusCode, `first ${n}`).toBe(404);
+    }
+    const blocked = await confirm("ip-limit-b", "Q-2000", first);
+    const open = await confirm("ip-limit-b", "Q-2000", second);
+    expect(blocked.statusCode).toBe(429);
+    expect(open.statusCode).toBe(404);
+  });
+
+  it("ignores a spoofed CF-Connecting-IP from a non-Cloudflare hop, through clientIp", async () => {
+    const socket = "203.0.113.80";
+    const other = "203.0.113.81";
+    const headersFor = (n: number) => ({ "cf-connecting-ip": `198.51.100.${n}` });
+    expect(clientIp({ ip: socket, headers: headersFor(1) })).toBe(socket);
+    expect(clientIp({ ip: socket, headers: headersFor(1) })).not.toBe("198.51.100.1");
+
+    for (let n = 1; n <= CONFIRM_MAX; n++) {
+      const res = await confirm(`spoof-${n}`, "Q-3000", socket, headersFor(n));
+      expect(res.statusCode, `spoof ${n}`).toBe(404);
+    }
+    const blocked = await confirm("spoof-extra", "Q-3001", socket, { "cf-connecting-ip": "198.51.100.200" });
+    const separate = await confirm("spoof-other", "Q-3002", other, { "cf-connecting-ip": "198.51.100.200" });
+    expect(blocked.statusCode).toBe(429);
+    expect(separate.statusCode).toBe(404);
+    expect(clientIp({ ip: other, headers: { "cf-connecting-ip": "198.51.100.200" } })).toBe(other);
   });
 });
