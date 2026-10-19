@@ -59,7 +59,7 @@
     ];
   }
   const RISK_TONE = { low: { t: 'Low', c: CD.green, bg: CD.greenSoft }, medium: { t: 'Medium', c: CD.amber, bg: CD.amberSoft }, high: { t: 'High', c: CD.flag, bg: CD.flagSoft } };
-  const feeFor = (amount, type) => { const t = type || {}; return Math.max(+t.feeMin || 0, (+amount || 0) * (+t.feePct || 0) / 100); };
+  const feeFor = (amount, type) => { const t = type || {}; const fee = window.CDOS_CHEQUE_FEE.chequeScheduleFee(amount, t.feePct, t.feeMin); return fee == null ? 0 : Number(fee); };
 
   const STATUS = {
     held:     { label: 'On hold',  tone: CD.amber, soft: CD.amberSoft, ink: 'var(--cd-brass-text)', icon: 'clock' },

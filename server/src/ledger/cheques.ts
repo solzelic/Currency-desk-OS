@@ -51,6 +51,7 @@
 import { randomUUID } from "node:crypto";
 import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
+import { chequeScheduleFee } from "./chequeFee.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import {
@@ -185,18 +186,20 @@ async function scheduledFee(
   const raw = found.rows[0].schedule;
   const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
   if (!Array.isArray(parsed)) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+    throw new LedgerError("INVALID_REQUEST", "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule.");
   }
   const row = parsed.find((item) => item && String(item.id) === chequeType) as
     | { feePct?: unknown; feeMin?: unknown }
     | undefined;
   if (!row) return null;
-  const pct = new Decimal(row.feePct as Decimal.Value);
-  const min = new Decimal(row.feeMin as Decimal.Value);
-  if (!pct.isFinite() || !min.isFinite() || pct.isNeg() || min.isNeg()) {
-    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+  /* The helper reads the stored figures. A percent with more than 2
+     digits after the point rounds half up to 2 here, and still books.
+     A figure it cannot read is refused. It is not a fee of 0.00. */
+  const dueText = chequeScheduleFee(fixed(face), row.feePct, row.feeMin);
+  if (dueText == null) {
+    throw new LedgerError("INVALID_REQUEST", "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule.");
   }
-  return Decimal.max(min, face.mul(pct).div(100)).toDecimalPlaces(2);
+  return new Decimal(dueText);
 }
 
 const dateOnly = (value: unknown) => {
