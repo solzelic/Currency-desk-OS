@@ -3005,3 +3005,28 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     text-transform: none !important;
   }
 }
+
+/* PIN issue row. A 220px flex basis on a phone column became empty
+   height above the PIN, and min-width 0 let the words shrink to one
+   word a line. The copy keeps a readable width and wraps the button
+   under it when the row is narrow. */
+.pin-issue-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.pin-issue-copy {
+  flex: 1 1 220px;
+  min-width: min(100%, 220px);
+}
+.pin-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+@media (max-width: 430px) {
+  .pin-issue-actions { margin-left: 0; width: 100%; }
+}
