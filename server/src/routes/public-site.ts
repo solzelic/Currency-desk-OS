@@ -45,22 +45,36 @@ const quoteBody = z.object({
 
 // simple abuse brake: a phone gets 3 quotes an hour, an IP gets 10.
 // Confirm passes its own window. Quote calls keep the hour.
+// A bucket that is past its window is dropped, so unused keys do not stay.
 const HOUR_MS = 60 * 60 * 1000;
-const recent = new Map<string, number[]>();
+type Bucket = { hits: number[]; windowMs: number };
+const recent = new Map<string, Bucket>();
+const sweep = (now: number) => {
+  for (const [key, bucket] of recent) {
+    const hits = bucket.hits.filter((t) => now - t < bucket.windowMs);
+    if (hits.length === 0) recent.delete(key);
+    else bucket.hits = hits;
+  }
+};
 const allow = (key: string, max: number, windowMs = HOUR_MS): boolean => {
   const now = Date.now();
-  const hits = (recent.get(key) ?? []).filter((t) => now - t < windowMs);
+  sweep(now);
+  const hits = (recent.get(key)?.hits ?? []).filter((t) => now - t < windowMs);
   if (hits.length >= max) return false;
   hits.push(now);
-  recent.set(key, hits);
+  recent.set(key, { hits, windowMs });
   return true;
 };
+export const rateBucketKeys = (): string[] => [...recent.keys()];
+export const clearRateBuckets = (): void => { recent.clear(); };
 
 /* 30 confirms a minute for one shop, and 30 for one client address.
    A normal desk stays under that. The address comes from confirmClientIp
    so a later change of source is one line. */
 const CONFIRM_MAX = 30;
 const CONFIRM_WINDOW_MS = 60 * 1000;
+const CONFIRM_LIMIT = { error: "slow_down" as const, detail: "Too many tries. Wait a minute and try again." };
+const NO_ADDRESS = { error: "invalid_request" as const, detail: "Try again in a bit, or call the desk." };
 function confirmClientIp(req: { ip?: string; headers: { [name: string]: unknown } }): string {
   return clientIp(req);
 }
@@ -278,17 +292,32 @@ export function registerPublicSiteRoutes(app: FastifyInstance, db: Db) {
       smsText,
       expiresAt,
     });
-    const rows = await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1);
-    return reply.code(201).send({ quote: quoteJson(rows[0]!) });
+    const row = (await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1))[0]!;
+    return reply.code(201).send({
+      quote: {
+        ref: row.id,
+        status: row.status,
+        expiresAt: row.expiresAt.getTime(),
+        from: row.haveCcy,
+        to: row.wantCcy,
+        amount: jsonMoney(row.haveAmount),
+        receive: jsonMoney(row.receiveAmount),
+      },
+    });
   });
 
   app.post("/api/sites/:slug/quotes/:ref/confirm", async (req, reply) => {
     const { slug, ref } = req.params as { slug: string; ref: string };
-    /* Count before the lookup. Over the limit, the body is the same
-       whether or not this ref belongs to the slug. */
-    if (!allow("confirm-ip:" + confirmClientIp(req), CONFIRM_MAX, CONFIRM_WINDOW_MS) || !allow("confirm-slug:" + slug, CONFIRM_MAX, CONFIRM_WINDOW_MS)) {
-      return reply.code(429).send({ error: "slow_down", detail: "Too many confirmations. Try again in a bit, or call the desk." });
+    let ip: string;
+    try {
+      ip = confirmClientIp(req);
+    } catch {
+      return reply.code(400).send(NO_ADDRESS);
     }
+    /* Count the address always. Count the slug only when it is a real site,
+       and do that before the quote lookup so a limited reply stays the same. */
+    if (!allow("confirm-ip:" + ip, CONFIRM_MAX, CONFIRM_WINDOW_MS)) return reply.code(429).send(CONFIRM_LIMIT);
+    if (SITES[slug] && !allow("confirm-slug:" + slug, CONFIRM_MAX, CONFIRM_WINDOW_MS)) return reply.code(429).send(CONFIRM_LIMIT);
     const t = await tenantForSlug(db, slug);
     if (!t) return reply.code(404).send({ error: "not_found" });
     const rows = await db.select().from(schema.rateQuotes).where(eq(schema.rateQuotes.id, ref)).limit(1);
