@@ -494,9 +494,13 @@ class Component extends DCLogic {
         const on = i === s.feat;
         const playing = on && s.featPlay > 0;
         const fillName = s.featPlay % 2 ? 'cdFeatFill' : 'cdFeatFill2';
+        const copilot = f.title === 'AI copilot';
         return { onClick: this.goFeat(i), label: f.title, current: on ? 'true' : 'false',
-          style: 'appearance:none;cursor:pointer;flex:1;height:26px;padding:0;border:0;background:none;position:relative;overflow:hidden;' +
-                 'background-image:linear-gradient(var(--line),var(--line));background-size:100% 3px;background-position:center;background-repeat:no-repeat;border-radius:2px;',
+          style: 'appearance:none;cursor:pointer;padding:0;border:0;background:none;position:relative;overflow:hidden;' +
+                 'background-image:linear-gradient(var(--line),var(--line));background-size:100% 3px;background-position:center;background-repeat:no-repeat;border-radius:2px;' +
+                 (copilot
+                   ? 'flex:none;width:44px;height:44px;min-width:44px;min-height:44px;'
+                   : 'flex:1;min-width:0;height:26px;'),
           fill: on
             ? 'position:absolute;left:0;right:0;top:50%;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--green);transform-origin:left center;' +
               (playing ? 'transform:scaleX(0);animation:' + fillName + ' ' + this.FEAT_MS + 'ms linear both;' : 'transform:scaleX(1);')
