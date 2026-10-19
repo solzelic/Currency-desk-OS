@@ -726,6 +726,66 @@
   window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
   scrubLocalHealthNumbers();
 
+  /* THE ID TYPES THIS SHOP ACCEPTS. The owner switches catalogue types
+     on and off in Settings → Accepted IDs, and the server keeps the
+     answer (`GET /api/clients/accepted-id-types`). Every ID picker
+     offers only these. Until the answer arrives, and on a desk with no
+     server, a picker offers the catalogue's own list, which is what
+     every shop accepts until its owner changes it. The server checks
+     every save either way. */
+  var acceptedIds = null;
+  var acceptedInflight = null;
+  function setAcceptedIdTypes(answer) {
+    acceptedIds = answer && Array.isArray(answer.types) && Array.isArray(answer.accepted) ? answer : null;
+    try { window.dispatchEvent(new CustomEvent("cdos-accepted-ids", { detail: acceptedIds })); } catch (error) {}
+    return acceptedIds;
+  }
+  function refreshAcceptedIdTypes() {
+    if (acceptedInflight) return acceptedInflight;
+    acceptedInflight = request("/api/clients/accepted-id-types")
+      .then(setAcceptedIdTypes, function () { return acceptedIds; })
+      .then(function (answer) { acceptedInflight = null; return answer; });
+    return acceptedInflight;
+  }
+  /* The catalogue's picker list, less what this shop has switched off.
+     A screen passes `pickerLabels(kind)` in, so the names still come
+     from the one catalogue and only the filter is the shop's. */
+  function acceptedHere(labels) {
+    if (!acceptedIds) return labels.slice();
+    return labels.filter(function (label) {
+      var row = idTypes().resolveIdType(label);
+      return !!row && acceptedIds.accepted.indexOf(row.code) >= 0;
+    });
+  }
+  /* A catalogue ID type this shop has switched off. A health card, an
+     unknown name, and "Not stated" are not: none of them was switched
+     off by the owner. */
+  function isSwitchedOffHere(value) {
+    if (!acceptedIds) return false;
+    var row = idTypes().resolveIdType(value);
+    return !!(row && row.acceptedAsId && acceptedIds.accepted.indexOf(row.code) < 0);
+  }
+  /* Redraw a screen when the list arrives or the owner changes it. Asks
+     the server once per mounted screen. */
+  function useAcceptedIdTypes() {
+    var React = window.React;
+    var bump = React.useState(0)[1];
+    React.useEffect(function () {
+      var live = true;
+      var on = function () { if (live) bump(function (n) { return n + 1; }); };
+      window.addEventListener("cdos-accepted-ids", on);
+      refreshAcceptedIdTypes();
+      return function () { live = false; window.removeEventListener("cdos-accepted-ids", on); };
+    }, []);
+    return acceptedIds;
+  }
+  window.CDOS.acceptedIdTypes = function () { return acceptedIds; };
+  window.CDOS.setAcceptedIdTypes = setAcceptedIdTypes;
+  window.CDOS.refreshAcceptedIdTypes = refreshAcceptedIdTypes;
+  window.CDOS.acceptedHere = acceptedHere;
+  window.CDOS.isSwitchedOffHere = isSwitchedOffHere;
+  window.CDOS.useAcceptedIdTypes = useAcceptedIdTypes;
+
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
      document flattened onto it as idType / idNum / idIssued / idExpiry.
@@ -779,6 +839,9 @@
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
       idType: primary ? primary.docType : "",
+      /* Said when this shop has switched the primary's type off. The
+         document still counts; the next visit records another. */
+      idNotice: primary && primary.notice ? primary.notice : "",
       idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
@@ -793,6 +856,7 @@
         return {
           documentId: d.documentId,
           type: d.docType,
+          notice: d.notice || "",
           num: isHealthCardType(d.docType) ? "" : (d.docNumber || ""),
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
@@ -888,6 +952,15 @@
     fromDeskFields: fromDeskFields,
     list: function () { return request("/api/clients"); },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
+    /* Settings → Accepted IDs. The read is anybody's; `canChange` says
+       whether this person may switch types. The write takes catalogue
+       codes, or null to follow the pack, and is the owner's. */
+    acceptedIdTypes: function () { return request("/api/clients/accepted-id-types"); },
+    setAcceptedIdTypes: function (codes) {
+      return request("/api/clients/accepted-id-types", {
+        method: "PUT", body: JSON.stringify({ accepted: codes }),
+      });
+    },
     /* More than one answer is a legitimate answer: two people share a
        name, and the caller chooses rather than this picking one and
        being quietly wrong about somebody's compliance history. */

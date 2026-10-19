@@ -66,6 +66,17 @@
    be removed, and a new primary document can be added beside it. The
    number stays in the column until the owner runs the redaction tool,
    which is a separate change.
+
+   ---- WHAT THIS SHOP ACCEPTS ----
+
+   The owner can switch catalogue types off for their shop in Settings →
+   Accepted IDs (accepted-id-types.ts). Adding a document of a type that
+   is off, or changing a document to one, is refused
+   (`ID_TYPE_NOT_ACCEPTED_HERE`). A document already on file of that
+   type is never deleted or rewritten: it reads as before, keeps its
+   verification status, and carries a `notice` saying the shop no longer
+   accepts it. Editing that document's number or dates is still allowed,
+   and so is sending its own type back unchanged.
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
@@ -73,10 +84,19 @@ import { civilDate, civilToday } from "../civil-date.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 import {
+  acceptedLabels,
+  resolveAcceptedIdTypes,
+  type AcceptedIdTypes,
+} from "./accepted-id-types.js";
+import {
   HEALTH_CARD_KEYS,
   HEALTH_CARD_REFUSAL,
   isHealthCardType,
+  noLongerAcceptedSentence,
   normaliseForWrite,
+  notAcceptedHereSentence,
+  notInCatalogueSentence,
+  resolveIdType,
   typeKeySql,
 } from "./id-document-types.js";
 
@@ -286,6 +306,7 @@ export class ClientRecordService {
       const scanCount = new Map(scans.rows.map((row) => [row.document_id, row.n as number]));
       const photo = new Map(photographs.rows.map((row) => [row.client_id, row]));
       const files = await this.supportingFiles(client, ids);
+      const accepted = new Set((await resolveAcceptedIdTypes(client, actor.legalEntityId)).accepted);
       /* Same-name records, surfaced rather than merged. This is the
          entire defect being fixed, said out loud on every read: two
          David Chens come back as two clients, each told about the
@@ -307,6 +328,7 @@ export class ClientRecordService {
               (id) => id !== row.client_id,
             ),
             files.get(row.client_id as string) ?? [],
+            accepted,
           ),
         ),
       };
@@ -319,7 +341,12 @@ export class ClientRecordService {
       this.readOne(client, actor, clientId));
   }
 
-  private async readOne(client: pg.PoolClient, actor: LedgerActor, clientId: string) {
+  private async readOne(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+    clientId: string,
+    shop?: AcceptedIdTypes,
+  ) {
     const found = await client.query(
       `SELECT * FROM desk_clients
         WHERE client_id=$1 AND tenant_id=$2 AND legal_entity_id=$3`,
@@ -353,6 +380,7 @@ export class ClientRecordService {
       [...entityScope(actor), row.name_key, clientId],
     );
     const files = await this.supportingFiles(client, [clientId]);
+    const accepted = shop ?? (await resolveAcceptedIdTypes(client, actor.legalEntityId));
     return clientJson(
       row,
       documents.rows,
@@ -361,6 +389,7 @@ export class ClientRecordService {
       photograph.rows[0] ?? null,
       sameName.rows.map((s) => s.client_id as string),
       files.get(clientId) ?? [],
+      new Set(accepted.accepted),
     );
   }
 
@@ -567,7 +596,10 @@ export class ClientRecordService {
         [...entityScope(actor), key],
       );
       const rows = [];
-      for (const match of matches.rows) rows.push(await this.readOne(client, actor, match.client_id));
+      const shop = matches.rowCount
+        ? await resolveAcceptedIdTypes(client, actor.legalEntityId)
+        : undefined;
+      for (const match of matches.rows) rows.push(await this.readOne(client, actor, match.client_id, shop));
       return { name: name.trim(), clients: rows };
     });
   }
@@ -576,8 +608,11 @@ export class ClientRecordService {
 
   async addDocument(actor: LedgerActor, clientId: string, input: DocumentInput) {
     /* Before the transaction: a refused type is refused whoever asks and
-       whatever the file holds, and nothing is written. */
-    const docType = catalogueType(input.docType);
+       whatever the file holds, and nothing is written. That includes a
+       type this shop has switched off. */
+    const written = await this.writableType(actor, input.docType);
+    if (written.code) refuseSwitchedOff(written.shop!, written.code, written.label);
+    const docType = written.label;
     return this.inTransaction(actor, "customer:write", async (client) => {
       const owned = await client.query(
         "SELECT 1 FROM desk_clients WHERE client_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 FOR UPDATE",
@@ -637,7 +672,8 @@ export class ClientRecordService {
     documentId: string,
     input: Partial<DocumentInput>,
   ) {
-    const docType = input.docType === undefined ? undefined : catalogueType(input.docType);
+    const written = input.docType === undefined ? undefined : await this.writableType(actor, input.docType);
+    const docType = written?.label;
     return this.inTransaction(actor, "customer:write", async (client) => {
       const found = await client.query(
         `SELECT d.document_id, d.doc_type FROM desk_client_identity_documents d
@@ -652,6 +688,12 @@ export class ClientRecordService {
          would put the stored health number under a passport's name. It
          can be removed, and a new document can be added beside it. */
       if (isHealthCardType(found.rows[0]!.doc_type)) throw healthCardNotId();
+      /* Changing a document TO a type this shop has switched off is
+         refused. Sending the document's own type back is not a change,
+         so a screen that saves the whole document does not stop
+         somebody correcting a number on an ID the shop no longer takes. */
+      if (written?.code && resolveIdType(found.rows[0]!.doc_type)?.code !== written.code)
+        refuseSwitchedOff(written.shop!, written.code, written.label);
       const columns: Record<string, unknown> = {};
       if (docType !== undefined) columns.doc_type = docType;
       if (input.docNumber !== undefined) columns.doc_number = blank(input.docNumber);
@@ -1218,6 +1260,32 @@ export class ClientRecordService {
     );
   }
 
+  /* A type as the catalogue spells it, or the refusal. "Not stated" is
+     the placeholder for a row whose type nobody has picked yet, and
+     needs nothing more. A catalogue type comes back with this shop's
+     list, so the caller can refuse one the owner has switched off. A
+     name the catalogue does not have is refused with this shop's own
+     list in the sentence. */
+  private async writableType(
+    actor: LedgerActor,
+    docType: string,
+  ): Promise<{ label: string; code?: string; shop?: AcceptedIdTypes }> {
+    const result = normaliseForWrite(docType);
+    if (result.ok && !result.code) return { label: result.label };
+    if (!result.ok && result.code === "HEALTH_CARD_NOT_ID")
+      throw new LedgerError(result.code, result.detail);
+    const client = await this.pool.connect();
+    let shop: AcceptedIdTypes;
+    try {
+      shop = await resolveAcceptedIdTypes(client, actor.legalEntityId);
+    } finally {
+      client.release();
+    }
+    if (!result.ok)
+      throw new LedgerError(result.code, notInCatalogueSentence(acceptedLabels(shop)));
+    return { label: result.label, code: result.code, shop };
+  }
+
   private async hasPrimary(client: pg.PoolClient, clientId: string) {
     const found = await client.query(
       "SELECT 1 FROM desk_client_identity_documents WHERE client_id=$1 AND is_primary",
@@ -1293,12 +1361,10 @@ export class ClientRecordService {
   }
 }
 
-/* A type as the catalogue spells it, or the refusal. "Not stated" is
-   the placeholder for a row whose type nobody has picked yet. */
-function catalogueType(docType: string): string {
-  const result = normaliseForWrite(docType);
-  if (!result.ok) throw new LedgerError(result.code, result.detail);
-  return result.label;
+/* A catalogue type the owner has switched off for this shop. */
+function refuseSwitchedOff(shop: AcceptedIdTypes, code: string, label: string) {
+  if (!shop.accepted.includes(code))
+    throw new LedgerError("ID_TYPE_NOT_ACCEPTED_HERE", notAcceptedHereSentence(label));
 }
 
 const healthCardNotId = () => new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
@@ -1338,8 +1404,17 @@ const isoDate = (value: unknown) => civilDate(value);
 /* One document's metadata. A health card's number is not in it: the key
    is absent, so a caller cannot read "withheld" as "blank" and nothing
    downstream (search, a report, a filing form) can copy it. The column
-   is unchanged. */
-function documentJson(document: Record<string, unknown>, scanCount: Map<unknown, number>) {
+   is unchanged.
+
+   `accepted` is this shop's list. A catalogue ID type the shop has
+   switched off is still read in full, and `notice` says so. A health
+   card, "Not stated", and a name from before the catalogue get no
+   notice: none of them is a type the shop switched off. */
+function documentJson(
+  document: Record<string, unknown>,
+  scanCount: Map<unknown, number>,
+  accepted: ReadonlySet<string>,
+) {
   const out: Record<string, unknown> = {
     documentId: document.document_id,
     docType: document.doc_type,
@@ -1350,6 +1425,9 @@ function documentJson(document: Record<string, unknown>, scanCount: Map<unknown,
   out.expiresOn = isoDate(document.expires_on);
   out.isPrimary = document.is_primary;
   out.hasScan = (scanCount.get(document.document_id) ?? 0) > 0;
+  const type = resolveIdType(document.doc_type);
+  const switchedOff = !!type && type.acceptedAsId && !accepted.has(type.code);
+  out.notice = switchedOff ? noLongerAcceptedSentence(type!.label) : null;
   return out;
 }
 
@@ -1377,7 +1455,8 @@ function clientJson(
   scanCount: Map<unknown, number>,
   photograph: Record<string, unknown> | null,
   sameNameClientIds: string[],
-  files: Record<string, unknown>[] = [],
+  files: Record<string, unknown>[],
+  accepted: ReadonlySet<string>,
 ) {
   return {
     clientId: row.client_id,
@@ -1419,7 +1498,7 @@ function clientJson(
     /* Metadata only. `hasScan` is what lets a screen draw the covered
        placeholder without the bytes ever being on the wire until
        somebody clicks, which is what makes the audit row meaningful. */
-    documents: documents.map((document) => documentJson(document, scanCount)),
+    documents: documents.map((document) => documentJson(document, scanCount, accepted)),
     photograph: photograph
       ? {
           imageId: photograph.image_id,

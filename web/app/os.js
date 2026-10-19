@@ -2252,8 +2252,26 @@
     return labels.slice(0, -1).join(", ") + ", or " + labels[labels.length - 1];
   }
 
-  var NOT_IN_CATALOGUE =
-    "That ID type isn't on this desk's list. Use one of: " + listInWords(pickerLabels()) + ".";
+  /* The refusal for a name that is not on the list. The server passes
+     the types this shop accepts. With no shop, it is every accepted
+     type in the catalogue. */
+  function notInCatalogueSentence(labels) {
+    return "That ID type isn't on this desk's list. Use one of: " + listInWords(labels) + ".";
+  }
+
+  var NOT_IN_CATALOGUE = notInCatalogueSentence(pickerLabels());
+
+  /* Settings → Accepted IDs. The owner can switch a type off for their
+     shop. A new document of that type is refused with the first
+     sentence. A document already on file keeps reading, with the second
+     one beside it. */
+  function notAcceptedHereSentence(label) {
+    return "This shop doesn't accept " + label + ". The owner can change this in Settings → Accepted IDs.";
+  }
+
+  function noLongerAcceptedSentence(label) {
+    return "This shop no longer accepts " + label + ". Record another ID at the next visit.";
+  }
 
   /* What a write may store. Either the catalogue label, the placeholder,
      or a refusal with its code and sentence. */
@@ -2341,6 +2359,9 @@
     isAcceptedIdType: isAcceptedIdType,
     pickerLabels: pickerLabels,
     shownIdType: shownIdType,
+    notInCatalogueSentence: notInCatalogueSentence,
+    notAcceptedHereSentence: notAcceptedHereSentence,
+    noLongerAcceptedSentence: noLongerAcceptedSentence,
     normaliseForWrite: normaliseForWrite,
     scrubHealthNumbers: scrubHealthNumbers,
     typeKeySql: typeKeySql,
@@ -3077,6 +3098,66 @@
   window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
   scrubLocalHealthNumbers();
 
+  /* THE ID TYPES THIS SHOP ACCEPTS. The owner switches catalogue types
+     on and off in Settings → Accepted IDs, and the server keeps the
+     answer (`GET /api/clients/accepted-id-types`). Every ID picker
+     offers only these. Until the answer arrives, and on a desk with no
+     server, a picker offers the catalogue's own list, which is what
+     every shop accepts until its owner changes it. The server checks
+     every save either way. */
+  var acceptedIds = null;
+  var acceptedInflight = null;
+  function setAcceptedIdTypes(answer) {
+    acceptedIds = answer && Array.isArray(answer.types) && Array.isArray(answer.accepted) ? answer : null;
+    try { window.dispatchEvent(new CustomEvent("cdos-accepted-ids", { detail: acceptedIds })); } catch (error) {}
+    return acceptedIds;
+  }
+  function refreshAcceptedIdTypes() {
+    if (acceptedInflight) return acceptedInflight;
+    acceptedInflight = request("/api/clients/accepted-id-types")
+      .then(setAcceptedIdTypes, function () { return acceptedIds; })
+      .then(function (answer) { acceptedInflight = null; return answer; });
+    return acceptedInflight;
+  }
+  /* The catalogue's picker list, less what this shop has switched off.
+     A screen passes `pickerLabels(kind)` in, so the names still come
+     from the one catalogue and only the filter is the shop's. */
+  function acceptedHere(labels) {
+    if (!acceptedIds) return labels.slice();
+    return labels.filter(function (label) {
+      var row = idTypes().resolveIdType(label);
+      return !!row && acceptedIds.accepted.indexOf(row.code) >= 0;
+    });
+  }
+  /* A catalogue ID type this shop has switched off. A health card, an
+     unknown name, and "Not stated" are not: none of them was switched
+     off by the owner. */
+  function isSwitchedOffHere(value) {
+    if (!acceptedIds) return false;
+    var row = idTypes().resolveIdType(value);
+    return !!(row && row.acceptedAsId && acceptedIds.accepted.indexOf(row.code) < 0);
+  }
+  /* Redraw a screen when the list arrives or the owner changes it. Asks
+     the server once per mounted screen. */
+  function useAcceptedIdTypes() {
+    var React = window.React;
+    var bump = React.useState(0)[1];
+    React.useEffect(function () {
+      var live = true;
+      var on = function () { if (live) bump(function (n) { return n + 1; }); };
+      window.addEventListener("cdos-accepted-ids", on);
+      refreshAcceptedIdTypes();
+      return function () { live = false; window.removeEventListener("cdos-accepted-ids", on); };
+    }, []);
+    return acceptedIds;
+  }
+  window.CDOS.acceptedIdTypes = function () { return acceptedIds; };
+  window.CDOS.setAcceptedIdTypes = setAcceptedIdTypes;
+  window.CDOS.refreshAcceptedIdTypes = refreshAcceptedIdTypes;
+  window.CDOS.acceptedHere = acceptedHere;
+  window.CDOS.isSwitchedOffHere = isSwitchedOffHere;
+  window.CDOS.useAcceptedIdTypes = useAcceptedIdTypes;
+
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
      document flattened onto it as idType / idNum / idIssued / idExpiry.
@@ -3130,6 +3211,9 @@
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
       idType: primary ? primary.docType : "",
+      /* Said when this shop has switched the primary's type off. The
+         document still counts; the next visit records another. */
+      idNotice: primary && primary.notice ? primary.notice : "",
       idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
@@ -3144,6 +3228,7 @@
         return {
           documentId: d.documentId,
           type: d.docType,
+          notice: d.notice || "",
           num: isHealthCardType(d.docType) ? "" : (d.docNumber || ""),
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
@@ -3239,6 +3324,15 @@
     fromDeskFields: fromDeskFields,
     list: function () { return request("/api/clients"); },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
+    /* Settings → Accepted IDs. The read is anybody's; `canChange` says
+       whether this person may switch types. The write takes catalogue
+       codes, or null to follow the pack, and is the owner's. */
+    acceptedIdTypes: function () { return request("/api/clients/accepted-id-types"); },
+    setAcceptedIdTypes: function (codes) {
+      return request("/api/clients/accepted-id-types", {
+        method: "PUT", body: JSON.stringify({ accepted: codes }),
+      });
+    },
     /* More than one answer is a legitimate answer: two people share a
        name, and the caller chooses rather than this picking one and
        being quietly wrong about somebody's compliance history. */
@@ -6145,6 +6239,174 @@
     }, err));
   }
 
+  /* ---------- Accepted IDs (server-backed) ----------
+      Which ID types this shop takes, one switch per type. The owner asked
+     for exactly this: "accepted IDs, not accepted IDs, within reason".
+     Within reason is the pack's: a locked type shows a padlock and the
+     legal note, and cannot be switched on. The server also refuses a
+     change that leaves no photo ID on. See
+     server/src/clients/accepted-id-types.ts.
+      Same pattern as DeskCurrencyRows: read from the server, saved to the
+     server, never to this browser's settings. Each switch saves on its
+     own. A refused save shows the server's sentence and the switches go
+     back to what the server holds. "Saved" is said only for a save that
+     landed. Whether this person may change it is the server's answer
+     (`canChange`); anyone else sees the list read-only. */
+  function IdSwitch({
+    on,
+    label,
+    disabled,
+    onFlip
+  }) {
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
+      "aria-checked": on,
+      "aria-label": label,
+      disabled: disabled,
+      onClick: onFlip,
+      className: "w-11 h-6 relative flex-none",
+      style: {
+        background: on ? CD.ink : 'var(--cd-disabled)',
+        borderRadius: 999,
+        transition: 'background .15s',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.55 : 1
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "absolute top-0.5 w-5 h-5",
+      style: {
+        left: on ? 22 : 2,
+        background: 'var(--cd-panel)',
+        borderRadius: 999,
+        transition: 'left .15s'
+      }
+    }));
+  }
+  function AcceptedIdRows() {
+    const {
+      log
+    } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading'); // loading | ready | offline
+    const [shop, setShop] = useState(null);
+    const [busy, setBusy] = useState('');
+    const [err, setErr] = useState('');
+    const [saved, setSaved] = useState(false);
+    const api = window.CDOS && window.CDOS.Backend && window.CDOS.Backend.Clients;
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') {
+        setStatus('offline');
+        return;
+      }
+      let alive = true;
+      api.acceptedIdTypes().then(answer => {
+        if (!alive) return;
+        setShop(answer);
+        if (window.CDOS.setAcceptedIdTypes) window.CDOS.setAcceptedIdTypes(answer);
+        setStatus('ready');
+      }).catch(() => {
+        if (alive) setStatus('offline');
+      });
+      return () => {
+        alive = false;
+      };
+    }, []);
+    const flip = async type => {
+      if (busy || !shop || !shop.canChange || type.locked) return;
+      const next = shop.types.filter(t => t.code === type.code ? !t.on : t.on).map(t => t.code);
+      setBusy(type.code);
+      setErr('');
+      setSaved(false);
+      try {
+        const answer = await api.setAcceptedIdTypes(next);
+        setShop(answer);
+        /* Published so every ID picker on the desk follows at once. */
+        if (window.CDOS.setAcceptedIdTypes) window.CDOS.setAcceptedIdTypes(answer);
+        setSaved(true);
+        log && log('Accepted IDs changed', `${type.label} ${type.on ? 'off' : 'on'}`);
+      } catch (error) {
+        setErr(error && error.message || 'That was not saved. Nothing was changed.');
+      }
+      setBusy('');
+    };
+    if (status !== 'ready') {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] py-3",
+        style: {
+          color: CD.faint
+        }
+      }, status === 'loading' ? 'Reading this shop’s list…' : 'Available on the hosted desk, where the server keeps the list and checks every ID.');
+    }
+    const group = (kind, title) => /*#__PURE__*/React.createElement("div", {
+      className: "mb-4"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest mb-1",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, title), shop.types.filter(t => t.kind === kind).map(t => /*#__PURE__*/React.createElement("div", {
+      key: t.code,
+      "data-testid": `accepted-id-${t.code}`,
+      className: "flex items-center justify-between gap-4 py-3",
+      style: {
+        borderTop: `1px solid ${CD.lineSoft}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "min-w-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm flex items-center gap-1.5",
+      style: {
+        color: t.locked ? CD.mute : CD.ink
+      }
+    }, t.locked && /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 12,
+      c: CD.mute
+    }), t.label), t.locked && t.note && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-0.5",
+      style: {
+        color: CD.mute
+      }
+    }, t.note)), /*#__PURE__*/React.createElement(IdSwitch, {
+      on: t.on,
+      label: t.label,
+      disabled: t.locked || !shop.canChange || !!busy,
+      onFlip: () => flip(t)
+    }))));
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "accepted-ids"
+    }, !shop.canChange && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mb-3 flex items-center gap-1.5 px-3 py-2",
+      style: {
+        background: CD.brassSoft,
+        color: 'var(--cd-brass-text)',
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "lock",
+      s: 12,
+      c: "var(--cd-brass-text)"
+    }), " Only the owner can change which IDs this shop accepts."), group('person', 'Person'), group('business', 'Business'), /*#__PURE__*/React.createElement("div", {
+      className: "text-[10.5px] mb-2",
+      style: {
+        color: CD.faint
+      }
+    }, shop.followsPack ? 'These are your jurisdiction pack’s defaults.' : 'Your own list. Your jurisdiction pack’s locks still apply.', " Customers already on file keep their ID. If you switch a type off, their file says to record another ID at the next visit."), err && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "text-[11.5px] mb-2",
+      style: {
+        color: CD.flag
+      }
+    }, err), !err && saved && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      className: "text-[11px] mb-2",
+      style: {
+        color: CD.green
+      }
+    }, "Saved"));
+  }
+
   // default cards on the account (until the owner edits them); helpers for card display
   const seedCards = settings => settings.cards || [{
     id: 'card_visa',
@@ -7291,6 +7553,7 @@
       locations: 'branch till teller station',
       localization: 'currency timezone date time format region',
       compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code',
+      'accepted-ids': 'kyc identification documents passport driver licence photo id national card health card business number',
       billing: 'plan subscription invoice provider kyc partner code seats',
       payment: 'card visa mastercard billing email',
       ledger: 'import csv excel duplicate',
@@ -7581,7 +7844,10 @@
       payment: 1,
       permissions: 1
     };
-    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [
+    const NAV_GROUPS = canSys ? [['Business', [['business', 'Business profile', 'building'], ['locations', 'Locations & tills', 'wallet'], ['employees', 'Employees', 'users'], ['localization', 'Localization', 'globe'], ['compliance', 'Compliance & jurisdiction', 'shield'],
+    /* Not owner-only: a manager sees the list read-only, because
+       the pickers they use follow it. Only the owner can switch. */
+    ['accepted-ids', 'Accepted IDs', 'id'], ['billing', 'Billing & plan', 'coins'], ['payment', 'Payment methods', 'card']]], ['App settings', [['texts', 'Texts · SMS', 'smartphone'], ['ledger', 'Ledger', 'scroll'], ['clients', 'Clients · KYC', 'users'], ['till', 'Cash drawer', 'wallet'], ['vault', 'Cash on hand · Vault', 'building'], ['transfers', 'Transfers', 'globe'], ['cheques', 'Cheques', 'receipt'], ['rates', 'Rates & fees', 'percent'], ['receipts', 'Receipts', 'receipt'], ['tagged', 'Tagged', 'bookmark'], ['ticker', 'Ticker tape', 'bars']]], ['Access', [['permissions', 'Role presets', 'id']]]] : [
     /* A cashier does not get the rest of this rail. They can open
        Rates & fees and read the locked prices. */
     ['App settings', [['rates', 'Rates & fees', 'percent']]]];
@@ -8914,6 +9180,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       desc: "Moved to Compliance & jurisdiction, alongside the rest of the verification policy."
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setTab('compliance'),
+      className: "flex items-center gap-1 text-[12.5px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Open ", /*#__PURE__*/React.createElement(Ic, {
+      n: "chev",
+      s: 13,
+      c: CD.mute
+    }))), /*#__PURE__*/React.createElement(Row, {
+      title: "Accepted IDs",
+      desc: "Which ID types your staff can record."
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => setTab('accepted-ids'),
       className: "flex items-center gap-1 text-[12.5px] font-semibold",
       style: {
         color: CD.ink
@@ -11544,7 +11823,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.ink
         }
       }, "Compliance"), " desk. Sanctions screening is not connected yet. Aggregation and fileable submissions follow the active pack."))));
-    })(), tab === 'rates' && /*#__PURE__*/React.createElement(RatesFees, {
+    })(), tab === 'accepted-ids' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+      icon: "id",
+      title: "Accepted IDs",
+      sub: "The ID types your staff can record for a customer. Switch off any your shop doesn\u2019t take. Every till\u2019s ID picker follows this list."
+    }), /*#__PURE__*/React.createElement(AcceptedIdRows, null)), tab === 'rates' && /*#__PURE__*/React.createElement(RatesFees, {
       me: me,
       serverRole: serverRole,
       settings: settings,
@@ -23424,14 +23707,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }), " Capture")))))));
   }
 
-  /* The pickers are the catalogue's (shared/id-document-types.js), the
-     same list the server checks a save against. A health card is not
-     offered. */
-  const ID_TYPES_IND = IDT.pickerLabels('person');
-  const ID_TYPES_CORP = IDT.pickerLabels('business');
+  /* The pickers offer the types THIS SHOP accepts: the catalogue's
+     (shared/id-document-types.js) less what the owner switched off in
+     Settings → Accepted IDs. The server checks a save against the same
+     list. A health card is never offered. Read at render, so a screen
+     that subscribes with useAcceptedIdTypes() redraws when it changes;
+     until the server answers, every catalogue type is offered. */
+  const idTypesFor = kind => window.CDOS.acceptedHere(IDT.pickerLabels(kind === 'corporate' ? 'business' : 'person'));
   /* A type already on the file that the picker does not offer stays
-     visible in the select. A health card says it is not accepted and
-     cannot be chosen again. */
+     visible in the select. A health card says it is not accepted, and
+     neither it nor a type this shop has switched off can be chosen
+     again. */
   function keptTypeOption(current, types) {
     if (!current || types.indexOf(current) >= 0) return null;
     if (isHealthType(current)) return /*#__PURE__*/React.createElement("option", {
@@ -23439,6 +23725,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       value: current,
       disabled: true
     }, IDT.HEALTH_CARD_SHOWN);
+    if (window.CDOS.isSwitchedOffHere(current)) return /*#__PURE__*/React.createElement("option", {
+      key: current,
+      value: current,
+      disabled: true
+    }, current);
     return /*#__PURE__*/React.createElement("option", {
       key: current,
       value: current
@@ -23451,6 +23742,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       color: CD.flag
     }
   }, IDT.HEALTH_CARD_REFUSAL);
+  /* Said, quietly, under an ID this shop no longer accepts. The server
+     writes the sentence. The document still counts. */
+  const SwitchedOffNote = ({
+    text
+  }) => text ? /*#__PURE__*/React.createElement("div", {
+    "data-testid": "id-no-longer-accepted",
+    className: "text-[11.5px] mt-1.5 flex items-start gap-1.5",
+    style: {
+      color: CD.mute
+    }
+  }, /*#__PURE__*/React.createElement(Ic, {
+    n: "info",
+    s: 12,
+    c: CD.mute
+  }), /*#__PURE__*/React.createElement("span", null, text)) : null;
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
   const COUNTRIES = ['Canada', 'United States', 'Other'];
@@ -23848,7 +24154,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     who,
     log
   }) {
-    const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const types = idTypesFor(kind);
     /* A health card on file: no number, nothing to edit on it. Picking a
        type records a new ID. */
     const health = isHealthType(rec.idType);
@@ -23867,7 +24173,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       value: ""
     }, "\u2014"), keptTypeOption(rec.idType, types), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null)), !health && /*#__PURE__*/React.createElement(EditField, {
+    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null), /*#__PURE__*/React.createElement(SwitchedOffNote, {
+      text: rec.idNotice
+    })), !health && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Business / document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23945,7 +24253,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     who,
     log
   }) {
-    const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const types = idTypesFor(kind);
     /* A health card can be removed. It cannot be edited or retyped. */
     const health = isHealthType(doc.type);
     const editDoc = canEdit && !health;
@@ -23985,7 +24293,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       value: ""
     }, "\u2014"), keptTypeOption(doc.type, types), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null)), !health && /*#__PURE__*/React.createElement(EditField, {
+    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null), /*#__PURE__*/React.createElement(SwitchedOffNote, {
+      text: doc.notice
+    })), !health && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -24431,9 +24741,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), keptTypeOption(rec.idType, corp ? ID_TYPES_CORP : ID_TYPES_IND), (corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), keptTypeOption(rec.idType, idTypesFor(rec.kind)), idTypesFor(rec.kind).map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t))), isHealthType(rec.idType) && /*#__PURE__*/React.createElement(HealthCardNote, null)), !isHealthType(rec.idType) && /*#__PURE__*/React.createElement(EditField, {
+    }, t))), isHealthType(rec.idType) && /*#__PURE__*/React.createElement(HealthCardNote, null), /*#__PURE__*/React.createElement(SwitchedOffNote, {
+      text: rec.idNotice
+    })), !isHealthType(rec.idType) && /*#__PURE__*/React.createElement(EditField, {
       label: corp ? 'Number' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -26014,6 +26326,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       icon: "id",
       label: corp ? 'Document' : 'ID type',
       value: IDT.shownIdType(rec.idType)
+    }), /*#__PURE__*/React.createElement(SwitchedOffNote, {
+      text: rec.idNotice
     }), !isHealthType(rec.idType) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
@@ -26050,6 +26364,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       icon: "id",
       label: "Type",
       value: IDT.shownIdType(d.type)
+    }), /*#__PURE__*/React.createElement(SwitchedOffNote, {
+      text: d.notice
     }), !isHealthType(d.type) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
@@ -26281,6 +26597,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const canEdit = can('canEditKYC');
     const canExport = can('canExport');
     const store = useClientRecords();
+    /* The ID pickers below offer this shop's accepted types; redraw
+       when that list arrives or the owner changes it. */
+    window.CDOS.useAcceptedIdTypes();
     const [saveErr, setSaveErr] = useState('');
 
     /* Pull the desk's customer files from the server and lay them over
@@ -26750,6 +27069,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     onClose,
     onDone
   }) {
+    window.CDOS.useAcceptedIdTypes();
     const [phase, setPhase] = useState('loading');
     const [file, setFile] = useState(rec || {});
     const startsFresh = !!(rec && isHealthType(rec.idType));
@@ -26910,6 +27230,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       }
     };
     const shown = phase === 'edit' ? Object.assign({}, file, draft) : file;
+    /* The "no longer accepts" line is about the type on file. Once a
+       different type is picked here it no longer applies. */
+    if (shown && file && shown.idType !== file.idType) shown.idNotice = '';
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-record fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -27627,9 +27950,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
-  /* The catalogue's types (shared/id-document-types.js), the list the
-     server checks a save against. A health card is not one of them. */
-  const ID_TYPES = window.CDOS.idTypes().pickerLabels('person').concat(window.CDOS.idTypes().pickerLabels('business'));
+  /* The catalogue's types (shared/id-document-types.js), less what this
+     shop has switched off in Settings → Accepted IDs. The server checks
+     a save against the same list. A health card is never one of them.
+     Read at render; TxModal subscribes so it redraws when the list
+     changes. */
+  const idTypeChoices = () => window.CDOS.acceptedHere(window.CDOS.idTypes().pickerLabels('person').concat(window.CDOS.idTypes().pickerLabels('business')));
 
   /* ---------- small shared UI ---------- */
   function StatCard({
@@ -28258,6 +28584,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     chequeSchedule,
     onOpenCheques
   }) {
+    window.CDOS.useAcceptedIdTypes();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => {
       const s = new Set(Object.keys(clients));
@@ -28774,7 +29101,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "ID type\u2026"), ID_TYPES.map(o => /*#__PURE__*/React.createElement("option", {
+    }, "ID type\u2026"), idTypeChoices().map(o => /*#__PURE__*/React.createElement("option", {
       key: o
     }, o))), /*#__PURE__*/React.createElement("input", {
       value: nc.idNum,

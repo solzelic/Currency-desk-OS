@@ -332,10 +332,17 @@ CREATE TABLE IF NOT EXISTS legal_entities (
   -- lives with the migration — see server/src/ledger/currencies.ts for why
   -- minor units are deliberately NOT a column.
   traded_currencies text[],
+  -- the ID types this shop accepts, as catalogue codes. NULL means
+  -- "follow the jurisdiction pack". Migration 047 adds it, with the
+  -- CHECK constraint; it is here because the test database is built
+  -- from this constant rather than from the migrations. See
+  -- server/src/clients/accepted-id-types.ts.
+  accepted_id_types text[],
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS cost_method text;
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS traded_currencies text[];
+ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS accepted_id_types text[];
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS report_threshold numeric(24,2);
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS id_threshold numeric(24,2);
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS aggregation_hours integer;
