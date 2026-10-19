@@ -1,9 +1,9 @@
 /* A Canada desk must not present the sample names as a sanctions screen.
 
    York opens on the Canada pack. The browser still seeds a beneficiary
-   named Lin Wei. On main, that name is fuzzy-matched to the sample
+   named Lin Wei. Before #73, that name was fuzzy-matched to the sample
    entry Wei Lin and shown as an OFAC hit, and the dashboard tile
-   shows the count. This seam requires the not-connected sentence and
+   showed the count. This seam requires the not-connected sentence and
    no count. It does not post a deal.
    ============================================================ */
 import type { Page } from "@playwright/test";

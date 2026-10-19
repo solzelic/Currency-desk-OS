@@ -1,0 +1,85 @@
+# Calendar days must not move with the machine zone.
+#
+# The sign-off day, an ID expiry, a cheque's dates, and a client record's
+# dates are read back here under Asia/Jerusalem and America/Toronto.
+# Reverting the civil-date helper to toISOString() fails the Jerusalem job.
+name: Civil dates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  zones:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [Asia/Jerusalem, America/Toronto]
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: currencydesk_civil }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 5
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - name: Install the server
+        run: npm ci
+        working-directory: server
+
+      - name: Calendar days on the server
+        working-directory: server
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_civil
+        run: >
+          npx vitest run --no-file-parallelism
+          tests/civil-date.test.ts
+          tests/cheque-cashing.postgres.test.ts
+          tests/client-records.postgres.test.ts
+
+      - name: Install Chromium
+        run: |
+          for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -e "$f" ] || continue
+            if grep -qiE 'dl\.google\.com' "$f"; then
+              echo "Removing unused apt source $f"
+              sudo rm -f "$f"
+            fi
+          done
+          sudo rm -f /var/lib/apt/lists/*google* /var/lib/apt/lists/*chrome* || true
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::Chromium install attempt ${attempt}/3 failed"
+            if [ "$attempt" -lt 3 ]; then
+              sudo apt-get clean
+              sleep 15
+            fi
+          done
+          echo "::error::Chromium install failed after 3 attempts"
+          exit 1
+
+      - name: Fresh book for the browser
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c 'CREATE DATABASE currencydesk_civil_seam'
+
+      - name: Calendar days in the browser
+        env:
+          SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_civil_seam
+        run: >
+          npx playwright test
+          tests/e2e/document-seam.spec.ts
+          tests/e2e/phone-new-transaction.spec.ts
+          tests/e2e/desktop-clock.spec.ts
+          -g "desk's own day|recording an ID from the phone deal writes the document|desktop clock reads 15:02"

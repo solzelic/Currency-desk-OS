@@ -1,10 +1,11 @@
 /* ============================================================
    CurrencyDesk server — database schema
-   Mirrors the frontend's DomainScope hierarchy exactly:
+   Scope hierarchy:
      tenant → legal entity → branch → workspace (till)
-   Staff roles are the same union as src/domain/types.ts StaffRole,
-   so the two sides can never drift apart on authorization.
+   The frontend maps these staff roles to its own labels (SRV2OS in
+   os-src/cdos-signin.jsx and os-src/cdos-os.jsx).
    ============================================================ */
+import { sql } from "drizzle-orm";
 import { boolean, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const staffRole = pgEnum("staff_role", [
@@ -32,7 +33,7 @@ export const tenants = pgTable("tenants", {
   siteConfig: jsonb("site_config").$type<SiteConfig>(),
   // onboarding answers captured at signup: regulator/country, home currency,
   // MSB number, address, compliance thresholds. The OS reads these as the
-  // desk's starting configuration (fully consumed in Phase B).
+  // desk's starting configuration.
   setup: jsonb("setup").$type<Record<string, unknown>>(),
   // platform admin can freeze a desk (non-payment/abuse): a suspended desk's
   // people can't sign in. Reversible.
@@ -201,9 +202,9 @@ export const stripeEvents = pgTable(
 
    Keyed on the APPLICATION, not on a tenant — because the whole point is
    that this happens BEFORE the desk exists. Somebody applies, we invite
-   them, and then either they work through it from their link or we sit
-   down and do it with them. The desk is created at the end, out of these
-   answers; tenantId is set at that moment and not before.
+   them, and then they work through it from their link. The desk is
+   created at the end, out of these answers; tenantId is set at that
+   moment and not before.
 
    `answers` holds only what somebody actually typed. What the application
    already told us, and what follows from it, is worked out on read (see
@@ -313,6 +314,10 @@ export const staffUsers = pgTable(
        without first asking which desk. Null until issued — every account
        created before the scheme existed keeps working on its staff id. */
     cdId: text("cd_id"),
+    /* Where the welcome goes when the staff id is a username rather than an
+       address. A contact, not a sign-in name: not unique, and sign-in never
+       looks it up. Null for anyone added before it existed. */
+    email: text("email"),
     name: text("name").notNull(),
     role: staffRole("role").notNull(),
     authorizedBranchIds: jsonb("authorized_branch_ids").$type<string[]>().notNull().default([]),
@@ -333,7 +338,12 @@ export const staffUsers = pgTable(
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("staff_tenant_staffid_idx").on(t.tenantId, t.staffId), uniqueIndex("staff_cd_id_idx").on(t.cdId)],
+  (t) => [
+    uniqueIndex("staff_tenant_staffid_idx").on(t.tenantId, t.staffId),
+    uniqueIndex("staff_cd_id_idx").on(t.cdId),
+    // a username is free on every desk, so it is looked up across tenants
+    index("staff_users_staff_id_lower_idx").on(sql`lower(${t.staffId})`),
+  ],
 );
 
 /* A password reset in flight.
@@ -358,6 +368,32 @@ export const passwordResets = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("password_resets_user_idx").on(t.userId)],
+);
+
+/* Wrong shop-sign-in passwords. One row per account (`acct:<user id>`)
+   and one per client address (`ip:<address>`). A miss is its own bucket
+   so an unknown id locks on the same sentence as a real one. Postgres,
+   not a process map: a restart must not reset the count. */
+export const signinFailures = pgTable("signin_failures", {
+  bucket: text("bucket").primaryKey(),
+  failures: integer("failures").notNull(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+});
+
+/* Password proved, code not yet. The cookie is random; only its hash is
+   stored. Checking a code requires this row. ON DELETE CASCADE so removing
+   a staff user mid sign-in does not fail the foreign key. */
+export const loginChallenges = pgTable(
+  "login_challenges",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id").notNull().references(() => staffUsers.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("login_challenges_user_idx").on(t.userId)],
 );
 
 export const sessions = pgTable(
@@ -709,7 +745,7 @@ export const rateQuotes = pgTable(
   (t) => [index("rate_quotes_tenant_idx").on(t.tenantId, t.createdAt)],
 );
 
-// append-only security audit (mirrors src/security/audit.ts event shape)
+// append-only security audit (most rows are written by audit() in src/audit.ts)
 export const auditEvents = pgTable(
   "audit_events",
   {

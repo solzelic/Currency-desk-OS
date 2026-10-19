@@ -49,6 +49,7 @@
    see `CHEQUE_CURRENCY_NOT_HOME` below — rather than mis-posted quietly.
    ============================================================ */
 import { randomUUID } from "node:crypto";
+import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
@@ -157,10 +158,52 @@ const money = (value: string, minimum: Decimal.Value) => {
 const fixed = (value: Decimal.Value, places = 2) =>
   new Decimal(value).toDecimalPlaces(places).toFixed(places);
 
-const dateOnly = (value: unknown) =>
-  value instanceof Date
-    ? value.toISOString().slice(0, 10)
-    : String(value).slice(0, 10);
+/* The fee the desk published for this type. Null when this desk has
+   not stored a schedule: the capture screen's figure stands, which is
+   how every cheque posted before a schedule was saved still posts.
+   Once a schedule is stored, the book uses that row. A refused edit
+   therefore cannot arrive as a fee of 0 on the next cheque. A stored
+   schedule that cannot be read is thrown, not treated as "no fee". */
+/* The price already stored for this cheque type.
+   A missing schedule, or a type the stored schedule does not name,
+   returns null so the fee the capture screen sent still stands. That
+   is how a desk that has never saved a schedule keeps booking.
+   A schedule that is present and names the type is the price: the
+   greater of the percentage of the face and the minimum. A stored
+   schedule that cannot be read throws. It is not read as a zero fee. */
+async function scheduledFee(
+  client: pg.PoolClient,
+  tenantId: string,
+  chequeType: string,
+  face: Decimal,
+): Promise<Decimal | null> {
+  const found = await client.query(
+    "SELECT state->'cdos_cheque_schedule_v1' AS schedule FROM tenant_state WHERE tenant_id=$1",
+    [tenantId],
+  );
+  if (!found.rowCount || found.rows[0].schedule == null) return null;
+  const raw = found.rows[0].schedule;
+  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (!Array.isArray(parsed)) {
+    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+  }
+  const row = parsed.find((item) => item && String(item.id) === chequeType) as
+    | { feePct?: unknown; feeMin?: unknown }
+    | undefined;
+  if (!row) return null;
+  const pct = new Decimal(row.feePct as Decimal.Value);
+  const min = new Decimal(row.feeMin as Decimal.Value);
+  if (!pct.isFinite() || !min.isFinite() || pct.isNeg() || min.isNeg()) {
+    throw new LedgerError("INVALID_REQUEST", "The cheque fee schedule cannot be read.");
+  }
+  return Decimal.max(min, face.mul(pct).div(100)).toDecimalPlaces(2);
+}
+
+const dateOnly = (value: unknown) => {
+  const day = civilDate(value);
+  if (!day) throw new Error("A cheque date is missing");
+  return day;
+};
 
 /** One cheque, in the shape the desk's screens already speak. */
 const chequeJson = (row: Record<string, any>) => ({
@@ -346,7 +389,11 @@ export class ChequeService {
         );
 
       const face = money(input.faceAmount, "0.01");
-      const fee = money(input.feeAmount, "0");
+      const quoted = money(input.feeAmount, "0");
+      /* The browser can send 0 after a teller was refused a schedule
+         write. The stored schedule is the fee when it names this type. */
+      const listed = await scheduledFee(client, actor.tenantId, String(input.chequeType ?? "").trim(), face);
+      const fee = listed ?? quoted;
       const net = face.minus(fee);
       if (net.lt(0))
         throw new LedgerError(
@@ -921,7 +968,7 @@ export class ChequeService {
       /* Cash goes back INTO this drawer, so this drawer has to be open.
          The clearance path deliberately does not ask for this; see the
          note there. */
-      await requireOpenTill(client, actor);
+      await requireOpenTill(client, actor, { held: false });
 
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='cheque-reverse' AND idempotency_key=$6 FOR UPDATE",

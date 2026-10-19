@@ -4,7 +4,7 @@
    and OWASP-acceptable at these parameters. Format:
      scrypt$N$r$p$saltB64$hashB64
    so parameters can be raised later without invalidating stored
-   hashes — verify() reads them from the stored string.
+   hashes — verifyPassword() reads them from the stored string.
    ============================================================ */
 import { randomBytes, scrypt as scryptCb, timingSafeEqual, type BinaryLike, type ScryptOptions } from "node:crypto";
 
@@ -23,9 +23,9 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 /* A password somebody has to read down a phone line or copy off a screen.
-   No vowels, so it cannot form a word by accident; none of the characters
-   that look like each other when spoken or written down. Temporary by
-   construction — whoever receives it is made to pick their own. */
+   No i, l, o, 0 or 1, so nothing is misread down a phone line or copied
+   wrong off a screen. Temporary by construction — whoever receives it is
+   made to pick their own. */
 export function temporaryPassword(): string {
   const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
   const bytes = randomBytes(14);

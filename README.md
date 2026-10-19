@@ -5,8 +5,8 @@ rate board, ledger, transfers, cheques, clients/KYC, compliance filings,
 till/vault cash, branches, and reports — and CurrencyDesk hosts each customer's
 public storefront (live rates, converter, SMS rate quotes) on their own domain.
 
-**Live:** https://currencydesk.onrender.com · hosted customer site at
-[`/sites/yorkfx/`](https://currencydesk.onrender.com/sites/yorkfx/)
+**Live:** https://www.currencydeskos.com · hosted customer site at
+[`/sites/yorkfx/`](https://www.currencydeskos.com/sites/yorkfx/)
 
 ## Repository layout
 
@@ -32,8 +32,9 @@ npm run dev:prototype        # http://127.0.0.1:8787
 ```
 
 That serves the public site at `/`, the OS at `/app`, the customer storefront at
-`/sites/yorkfx/`, and the API under `/api/*`. (Set `SITE_INDEX` to change which
-file is the front door; remove it and the OS takes the root again.)
+`/sites/yorkfx/`, and the API under `/api/*`. (`SITE_INDEX` picks the front-door
+file and defaults to `web/index.html`; only when that file is missing does the
+OS take the root.)
 
 ### The public site
 

@@ -373,6 +373,11 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       payload: { balances: { CAD: "1000.00" } },
     });
     expect(openedVault.statusCode).toBe(201);
+    /* The float is the holder's. A manager may approve, not move cash. */
+    await handle.db
+      .update(schema.staffUsers)
+      .set({ role: "supervisor" })
+      .where(eq(schema.staffUsers.id, `${DEMO.tenantId}:a.singh`));
     const movePayload = {
       idempotencyKey: "move-1",
       direction: "in",
@@ -385,7 +390,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     const moved = await app.inject({
       method: "POST",
       url: "/api/ledger/till-movements",
-      cookies: manager,
+      cookies: teller,
       payload: movePayload,
     });
     expect(moved.statusCode).toBe(201);
@@ -394,7 +399,7 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     const replayedMove = await app.inject({
       method: "POST",
       url: "/api/ledger/till-movements",
-      cookies: manager,
+      cookies: teller,
       payload: movePayload,
     });
     expect(replayedMove.json().balances.CAD).toBe("25100.00");

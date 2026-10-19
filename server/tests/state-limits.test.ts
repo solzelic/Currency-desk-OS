@@ -17,6 +17,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { MAX_STATE_BYTES, WARN_AT_BYTES } from "../src/state/contract.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -24,7 +25,8 @@ let cookies: Record<string, string> = {};
 
 /* A state document of roughly `bytes`, shaped like the real thing: one key
    holding a long JSON string, which is what the OS actually stores. */
-const stateOf = (bytes: number) => ({ cdos_rows_v1: "x".repeat(Math.max(0, bytes - 32)) });
+const keptSchedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE);
+const stateOf = (bytes: number) => ({ cdos_cheque_schedule_v1: keptSchedule, cdos_rows_v1: "x".repeat(Math.max(0, bytes - 32)) });
 const put = (state: Record<string, unknown>) =>
   app.inject({ method: "PUT", url: "/api/tenant/state", cookies, payload: { state } });
 
@@ -81,7 +83,7 @@ describe("past the limit", () => {
   });
 
   it("saves nothing — the previous state is still there", async () => {
-    const good = { cdos_settings: JSON.stringify({ name: "Harbour FX" }) };
+    const good = { cdos_cheque_schedule_v1: keptSchedule, cdos_settings: JSON.stringify({ name: "Harbour FX" }) };
     await put(good);
     await put(stateOf(MAX_STATE_BYTES + 64 * 1024));
     const got = await app.inject({ method: "GET", url: "/api/tenant/state", cookies });
@@ -106,7 +108,7 @@ describe("approaching the limit", () => {
   });
 
   it("stays quiet for an ordinary desk", async () => {
-    const res = await put({ cdos_settings: JSON.stringify({ name: "Harbour FX" }) });
+    const res = await put({ cdos_cheque_schedule_v1: keptSchedule, cdos_settings: JSON.stringify({ name: "Harbour FX" }) });
     expect(res.statusCode).toBe(200);
     expect(res.json().nearingLimit).toBeUndefined();
   });

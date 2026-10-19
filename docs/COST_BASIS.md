@@ -170,7 +170,7 @@ while cash walks down a corridor between two safes it owns.
 
 Under weighted average all of these figures coincide exactly, which is why
 this was invisible until FIFO existed and why
-`tests/fifo-boundary.postgres.test.ts` exercises it under FIFO specifically.
+`server/tests/fifo-boundary.postgres.test.ts` exercises it under FIFO specifically.
 
 ## An opening position that nobody costed
 

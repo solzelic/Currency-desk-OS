@@ -1,5 +1,6 @@
-/* Platform Admin Console — cross-tenant back office, gated to
-   PLATFORM_ADMIN_EMAILS. A normal owner/teller can't reach it. */
+/* Platform Admin Console — cross-tenant back office, gated to the
+   platform team (seeded here from PLATFORM_ADMIN_EMAILS). A normal
+   owner/teller can't reach it. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";

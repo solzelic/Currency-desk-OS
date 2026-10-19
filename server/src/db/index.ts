@@ -3,7 +3,8 @@
    One schema, two drivers:
      • DATABASE_URL set   → node-postgres against managed Postgres (prod)
      • DATABASE_URL unset → embedded PGlite (dev / tests, zero install)
-   Both are real Postgres, so SQL and migrations never fork.
+   Both are real Postgres, so the queries never fork; only the managed
+   path runs migrations (see the note above desk_clients).
    ============================================================ */
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
@@ -388,6 +389,11 @@ ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS pin_must_change boolean NOT NUL
 -- where set; Postgres allows many NULLs, so accounts predating it keep working.
 ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS cd_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS staff_cd_id_idx ON staff_users(cd_id);
+-- the work email the welcome goes to when the staff id is a username. A
+-- contact, not a sign-in name: not unique, never looked up at sign-in.
+ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS email text;
+-- usernames are free on every desk, so they are looked up across tenants
+CREATE INDEX IF NOT EXISTS staff_users_staff_id_lower_idx ON staff_users (lower(staff_id));
 CREATE TABLE IF NOT EXISTS password_resets (
   id text PRIMARY KEY,
   user_id text NOT NULL REFERENCES staff_users(id),
@@ -398,6 +404,20 @@ CREATE TABLE IF NOT EXISTS password_resets (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS password_resets_user_idx ON password_resets(user_id);
+CREATE TABLE IF NOT EXISTS signin_failures (
+  bucket text PRIMARY KEY,
+  failures integer NOT NULL,
+  window_started_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS login_challenges (
+  token_hash text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_challenges_user_idx ON login_challenges(user_id);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   user_id text NOT NULL REFERENCES staff_users(id),

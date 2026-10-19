@@ -60,8 +60,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Financial ledger — every balance, movement, P&L | Server Postgres ledger (`server/src/ledger/`). One book. The browser renders cash, never computes it |
 | Customers / KYC files | Server: `desk_clients` (+ documents/images tables). `ledger_customers` is the ledger-side counterparty record — deliberately distinct |
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
-| Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers |
+| Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers. Switching staff replaces the session. The name on a deal is that session |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
+| Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock and follows the browser zone. |
 
 ## Production/build surfaces
 
@@ -70,6 +71,117 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 · `server/API` (`/api/*`).
 
 ## Current active work
+
+- **Public quote replies omit the visitor's phone and name.** Creating a quote returns only the ref, the status, the expiry, and the amounts (`from`, `to`, `amount`, `receive`). Confirming returns only the ref, the status, and the expiry. After confirm the Visit page shows "Show ref <ref> at the desk.", the same line for every text status, because create no longer returns the SMS status. The footer says the held rate is honoured at the desk with this ref. The quote card heading, hint, options, buttons, held line, confirmed line, ref line, limit line, error lines, and footer have no em dash and no en dash. The page title, the meta description, and the location lede still have em dashes. That is a Head of Design follow-up and is not in this change. The customer confirm text still has an em dash and a double period. That text is its own follow-up and is not changed here. The hold time is 12-hour, like "12:22 am". A confirm inside the cleanup minute does not walk the buckets again. The next confirm after that minute does. The confirmation text goes out only on the first confirm. A shop allows 30 confirms a minute, and only a real site is counted. One client address allows 30 confirms a minute, taken from `clientIp`. Over the limit, the reply and the Visit page both say "Too many tries. Wait a minute and try again." A request with no client address gets a plain error, not an internal sentence. Old rate buckets are dropped after their window, and that walk runs at most once a minute. Production presents every request as 127.0.0.1, so that per-IP bucket is shared until loopback handling in `clientIp` changes. The smaller replies are what stop a guessed ref from revealing who asked. The short Q- ref can still be guessed. An unguessable confirm token is a later change and is not in this one.
+
+- **One ID-type catalogue, and no health card numbers.** The types a
+  desk can record are one list, `shared/id-document-types.js`. The
+  server requires it and the desk loads the same file. Person types:
+  Driver's Licence, Passport, Provincial/Territorial Photo ID, Permanent
+  Resident Card (PR Card), Citizenship Card, BC Services Card, and
+  National Identity Card. The BC Services Card is photo ID, not a
+  health card. The National Identity Card is another country's
+  government photo ID card, such as an Emirates ID, so a desk outside
+  Canada can record its own country's card. Business types:
+  Business Number, Incorporation Certificate, Master Business Licence,
+  and Articles of Incorporation. A saved type is stored as the
+  catalogue names it. Any other type is 422 `ID_TYPE_NOT_IN_CATALOGUE`,
+  and the sentence lists the accepted types. A health card is in the
+  list so a stored one still reads, and it is never accepted: adding
+  one, or changing a type to one, is 422 `HEALTH_CARD_NOT_ID`, "Health
+  cards can't be used as ID. Record a current photo ID." A stored
+  health card cannot be edited. It can be removed, and a new ID can be
+  added beside it. No read returns a health number: the key is absent
+  from one client, the list, and lookup. Search does not match it. The
+  saved desk document drops it on save, on read, and on a conflict, and
+  the desk drops it from this browser's saved copies when it loads. The
+  file, the quick card, the editors, and the printed report say "Health
+  card — not accepted as ID" with no number. The KYC register and its
+  CSV leave the number empty. LCTR and STR identifier fields fill only
+  from a type the catalogue accepts. A health card does not make a file
+  identified, and the till's counter record for a health card only is
+  `missing`. The register and the ledger say "ID on file" where they
+  said "verified". Ontario's Health Cards and Numbers Control Act, 1991
+  bars a business outside health care from collecting or using a health
+  number, and FINTRAC says not to use a health card where provincial
+  law prohibits it. The desk refuses them everywhere, which is stricter
+  than the law. Stored numbers are not blanked: that is the owner's
+  redaction tool, #134. The posting gate is #108. Per-country Accepted
+  IDs come in a later change. This replaces #157, #100, and #131. The
+  owner asked for it during the freeze, on 2026-10-19. Write-up:
+  `docs/CLIENT_RECORDS.md`.
+
+- **Cheque fees are the owner's or a manager's.** Sol's rule: the owner and a manager may set the fee, including 0%. A teller, a senior teller, a trainee, and an auditor may not. Who may write `cdos_cheque_schedule_v1` is `canWriteSetting`. Today's default allows a branch manager and a compliance officer. The owner is always allowed, so they cannot be locked out. The table is not stored yet and there is no screen for it. A numeric version that is not current is 409 before the fee refusal. Anyone else gets 403: "Only the owner or a manager can change cheque fees. Ask a manager to make this change." A platform row does not take the save away. A teller's document cannot replace the fee key. A save with no version that would change the fee is 409, with no write and no refusal row. The refusal is `settings.cheque_fee_refused`. A save that lands is `settings.cheque_fee_changed`, with who, when, and the old and new price of each cheque type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is grey, with the lock at the start of that sentence and the sentence wrapped, and no inputs and no Save, for a teller and for a cashier, before any Save. The phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals and the example is the body colour, and its header is $2,000.00. A grouped list for the phone is a later change and is not here. The owner and a manager see the table and Save. The header names whoever is signed in now. A refused Save keeps the typed values and shows one amber line above Save. A stale second save shows a conflict line that stays on screen, with darker text, a 44px Reload, and the typed values kept until Reload loads the server schedule and its version. The Risk select is 44px. A save that lands shows Saved. A low-fee notice is not here.
+
+- **A new person's username has the shop in it.** On the Employees
+  screen, typing a name fills Staff ID / username with the first name
+  and the shop's handle: amir.yorkfx. The handle is the shop's site
+  handle, or its name, letters and digits only. If that is taken, the
+  last initial is added (amirs.yorkfx), then a number (amir2.yorkfx).
+  The server picks it and checks it against every desk, not only this
+  one (`GET /api/staff/username`, `server/src/auth/username.ts`). The
+  manager can type a different one. The screen says whether it is free,
+  and the create route checks it again: a username another desk holds
+  is 409 with the next free one, and one in the shape of a CurrencyDesk
+  ID is 400. Once the sign-in exists the username is fixed on the
+  screen. A username typed on a profile that already belongs to
+  somebody else does not make their account this person's: the profile
+  shows no sign-in, and offers no reset, disable, block, or PIN for
+  that other account. An account is the profile's once its sign-in was
+  created from that profile, or when the profile predates usernames. A person can have a work email on file (`staff_users.email`,
+  migration 046). It is a contact, not a sign-in name. Creating a
+  sign-in no longer asks the manager for a password. The server issues
+  a temporary one and emails it to the work email, with the username
+  and the sign-in link. With no work email, the temporary password is
+  shown once to be read out. A work email edited after the sign-in
+  exists is saved on the server, and the next invitation goes there.
+  Before this, a name-style id at any desk but York could not sign in:
+  the sign-in screen does not name a desk, and the server looked in
+  York. When the caller names no desk, sign-in now looks at York first
+  and then on every desk. A caller that names a desk gets that desk
+  only. Only a name that exists once signs in, so an older id that two
+  desks both hold signs in nowhere. York's older ids, like a.singh, keep
+  working. A username sign-in is still password-only; the work email
+  does not add an emailed code. Reset password on the screen still
+  takes a password the manager types. Forgot password does not use the
+  work email yet. The owner authorised this pull request during the
+  freeze, on 2026-10-18.
+
+- **Owner-only settings stay with the owner.** Non-owners may change
+  an allowlist of desk fields their own screens write (their account,
+  the people a sign-in adopts, and the manager's app settings). A
+  manager may also change the default spread. Every other field in
+  the desk settings (shop, compliance including the large-cash line,
+  localization, billing, hours and timezone, role presets, and the
+  handoff count) is the owner's. A teller who sends a different
+  default spread is refused, audited, and the stored spread is kept.
+  A different value on `PUT /api/tenant/state` is 403, an audit row, and
+  nothing in that save is written. An equal value, or a key the client
+  left out, is not a change: the stored value stays and the rest saves.
+  Sign-in does not upload the derived role presets or billing plan.
+  A refusal of any other save reloads the stored desk and saving
+  continues. Settings search hides the owner-only tabs. The settings
+  rail follows the signed-in role, so a manager still sees it after a
+  teller has rewritten the shared preset. Rates & fees shows a field
+  the person cannot change as a grey value with a lock, before they
+  type. The default spread stays editable for a manager and the owner,
+  and that row says a manager or the owner can change it. Every other
+  price on that screen is the owner's, and the row says only the owner
+  can change it. A teller has nothing to edit there, so there is no
+  Save. A manager sees one line: only the owner can change most of
+  these, and that they can change the default spread. A teller sees
+  one line: only the owner can change rates and fees, and to ask the
+  owner or a manager. A locked amount shows two decimals. A Rates &
+  fees save the server still refuses keeps what was typed, repeats
+  that person's line above Save, and does not toast or show an error
+  code. The stored
+  desk is put back underneath so other saves continue. A manager
+  cannot move the threshold.
+  `PUT /api/ledger/desk-thresholds` was already limited to the owner.
+  Only the owner-only refusal (`forbidden`) reloads and keeps saving.
+  A cheque fee refusal still stops the autosave. The Fee schedule Save
+  sends what the autosave sends, so a manager's fee save is not refused
+  over the role presets.
 
 - **The desk fits a phone.** At 430px wide and under, a window fills
   the desk instead of floating as a desktop panel. A compact header
@@ -214,6 +326,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   at `/admin` requires TOTP after enrollment. The first sign-in enrolls
   (otpauth URI shown once, backup codes stored only as scrypt hashes).
   Desk `/login` is still password-only.
+  Password guesses on that door are limited: five wrong passwords on
+  one account, or twenty from one address, inside fifteen minutes, and
+  the next answer is "Too many tries. Try again in N minutes." The
+  count is a Postgres row, so a restart does not clear it. An unknown
+  staff id gets the same sentence. The emailed-code step answers with
+  the same words, in the same time, for an unknown id and a wrong code,
+  and it will not check a code unless this browser already passed the
+  password (a server-side marker). If `RESEND_API_KEY` or `EMAIL_FROM`
+  is missing in production, the send is refused and the code is not
+  written to the log.
 
 - **Signup mobile on the admin call** — the number `placeOutboundCall`
   dials is `enquiries.details.phone`. The mobile typed while opening a
@@ -508,6 +630,8 @@ cherry-pick, deterministic deletions, and documentation consolidation have
 all landed. The nine unreferenced YorkFX media files rated LOW-MED were
 deliberately retained until external hot-linking can be ruled out.
 
+- **Every desk has a cheque schedule.** Migration 045 writes the default where the desk has none. A stored null, an empty string, `[]`, or a value that is not a non-empty JSON array is missing, and the default is written. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one audit row, actor `system migration`, action `cheque.schedule_backfill`, with the value before and the value after. A second run writes none. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write that same default when the desk is created, and they do not replace a schedule that is already there. A boot that fills a missing schedule writes one audit row, actor `system seed`, action `cheque.schedule_backfill`, with the value before and the value after. A boot that finds a schedule already stored writes none. A browser opens the desk as new only when `cdos_settings` is missing and there are no rows and no clients. A blank `cdos_settings` is missing. The schedule and a tour flag do not count as records. It writes the shop name and the empty cash, keeps the stored keys, and leaves the rate board in place. A desk that has rows, clients, or a saved `cdos_settings` opens as the saved desk, so those records are not replaced with empty.
+
 ## Known high-priority engineering risks (unresolved)
 
 1. **Resend API key rotation** (issue #32) — the key passed through chat;
@@ -547,6 +671,115 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-19**, ID-type catalogue and health cards. One list, `shared/id-document-types.js`, loaded by the server and by the desk. A type outside it is 422 `ID_TYPE_NOT_IN_CATALOGUE`. A health card is 422 `HEALTH_CARD_NOT_ID`, "Health cards can't be used as ID. Record a current photo ID." The BC Services Card is accepted. A health number is not in any client read, search, report, register, CSV, LCTR or STR field, or the saved desk document. It does not identify a file. Stored rows are not rewritten and stored numbers are not blanked. No migration.
+
+**2026-10-18**, names and comments. Every tracked file name was checked against CONTRIBUTING, and every comment and doc line against the code. Statements the code contradicts were corrected; nothing that could not be shown wrong was changed. `server/src/state/defaultChequeSchedule.ts` is `default-cheque-schedule.ts`. `tenantState.ts` and `settingsWrite.ts` keep their names until the open pull requests that edit or import them have landed. The desk no longer carries an uncalled function that made up an address and an ID number from a name. The Cross-Border EFT report no longer says transfers do not post; it says the page is built from the Transfers app's own records. The owner ended the PR freeze.
+
+**2026-10-18**, usernames and the work email. A new username is the first name and the shop handle, picked by the server and free on every desk. A taken one is 409 with the next free one; a CurrencyDesk-ID shape is 400. Creating a sign-in emails a temporary password to the work email with the username and the link, or shows it once when there is no address. Sign-in that names no desk finds a username on any desk when exactly one desk holds it; one that names a desk stays there. Migration 046. 041 is claimed by open draft #132, 042 by #130, and 043 by #138.
+
+**2026-10-17**, cheque fees. The owner and a manager can change the cheque fee schedule, including to 0%. A teller, a senior teller, a trainee, and an auditor cannot. Who may write it is `canWriteSetting`. Today's default allows a branch manager and a compliance officer, and the owner is always allowed. That table is not stored and has no screen. A stale numeric version is 409 before the fee refusal. A platform row does not remove the save. A teller's document cannot replace the fee key. A refusal is 403, the stored schedule is unchanged, and the audit action is `settings.cheque_fee_refused`. A save that lands writes `settings.cheque_fee_changed` with who, when, and the old and new price of each type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is read-only for a teller and for a cashier, with no inputs before any Save, the sentence wraps, and the phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals, the example is the body colour, and its header is $2,000.00. A grouped list for the phone follows in its own change. The header names the person signed in now. A second save against a newer version keeps the typed values until Reload, which loads the server schedule and its version. The conflict line stays on screen, its text is darker than the amber token, Reload and the Risk select are 44px, and a save with no version that would change the fee is 409 with no write and no refusal row.
+
+**2026-10-12**, shop sign-in. A wrong password at `/login` is counted in
+Postgres, five per account and twenty per address, for fifteen
+minutes. The count is written before the answer, so a burst cannot
+slip a correct password through after the limit. The lock says "Too many tries. Try again in N minutes." The screen says "Too many tries. Try again at 10:42 AM." The hour is the shop's own clock, so the zone is not repeated. While that holds, the button reads Sign in, with a lock, and it is disabled. It comes back when that time passes. With no time from the server it says "Too many tries. Try again in a few minutes." and Try again sends the password once more. Asking for another code while locked says "Too many tries. Try again at 10:42 AM." A staff id with no @ does not see the email-code line. not you?, SHOW, and the reset link are 44px. Forgot it? and the OS mark use the body grey (#6E675E), so each clears 4.5:1. A staff id with no @ is password-only: the button reads Sign in on that step and again after the lock ends. The greeting uses the display name, as in Welcome back, M. Costa. The lock hour is the shop clock in America/Toronto, including when the process zone is Asia/Jerusalem. An unknown staff id gets that same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
+socket is a published Cloudflare address, or when the socket is a
+private address and the rightmost `X-Forwarded-For` hop is Cloudflare.
+IPv6 /64 rotation is accepted for now and is a follow-up. A missing
+or invalid header counts the socket and warns without the header
+value. Otherwise a private socket counts the rightmost hop, and
+anything else counts the socket. The first request logs the header
+names present, with no values and no IPs. Render's docs say the app
+sees the proxy IP and that the first `X-Forwarded-For` entry is the
+client. This count does not use that first entry. A caller-supplied
+header cannot open a new bucket unless the hop is Cloudflare.
+Production mail uses `is not set` for one missing name and `are not
+set` for both, and a provider error body that cannot be read still
+logs the status. An owner or a
+manager can clear the account
+counter, and `RESET_STAFF_PASSWORD` clears it too. The emailed-code
+step gives one answer, in the same time, for an unknown id and a
+wrong code, and it checks a code only after the password step has
+left a server-side marker. A wrong code says "That code isn't right.
+Check your email." Production without `RESEND_API_KEY` or
+`EMAIL_FROM` does not send and does not log the code. Migration 044. 041 is claimed by open drafts
+#96, #110, #120, and #132, 042 by #130, and 043 by #138.
+
+**2026-10-18**, cheque schedule on every desk. Migration 045 writes the default schedule where none is stored. A stored null, an empty string, `[]`, or a value that is not a non-empty JSON array is missing, and the default is written. A schedule already stored, including 0%, is left byte for byte. One audit row per desk that changes, actor `system migration`, with the value before and the value after. A second run writes none. A desk created afterwards, including signup, onboarding, an admin, the platform tenant, and the York FX seed, is given that default at creation.
+
+**2026-10-12**, serialization retry. A post that Postgres aborts with 40001 is run
+again, up to six times. The aborted attempt wrote nothing. The same
+idempotency key makes the next attempt the same post. A quote the other
+attempt has already posted is that stored post, not a refusal that the
+quote is no longer active. A key already saved with no stored answer
+posts once. It is not refused as IDEMPOTENCY_IN_PROGRESS. The teller
+sentence for that code is "This request is already being posted.
+Nothing else was posted."
+
+**2026-10-12**, platform write gates. An auditor on the platform team can
+read desks, applications, billing, people, and the audit trail. They
+cannot suspend or delete a desk, create one, change a plan, reset a
+password or a PIN, issue a CD-ID, block a person, invite a desk, or
+edit an application. Suspending and deleting a desk require
+`security:manage`. Changing a plan requires `billing:write`. A body
+that does both has to hold both, and nothing is written until both
+checks pass. Creating a desk by hand requires `desks:write`. Acting
+on a person requires `people:write`. An invitation and an application
+edit (notes, status, answered, labels, rotating the code) require
+`applications:write`. Support does not suspend a desk and does not
+change a plan. That loss of suspend and delete is the rule. The need
+is read from the fields on `PATCH /api/admin/tenants/:id` and checked
+before the body is validated, so a caller who does not hold it gets
+403 even when the body is bad. A read still answers any platform role.
+
+**2026-10-12**, cheque reversal door. `POST /api/ledger/transactions/:transactionId/reversal`
+refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return` with
+`REVERSAL_NOT_ALLOWED`. The message names
+`POST /api/ledger/cheques/:chequeId/reversal`. A generic reversal of a
+cashing used to put the cash back, leave `ledger_cheques.status` as
+held, write no cheque event, and then refuse the cheque route forever
+with `REVERSAL_ALREADY_EXISTS`. A clearance and a return were the same
+hole on their own transaction rows. The cheque route itself is unchanged.
+
+**2026-10-12**, PIN guesses. A wrong PIN, and a wrong sign-in password on the
+forgot-PIN door, is counted before the slow check. That guess is given
+back as soon as the current PIN or password checks out, so a later
+refusal does not count. Only a wrong current PIN, or a wrong password
+on that door, counts. A right PIN on the keypad gives the run back.
+A burst of wrong guesses still stops at five. The lock still lives in
+memory on this process.
+
+**2026-10-12**, staff switch. Taking the desk from the avatar menu is a new
+session. `POST /api/auth/switch` checks the next person's server-held
+PIN. A missing PIN, a manager-issued PIN they have not replaced, the
+guess `0000`, and a locked keypad are said inside the PIN dialog. The
+name is an initial and a surname, and the space between them does not
+break. `0000` and the other easy PINs are refused when someone sets a
+PIN, not only when they switch. `0000` on a switch does not count as a
+wrong try. Five wrong tries lock the keypad, and the lock clears on
+its own in 5 minutes. The dialog's Cancel key uses the desk font at
+15px. The route revokes the cookie that was live and issues one for
+them. Two switches from the same cookie cannot both win. The till
+session belongs to whoever counted it. A switch does not hand it over.
+A teller or a supervisor keeps that workspace only when they counted
+it, or when nobody has. A manager, an auditor, or compliance can stay
+on it to look or to approve, and they do not become the person who
+counted it. Anyone else is asked to pick a till. A deal, and cash in
+or out, on a till somebody else counted is refused until the new
+person does a handover count. A manager may approve. They may not
+move the cash. A mid-day count is only for the person who holds the
+till, and a count reply to anyone else carries no expected amount.
+The handover is a blind count. It closes the old session, writes the
+variance on that session, and records the person who counted as the
+closer and the counter. It opens a session they counted. The screen applies the role
+`/api/auth/me` returns after the switch. The Settings toggle that used
+to skip the PIN does not skip the server. A deal, a till open, and an
+audit row carry the new session. The first-run tour is once per person,
+on sign-in. A switch or a handover does not open it and does not mark
+it done. Before this, a successful switch wrote nothing, so a deal
+whose screen said one person and whose `actor_id` is another cannot
+be found with a query.
+
 **2026-10-12**, teller earnings. A teller can post a deal and still cannot
 read what the desk earned. The customer-facing fee stays, because the
 customer was charged it. `GET /api/ledger/summary` keeps `feesHome`
@@ -569,6 +802,23 @@ the day and still see the figures. An auditor and a compliance
 officer do not close the day, and they do not hold
 `report:earnings`, which is the same as on main. That permission
 exists and nobody holds it. Granting it is a later decision.
+
+**2026-10-17**, owner-only settings. Non-owners may change only the
+allowlist their screens write. A manager may also change the default
+spread. A teller who sends a different default spread is refused,
+audited, and the stored spread is kept. A different owner-only value,
+including the large-cash line, is refused whole and audited. Leaving a
+derived key out (role presets, billing plan) keeps the stored value
+and saves the rest. A refusal of any other save reloads the stored
+  desk and saving continues. The settings rail follows the signed-in
+  role. Rates & fees locks every price except the default spread, which
+  a manager or the owner can change. A teller gets no Save on that
+  panel. A manager's line says they can change the default spread. A
+  teller's line says to ask the owner or a manager. A locked amount
+  shows two decimals. A refused Rates & fees save keeps the typed
+  values and repeats that person's line above Save, with no toast and
+  no error code. A manager cannot move the large-cash line. The ledger
+  threshold route was already the owner's.
 
 **2026-10-11**, phone bottom bar. At 430px and under, the header is the
 shop name, a till dot that reads Till open or Till closed, and the

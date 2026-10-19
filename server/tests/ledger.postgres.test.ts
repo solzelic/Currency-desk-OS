@@ -1,7 +1,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
-import { LedgerError, LedgerService, type LedgerActor } from "../src/ledger/service.js";
+import { LedgerError, LedgerService, type FrozenQuote, type LedgerActor } from "../src/ledger/service.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -19,7 +19,7 @@ const request = {
 };
 
 async function reset() {
-  await pool.query("TRUNCATE ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE");
+  await pool.query("TRUNCATE ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE");
   await pool.query("INSERT INTO ledger_principals VALUES ('teller-1','tenant-1','le-1','branch-1','workspace-1','till-1','teller','[\"branch-1\"]'),('supervisor-1','tenant-1','le-1','branch-1','workspace-1','till-1','supervisor','[\"branch-1\"]')");
   await pool.query("INSERT INTO ledger_customers VALUES ('customer-1','tenant-1','le-1','branch-1','workspace-1','Customer','Normal','verified')");
   await pool.query("INSERT INTO ledger_rates VALUES ('tenant-1','le-1','branch-1','workspace-1','CAD',1),('tenant-1','le-1','branch-1','workspace-1','USD',0.731),('tenant-1','le-1','branch-1','workspace-1','EUR',0.676),('tenant-1','le-1','branch-1','workspace-1','GBP',0.581)");
@@ -126,5 +126,129 @@ postgres("real PostgreSQL ledger posting", () => {
     expect((await pool.query("SELECT * FROM ledger_till_movements WHERE reversal_id=$1 AND movement_kind='reversal'", [reversed.reversalId])).rowCount).toBe(3);
     expect((await service.reverse(supervisor, posted.transactionId, "reverse-1", "Correction")).reversalId).toBe(reversed.reversalId);
     await expect(service.reverse(supervisor, posted.transactionId, "reverse-2", "Again")).rejects.toMatchObject({ code: "REVERSAL_ALREADY_EXISTS" });
+  });
+
+  /* Postgres 40001 means the transaction was rolled back. post() and
+     postFrozenQuote() have to run it again. Rewriting that code as
+     IDEMPOTENCY_IN_PROGRESS makes withSerializationRetry look past it,
+     so these fail while that rewrite is in place. The default limit is
+     six attempts (server/src/ledger/retry.ts). */
+  function attemptsOf(fault: (attempt: number, sql: string) => "40001" | "conflict" | "ok") {
+    let attempts = 0;
+    const connect = async () => {
+      attempts += 1;
+      const attempt = attempts;
+      const client = await pool.connect();
+      const query = client.query.bind(client);
+      const release = client.release.bind(client);
+      client.query = (async (text: unknown, values?: unknown) => {
+        const sql = typeof text === "string" ? text : "";
+        const kind = fault(attempt, sql);
+        if (kind === "40001") {
+          throw Object.assign(new Error("could not serialize access due to concurrent update"), { code: "40001" });
+        }
+        if (kind === "conflict") return { rowCount: 0, rows: [] };
+        return query(text as string, values as never[]);
+      }) as typeof client.query;
+      client.release = ((err?: Error | boolean) => {
+        client.query = query;
+        return release(err as Error);
+      }) as typeof client.release;
+      return client;
+    };
+    return {
+      service: new LedgerService({ connect, query: pool.query.bind(pool) } as unknown as pg.Pool),
+      attempts: () => attempts,
+    };
+  }
+
+  const frozen: FrozenQuote = {
+    quoteId: "quote-retry",
+    customerId: "customer-1",
+    from: "CAD",
+    to: "USD",
+    inputAmount: "1000.00",
+    outputAmount: "500.00",
+    marketMid: "2.000000000000",
+    customerRate: "2.000000000000",
+    feeCad: "4.00",
+    spreadCad: "0.00",
+    rateBoardPublicationId: "board-retry",
+    marketSnapshotId: null,
+    rateSourceType: "manual",
+    quoteOverrideId: null,
+    purpose: "Travel",
+    sourceOfFunds: "Cash",
+  };
+
+  it("retries a serialization failure and posts once", async () => {
+    const led = attemptsOf((attempt, sql) => (attempt === 1 && sql.startsWith("BEGIN") ? "40001" : "ok"));
+    const posted = await led.service.post(teller, { ...request, idempotencyKey: "ser-retry" });
+    expect(led.attempts()).toBe(2);
+    expect(posted.transactionId).toBeTruthy();
+    expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("1");
+  });
+
+  it("retries a serialization failure on a frozen quote and posts once", async () => {
+    await pool.query(
+      `INSERT INTO quotes (
+         quote_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+         customer_id,created_by,direction,from_currency,to_currency,
+         input_amount,output_amount,market_mid,customer_rate,buy_or_sell_side,
+         fee_cad,spread_cad,rate_board_publication_id,rate_source_type,status,
+         expires_at,created_at
+       ) VALUES (
+         'quote-retry','tenant-1','le-1','branch-1','workspace-1','till-1',
+         'customer-1','teller-1','customer_buy_foreign','CAD','USD',
+         1000.00,500.00,2,2,'we_sell',
+         4.00,0,'board-retry','manual','active',
+         now() + interval '10 minutes', now()
+       )`,
+    );
+    const led = attemptsOf((attempt, sql) => (attempt === 1 && sql.startsWith("BEGIN") ? "40001" : "ok"));
+    const posted = await led.service.postFrozenQuote(teller, frozen, "ser-quote");
+    expect(led.attempts()).toBe(2);
+    expect(posted.quoteId).toBe("quote-retry");
+    expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("1");
+  });
+
+  it("stops at the retry limit and still reports the serialization failure", async () => {
+    const led = attemptsOf((_attempt, sql) => (sql.startsWith("BEGIN") ? "40001" : "ok"));
+    await expect(led.service.post(teller, { ...request, idempotencyKey: "ser-limit" })).rejects.toMatchObject({ code: "40001" });
+    expect(led.attempts()).toBe(6);
+    expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("0");
+
+    const quoted = attemptsOf((_attempt, sql) => (sql.startsWith("BEGIN") ? "40001" : "ok"));
+    await expect(quoted.service.postFrozenQuote(teller, frozen, "ser-quote-limit")).rejects.toMatchObject({ code: "40001" });
+    expect(quoted.attempts()).toBe(6);
+  });
+
+  it("posts a saved key that has no stored answer", async () => {
+    await pool.query(
+      `INSERT INTO ledger_idempotency
+         (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key)
+       VALUES ('tenant-1','le-1','branch-1','workspace-1','till-1','post','ser-empty')`,
+    );
+    const posted = await service.post(teller, { ...request, idempotencyKey: "ser-empty" });
+    expect(posted.transactionId).toBeTruthy();
+    expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("1");
+    const stored = await pool.query(
+      "SELECT response FROM ledger_idempotency WHERE operation='post' AND idempotency_key='ser-empty'",
+    );
+    expect(stored.rows[0].response).toBeTruthy();
+  });
+
+  /* Not a row saved with an empty response. That posts once, above.
+     This forces the insert to return no row, which is the only way this
+     suite reaches IDEMPOTENCY_IN_PROGRESS. The code is not retried. */
+  it("does not retry a forced idempotency insert conflict", async () => {
+    const led = attemptsOf((_attempt, sql) => (
+      sql.includes("INSERT INTO ledger_idempotency") ? "conflict" : "ok"
+    ));
+    await expect(led.service.post(teller, { ...request, idempotencyKey: "ser-progress" })).rejects.toMatchObject({
+      code: "IDEMPOTENCY_IN_PROGRESS",
+    });
+    expect(led.attempts()).toBe(1);
+    expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("0");
   });
 });

@@ -98,6 +98,15 @@ mirrored from what was actually posted rather than composed a second
 time. That is what makes the fee come back *without anybody having to
 remember that it should*.
 
+That write happens on `POST /api/ledger/cheques/:chequeId/reversal`.
+The deal reversal route, `POST /api/ledger/transactions/:transactionId/reversal`,
+refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return`
+(`REVERSAL_NOT_ALLOWED`). The message names the cheque reversal route.
+The deal route mirrors the journal and the till and inserts
+`ledger_reversals`, and it does not update `ledger_cheques` or append
+a cheque event. Once it has reversed a cashing, the cheque route
+answers `REVERSAL_ALREADY_EXISTS` and the cheque stays `held`.
+
 Only a cheque the desk is still carrying can be cleared, returned or
 reversed. A cheque that has already cleared cannot be reversed: the bank
 has paid, and unwinding the cashing now would take cash into the drawer
@@ -208,6 +217,10 @@ inside a `SERIALIZABLE` money transaction. It lives in its own small
 store keyed by the ledger's cheque id, so re-reading the register cannot
 silently drop the scans.
 
+## A desk is not left without a schedule
+
+Migration 045 writes the default schedule where `cdos_cheque_schedule_v1` is missing. Missing means the key is absent, the value is null, the text is empty, the text is `[]`, or the text is not a non-empty JSON array. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one `audit_events` row, actor `system migration`, action `cheque.schedule_backfill`, with `before` and `after`. A second run changes nothing and writes no audit row. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write the same default when the desk is created, and they do not replace a schedule that is already there. A boot that fills a missing schedule writes one audit row, actor `system seed`, action `cheque.schedule_backfill`, with `before` and `after`. A boot that finds a schedule already stored writes none. A browser opens the desk as new only when `cdos_settings` is missing and there are no rows and no clients. A blank `cdos_settings` is missing. The schedule and a tour flag do not count as records. It writes the shop name and the empty cash, keeps the stored keys, and leaves the rate board in place. A desk that has rows, clients, or a saved `cdos_settings` opens as the saved desk, so those records are not replaced with empty.
+
 ## What a settlement is not
 
 A clearance and a return each carry a journal, so each needs a
@@ -259,3 +272,9 @@ face of a cashed cheque toward a large-cash aggregate. That was true
 before this change and is still true after it; what is new is that the
 row now carries `receivedInstrument`, so the engine has something true to
 consult when a pack can say what "cash" means where the desk trades.
+
+## Who can change the fee
+
+The fee on a cashed cheque comes from `cdos_cheque_schedule_v1` in the desk's saved state when that schedule names the cheque type. The figure is the greater of the percentage of the face and the minimum, in cents. A desk that has not saved a schedule still takes the fee the capture screen sends. A type string that is not that stored id is not priced from the schedule yet. Closing that hole is a separate change and is not in this one.
+
+Who may write the schedule is `canWriteSetting`. Today's default allows a branch manager and a compliance officer to write `cdos_cheque_schedule_v1`. The owner is always allowed, so a later saved row cannot lock them out. The table is today's default and will become owner-configurable. There is no screen for that yet, and nothing is stored. A teller, a senior teller, a trainee, and an auditor are refused. A platform row does not grant the write and does not take it away. On `PUT /api/tenant/state` a numeric version that is not the stored version is 409 before that refusal, so a stale tab is a conflict and not a 403, and it does not write `settings.cheque_fee_refused`. A version that is not a number still meets the refusal before the body is validated. The refusal sentence is "Only the owner or a manager can change cheque fees. Ask a manager to make this change." The stored schedule is not changed. A teller's document cannot replace the fee key, and a versioned save updates only when the version still matches, so a teller's copy cannot overwrite a fee the owner just saved. A save with no version that would change the fee is 409, writes nothing, and writes no refusal row. The update matches only when the stored fee text is unchanged. A save that lands writes `settings.cheque_fee_changed` with the staff id, name, role, the time, and the old and new price of each cheque type. The Fee schedule tab shows the locked sentence, with the lock at the start of the line and the line wrapped inside the window, the other figures grey, and no inputs and no Save, for a teller and for a cashier, before any Save. The phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals in the field, as in 4.00. The example is the body colour, as in 30.00 CAD, and its header is $2,000.00. The owner and a manager see the editable table, and Save, the fee inputs, the Risk select, and Reload are 44px. A grouped list for the phone is a later change and is not here. The header names whoever is signed in now. A cashier who is signed in sees that locked table. A Save the server refuses keeps the typed values and shows one amber line above Save: "That change didn't save. Only the owner or a manager can change cheque fees." It does not repeat, it does not show a code, and it does not toast. A second save that meets a newer version shows "That change didn't save. Someone changed these fees. Reload to see the latest, then try again." The line stays on screen, including above the phone bar. Its text is darker than the amber token. The typed values stay until Reload, which then loads the server schedule and its version. A save the server cannot read shows "That change didn't save. Try again." A save that lands shows Saved beside the button. A low-fee notice to the owner is a separate change and is not here.

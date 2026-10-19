@@ -50,11 +50,35 @@
    that writes the audit row in the same transaction that returns the
    bytes — the same rule as a passport, because these files are how an
    examiner reconstructs a customer and they used to live in one browser.
+
+   ---- ID TYPES AND HEALTH CARDS ----
+
+   A document type is one of the catalogue's (shared/id-document-types.js)
+   or the "Not stated" placeholder. A write stores the catalogue's own
+   label, so "PR Card" is stored as "Permanent Resident Card". A type the
+   catalogue does not list is refused, and so is a health card. A row
+   already stored under any other name is read as it is and never
+   rewritten here.
+
+   A health card is not ID. Its number is never in a read: the
+   `docNumber` key is absent, not null and not masked. It does not make
+   the file identified. A stored health-card row cannot be edited; it can
+   be removed, and a new primary document can be added beside it. The
+   number stays in the column until the owner runs the redaction tool,
+   which is a separate change.
    ============================================================ */
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
+import { civilDate, civilToday } from "../civil-date.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
+import {
+  HEALTH_CARD_KEYS,
+  HEALTH_CARD_REFUSAL,
+  isHealthCardType,
+  normaliseForWrite,
+  typeKeySql,
+} from "./id-document-types.js";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -551,6 +575,9 @@ export class ClientRecordService {
   /* ---- identity documents ------------------------------------------- */
 
   async addDocument(actor: LedgerActor, clientId: string, input: DocumentInput) {
+    /* Before the transaction: a refused type is refused whoever asks and
+       whatever the file holds, and nothing is written. */
+    const docType = catalogueType(input.docType);
     return this.inTransaction(actor, "customer:write", async (client) => {
       const owned = await client.query(
         "SELECT 1 FROM desk_clients WHERE client_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 FOR UPDATE",
@@ -576,7 +603,7 @@ export class ClientRecordService {
           documentId,
           clientId,
           ...entityScope(actor),
-          input.docType.trim(),
+          docType,
           blank(input.docNumber),
           blank(input.issuingJurisdiction),
           blank(input.issuedOn),
@@ -586,7 +613,7 @@ export class ClientRecordService {
         ],
       );
       if (input.scanDataUrl)
-        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, input.docType.trim());
+        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, docType);
       /* The audit row names the TYPE and never the number. An audit log
          that quotes passport numbers is a second copy of the thing being
          protected, in a table designed to be read widely and kept
@@ -596,7 +623,7 @@ export class ClientRecordService {
         actor,
         "client.document.add",
         clientId,
-        `${input.docType.trim()}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
+        `${docType}${input.scanDataUrl ? " · scan captured" : " · no scan"}`,
       );
       await this.refreshVerification(client, clientId);
       await this.syncCounterRecord(client, actor, clientId);
@@ -610,17 +637,23 @@ export class ClientRecordService {
     documentId: string,
     input: Partial<DocumentInput>,
   ) {
+    const docType = input.docType === undefined ? undefined : catalogueType(input.docType);
     return this.inTransaction(actor, "customer:write", async (client) => {
       const found = await client.query(
-        `SELECT d.document_id FROM desk_client_identity_documents d
+        `SELECT d.document_id, d.doc_type FROM desk_client_identity_documents d
            JOIN desk_clients c ON c.client_id=d.client_id
           WHERE d.document_id=$1 AND d.client_id=$2
             AND c.tenant_id=$3 AND c.legal_entity_id=$4 FOR UPDATE`,
         [documentId, clientId, ...entityScope(actor)],
       );
       if (!found.rowCount) throw documentNotFound();
+      /* A health card on the file is not edited back into use. A new
+         number would be a health number newly stored, and a new type
+         would put the stored health number under a passport's name. It
+         can be removed, and a new document can be added beside it. */
+      if (isHealthCardType(found.rows[0]!.doc_type)) throw healthCardNotId();
       const columns: Record<string, unknown> = {};
-      if (input.docType !== undefined) columns.doc_type = input.docType.trim();
+      if (docType !== undefined) columns.doc_type = docType;
       if (input.docNumber !== undefined) columns.doc_number = blank(input.docNumber);
       if (input.issuingJurisdiction !== undefined)
         columns.issuing_jurisdiction = blank(input.issuingJurisdiction);
@@ -643,7 +676,7 @@ export class ClientRecordService {
           [documentId, actor.userId, ...names.map((name) => columns[name])],
         );
       if (input.scanDataUrl)
-        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, input.docType?.trim() ?? null);
+        await this.storeImage(client, actor, clientId, "identity_document", input.scanDataUrl, documentId, docType ?? null);
       await this.audit(
         client,
         actor,
@@ -1043,15 +1076,19 @@ export class ClientRecordService {
     actor: LedgerActor,
     clientId: string,
   ): Promise<string | null> {
+    /* A health card is not a document on file for this purpose: its
+       number does not count, and its expiry is not the primary's. */
     const found = await client.query(
       `SELECT c.display_name, c.risk_rating, c.verification_status,
               (SELECT min(expires_on) FROM desk_client_identity_documents d
-                WHERE d.client_id=c.client_id AND d.is_primary) AS primary_expiry,
+                WHERE d.client_id=c.client_id AND d.is_primary
+                  AND ${NOT_HEALTH_CARD_SQL("$4")}) AS primary_expiry,
               (SELECT count(*)::int FROM desk_client_identity_documents d
-                WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'')<>'') AS numbered
+                WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'')<>''
+                  AND ${NOT_HEALTH_CARD_SQL("$4")}) AS numbered
          FROM desk_clients c
         WHERE c.client_id=$1 AND c.tenant_id=$2 AND c.legal_entity_id=$3`,
-      [clientId, ...entityScope(actor)],
+      [clientId, ...entityScope(actor), HEALTH_CARD_KEYS],
     );
     if (!found.rowCount) return null;
     const row = found.rows[0]!;
@@ -1061,8 +1098,8 @@ export class ClientRecordService {
        expiry is "expired" — the two states the posting gate actually
        acts on, computed from the documents rather than from a field
        somebody forgot to update. */
-    const expired =
-      row.primary_expiry != null && new Date(row.primary_expiry) < new Date(new Date().toDateString());
+    const expiry = civilDate(row.primary_expiry);
+    const expired = expiry != null && expiry < civilToday();
     const status: VerificationStatus =
       row.numbered === 0
         ? "unverified"
@@ -1154,6 +1191,10 @@ export class ClientRecordService {
    * rows in this table can grant that, and nothing here may quietly take
    * it away either. The three states this DOES own are the ones that
    * follow mechanically from what the desk is holding.
+   *
+   * A health card is left out of both questions. It is not ID, so its
+   * number does not make the file identified and its expiry does not
+   * make it expired.
    */
   private async refreshVerification(client: pg.PoolClient, clientId: string) {
     await client.query(
@@ -1162,16 +1203,18 @@ export class ClientRecordService {
             WHEN NOT EXISTS (
               SELECT 1 FROM desk_client_identity_documents d
                WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'') <> ''
+                 AND ${NOT_HEALTH_CARD_SQL("$2")}
             ) THEN 'unverified'
             WHEN EXISTS (
               SELECT 1 FROM desk_client_identity_documents d
                WHERE d.client_id=c.client_id AND d.is_primary
+                 AND ${NOT_HEALTH_CARD_SQL("$2")}
                  AND d.expires_on IS NOT NULL AND d.expires_on < current_date
             ) THEN 'expired'
             ELSE 'identified'
           END
         WHERE c.client_id=$1 AND c.verification_status <> 'verified'`,
-      [clientId],
+      [clientId, HEALTH_CARD_KEYS],
     );
   }
 
@@ -1250,6 +1293,21 @@ export class ClientRecordService {
   }
 }
 
+/* A type as the catalogue spells it, or the refusal. "Not stated" is
+   the placeholder for a row whose type nobody has picked yet. */
+function catalogueType(docType: string): string {
+  const result = normaliseForWrite(docType);
+  if (!result.ok) throw new LedgerError(result.code, result.detail);
+  return result.label;
+}
+
+const healthCardNotId = () => new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
+
+/* `d.doc_type` is not a health card. `param` is the query parameter
+   that carries HEALTH_CARD_KEYS as text[]. */
+const NOT_HEALTH_CARD_SQL = (param: string) =>
+  `NOT (${typeKeySql("d.doc_type")} = ANY(${param}::text[]))`;
+
 const notFound = () =>
   new LedgerError("CLIENT_NOT_FOUND", "That customer is not on this desk's records.");
 
@@ -1275,8 +1333,42 @@ const blank = (value: string | null | undefined) => {
   return trimmed === "" ? null : trimmed;
 };
 
-const isoDate = (value: unknown) =>
-  value == null ? null : new Date(value as string | Date).toISOString().slice(0, 10);
+const isoDate = (value: unknown) => civilDate(value);
+
+/* One document's metadata. A health card's number is not in it: the key
+   is absent, so a caller cannot read "withheld" as "blank" and nothing
+   downstream (search, a report, a filing form) can copy it. The column
+   is unchanged. */
+function documentJson(document: Record<string, unknown>, scanCount: Map<unknown, number>) {
+  const out: Record<string, unknown> = {
+    documentId: document.document_id,
+    docType: document.doc_type,
+  };
+  if (!isHealthCardType(document.doc_type)) out.docNumber = document.doc_number ?? null;
+  out.issuingJurisdiction = document.issuing_jurisdiction ?? null;
+  out.issuedOn = isoDate(document.issued_on);
+  out.expiresOn = isoDate(document.expires_on);
+  out.isPrimary = document.is_primary;
+  out.hasScan = (scanCount.get(document.document_id) ?? 0) > 0;
+  return out;
+}
+
+/* The stored status, read with a health card left out. Only a file that
+   holds a health card is looked at again. Before this change a health
+   card's number made a file identified, and that row is not rewritten
+   here, so the read says what the next write will store. `verified` is a
+   provider's word and is never changed by the papers in the folder. */
+function verificationForRead(status: unknown, documents: Record<string, unknown>[]): unknown {
+  if (status === "verified") return status;
+  if (!documents.some((document) => isHealthCardType(document.doc_type))) return status;
+  const papers = documents.filter((document) => !isHealthCardType(document.doc_type));
+  const numbered = papers.some((document) => String(document.doc_number ?? "").trim() !== "");
+  if (!numbered) return "unverified";
+  const primary = papers.find((document) => document.is_primary === true);
+  const expiry = primary ? isoDate(primary.expires_on) : null;
+  if (expiry && expiry < civilToday()) return "expired";
+  return "identified";
+}
 
 function clientJson(
   row: Record<string, unknown>,
@@ -1308,7 +1400,7 @@ function clientJson(
     occupation: row.occupation ?? null,
     notes: row.notes ?? null,
     riskRating: row.risk_rating,
-    verificationStatus: row.verification_status,
+    verificationStatus: verificationForRead(row.verification_status, documents),
     verifiedAt: row.verified_at ? new Date(row.verified_at as string | Date).toISOString() : null,
     screeningOutcome: row.screening_outcome ?? null,
     screeningMatched: row.screening_matched ?? null,
@@ -1327,16 +1419,7 @@ function clientJson(
     /* Metadata only. `hasScan` is what lets a screen draw the covered
        placeholder without the bytes ever being on the wire until
        somebody clicks, which is what makes the audit row meaningful. */
-    documents: documents.map((document) => ({
-      documentId: document.document_id,
-      docType: document.doc_type,
-      docNumber: document.doc_number ?? null,
-      issuingJurisdiction: document.issuing_jurisdiction ?? null,
-      issuedOn: isoDate(document.issued_on),
-      expiresOn: isoDate(document.expires_on),
-      isPrimary: document.is_primary,
-      hasScan: (scanCount.get(document.document_id) ?? 0) > 0,
-    })),
+    documents: documents.map((document) => documentJson(document, scanCount)),
     photograph: photograph
       ? {
           imageId: photograph.image_id,

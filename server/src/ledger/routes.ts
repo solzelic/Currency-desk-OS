@@ -356,7 +356,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       app.log.warn(error, "ledger contention after retries");
       return reply.code(409).send({
         code: "LEDGER_BUSY",
-        message: "The ledger is handling another change to this till. Nothing was posted — try again.",
+        message: "The ledger is handling another change to this till. Nothing was posted. Try again.",
       });
     }
     if (!(error instanceof LedgerError)) {
@@ -378,6 +378,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "TILL_ALREADY_ACTIVE" ||
                 error.code === "TILL_ALREADY_CLOSED" ||
                 error.code === "TILL_NOT_OPEN" ||
+                error.code === "TILL_HELD" ||
                 error.code === "CUSTOMER_EXTERNAL_REF_CONFLICT" ||
                 error.code === "VAULT_ALREADY_INITIALIZED" ||
                 error.code === "OBLIGATION_ALREADY_FILED" ||
@@ -628,7 +629,16 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   app.get("/api/ledger/till-session", async (req, reply) => {
     try {
       const actor = await actorOrReply(req, reply);
-      return actor ? reply.send(await tillControl.current(actor)) : undefined;
+      if (!actor) return;
+      const current = await tillControl.current(actor);
+      /* A count that is not saved yet must not show the expected figure
+         to the person who does not hold the till. */
+      if (current.session && current.session.openedBy !== actor.userId) {
+        for (const figure of Object.values(current.latestCounts)) {
+          delete (figure as { expected?: unknown }).expected;
+        }
+      }
+      return reply.send(current);
     } catch (error) {
       return failure(reply, error);
     }
@@ -639,6 +649,19 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const actor = await actorOrReply(req, reply);
       return actor
         ? reply.code(201).send(await tillControl.open(actor))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/till-sessions/handover", async (req, reply) => {
+    const parsed = countBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.code(201).send(await tillControl.handover(actor, parsed.data.idempotencyKey, parsed.data.counts))
         : undefined;
     } catch (error) {
       return failure(reply, error);

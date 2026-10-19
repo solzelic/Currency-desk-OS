@@ -4,7 +4,7 @@
    1) Hydration: fetches the contact/hours the OS published for this
       tenant and swaps them into any [data-site="…"] element. The
       hardcoded HTML remains as the offline/static fallback.
-   2) Quote widget: "Text me this rate" — posts to the quotes API,
+   2) Quote widget: "Text me this rate" posts to the quotes API,
       which prices off the desk's published board, holds the rate 30
       minutes and texts the customer. Confirm step included.
 
@@ -57,7 +57,11 @@
     result.innerHTML = html;
   }
   function fmt(n, c) { return Number(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + c; }
-  function until(ts) { return new Date(ts).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' }); }
+  /* "12:22 am". Locale "a.m." plus the sentence period was a double period. */
+  function until(ts) {
+    var d = new Date(ts), h24 = d.getHours(), h = h24 % 12 || 12, m = d.getMinutes();
+    return h + ':' + (m < 10 ? '0' : '') + m + ' ' + (h24 < 12 ? 'am' : 'pm');
+  }
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -68,7 +72,7 @@
     if (!amount || amount <= 0) { say('Enter the amount you’re exchanging.', 'err'); return; }
     if (from === to) { say('Pick two different currencies.', 'err'); return; }
     if (!phone) { say('Enter a mobile number we can text.', 'err'); return; }
-    if (!QUOTES_BASE) { say('Quotes are offline right now — call the desk' + (SITE && SITE.phone ? ' at ' + esc(SITE.phone) : '') + '.', 'err'); return; }
+    if (!QUOTES_BASE) { say('Quotes are offline right now. Call the desk' + (SITE && SITE.phone ? ' at ' + esc(SITE.phone) : '') + '.', 'err'); return; }
 
     btn.disabled = true; btn.textContent = 'Getting your rate…';
     fetch(QUOTES_BASE, {
@@ -76,24 +80,16 @@
       body: JSON.stringify({ phone: phone, from: from, to: to, amount: amount }),
     }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); })
       .then(function (res) {
-        btn.disabled = false; btn.textContent = 'Text me this rate — held 30 min';
-        if (!res.ok) { say(esc((res.d && res.d.detail) || 'Couldn’t get a quote — try again or call the desk.'), 'err'); return; }
+        btn.disabled = false; btn.textContent = 'Text me this rate. Held 30 min';
+        if (!res.ok) { say(esc((res.d && res.d.detail) || 'Couldn’t get a quote. Try again or call the desk.'), 'err'); return; }
         var q = res.d.quote;
         form.querySelectorAll('input, select, button[type="submit"]').forEach(function (el) { el.closest('.two') ? el.closest('.two').style.display = 'none' : el.style.display = 'none'; });
-        // be honest about the text: sent vs preview vs failed. On a real send
-        // failure (unverified number, carrier filtering) the rate is still held —
-        // tell them to use the ref at the desk rather than claiming a text went out.
-        var deskPhone = (SITE && SITE.phone) ? ' or call ' + esc(SITE.phone) : '';
-        var smsLine =
-          q.smsStatus === 'sent' ? ' We’ve texted the details to ' + esc(q.phone) + '.'
-          : q.smsStatus === 'simulated' ? ' (SMS preview — texting goes live soon.)'
-          : ' We couldn’t text you just now — show ref <b>' + esc(q.ref) + '</b> at the desk' + deskPhone + '.';
         say(
           '<div style="border:1px solid rgba(0,0,0,0.14); border-radius:12px; padding:16px 18px; font-size:14px; line-height:1.65;">' +
             '<div style="font-size:11px; letter-spacing:0.1em; text-transform:uppercase; opacity:0.6;">Rate held · ref ' + esc(q.ref) + '</div>' +
             '<div style="font-size:20px; font-weight:800; margin:6px 0 2px;">' + fmt(q.amount, q.from) + ' → ' + fmt(q.receive, q.to) + '</div>' +
-            '<div>Held for you until <b>' + until(q.expiresAt) + '</b>.' + smsLine + '</div>' +
-            '<button type="button" id="quoteConfirm" class="btn btn-solid" style="margin-top:12px;">I’m coming — set it aside</button>' +
+            '<div>Held for you until <b>' + until(q.expiresAt) + '</b>.</div>' +
+            '<button type="button" id="quoteConfirm" class="btn btn-solid" style="margin-top:12px;">I’m coming. Set it aside</button>' +
             '<div id="quoteConfirmNote" style="margin-top:8px;"></div>' +
           '</div>'
         );
@@ -101,18 +97,24 @@
         cbtn.addEventListener('click', function () {
           cbtn.disabled = true;
           fetch(QUOTES_BASE + '/' + encodeURIComponent(q.ref) + '/confirm', { method: 'POST' })
-            .then(function (r) { return r.json(); })
-            .then(function (d) {
+            .then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d }; }); })
+            .then(function (res) {
               var note = document.getElementById('quoteConfirmNote');
-              if (d.quote && d.quote.status === 'confirmed') { cbtn.style.display = 'none'; note.innerHTML = '<b>Confirmed.</b> Your ' + fmt(q.receive, q.to) + ' is set aside until ' + until(q.expiresAt) + ' — ref ' + esc(q.ref) + '.'; }
-              else { cbtn.disabled = false; note.textContent = 'Couldn’t confirm — the hold may have expired.'; }
+              /* 429 is its own sentence. Without this branch the page says the hold expired. */
+              if (res.status === 429) { cbtn.disabled = false; note.textContent = 'Too many tries. Wait a minute and try again.'; return; }
+              if (res.d.quote && res.d.quote.status === 'confirmed') {
+                cbtn.style.display = 'none';
+                /* Same line whether or not the text went out. The ref is not personal data. */
+                note.innerHTML = '<b>Confirmed.</b> Your ' + fmt(q.receive, q.to) + ' is set aside until ' + until(q.expiresAt) + '.'
+                  + '<div id="quoteRefLine">Show ref ' + esc(q.ref) + ' at the desk.</div>';
+              } else { cbtn.disabled = false; note.textContent = 'Couldn’t confirm. The hold may have expired.'; }
             })
             .catch(function () { cbtn.disabled = false; });
         });
       })
       .catch(function () {
-        btn.disabled = false; btn.textContent = 'Text me this rate — held 30 min';
-        say('Couldn’t reach the desk — try again in a moment.', 'err');
+        btn.disabled = false; btn.textContent = 'Text me this rate. Held 30 min';
+        say('Couldn’t reach the desk. Try again in a moment.', 'err');
       });
   });
 })();
