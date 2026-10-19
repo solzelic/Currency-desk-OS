@@ -441,7 +441,18 @@ describe("public marketing claims", () => {
   });
 
   it("flags the false claims removed from the public pages", () => {
+    const gap = [
+      "the desk records what happened",
+      "CBUAE rulebook",
+      "Clients & KYC",
+      "rulebook loads first",
+    ].filter((claim) => probe(claim).ok);
+    expect(gap, "checker still allows removed claims").toEqual([]);
     const removed = [
+      "the desk records what happened",
+      "CBUAE rulebook",
+      "Clients & KYC",
+      "rulebook loads first",
       "the desk tells you when that is",
       "A small walk-in exchange is not the same as a large one",
       "being able to show declines is exactly what a regulator expects",
@@ -535,8 +546,16 @@ describe("public marketing claims", () => {
     expect(home).not.toContain("6-year records");
     expect(home).not.toContain("PS Act class");
     expect(home).toContain("spec:'Not tracked'");
-    expect(legal).toContain("Texting is not connected, so the desk does not send messages to your clients.");
+    expect(legal).toContain("When a visitor asks for a quote on a shop's public page, the desk stores their phone number, and their name if they give one.");
+    expect(legal).toContain("If texting is configured, the quote is sent to that number by text, or by WhatsApp when a WhatsApp sender is set.");
+    expect(legal).not.toContain("Texting is not connected, so the desk does not send messages to your clients.");
+    expect(faq).toContain("The desk gives you a worksheet to prepare a suspicious transaction report. It never sends it. A person at your business decides and files it with FINTRAC.");
+    expect(faq).not.toContain("The desk does not draft or send a suspicious transaction report.");
+    expect(faq).not.toContain("A shared view across several locations is not built yet.");
+    expect(home).toContain("Worksheet only, you file it.");
+    expect(home).not.toContain("Not drafted or sent");
+    expect(home).not.toContain("Clients & KYC");
     expect(legal).not.toContain("messages you send clients through the desk");
     expect(legal).not.toContain("support analytics and can be declined");
-  });
+  }, 20000);
 });

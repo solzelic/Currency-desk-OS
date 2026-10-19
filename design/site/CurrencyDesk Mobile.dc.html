@@ -287,7 +287,7 @@ class Component extends DCLogic {
     { name: 'Canada', tag: 'FINTRAC', live: true, status: 'live', rules: [
       { name: 'Large cash', spec: 'LCTR worksheet, not sent', tag: 'Prepared' },
       { name: 'Fund transfer', spec: 'In the pack, not from the book', tag: 'In the pack' },
-      { name: 'Suspicious', spec: 'Not drafted or sent', tag: 'In the pack' },
+      { name: 'Suspicious', spec: 'Worksheet only, you file it.', tag: 'In the pack' },
       { name: 'Records', spec: 'Kept 5 years. Nothing is deleted', tag: 'Kept' } ] },
     { name: 'Serbia', tag: 'APML', live: false, status: 'Not live', rules: [
       { name: 'Exchange ID', spec: '5,000 EUR, NBS rate', tag: 'Assisted' },

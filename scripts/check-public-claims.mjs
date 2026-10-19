@@ -163,6 +163,10 @@ const phrases = [
   [/ps act class/, "PS Act class"],
   [/we rely on our contracts with these providers/, "we rely on our contracts"],
   [/retained for the statutory retention period that applies/, "retained for the statutory retention period"],
+  [/the desk records what happened/, "the desk records what happened"],
+  [/cbuae rulebook/, "CBUAE rulebook"],
+  [/clients & kyc/, "Clients & KYC"],
+  [/rulebook loads first/, "rulebook loads first"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";
