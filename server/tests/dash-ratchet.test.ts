@@ -52,7 +52,7 @@ const BASELINE: Record<string, number> = {
   "os-src/cdos-pricing.jsx": 5,
   "os-src/cdos-reports.jsx": 61,
   "os-src/cdos-search.jsx": 4,
-  "os-src/cdos-settings.jsx": 98,
+  "os-src/cdos-settings.jsx": 96,
   "os-src/cdos-signin.jsx": 10,
   "os-src/cdos-telegraph.jsx": 111,
   "os-src/cdos-till.jsx": 58,
@@ -98,13 +98,15 @@ const BASELINE: Record<string, number> = {
 };
 
 const FIXED: Array<[string, string]> = [
-  ["os-src/cdos-branches.jsx", "Drag someone onto a branch to assign them, onto a till to post them to that drawer"],
+  ["os-src/cdos-branches.jsx", "Drag someone onto a branch to assign them, or onto a till to post them to that drawer"],
   ["os-src/cdos-settings.jsx", "Password set by the employee. Only they know it. Reset issues a new temporary one."],
+  ["os-src/cdos-settings.jsx", "Server unavailable. Passwords are managed on the live desk."],
+  ["os-src/cdos-settings.jsx", "Type their name above. Their username fills in by itself."],
   ["server/src/routes/public-site.ts", "Ref ${ref}. Show this text at the desk."],
   ["server/src/routes/public-site.ts", "confirmed. ${fmtAmount(q.receiveAmount, q.wantCcy)} set aside until"],
-  ["YorkFX/YorkFX Visit.html", "Visit Us. Currency Exchange"],
-  ["YorkFX/YorkFX Visit.html", "Unit 102. Footsteps"],
-  ["YorkFX/YorkFX Visit.html", "Unit 102. Directly"],
+  ["YorkFX/YorkFX Visit.html", "Visit Us | Currency Exchange"],
+  ["YorkFX/YorkFX Visit.html", "Unit 102, footsteps"],
+  ["YorkFX/YorkFX Visit.html", "Unit 102, directly across"],
   ["YorkFX/YorkFX Visit.html", "Bloor-Yonge"],
 ];
 
