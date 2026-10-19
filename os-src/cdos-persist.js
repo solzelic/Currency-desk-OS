@@ -54,6 +54,10 @@ window.CDOS_PERSIST = (function () {
      losing everything. */
   var version = 0;
   var baseline = {};
+  /* False until the signed-in person is the owner. A teller must not
+     upload the two keys the shell derives on the way in. */
+  var savesOwnerSettings = false;
+  var reloaded = null;
 
   var SAVE_EVERY_MS = 4000;
   /* Back off rather than hammer a server that is already unhappy, but never
@@ -75,6 +79,29 @@ window.CDOS_PERSIST = (function () {
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
+  }
+  /* What actually goes to the server. Owners send the desk as it stands.
+     Everyone else leaves out cdos_perms and billingPlan. Those two are
+     rewritten on sign-in from the role and the plan the server already
+     has. Sending them looked like a change and the save was refused. */
+  function outgoing() {
+    var snap = snapshot();
+    if (savesOwnerSettings) return snap;
+    delete snap.cdos_perms;
+    if (typeof snap.cdos_settings === 'string') {
+      try {
+        var parsed = JSON.parse(snap.cdos_settings);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          delete parsed.billingPlan;
+          snap.cdos_settings = JSON.stringify(parsed);
+        }
+      } catch (e) {
+        /* A string that is not JSON is sent as stored. A real change in
+           it is still refused. Any other failure is a bug. */
+        if (!(e instanceof SyntaxError)) throw e;
+      }
+    }
+    return snap;
   }
   function clearKeys() { keys().forEach(function (k) { localStorage.removeItem(k); }); }
   function applyState(obj) {
@@ -231,11 +258,11 @@ window.CDOS_PERSIST = (function () {
     return 'restored';
   }
 
-  async function save() {
+  async function save(opts) {
     if (!tenantId) return;
     if (health === 'stopped') return;           // a person has to clear this
     if (Date.now() < nextAttemptAt) return;     // backing off
-    var snap = snapshot();
+    var snap = outgoing();
     var sig = JSON.stringify(snap);
     if (sig === lastSig) return; // unchanged since the last successful save
 
@@ -285,10 +312,22 @@ window.CDOS_PERSIST = (function () {
       return;
     }
 
+    /* Two refusals share 403. The body says which one this is. An
+       owner-only setting is "forbidden" and is handled below. Anything
+       else, including the cheque fee refusal, stops here. */
+    var denied = null;
+    var deniedRaw = '';
+    if (r.status === 403) {
+      deniedRaw = await r.text();
+      if (deniedRaw) {
+        try { denied = JSON.parse(deniedRaw); } catch (e) { if (!(e instanceof SyntaxError)) throw e; }
+      }
+    }
+
     /* A refusal is the answer. Sending the same document again writes
        another refusal row and does not save anything. The keys stay
        in this browser. */
-    if (r.status === 403) {
+    if (r.status === 403 && !(denied && denied.error === 'forbidden')) {
       lastSig = sig;
       health = 'stopped';
       return announce({
@@ -309,6 +348,47 @@ window.CDOS_PERSIST = (function () {
         level: 'stopped', code: 'state_too_large',
         detail: (over && over.detail) || "This desk's records are too large to save. Nothing is being saved. Contact CurrencyDesk.",
       });
+    }
+
+    /* A real change to an owner-only setting. Put the stored document
+       back and keep saving. Stopping here used to freeze every later
+       customer and day-state write for the rest of the session.
+       keepTyped is the Rates & fees Save: the panel keeps what was
+       typed and says so itself. This path must not toast, and it must
+       not put an error code on screen. */
+    if (r.status === 403) {
+      var keepTyped = !!(opts && opts.keepTyped);
+      if (!keepTyped) {
+        /* The refusal names the rule. */
+        var detail = (denied && (denied.detail || denied.message)) || 'Only the owner can change that setting. Nothing was saved.';
+        announce({
+          level: 'retrying', code: 'settings_forbidden',
+          detail: detail,
+        });
+      }
+      var again;
+      try {
+        again = await fetch('/api/tenant/state', { credentials: 'same-origin' });
+      } catch (e) {
+        return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      }
+      if (!again.ok) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      var fresh = await again.json();
+      if (!fresh || !fresh.state) return transient('CurrencyDesk could not reload the saved desk. Still trying.');
+      applyState(fresh.state);
+      if (typeof reloaded === 'function') reloaded();
+      version = typeof fresh.version === 'number' ? fresh.version : version;
+      baseline = snapshot();
+      lastSig = JSON.stringify(outgoing());
+      if (keepTyped) {
+        /* The bottom strip is the toast. This refusal does not use it. */
+        var toast = document.getElementById('cdos-persist-banner');
+        if (toast) toast.remove();
+        if (typeof window.dispatchEvent !== 'function') throw new Error('desk save bridge is not loaded');
+        window.dispatchEvent(new CustomEvent('cdos-rates-refused'));
+        return 'refused';
+      }
+      return;
     }
 
     /* Session gone. Retrying cannot fix it either; the OS handles the
@@ -333,7 +413,7 @@ window.CDOS_PERSIST = (function () {
     timer = setInterval(save, SAVE_EVERY_MS);
     window.addEventListener('beforeunload', function () {
       if (!tenantId || health === 'stopped') return;
-      var snap = snapshot();
+      var snap = outgoing();
       if (JSON.stringify(snap) === lastSig) return;
       try {
         /* Carries the version like any other save. There is no chance to
@@ -362,10 +442,17 @@ window.CDOS_PERSIST = (function () {
   // (after seeding a fresh desk we save() explicitly, which sets this)
   function markClean() { baseline = snapshot(); lastSig = JSON.stringify(baseline); }
 
+  function setOwner(isOwner) { savesOwnerSettings = !!isOwner; }
+  function onReloaded(fn) { reloaded = typeof fn === 'function' ? fn : null; return function () { if (reloaded === fn) reloaded = null; }; }
+
   return {
     begin: begin, save: save, end: end, startAutosave: startAutosave,
     snapshot: snapshot, applyState: applyState, clearKeys: clearKeys,
     markClean: markClean, tenant: function () { return tenantId; },
+    setOwner: setOwner, onReloaded: onReloaded,
+    /* The document a save sends, for a screen that saves on its own
+       (the Fee schedule). It leaves out what a non-owner must not upload. */
+    outgoing: outgoing,
     onTrouble: onTrouble,
     status: function () { return { health: health, failures: failures, trouble: lastTrouble, version: version }; },
     noteVersion: function (v) { if (typeof v === 'number') version = v; },

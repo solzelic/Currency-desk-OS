@@ -2,7 +2,9 @@
    A teller who can save payroll at 0% cashes the next cheque for nothing.
    Real Postgres: the write is refused, the schedule stays, the cheque pays the old fee.
    A stale numeric version is a conflict before it is a refusal.
-   A teller's copy cannot replace a fee the owner just saved. */
+   A teller's copy cannot replace a fee the owner just saved.
+   A teller's ordinary save here writes receiptFooter, a field a teller
+   may change. The shop name is the owner's, so it is not used. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -148,7 +150,7 @@ postgres("cheque fee schedule is owner or manager", () => {
   it("still lets a teller save a state that does not change the schedule", async () => {
     await desk();
     const before = await storedSchedule();
-    const res = await put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { deskName: "Yorkville" } });
+    const res = await put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { receiptFooter: "Yorkville" } });
     expect(res.statusCode).toBe(200);
     expect(await storedSchedule()).toBe(before);
   });
@@ -188,7 +190,7 @@ postgres("cheque fee schedule is owner or manager", () => {
       const original = await storedSchedule();
       const [ownerRes, tellerRes] = await Promise.all([
         put(session("j.masri"), payroll(7, 5), 1),
-        put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { deskName: "Yorkville" } }, 1),
+        put(session("m.costa"), { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { receiptFooter: "Yorkville" } }, 1),
       ]);
       expect([200, 409]).toContain(ownerRes.statusCode);
       expect([200, 409]).toContain(tellerRes.statusCode);
@@ -207,7 +209,7 @@ postgres("cheque fee schedule is owner or manager", () => {
     expect(bare.statusCode).toBe(409);
     expect(await storedSchedule()).toBe(before);
     expect((await pool.query("SELECT action FROM audit_events WHERE action='settings.cheque_fee_refused'")).rowCount).toBe(0);
-    expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { deskName: "York" } } } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: before, cdos_settings: { receiptFooter: "York" } } } })).statusCode).toBe(200);
     expect((await app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: payroll(0, 0) } })).statusCode).toBe(409);
     expect(await storedSchedule()).toBe(before);
     for (let n = 0; n < 15; n++) {
@@ -215,7 +217,7 @@ postgres("cheque fee schedule is owner or manager", () => {
       const original = await storedSchedule();
       const [ownerRes] = await Promise.all([
         put(session("j.masri"), payroll(7, 5), 1),
-        app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { n } } } }),
+        app.inject({ method: "PUT", url: "/api/tenant/state", cookies: session("m.costa"), payload: { state: { [CHEQUE_FEE_SCHEDULE_KEY]: original, cdos_settings: { receiptFooter: `r${n}` } } } }),
       ]);
       const feePct = (JSON.parse((await storedSchedule()) ?? "[]") as { id: string; feePct: number }[]).find((row) => row.id === "payroll")?.feePct;
       if (ownerRes.statusCode === 200) expect(feePct).toBe(7);
