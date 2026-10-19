@@ -34,6 +34,13 @@
       [style*="grid-template-columns: 1.3fr"], [style*="grid-template-columns: 0.82fr"], [style*="0.68fr"] { grid-template-columns: minmax(0, 1fr) !important; }
       [style*="grid-template-columns: repeat(auto-fill"] { grid-template-columns: minmax(0, 1fr) !important; }
     }
+    @media (max-width: 639px) {
+      [style*="height: 66px"] { flex-wrap: nowrap !important; gap: 8px !important; }
+      [style*="height: 66px"] a { white-space: nowrap !important; }
+      [style*="height: 66px"] a[style*="text-transform: uppercase"] { padding: 8px 9px !important; letter-spacing: 0.04em !important; font-size: 9px !important; gap: 6px !important; }
+      [data-back], [data-bar-cta] { display: inline-flex !important; align-items: center !important; box-sizing: border-box !important; min-height: 44px !important; }
+      [data-bar-cta] { height: 44px !important; padding: 0 12px !important; }
+    }
   </style>
 </helmet>
 
@@ -47,8 +54,8 @@
         <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
       </a>
       <div style="flex: 1;"></div>
-      <a href="CurrencyDesk Site.dc.html" style="font-size: 13.5px; font-weight: 700; color: var(--ink);" style-hover="color: var(--green);">← Back to site</a>
-      <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 17px; background: var(--green); color: #fff; border-radius: 10px; font-family: var(--m); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;" style-hover="background: var(--green-deep); color: #fff;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright);"></span>Get early access</a>
+      <a data-back href="CurrencyDesk Site.dc.html" style="font-size: 13.5px; font-weight: 700; color: var(--ink); white-space: nowrap;" style-hover="color: var(--green);">Back to site</a>
+      <a data-bar-cta href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 17px; background: var(--green); color: #fff; border-radius: 10px; font-family: var(--m); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;" style-hover="background: var(--green-deep); color: #fff;"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green-bright);"></span>Get early access</a>
     </div>
   </div>
 

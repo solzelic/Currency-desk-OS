@@ -42,6 +42,50 @@
     @keyframes cdNudge { 0%, 72%, 100% { transform: translateX(0); } 84% { transform: translateX(4px); } }
     @keyframes cdStageIn { from { opacity: 0.3; transform: scale(1.04); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; } }
+    @media (max-width: 639px) {
+      [data-pricing-plans] { grid-template-columns: minmax(0, 1fr) !important; }
+      [data-footer-cols] { grid-template-columns: minmax(0, 1fr) !important; gap: 28px !important; }
+      [data-jur-top] { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 18px !important; }
+      [data-feat-stage] { grid-template-columns: minmax(0, 1fr) !important; }
+      #compliance { height: auto !important; min-height: 0 !important; overflow: visible !important; scroll-snap-align: none !important; }
+      [data-cards] { grid-template-columns: minmax(0, 1fr) !important; }
+      [data-cards] span { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+      [data-bento] { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: none !important; grid-auto-rows: auto !important; flex: none !important; }
+      [data-tile] { grid-column: auto !important; grid-row: auto !important; }
+      [data-tile] b, [data-tile] b + span { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; -webkit-line-clamp: unset !important; display: block !important; }
+      [data-tile] [aria-hidden="true"] { display: none !important; }
+      [data-detail-points] { grid-template-columns: minmax(0, 1fr) !important; hyphens: none !important; -webkit-hyphens: none !important; }
+      #product { height: auto !important; }
+      #product [data-sticky] { position: relative !important; height: auto !important; overflow: visible !important; }
+      [data-feat-frame] { height: auto !important; min-height: 280px !important; }
+      [data-feat-detail] { position: relative !important; inset: auto !important; height: auto !important; }
+      [data-payoff] { grid-template-columns: minmax(0, 1fr) !important; overflow: visible !important; }
+      [data-old-way] { grid-template-columns: minmax(0, 1fr) !important; }
+      [data-scene="oldway"] { height: auto !important; }
+      [data-scene="oldway"] [data-sticky] { position: relative !important; height: auto !important; overflow: visible !important; }
+      [data-hero-chrome] { display: none !important; }
+      [data-hero-stage] { height: auto !important; }
+      [data-hero-rates="card"] { position: relative !important; width: 100% !important; max-width: 100% !important; left: auto !important; top: auto !important; transform: none !important; animation: none !important; margin: 24px auto 0 !important; }
+      [data-hero-note] { max-width: 168px !important; right: 8px !important; box-sizing: border-box !important; }
+      [data-hero-note] span { min-width: 0 !important; white-space: normal !important; overflow-wrap: break-word !important; }
+      [data-hero-margin] { bottom: 8px !important; right: 8px !important; animation: none !important; }
+      [data-founding] { grid-template-columns: minmax(0, 1fr) !important; padding: 32px 18px !important; }
+      [data-founding-cta], [data-see-demo] { white-space: nowrap !important; }
+      [data-nav-cta] { height: 44px !important; min-height: 44px !important; }
+      [data-pricing-plans] a, [data-footer-cols] a, [data-show-all], [data-term] button, [data-more] { min-height: 44px !important; box-sizing: border-box !important; }
+      [data-pricing-plans] a { display: flex !important; align-items: center !important; justify-content: center !important; }
+      [data-footer-cols] a, [data-show-all] { display: inline-flex !important; align-items: center !important; }
+      [data-rail][data-active="true"] [data-more] { max-height: 52px !important; }
+    }
+    @media (max-width: 399px) {
+      [data-nav-row] { grid-template-columns: minmax(0, 1fr) auto !important; column-gap: 8px !important; padding-left: 12px !important; padding-right: 12px !important; }
+      [data-nav-actions] { gap: 0 !important; flex-wrap: nowrap !important; }
+      [data-nav-brand] { gap: 8px !important; min-width: 0 !important; white-space: nowrap !important; }
+      [data-nav-brand] svg { width: 32px !important; height: 22px !important; }
+      [data-nav-word] { font-size: 12px !important; letter-spacing: 0.02em !important; white-space: nowrap !important; }
+      [data-nav-signin] { display: none !important; }
+      [data-nav-cta] { height: 44px !important; white-space: nowrap !important; flex: none !important; padding: 0 10px !important; letter-spacing: 0.04em !important; }
+    }
   </style>
   <meta name="ext-resource-dependency" content="../photos/rate-board-storefront.jpg">
   <meta name="ext-resource-dependency" content="../photos/sms-storefront.jpg">
@@ -68,19 +112,19 @@
 
   <!-- ================= NAV ================= -->
   <div style="position: sticky; top: 0; z-index: 50; backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); background: rgba(231,227,218,0.8); border-bottom: 1px solid var(--line);">
-    <div style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px;">
-      <a href="#top" style="justify-self: start; display: inline-flex; align-items: center; gap: 11px; height: 100%; color: var(--ink);">
+    <div data-nav-row style="max-width: 1200px; margin: 0 auto; height: 66px; padding: 0 28px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px;">
+      <a data-nav-brand href="#top" style="justify-self: start; display: inline-flex; align-items: center; gap: 11px; height: 100%; color: var(--ink);">
         <svg viewBox="0 0 200 140" width="46" height="32"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
-        <span style="display: inline-flex; align-items: baseline; flex: none;"><span style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
+        <span style="display: inline-flex; align-items: baseline; flex: none;"><span data-nav-word style="font-size: 15.5px; font-weight: 800; letter-spacing: 0.05em;">CURRENCYDESK</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em; color: #1D6B45; margin-left: 4px; transform: translateY(-5.5px);">OS</span></span>
       </a>
       <div style="justify-self: center; display: none; gap: 30px; align-items: center; height: 100%;" data-nav-links="true">
         <a href="#product" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Product</a>
         <a href="#compliance" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Compliance</a>
         <a href="#pricing" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 600; color: var(--mute);" style-hover="color: var(--ink);">Pricing</a>
       </div>
-      <div style="justify-self: end; display: flex; align-items: center; gap: 20px; height: 100%;">
-        <a href="../app/CurrencyDesk Sign In.dc.html" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 700; color: var(--ink); transition: color 0.25s ease;" style-hover="color: var(--green);">Sign in</a>
-        <a href="CurrencyDesk Early Access.dc.html" style="position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 15px; background: var(--green); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; animation: cdPulseG 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), background 0.25s ease;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);"><span style="position: relative; width: 5.5px; height: 5.5px; border-radius: 50%; flex: none; background: #7fe3ab; animation: cdLive 2s infinite;"></span><span style="position: relative;">Get early access</span></a>
+      <div data-nav-actions style="justify-self: end; display: flex; align-items: center; gap: 20px; height: 100%;">
+        <a data-nav-signin href="../app/CurrencyDesk Sign In.dc.html" style="display: inline-flex; align-items: center; height: 100%; font-size: 13.5px; font-weight: 700; color: var(--ink); transition: color 0.25s ease;" style-hover="color: var(--green);">Sign in</a>
+        <a data-nav-cta href="CurrencyDesk Early Access.dc.html" style="position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 15px; background: var(--green); color: #fff; border-radius: 9px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; animation: cdPulseG 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), background 0.25s ease;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);"><span style="position: relative; width: 5.5px; height: 5.5px; border-radius: 50%; flex: none; background: #7fe3ab; animation: cdLive 2s infinite;"></span><span style="position: relative;">Get early access</span></a>
       </div>
     </div>
   </div>
@@ -102,12 +146,12 @@
       </div>
       <div style="display: inline-flex; align-items: center; gap: 12px; margin-top: 18px; font-family: var(--m); font-size: 11px; letter-spacing: 0.03em; color: var(--faint); animation: cdRiseIn 0.7s ease 0.44s both;"><span style="display: inline-flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: block; width: clamp(24px, 5vw, 56px); height: 1px; background: linear-gradient(90deg, transparent, var(--line));"></span><span style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; color: var(--green-deep);"><span style="width: 5px; height: 5px; border-radius: 50%; background: var(--green-bright); animation: cdLive 2s infinite;"></span>Available in Canada (early access)</span><span aria-hidden="true" style="display: block; width: clamp(24px, 5vw, 56px); height: 1px; background: linear-gradient(90deg, var(--line), transparent);"></span></span></div>
 
-      <div data-hero="rx:15;ty:-12;s:0.9" style="position: relative; height: 510px; margin: 16px auto 0; max-width: 1000px;">
+      <div data-hero-stage data-hero="rx:15;ty:-12;s:0.9" style="position: relative; height: 510px; margin: 16px auto 0; max-width: 1000px;">
         <div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 760px; height: 760px; transform: translate(-50%,-50%); border-radius: 50%; background: repeating-radial-gradient(circle at 50% 50%, rgba(29,107,69,0.05) 0 1.5px, transparent 1.5px 11px); opacity: 0.5; animation: cdSpin 150s linear infinite;"></div>
         <div aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 520px; height: 520px; transform: translate(-50%,-50%); border: 1px dashed rgba(23,20,15,0.1); border-radius: 50%;"></div>
 
         <div data-hero-rates="card" style="position: absolute; top: 50%; left: 50%; width: 430px; transform: translate(-50%,-50%); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: 0 50px 100px -34px rgba(23,20,15,0.6), 0 0 0 1px var(--line); animation: cdFloat 9s ease-in-out infinite;">
-          <div style="display: flex; align-items: center; gap: 7px; padding: 11px 15px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span></div>
+          <div data-hero-chrome style="display: flex; align-items: center; gap: 7px; padding: 11px 15px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span></div>
           <div style="padding: 20px 22px 22px;">
             <div style="display: flex; align-items: baseline; justify-content: space-between;"><div data-sample-label style="font-family: var(--serif); font-size: 25px; line-height: 1; color: var(--ink);">Sample rates</div></div>
             <sc-for list="{{ heroRows }}" as="r" hint-placeholder-count="5">
@@ -117,7 +161,7 @@
         </div>
 
         <div style="position: absolute; text-align: left; background: rgba(255,255,255,0.9); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 24px 48px -22px rgba(23,20,15,0.5); top: 7%; left: 1%; padding: 13px 16px; animation: cdFloat 7s ease-in-out infinite;"><div style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);">Sample figure</div><div style="font-family: var(--serif); font-size: 32px; color: var(--green-deep); margin-top: 2px; line-height: 1;">+$1,284<span style="font-family: var(--m); font-size: 11px; color: var(--green-bright); font-weight: 600;"> ▲ 8%</span></div></div>
-        <div style="position: absolute; text-align: left; background: rgba(255,255,255,0.9); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 24px 48px -22px rgba(23,20,15,0.5); top: 7%; right: 1%; padding: 13px 16px; animation: cdFloat 6.4s ease-in-out 0.5s infinite;">
+        <div data-hero-note style="position: absolute; text-align: left; background: rgba(255,255,255,0.9); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 24px 48px -22px rgba(23,20,15,0.5); top: 7%; right: 1%; padding: 13px 16px; animation: cdFloat 6.4s ease-in-out 0.5s infinite;">
           <div style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);">Compliance check</div>
           <div style="display: flex; align-items: center; gap: 9px; margin-top: 6px;">
             <span style="width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; background: rgba(169,121,28,0.12); border: 1px solid rgba(169,121,28,0.28); color: var(--brass);"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5M12 16.5v.01"></path><circle cx="12" cy="12" r="9"></circle></svg></span>
@@ -128,7 +172,7 @@
           </div>
         </div>
         <div style="position: absolute; text-align: left; background: rgba(255,255,255,0.9); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 24px 48px -22px rgba(23,20,15,0.5); bottom: 10%; left: 1%; padding: 13px 16px; animation: cdFloat 7.6s ease-in-out 0.9s infinite;"><div style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);">Sample figure</div><div style="font-family: var(--serif); font-size: 28px; color: var(--ink); margin-top: 2px; line-height: 1;">$83,400</div></div>
-        <div style="position: absolute; text-align: left; background: rgba(255,255,255,0.9); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 24px 48px -22px rgba(23,20,15,0.5); bottom: 33%; right: 0%; padding: 13px 16px; animation: cdFloat 6.8s ease-in-out 0.3s infinite;"><div style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px;">Margin by currency</div><div style="display: flex; align-items: flex-end; gap: 6px; height: 42px;"><span style="width: 12px; height: 60%; background: rgba(29,107,69,0.3); border-radius: 3px;"></span><span style="width: 12px; height: 85%; background: var(--green); border-radius: 3px;"></span><span style="width: 12px; height: 45%; background: rgba(29,107,69,0.3); border-radius: 3px;"></span><span style="width: 12px; height: 72%; background: rgba(29,107,69,0.55); border-radius: 3px;"></span></div></div>
+        <div data-hero-margin style="position: absolute; text-align: left; background: rgba(255,255,255,0.9); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 24px 48px -22px rgba(23,20,15,0.5); bottom: 33%; right: 0%; padding: 13px 16px; animation: cdFloat 6.8s ease-in-out 0.3s infinite;"><div style="font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px;">Margin by currency</div><div style="display: flex; align-items: flex-end; gap: 6px; height: 42px;"><span style="width: 12px; height: 60%; background: rgba(29,107,69,0.3); border-radius: 3px;"></span><span style="width: 12px; height: 85%; background: var(--green); border-radius: 3px;"></span><span style="width: 12px; height: 45%; background: rgba(29,107,69,0.3); border-radius: 3px;"></span><span style="width: 12px; height: 72%; background: rgba(29,107,69,0.55); border-radius: 3px;"></span></div></div>
 
       </div>
     </div>
@@ -158,7 +202,7 @@
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.02em; margin: 16px 0 0; text-wrap: pretty;">Six logins, a whiteboard of rates, and a drawer full of receipts.</h2>
           <p style="font-size: 17.5px; line-height: 1.6; color: var(--mute); margin: 18px 0 0; max-width: 580px;">It works, until the regulator calls, a currency runs dry, or you try to open a second shop. Every one of these is a leak.</p>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 44px; border-top: 1px solid rgba(23,20,15,0.16);">
+        <div data-old-way style="display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 44px; border-top: 1px solid rgba(23,20,15,0.16);">
           <sc-for list="{{ problems }}" as="p" hint-placeholder-count="3">
             <div style="padding: 26px 26px 24px; border-right: 1px solid rgba(23,20,15,0.1);">
               <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -219,7 +263,7 @@
 
       <div style="position: relative; border-radius: 20px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 44px 90px -42px rgba(23,20,15,0.6);">
         <div style="position: relative; z-index: 5; display: flex; align-items: center; gap: 7px; padding: 12px 16px; background: var(--soft); border-bottom: 1px solid var(--hair);"><span style="width: 9px; height: 9px; border-radius: 50%; background: #e2695b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #e8b84b;"></span><span style="width: 9px; height: 9px; border-radius: 50%; background: #5fb87a;"></span><span style="margin-left: 10px; font-family: var(--m); font-size: 10px; color: var(--faint);">app.currencydeskos.com</span><span style="margin-left: auto; font-family: var(--m); font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--green-deep); font-weight: 600;">{{ activeTitle }}</span></div>
-        <div style="position: relative; height: clamp(250px, 42vh, 452px); background: var(--paper2);">
+        <div data-feat-frame style="position: relative; height: clamp(250px, 42vh, 452px); background: var(--paper2);">
           <sc-for list="{{ features }}" as="f" hint-placeholder-count="9">
             <div style="{{ f.layerStyle }}">
               <image-slot id="{{ f.slot }}" src="{{ f.src }}" style="display: block; width: 100%; height: 100%;" shape="rect" placeholder="{{ f.ph }}"></image-slot>
@@ -232,7 +276,7 @@
             </div>
           </sc-for>
           <sc-if value="{{ detailOpen }}" hint-placeholder-val="{{ false }}">
-            <div style="position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; padding: 26px 28px 24px; background: rgba(251,249,244,0.94); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); animation: cdStageIn 0.42s cubic-bezier(0.2,0.8,0.2,1);">
+            <div data-feat-detail style="position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; padding: 26px 28px 24px; background: rgba(251,249,244,0.94); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); animation: cdStageIn 0.42s cubic-bezier(0.2,0.8,0.2,1);">
               <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
                 <div>
                   <div style="display: inline-flex; align-items: center; gap: 8px; font-family: var(--m); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green-deep); font-weight: 600;"><span style="width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: var(--green);">{{ detailIcon }}</span>{{ detailNum }} · {{ detailKicker }}</div>
@@ -241,7 +285,7 @@
                 <button type="button" onClick="{{ closeDetail }}" style="flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,0.7); display: grid; place-items: center; cursor: pointer; color: var(--mute);" style-hover="background: #fff; color: var(--ink); border-color: var(--ink);"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
               </div>
               <p style="font-size: 14.5px; line-height: 1.6; color: var(--mute); margin: 16px 0 0; max-width: 520px;">{{ detailDesc }}</p>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; margin-top: 20px;">
+              <div data-detail-points style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; margin-top: 20px; hyphens: none; -webkit-hyphens: none;">
                 <sc-for list="{{ detailPoints }}" as="pt" hint-placeholder-count="4">
                   <div style="display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.4; color: var(--ink);"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#1D6B45" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex: none; margin-top: 2px;"><path d="M4 12.5l5 5L20 6.5"></path></svg>{{ pt }}</div>
                 </sc-for>
@@ -249,7 +293,7 @@
               <div style="flex: 1;"></div>
               <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hair);">
                 <span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.04em; color: var(--faint);">In the desk · {{ detailKicker }}</span>
-                <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--green); color: #fff; border-radius: 11px; font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600;" style-hover="background: var(--green-deep); color: #fff;">See a demo<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+                <a data-see-demo href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; background: var(--green); color: #fff; border-radius: 11px; font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; white-space: nowrap;" style-hover="background: var(--green-deep); color: #fff;">See a demo<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
               </div>
             </div>
           </sc-if>
@@ -345,7 +389,7 @@
 
     <div style="position: relative; z-index: 1; width: 100%; max-width: 1300px; margin: 0 auto; padding: 62px 32px 40px; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; gap: 12px;">
 
-      <div style="{{ topGridStyle }}">
+      <div data-jur-top style="{{ topGridStyle }}">
         <div style="{{ textColStyle }}">
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Compliance · On the record</div>
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.015em; margin: 9px 0 0; color: var(--ink); text-wrap: pretty;">The desk knows the rules, so you can focus on the transaction.</h2>
@@ -355,7 +399,7 @@
         <div style="min-width: 0; display: flex; flex-direction: column;">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px;">
             <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">{{ selectorLabel }}</span>
-            <button type="button" onClick="{{ toggleAll }}" style="{{ showAllStyle }}">{{ showAllLabel }}</button>
+            <button type="button" data-show-all onClick="{{ toggleAll }}" style="{{ showAllStyle }}">{{ showAllLabel }}</button>
           </div>
           <div data-cards style="{{ cardsGridStyle }}">
             <sc-for list="{{ jurCards }}" as="c" hint-placeholder-count="6">
@@ -465,7 +509,7 @@
             <div style="font-family: var(--serif); font-size: 27px; line-height: 1.1; letter-spacing: -0.015em; margin-top: 7px;">More trades. Less paperwork. Here's the arithmetic.</div>
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: rgba(23,20,15,0.14); border: 1px solid rgba(23,20,15,0.14); border-radius: 16px; overflow: hidden;">
+        <div data-payoff style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: rgba(23,20,15,0.14); border: 1px solid rgba(23,20,15,0.14); border-radius: 16px; overflow: hidden;">
           <sc-for list="{{ proofPoints }}" as="pp" hint-placeholder-count="5">
             <div style="background: var(--panel); padding: 17px 19px 18px; display: flex; flex-direction: column; gap: 7px;">
               <div style="display: flex; align-items: baseline; gap: 9px;">
@@ -487,13 +531,13 @@
         <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--green); font-weight: 600;">Founding pricing</div>
         <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.018em; margin: 14px 0 0;">One flat price. The whole desk.</h2>
         <p style="font-size: 15.5px; line-height: 1.6; color: var(--mute); margin: 16px auto 0; max-width: 490px;">Early-access members lock founding rates for life. This is the price the first 100 desks will ever pay.</p>
-        <div style="display: inline-flex; gap: 6px; margin-top: 26px; padding: 5px; border-radius: 12px; background: rgba(23,20,15,0.05); border: 1px solid var(--line);">
+        <div data-term style="display: inline-flex; gap: 6px; margin-top: 26px; padding: 5px; border-radius: 12px; background: rgba(23,20,15,0.05); border: 1px solid var(--line);">
           <button type="button" onClick="{{ termMonthly }}" style="{{ segMonthly }}">Monthly</button>
           <button type="button" onClick="{{ termAnnual }}" style="{{ segAnnual }}">Annual · save 10%</button>
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 40px; align-items: stretch;">
+      <div data-pricing-plans style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 40px; align-items: stretch;">
         <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
           <div data-reveal="true" style="{{ p.wrap }}">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 24px;">
@@ -523,14 +567,14 @@
   <!-- ================= FINAL CTA — FOUNDING OPERATOR ================= -->
   <div style="max-width: 1200px; margin: 0 auto; padding: 88px 28px 96px;">
     <div data-reveal="true" style="opacity: 0; transform: translateY(18px); transition: opacity 0.7s cubic-bezier(0.2,0.8,0.2,1), transform 0.7s cubic-bezier(0.2,0.8,0.2,1); position: relative; overflow: hidden; border-radius: 28px; background: linear-gradient(150deg, var(--green), var(--green-deep)); color: #fff; padding: 6px;">
-      <div style="position: relative; border-radius: 24px; overflow: hidden; display: grid; grid-template-columns: 1.3fr 0.7fr; gap: 32px; align-items: center; padding: 58px 50px;">
+      <div data-founding style="position: relative; border-radius: 24px; overflow: hidden; display: grid; grid-template-columns: 1.3fr 0.7fr; gap: 32px; align-items: center; padding: 58px 50px;">
         <div aria-hidden="true" style="position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.5px); background-size: 22px 22px;"></div>
         <div style="position: relative;">
           <div style="font-family: var(--m); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #b7f0d0; font-weight: 600;">Apply for early access</div>
           <h2 style="font-family: var(--serif); font-weight: 400; font-size: clamp(34px, 3.6vw, 52px); line-height: 1.04; letter-spacing: -0.02em; margin: 13px 0 0;">Become a Founding Operator.</h2>
           <p style="font-size: 16px; line-height: 1.6; color: rgba(255,255,255,0.9); margin: 16px 0 0; max-width: 450px;">Reserve your workspace, lock founding pricing, and get your charter card. No card, no commitment.</p>
           <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px;">
-            <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 9px; padding: 17px 30px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 12.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; overflow: hidden; position: relative; animation: cdPulse 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);" style-hover="transform: translateY(-2px) scale(1.02); color: var(--green-deep);"><span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: linear-gradient(90deg, transparent, rgba(29,107,69,0.16), transparent); animation: cdSheen 3.4s ease-in-out 0.8s infinite;"></span><span style="position: relative;">Get early access</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="position: relative; animation: cdNudge 2.8s ease-in-out infinite;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+            <a data-founding-cta href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 9px; padding: 17px 30px; background: #fff; color: var(--green-deep); border-radius: 13px; font-family: var(--m); font-size: 12.5px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; overflow: hidden; position: relative; white-space: nowrap; animation: cdPulse 2.8s ease-out infinite; transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1);" style-hover="transform: translateY(-2px) scale(1.02); color: var(--green-deep);"><span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: linear-gradient(90deg, transparent, rgba(29,107,69,0.16), transparent); animation: cdSheen 3.4s ease-in-out 0.8s infinite;"></span><span style="position: relative;">Get early access</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="position: relative; animation: cdNudge 2.8s ease-in-out infinite;"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
             <div style="font-family: var(--m); font-size: 11px; color: rgba(255,255,255,0.82);">Early access is open</div>
           </div>
         </div>
@@ -621,7 +665,7 @@
   <!-- ================= FOOTER ================= -->
   <div style="border-top: 1px solid var(--line); background: rgba(255,255,255,0.5); overflow: hidden;">
     <div style="max-width: 1200px; margin: 0 auto; padding: 58px 28px 26px;">
-      <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 0.85fr)) minmax(0, 1.1fr); gap: 40px; align-items: start;">
+      <div data-footer-cols style="display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 0.85fr)) minmax(0, 1.1fr); gap: 40px; align-items: start;">
         <div>
           <div style="display: flex; align-items: center; gap: 10px;">
             <svg viewBox="0 0 200 140" width="40" height="28"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#E7E3DA"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>
@@ -652,7 +696,7 @@
         <div>
           <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Get started</div>
           <a href="CurrencyDesk Early Access.dc.html" style="display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 12px 18px; border-radius: 11px; background: var(--green); color: #fff; font-family: var(--m); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;" style-hover="background: var(--green-deep); color: #fff; transform: translateY(-1px);">Apply for access<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
-          <div style="margin-top: 12px;"><a href="../app/CurrencyDesk Sign In.dc.html" style="font-size: 13px; color: var(--mute);">Already a member? Sign in</a></div>
+          <div style="margin-top: 12px;"><a data-footer-signin href="../app/CurrencyDesk Sign In.dc.html" style="font-size: 13px; color: var(--mute);">Already a member? Sign in</a></div>
         </div>
       </div>
 
@@ -750,7 +794,7 @@ class Component extends DCLogic {
       { tag: 'CLIENTS', desc: 'Capture a client once and they are yours. The next visit reuses the file already on the desk.', points: ['Capture ID once, reuse every visit', 'Screening is not connected', 'No list is loaded', 'A document expiry reminder is not sent'] },
       { tag: 'REGULATORY', desc: 'The Canada pack watches cash thresholds on the book. The desk does not draft a regulator report on its own and does not send one.', points: ['Cash thresholds watched from the book', 'A large cash worksheet can be prepared', 'The desk does not send it', 'There is no one-click exam package'] },
       { tag: 'REPORTS', desc: 'The book can show takings, margin, and a client history from deals already written. It does not write whatever an accountant or a regulator asks for.', points: ['Takings for a period the book holds', 'Margin from posted deals', 'One client history from posted deals', 'An export is not a filing'] },
-      { tag: 'CHEQUES', desc: 'Cheque cashing, on the record. Set your fee once and the desk figures the rest: what the client gets, what you keep, and how long the funds are held. It then files it against their name so a returned cheque is never a mystery.', points: ['Fee and hold worked out for you', 'Payer and cheque details kept on file', 'Repeat cheques recognised at the counter', 'Returned-cheque history on every client'] },
+      { tag: 'CHEQUES', desc: 'Cheque cashing, on the record. Set your fee once and the desk figures the rest: what the client gets, what you keep, and how long the funds are held. It then files it against their name so a returned cheque is never a mystery.', points: ['Fee and hold worked out for you', 'Payer and cheque details kept on file', 'Repeat cheques recognised at the counter', 'Returned\u2011cheque history on every client'] },
       { tag: 'VAULT', desc: 'The safe, on the record. Holdings by currency and denomination, every movement between till and vault logged, and the count you did sitting next to the number expected.', points: ['Holdings by currency and denomination', 'Every till-to-vault move logged', 'Counted against expected, side by side', 'Who opened it, and when'] },
       { tag: 'INTELLIGENCE', desc: 'Coming soon, not included yet. The AI copilot does not answer questions on a customer desk today.', points: ['Coming soon, not included yet', 'It does not answer questions on a customer desk today', 'No pattern check runs', 'No daily read is prepared']
       }

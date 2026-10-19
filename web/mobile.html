@@ -36,6 +36,10 @@
     @keyframes cdRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes cdFeatFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
     @keyframes cdFeatFill2 { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    @media (max-width: 639px) {
+      [data-feat-dots] { flex-wrap: wrap !important; }
+      [data-feat-dots] button { flex: none !important; width: 44px !important; height: 44px !important; min-width: 44px !important; min-height: 44px !important; }
+    }
     @media (prefers-reduced-motion: reduce) {
       * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
       [data-feat-caption], [data-feat-body] { animation: none !important; opacity: 1 !important; transform: none !important; }
@@ -138,7 +142,7 @@
 
     <div style="display: flex; align-items: center; gap: 12px; padding: 16px 20px 0;">
       <button type="button" onClick="{{ onPrev }}" aria-label="Previous" style="{{ prevStyle }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></button>
-      <div style="flex: 1; display: flex; gap: 4px;">
+      <div data-feat-dots style="flex: 1; display: flex; gap: 4px;">
         <sc-for list="{{ featDots }}" as="d" hint-placeholder-count="9">
           <button type="button" onClick="{{ d.onClick }}" aria-label="{{ d.label }}" aria-current="{{ d.current }}" style="{{ d.style }}"><span aria-hidden="true" style="{{ d.fill }}"></span></button>
         </sc-for>
@@ -494,9 +498,13 @@ class Component extends DCLogic {
         const on = i === s.feat;
         const playing = on && s.featPlay > 0;
         const fillName = s.featPlay % 2 ? 'cdFeatFill' : 'cdFeatFill2';
+        const copilot = f.title === 'AI copilot';
         return { onClick: this.goFeat(i), label: f.title, current: on ? 'true' : 'false',
-          style: 'appearance:none;cursor:pointer;flex:1;height:26px;padding:0;border:0;background:none;position:relative;overflow:hidden;' +
-                 'background-image:linear-gradient(var(--line),var(--line));background-size:100% 3px;background-position:center;background-repeat:no-repeat;border-radius:2px;',
+          style: 'appearance:none;cursor:pointer;padding:0;border:0;background:none;position:relative;overflow:hidden;' +
+                 'background-image:linear-gradient(var(--line),var(--line));background-size:100% 3px;background-position:center;background-repeat:no-repeat;border-radius:2px;' +
+                 (copilot
+                   ? 'flex:none;width:44px;height:44px;min-width:44px;min-height:44px;'
+                   : 'flex:1;min-width:0;height:26px;'),
           fill: on
             ? 'position:absolute;left:0;right:0;top:50%;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--green);transform-origin:left center;' +
               (playing ? 'transform:scaleX(0);animation:' + fillName + ' ' + this.FEAT_MS + 'ms linear both;' : 'transform:scaleX(1);')
