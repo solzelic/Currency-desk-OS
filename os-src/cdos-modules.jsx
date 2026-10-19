@@ -20,9 +20,29 @@
   /* The desk's one clock. Settings → Time format is 12-hour unless the
      desk picked 24-hour. The Audit Trail already used this rule. The
      menubar calls the same function, so a 12-hour desk reads 16:05 as
-     4:05 pm, the same shape as a held quote. */
-  function deskTime(date, timeFormat) {
-    const h = date.getHours(), m = date.getMinutes();
+     4:05 pm, the same shape as a held quote.
+
+     timeZone is settings.timezone, the zone the localization screen
+     stores and the receipt settings travel with. The menubar passes
+     it, so the header is the desk's hour, not the browser's. Omit it
+     for a reading that is already wall time: the Audit Trail stores
+     minutes, then builds a local date from those minutes. */
+  function deskTime(date, timeFormat, timeZone) {
+    let h, m;
+    if (timeZone) {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: timeZone,
+      }).formatToParts(date);
+      h = 0; m = 0;
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].type === 'hour') h = +parts[i].value;
+        else if (parts[i].type === 'minute') m = +parts[i].value;
+      }
+      if (h === 24) h = 0;
+    } else {
+      h = date.getHours();
+      m = date.getMinutes();
+    }
     if ((timeFormat || '12h') !== '24h') {
       const ap = h < 12 ? 'am' : 'pm';
       let hh = h % 12;

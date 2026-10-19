@@ -2557,8 +2557,11 @@
             <button className={'mb-op' + (locked ? ' on' : '')} title={locked ? 'Unlock rates — follow the live board' : 'Lock rates — hold at last pull'} onClick={toggleLock}><Ic n="lock" s={17} /></button>
             <button className="mb-op" title="Settings" onClick={() => openApp('settings')}><Ic n="gear" s={17} /></button>
             <span className="mb-op-div"></span>
-            {/* Same clock as the Audit Trail. 12-hour unless this desk set 24-hour. */}
-            <span className="mb-clock"><Ic n="clock" s={12} /> <b>{window.CDOS.deskTime(clock, settings.timeFormat)}</b></span>
+            {/* Same clock as the Audit Trail, in the desk's timezone.
+                The hidden sizer is the widest reading for this mode, so
+                the box does not change through the morning and a 24-hour
+                desk stays the width of 23:59. */}
+            <span className="mb-clock"><Ic n="clock" s={12} /> <b><span className="mb-clock-face">{window.CDOS.deskTime(clock, settings.timeFormat, settings.timezone || 'America/Toronto')}</span><span className="mb-clock-sizer" aria-hidden="true">{(settings.timeFormat || '12h') === '24h' ? '23:59' : '12:45 pm'}</span></b></span>
             <span className="mb-op-div"></span>
             {profileButton('desk')}
             <div className="mb-power-wrap" ref={opMenuRef}>
