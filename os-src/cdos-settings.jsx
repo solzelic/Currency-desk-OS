@@ -1876,7 +1876,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                       <div className="flex items-center gap-2 mt-2.5" style={{ opacity: srvBusy ? 0.5 : 1, pointerEvents: srvBusy ? 'none' : 'auto' }}>
                         {!acct
                           ? <button onClick={doCreate} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>{mailTo ? 'Create sign-in & email it' : 'Create sign-in'}</button>
-                          : (!hideStaffBtn && <React.Fragment>
+                          : (<React.Fragment>
                               <input type="text" value={srvPw} onChange={ev => setSrvPw(ev.target.value)} placeholder="temporary password · min 8 chars" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
                               <button onClick={doReset} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Reset password</button>
                               <button onClick={doToggle} className="text-[11.5px] px-2.5 py-1.5 flex-none" style={{ border: `1px solid ${acct.active ? CD.flagSoft : CD.line}`, background: acct.active ? CD.flagSoft : 'transparent', color: acct.active ? CD.flag : CD.ink, borderRadius: 8 }}>{acct.active ? 'Disable' : 'Enable'}</button>

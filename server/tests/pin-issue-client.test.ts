@@ -114,13 +114,11 @@ describe("who the Employees buttons are hidden from", () => {
     expect(pinIssueAbove("administrator", "administrator", true)).toBe(true);
   });
 
-  it("gates Issue a new PIN, Reset password, and Disable in the built screen", () => {
+  it("gates Issue a new PIN in the built screen", () => {
     const os = readFileSync(new URL("../../web/app/os.js", import.meta.url), "utf8");
-    for (const label of ["Issue a new PIN", "Reset password", "Disable"]) {
-      const at = os.lastIndexOf(label);
-      expect(at, label).toBeGreaterThan(0);
-      expect(os.slice(Math.max(0, at - 1500), at), label).toMatch(/hideStaffBtn/);
-    }
+    const at = os.lastIndexOf("Issue a new PIN");
+    expect(at).toBeGreaterThan(0);
+    expect(os.slice(Math.max(0, at - 1500), at)).toMatch(/hideStaffBtn/);
   });
 
   it("keeps the My account password line exact, with no em dash or en dash", () => {

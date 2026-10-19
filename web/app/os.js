@@ -5290,7 +5290,7 @@ function pinIssueRank(role) {
   return 0;
 }
 
-/* True when the server would refuse the Employees action.
+/* True when the server would refuse Issue a new PIN.
    An owner may act on another owner. Anyone else, and the signed-in person, is refused. */
 function pinIssueAbove(actorRole, targetRole, isSelf) {
   var a = pinIssueRank(actorRole);
@@ -10244,7 +10244,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               color: 'var(--cd-on-ink)',
               borderRadius: 8
             }
-          }, mailTo ? 'Create sign-in & email it' : 'Create sign-in') : !hideStaffBtn && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
+          }, mailTo ? 'Create sign-in & email it' : 'Create sign-in') : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
             type: "text",
             value: srvPw,
             onChange: ev => setSrvPw(ev.target.value),

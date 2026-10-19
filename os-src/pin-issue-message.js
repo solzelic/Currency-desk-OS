@@ -19,7 +19,7 @@ function pinIssueRank(role) {
   return 0;
 }
 
-/* True when the server would refuse the Employees action.
+/* True when the server would refuse Issue a new PIN.
    An owner may act on another owner. Anyone else, and the signed-in person, is refused. */
 function pinIssueAbove(actorRole, targetRole, isSelf) {
   var a = pinIssueRank(actorRole);
