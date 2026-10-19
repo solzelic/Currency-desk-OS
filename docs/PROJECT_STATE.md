@@ -106,10 +106,48 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   number, and FINTRAC says not to use a health card where provincial
   law prohibits it. The desk refuses them everywhere, which is stricter
   than the law. Stored numbers are not blanked: that is the owner's
-  redaction tool, #134. The posting gate is #108. Per-country Accepted
-  IDs come in a later change. This replaces #157, #100, and #131. The
-  owner asked for it during the freeze, on 2026-10-19. Write-up:
-  `docs/CLIENT_RECORDS.md`.
+  redaction tool, #134. The posting gate is #108. This replaces #157,
+  #100, and #131. The owner asked for it during the freeze, on
+  2026-10-19. Write-up: `docs/CLIENT_RECORDS.md`.
+
+- **Settings → Accepted IDs, per shop.** The owner switches each
+  catalogue ID type on or off for their shop, in Person and Business
+  groups. The list is `legal_entities.accepted_id_types` (migration
+  047), catalogue codes. NULL follows the jurisdiction pack, and every
+  existing desk is NULL. A save that lands on the pack's own list
+  stores NULL again. By default every type the catalogue accepts is
+  on, in every pack. A pack can lock a type off with a short legal note
+  (`server/src/ledger/id-type-rules.ts`, keyed by the pack's
+  jurisdiction). The health card is locked in every pack; Canada's note
+  says FINTRAC says not to use a health card where provincial law
+  forbids it, and that Ontario's Health Cards and Numbers Control Act
+  bars it. `GET /api/clients/accepted-id-types` is every role's, with
+  `canChange` true only for the owner. `PUT` takes `{ accepted: codes
+  | null }` and is the owner's (`compliance:thresholds`): a manager or
+  a teller gets 403, "Only the owner can change which IDs this shop
+  accepts.", and nothing changes. Switching on a locked type is 422
+  `ID_TYPE_LOCKED` with the note. A list with no person photo ID is 422
+  `PHOTO_ID_REQUIRED`, "Keep at least one photo ID switched on."
+  Business types may all be off. A change writes
+  `desk.id_types.change` naming what went on and off and how many IDs
+  on file are a type just switched off, never a document number. Adding
+  a document of a switched-off type, or changing one to it, is 422
+  `ID_TYPE_NOT_ACCEPTED_HERE`, "This shop doesn't accept {label}. The
+  owner can change this in Settings → Accepted IDs." Sending a
+  document's own type back, and correcting its number or dates, still
+  works. "Not stated" still works. `ID_TYPE_NOT_IN_CATALOGUE` now lists
+  this shop's accepted types. A document already on file of a
+  switched-off type is not deleted or rewritten: it reads in full,
+  keeps its verification status and counter record, and carries a
+  `notice`, "This shop no longer accepts {label}. Record another ID at
+  the next visit.", which the client file shows quietly. Every ID
+  picker (client file, quick card, Record the ID, the ledger's quick
+  add) offers only this shop's types; a switched-off type on file stays
+  visible as the current value and cannot be chosen again. Locked types
+  show a padlock and their note and cannot be switched on. A manager
+  sees the list read-only with that sentence. A refused save shows the
+  server's sentence and does not say Saved. The owner asked for this on
+  2026-10-19.
 
 - **Cheque fees are the owner's or a manager's.** Sol's rule: the owner and a manager may set the fee, including 0%. A teller, a senior teller, a trainee, and an auditor may not. Who may write `cdos_cheque_schedule_v1` is `canWriteSetting`. Today's default allows a branch manager and a compliance officer. The owner is always allowed, so they cannot be locked out. The table is not stored yet and there is no screen for it. A numeric version that is not current is 409 before the fee refusal. Anyone else gets 403: "Only the owner or a manager can change cheque fees. Ask a manager to make this change." A platform row does not take the save away. A teller's document cannot replace the fee key. A save with no version that would change the fee is 409, with no write and no refusal row. The refusal is `settings.cheque_fee_refused`. A save that lands is `settings.cheque_fee_changed`, with who, when, and the old and new price of each cheque type. A type string that is not the stored id is not priced from the schedule yet. That close is a separate change and is not here. The Fee schedule tab is grey, with the lock at the start of that sentence and the sentence wrapped, and no inputs and no Save, for a teller and for a cashier, before any Save. The phone table uses the same card, padding, Fee % column, and sideways scroll as main. Min fee shows two decimals and the example is the body colour, and its header is $2,000.00. A grouped list for the phone is a later change and is not here. The owner and a manager see the table and Save. The header names whoever is signed in now. A refused Save keeps the typed values and shows one amber line above Save. A stale second save shows a conflict line that stays on screen, with darker text, a 44px Reload, and the typed values kept until Reload loads the server schedule and its version. The Risk select is 44px. A save that lands shows Saved. A low-fee notice is not here. The screen and the server price a cheque fee with the same integer-cent half-up helper. Payroll at 2% of 1,000.25 is 20.01. A float multiply prints 20.00. A face of 1,000.5 is the same 20.01. Fee %, a minimum, and a maximum accept at most 2 decimal places on save. More than that is a 400 that names the field, and the schedule is unchanged. A fee % says "That change didn't save. A fee % can have up to 2 decimals, like 2.25." The check reads the number, so 1e-7 is refused and 1e2 is 100. The Fee % field is text. Clearing it and leaving the field restores the saved percent. The table and the edit state show a stored 2.125 as 2.13, the figure booking uses, so saving another row stores 2.13 for that percent. A percent already stored with more places rounds half up to 2 when the fee is read, and the cheque still books. The cheque route books a face of 1000.5 at 2% as 20.01. A figure the helper cannot read is refused on save and at booking, by the same reader, so a schedule that saves can still be priced. Nothing is booked at 0.00. Min fee "4." tidies to 4.00, and Fee % "." restores the saved percent. The teller sees "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule." The places banner is 13px, outlines the field that broke the rule, and sets aria-invalid. The phone table's sideways scroll stays until the grouped-list change.
 
@@ -670,6 +708,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-19**, Settings → Accepted IDs. The owner switches catalogue ID types on and off per shop; NULL follows the pack, and every type the catalogue accepts is on by default in every pack. Packs lock types in code (`server/src/ledger/id-type-rules.ts`); the health card is locked everywhere, with Canada's FINTRAC and Ontario note. The route is every role's to read and the owner's to change; a locked type and a list with no photo ID are 422, and a change is an audit row with no document number. A switched-off type is refused on add and on change (`ID_TYPE_NOT_ACCEPTED_HERE`); one already on file reads in full with its status and a quiet notice. The pickers follow the list. Migration 047. 041 is still claimed by open draft #132, 042 by #130, and 043 by #138.
 
 **2026-10-19**, ID-type catalogue and health cards. One list, `shared/id-document-types.js`, loaded by the server and by the desk. A type outside it is 422 `ID_TYPE_NOT_IN_CATALOGUE`. A health card is 422 `HEALTH_CARD_NOT_ID`, "Health cards can't be used as ID. Record a current photo ID." The BC Services Card is accepted. A health number is not in any client read, search, report, register, CSV, LCTR or STR field, or the saved desk document. It does not identify a file. Stored rows are not rewritten and stored numbers are not blanked. No migration.
 

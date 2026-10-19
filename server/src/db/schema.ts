@@ -262,6 +262,10 @@ export const legalEntities = pgTable(
        a peso in a till. NULL means unstated, not empty — the resolver
        falls back to the branch's board. */
     tradedCurrencies: text("traded_currencies").array(),
+    /* The ID types this shop accepts, as catalogue codes. NULL means
+       follow the jurisdiction pack, which is where every desk starts.
+       The owner changes it in Settings → Accepted IDs. Migration 047. */
+    acceptedIdTypes: text("accepted_id_types").array(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("legal_entities_tenant_idx").on(t.tenantId)],

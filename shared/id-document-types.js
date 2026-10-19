@@ -222,8 +222,26 @@
     return labels.slice(0, -1).join(", ") + ", or " + labels[labels.length - 1];
   }
 
-  var NOT_IN_CATALOGUE =
-    "That ID type isn't on this desk's list. Use one of: " + listInWords(pickerLabels()) + ".";
+  /* The refusal for a name that is not on the list. The server passes
+     the types this shop accepts. With no shop, it is every accepted
+     type in the catalogue. */
+  function notInCatalogueSentence(labels) {
+    return "That ID type isn't on this desk's list. Use one of: " + listInWords(labels) + ".";
+  }
+
+  var NOT_IN_CATALOGUE = notInCatalogueSentence(pickerLabels());
+
+  /* Settings → Accepted IDs. The owner can switch a type off for their
+     shop. A new document of that type is refused with the first
+     sentence. A document already on file keeps reading, with the second
+     one beside it. */
+  function notAcceptedHereSentence(label) {
+    return "This shop doesn't accept " + label + ". The owner can change this in Settings → Accepted IDs.";
+  }
+
+  function noLongerAcceptedSentence(label) {
+    return "This shop no longer accepts " + label + ". Record another ID at the next visit.";
+  }
 
   /* What a write may store. Either the catalogue label, the placeholder,
      or a refusal with its code and sentence. */
@@ -311,6 +329,9 @@
     isAcceptedIdType: isAcceptedIdType,
     pickerLabels: pickerLabels,
     shownIdType: shownIdType,
+    notInCatalogueSentence: notInCatalogueSentence,
+    notAcceptedHereSentence: notAcceptedHereSentence,
+    noLongerAcceptedSentence: noLongerAcceptedSentence,
     normaliseForWrite: normaliseForWrite,
     scrubHealthNumbers: scrubHealthNumbers,
     typeKeySql: typeKeySql,

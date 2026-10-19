@@ -247,15 +247,67 @@ A document add or a type change (`POST|PATCH
 /api/clients/:clientId/documents`) stores the catalogue label, so
 "PR Card" is stored as "Permanent Resident Card". A type the catalogue
 does not list is **422** `{ error: "ID_TYPE_NOT_IN_CATALOGUE", detail }`,
-and the detail names the accepted types. "Not stated" is not a type: it
-is the placeholder the desk writes when Add ID opens a row before a type
-is picked, and it is still accepted. The response also carries `code`
-and `message`, the shape every other refusal on these routes has.
+and the detail names the types this shop accepts. "Not stated" is not a
+type: it is the placeholder the desk writes when Add ID opens a row
+before a type is picked, and it is still accepted. The response also
+carries `code` and `message`, the shape every other refusal on these
+routes has.
 
-A row already stored under any other name reads as it was stored. This
-change rewrites no stored row. Per-country "Accepted IDs" settings come
-in a follow-up change; until then the catalogue is the same for every
-desk, as the desk's own picker already was.
+A row already stored under any other name reads as it was stored. No
+stored row is rewritten.
+
+## Accepted IDs, per shop
+
+The owner chooses which catalogue types their shop accepts in
+**Settings → Accepted IDs**, one switch per type, in Person and
+Business groups. The owner asked for "accepted IDs, not accepted IDs,
+within reason"; the reason is the jurisdiction pack.
+
+- **Stored** on `legal_entities.accepted_id_types` (migration 047), as
+  catalogue codes. **NULL follows the pack**, and every desk starts
+  there. A save that lands on the pack's own list stores NULL again, so
+  the shop keeps following the pack.
+- **Pack defaults and locks are code**, in
+  `server/src/ledger/id-type-rules.ts`, keyed by the pack's
+  jurisdiction. Every type the catalogue accepts is on by default in
+  every pack. A pack can **lock** a type off with a short legal note; a
+  locked type is off whatever the shop stored, shows a padlock and the
+  note, and cannot be switched on. The health card is locked in every
+  pack. Canada's note: FINTRAC says not to use a health card where
+  provincial law forbids it, and Ontario's Health Cards and Numbers
+  Control Act bars it.
+- **The route.** `GET /api/clients/accepted-id-types` is every role's,
+  because every ID picker reads it; it returns each type with `on`,
+  `packDefault`, `locked`, `note`, plus `accepted`, `followsPack`, and
+  `canChange`. `PUT` with `{ accepted: [codes] | null }` is the
+  owner's (`compliance:thresholds`). A manager or a teller gets **403**,
+  "Only the owner can change which IDs this shop accepts." Switching on
+  a locked type is **422** `ID_TYPE_LOCKED`, naming the note. A list
+  with no person photo ID is **422** `PHOTO_ID_REQUIRED`, "Keep at least
+  one photo ID switched on." Business types may all be off. Nothing is
+  written on a refusal.
+- **Audited.** A change writes `desk.id_types.change` to
+  `ledger_audit_events`: what was switched on and off, whether the shop
+  now follows the pack, and how many IDs on file are a type just
+  switched off. Never a document number.
+- **New documents.** Adding a document of a type the shop has switched
+  off, or changing a document to one, is **422**
+  `{ error: "ID_TYPE_NOT_ACCEPTED_HERE", detail: "This shop doesn't
+  accept {label}. The owner can change this in Settings → Accepted
+  IDs." }`. Sending a document's own type back unchanged, and
+  correcting its number or dates, still works.
+- **Customers already on file are never deleted or rewritten.** A
+  document whose type the shop has since switched off reads in full,
+  keeps its verification status and the till's counter record, and
+  carries `notice: "This shop no longer accepts {label}. Record another
+  ID at the next visit."`. The client file and the editors show that
+  line quietly. It is computed on the read; there is no data migration.
+- **The desk.** Every ID picker (the client file, the quick card,
+  Record the ID, the ledger's quick add) offers the catalogue's types
+  less what this shop switched off. A switched-off type on file stays
+  visible as the current value and cannot be chosen again. A manager
+  sees the Settings list read-only. A refused save shows the server's
+  sentence and does not say Saved.
 
 ## Health card numbers
 
@@ -511,6 +563,20 @@ every time.
   editable, the counter record `missing` for a health card only, the
   Postgres fold equal to the JavaScript fold, and the tenant-state
   scrub on save, read, conflict, and a teller's read.
+- `server/tests/accepted-id-rules.test.ts` — pack defaults (every
+  accepted type on, in every pack), the health card locked everywhere
+  with Canada's note, a later pack locking another type, and the
+  sentences.
+- `server/tests/accepted-id-types.postgres.test.ts` — the route: every
+  role reads, the owner changes, a manager and a teller get 403 with
+  nothing changed, the audit row, a locked type and a list with no
+  photo ID refused; the switched-off refusal on add and on update; a
+  switched-off ID on file read with its status and notice; NULL
+  following the pack; the column constraint.
+- `tests/e2e/accepted-ids-seam.spec.ts` — the owner's switch reaching
+  the server, a refused save showing the server's sentence and not
+  Saved, a manager's read-only list, and the client file's notice and
+  picker following the list.
 - `tests/e2e/health-card-seam.spec.ts` — a health card already in the
   database and in this browser's saved copy: after the desk loads the
   number is not in `localStorage`, search does not find it, the file

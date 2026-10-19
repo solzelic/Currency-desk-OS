@@ -120,6 +120,12 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   because PGlite does not run the SQL migrations. 040 is on main.
   041 is claimed by open drafts #96, #110, #120, and #132, 042 by #130,
   and 043 by #138, so this file is 044. 027 and 030 are still open drafts.
+- Migration `047_accepted_id_types` adds `legal_entities.accepted_id_types`
+  (catalogue codes; NULL follows the pack) with a shape CHECK. The
+  column is also in the boot DDL and the Drizzle schema. 046 is the last
+  on main, so this file is 047. The pack defaults and locks are code,
+  in `server/src/ledger/id-type-rules.ts`. The rule is
+  `docs/CLIENT_RECORDS.md`, "Accepted IDs, per shop".
 
 ## Test commands
 
