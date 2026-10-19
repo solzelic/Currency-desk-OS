@@ -30,6 +30,7 @@ const PERSON = [
   "Permanent Resident Card",
   "Citizenship Card",
   "BC Services Card",
+  "National Identity Card",
 ];
 const BUSINESS = [
   "Business Number",
@@ -41,7 +42,7 @@ const BUSINESS = [
 describe("the catalogue", () => {
   it("lists every type with the fields a screen and the server need", () => {
     expect(ID_DOCUMENT_TYPES.map((row) => row.label)).toEqual([
-      ...PERSON.slice(0, 6),
+      ...PERSON,
       "Health Card",
       ...BUSINESS,
     ]);
@@ -72,6 +73,8 @@ describe("the catalogue", () => {
       ["Driver’s Licence", "Driver's Licence"],
       ["drivers_licence", "Driver's Licence"],
       ["BC Services Card", "BC Services Card"],
+      ["Emirates ID", "National Identity Card"],
+      ["national id", "National Identity Card"],
       ["Certificate of Incorporation", "Incorporation Certificate"],
       ["Master Business License", "Master Business Licence"],
       ["Articles of Incorporation", "Articles of Incorporation"],
@@ -97,8 +100,8 @@ describe("the catalogue", () => {
     }
     expect(NOT_IN_CATALOGUE).toBe(
       "That ID type isn't on this desk's list. Use one of: Driver's Licence, Passport, Provincial/Territorial Photo ID, " +
-        "Permanent Resident Card, Citizenship Card, BC Services Card, Business Number, Incorporation Certificate, " +
-        "Master Business Licence, or Articles of Incorporation.",
+        "Permanent Resident Card, Citizenship Card, BC Services Card, National Identity Card, Business Number, " +
+        "Incorporation Certificate, Master Business Licence, or Articles of Incorporation.",
     );
     expect(NOT_IN_CATALOGUE).not.toContain("Health");
   });

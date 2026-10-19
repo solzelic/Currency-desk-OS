@@ -80,6 +80,15 @@
       aliases: ["BC Services Card with photo"],
     },
     {
+      /* A government photo ID card from another country, such as an
+         Emirates ID or a German Personalausweis. FINTRAC accepts a
+         foreign government's photo ID, and desks outside Canada record
+         their own country's card here. */
+      code: "national_id_card", label: "National Identity Card", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["National ID", "National ID Card", "National Identity Document", "Identity Card", "ID Card", "Emirates ID"],
+    },
+    {
       code: HEALTH_CARD, label: "Health Card", kind: "person",
       photo: false, mayLackExpiry: false, acceptedAsId: false,
       aliases: [

@@ -232,6 +232,7 @@ one space.
 | Permanent Resident Card | person | yes | no | PR Card |
 | Citizenship Card | person | yes | yes | Canadian Citizenship Card |
 | BC Services Card | person | yes | no | BC Services Card with photo |
+| National Identity Card | person | yes | no | National ID, Identity Card, Emirates ID |
 | Health Card | person | no | no | about forty provincial names; **not accepted as ID** |
 | Business Number | business | no | yes | BN |
 | Incorporation Certificate | business | no | yes | Certificate of Incorporation |

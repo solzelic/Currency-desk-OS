@@ -78,8 +78,11 @@ New agent pull requests are frozen until the repository owner pushes a commit to
   desk can record are one list, `shared/id-document-types.js`. The
   server requires it and the desk loads the same file. Person types:
   Driver's Licence, Passport, Provincial/Territorial Photo ID, Permanent
-  Resident Card (PR Card), Citizenship Card, and BC Services Card. The
-  BC Services Card is photo ID, not a health card. Business types:
+  Resident Card (PR Card), Citizenship Card, BC Services Card, and
+  National Identity Card. The BC Services Card is photo ID, not a
+  health card. The National Identity Card is another country's
+  government photo ID card, such as an Emirates ID, so a desk outside
+  Canada can record its own country's card. Business types:
   Business Number, Incorporation Certificate, Master Business Licence,
   and Articles of Incorporation. A saved type is stored as the
   catalogue names it. Any other type is 422 `ID_TYPE_NOT_IN_CATALOGUE`,
