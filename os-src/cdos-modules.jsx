@@ -7,7 +7,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, dDiff, counterCashIn, counterCashOut } = window.CDOS;
+  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, currencyPlaces, effectiveRate, ROUNDED_NOTE, dDiff, counterCashIn, counterCashOut } = window.CDOS;
 
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -479,6 +479,13 @@
   function ReceiptModal({ row, onClose, settings }) {
     const s = settings || {};
     const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
+    const fx = !!(row.inCcy && row.outCcy && row.inCcy !== row.outCcy);
+    const priced = fx && typeof effectiveRate === 'function'
+      ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy))
+      : null;
+    const rateValue = !fx ? row.rate : (priced && priced.text
+      ? <>{priced.text}{priced.rounded ? <span className="cd-rate-rounded" style={{ fontSize: 9, marginLeft: 4 }}>{ROUNDED_NOTE || 'rounded'}</span> : null}</>
+      : 'Rate unavailable');
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="overflow-hidden cd-paper-island" style={{ width: 340, background: CD.panel, border: `1px solid ${CD.ink}` }}>
         <div id="rcpt" className="p-5" style={{ fontFamily: 'Space Mono, ui-monospace, monospace' }}>
@@ -491,7 +498,7 @@
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
           <Line k="Reference" v={row.ref || '—'} /><Line k="Date" v={row.date} /><Line k="Customer" v={row.customer || '—'} /><Line k="Type" v={row.type} /><Line k="Teller" v={row.teller} />
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
-          <Line k="Pay-in" v={`${num(row.inAmt)} ${row.inCcy}`} /><Line k="Rate" v={row.rate} /><Line k="Pay-out" v={`${num(row.outAmt)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
+          <Line k="Pay-in" v={`${num(row.inAmt)} ${row.inCcy}`} /><Line k={fx ? 'Effective rate' : 'Rate'} v={rateValue} /><Line k="Pay-out" v={`${num(row.outAmt)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
           {row.type !== 'Cheque Cashing' && row.side && <Line k="Pricing" v={row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross'} />}
           {row.quoteRef && <Line k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} />}
           {row.serverReceipt && <><div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} /><Line k="Server receipt" v={row.serverReceipt.receiptId} /><div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div></>}

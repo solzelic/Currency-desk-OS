@@ -105,6 +105,15 @@ directions. `parseMoney` asks the currency: **there is no such thing as
 ¥1,234.56**, and a payout quoted that way is not a rounding nicety, it is a
 figure a teller cannot count out.
 
+The rate on the sheet, the summary, and the receipt is the shortest
+rate that multiplies back to the payout, at that currency's places.
+`EXACT_RATE_PLACES` is 6 and `ROUNDED_RATE_PLACES` is 4, both in
+`os-src/effective-rate.js`. When six places still miss the cents, the
+screen shows the true rate rounded to four with the word `rounded`,
+and the payout stays the ledger figure. Head of Design has not
+confirmed those two caps. The published rate stays in the editable
+field. The rate stored on the deal stays 12 places.
+
 **Three-decimal currencies are refused, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then
 watch every amount quietly lose its third decimal is worse off than one told

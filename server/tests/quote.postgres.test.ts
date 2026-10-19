@@ -192,6 +192,19 @@ postgres("quote service against real PostgreSQL", () => {
     expect(q.customerRate).toBe("0.692857142857");
     expect(q.outputAmount).toBe("692.86");
   });
+  it("refuses a mismatched direction in cashier words", async () => {
+    const quote = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: { ...body, direction: "customer_sell_foreign" },
+    });
+    expect(quote.statusCode).toBe(400);
+    const message = String(quote.json().message ?? "");
+    expect(message).not.toContain("direction and currencies disagree");
+    expect(message).not.toContain("negative spread");
+    expect(message).toMatch(/currency pair/);
+  });
   it("creates a customer-sell quote using We Buy and preserves old board terms", async () => {
     const created = await app.inject({
       method: "POST",

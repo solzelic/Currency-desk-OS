@@ -16,7 +16,7 @@ import {
   type LedgerActor,
 } from "../ledger/service.js";
 import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
-import { calculateQuoteTerms, type QuoteDirection } from "./terms.js";
+import { calculateQuoteTerms, cashierQuoteMessage, type QuoteDirection } from "./terms.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -326,7 +326,7 @@ export class QuoteService {
         }
       } catch (error) {
         if (error instanceof LedgerError) throw error;
-        throw new LedgerError("INVALID_REQUEST", "Invalid commercial terms.");
+        throw new LedgerError("INVALID_REQUEST", cashierQuoteMessage(error));
       }
       const {
         input,

@@ -724,6 +724,8 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-19**, rate on the sheet. The payout is the figure that is true. The sheet, the summary, and the receipt show the shortest rate that multiplies back to it, at the currency's places, and they stop at 6 places. When 6 places still miss the cents, they show the true rate rounded to 4 with the word `rounded`, and the payout is not recomputed. Those two caps are `EXACT_RATE_PLACES` and `ROUNDED_RATE_PLACES` in `os-src/effective-rate.js`. Head of Design has not confirmed them. The editable field keeps the published rate. A quote the board cannot price, a direction that does not match the currencies, and a negative spread are cashier sentences. The raw words `negative spread` and `direction and currencies disagree` do not reach the screen. 100 CAD to 10,825 JPY shows `108.25`.
+
 **2026-10-19**, test isolation. The document-reads suite's last case leaves York FX on the British pack, and the report-filings suite's last case does the same. Each file puts the seed pack back (`CAD`, `pack-ca-v1`) before it ends, then reads the York FX desk and requires CAD and `pack-ca-v1`. No cheque source changes.
 
 **2026-10-19**, menubar clock. The header uses the Audit Trail clock, in `settings.timezone`. A 12-hour desk reads 16:05 as 4:05 pm. A 24-hour desk still reads 16:05. The 12-hour box is the width of `12:45 pm`. The 24-hour box is the width of `23:59`. A stored zone the clock cannot read falls back to the browser zone, then UTC, and the menubar still shows a time.

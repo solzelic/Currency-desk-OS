@@ -29,6 +29,29 @@ import Decimal from "decimal.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
+const BOARD =
+  "The rate board cannot price this quote. Ask a manager to check the published rate.";
+const DIRECTION =
+  "The currencies do not match buy or sell. Check which currency is paid in and which is paid out.";
+const SPREAD =
+  "This quote would cost the desk money. Check the rate and try again.";
+
+/* What the cashier reads. The raw term never leaves this file. */
+export function cashierQuoteMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message.trim() : "";
+  if (raw === "negative spread") return SPREAD;
+  if (raw === "direction and currencies disagree") return DIRECTION;
+  if (raw === "invalid board terms" || raw.startsWith("invalid ")) return BOARD;
+  if (
+    raw.includes("negative spread") ||
+    raw.includes("direction and currencies disagree")
+  ) {
+    return "This quote could not be priced. Check the currencies and the rate.";
+  }
+  if (raw) return raw;
+  return "This quote could not be priced. Check the amount and the currencies.";
+}
+
 export type QuoteDirection =
   | "customer_buy_foreign"
   | "customer_sell_foreign"
