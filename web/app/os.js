@@ -2033,6 +2033,318 @@
   });
 })();
 
+/* ---- shared/id-document-types.js ---- */
+/* ============================================================
+   The ID-document catalogue. One list, loaded by the server and by the
+   desk.
+
+   The server loads this file with `require` (server/src/clients/
+   id-document-types.ts). The desk shell loads it as a plain script
+   before cdos-backend.js, and scripts/build-os.mjs puts it in
+   web/app/os.js. Neither side keeps a copy of these names.
+
+   Each type has:
+     code           stable id. Never shown.
+     label          what the desk shows and what the server stores.
+     kind           'person' or 'business'.
+     photo          the document carries the holder's photograph.
+     mayLackExpiry  a blank expiry is normal for this document.
+     acceptedAsId   false only for the health card.
+     aliases        other names that mean the same document.
+
+   A name matches the whole type after the same fold on both sides:
+   lower case, apostrophes removed, every run of anything that is not
+   a-z or 0-9 turned into one space. "healthcare" is not "health card".
+   "mspaint" is not "MSP".
+
+   HEALTH CARDS. The row is here so a health card already stored still
+   resolves to a type. It is not accepted as ID. Ontario's Health Cards
+   and Numbers Control Act, 1991 bars a business outside health care
+   from collecting or using a health number, and FINTRAC says not to use
+   a health card where provincial law prohibits it. The desk refuses a
+   new one everywhere and never shows, searches, or sends the number.
+
+   The BC Services Card is NOT a health card here. The photo version is
+   a provincial government photo ID, and FINTRAC accepts it. A bare
+   "Medicare" is not an alias, and neither is "Medicare card": both are
+   also the name of Australia's card.
+
+   "Not stated" is not a type. It is the placeholder the desk writes
+   when a document row exists before anybody has picked its type.
+   ============================================================ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) root.CDOS_ID_TYPES = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var HEALTH_CARD = "health_card";
+  var NOT_STATED = "Not stated";
+  var HEALTH_CARD_REFUSAL = "Health cards can't be used as ID. Record a current photo ID.";
+  var HEALTH_CARD_SHOWN = "Health card — not accepted as ID";
+
+  var TYPES = [
+    {
+      code: "drivers_licence", label: "Driver's Licence", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["Driver's License", "Drivers Licence", "Drivers License", "Driver Licence", "Driver License", "Driving Licence"],
+    },
+    {
+      code: "passport", label: "Passport", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: [],
+    },
+    {
+      code: "provincial_photo_id", label: "Provincial/Territorial Photo ID", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["Provincial ID", "Territorial ID", "Provincial Photo ID", "Territorial Photo ID", "Provincial or Territorial Photo ID", "Ontario Photo Card"],
+    },
+    {
+      code: "permanent_resident_card", label: "Permanent Resident Card", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["PR Card"],
+    },
+    {
+      /* The card IRCC issued until 2012 carried a photograph and no
+         expiry. The paper certificate issued since is not this type. */
+      code: "citizenship_card", label: "Citizenship Card", kind: "person",
+      photo: true, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["Canadian Citizenship Card"],
+    },
+    {
+      code: "bc_services_card", label: "BC Services Card", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      aliases: ["BC Services Card with photo"],
+    },
+    {
+      code: HEALTH_CARD, label: "Health Card", kind: "person",
+      photo: false, mayLackExpiry: false, acceptedAsId: false,
+      aliases: [
+        "Health Insurance Card",
+        "Provincial Health Card",
+        "OHIP",
+        "OHIP card",
+        "Ontario Health Insurance Plan",
+        "Ontario Health Card",
+        "Carte d'assurance maladie",
+        "Carte soleil",
+        "RAMQ",
+        "RAMQ card",
+        "Régie de l'assurance maladie du Québec",
+        "Regie de l'assurance maladie du Quebec",
+        "MSP",
+        "MSP card",
+        "Medical Services Plan",
+        "Care Card",
+        "BC Care Card",
+        "Alberta Health",
+        "Alberta Health Card",
+        "Alberta Health Care",
+        "Alberta Health Care Insurance Plan",
+        "New Brunswick Medicare",
+        "NB Medicare",
+        "Manitoba Health",
+        "Manitoba Health Card",
+        "Saskatchewan Health Card",
+        "Saskatchewan Health Services Card",
+        "Nova Scotia Health Card",
+        "MSI",
+        "Medical Services Insurance",
+        "PEI Health Card",
+        "Prince Edward Island Health Card",
+        "Newfoundland and Labrador Medical Care Plan",
+        "MCP",
+        "Medical Care Plan",
+        "Northwest Territories Health Care Card",
+        "NWT Health Care Card",
+        "Nunavut Health Care Card",
+        "Yukon Health Care Card",
+        "Yukon Health Care Insurance Plan",
+      ],
+    },
+    {
+      code: "business_number", label: "Business Number", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["BN"],
+    },
+    {
+      code: "incorporation_certificate", label: "Incorporation Certificate", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["Certificate of Incorporation"],
+    },
+    {
+      code: "master_business_licence", label: "Master Business Licence", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: ["Master Business License"],
+    },
+    {
+      code: "articles_of_incorporation", label: "Articles of Incorporation", kind: "business",
+      photo: false, mayLackExpiry: true, acceptedAsId: true,
+      aliases: [],
+    },
+  ];
+
+  function typeKey(value) {
+    return String(value == null ? "" : value)
+      .toLowerCase()
+      .replace(/['‘’]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  /* Every name, folded, to its row. Two rows may never share a name. */
+  var BY_KEY = Object.create(null);
+  TYPES.forEach(function (row) {
+    Object.freeze(row.aliases);
+    [row.code, row.label].concat(row.aliases).forEach(function (name) {
+      var key = typeKey(name);
+      if (!key) throw new Error("An ID type name folds to nothing: " + name);
+      if (BY_KEY[key] && BY_KEY[key] !== row) {
+        throw new Error("Two ID types share the name " + name);
+      }
+      BY_KEY[key] = row;
+    });
+    Object.freeze(row);
+  });
+  Object.freeze(TYPES);
+  var NOT_STATED_KEY = typeKey(NOT_STATED);
+  if (BY_KEY[NOT_STATED_KEY]) throw new Error("\"Not stated\" cannot be an ID type");
+
+  /* The row a name means, or null. */
+  function resolveIdType(value) {
+    var key = typeKey(value);
+    return key ? (BY_KEY[key] || null) : null;
+  }
+
+  function isNotStated(value) {
+    return typeKey(value) === NOT_STATED_KEY;
+  }
+
+  function isHealthCardType(value) {
+    var row = resolveIdType(value);
+    return !!(row && row.code === HEALTH_CARD);
+  }
+
+  /* In the catalogue and accepted as ID. */
+  function isAcceptedIdType(value) {
+    var row = resolveIdType(value);
+    return !!(row && row.acceptedAsId);
+  }
+
+  /* What a picker offers for a new document of this kind. */
+  function pickerLabels(kind) {
+    return TYPES.filter(function (row) {
+      return row.acceptedAsId && (!kind || row.kind === kind);
+    }).map(function (row) { return row.label; });
+  }
+
+  /* The words a screen shows for a stored type. A health card says it
+     is not accepted. Anything else is shown as it was stored. */
+  function shownIdType(value) {
+    if (isHealthCardType(value)) return HEALTH_CARD_SHOWN;
+    return value == null ? "" : String(value);
+  }
+
+  function listInWords(labels) {
+    if (labels.length <= 1) return labels.join("");
+    return labels.slice(0, -1).join(", ") + ", or " + labels[labels.length - 1];
+  }
+
+  var NOT_IN_CATALOGUE =
+    "That ID type isn't on this desk's list. Use one of: " + listInWords(pickerLabels()) + ".";
+
+  /* What a write may store. Either the catalogue label, the placeholder,
+     or a refusal with its code and sentence. */
+  function normaliseForWrite(value) {
+    if (isNotStated(value)) return { ok: true, label: NOT_STATED };
+    var row = resolveIdType(value);
+    if (!row) return { ok: false, code: "ID_TYPE_NOT_IN_CATALOGUE", detail: NOT_IN_CATALOGUE };
+    if (!row.acceptedAsId) return { ok: false, code: "HEALTH_CARD_NOT_ID", detail: HEALTH_CARD_REFUSAL };
+    return { ok: true, label: row.label, code: row.code };
+  }
+
+  /* ---- health numbers in a stored copy -------------------------------
+
+     A saved desk document, a localStorage value, or a cached client
+     record can still hold a health number written before this list
+     existed. This walks any JSON value. An object whose type field names
+     a health card loses its number field. A string that is JSON is read,
+     cleaned, and written back as a string. Anything that needed no
+     change comes back as the same value, so a caller can compare with
+     === and not rewrite what was already clean. */
+  var NUMBER_FIELDS = { docNumber: 1, doc_number: 1, idNum: 1, num: 1, number: 1 };
+  var TYPE_FIELDS = ["docType", "doc_type", "idType", "type"];
+
+  function namesHealthCard(value) {
+    for (var i = 0; i < TYPE_FIELDS.length; i++) {
+      if (isHealthCardType(value[TYPE_FIELDS[i]])) return true;
+    }
+    return false;
+  }
+
+  function scrubHealthNumbers(value) {
+    if (typeof value === "string") {
+      var first = value.charAt(0);
+      if (first !== "{" && first !== "[") return value;
+      var parsed;
+      try { parsed = JSON.parse(value); } catch (error) { return value; }
+      var cleaned = scrubHealthNumbers(parsed);
+      return cleaned === parsed ? value : JSON.stringify(cleaned);
+    }
+    if (Array.isArray(value)) {
+      var changed = false;
+      var items = value.map(function (item) {
+        var next = scrubHealthNumbers(item);
+        if (next !== item) changed = true;
+        return next;
+      });
+      return changed ? items : value;
+    }
+    if (!value || typeof value !== "object") return value;
+    var drop = namesHealthCard(value);
+    var touched = false;
+    var out = {};
+    Object.keys(value).forEach(function (key) {
+      if (drop && NUMBER_FIELDS[key]) { touched = true; return; }
+      var next = scrubHealthNumbers(value[key]);
+      if (next !== value[key]) touched = true;
+      out[key] = next;
+    });
+    return touched ? out : value;
+  }
+
+  /* The same fold as typeKey(), in Postgres. Any letter outside a-z is
+     a space on both sides, so the two always agree. */
+  function typeKeySql(expr) {
+    return "btrim(regexp_replace(regexp_replace(lower(" + expr + "), '[''‘’]', '', 'g'), '[^a-z0-9]+', ' ', 'g'))";
+  }
+
+  /* Every folded name that means a health card, for a query parameter. */
+  var HEALTH_CARD_KEYS = Object.keys(BY_KEY).filter(function (key) {
+    return BY_KEY[key].code === HEALTH_CARD;
+  });
+
+  return {
+    ID_DOCUMENT_TYPES: TYPES,
+    HEALTH_CARD: HEALTH_CARD,
+    NOT_STATED: NOT_STATED,
+    HEALTH_CARD_REFUSAL: HEALTH_CARD_REFUSAL,
+    HEALTH_CARD_SHOWN: HEALTH_CARD_SHOWN,
+    NOT_IN_CATALOGUE: NOT_IN_CATALOGUE,
+    HEALTH_CARD_KEYS: HEALTH_CARD_KEYS,
+    typeKey: typeKey,
+    resolveIdType: resolveIdType,
+    isNotStated: isNotStated,
+    isHealthCardType: isHealthCardType,
+    isAcceptedIdType: isAcceptedIdType,
+    pickerLabels: pickerLabels,
+    shownIdType: shownIdType,
+    normaliseForWrite: normaliseForWrite,
+    scrubHealthNumbers: scrubHealthNumbers,
+    typeKeySql: typeKeySql,
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -2715,6 +3027,53 @@
   var RISK_IN = { Low: "low", Normal: "normal", Medium: "medium", High: "high" };
   var RISK_OUT = { low: "Low", normal: "Normal", medium: "Medium", high: "High" };
 
+  /* The ID-type catalogue is shared/id-document-types.js, loaded before
+     this file. The server reads the same file. Without it the desk would
+     not know which type is a health card, so it says so and stops. */
+  function idTypes() {
+    var catalogue = window.CDOS_ID_TYPES;
+    if (!catalogue || typeof catalogue.isHealthCardType !== "function") {
+      throw new Error("CurrencyDesk has no ID-type catalogue loaded");
+    }
+    return catalogue;
+  }
+  var isHealthCardType = function (type) { return idTypes().isHealthCardType(type); };
+
+  /* A health number this browser already holds, from before the desk
+     refused them, is removed from every saved copy here, before any
+     screen reads one. A value that cannot be read or rewritten is
+     logged and left; the next key is still cleaned. */
+  function scrubLocalHealthNumbers() {
+    var scrub = idTypes().scrubHealthNumbers;
+    var names = [];
+    var i;
+    try {
+      for (i = 0; i < localStorage.length; i++) names.push(localStorage.key(i));
+    } catch (error) {
+      console.error("[CurrencyDesk] could not list this browser's saved desk", error);
+      return;
+    }
+    names.forEach(function (name) {
+      if (!name) return;
+      var raw;
+      try { raw = localStorage.getItem(name); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not read " + name + " while removing a health number", error);
+        return;
+      }
+      if (typeof raw !== "string") return;
+      var next = scrub(raw);
+      if (next === raw) return;
+      try { localStorage.setItem(name, next); }
+      catch (error) {
+        console.error("[CurrencyDesk] could not remove a health number from " + name, error);
+      }
+    });
+  }
+  window.CDOS.idTypes = idTypes;
+  window.CDOS.scrubLocalHealthNumbers = scrubLocalHealthNumbers;
+  scrubLocalHealthNumbers();
+
   /* One server record, in the shape every screen that has not moved yet
      still reads: a flat object keyed by name, with the primary identity
      document flattened onto it as idType / idNum / idIssued / idExpiry.
@@ -2726,7 +3085,12 @@
      that is the byte weight that was stopping the desk saving. */
   function toDeskRecord(record, local) {
     local = local || {};
-    var documents = record.documents || [];
+    /* The server never sends a health card's number. This is the same
+       rule again, so a response from an older server cannot put one in
+       this browser either. */
+    var documents = (record.documents || []).map(function (d) {
+      return idTypes().scrubHealthNumbers(d);
+    });
     var primary = documents.filter(function (d) { return d.isPrimary; })[0] || null;
     var extra = documents.filter(function (d) { return !d.isPrimary; });
     var serverHasPrimaryScan = !!(primary && primary.hasScan);
@@ -2763,7 +3127,7 @@
       duplicateReason: record.duplicateReason || null,
       sameNameClientIds: record.sameNameClientIds || [],
       idType: primary ? primary.docType : "",
-      idNum: primary ? (primary.docNumber || "") : "",
+      idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
       primaryDocumentId: primary ? primary.documentId : null,
@@ -2777,7 +3141,7 @@
         return {
           documentId: d.documentId,
           type: d.docType,
-          num: d.docNumber || "",
+          num: isHealthCardType(d.docType) ? "" : (d.docNumber || ""),
           issued: d.issuedOn || "",
           expiry: d.expiresOn || "",
           hasScan: !!d.hasScan,
@@ -22328,6 +22692,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     return p && p.homeCurrency || (reportingLimit(null) || {}).currency || null;
   };
   const computeFlags = window.CDOS.computeFlags;
+  /* The ID-type catalogue the server also checks against. A health card
+     is in it so a stored one can be named, and is never accepted as ID:
+     its number is not shown, searched, or sent. */
+  const IDT = window.CDOS.idTypes();
+  const isHealthType = type => IDT.isHealthCardType(type);
   // render overlays at the document root so the window's stacking context
   // (and the rate ticker at z-360) can never occlude them
   const Portal = ({
@@ -22427,6 +22796,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const client = api();
       if (!client || !clientId) return;
       if (!rec || !rec.idType && !rec.idNum && !rec.photo) return;
+      /* A health card is not ID and the server refuses one. A copy this
+         browser still holds is not sent. */
+      if (isHealthType(rec.idType)) return;
       await client.addDocument(clientId, {
         docType: rec.idType || 'Not stated',
         docNumber: rec.idNum || null,
@@ -22564,18 +22936,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        till sees the old one. */
     const send = run => Promise.resolve().then(run).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
     const extraDoc = i => (rec.ids || [])[i] || {};
+    /* A health card as the primary is not edited: the server refuses
+       that. Typing an ID on such a file adds a new primary document and
+       the health card stays on the file beside it, not accepted. */
+    const healthPrimary = isHealthType(rec.idType);
+    const primaryId = healthPrimary ? null : rec.primaryDocumentId;
+    const typeOnFile = healthPrimary ? '' : rec.idType;
     function field(k, v) {
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
         const patch = {};
         patch[DOC[k]] = v || null;
-        if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, patch));
+        if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
         /* Typing a document's details when the file has none is how a
            document gets created — the same gesture the old flat editor
            made, landing in the right table. */
         return send(() => api.addDocument(clientId, Object.assign({
-          docType: k === 'idType' ? v || 'Not stated' : rec.idType || 'Not stated',
+          docType: k === 'idType' ? v || 'Not stated' : typeOnFile || 'Not stated',
           isPrimary: true
         }, k === 'idType' ? {} : patch)));
       }
@@ -22690,11 +23068,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }
     function scan(dataUrl) {
       if (!onServer) return localSet('photo', dataUrl);
-      if (rec.primaryDocumentId) return send(() => api.updateDocument(clientId, rec.primaryDocumentId, {
+      if (primaryId) return send(() => api.updateDocument(clientId, primaryId, {
         scanDataUrl: dataUrl
       }));
       return send(() => api.addDocument(clientId, {
-        docType: rec.idType || 'Not stated',
+        docType: typeOnFile || 'Not stated',
         isPrimary: true,
         scanDataUrl: dataUrl
       }));
@@ -23052,8 +23430,34 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }), " Capture")))))));
   }
-  const ID_TYPES_IND = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Citizenship Card', 'Health Card', 'Permanent Resident Card'];
-  const ID_TYPES_CORP = ['Business Number', 'Incorporation Certificate', 'Master Business Licence', 'Articles of Incorporation'];
+
+  /* The pickers are the catalogue's (shared/id-document-types.js), the
+     same list the server checks a save against. A health card is not
+     offered. */
+  const ID_TYPES_IND = IDT.pickerLabels('person');
+  const ID_TYPES_CORP = IDT.pickerLabels('business');
+  /* A type already on the file that the picker does not offer stays
+     visible in the select. A health card says it is not accepted and
+     cannot be chosen again. */
+  function keptTypeOption(current, types) {
+    if (!current || types.indexOf(current) >= 0) return null;
+    if (isHealthType(current)) return /*#__PURE__*/React.createElement("option", {
+      key: current,
+      value: current,
+      disabled: true
+    }, IDT.HEALTH_CARD_SHOWN);
+    return /*#__PURE__*/React.createElement("option", {
+      key: current,
+      value: current
+    }, current);
+  }
+  /* Said under a health card wherever it is edited. */
+  const HealthCardNote = () => /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] mt-1.5",
+    style: {
+      color: CD.flag
+    }
+  }, IDT.HEALTH_CARD_REFUSAL);
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
   const COUNTRIES = ['Canada', 'United States', 'Other'];
@@ -23452,7 +23856,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = rec.idType && types.indexOf(rec.idType) < 0 ? rec.idType : null;
+    /* A health card on file: no number, nothing to edit on it. Picking a
+       type records a new ID. */
+    const health = isHealthType(rec.idType);
+    const editDoc = canEdit && !health;
     return /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(EditField, {
@@ -23465,11 +23872,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), stated && /*#__PURE__*/React.createElement("option", {
-      key: stated
-    }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), keptTypeOption(rec.idType, types), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null)), !health && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Business / document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23480,7 +23885,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Issued"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: rec.idIssued || '',
       onChange: e => set('idIssued', e.target.value),
@@ -23489,7 +23894,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Expiry"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: rec.idExpiry || '',
       onChange: e => set('idExpiry', e.target.value),
@@ -23507,7 +23912,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hasScan: rec.primaryHasScan,
       height: 64,
       who: who,
-      what: rec.idType || 'primary ID',
+      what: IDT.shownIdType(rec.idType) || 'primary ID',
       log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => set('photo', null),
@@ -23529,7 +23934,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       type: "file",
       accept: "image/*",
       className: "hidden",
-      disabled: !canEdit,
+      disabled: !editDoc,
       onChange: e => e.target.files[0] && onUpload('photo', e.target.files[0])
     }))));
   }
@@ -23548,7 +23953,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     log
   }) {
     const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
-    const stated = doc.type && types.indexOf(doc.type) < 0 ? doc.type : null;
+    /* A health card can be removed. It cannot be edited or retyped. */
+    const health = isHealthType(doc.type);
+    const editDoc = canEdit && !health;
     return /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
@@ -23576,18 +23983,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document type' : 'ID type'
     }, /*#__PURE__*/React.createElement("select", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       value: doc.type || '',
       onChange: e => setId(i, 'type', e.target.value),
       className: inCls,
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), stated && /*#__PURE__*/React.createElement("option", {
-      key: stated
-    }, stated), types.map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), keptTypeOption(doc.type, types), types.map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t))), health && /*#__PURE__*/React.createElement(HealthCardNote, null)), !health && /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document #' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -23598,7 +24003,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Issued"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: doc.issued || '',
       onChange: e => setId(i, 'issued', e.target.value),
@@ -23607,7 +24012,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Expiry"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !editDoc,
       type: "date",
       value: doc.expiry || '',
       onChange: e => setId(i, 'expiry', e.target.value),
@@ -23625,7 +24030,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       hasScan: doc.hasScan,
       height: 64,
       who: who,
-      what: doc.type || "additional ID",
+      what: IDT.shownIdType(doc.type) || "additional ID",
       log: log
     }), canEdit && /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -23648,7 +24053,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       type: "file",
       accept: "image/*",
       className: "hidden",
-      disabled: !canEdit,
+      disabled: !editDoc,
       onChange: e => e.target.files[0] && uploadId(i, e.target.files[0])
     })))));
   }
@@ -23849,7 +24254,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
 <div class="card"><div class="ct">Contact</div><table class="kv">${row('Email', rec.email)}${row('Phone', rec.phone)}${row('Address', addr)}</table></div>
-<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', rec.idType)}${row('Number', rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
+<div class="card"><div class="ct">Identification (KYC)</div><table class="kv">${row(corp ? 'Document' : 'ID type', IDT.shownIdType(rec.idType))}${row('Number', isHealthType(rec.idType) ? '' : rec.idNum)}${row('Issued', rec.idIssued)}${row('Expiry', rec.idExpiry)}${row('Risk rating', rec.risk)}</table></div>
 <div class="card"><div class="ct">Activity</div><table class="kv">${row('First seen', mine.length ? mine[mine.length - 1].date : '')}${row('Last seen', st.last)}${row('Status', stat)}</table>${rec.notes ? `<div style="margin-top:8px;font-size:11.5px;color:#555;"><b>Notes:</b> ${esc(rec.notes)}</div>` : ''}</div>
 </div>
 <div class="ct" style="margin-bottom:6px;">Transaction history (${mine.length})</div>
@@ -24033,9 +24438,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: inSty
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "\u2014"), (corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => /*#__PURE__*/React.createElement("option", {
+    }, "\u2014"), keptTypeOption(rec.idType, corp ? ID_TYPES_CORP : ID_TYPES_IND), (corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => /*#__PURE__*/React.createElement("option", {
       key: t
-    }, t)))), /*#__PURE__*/React.createElement(EditField, {
+    }, t))), isHealthType(rec.idType) && /*#__PURE__*/React.createElement(HealthCardNote, null)), !isHealthType(rec.idType) && /*#__PURE__*/React.createElement(EditField, {
       label: corp ? 'Number' : 'ID number'
     }, /*#__PURE__*/React.createElement("input", {
       disabled: !canEdit,
@@ -24046,7 +24451,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     })), /*#__PURE__*/React.createElement(EditField, {
       label: "Expiry"
     }, /*#__PURE__*/React.createElement("input", {
-      disabled: !canEdit,
+      disabled: !canEdit || isHealthType(rec.idType),
       type: "date",
       value: rec.idExpiry || '',
       onChange: e => setField('idExpiry', e.target.value),
@@ -25615,8 +26020,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, " \xB7 ", 1 + (rec.ids || []).length, " on file")), /*#__PURE__*/React.createElement(KV, {
       icon: "id",
       label: corp ? 'Document' : 'ID type',
-      value: rec.idType
-    }), /*#__PURE__*/React.createElement(KV, {
+      value: IDT.shownIdType(rec.idType)
+    }), !isHealthType(rec.idType) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
       value: rec.idNum,
@@ -25651,8 +26056,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, "Additional ID ", i + 1), /*#__PURE__*/React.createElement(KV, {
       icon: "id",
       label: "Type",
-      value: d.type
-    }), /*#__PURE__*/React.createElement(KV, {
+      value: IDT.shownIdType(d.type)
+    }), !isHealthType(d.type) && /*#__PURE__*/React.createElement(KV, {
       icon: "scroll",
       label: "Number",
       value: d.num,
@@ -25970,7 +26375,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'attention' && isVerified(s)) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
-      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${r.idNum || ''} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
+      /* A health number is never searched, even one still cached. */
+      const idNum = isHealthType(r.idType) ? '' : r.idNum || '';
+      const blob = `${c.name} ${r.email || ''} ${r.phone || ''} ${idNum} ${r.occupation || ''} ${r.business || ''} ${r.contactName || ''} ${files}`.toLowerCase();
       return blob.includes(q.toLowerCase());
     }), [list, q, filter, settings]);
     const onClick = name => {
@@ -26352,12 +26759,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }) {
     const [phase, setPhase] = useState('loading');
     const [file, setFile] = useState(rec || {});
+    const startsFresh = !!(rec && isHealthType(rec.idType));
     const [draft, setDraft] = useState({
-      idType: rec && rec.idType || '',
-      idNum: rec && rec.idNum || '',
-      idIssued: rec && rec.idIssued || '',
-      idExpiry: rec && rec.idExpiry || '',
-      photo: rec && rec.photo || null
+      idType: !startsFresh && rec && rec.idType || '',
+      idNum: !startsFresh && rec && rec.idNum || '',
+      idIssued: !startsFresh && rec && rec.idIssued || '',
+      idExpiry: !startsFresh && rec && rec.idExpiry || '',
+      photo: !startsFresh && rec && rec.photo || null
     });
     const [err, setErr] = useState('');
     const [leaving, setLeaving] = useState(false);
@@ -26416,12 +26824,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             });
             setClients(prev => shared.project(prev));
             setFile(desk);
+            /* A health card on file is not the ID being recorded. Its
+               dates are not carried into the new one. */
+            const fresh = isHealthType(desk.idType);
             setDraft({
-              idType: desk.idType || '',
-              idNum: desk.idNum || '',
-              idIssued: desk.idIssued || '',
-              idExpiry: desk.idExpiry || '',
-              photo: desk.photo || null
+              idType: fresh ? '' : desk.idType || '',
+              idNum: fresh ? '' : desk.idNum || '',
+              idIssued: fresh ? '' : desk.idIssued || '',
+              idExpiry: fresh ? '' : desk.idExpiry || '',
+              photo: fresh ? null : desk.photo || null
             });
           } else {
             setFile(rec || {});
@@ -26444,6 +26855,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setErr('Type, number, and expiry are required.');
         return;
       }
+      if (isHealthType(draft.idType)) {
+        setErr(IDT.HEALTH_CARD_REFUSAL);
+        return;
+      }
       setLeaving(true);
       setErr('');
       const payload = {
@@ -26464,7 +26879,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             const created = await shared.open(name, payload);
             if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
             clientId = created.clientId;
-          } else if (file.primaryDocumentId && api) {
+          } else if (file.primaryDocumentId && api && !isHealthType(file.idType)) {
             await api.updateDocument(clientId, file.primaryDocumentId, {
               docType: payload.idType,
               docNumber: payload.idNum,
@@ -26582,7 +26997,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.flag
       }
-    }, err), phase === 'edit' && /*#__PURE__*/React.createElement(KycEditor, {
+    }, err), phase === 'edit' && isHealthType(file && file.idType) && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mb-3",
+      style: {
+        color: CD.ink
+      }
+    }, IDT.HEALTH_CARD_SHOWN, ". ", IDT.HEALTH_CARD_REFUSAL), phase === 'edit' && /*#__PURE__*/React.createElement(KycEditor, {
       rec: shown,
       set: set,
       kind: file && file.kind || 'individual',
@@ -27214,7 +27634,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
-  const ID_TYPES = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Business Number'];
+  /* The catalogue's types (shared/id-document-types.js), the list the
+     server checks a save against. A health card is not one of them. */
+  const ID_TYPES = window.CDOS.idTypes().pickerLabels('person').concat(window.CDOS.idTypes().pickerLabels('business'));
 
   /* ---------- small shared UI ---------- */
   function StatCard({
@@ -27533,8 +27955,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const idExpired = rec && rec.idExpiry && rec.idExpiry < businessDate();
     const idOk = !idMissing && !idExpired;
     const idTone = idOk ? CD.green : CD.flag;
-    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID verified';
-    const maskedId = rec && rec.idNum ? '••••' + String(rec.idNum).slice(-3) : '';
+    /* Papers on file, not a verification: nothing on this desk checks
+       an ID with a provider. A health number is never shown, even masked. */
+    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID on file';
+    const maskedId = rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? '••••' + String(rec.idNum).slice(-3) : '';
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -28294,8 +28718,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         zIndex: 20
       }
     }, shownNames.map(n => {
-      const st = !clients[n] || !clients[n].idType ? 'missing ID' : clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'verified';
-      const ok = st === 'verified';
+      const st = !clients[n] || !clients[n].idType || !clients[n].idNum ? 'missing ID' : clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'ID on file';
+      const ok = st === 'ID on file';
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onClick: () => pickClient(n),
@@ -42976,6 +43400,30 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
      country line. */
   const fullAddr = rec => [rec.address, rec.city, rec.province, rec.postal, rec.country && rec.country !== homeCountry() ? rec.country : ''].filter(Boolean).join(', ');
 
+  /* The identifier a filing may start from: the client's ID, only when
+     its type is one the catalogue (shared/id-document-types.js) accepts
+     as ID and it has a number. A health card is never copied, and
+     neither is a type the catalogue does not list. Otherwise the three
+     identifier fields are left empty for the filer to type from the
+     document in front of them. */
+  function filingIdentifier(rec) {
+    rec = rec || {};
+    const num = String(rec.idNum || '').trim();
+    if (!num || !window.CDOS.idTypes().isAcceptedIdType(rec.idType)) return {
+      type: '',
+      num: '',
+      jurisdiction: ''
+    };
+    const jurisdiction = rec.province ? `${rec.province}, ${rec.country || homeCountry()}` : rec.country || '';
+    return {
+      type: rec.idType,
+      num,
+      jurisdiction
+    };
+  }
+  const ID_TYPE_HINT = 'Never a SIN. Never a health card.';
+  const ID_NUMBER_HINT = 'Document number. Never a SIN, never a health number.';
+
   /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
      each field: { id, label, cat, source, value, prompt, hint, missing } */
@@ -43024,7 +43472,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : subj.country || '';
+      const subjId = filingIdentifier(subj);
       const win = settings && +settings.structuringDays || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [F('re_num', 'Reporting entity number', '*', 'CONFIG', settings.reportingEntityNumber, {
@@ -43043,11 +43491,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
         hint: 'YYYY-MM-DD'
       }), F('su_occ', 'Occupation (descriptive)', '*', 'KYC', subj.occupation, {
         hint: 'e.g. "retail store manager"'
-      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), F('su_idtype', 'Identifier type', '*', 'KYC', subj.idType, {
-        hint: 'Never a SIN'
-      }), F('su_idnum', 'Identifier number', '*', 'KYC', subj.idNum, {
-        hint: 'Document number — never a SIN'
-      }), F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjJur, {
+      }), F('su_employer', 'Name of employer', '', 'KYC', subj.employer), F('su_idtype', 'Identifier type', '*', 'KYC', subjId.type, {
+        hint: ID_TYPE_HINT
+      }), F('su_idnum', 'Identifier number', '*', 'KYC', subjId.num, {
+        hint: ID_NUMBER_HINT
+      }), F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjId.jurisdiction, {
         hint: 'Province / state + country that issued the ID'
       }), F('su_tel', 'Telephone', '', 'KYC', subj.phone), F('su_rel', 'Relationship to your business', '', 'PROMPT', '', {
         prompt: true,
@@ -43149,7 +43597,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : cond.country || '';
+      const condId = filingIdentifier(cond);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [F('sa_amount', 'Amount (starting action)', '*', 'LEDGER', num(r.inAmt)), F('sa_currency', 'Currency — report ORIGINAL, do not convert', '*', 'LEDGER', r.inCcy), F('sa_cadtest', `${cur}-equivalent (threshold test only)`, '', 'ENGINE', fmt(cad, cur)), F('sa_obtained', 'How was the cash obtained?', '', cap && cap.source ? 'LEDGER' : 'PROMPT', cap && cap.source ? cap.source : '', cap && cap.source ? {} : {
@@ -43177,11 +43625,11 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
           hint: 'YYYY-MM-DD'
         }), F('cd_occ', 'Occupation (descriptive)', '*', 'KYC', cond.occupation, {
           hint: 'e.g. "retail store manager"'
-        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), F('cd_idtype', 'Identifier type', '*', 'KYC', cond.idType, {
-          hint: 'Never a SIN'
-        }), F('cd_idnum', 'Identifier number', '*', 'KYC', cond.idNum, {
-          hint: 'Document number — never a SIN'
-        }), F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', idJur, {
+        }), F('cd_employer', 'Name of employer', '', 'KYC', cond.employer), F('cd_idtype', 'Identifier type', '*', 'KYC', condId.type, {
+          hint: ID_TYPE_HINT
+        }), F('cd_idnum', 'Identifier number', '*', 'KYC', condId.num, {
+          hint: ID_NUMBER_HINT
+        }), F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', condId.jurisdiction, {
           hint: 'Province / state + country that issued the ID'
         }), F('cd_tel', 'Telephone', '', 'KYC', cond.phone), {
           divider: 'Third party — acting on behalf of someone else?'
@@ -50855,8 +51303,9 @@ ${snap}`;
           const tx = data.live.filter(r => r.customer === n);
           const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
           const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
-          const st = !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'verified';
-          return [n, c.idType || '', c.idNum || '', c.idExpiry || '', st, tx.length, csvMoney(v)];
+          const idNum = kycIdNumber(c);
+          const st = !c.idType || !idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'ID on file';
+          return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
       }
       return [];
@@ -51747,7 +52196,7 @@ ${snap}`;
             fontSize: 12,
             color: CD.faint
           }
-        }, "All active clients verified.") : data.kycGaps.map(k => /*#__PURE__*/React.createElement("div", {
+        }, "Every deal that needed an ID has one on file.") : data.kycGaps.map(k => /*#__PURE__*/React.createElement("div", {
           key: k.customer,
           style: {
             display: 'flex',
@@ -52094,9 +52543,9 @@ ${snap}`;
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = n => {
           const c = clients[n] || {};
-          if (!c.idType || !c.idNum) return ['missing ID', CD.flag, CD.flagSoft];
+          if (!c.idType || !kycIdNumber(c)) return ['missing ID', CD.flag, CD.flagSoft];
           if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft];
-          return ['verified', CD.green, CD.greenSoft];
+          return ['ID on file', CD.green, CD.greenSoft];
         };
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Client & KYC Register",
@@ -52149,14 +52598,14 @@ ${snap}`;
               ...tdS,
               color: CD.mute
             }
-          }, c.idType || '—'), /*#__PURE__*/React.createElement("td", {
+          }, kycIdType(c) || '—'), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               fontFamily: 'Space Mono, monospace',
               fontSize: 11,
               color: CD.mute
             }
-          }, c.idNum || '—'), /*#__PURE__*/React.createElement("td", {
+          }, kycIdNumber(c) || '—'), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               color: c.idExpiry && c.idExpiry < businessDate() ? CD.flag : CD.mute
@@ -53402,6 +53851,17 @@ ${snap}`;
      localStorage. See docs/GENERATED_DOCUMENTS.md.
      ============================================================ */
 
+  /* The ID cells of the Client & KYC Register, shared by the sheet and
+     the CSV so the two cannot differ. A health card is named as not
+     accepted and its number is never in either. */
+  function kycIdType(client) {
+    return window.CDOS.idTypes().shownIdType((client || {}).idType);
+  }
+  function kycIdNumber(client) {
+    const c = client || {};
+    if (window.CDOS.idTypes().isHealthCardType(c.idType)) return '';
+    return c.idNum || '';
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Reports,
     ReportHistory
@@ -61124,7 +61584,14 @@ window.CDOS_PERSIST = (function () {
     }
     return out;
   }
+  /* A health number is not saved and is not kept. cdos-backend.js
+     removes one from this browser's copies; this runs it again before a
+     save is built and after the server's copy is written in. */
+  function scrubHealth() {
+    if (window.CDOS && typeof window.CDOS.scrubLocalHealthNumbers === 'function') window.CDOS.scrubLocalHealthNumbers();
+  }
   function snapshot() {
+    scrubHealth();
     var o = {};
     keys().forEach(function (k) { o[k] = localStorage.getItem(k); });
     return o;
@@ -61158,6 +61625,7 @@ window.CDOS_PERSIST = (function () {
     Object.keys(obj || {}).forEach(function (k) {
       if (KEY_RE.test(k) && obj[k] != null) localStorage.setItem(k, obj[k]);
     });
+    scrubHealth();
   }
 
   /* Missing, null, or "" is not a saved shop. */

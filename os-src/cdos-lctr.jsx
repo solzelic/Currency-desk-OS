@@ -104,6 +104,22 @@
      country line. */
   const fullAddr = (rec) => [rec.address, rec.city, rec.province, rec.postal, (rec.country && rec.country !== homeCountry()) ? rec.country : ''].filter(Boolean).join(', ');
 
+  /* The identifier a filing may start from: the client's ID, only when
+     its type is one the catalogue (shared/id-document-types.js) accepts
+     as ID and it has a number. A health card is never copied, and
+     neither is a type the catalogue does not list. Otherwise the three
+     identifier fields are left empty for the filer to type from the
+     document in front of them. */
+  function filingIdentifier(rec) {
+    rec = rec || {};
+    const num = String(rec.idNum || '').trim();
+    if (!num || !window.CDOS.idTypes().isAcceptedIdType(rec.idType)) return { type: '', num: '', jurisdiction: '' };
+    const jurisdiction = rec.province ? `${rec.province}, ${rec.country || homeCountry()}` : (rec.country || '');
+    return { type: rec.idType, num, jurisdiction };
+  }
+  const ID_TYPE_HINT = 'Never a SIN. Never a health card.';
+  const ID_NUMBER_HINT = 'Document number. Never a SIN, never a health number.';
+
   /* ---------- field map (the form's own order) ----------
      Returns ordered blocks; each block has instances (1, or repeat per txn);
      each field: { id, label, cat, source, value, prompt, hint, missing } */
@@ -140,7 +156,7 @@
     if (report.kind === regime.strCode) {
       const subj = partyName(report.subject);
       const sp = nameParts(report.subject);
-      const subjJur = subj.province ? `${subj.province}, ${subj.country || homeCountry()}` : (subj.country || '');
+      const subjId = filingIdentifier(subj);
       const win = (settings && +settings.structuringDays) || 7;
       const strContact = [settings.fintracContactName, settings.bizPhone, settings.bizEmail].filter(Boolean).join(' · ');
       const strGeneral = [
@@ -159,9 +175,9 @@
         F('su_dob', 'Date of birth', '*', 'KYC', subj.dob, { hint: 'YYYY-MM-DD' }),
         F('su_occ', 'Occupation (descriptive)', '*', 'KYC', subj.occupation, { hint: 'e.g. "retail store manager"' }),
         F('su_employer', 'Name of employer', '', 'KYC', subj.employer),
-        F('su_idtype', 'Identifier type', '*', 'KYC', subj.idType, { hint: 'Never a SIN' }),
-        F('su_idnum', 'Identifier number', '*', 'KYC', subj.idNum, { hint: 'Document number — never a SIN' }),
-        F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjJur, { hint: 'Province / state + country that issued the ID' }),
+        F('su_idtype', 'Identifier type', '*', 'KYC', subjId.type, { hint: ID_TYPE_HINT }),
+        F('su_idnum', 'Identifier number', '*', 'KYC', subjId.num, { hint: ID_NUMBER_HINT }),
+        F('su_idjur', 'Identifier jurisdiction', '*', 'KYC', subjId.jurisdiction, { hint: 'Province / state + country that issued the ID' }),
         F('su_tel', 'Telephone', '', 'KYC', subj.phone),
         F('su_rel', 'Relationship to your business', '', 'PROMPT', '', { prompt: true, hint: 'e.g. "walk-in since 2023, regular FX customer"' }),
       ];
@@ -239,7 +255,7 @@
       // Section 3 — starting action + conductor (the cash in)
       const cond = partyName(r.customer);
       const np = nameParts(r.customer);
-      const idJur = cond.province ? `${cond.province}, ${cond.country || homeCountry()}` : (cond.country || '');
+      const condId = filingIdentifier(cond);
       startInstances.push({
         label: `${r.ref} · cash in`,
         fields: [
@@ -264,9 +280,9 @@
           F('cd_dob', 'Date of birth', '*', 'KYC', cond.dob, { hint: 'YYYY-MM-DD' }),
           F('cd_occ', 'Occupation (descriptive)', '*', 'KYC', cond.occupation, { hint: 'e.g. "retail store manager"' }),
           F('cd_employer', 'Name of employer', '', 'KYC', cond.employer),
-          F('cd_idtype', 'Identifier type', '*', 'KYC', cond.idType, { hint: 'Never a SIN' }),
-          F('cd_idnum', 'Identifier number', '*', 'KYC', cond.idNum, { hint: 'Document number — never a SIN' }),
-          F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', idJur, { hint: 'Province / state + country that issued the ID' }),
+          F('cd_idtype', 'Identifier type', '*', 'KYC', condId.type, { hint: ID_TYPE_HINT }),
+          F('cd_idnum', 'Identifier number', '*', 'KYC', condId.num, { hint: ID_NUMBER_HINT }),
+          F('cd_idjur', 'Identifier jurisdiction', '*', 'KYC', condId.jurisdiction, { hint: 'Province / state + country that issued the ID' }),
           F('cd_tel', 'Telephone', '', 'KYC', cond.phone),
           { divider: 'Third party — acting on behalf of someone else?' },
           F('tp_det', 'Third-party determination made? (Y/N)', '†', cap ? 'LEDGER' : 'PROMPT', cap ? (cap.thirdParty ? 'Yes' : 'No') : '', cap ? {} : { prompt: true, hint: 'Did you ask if they act for another?' }),

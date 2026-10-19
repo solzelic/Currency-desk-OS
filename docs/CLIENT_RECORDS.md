@@ -192,14 +192,109 @@ one that drives the desk's KYC standing.
 
 `verification_status` is derived from the documents, not typed:
 
-- no document with a number → `unverified`
-- the primary document is past its expiry → `expired`
+- no document with a number, leaving out health cards → `unverified`
+- the primary document, when it is not a health card, is past its
+  expiry → `expired`
 - otherwise → `identified`
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of
 adding or removing rows in this table can grant that, and nothing here
 may quietly take it away.
+
+The till's counter record (`ledger_customers.id_status`) leaves health
+cards out the same way: a file whose only numbered document is a health
+card is `missing`. A file stored as `identified` before this rule reads
+as `unverified` until its next document write stores that. The posting
+gate itself is unchanged; PR #108 owns it.
+
+## ID-document types
+
+One catalogue, `shared/id-document-types.js`. The server requires it
+(`server/src/clients/id-document-types.ts` only adds types) and the desk
+shell loads the same file as a script before `cdos-backend.js`;
+`scripts/build-os.mjs` puts it in `web/app/os.js`. The uncompiled shell
+fetches `/shared/id-document-types.js`, which is on the static
+allow-list only while `web/app/index.html` is absent, like `os-src/`.
+
+Each type has a `code`, the `label` the desk shows and the server
+stores, a `kind` (`person` or `business`), `photo`, `mayLackExpiry`,
+`acceptedAsId`, and `aliases`. A name matches a whole type after one
+fold, the same in JavaScript and in Postgres: lower case, apostrophes
+dropped, every other run of characters outside a–z and 0–9 turned into
+one space.
+
+| label | kind | photo | may lack expiry | aliases (some) |
+|---|---|---|---|---|
+| Driver's Licence | person | yes | no | Driver's License, Drivers Licence |
+| Passport | person | yes | no | |
+| Provincial/Territorial Photo ID | person | yes | no | Provincial ID, Territorial ID, Ontario Photo Card |
+| Permanent Resident Card | person | yes | no | PR Card |
+| Citizenship Card | person | yes | yes | Canadian Citizenship Card |
+| BC Services Card | person | yes | no | BC Services Card with photo |
+| Health Card | person | no | no | about forty provincial names; **not accepted as ID** |
+| Business Number | business | no | yes | BN |
+| Incorporation Certificate | business | no | yes | Certificate of Incorporation |
+| Master Business Licence | business | no | yes | Master Business License |
+| Articles of Incorporation | business | no | yes | |
+
+The **BC Services Card** is a government photo ID and FINTRAC accepts
+it. It is not on the health-card list. Neither is a bare "Medicare" or
+"Medicare card", because that is also the name of Australia's card.
+
+A document add or a type change (`POST|PATCH
+/api/clients/:clientId/documents`) stores the catalogue label, so
+"PR Card" is stored as "Permanent Resident Card". A type the catalogue
+does not list is **422** `{ error: "ID_TYPE_NOT_IN_CATALOGUE", detail }`,
+and the detail names the accepted types. "Not stated" is not a type: it
+is the placeholder the desk writes when Add ID opens a row before a type
+is picked, and it is still accepted. The response also carries `code`
+and `message`, the shape every other refusal on these routes has.
+
+A row already stored under any other name reads as it was stored. This
+change rewrites no stored row. Per-country "Accepted IDs" settings come
+in a follow-up change; until then the catalogue is the same for every
+desk, as the desk's own picker already was.
+
+## Health card numbers
+
+A health card is not ID, and its number is not kept, shown, searched,
+or sent. In Ontario, the Health Cards and Numbers Control Act, 1991
+bars a business outside health care from collecting or using a health
+number. FINTRAC says not to use a health card where provincial law
+prohibits it. The desk refuses them everywhere, in every province and
+every country. That is stricter than the law, which is allowed.
+
+- **A new one is refused.** Adding a document whose type is a health
+  card, or changing a type to one, is **422** `{ error:
+  "HEALTH_CARD_NOT_ID", detail: "Health cards can't be used as ID.
+  Record a current photo ID." }`. Nothing is written.
+- **A stored one cannot be edited.** A new number would be a health
+  number newly stored, and a new type would put the stored number under
+  another document's name. It can be removed, and a new primary document
+  can be added beside it; the health card is then an additional row.
+- **No read returns the number.** The `docNumber` key is absent, not
+  null and not masked, on one client, the list, and name lookup. The
+  type, issuing jurisdiction, dates, and scan flag stay.
+- **The saved desk does not carry one.** `/api/tenant/state` removes a
+  health number from the document on save, on read, and from a conflict
+  body. The desk removes one from every `localStorage` value when it
+  loads, before a save is built, and after the server's copy is written
+  in. Unchanged values are kept byte for byte. The desk stores nothing in
+  IndexedDB, so there is nothing there to clean.
+- **The desk never shows or copies one.** A health card on the client
+  file reads "Health card — not accepted as ID", with no Number row, on
+  the file, the quick card, the editors, and the printable report. The
+  Client & KYC Register sheet and its CSV leave the number cell empty.
+  Client search does not match it. LCTR and STR identifier fields are
+  filled only from a type the catalogue accepts; otherwise they are
+  empty for the filer to type from the document.
+
+**The stored number is not blanked here.** It stays in
+`desk_client_identity_documents.doc_number`, and in any backup, until
+the owner runs the redaction tool in PR #134, which is a separate
+change. Scans are unchanged: a health-card scan, if one was taken, is
+still opened only through the audited reveal.
 
 ## Scans, and the photograph
 
@@ -404,6 +499,23 @@ every time.
   second till and a second branch and *not* from another tenant,
   documents as separate rows, the audit row a reveal writes, the
   identifying/signal boundary, and migration 019 run over a real blob.
+- `server/tests/id-document-types.test.ts` — the catalogue: every type
+  and its fields, aliases, the BC Services Card accepted, the health
+  names refused and the near-misses not matched, the scrub, and the
+  shell and bundle loading the one file.
+- `server/tests/id-catalogue.postgres.test.ts` — the two 422s over
+  HTTP with their exact bodies, business types and the placeholder
+  accepted, legacy health and unknown-type rows read without rewriting,
+  no health number in any read or lookup, a stored health card not
+  editable, the counter record `missing` for a health card only, the
+  Postgres fold equal to the JavaScript fold, and the tenant-state
+  scrub on save, read, conflict, and a teller's read.
+- `tests/e2e/health-card-seam.spec.ts` — a health card already in the
+  database and in this browser's saved copy: after the desk loads the
+  number is not in `localStorage`, search does not find it, the file
+  says "Health card — not accepted as ID" with no number, the pickers
+  offer the BC Services Card and never a health card, and an LCTR
+  identifier is empty for a health card and filled for a passport.
 - `tests/e2e/client-records-seam.spec.ts` — a client created through the
   desk's own screen and then found on the server; a rename after a posted
   deal, with the deal still resolving and the old name still finding

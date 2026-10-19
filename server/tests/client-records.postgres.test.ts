@@ -376,6 +376,7 @@ postgres("the desk's customer file, on the server", () => {
       expiresOn: "2031-08-14",
       scanDataUrl: SCAN,
     });
+    /* Typed as the desk's old short name. Stored as the catalogue's. */
     const withBoth = await records.addDocument(TILL_1, clientId, {
       docType: "PR Card",
       docNumber: "PR-88120",
@@ -390,7 +391,7 @@ postgres("the desk's customer file, on the server", () => {
       "SELECT doc_type, is_primary FROM desk_client_identity_documents WHERE client_id=$1 ORDER BY is_primary DESC",
       [clientId],
     );
-    expect(stored.rows.map((r) => r.doc_type)).toEqual(["Passport", "PR Card"]);
+    expect(stored.rows.map((r) => r.doc_type)).toEqual(["Passport", "Permanent Resident Card"]);
     /* Exactly one drives the desk's KYC standing. The old shape let a
        top-level ID and an array entry both claim to be it. */
     expect(stored.rows.filter((r) => r.is_primary)).toHaveLength(1);
@@ -468,10 +469,10 @@ postgres("the desk's customer file, on the server", () => {
     /* A document with no scan says so rather than returning nothing that
        looks like an empty picture. */
     const typedOnly = await records.addDocument(TILL_1, clientId, {
-      docType: "Health Card",
-      docNumber: "H-1",
+      docType: "Citizenship Card",
+      docNumber: "C-1",
     });
-    const bare = typedOnly.documents.find((d) => d.docType === "Health Card")!;
+    const bare = typedOnly.documents.find((d) => d.docType === "Citizenship Card")!;
     await expect(
       records.revealDocumentScan(TILL_1, clientId, bare.documentId as string),
     ).rejects.toMatchObject({ code: "SCAN_NOT_ON_FILE" });
