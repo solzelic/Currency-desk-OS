@@ -153,3 +153,96 @@ export function staffRuleChanges(stored: unknown, incoming: unknown, knownStaffI
   }
   return { guarded, removed };
 }
+
+export const OWNER_PIN_REQUIRE = "Only the owner can change whether this person needs a PIN.";
+export const OWNER_PIN_SWITCH = "Only the owner can change whether a PIN is needed to switch accounts.";
+export const OWNER_PIN_TILL = "Only the owner can change whether a PIN is needed to take a till.";
+export const OWNER_PIN_VOID = "Only the owner can change whether a PIN is needed to void a deal.";
+export const OWNER_PIN_HASH = "Use Issue a new PIN to give someone a new PIN.";
+export const OWNER_PIN_MUST = "Only the owner can change whether this person must pick a new PIN.";
+export const OWNER_PERMISSION_GRANT = "Only the owner can grant that permission.";
+
+const SWITCH_MSG: Record<string, string> = {
+  pinOnSwitch: OWNER_PIN_SWITCH,
+  pinOnTill: OWNER_PIN_TILL,
+  pinOnVoid: OWNER_PIN_VOID,
+};
+
+function differs(prior: Record<string, unknown> | undefined, next: Record<string, unknown>, key: string): boolean {
+  const had = !!prior && has(prior, key);
+  const hasNext = has(next, key);
+  if (!had && !hasNext) return false;
+  if (!had || !hasNext) return true;
+  return stable(prior![key]) !== stable(next[key]);
+}
+
+function tillPinValue(value: unknown): boolean {
+  if (value === "0000" || value === 0) return true;
+  if (typeof value === "string") return /^\d{4}$/.test(value);
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 9999;
+}
+
+/* True when this save turns compliance:thresholds on. That permission
+   is not what makes someone the owner. */
+function grantsOwnerPermission(before: Record<string, unknown> | undefined, emp: Record<string, unknown>): boolean {
+  for (const field of ["caps", "permissions"]) {
+    if (!has(emp, field)) continue;
+    const next = asRecord(emp[field]);
+    const prev = asRecord(before?.[field]);
+    if (next?.["compliance:thresholds"] === true && prev?.["compliance:thresholds"] !== true) return true;
+  }
+  return false;
+}
+
+function hashChanged(prior: Record<string, unknown> | undefined, next: Record<string, unknown>): boolean {
+  const keys = new Set([...Object.keys(prior ?? {}), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (!/^pinhash$/i.test(key)) continue;
+    if (!differs(prior, next, key)) continue;
+    if (has(next, key) && tillPinValue(next[key])) continue;
+    return true;
+  }
+  return false;
+}
+
+function readIncomingSettings(incoming: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = incoming.cdos_settings;
+  if (typeof raw === "string") {
+    try {
+      return asRecord(JSON.parse(raw) as unknown);
+    } catch (error) {
+      if (error instanceof SyntaxError) return null;
+      throw error;
+    }
+  }
+  return asRecord(raw);
+}
+
+/* Require PIN, the switches, a non-digit pinHash, pinMustChange, and
+   granting compliance:thresholds. A four digit pin stays with the
+   snapshot strip. */
+export function pinOwnerRefusal(stored: unknown, incoming: Record<string, unknown>): string | null {
+  const prior = readSettings(stored);
+  const settings = readIncomingSettings(incoming);
+  const priorEmp = new Map<string, Record<string, unknown>>();
+  for (const emp of employeesOf(prior)) {
+    const code = codeOf(emp);
+    if (code && !priorEmp.has(code)) priorEmp.set(code, emp);
+  }
+  for (const emp of employeesOf(settings)) {
+    const before = priorEmp.get(codeOf(emp) ?? "");
+    if (grantsOwnerPermission(before, emp)) return OWNER_PERMISSION_GRANT;
+    if ((before?.requirePin === false) !== (emp.requirePin === false)) return OWNER_PIN_REQUIRE;
+    if (differs(before, emp, "pinMustChange")) return OWNER_PIN_MUST;
+    if (hashChanged(before, emp)) return OWNER_PIN_HASH;
+  }
+  if (hashChanged(prior ?? undefined, settings ?? {})) return OWNER_PIN_HASH;
+  const storedRoot = asRecord(stored) ?? undefined;
+  if (hashChanged(storedRoot, incoming)) return OWNER_PIN_HASH;
+  if (settings) {
+    for (const key of ["pinOnSwitch", "pinOnTill", "pinOnVoid"] as const) {
+      if (differs(prior ?? undefined, settings, key)) return SWITCH_MSG[key] ?? OWNER_PIN_SWITCH;
+    }
+  }
+  return null;
+}
