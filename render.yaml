@@ -23,6 +23,10 @@
 #                   Never put it in this file, Git, or browser code.
 #   STRIPE_WEBHOOK_SECRET — signing secret for this service's Stripe webhook.
 #                   Create the endpoint only after both secrets are saved.
+#   PERSONA_API_KEY, PERSONA_WEBHOOK_SECRET — Persona identity checks. Both
+#                   or neither. The webhook secret is the signing secret of
+#                   the Persona webhook pointed at /api/webhooks/persona.
+#   PERSONA_TEMPLATE_ID — the Persona inquiry template (itmpl_…). Optional.
 #
 # Hosted customer sites: each customer's storefront serves at /sites/<slug>
 # (York FX: /sites/yorkfx). When a customer hands off their domain, the owner
@@ -145,3 +149,14 @@ services:
         sync: false
       - key: STRIPE_PRICE_PREMIUM_ANNUAL
         value: price_1TyKx7AWdRTG9PX9CL2NjTPK
+      # Persona identity checks. Off until PERSONA_API_KEY and
+      # PERSONA_WEBHOOK_SECRET are both set: the desk says "Persona is not
+      # connected yet." and POST /api/webhooks/persona answers 503.
+      # PERSONA_TEMPLATE_ID is the inquiry template the desk will start
+      # checks with; nothing reads it until that is built.
+      - key: PERSONA_API_KEY
+        sync: false
+      - key: PERSONA_WEBHOOK_SECRET
+        sync: false
+      - key: PERSONA_TEMPLATE_ID
+        sync: false

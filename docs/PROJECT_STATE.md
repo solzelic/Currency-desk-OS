@@ -72,6 +72,33 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Persona ID checks, off until the keys are set.** `GET /api/kyc/persona`
+  (any signed-in role) answers connected only when `PERSONA_API_KEY` and
+  `PERSONA_WEBHOOK_SECRET` are both set. Until then the client file's
+  identity panel and Settings → Billing say "Persona is not connected
+  yet." and `POST /api/webhooks/persona` answers 503. With both set, the
+  webhook checks `Persona-Signature` (`t=`, `v1=` HMAC-SHA256 over
+  `t.rawBody`, either set during a secret rotation) before it parses the
+  body. A bad signature, or one more than five minutes from now, is 400
+  and stores nothing. `inquiry.created`, `started`, `completed`,
+  `approved`, `declined`, `marked-for-review`, `failed`, and `expired`
+  are stored once per Persona event id in `persona_inquiry_events`
+  (migration 048, append-only on Postgres); a replay or a retry answers
+  200 `duplicate: true` and writes nothing. Other events are 200
+  `ignored`. A row is linked to a client file only when Persona's
+  reference-id is a `cli_` id that exists, and then
+  `kyc.persona.recorded` is written on that desk's audit log. The row
+  and the audit hold ids, the event, the status, and at most one ID
+  type: `dl`, `pp`, and `pr` map to Driver's Licence, Passport, and
+  Permanent Resident Card, only when the catalogue accepts them. A
+  health card (`hic`) and every other class are stored as no type, and
+  the database refuses `health_card`. No name, date of birth, address,
+  document number, or health number is read, stored, audited, or
+  logged. The result does not change `verification_status`, add an ID
+  document, or bill anything (`reportKycUsage` is not called). The desk
+  does not start a check yet: `PERSONA_TEMPLATE_ID` is read for that
+  next job and nothing uses it. This replaces closed draft #96.
+
 - **Public quote replies omit the visitor's phone and name.** Creating a quote returns only the ref, the status, the expiry, and the amounts (`from`, `to`, `amount`, `receive`). Confirming returns only the ref, the status, and the expiry. After confirm the Visit page shows "Show ref <ref> at the desk.", the same line for every text status, because create no longer returns the SMS status. The footer says the held rate is honoured at the desk with this ref. The quote card heading, hint, options, buttons, held line, confirmed line, ref line, limit line, error lines, and footer have no em dash and no en dash. The page title, the meta description, and the location lede still have em dashes. That is a Head of Design follow-up and is not in this change. The customer confirm text still has an em dash and a double period. That text is its own follow-up and is not changed here. The hold time is 12-hour, like "12:22 am". A confirm inside the cleanup minute does not walk the buckets again. The next confirm after that minute does. The confirmation text goes out only on the first confirm. A shop allows 30 confirms a minute, and only a real site is counted. One client address allows 30 confirms a minute, taken from `clientIp`. Over the limit, the reply and the Visit page both say "Too many tries. Wait a minute and try again." A request with no client address gets a plain error, not an internal sentence. Old rate buckets are dropped after their window, and that walk runs at most once a minute. Production presents every request as 127.0.0.1, so that per-IP bucket is shared until loopback handling in `clientIp` changes. The smaller replies are what stop a guessed ref from revealing who asked. The short Q- ref can still be guessed. An unguessable confirm token is a later change and is not in this one.
 
 - **One ID-type catalogue, and no health card numbers.** The types a
@@ -711,6 +738,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-19**, Persona ID checks. Off until `PERSONA_API_KEY` and `PERSONA_WEBHOOK_SECRET` are both set. A signed Persona webhook at `/api/webhooks/persona` is stored once per event id, linked to the client file when the reference is a `cli_` id that exists, and audited as `kyc.persona.recorded`, without the name, the document number, or a health number. A bad or stale signature is 400. A Persona ID type is stored only as a catalogue type the catalogue accepts; a health card is never stored. The client file is not marked verified and nothing is billed. Migration 048. 041 is still claimed by open draft #132, 042 by #130, and 043 by #138.
 
 **2026-10-19**, plan changes in the Stripe portal. The plan on a subscription is read from its price; the `currencydesk_plan` label stamped at checkout is only a fallback, because it is stale after a portal upgrade or downgrade. A paid invoice sets the shop's plan from the price it charged for (the positive line), so it no longer depends on `customer.subscription.updated` arriving first. A subscription update that is `active` (or `trialing`) with no `pending_update` also sets the shop's plan: the portal does not move the price until an upgrade is paid.
 

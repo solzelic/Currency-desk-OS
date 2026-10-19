@@ -194,8 +194,40 @@
   function setProvider(name) { PROVIDER = (name || 'Persona').trim() || 'Persona'; try { localStorage.setItem(PKEY, PROVIDER); } catch (e) {} listeners.forEach(l => l()); }
   const getProvider = () => PROVIDER;
   /* The chooser names Persona. Nothing is sent. The phone sheet hides
-     the paid verify while this is false. */
+     the paid verify while this is false. It stays false even when the
+     server has both Persona secrets: the desk does not start a check
+     yet, it only records the results Persona sends. */
   const personaConnected = () => false;
+
+  /* What the server says about Persona: connected only when
+     PERSONA_API_KEY and PERSONA_WEBHOOK_SECRET are both set. Read once,
+     the first time a signed-in screen asks. Until the answer arrives, or
+     when it fails, the desk says Persona is not connected. */
+  const PERSONA_OFF = { connected: false, message: 'Persona is not connected yet.' };
+  let personaStatus = PERSONA_OFF;
+  let personaAsked = false;
+  function askPersona() {
+    if (personaAsked) return;
+    personaAsked = true;
+    fetch('/api/kyc/persona', { credentials: 'same-origin' })
+      .then(res => res.ok ? res.json() : null)
+      .then(body => {
+        personaStatus = body && body.connected === true
+          ? { connected: true, message: String(body.message || 'Persona is connected.') }
+          : PERSONA_OFF;
+        if (!body) personaAsked = false;
+        listeners.forEach(l => l());
+      })
+      .catch(function (err) {
+        personaAsked = false;
+        console.warn('[CurrencyDesk] Persona status not read (' + (err && err.name ? err.name : 'Error') + ')');
+      });
+  }
+  const usePersonaStatus = () => {
+    const [, force] = useState(0);
+    useEffect(() => { const l = () => force(x => x + 1); listeners.add(l); askPersona(); return () => listeners.delete(l); }, []);
+    return personaStatus;
+  };
 
   function createCheck({ subject, kind, template, channel, contact, by }) {
     const t = tmpl(template);
@@ -522,6 +554,7 @@
      ==================================================================== */
   function SubjectPanel({ name, kind, rec, by, setClients, settings }) {
     useStore();
+    const persona = usePersonaStatus();
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
@@ -544,7 +577,7 @@
         <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
         <div>
           <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself." /></div>
-          <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
+          <div className="text-[11px]" data-testid={persona.connected ? 'persona-connected' : 'persona-not-connected'} style={{ color: CD.mute }}>{persona.message}</div>
         </div>
       </div>
 
@@ -559,7 +592,7 @@
         </div>); })()}
 
       {checks.length ? <div className="space-y-1.5">{checks.map(c => <CheckRow key={c.id} check={c} />)}</div>
-        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>No verifications on file. Persona is not connected yet.</div>}
+        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>{persona.connected ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'}</div>}
     </div>);
   }
 
@@ -851,5 +884,5 @@
   // tiny spinner keyframes (once)
   if (!document.getElementById('kyc-spin-kf')) { const st = document.createElement('style'); st.id = 'kyc-spin-kf'; st.textContent = '@keyframes kycspin{to{transform:rotate(360deg)}}.kyc-spin{animation:kycspin .8s linear infinite}'; document.head.appendChild(st); }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { KYC: { TEMPLATES, summary, checksFor, setContactSink, setProvider, getProvider, personaConnected, applyPartnerCode, getPartnerRate, SendModal, SubjectPanel, PickerModal, NewContactFlow, VerificationNudge, decisionMeta, phaseMeta } });
+  window.CDOS = Object.assign(window.CDOS || {}, { KYC: { TEMPLATES, summary, checksFor, setContactSink, setProvider, getProvider, personaConnected, usePersonaStatus, applyPartnerCode, getPartnerRate, SendModal, SubjectPanel, PickerModal, NewContactFlow, VerificationNudge, decisionMeta, phaseMeta } });
 })();

@@ -765,6 +765,32 @@ export const auditEvents = pgTable(
   (t) => [index("audit_scope_idx").on(t.tenantId, t.branchId, t.at)],
 );
 
+/* One Persona webhook delivery (migration 048). Persona's event id is
+   the key, so a replayed delivery inserts nothing. client_id is set only
+   when Persona's reference-id is a client file that exists. id_type is a
+   catalogue code the catalogue accepts as ID, or null: never a health
+   card and never a type outside shared/id-document-types.js. There is
+   no column for a name, a date of birth, or a document number. */
+export const personaInquiryEvents = pgTable(
+  "persona_inquiry_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    inquiryId: text("inquiry_id").notNull(),
+    eventName: text("event_name").notNull(),
+    status: text("status").notNull(),
+    idType: text("id_type"),
+    clientId: text("client_id"),
+    tenantId: text("tenant_id"),
+    legalEntityId: text("legal_entity_id"),
+    environment: text("environment").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("persona_inquiry_events_client_idx").on(t.clientId, t.receivedAt),
+    index("persona_inquiry_events_inquiry_idx").on(t.inquiryId),
+  ],
+);
+
 /* What we have written back to somebody who messaged us.
 
    Their note lives on `enquiries`; this is our side of the thread. Kept

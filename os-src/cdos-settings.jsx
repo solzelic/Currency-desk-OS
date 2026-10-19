@@ -718,6 +718,22 @@
   // numbers below it — not a static diagram. #2B50E2 is the one sanctioned literal
   // (BRAND.md) for the KYC recommendation accent.
   const KYC_BLUE = '#2B50E2';
+  /* Persona, as the server sees it. Connected only when both Persona
+     secrets are set on the server. Nothing is charged either way:
+     billing a verification is a later decision. */
+  function PersonaUsageRow() {
+    const persona = window.CDOS.KYC.usePersonaStatus();
+    const line = persona.connected ? 'Persona is connected. Nothing is charged yet.' : 'Persona is not connected yet. Nothing is charged.';
+    return (
+      <div className="flex items-center justify-between p-3 mb-4" data-testid="persona-usage" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
+        <div className="flex items-center gap-2.5">
+          <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 9, background: CD.lineSoft }}><Ic n="id" s={16} c={CD.mute} /></span>
+          <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Identity verifications <window.CDOS.InfoTip title="Identity verifications" body={persona.connected ? 'Persona results are recorded on the client file. The desk does not start a check yet, and nothing is charged.' : 'Persona is not connected yet. No background check is sent and nothing is charged.'} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{line}</div></div>
+        </div>
+        <div className="text-right"><div className="text-[13px] font-semibold" style={{ color: persona.connected ? CD.ink : CD.mute }}>{persona.connected ? 'Connected' : 'Not connected'}</div></div>
+      </div>);
+  }
+
   function CadenceLadder({ recheckDays, reverifyDays, escalate }) {
     const Stop = ({ tone, bg, icon, label }) => (
       <div className="flex flex-col items-center gap-1.5 flex-none" style={{ width: 104 }}>
@@ -1520,14 +1536,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   <span className="absolute pointer-events-none" style={{ right: 10, display: 'inline-flex' }}><Ic n="chev" s={13} c={CD.mute} /></span>
                 </div>
               </div>); })()}
-            {(() => { return (
-              <div className="flex items-center justify-between p-3 mb-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
-                <div className="flex items-center gap-2.5">
-                  <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 9, background: CD.lineSoft }}><Ic n="id" s={16} c={CD.mute} /></span>
-                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Identity verifications <window.CDOS.InfoTip title="Identity verifications" body="Persona is not connected yet. No background check is sent and nothing is charged." /></div><div className="text-[11px]" style={{ color: CD.mute }}>Persona is not connected yet. Nothing is charged.</div></div>
-                </div>
-                <div className="text-right"><div className="text-[13px] font-semibold" style={{ color: CD.mute }}>Not connected</div></div>
-              </div>); })()}
+            {window.CDOS.KYC && window.CDOS.KYC.usePersonaStatus ? <PersonaUsageRow /> : null}
 
             <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Payment</div>
             <button onClick={openBillingPortal} className="w-full flex items-center gap-3 p-3 mb-4 text-left" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>

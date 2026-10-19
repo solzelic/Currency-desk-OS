@@ -54,6 +54,8 @@ export const migrations: readonly Migration[] = [
   ["046_staff_contact_email", "src/db/migrations/046_staff_contact_email.sql"],
   /* 047 is the ID types a shop accepts. NULL follows the pack. */
   ["047_accepted_id_types", "src/db/migrations/047_accepted_id_types.sql"],
+  /* 048 is Persona webhook deliveries. Ids and a status, never a name or a number. */
+  ["048_persona_inquiry_events", "src/db/migrations/048_persona_inquiry_events.sql"],
 ] as const;
 
 export async function runMigrations(

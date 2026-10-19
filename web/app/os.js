@@ -6442,6 +6442,56 @@
   // numbers below it — not a static diagram. #2B50E2 is the one sanctioned literal
   // (BRAND.md) for the KYC recommendation accent.
   const KYC_BLUE = '#2B50E2';
+  /* Persona, as the server sees it. Connected only when both Persona
+     secrets are set on the server. Nothing is charged either way:
+     billing a verification is a later decision. */
+  function PersonaUsageRow() {
+    const persona = window.CDOS.KYC.usePersonaStatus();
+    const line = persona.connected ? 'Persona is connected. Nothing is charged yet.' : 'Persona is not connected yet. Nothing is charged.';
+    return /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between p-3 mb-4",
+      "data-testid": "persona-usage",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12,
+        background: CD.panel
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2.5"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 34,
+        height: 34,
+        borderRadius: 9,
+        background: CD.lineSoft
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "id",
+      s: 16,
+      c: CD.mute
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold flex items-center gap-1.5",
+      style: {
+        color: CD.ink
+      }
+    }, "Identity verifications ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
+      title: "Identity verifications",
+      body: persona.connected ? 'Persona results are recorded on the client file. The desk does not start a check yet, and nothing is charged.' : 'Persona is not connected yet. No background check is sent and nothing is charged.'
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, line))), /*#__PURE__*/React.createElement("div", {
+      className: "text-right"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold",
+      style: {
+        color: persona.connected ? CD.ink : CD.mute
+      }
+    }, persona.connected ? 'Connected' : 'Not connected')));
+  }
   function CadenceLadder({
     recheckDays,
     reverifyDays,
@@ -8694,50 +8744,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           s: 13,
           c: CD.mute
         }))));
-      })(), (() => {
-        return /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center justify-between p-3 mb-4",
-          style: {
-            border: `1px solid ${CD.line}`,
-            borderRadius: 12,
-            background: CD.panel
-          }
-        }, /*#__PURE__*/React.createElement("div", {
-          className: "flex items-center gap-2.5"
-        }, /*#__PURE__*/React.createElement("span", {
-          className: "grid place-items-center flex-none",
-          style: {
-            width: 34,
-            height: 34,
-            borderRadius: 9,
-            background: CD.lineSoft
-          }
-        }, /*#__PURE__*/React.createElement(Ic, {
-          n: "id",
-          s: 16,
-          c: CD.mute
-        })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-          className: "text-[13px] font-semibold flex items-center gap-1.5",
-          style: {
-            color: CD.ink
-          }
-        }, "Identity verifications ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
-          title: "Identity verifications",
-          body: "Persona is not connected yet. No background check is sent and nothing is charged."
-        })), /*#__PURE__*/React.createElement("div", {
-          className: "text-[11px]",
-          style: {
-            color: CD.mute
-          }
-        }, "Persona is not connected yet. Nothing is charged."))), /*#__PURE__*/React.createElement("div", {
-          className: "text-right"
-        }, /*#__PURE__*/React.createElement("div", {
-          className: "text-[13px] font-semibold",
-          style: {
-            color: CD.mute
-          }
-        }, "Not connected")));
-      })(), /*#__PURE__*/React.createElement("div", {
+      })(), window.CDOS.KYC && window.CDOS.KYC.usePersonaStatus ? /*#__PURE__*/React.createElement(PersonaUsageRow, null) : null, /*#__PURE__*/React.createElement("div", {
         className: "text-[10px] uppercase tracking-widest mb-2",
         style: {
           color: CD.faint,
@@ -47979,8 +47986,48 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
   const getProvider = () => PROVIDER;
   /* The chooser names Persona. Nothing is sent. The phone sheet hides
-     the paid verify while this is false. */
+     the paid verify while this is false. It stays false even when the
+     server has both Persona secrets: the desk does not start a check
+     yet, it only records the results Persona sends. */
   const personaConnected = () => false;
+
+  /* What the server says about Persona: connected only when
+     PERSONA_API_KEY and PERSONA_WEBHOOK_SECRET are both set. Read once,
+     the first time a signed-in screen asks. Until the answer arrives, or
+     when it fails, the desk says Persona is not connected. */
+  const PERSONA_OFF = {
+    connected: false,
+    message: 'Persona is not connected yet.'
+  };
+  let personaStatus = PERSONA_OFF;
+  let personaAsked = false;
+  function askPersona() {
+    if (personaAsked) return;
+    personaAsked = true;
+    fetch('/api/kyc/persona', {
+      credentials: 'same-origin'
+    }).then(res => res.ok ? res.json() : null).then(body => {
+      personaStatus = body && body.connected === true ? {
+        connected: true,
+        message: String(body.message || 'Persona is connected.')
+      } : PERSONA_OFF;
+      if (!body) personaAsked = false;
+      listeners.forEach(l => l());
+    }).catch(function (err) {
+      personaAsked = false;
+      console.warn('[CurrencyDesk] Persona status not read (' + (err && err.name ? err.name : 'Error') + ')');
+    });
+  }
+  const usePersonaStatus = () => {
+    const [, force] = useState(0);
+    useEffect(() => {
+      const l = () => force(x => x + 1);
+      listeners.add(l);
+      askPersona();
+      return () => listeners.delete(l);
+    }, []);
+    return personaStatus;
+  };
   function createCheck({
     subject,
     kind,
@@ -49041,6 +49088,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     settings
   }) {
     useStore();
+    const persona = usePersonaStatus();
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
@@ -49098,11 +49146,11 @@ ${(filing.map || []).map(blockHTML).join('')}
       body: "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
-      "data-testid": "persona-not-connected",
+      "data-testid": persona.connected ? 'persona-connected' : 'persona-not-connected',
       style: {
         color: CD.mute
       }
-    }, "Persona is not connected yet."))), latest && latest.status === 'completed' && (() => {
+    }, persona.message))), latest && latest.status === 'completed' && (() => {
       const r = latest.result;
       const dm = decisionMeta(r.decision);
       const cell = (l, v) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -49170,7 +49218,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "No verifications on file. Persona is not connected yet."));
+    }, persona.connected ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'));
   }
 
   /* ====================================================================
@@ -50247,6 +50295,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       setProvider,
       getProvider,
       personaConnected,
+      usePersonaStatus,
       applyPartnerCode,
       getPartnerRate,
       SendModal,

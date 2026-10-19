@@ -506,6 +506,54 @@ dashboard. That projection obeys two rules:
   label and file name. A copy the migration could not read stays in the
   browser and the folder says so.
 
+## Persona results
+
+Persona is off until `PERSONA_API_KEY` and `PERSONA_WEBHOOK_SECRET` are
+both set on the server. `GET /api/kyc/persona` tells the desk which,
+and the desk says "Persona is not connected yet." until it is.
+
+With both set, Persona calls `POST /api/webhooks/persona`
+(`server/src/kyc/`):
+
+- **Signed or refused.** The `Persona-Signature` header is `t=<unix
+  seconds>,v1=<hex>`; `v1` is HMAC-SHA256 of `<t>.<raw body>` with the
+  webhook secret. During a secret rotation Persona sends two such sets
+  separated by a space, and either may pass. The comparison is
+  constant-time, over the raw bytes, before the body is read. A missing
+  or wrong signature, or a `t` more than five minutes from now, is 400
+  and nothing is stored.
+- **Once.** Persona's event id is the key of `persona_inquiry_events`.
+  A replayed or retried delivery answers 200 `duplicate: true`, inserts
+  nothing, and writes no second audit row. Rows cannot be updated or
+  deleted on Postgres (migration 048).
+- **Linked only to a real file.** Persona's reference-id is linked when
+  it is a `cli_` client id that exists. Then the row carries that
+  client's desk, and `kyc.persona.recorded` is written to that desk's
+  audit log with the event id, the event, the inquiry id, the status,
+  the ID type, the client id, and the environment. Any other reference
+  is dropped, not stored.
+- **Nothing that names the person.** The reader takes ids, the event
+  name, the status, and the government-ID class. It never reads a name,
+  a date of birth, an address, or a document number, so none of them
+  can reach a row, an audit row, or a log line.
+- **ID types from the catalogue only.** A passed government-ID
+  verification's class is stored only through a fixed map, and only
+  when `shared/id-document-types.js` accepts the result as ID: `dl` is
+  Driver's Licence, `pp` is Passport, `pr` is Permanent Resident Card.
+  Persona's `hic` (Canada Health Insurance Card) maps to nothing, and
+  the column refuses `health_card`. `id` (which may be a provincial
+  card or another country's), `cct` (the citizenship certificate, not
+  the card), and every other class are stored as no type. Two passed
+  verifications that disagree are no type.
+- **It does not change the file.** `verification_status` stays what the
+  desk set, no identity document is added, and the shop's Accepted IDs
+  are not consulted, because nothing is written to the documents. Nothing
+  is billed: `reportKycUsage` is not called.
+
+Starting a check from the desk is the next job. `createPersonaInquiry`
+is the request it will make, with `PERSONA_TEMPLATE_ID` and the client
+id as the reference; no route calls it yet.
+
 ## What is still in the browser
 
 Named plainly, because "the customer record is on the server" should not
@@ -520,7 +568,8 @@ be read as more than it is:
   to. The other half of a remittance record, and browser-only.
 - **KYC provider checks** (`cdos_kyc_v1`) — the evidence behind
   `verification_status`. The status is on the server; the inquiry that
-  produced it is not.
+  produced it is not. A Persona result is now recorded on the server
+  (see "Persona results"), but it does not set the status.
 - A desk with **no ledger database** keeps the browser-only store
   entirely. The client routes register only where the ledger's do,
   because they join `ledger_customers`, which the embedded database has
@@ -541,6 +590,8 @@ be read as more than it is:
 | papers filed for them (label only) | `POST|PATCH|DELETE /api/clients/:clientId/files[/:fileId]` |
 | open one of those papers (audited) | `POST /api/clients/:clientId/files/:fileId/reveal` |
 | this person, as the till's counter record | `POST /api/clients/:clientId/counter-record` |
+| is Persona connected | `GET /api/kyc/persona` |
+| a Persona result (Persona calls it, signed) | `POST /api/webhooks/persona` |
 
 ## Testing
 

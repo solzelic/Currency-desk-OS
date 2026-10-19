@@ -63,6 +63,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |
 | `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
+| `/api/webhooks/persona` | Persona's signed webhook (no session; `Persona-Signature`). 503 until both Persona secrets are set |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 
 The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `admin.html`, and `/os-src/` so a deploy that skipped `npm run build:os` can boot the hand-written shells. When `web/app/index.html` is in `STATIC_DIR`, a direct fetch of `/CurrencyDesk OS.html` or of anything under `/os-src/` except `/os-src/york-os.css` is a 404, including a browser navigation — it is not answered with the marketing page. When `web/app/admin.html` is present, `/admin.html` is a 404 the same way. `/shared/id-document-types.js` is on the list for the uncompiled shell and is a 404 with `os-src/` once the compiled OS shell is present; nothing else under `shared/` is served. The compiled desk links `/os-src/york-os.css`, so that stylesheet stays public either way. `/assets/`, `/YorkFX/`, `/web/`, `/yorkfx.css`, and `/yorkfx-converter.js` are unchanged. The two shells are gated separately: a half-built `web/app` hides only the file whose compiled replacement is on disk. When `NODE_ENV` is `production`, a missing `web/app/index.html` logs that the uncompiled shell and `os-src` are public, and a missing `web/app/admin.html` logs that the uncompiled admin shell is public. The admin warning does not mention `os-src`. The same boot logs nothing when `NODE_ENV` is unset or `test`. The fallback itself stays, so a skipped build does not take the desk down.
@@ -126,6 +127,17 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   on main, so this file is 047. The pack defaults and locks are code,
   in `server/src/ledger/id-type-rules.ts`. The rule is
   `docs/CLIENT_RECORDS.md`, "Accepted IDs, per shop".
+- Migration `048_persona_inquiry_events` stores a Persona webhook
+  delivery: the event id (the key, so a replay inserts nothing), the
+  inquiry id, the event name, a status, at most one catalogue ID type
+  (never `health_card`, a CHECK), the client id when the reference is a
+  desk client, and the Persona environment. It has no column for a
+  name, a date of birth, or a document number. Rows are append-only (a
+  trigger). The table is also in the boot DDL and the Drizzle schema;
+  the trigger is only in the migration. 047 is the last on main and
+  041–043 are claimed by open drafts, so this file is 048. The code is
+  `server/src/kyc/`; the rule is `docs/CLIENT_RECORDS.md`, "Persona
+  results".
 
 ## Test commands
 
@@ -133,7 +145,7 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 npm run check:parse                     # every browser script parses
 npm run check:sanctions                 # banned-name variants, then the built web/app/os.js
 cd server && npm run typecheck && npm test          # server suite (embedded PGlite)
-TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 41 *.postgres.test.ts suites
+TEST_DATABASE_URL=postgres://…/freshdb npm test     # + the 46 *.postgres.test.ts suites
 SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # full browser↔ledger seam suite
 ```
 
