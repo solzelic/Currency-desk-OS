@@ -455,12 +455,38 @@
      ============================================================ */
   let _currencies = null;
   const deskCurrencies = () => _currencies;
-  /** How many decimal places this currency is actually paid in. */
+  /** How many decimal places this currency is paid in.
+      Null until the server table has loaded. Two once it has, unless
+      the table names the code. Nothing here asks the browser. */
   const currencyPlaces = (code) => {
-    const known = _currencies && _currencies.minorUnits;
-    const stated = known && known[String(code || '').toUpperCase()];
-    return typeof stated === 'number' ? stated : 2;
+    const scales = _currencies && _currencies.scales;
+    if (!scales) return null;
+    const c = String(code || '').toUpperCase();
+    return Object.prototype.hasOwnProperty.call(scales, c) ? scales[c] : 2;
   };
+  const fractionDigitsHeld = (n) => {
+    const text = String(n);
+    const dot = text.indexOf('.');
+    if (dot < 0) return 0;
+    const frac = text.slice(dot + 1).replace(/[^0-9].*$/, '');
+    return frac.length;
+  };
+  /* known places, or the digits the figure already holds when the
+     table has not loaded. keepStored shows a balance that is not on
+     those places, so 99.85 yen is not drawn as 100. */
+  const digitsFor = (n, ccy, keepStored) => {
+    const known = currencyPlaces(ccy);
+    const held = fractionDigitsHeld(n);
+    if (known == null) return held;
+    if (!keepStored) return known;
+    const value = Number(n);
+    if (!isFinite(value)) return known;
+    const scale = Math.pow(10, known);
+    const rounded = Math.round((value + Number.EPSILON) * scale) / scale;
+    if (Math.abs(value - rounded) > 1e-8) return Math.max(known, held);
+    return known;
+  };
+  const formatDigits = (n, digits) => new Intl.NumberFormat('en-CA', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n) || 0);
   /** Does this desk deal in it? True where nobody has restricted anything. */
   const deskTrades = (code) => {
     const want = String(code || '').toUpperCase();
@@ -727,12 +753,22 @@
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
 
-  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
+  const fmt = (n, c) => {
+    if (n == null || n === '' || isNaN(n)) return '';
+    const code = c || 'CAD';
+    const known = currencyPlaces(code);
+    const digits = digitsFor(n, code, false);
+    if (known == null) return formatDigits(n, digits);
+    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: code, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n));
+  };
   const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
-  /* Phone ticket amounts: grouped digits, two places, then the code.
-     '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
+  /* Grouped digits in the currency's own places. Display only.
+     Before the table loads, the digits already on the figure. */
+  const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
+  /* A stored balance. Extra places stay, so a variance is not rounded away. */
+  const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
   const formatPhoneMoney = (n, ccy) => {
-    const body = new Intl.NumberFormat('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+    const body = unitText(n, ccy);
     return ccy ? body + ' ' + ccy : body;
   };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
@@ -1327,7 +1363,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */

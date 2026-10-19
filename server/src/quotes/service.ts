@@ -6,7 +6,7 @@ import {
   type BackendPermission,
 } from "../auth/permissions.js";
 import { pairAllowed, resolvePack } from "../ledger/jurisdiction.js";
-import { assertTradeable } from "../ledger/currencies.js";
+import { assertTradeable, roundTo } from "../ledger/currencies.js";
 import { withSerializationRetry } from "../ledger/retry.js";
 import {
   LedgerError,
@@ -541,14 +541,16 @@ export class QuoteService {
             ? new Decimal(1)
             : mid;
       const input = new Decimal(q.input_amount),
-        output = input.mul(rate).toDecimalPlaces(2),
-        inputCad = input
-          .mul(sideMid(q.from_currency, q.from_mid))
-          .toDecimalPlaces(2),
-        outputCad = output
-          .mul(sideMid(q.to_currency, q.to_mid))
-          .toDecimalPlaces(2),
-        spread = inputCad.sub(outputCad).toDecimalPlaces(2);
+        output = roundTo(input.mul(rate), q.to_currency),
+        inputCad = roundTo(
+          input.mul(sideMid(q.from_currency, q.from_mid)),
+          home,
+        ),
+        outputCad = roundTo(
+          output.mul(sideMid(q.to_currency, q.to_mid)),
+          home,
+        ),
+        spread = inputCad.sub(outputCad);
       if (spread.lt(0))
         throw new LedgerError(
           "OVERRIDE_LIMIT_EXCEEDED",

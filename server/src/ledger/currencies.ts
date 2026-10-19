@@ -75,6 +75,11 @@ export function minorUnits(code: string): number {
   return EXCEPTIONS[code.toUpperCase()] ?? 2;
 }
 
+/** The same exception table. Callers must not copy it into a second map. */
+export function isoMinorUnits(): Readonly<Record<string, number>> {
+  return EXCEPTIONS;
+}
+
 /** The shape of a currency code. Not whether this desk trades it. */
 export function isCurrencyCode(code: unknown): code is string {
   return typeof code === "string" && /^[A-Z]{3}$/.test(code.trim().toUpperCase());
@@ -132,17 +137,15 @@ export function parseMoney(
   const carried = carriable(currency);
   if (!carried.ok) throw new LedgerError("UNSUPPORTED_CURRENCY", carried.reason);
 
-  const pattern =
+  /* A stored numeric(24,2) reads back with two places, including ".00"
+     on a whole yen. That string is the same amount. A digit that is
+     not already the rounded amount is a figure the currency cannot pay. */
+  const offScale =
     places === 0
-      ? /^(?:0|[1-9]\d{0,11})$/
-      : new RegExp(`^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,${places}})?$`);
-  if (!pattern.test(value)) {
-    throw new LedgerError(
-      "INVALID_REQUEST",
-      places === 0
-        ? `${field} is not a whole number of ${currency}. ${currency} has no minor unit.`
-        : `${field} is not an amount in ${currency}, to ${places} decimal places.`,
-    );
+      ? `${field} is not a whole number of ${currency}. ${currency} has no minor unit.`
+      : `${field} is not an amount in ${currency}, to ${places} decimal places.`;
+  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,8})?$/.test(value)) {
+    throw new LedgerError("INVALID_REQUEST", offScale);
   }
   const out = new Decimal(value);
   if (out.lt(minimum) || out.gt("1000000000")) {
@@ -151,7 +154,9 @@ export function parseMoney(
       `${field} is outside the permitted range.`,
     );
   }
-  return out.toDecimalPlaces(places);
+  const rounded = roundTo(out, currency);
+  if (!out.eq(rounded)) throw new LedgerError("INVALID_REQUEST", offScale);
+  return rounded;
 }
 
 /**
@@ -165,10 +170,9 @@ export function roundTo(amount: Decimal, currency: string): Decimal {
   return amount.toDecimalPlaces(minorUnits(currency), Decimal.ROUND_HALF_UP);
 }
 
-/** A fixed-point string in the currency's own places. */
+/** A fixed-point string in the currency's own places. One rounding path. */
 export function fixedIn(amount: Decimal, currency: string): string {
-  const places = minorUnits(currency);
-  return amount.toDecimalPlaces(places).toFixed(places);
+  return roundTo(amount, currency).toFixed(minorUnits(currency));
 }
 
 /* ============================================================

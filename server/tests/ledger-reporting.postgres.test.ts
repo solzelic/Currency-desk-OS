@@ -259,6 +259,47 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(after.byCurrency).toEqual([]);
   });
 
+  it("shows a stored yen amount on a closed day, and rounds each open-day row before adding", async () => {
+    const past = new Date(Date.now() - 3 * 86400000).toISOString();
+    const insert = (id: string, amount: string, at: string) =>
+      pool.query(
+        `INSERT INTO ledger_transactions
+           (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
+            workspace_id, till_id, customer_id, actor_id, from_currency, to_currency,
+            input_amount, output_amount, rate, fee_cad, spread_cad, purpose,
+            source_of_funds, posted_at, deal_kind, received_instrument, disbursed_instrument,
+            jurisdiction_pack_id, jurisdiction_pack_version, home_currency)
+         VALUES
+           ($1, $2, $3, $4, $5, $6, $7, 'customer-demo', $3||':r.haddad',
+            'CAD', 'JPY', 100.00, $8, 1, 0, 0, 'travel', 'salary', $9,
+            'exchange', 'cash', 'cash', 'pack-ca-v1', 1, 'CAD')`,
+        [id, `ref-${id}`, ...scope, amount, at],
+      );
+    await insert("jpy-old", "200.80", past);
+    const closed = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 4 * 86400000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() - 2 * 86400000).toISOString())}`,
+    );
+    expect(closed.byCurrency).toEqual([
+      expect.objectContaining({ currency: "JPY", deals: 1, sold: "200.80" }),
+    ]);
+
+    await insert("jpy-a", "100.40", new Date().toISOString());
+    await insert("jpy-b", "100.40", new Date().toISOString());
+    const open = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+    );
+    const today = open.byCurrency.find((row: { currency: string }) => row.currency === "JPY");
+    expect(today).toMatchObject({ deals: 2, sold: "200.00" });
+  });
+
+  it("shows a stored yen balance as stored", async () => {
+    await tillHolds("JPY", 200.8);
+    const held = await position();
+    const jpy = held.currencies.find((row: { currency: string }) => row.currency === "JPY");
+    expect(jpy.quantity).toBe("200.80");
+    expect(jpy.till.quantity).toBe("200.80");
+  });
+
   it("only totals the window it was asked for", async () => {
     await tillHolds("CAD", 50000);
     await tillHolds("USD", 4000, "1.340000000000");

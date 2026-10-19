@@ -26,6 +26,7 @@
    decides what a person is handed at a counter, so it is written to be read.
    ============================================================ */
 import Decimal from "decimal.js";
+import { parseMoney, roundTo } from "../ledger/currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -33,14 +34,6 @@ export type QuoteDirection =
   | "customer_buy_foreign"
   | "customer_sell_foreign"
   | "customer_cross";
-
-const money = (value: string, min: Decimal.Value) => {
-  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(value))
-    throw new Error("invalid money");
-  const out = new Decimal(value);
-  if (out.lt(min) || out.gt("1000000000")) throw new Error("out of range");
-  return out.toDecimalPlaces(2);
-};
 
 const rateOf = (value: Decimal.Value | undefined, what: string) => {
   const out = new Decimal(value ?? NaN);
@@ -78,13 +71,15 @@ export type QuoteTermsInput = {
 
 export function calculateQuoteTerms(input: QuoteTermsInput) {
   const home = (input.homeCurrency ?? "CAD").toUpperCase();
-  const amount = money(input.inputAmount, "0.01");
-  const fee = money(input.feeCad, "0");
+  const from = input.from.toUpperCase();
+  const to = input.to.toUpperCase();
+  const amount = parseMoney(input.inputAmount, from, "Amount", "0.01");
+  const fee = parseMoney(input.feeCad, home, "Fee", "0");
   const margin = marginOf(input.margin);
 
-  const fromIsHome = input.from === home;
-  const toIsHome = input.to === home;
-  if (input.from === input.to) throw new Error("direction and currencies disagree");
+  const fromIsHome = from === home;
+  const toIsHome = to === home;
+  if (from === to) throw new Error("direction and currencies disagree");
 
   /* The direction the caller states and the currencies they gave are two
      descriptions of the same deal. A disagreement means somebody built the
@@ -106,12 +101,12 @@ export function calculateQuoteTerms(input: QuoteTermsInput) {
        what the desk received, so that is what the deal is worth to it, and
        pricing off the incoming side leaves the margin as the only thing
        moving the customer's number. */
-    const inputHome = amount.mul(fromMid).toDecimalPlaces(2);
+    const inputHome = roundTo(amount.mul(fromMid), home);
     const kept = new Decimal(1).sub(margin).mul(new Decimal(1).sub(outMargin));
     const customerRate = fromMid.div(toMid).mul(kept);
-    const outputAmount = amount.mul(customerRate).toDecimalPlaces(2);
-    const outputHome = outputAmount.mul(toMid).toDecimalPlaces(2);
-    const spreadCad = inputHome.sub(outputHome).toDecimalPlaces(2);
+    const outputAmount = roundTo(amount.mul(customerRate), to);
+    const outputHome = roundTo(outputAmount.mul(toMid), home);
+    const spreadCad = inputHome.sub(outputHome);
     if (spreadCad.lt(0)) throw new Error("negative spread");
 
     return {
@@ -141,10 +136,10 @@ export function calculateQuoteTerms(input: QuoteTermsInput) {
     shape === "customer_buy_foreign"
       ? new Decimal(1).div(mid).mul(new Decimal(1).sub(margin))
       : mid.mul(new Decimal(1).sub(margin));
-  const outputAmount = amount.mul(customerRate).toDecimalPlaces(2);
-  const inputCad = fromIsHome ? amount : amount.mul(mid).toDecimalPlaces(2);
-  const outputCad = toIsHome ? outputAmount : outputAmount.mul(mid).toDecimalPlaces(2);
-  const spreadCad = inputCad.sub(outputCad).toDecimalPlaces(2);
+  const outputAmount = roundTo(amount.mul(customerRate), to);
+  const inputCad = fromIsHome ? amount : roundTo(amount.mul(mid), home);
+  const outputCad = toIsHome ? outputAmount : roundTo(outputAmount.mul(mid), home);
+  const spreadCad = inputCad.sub(outputCad);
   if (spreadCad.lt(0)) throw new Error("negative spread");
 
   return {

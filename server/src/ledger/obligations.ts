@@ -65,6 +65,7 @@ import Decimal from "decimal.js";
 import pg from "pg";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
+import { LEDGER_SCALE, fixedIn, minorUnits, parseMoney } from "./currencies.js";
 import { carriedPackStamp, EU_AMLR_PACK_ID, resolvePack } from "./jurisdiction.js";
 import { beneficiaryRecordGap } from "./canada-rules.js";
 import { holdSerbiaSuspicion, SERBIA_PACK_ID, SERBIA_SUSPICION_HELD } from "./serbia.js";
@@ -104,17 +105,40 @@ const entityScope = (actor: LedgerActor) => [
 const fixed = (value: Decimal, places = 2) =>
   value.toDecimalPlaces(places).toFixed(places);
 
-/* Same shape as the one in service.ts and deliberately a separate copy:
-   that one is closed over an exchange's own minimum of one cent on the
-   input leg, and a fee of zero is ordinary here. */
-const decimal = (value: string, min: Decimal.Value, field: string) => {
-  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(value))
-    throw new LedgerError("INVALID_REQUEST", `${field} is not a decimal amount.`);
-  const out = new Decimal(value);
-  if (out.lt(min) || out.gt("1000000000"))
-    throw new LedgerError("INVALID_REQUEST", `${field} is outside the permitted range.`);
-  return out.toDecimalPlaces(2);
+/* A fee of zero is ordinary here. A three-decimal currency is still a
+   remittance face amount at the ledger's two places: that is what main
+   accepted, and refusing the currency refuses a corridor that posted.
+   A third decimal is refused, the same as the old two-place check.
+   Yen and won still go through parseMoney, so a fractional yen is not
+   a payout. */
+const decimal = (
+  value: string,
+  currency: string,
+  min: Decimal.Value,
+  field: string,
+) => {
+  if (minorUnits(currency) > LEDGER_SCALE) {
+    if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(value)) {
+      throw new LedgerError(
+        "INVALID_REQUEST",
+        `${field} is not a decimal amount.`,
+      );
+    }
+    const out = new Decimal(value);
+    if (out.lt(min) || out.gt("1000000000")) {
+      throw new LedgerError(
+        "INVALID_REQUEST",
+        `${field} is outside the permitted range.`,
+      );
+    }
+    return out.toDecimalPlaces(LEDGER_SCALE);
+  }
+  return parseMoney(value, currency, field, min);
 };
+/* A stored face amount. Three-decimal currencies are held at two places,
+   so the receipt must not invent a third. */
+const shown = (amount: Decimal, currency: string) =>
+  minorUnits(currency) > LEDGER_SCALE ? fixed(amount) : fixedIn(amount, currency);
 
 export type ObligationKind =
   | "remittance_payable"
@@ -327,9 +351,9 @@ export class ObligationService {
   remittanceSend(actor: LedgerActor, input: RemittanceSendInput) {
     return withSerializationRetry(() =>
       this.postDeal(actor, (home) => {
-        const principal = decimal(input.principalAmount, "0.01", "Principal");
-        const fee = decimal(input.feeAmount, "0", "Fee");
-        const payout = decimal(input.payoutAmount, "0.01", "Payout amount");
+        const principal = decimal(input.principalAmount, home, "0.01", "Principal");
+        const fee = decimal(input.feeAmount, home, "0", "Fee");
+        const payout = decimal(input.payoutAmount, input.payoutCurrency, "0.01", "Payout amount");
         return {
           dealKind: "remittance_send",
           operation: "remittance-send",
@@ -378,7 +402,7 @@ export class ObligationService {
               : []),
             `Paid in cash: ${h} ${fixed(principal)}`,
             `Fee paid separately: ${h} ${fixed(fee)}`,
-            `Beneficiary receives: ${fixed(payout)} ${input.payoutCurrency}`,
+            `Beneficiary receives: ${shown(payout, input.payoutCurrency)} ${input.payoutCurrency}`,
           ],
         };
       }),
@@ -388,9 +412,9 @@ export class ObligationService {
   remittanceReceive(actor: LedgerActor, input: RemittanceReceiveInput) {
     return withSerializationRetry(() =>
       this.postDeal(actor, (home) => {
-        const sent = decimal(input.sentAmount, "0.01", "Sent amount");
-        const payout = decimal(input.payoutAmount, "0.01", "Payout amount");
-        const fee = decimal(input.feeAmount, "0", "Fee");
+        const sent = decimal(input.sentAmount, input.sentCurrency, "0.01", "Sent amount");
+        const payout = decimal(input.payoutAmount, home, "0.01", "Payout amount");
+        const fee = decimal(input.feeAmount, home, "0", "Fee");
         return {
           dealKind: "remittance_receive",
           operation: "remittance-receive",
@@ -427,7 +451,7 @@ export class ObligationService {
             `Receipt ${ref}`,
             `Recipient: ${customer}`,
             `Transfer ${input.reference} · ${input.partner} (${input.corridor})`,
-            `Sent: ${fixed(sent)} ${input.sentCurrency}`,
+            `Sent: ${shown(sent, input.sentCurrency)} ${input.sentCurrency}`,
             `Fee deducted: ${h} ${fixed(fee)}`,
             `Paid out in cash: ${h} ${fixed(payout)}`,
           ],
@@ -439,8 +463,8 @@ export class ObligationService {
   billPayment(actor: LedgerActor, input: BillPaymentInput) {
     return withSerializationRetry(() =>
       this.postDeal(actor, (home) => {
-        const bill = decimal(input.billAmount, "0.01", "Bill amount");
-        const fee = decimal(input.feeAmount, "0", "Fee");
+        const bill = decimal(input.billAmount, home, "0.01", "Bill amount");
+        const fee = decimal(input.feeAmount, home, "0", "Fee");
         return {
           dealKind: "bill_payment",
           operation: "bill-payment",
@@ -483,8 +507,8 @@ export class ObligationService {
   moneyOrder(actor: LedgerActor, input: MoneyOrderInput) {
     return withSerializationRetry(() =>
       this.postDeal(actor, (home) => {
-        const face = decimal(input.faceAmount, "0.01", "Face amount");
-        const fee = decimal(input.feeAmount, "0", "Fee");
+        const face = decimal(input.faceAmount, home, "0.01", "Face amount");
+        const fee = decimal(input.feeAmount, home, "0", "Fee");
         return {
           dealKind: "money_order",
           operation: "money-order",
@@ -1027,7 +1051,7 @@ export class ObligationService {
       const carrying = new Decimal(obligation.carrying_amount_home);
       const amount =
         ending === "settled"
-          ? decimal(input.amountHome, "0", "Settlement amount")
+          ? decimal(input.amountHome, String(obligation.home_currency), "0", "Settlement amount")
           : new Decimal(0);
       /* Positive is a gain to the desk, whichever side the obligation sat
          on. A payable discharged for less than it was carried at is the

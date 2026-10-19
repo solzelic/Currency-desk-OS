@@ -17,7 +17,7 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const HKEY = 'cdos_report_history_v1';
   const AKEY = 'cdos_report_access_v1';
-  const { CD, Ic, TYPES, crossRate, perCadLive, fmt, num, dDiff, dealMargin, CCY,
+  const { CD, Ic, TYPES, crossRate, perCadLive, fmt, num, currencyPlaces, storedText, dDiff, dealMargin, CCY,
     businessDate, businessDayWindow, reportingLimit, useDeskFacts, deskPack, Absent } = window.CDOS;
   /* The desk's own reporting line, in the desk's own currency. This file
      used to print `THRESHOLD` — a hardcoded 10,000 Canadian dollars — in
@@ -461,9 +461,9 @@
               /* null, not zero: a currency held only in the safe has no
                  drawer balance, and a drawer line of 0.00 against a
                  counted figure would read as a variance. */
-              units: till ? Number(till.quantity) : null,
+              units: till ? till.quantity : null,
               home: till && till.marketValueHome != null ? Number(till.marketValueHome) : null,
-              vaultUnits: row.vault ? Number(row.vault.quantity) : null,
+              vaultUnits: row.vault ? row.vault.quantity : null,
               counted: record && record.counted != null ? Number(record.counted) : null,
               countedExpected: record && record.expected != null ? Number(record.expected) : null,
               variance: record && record.variance != null ? Number(record.variance) : null,
@@ -497,12 +497,26 @@
        a confident one, because SUM() treats a blank and a zero identically
        but a reader does not. */
     const csvMoney = (v) => v == null ? '' : Number(v).toFixed(2);
+    /* Stored units. A whole yen stays whole. A stored 200.80 stays 200.80.
+       Before the table loads, the digits already on the figure. */
+    const csvUnits = (v, ccy) => {
+      if (v == null || v === '') return '';
+      const known = currencyPlaces(ccy);
+      const text = String(v);
+      const held = text.indexOf('.') < 0 ? 0 : text.split('.')[1].replace(/[^0-9].*$/, '').length;
+      if (known == null) return text;
+      const value = Number(v);
+      const scale = Math.pow(10, known);
+      const rounded = Math.round((value + Number.EPSILON) * scale) / scale;
+      const digits = Math.abs(value - rounded) > 1e-8 ? Math.max(known, held) : known;
+      return value.toFixed(digits);
+    };
     const csvFor = (id) => {
       const s = periodBook.summary;
       if (id === 'endofday') {
         const d = dayBook.summary;
         return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'],
-          ...data.cash.map(x => [x.ccy, csvMoney(x.units), csvMoney(x.home), csvMoney(x.counted), csvMoney(x.variance), csvMoney(x.vaultUnits)]),
+          ...data.cash.map(x => [x.ccy, csvUnits(x.units, x.ccy), csvMoney(x.home), csvUnits(x.counted, x.ccy), csvUnits(x.variance, x.ccy), csvUnits(x.vaultUnits, x.ccy)]),
           [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''],
           [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''],
           [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''],
@@ -602,11 +616,11 @@
             <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>In the drawer</th><th style={{ ...thS, textAlign: 'right' }}>{homeCcy} value</th><th style={{ ...thS, textAlign: 'right' }}>Counted</th><th style={{ ...thS, textAlign: 'right' }}>Variance</th><th style={{ ...thS, textAlign: 'right' }}>In the safe</th></tr></thead>
               <tbody>{data.cash.map(x => { const off = x.variance != null && Math.abs(x.variance) > 0.005; return (<tr key={x.ccy}>
                 <td style={tdS}><b>{x.ccy}</b></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : num(x.units)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : storedText(x.units, x.ccy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : fmt(x.home, homeCcy)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : num(x.counted)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: x.variance != null ? 600 : 400, color: x.variance == null ? CD.faint : off ? CD.flag : CD.green }}>{x.variance == null ? '—' : (Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance))}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : num(x.vaultUnits)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : storedText(x.counted, x.ccy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: x.variance != null ? 600 : 400, color: x.variance == null ? CD.faint : off ? CD.flag : CD.green }}>{x.variance == null ? '—' : (Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + storedText(x.variance, x.ccy))}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy)}</td>
               </tr>); })}
               {(() => {
                 /* The counted and variance totals are only offered in the
@@ -750,7 +764,7 @@
                 <tbody>{book.byCurrency.map(c => (<tr key={c.currency}>
                   <td style={tdS}><b>{c.currency}</b></td>
                   <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.deals}</td>
-                  <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(c.sold)}</td>
+                  <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{storedText(c.sold, c.currency)}</td>
                   <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{orDash(c.realizedPnlHome, homeCcy, c.pricedDeals ? 'partly priced' : 'no cost basis recorded')}</td>
                 </tr>))}</tbody></table>}
           </Card>
@@ -898,7 +912,7 @@
                 <tbody>{book.byCurrency.map(c => (<tr key={c.currency}>
                   <td style={tdS}><b>{c.currency}</b></td>
                   <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.deals}</td>
-                  <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(c.sold)}</td>
+                  <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{storedText(c.sold, c.currency)}</td>
                   <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: CD.green }}>{orDash(c.realizedPnlHome, homeCcy, c.pricedDeals ? 'partly priced' : 'no cost basis recorded')}</td>
                 </tr>))}</tbody></table>}
           </Card>
