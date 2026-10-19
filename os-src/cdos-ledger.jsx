@@ -57,7 +57,9 @@
   // overlays portal to the document root so the window's stacking context
   // (and the rate ticker at z-360) can't occlude them
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
-  const ID_TYPES = ["Driver's Licence", 'Passport', 'Provincial ID', 'PR Card', 'Business Number'];
+  /* The catalogue's types (shared/id-document-types.js), the list the
+     server checks a save against. A health card is not one of them. */
+  const ID_TYPES = window.CDOS.idTypes().pickerLabels('person').concat(window.CDOS.idTypes().pickerLabels('business'));
 
   /* ---------- small shared UI ---------- */
   function StatCard({ label, value, sub, flag, active, onClick }) {
@@ -146,8 +148,10 @@
     const idExpired = rec && rec.idExpiry && rec.idExpiry < businessDate();
     const idOk = !idMissing && !idExpired;
     const idTone = idOk ? CD.green : CD.flag;
-    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID verified';
-    const maskedId = rec && rec.idNum ? '••••' + String(rec.idNum).slice(-3) : '';
+    /* Papers on file, not a verification: nothing on this desk checks
+       an ID with a provider. A health number is never shown, even masked. */
+    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID on file';
+    const maskedId = rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? '••••' + String(rec.idNum).slice(-3) : '';
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -293,7 +297,7 @@
     const lockLive = lock && lock.until > nowMs ? lock : null;
     useEffect(() => { if (lock && lock.until <= nowMs) setLock(null); }, [nowMs, lock]);
 
-    // THE pricing call — one source of truth (also drives Reports' earnings)
+    // THE pricing call — one source of truth for the quote
     const pricing = useMemo(() => priceDeal({
       inCcy, outCcy, inAmt: amtN, settings,
       lockedRate: lockLive && !override ? lockLive.rate : null,
@@ -330,7 +334,7 @@
     const lockSecsLeft = lockLive ? Math.max(0, Math.round((lockLive.until - nowMs) / 1000)) : 0;
     const lockClock = `${Math.floor(lockSecsLeft / 60)}:${String(lockSecsLeft % 60).padStart(2, '0')}`;
 
-    // live compliance preview (in CAD-equivalent for the threshold test)
+    // live compliance preview (in the desk's own money for the threshold test)
     /* The deal's size in the desk's own money — what the reporting line is
        stated in, and therefore what it must be tested against. Null when
        this desk's books are kept in a currency the rate board cannot
@@ -478,7 +482,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 </div>
                 {custOpen && (
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
-                    {shownNames.map(n => { const st = (!clients[n] || !clients[n].idType) ? 'missing ID' : (clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'verified'); const ok = st === 'verified'; return (
+                    {shownNames.map(n => { const st = (!clients[n] || !clients[n].idType || !clients[n].idNum) ? 'missing ID' : (clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'ID on file'); const ok = st === 'ID on file'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
                         <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : CD.flagSoft, color: ok ? CD.green : CD.flag }}>{st}</span>
                       </button>); })}
@@ -1573,7 +1577,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: feesKnown ? src.reduce((s, x) => s + (+x.fee || 0), 0) : null, rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
     }, [rows, client, flags, range]);
 
-    // live summary of exactly what's on screen (CAD-equivalent)
+    // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {
       let vol = 0, fees = 0, posted = 0;
       const liveRows = filtered.filter(r => r.status !== 'void');

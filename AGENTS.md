@@ -11,8 +11,8 @@ wrong.
 2. Read `docs/PROJECT_STATE.md` — what is true *now*. Never reason from old
    handoff documents or from memory of a previous session.
 3. Read `docs/REPOSITORY_MAP.md` — what runs, where it lives, how it builds.
-4. Read the domain document for the area you are changing (they are indexed in
-   `docs/PROJECT_STATE.md`). Financial changes start at
+4. Read the domain document for the area you are changing (they are indexed under
+   Documentation in `README.md`). Financial changes start at
    `docs/CASH_OWNERSHIP_INVARIANTS.md`.
 5. Establish real git state — never assume it:
 
@@ -77,7 +77,7 @@ touches money:
 ## Generated output
 
 `web/` and `web/app/` are **generated. Never edit them directly.** Edit the
-sources (`design/site/`, `CurrencyDesk Onboarding.html`, `os-src/` + the root
+sources (`design/site/`, `design/onboarding/currencydesk-onboarding.html`, `os-src/` + the root
 shells) and rebuild: `npm run build`. CI rejects stale generated output, and it
 also rejects hand-edits, because they make the build dirty.
 

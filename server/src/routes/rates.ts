@@ -7,8 +7,7 @@
                                   the rates:change permission)
    Publications are append-only: the "current board" is the newest row
    for the branch, and history answers "what was on the board at time T".
-   The permission table is imported from the FRONTEND source — one
-   contract, no drift.
+   The permission table is the server's own (auth/permissions.ts).
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { desc, eq, lte } from "drizzle-orm";

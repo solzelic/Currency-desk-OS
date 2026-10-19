@@ -81,27 +81,6 @@
 
   const screenOf = (name) => { try { return window.CDOS._compliance.screen(name); } catch (e) { return { status: 'clear', hits: [] }; } };
 
-  // What the provider reads off the ID document and hands back to us (deterministic per name so it's stable).
-  function extractIdentity(name) {
-    let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    const pick = (arr) => arr[h % arr.length];
-    const streets = ['Bathurst St', 'Dundas St W', 'Bloor St E', 'Eglinton Ave', 'Lakeshore Blvd', 'Yonge St', 'King St W', 'Queen St E'];
-    const cities = [['Toronto', 'ON', 'M5V 2T6'], ['Mississauga', 'ON', 'L5B 4M1'], ['Markham', 'ON', 'L3R 0B8'], ['Vaughan', 'ON', 'L4K 3N1'], ['Brampton', 'ON', 'L6Y 1M5']];
-    const idTypes = ["Driver's Licence", 'Passport', 'Provincial ID'];
-    const [city, province, postal] = pick(cities);
-    const num = 100 + (h % 8900);
-    const idType = pick(idTypes);
-    const idNum = idType === 'Passport' ? 'P' + String(1000000 + (h % 8999999)) : 'DL ' + String(1000 + (h % 8999)) + '-' + String(100 + (h % 899));
-    const yr = 1972 + (h % 32), mo = 1 + (h % 12), da = 1 + (h % 27);
-    const pad = (n) => String(n).padStart(2, '0');
-    return {
-      address: `${num} ${pick(streets)}`, city, province, postal, country: 'Canada',
-      dob: `${yr}-${pad(mo)}-${pad(da)}`,
-      idType, idNum, idIssued: `20${20 + (h % 4)}-${pad(mo)}-${pad(da)}`, idExpiry: `20${30 + (h % 5)}-${pad(mo)}-${pad(da)}`,
-      email: (s.toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').trim().split(/\s+/).slice(0, 2).join('.') || 'contact') + '@email.com'
-    };
-  }
-
   // A sent check used to copy a hit off the sample watchlist. That list
   // is gone, so a check does not report a sanctions result.
   function resolve(check) {
@@ -590,8 +569,8 @@
   /* ====================================================================
      NEW CONTACT FLOW — scan ID → name & phone → verify → auto-fill
      A guided onboarding: capture the ID, capture name + phone (creates
-     the contact), run Persona, then write the extracted address / DOB /
-     ID details back onto the contact.
+     the contact). Persona is not connected, so no check runs and nothing
+     is read off the ID.
      ==================================================================== */
   function NewContactFlow({ initialName, by, setClients, onClose, onDone, requireId }) {
     const store = useStore();

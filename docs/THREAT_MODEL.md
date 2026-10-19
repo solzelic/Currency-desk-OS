@@ -45,7 +45,7 @@ third-party screening, exports, or deployment architecture change.
 | Repudiation | Denying a warning override or reversal | Actor/action/target/reason/correlation event model | Trusted identity, timestamps, durable ingestion, monitored review |
 | Information disclosure | Cross-tenant customer lookup or KYC leakage | Scope on records, tenant/branch authorization checks | Query-level server enforcement, object-store grants, encryption, DLP, penetration testing |
 | Denial of service | Flooding posting or export endpoints | Shop sign-in passwords are limited per account and per address (Postgres, migration 044). A valid CF-Connecting-IP, including IPv6, is the client only from a Cloudflare hop. A missing or invalid header counts the socket instead of failing the request. The first request logs header names only. Other endpoints are not | Rate limits, quotas, queue controls, backpressure, service objectives, recovery plans |
-| Elevation of privilege | Teller changes rates or exports records | Permission matrix and helper functions | Server policy enforcement, admin approvals, access reviews, segregation of duties |
+| Elevation of privilege | Teller changes rates, exports records, or moves the large-cash threshold through the settings API | Owner-only settings are an allowlist on the server. A manager may also change the default spread. A real change outside that list is refused whole, audited, and the stored desk is reloaded. Echoed or omitted keys are not a change. The settings list does not offer those rows | Server policy enforcement, admin approvals, access reviews, segregation of duties |
 | Injection / XSS | Malicious customer text executes script | React escaping for rendered text | CSP, dependency controls, output encoding, safe file rendering, security testing |
 | Replay / duplicate post | Reusing a transaction request | Correlation IDs only | Idempotency keys, nonce/session binding, atomic server transactions |
 | Audit suppression | Business write succeeds while audit append fails | Best-effort demo rollback | Transactional audit/outbox, health checks, fail-closed policy where appropriate |
@@ -60,6 +60,7 @@ third-party screening, exports, or deployment architecture change.
 5. A malicious upload targets KYC document parsing or staff preview tools.
 6. A developer accidentally ships a service credential in a frontend environment variable.
 7. A deletion request removes records still subject to statutory retention or legal hold.
+8. A teller calls the settings API directly and raises the large-cash threshold so the day's cash is no longer reportable.
 
 ## Security Invariants
 
@@ -67,6 +68,7 @@ third-party screening, exports, or deployment architecture change.
 - Branch access is explicit; role alone does not grant branch access.
 - Sensitive actions are denied unless the actor has a named permission.
 - A platform write names its permission. The read-only auditor cannot suspend or delete a desk, change a plan, create a desk, reset a password or PIN, issue a CD-ID, block a person, invite a desk, or edit an application. Suspending and deleting a desk are `security:manage`. Changing a plan is `billing:write`. Creating a desk by hand is `desks:write`. Acting on a person is `people:write`. An invitation and an application edit are `applications:write`.
+- Shop settings, compliance thresholds, localization, billing, role presets, hours and timezone, and every other settings field outside the caller's allowlist stay as stored unless that caller may change them. The owner's list is everything. A manager's list is the teller list plus the default spread. A different value outside that list is refused, the refusal is audited, and nothing in that request is written. A teller's different default spread is one of those refusals, and the stored spread is kept. An equal or omitted value keeps the stored field and the rest of the save stands.
 - Audit history has no update or delete operation in the application port.
 - Audit events reference prior/new record versions without copying restricted payloads.
 - Demo reset does not erase audit history.

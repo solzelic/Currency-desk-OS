@@ -3,9 +3,9 @@
    A single counter flow that reshapes itself to the job: exchange,
    remittance, cheque, money order, bill payment. The right rail is a
    live "before you post" checklist + deal ticket, so a teller trained
-   once just fills until everything turns green. Compliance (ID at $3k,
-   LCTR at $10k, structuring, purpose/source capture) is part of the
-   checklist, not an afterthought.
+   once just fills until everything turns green. Compliance (the pack's
+   identification and reporting lines, structuring, purpose/source
+   capture) is part of the checklist, not an afterthought.
    Exposed as window.CDOS.TxModal — the Ledger prefers it when present.
    ============================================================ */
 (function () {

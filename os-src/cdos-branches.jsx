@@ -38,12 +38,6 @@
   // on-brand grayscale ramp + one amber accent, for FX-mix stacks
   const TONE = { CAD: 'var(--cd-ink)', USD: '#3c3b38', EUR: '#615f58', GBP: '#86837b', INR: '#a8a59b', PHP: '#c6c2b8', CNY: CD.brass };
 
-  /* ---- station model: branches → tills ----------------------------------
-     Each till carries TWO people fields:
-       teller   — who's POSTED here (management: their default drawer, set on
-                  the Team board). Sticky.
-       operator — who's ON it right now (a live session: set by sign-in /
-                  till switch, cleared by sign-out). One operator per till. */
   /* ---- station model: branches → vault + tills ---------------------------
      Each branch carries a VAULT (its cash account; `main: true` marks the
      main vault). Each till carries TWO people fields:
