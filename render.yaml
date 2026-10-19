@@ -127,13 +127,13 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_PRICE_BASIC_MONTHLY
-        value: price_1TyKwqAWdRTG9PX9XJTProS5
+        value: price_1USHAgAWdRTG9PX9QsTJ1Yxa
       - key: STRIPE_PRICE_BASIC_ANNUAL
         value: price_1TyKwuAWdRTG9PX9zjWCbog8
       - key: STRIPE_PRICE_PRO_MONTHLY
-        value: price_1TyKwxAWdRTG9PX9MziwMtXA
+        value: price_1USHB2AWdRTG9PX9SVS7AwKL
       - key: STRIPE_PRICE_PRO_ANNUAL
-        value: price_1TyKx0AWdRTG9PX9rPOU2sox
+        value: price_1USHB3AWdRTG9PX92aMTMoVw
       - key: STRIPE_PRICE_PREMIUM_MONTHLY
         value: price_1TyKx4AWdRTG9PX9z6MyB8lT
       # Google Places, for the address screen in onboarding. The key stays
