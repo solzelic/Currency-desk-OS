@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -437,5 +438,72 @@ describe("public marketing claims", () => {
   it("allows the moment a deal is written and an untimed launch", () => {
     const result = probe("the second it happens. a second shop. an on-site launch week. We have not timed it.");
     expect(result.ok).toBe(true);
+  });
+
+  it("flags the false claims removed from the public pages", () => {
+    const gap = [
+      "the desk records what happened",
+      "CBUAE rulebook",
+      "Clients & KYC",
+      "rulebook loads first",
+    ].filter((claim) => probe(claim).ok);
+    expect(gap, "checker still allows removed claims").toEqual([]);
+    const removed = ["the desk records what happened", "CBUAE rulebook", "Clients & KYC", "rulebook loads first", "the desk tells you when that is", "A small walk-in exchange is not the same as a large one", "being able to show declines is exactly what a regulator expects", "The desk carries the rules with you", "same screens, different thresholds", "The nine things on the desk today", "the next nine will come the same way", "Only you and the staff you name", "We hold it as a custodian, not an owner", "the people you nominate", "the messages you send clients through the desk", "staff who need it to do their job and is logged", "without anyone managing it", "a five-year-old ticket", "Moving your recordkeeping is not a reportable event", "your public board, clients and your ledger anywhere", "standard formats your accountant and regulator already read", "a full export, not a locked door", "a shared view across them", "a phone hotspot keeps you trading through an outage", "maps your regulator's obligations", "Your registration decides which obligations load", "The same four steps run in every jurisdiction", "We read your licence", "Green badge, good for a year", "Deep file behind the badge for scrutiny", "Maintained with the desk", "Maintained to the CBUAE rulebook", "Kept in line with the AMLO", "others support analytics and can be declined", "mapped for nine more jurisdictions", "get a straight answer back", "an AI assistant that watches the numbers with you", "the copilot that watches your numbers", "get an answer, not a spreadsheet", "Spots patterns you would never have looked for", "A short daily read on how the desk is doing", "Service providers we rely on are Render, for hosting", "The database is Neon.", "Listed in the pack. A licence class is not tracked.", "Listed in the pack. A licence is not tracked.", "Due diligence at HK$120,000.", "occasional-transaction threshold", "AI assistant", "If you need everything at once, ask us.", "6-year records", "C&ED licensed", "PS Act class", "We rely on our contracts with these providers to require a level of protection", "retained for the statutory retention period that applies to your business"];
+    for (const claim of removed) expect(probe(claim).ok, claim).toBe(false);
+    expect(probe("The AI assistant is coming soon, not included yet.").ok).toBe(true); expect(probe("The AI assistant is not connected.").ok).toBe(true); expect(probe("The database is hosted by Neon [Neon region: to confirm].").ok).toBe(true); expect(probe("Sanctions screening is not connected either.").ok).toBe(true);
+    const web = path.resolve(import.meta.dirname, "../../web");
+    const faq = readFileSync(path.join(web, "faq.html"), "utf8");
+    const home = readFileSync(path.join(web, "index.html"), "utf8");
+    const compliance = readFileSync(path.join(web, "compliance.html"), "utf8");
+    const legal = readFileSync(path.join(web, "legal.html"), "utf8");
+    const singapore = compliance.slice(compliance.indexOf("country:'Singapore'"), compliance.indexOf("country:'Hong Kong'"));
+    const hongKong = compliance.slice(compliance.indexOf("country:'Hong Kong'"));
+    expect(faq).toContain("Outside Canada the desk is not live."); expect(faq).toContain("These dates are plans, not commitments."); expect(faq).not.toContain("nine things on the desk today"); expect(faq).not.toContain("as a custodian, not an owner"); expect(home).toContain("The AI assistant is coming soon, not included yet."); expect(home).not.toContain("mapped for nine more jurisdictions"); expect(home).not.toContain("'AI assistant'"); expect(compliance).toContain("No Hong Kong pack is built."); expect(compliance).toContain("Money changing CDD"); expect(compliance).not.toContain("good for a year"); expect(compliance).not.toContain("We read your licence"); expect(singapore).not.toContain("Listed in the pack"); expect(hongKong).not.toContain("Listed in the pack"); expect(hongKong).not.toContain("Due diligence at HK$120,000."); expect(faq).toContain("[Neon region: to confirm]"); expect(legal).toContain("[Neon region: to confirm]"); expect(legal).toContain("[Data processing terms with Render and Neon: to confirm]."); expect(home).toContain("It then files it against their name so a returned cheque is never a mystery."); expect(compliance).toContain("No Singapore pack is built."); expect(legal).toContain("The desk does not delete records on a schedule while your account is open."); expect(faq).not.toContain("If you need everything at once, ask us."); expect(home).toContain("HK$8,000 or more (Sch. 2, s.13 and s.3(1A))"); expect(home).toContain("5-year records"); expect(home).not.toContain("6-year records"); expect(home).not.toContain("PS Act class"); expect(home).toContain("spec:'Not tracked'"); expect(legal).toContain("When a visitor asks for a quote on a shop's public page, the desk stores their phone number, and their name if they give one."); expect(legal).toContain("We use the number only for that quote and its confirmation. We do not send marketing to it."); expect(legal).toContain("Cloudflare, to deliver and protect the website. It sees visitors' IP addresses and requests."); expect(legal).toContain("If texting is configured, the quote is sent to that number by text, or by WhatsApp when a WhatsApp sender is set."); expect(legal).not.toContain("Texting is not connected, so the desk does not send messages to your clients."); expect(faq).toContain("The desk gives you a worksheet to prepare a suspicious transaction report. It never sends it. A person at your business decides and files it with FINTRAC."); expect(faq).not.toContain("The desk does not draft or send a suspicious transaction report."); expect(faq).not.toContain("A shared view across several locations is not built yet."); expect(home).toContain("Worksheet only, you file it."); expect(home).not.toContain("Not drafted or sent"); expect(home).not.toContain("Clients & KYC"); expect(legal).not.toContain("messages you send clients through the desk"); expect(legal).not.toContain("support analytics and can be declined");
+    expect(home).toContain("A quote can be texted to the number given, only for that quote, when texting is set up."); expect(home).not.toContain("Texting is not connected yet"); expect(faq).not.toContain("Texting is not connected yet"); expect(faq).toContain("If texting is not set up, no message is sent."); expect(faq).not.toContain("Can I text clients without giving out my number?"); expect(faq).toContain("Can my public page text a quote to a visitor?"); expect(home).not.toContain("ready for pickup"); expect(home).not.toContain("No message bubble."); expect(home).not.toContain("Your quote: 500 USD at 1.3712. Held for 30 minutes."); expect(home).not.toContain("text bubble"); expect(home).not.toContain(["site", "web", "2"].join("-")); expect(home).not.toContain(["gc", "web", "2"].join("-")); expect(probe("Held for 30 minutes.").ok).toBe(true); expect(probe("ready in 30 minutes").ok).toBe(false);
+  }, 20000);
+
+  it("keeps a message bubble and a texting picture out of the story", () => {
+    const home = readFileSync(path.join(path.resolve(import.meta.dirname, "../../web"), "index.html"), "utf8");
+    const story = home.slice(home.indexOf("storyDefs()"), home.indexOf("\n  state ="));
+    const srcs = [...story.matchAll(/src:'([^']+)'/g)].map((m) => m[1]);
+    expect(srcs).toEqual(["/web/assets/site-web-1.jpg", "/web/assets/site-web-3.jpg", "/web/assets/site-web-4.jpg", "/web/assets/site-web-5.jpg"]);
+    expect(story).not.toMatch(/bubble|texting|THE QUOTE/i);
+    expect([...story.matchAll(/caption:'([^']+)'/g)].map((m) => m[1])).toEqual(["They find you online.", "They walk in.", "Shows the code.", "Everyone\\u2019s a regular."]);
+    expect([...story.matchAll(/kicker:'([^']+)'/g)].map((m) => JSON.parse(`"${m[1]}"`))).toEqual(["01 · THE WEBSITE", "02 · THE VISIT", "03 · THE CODE", "04 · THE DEAL"]);
+    expect(home).toContain("const N = this.storyDefs().length");
+    expect(home).toContain("(this.state.panel + dir + n) % n");
+    expect(home).not.toMatch(/const N = \d/);
+  });
+
+  it("flags the quote sentence and the four claims only the page test caught", () => {
+    const missed = [
+      "Texting is not connected yet. The desk does not send a message.",
+      "Texting is not connected, so the desk does not send messages to your clients.",
+      "The desk does not draft or send a suspicious transaction report.",
+      "A shared view across several locations is not built yet.",
+      "Not drafted or sent", "Can I text clients without giving out my number?", "Your USD is ready for pickup.",
+    ];
+    expect(missed.filter((claim) => probe(claim).ok), "checker still allows these").toEqual([]);
+  });
+
+  it("keeps Worksheet only, you file it at 4.5 to 1 on the phone page", () => {
+    const html = readFileSync(path.join(path.resolve(import.meta.dirname, "../../web"), "mobile.html"), "utf8");
+    const token = html.match(/font-size: 10\.5px; color: var\(--([a-z]+)\)/)?.[1] ?? "";
+    const fg = html.match(new RegExp(`--${token}:\\s*(#[0-9A-Fa-f]{6})`))?.[1] ?? "";
+    const bg = html.match(/--panel:\s*(#[0-9A-Fa-f]{6})/)?.[1] ?? "";
+    const lum = (hex: string) => [0, 1, 2].reduce((sum, n) => {
+      const c = parseInt(hex.slice(1 + n * 2, 3 + n * 2), 16) / 255;
+      const lin = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      return sum + [0.2126, 0.7152, 0.0722][n]! * lin;
+    }, 0);
+    expect(fg && bg, `${token} ${fg} on ${bg}`).toBeTruthy();
+    expect((Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps a one-row pill clear of the 44px watermark", () => {
+    const src = readFileSync(path.resolve(import.meta.dirname, "../../design/site/CurrencyDesk Site.dc.html"), "utf8");
+    const pad = Number(src.match(/padding-right:' \+ \(tall \? '12' : '(\d+)'\)/)?.[1]);
+    const icon = Number(src.match(/bigIcon: this\.ic\(ico, tall \? 76 : (\d+)/)?.[1]);
+    expect(pad, "flat row does not reserve a side for the watermark").toBeGreaterThanOrEqual(icon + 16);
   });
 });

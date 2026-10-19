@@ -43,12 +43,12 @@ const SITE_ORIGIN = "https://www.currencydeskos.com";
    --------------------------------------------------------------- */
 const PAGES = {
   "CurrencyDesk Site":         { out: "index.html",  route: "/",  home: true,
-    title: "CurrencyDesk — more trades, less paperwork",
+    title: "more trades, less paperwork | CurrencyDesk",
     description: "One desk for the whole shop: the rate board, till and ledger, and clients. Canada is the only Live country.",
   },
   "CurrencyDesk Mobile":       { out: "mobile.html", route: "/m", home: true, noindex: true,
-    title: "CurrencyDesk — more trades, less paperwork",
-    description: "One desk for the whole shop — rates, till, ledger, clients and compliance.",
+    title: "more trades, less paperwork | CurrencyDesk",
+    description: "One desk for the whole shop. Rates, till, ledger, clients and compliance.",
     /* The mobile design has no way in for someone who already has a desk: its
        header offers Early access and nothing else, and at 390px that header is
        already full — a second action there costs the wordmark. So Sign in goes
@@ -60,16 +60,16 @@ const PAGES = {
         '<a href="/login" style="font-size: 13.5px; color: var(--mute);">Sign in</a>',
     ]] },
   "CurrencyDesk Legal":        { out: "legal.html",  route: "/legal", anchor: "#company",
-    title: "Privacy Policy and Terms of Service — CurrencyDesk",
+    title: "Privacy Policy and Terms of Service | CurrencyDesk",
     description: "Both documents in full, on one page. What we collect, what we do with it, and the terms your desk runs under." },
   "CurrencyDesk FAQ":          { out: "faq.html",    route: "/faq", anchor: "#faq",
-    title: "Your questions, answered — CurrencyDesk",
+    title: "Your questions, answered | CurrencyDesk",
     description: "What CurrencyDesk costs, what it runs on, how long setup takes, and when it reaches your country." },
   "CurrencyDesk Compliance":   { out: "compliance.html", route: "/compliance", anchor: "#compliance",
-    title: "Compliance — CurrencyDesk",
+    title: "Compliance | CurrencyDesk",
     description: "Your regulator's rulebook, as the product stands. Cash thresholds watched from the book. The desk does not send a report." },
   "CurrencyDesk Contact":      { out: "contact.html", route: "/contact", anchor: "#company",
-    title: "Contact — CurrencyDesk",
+    title: "Contact | CurrencyDesk",
     description: "Talk to the people building the desk. No ticket queue, no phone tree.",
     /* The design ends the form with a made-up reference and a promise of a
        reply. Send it first, and show the reference the server recorded. */
@@ -85,13 +85,13 @@ const PAGES = {
            screen renders text — React refuses to render one, so the page
            went blank at the exact moment somebody had finished writing to
            us. Read the reference off it. */
-        "    }).then((r) => this.setState({ ref: (r && r.reference) || 'not sent — please email hello@currencydeskos.com' }));",
+        "    }).then((r) => this.setState({ ref: (r && r.reference) || 'not sent. Please email hello@currencydeskos.com' }));",
     ]] },
   "CurrencyDesk Add-ons":      { out: "add-ons.html", route: "/add-ons", anchor: "#pricing",
-    title: "Add-ons — CurrencyDesk",
+    title: "Add-ons | CurrencyDesk",
     description: "Extras that bolt onto the desk, priced on their own." },
   "CurrencyDesk Early Access": { out: "early-access.html", route: "/signup", anchor: "/signup",
-    title: "Become a Founding Operator — CurrencyDesk",
+    title: "Become a Founding Operator | CurrencyDesk",
     description: "Apply for early access: founding pricing held for the life of the account, and a direct line to the people building the desk.",
     /* The last step congratulates the applicant. Nothing had been sent —
        record the application at the moment the design says it is done.
@@ -165,7 +165,7 @@ const PAGES = {
            reading them in the panel. */
         "          phone: s.dial + ' ' + String(s.phone || '').replace(/\\D/g, ''), bestTime: s.callWindow,\n" +
         "        }).then((r) => {\n" +
-        "          if (!r.reference) this.flashToast('We could not record that — email hello@currencydeskos.com');\n" +
+        "          if (!r.reference) this.flashToast('We could not record that. Email hello@currencydeskos.com');\n" +
         "          this._target = r.charterNo || null;\n" +
         "          setTimeout(() => this.startMemberCount(), 800);\n" +
         "        });\n      }",

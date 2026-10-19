@@ -35,7 +35,12 @@
    contains those words does not pass. Deadlines in days do not
    match a banned pattern, so they are not listed. US CTR and SAR
    phrases are not listed. "static 24 hours" and "within 3 business
-   days" are not a banned pattern. */
+   days" are not a banned pattern.
+
+   A claim this pass removed is banned as a phrase, so it cannot
+   return. "AI assistant" is allowed only in the honest sentence
+   that it is coming soon and not included yet, or that it is not
+   connected. */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,6 +114,64 @@ const phrases = [
   [/\breplying today\b/, "replying today"],
   [/\babout a week\b/, "about a week"],
   [/\bwithin a week\b/, "within a week"],
+  [/the desk tells you when that is/, "the desk tells you when that is"],
+  [/small walk-in exchange is not the same/, "small walk-in exchange"],
+  [/being able to show declines/, "show declines"],
+  [/the desk carries the rules with you/, "the desk carries the rules with you"],
+  [/same screens, different thresholds/, "same screens, different thresholds"],
+  [/nine things on the desk today/, "nine things on the desk today"],
+  [/the next nine will come/, "the next nine will come"],
+  [/only you and the staff you name/, "only you and the staff you name"],
+  [/as a custodian, not an owner/, "custodian, not an owner"],
+  [/people you nominate/, "people you nominate"],
+  [/messages you send clients through the desk/, "messages you send clients"],
+  [/need it to do their job and is logged/, "and is logged"],
+  [/without anyone managing it/, "without anyone managing it"],
+  [/five-year-old ticket/, "five-year-old ticket"],
+  [/not a reportable event/, "not a reportable event"],
+  [/your public board, clients and your ledger anywhere/, "ledger anywhere"],
+  [/standard formats your accountant/, "standard formats your accountant"],
+  [/full export, not a locked door/, "full export, not a locked door"],
+  [/shared view across them/, "shared view across them"],
+  [/keeps you trading through an outage/, "trading through an outage"],
+  [/maps your regulator/, "maps your regulator"],
+  [/your registration decides which obligations/, "your registration decides"],
+  [/four steps run in every jurisdiction/, "four steps in every jurisdiction"],
+  [/we read your licen[cs]e/, "we read your licence"],
+  [/good for a year/, "good for a year"],
+  [/deep file behind the badge/, "deep file behind the badge"],
+  [/maintained with the desk/, "maintained with the desk"],
+  [/maintained to the cbuae/, "maintained to the CBUAE"],
+  [/kept in line with the amlo/, "kept in line with the AMLO"],
+  [/support analytics and can be declined/, "support analytics"],
+  [/mapped for nine more/, "mapped for nine more"],
+  [/straight answer/, "straight answer"],
+  [/watches the numbers with you/, "watches the numbers with you"],
+  [/copilot that watches your numbers/, "copilot that watches your numbers"],
+  [/not a spreadsheet/, "not a spreadsheet"],
+  [/spots patterns you would never/, "spots patterns"],
+  [/short daily read/, "short daily read"],
+  [/we rely on are render/, "we rely on are Render"],
+  [/the database is neon\b/, "the database is Neon"],
+  [/listed in the pack\. a licence class is not tracked/, "listed in the pack, licence class"],
+  [/listed in the pack\. a licence is not tracked/, "listed in the pack, licence"],
+  [/due diligence at hk\$120,000/, "due diligence at HK$120,000"],
+  [/occasional-transaction threshold/, "occasional-transaction threshold"],
+  [/if you need everything at once, ask us/, "If you need everything at once, ask us"],
+  [/6-year records/, "6-year records"],
+  [/c&ed licensed/, "C&ED licensed"],
+  [/ps act class/, "PS Act class"],
+  [/we rely on our contracts with these providers/, "we rely on our contracts"],
+  [/retained for the statutory retention period that applies/, "retained for the statutory retention period"],
+  [/the desk records what happened/, "the desk records what happened"],
+  [/cbuae rulebook/, "CBUAE rulebook"],
+  [/clients & kyc/, "Clients & KYC"],
+  [/rulebook loads first/, "rulebook loads first"],
+  [/texting is not connected yet\. the desk does not send a message/, "Texting is not connected yet. The desk does not send a message."],
+  [/texting is not connected, so the desk does not send messages to your clients/, "Texting is not connected, so the desk does not send messages"],
+  [/the desk does not draft or send a suspicious transaction report/, "does not draft or send a suspicious transaction report"],
+  [/shared view across several locations is not built yet/, "shared view across several locations"],
+  [/not drafted or sent/, "Not drafted or sent"], [/can i text clients without giving out my number/, "Can I text clients without giving out my number?"], [/ready for pickup/, "ready for pickup"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";
@@ -211,7 +274,7 @@ function nearby(text, needle, other, span) {
 }
 
 function withoutAllowed(text, rel) {
-  let scanned = text.replace(/\blive rate board\b/g, " ");
+  let scanned = text.replace(/\blive rate board\b/g, " ").replaceAll("held for 30 minutes", " ");
   for (const name of HOUR_RULES) scanned = scanned.replaceAll(name, " ");
   if (!REGULATOR_PAGES.has(rel)) return scanned;
   for (const phrase of REGULATOR_CLAUSES) {
@@ -247,6 +310,21 @@ function claimsIn(text, problems, rel) {
     const after = text.slice(screeningMatch.index + screeningMatch[0].length);
     if (/^\s*is not connected/.test(after)) continue;
     problems.push("sanctions screening");
+  }
+  /* "The AI assistant is coming soon, not included yet" and
+     "The AI assistant is not connected" are the honest sentences.
+     A bare "AI assistant" in a feature list is a claim that it ships.
+     Onboarding still names the assistant. That page is outside this
+     pass, so the ban applies to every other served page. */
+  if (rel !== "web/onboarding.html") {
+    const assistant = /ai assistant/g;
+    let assistantMatch;
+    while ((assistantMatch = assistant.exec(text))) {
+      const after = text.slice(assistantMatch.index + assistantMatch[0].length);
+      if (/^\s+is coming soon, not included yet/.test(after)) continue;
+      if (/^\s+is not connected/.test(after)) continue;
+      problems.push("AI assistant");
+    }
   }
   for (const hit of nearby(text, "eftr", "live", 80)) {
     problems.push(`EFTR next to Live (${hit})`);

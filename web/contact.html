@@ -26,12 +26,12 @@ window.sendEnquiry = function (kind, email, name, details) {
 };
 </script>
 <script src="/web/support.js"></script>
-<title>Contact — CurrencyDesk</title>
+<title>Contact | CurrencyDesk</title>
 <meta name="description" content="Talk to the people building the desk. No ticket queue, no phone tree.">
 <link rel="canonical" href="https://www.currencydeskos.com/contact">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="CurrencyDesk">
-<meta property="og:title" content="Contact — CurrencyDesk">
+<meta property="og:title" content="Contact | CurrencyDesk">
 <meta property="og:description" content="Talk to the people building the desk. No ticket queue, no phone tree.">
 <meta property="og:url" content="https://www.currencydeskos.com/contact">
 <meta property="og:image" content="https://www.currencydeskos.com/web/photos/rate-board-storefront.jpg">
@@ -132,7 +132,7 @@ window.sendEnquiry = function (kind, email, name, details) {
 
           <label style="display: block; margin-top: 14px;">
             <span style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Your message<span style="letter-spacing: 0.06em; text-transform: none;">{{ countLabel }}</span></span>
-            <textarea rows="5" value="{{ vMsg }}" onInput="{{ onMsg }}" placeholder="Tell us about your shop — how many tellers, which currencies, what is breaking today." style="width: 100%; margin-top: 7px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-family: var(--f); font-size: 14px; line-height: 1.55; color: var(--ink); outline: none; resize: vertical;" style-focus="border-color: var(--green);"></textarea>
+            <textarea rows="5" value="{{ vMsg }}" onInput="{{ onMsg }}" placeholder="Tell us about your shop, how many tellers, which currencies, what is breaking today." style="width: 100%; margin-top: 7px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-family: var(--f); font-size: 14px; line-height: 1.55; color: var(--ink); outline: none; resize: vertical;" style-focus="border-color: var(--green);"></textarea>
           </label>
 
           <button type="button" onClick="{{ onSend }}" style="{{ sendStyle }}">{{ sendLabel }}<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
@@ -153,7 +153,7 @@ window.sendEnquiry = function (kind, email, name, details) {
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#1D6B45" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg>
           </div>
           <div style="font-family: var(--serif); font-size: 30px; line-height: 1.1; letter-spacing: -0.015em; margin-top: 20px;">Message received.</div>
-          <p style="font-size: 14.5px; line-height: 1.6; color: var(--mute); margin: 12px auto 0; max-width: 340px;">We've got it. Expect a reply within one business day — keep the reference below if you need to follow up.</p>
+          <p style="font-size: 14.5px; line-height: 1.6; color: var(--mute); margin: 12px auto 0; max-width: 340px;">We've got it. Expect a reply within one business day. Keep the reference below if you need to follow up.</p>
           <div style="display: inline-flex; align-items: center; gap: 10px; margin-top: 22px; padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-family: var(--m); font-size: 10.5px; color: var(--mute);">Reference<b style="color: var(--ink); font-weight: 600; letter-spacing: 0.06em;">{{ ref }}</b></div>
           <div style="display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 26px;">
             <a href="/" style="padding: 12px 20px; border-radius: 11px; background: var(--green); color: #fff; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700;" style-hover="background: var(--green-deep); color: #fff;">Back to site</a>
@@ -207,7 +207,7 @@ class Component extends DCLogic {
     this.setState({ sent: true, ref: 'sending…' });
     sendEnquiry('contact', s.email, s.name, {
       topic: s.topic, shop: s.shop, city: s.city, message: s.msg, newsletter: s.news,
-    }).then((r) => this.setState({ ref: (r && r.reference) || 'not sent — please email hello@currencydeskos.com' }));
+    }).then((r) => this.setState({ ref: (r && r.reference) || 'not sent. Please email hello@currencydeskos.com' }));
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
   };
   onAgain = () => this.setState({ sent: false, name: '', shop: '', email: '', city: '', msg: '', ref: '' });
