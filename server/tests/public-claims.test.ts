@@ -547,6 +547,8 @@ describe("public marketing claims", () => {
     expect(home).not.toContain("PS Act class");
     expect(home).toContain("spec:'Not tracked'");
     expect(legal).toContain("When a visitor asks for a quote on a shop's public page, the desk stores their phone number, and their name if they give one.");
+    expect(legal).toContain("We use the number only for that quote and its confirmation. We do not send marketing to it.");
+    expect(legal).toContain("Cloudflare, to deliver and protect the website. It sees visitors' IP addresses and requests.");
     expect(legal).toContain("If texting is configured, the quote is sent to that number by text, or by WhatsApp when a WhatsApp sender is set.");
     expect(legal).not.toContain("Texting is not connected, so the desk does not send messages to your clients.");
     expect(faq).toContain("The desk gives you a worksheet to prepare a suspicious transaction report. It never sends it. A person at your business decides and files it with FINTRAC.");

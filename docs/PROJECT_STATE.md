@@ -953,8 +953,10 @@ The pages do not name a Neon region. Privacy section 8 shows
 [Data processing terms with Render and Neon: to confirm]. The placeholder is followed by a period. The
 desk does not delete records on a schedule while the account is
 open, and keeping them for the statutory period is the shop's
-obligation. The pages also name Resend,
-Stripe, Twilio, Google, Tavily, and ElevenLabs. Admin changes are
+obligation. The pages also name Cloudflare, Resend,
+Stripe, Twilio, Google, Tavily, and ElevenLabs. A storefront quote
+number is used only for that quote and its confirmation, and the
+pages say the desk does not send marketing to it. Admin changes are
 logged. Admin reads are not described as logged. Texting is not
 connected. Sanctions screening is not connected. The AI copilot
 is marked coming soon, not included yet, with a neutral chip,
