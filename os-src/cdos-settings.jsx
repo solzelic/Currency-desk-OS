@@ -601,6 +601,108 @@
     </div>);
   }
 
+  /* ---------- Accepted IDs (server-backed) ----------
+
+     Which ID types this shop takes, one switch per type. The owner asked
+     for exactly this: "accepted IDs, not accepted IDs, within reason".
+     Within reason is the pack's: a locked type shows a padlock and the
+     legal note, and cannot be switched on. The server also refuses a
+     change that leaves no photo ID on. See
+     server/src/clients/accepted-id-types.ts.
+
+     Same pattern as DeskCurrencyRows: read from the server, saved to the
+     server, never to this browser's settings. Each switch saves on its
+     own. A refused save shows the server's sentence and the switches go
+     back to what the server holds. "Saved" is said only for a save that
+     landed. Whether this person may change it is the server's answer
+     (`canChange`); anyone else sees the list read-only. */
+  function IdSwitch({ on, label, disabled, onFlip }) {
+    return (<button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={onFlip}
+      className="w-11 h-6 relative flex-none"
+      style={{ background: on ? CD.ink : 'var(--cd-disabled)', borderRadius: 999, transition: 'background .15s', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
+      <span className="absolute top-0.5 w-5 h-5" style={{ left: on ? 22 : 2, background: 'var(--cd-panel)', borderRadius: 999, transition: 'left .15s' }} />
+    </button>);
+  }
+
+  function AcceptedIdRows() {
+    const { log } = React.useContext(SettingsCtx);
+    const [status, setStatus] = useState('loading');   // loading | ready | offline
+    const [shop, setShop] = useState(null);
+    const [busy, setBusy] = useState('');
+    const [err, setErr] = useState('');
+    const [saved, setSaved] = useState(false);
+    const api = window.CDOS && window.CDOS.Backend && window.CDOS.Backend.Clients;
+
+    useEffect(() => {
+      if (!api || typeof fetch !== 'function' || window.location.protocol === 'file:') { setStatus('offline'); return; }
+      let alive = true;
+      api.acceptedIdTypes()
+        .then(answer => {
+          if (!alive) return;
+          setShop(answer);
+          if (window.CDOS.setAcceptedIdTypes) window.CDOS.setAcceptedIdTypes(answer);
+          setStatus('ready');
+        })
+        .catch(() => { if (alive) setStatus('offline'); });
+      return () => { alive = false; };
+    }, []);
+
+    const flip = async (type) => {
+      if (busy || !shop || !shop.canChange || type.locked) return;
+      const next = shop.types.filter(t => t.code === type.code ? !t.on : t.on).map(t => t.code);
+      setBusy(type.code); setErr(''); setSaved(false);
+      try {
+        const answer = await api.setAcceptedIdTypes(next);
+        setShop(answer);
+        /* Published so every ID picker on the desk follows at once. */
+        if (window.CDOS.setAcceptedIdTypes) window.CDOS.setAcceptedIdTypes(answer);
+        setSaved(true);
+        log && log('Accepted IDs changed', `${type.label} ${type.on ? 'off' : 'on'}`);
+      } catch (error) {
+        setErr((error && error.message) || 'That was not saved. Nothing was changed.');
+      }
+      setBusy('');
+    };
+
+    if (status !== 'ready') {
+      return (<div className="text-[12px] py-3" style={{ color: CD.faint }}>
+        {status === 'loading' ? 'Reading this shop’s list…' : 'Available on the hosted desk, where the server keeps the list and checks every ID.'}
+      </div>);
+    }
+
+    const group = (kind, title) => (
+      <div className="mb-4">
+        <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{title}</div>
+        {shop.types.filter(t => t.kind === kind).map(t => (
+          <div key={t.code} data-testid={`accepted-id-${t.code}`} className="flex items-center justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+            <div className="min-w-0">
+              <div className="text-sm flex items-center gap-1.5" style={{ color: t.locked ? CD.mute : CD.ink }}>
+                {t.locked && <Ic n="lock" s={12} c={CD.mute} />}{t.label}
+              </div>
+              {t.locked && t.note && <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{t.note}</div>}
+            </div>
+            <IdSwitch on={t.on} label={t.label} disabled={t.locked || !shop.canChange || !!busy} onFlip={() => flip(t)} />
+          </div>
+        ))}
+      </div>
+    );
+
+    return (<div data-testid="accepted-ids">
+      {!shop.canChange && (
+        <div className="text-[11px] mb-3 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}>
+          <Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change which IDs this shop accepts.
+        </div>
+      )}
+      {group('person', 'Person')}
+      {group('business', 'Business')}
+      <div className="text-[10.5px] mb-2" style={{ color: CD.faint }}>
+        {shop.followsPack ? 'These are your jurisdiction pack’s defaults.' : 'Your own list. Your jurisdiction pack’s locks still apply.'} Customers already on file keep their ID. If you switch a type off, their file says to record another ID at the next visit.
+      </div>
+      {err && <div role="alert" className="text-[11.5px] mb-2" style={{ color: CD.flag }}>{err}</div>}
+      {!err && saved && <div role="status" className="text-[11px] mb-2" style={{ color: CD.green }}>Saved</div>}
+    </div>);
+  }
+
   // default cards on the account (until the owner edits them); helpers for card display
   const seedCards = (settings) => (settings.cards) || [
     { id: 'card_visa', num: '4242 4242 4242 4242', exp: '04/27', name: (settings.billingName || 'Jordan Masri'), postal: 'M5V 2T6', role: 'primary' },
@@ -1045,7 +1147,7 @@
       setPwForm({ cur: '', a: '', b: '', msg: 'Password changed.', busy: false });
       setTimeout(() => setPwForm(null), 1600);
     };
-    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
+    const NAV_KEYWORDS = { business: 'logo msb fintrac reporting entity name address', locations: 'branch till teller station', localization: 'currency timezone date time format region', compliance: 'kyc verification threshold lctr aggregation structuring sanctions retention nudge quick check reverify escalate jurisdiction fintrac fincen partner code', 'accepted-ids': 'kyc identification documents passport driver licence photo id national card health card business number', billing: 'plan subscription invoice provider kyc partner code seats', payment: 'card visa mastercard billing email', ledger: 'import csv excel duplicate', till: 'cash drawer count denomination variance tolerance reconcile blind handoff close day float', transfers: 'remittance corridor beneficiary eft eftr threshold cross-border reporting settlement purpose', cheques: 'cheque check clearing hold fee schedule nsf risk minimum days', clients: 'kyc risk id expiry email phone contact', rates: 'spread margin fee floor rounding rate lock provider commission', vault: 'cash floor reserve stock low valuation cost', receipts: 'print header footer disclaimer logo', tagged: 'auto tag follow-up review', ticker: 'tape scroll speed flags', employees: 'staff team seats accounts apps roles', permissions: 'roles presets teller handoff drawer count' };
     const navMatch = (id, label) => { const q = navQ.trim().toLowerCase(); if (!q) return true; return (label + ' ' + (NAV_KEYWORDS[id] || '')).toLowerCase().includes(q); };
     /* "Reset demo data" IS GONE, and it is worth saying why rather than
        leaving a gap somebody fills back in.
@@ -1181,6 +1283,9 @@
         ['employees', 'Employees', 'users'],
         ['localization', 'Localization', 'globe'],
         ['compliance', 'Compliance & jurisdiction', 'shield'],
+        /* Not owner-only: a manager sees the list read-only, because
+           the pickers they use follow it. Only the owner can switch. */
+        ['accepted-ids', 'Accepted IDs', 'id'],
         ['billing', 'Billing & plan', 'coins'],
         ['payment', 'Payment methods', 'card'],
       ]],
@@ -1519,6 +1624,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
           <div className="text-[10px] uppercase tracking-widest mb-1 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>File completeness</div>
           <Row title="Require ID scan on file" desc="Moved to Compliance & jurisdiction, alongside the rest of the verification policy."><button onClick={() => setTab('compliance')} className="flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: CD.ink }}>Open <Ic n="chev" s={13} c={CD.mute} /></button></Row>
+          <Row title="Accepted IDs" desc="Which ID types your staff can record."><button onClick={() => setTab('accepted-ids')} className="flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: CD.ink }}>Open <Ic n="chev" s={13} c={CD.mute} /></button></Row>
           <Row title="Require email on file" desc="Contacts missing an email get an amber 'email required' chip on their profile."><Sw on={!!settings.requireClientEmail} click={() => toggleSet('requireClientEmail', 'Require client email')} /></Row>
           <Row title="Require phone on file" desc="Contacts missing a phone number get an amber 'phone required' chip on their profile."><Sw on={!!settings.requireClientPhone} click={() => toggleSet('requireClientPhone', 'Require client phone')} /></Row>
           <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="users" s={13} c={CD.mute} /><span>These feed the KYC status on every profile and the <b style={{ color: CD.ink }}>ID / KYC issues</b> queue in the Ledger's Compliance workspace.</span></div>
@@ -2219,6 +2325,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
           <div className="mt-4 p-3 text-[11px] leading-relaxed flex items-start gap-2" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 9 }}><Ic n="shield" s={13} c={CD.mute} /><span>{pack && pack.packId === 'pack-eu-v2' ? 'These rules drive the live flags in the Ledger and the Compliance desk. This pack has no large-cash report and does not state an aggregation window.' : regime && regime.windowKind === 'calendar_month' ? 'A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND.' : regime && regime.windowKind === 'banking_day' ? 'A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC.' : <>These rules drive the live flags in the Ledger and the <b style={{ color: CD.ink }}>Compliance</b> desk. Sanctions screening is not connected yet. Aggregation and fileable submissions follow the active pack.</>}</span></div>
         </div>); })()}
+
+        {tab === 'accepted-ids' && (<div>
+          <SectionTitle icon="id" title="Accepted IDs" sub="The ID types your staff can record for a customer. Switch off any your shop doesn’t take. Every till’s ID picker follows this list." />
+          <AcceptedIdRows />
+        </div>)}
 
         {tab === 'rates' && <RatesFees me={me} serverRole={serverRole} settings={settings} setSettings={setSettings} />}
 

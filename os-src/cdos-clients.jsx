@@ -474,21 +474,30 @@
   }
 
 
-  /* The pickers are the catalogue's (shared/id-document-types.js), the
-     same list the server checks a save against. A health card is not
-     offered. */
-  const ID_TYPES_IND = IDT.pickerLabels('person');
-  const ID_TYPES_CORP = IDT.pickerLabels('business');
+  /* The pickers offer the types THIS SHOP accepts: the catalogue's
+     (shared/id-document-types.js) less what the owner switched off in
+     Settings → Accepted IDs. The server checks a save against the same
+     list. A health card is never offered. Read at render, so a screen
+     that subscribes with useAcceptedIdTypes() redraws when it changes;
+     until the server answers, every catalogue type is offered. */
+  const idTypesFor = (kind) => window.CDOS.acceptedHere(IDT.pickerLabels(kind === 'corporate' ? 'business' : 'person'));
   /* A type already on the file that the picker does not offer stays
-     visible in the select. A health card says it is not accepted and
-     cannot be chosen again. */
+     visible in the select. A health card says it is not accepted, and
+     neither it nor a type this shop has switched off can be chosen
+     again. */
   function keptTypeOption(current, types) {
     if (!current || types.indexOf(current) >= 0) return null;
     if (isHealthType(current)) return <option key={current} value={current} disabled>{IDT.HEALTH_CARD_SHOWN}</option>;
+    if (window.CDOS.isSwitchedOffHere(current)) return <option key={current} value={current} disabled>{current}</option>;
     return <option key={current} value={current}>{current}</option>;
   }
   /* Said under a health card wherever it is edited. */
   const HealthCardNote = () => <div className="text-[12px] mt-1.5" style={{ color: CD.flag }}>{IDT.HEALTH_CARD_REFUSAL}</div>;
+  /* Said, quietly, under an ID this shop no longer accepts. The server
+     writes the sentence. The document still counts. */
+  const SwitchedOffNote = ({ text }) => text
+    ? <div data-testid="id-no-longer-accepted" className="text-[11.5px] mt-1.5 flex items-start gap-1.5" style={{ color: CD.mute }}><Ic n="info" s={12} c={CD.mute} /><span>{text}</span></div>
+    : null;
   const PROVINCES = ['', 'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
   const US_STATES = ['', 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
   const COUNTRIES = ['Canada', 'United States', 'Other'];
@@ -641,13 +650,13 @@
      defined at all, so rendering a client who had a scan on file threw).
      A covered ID that crashes the profile is the worst of both. */
   function KycEditor({ rec, set, kind, onUpload, canEdit, who, log }) {
-    const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const types = idTypesFor(kind);
     /* A health card on file: no number, nothing to edit on it. Picking a
        type records a new ID. */
     const health = isHealthType(rec.idType);
     const editDoc = canEdit && !health;
     return (<div className="grid grid-cols-2 gap-3">
-      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}</EditField>
+      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}<SwitchedOffNote text={rec.idNotice} /></EditField>
       {!health && <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
       <EditField label="Issued"><input disabled={!editDoc} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Expiry"><input disabled={!editDoc} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
@@ -661,14 +670,14 @@
 
   // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
   function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
-    const types = kind === 'corporate' ? ID_TYPES_CORP : ID_TYPES_IND;
+    const types = idTypesFor(kind);
     /* A health card can be removed. It cannot be edited or retyped. */
     const health = isHealthType(doc.type);
     const editDoc = canEdit && !health;
     return (<div className="p-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-panel)' }}>
       <div className="flex items-center justify-between mb-2"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>{canEdit && <button type="button" onClick={() => rmId(i)} className="text-[11px] font-medium" style={{ color: CD.flag }}>Remove</button>}</div>
       <div className="grid grid-cols-2 gap-3">
-        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!editDoc} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(doc.type, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}</EditField>
+        <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!editDoc} value={doc.type || ''} onChange={e => setId(i, 'type', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(doc.type, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}<SwitchedOffNote text={doc.notice} /></EditField>
         {!health && <EditField label={kind === 'corporate' ? 'Document #' : 'ID number'}><input disabled={!canEdit} value={doc.num || ''} onChange={e => setId(i, 'num', e.target.value)} className={inCls} style={inSty} /></EditField>}
         <EditField label="Issued"><input disabled={!editDoc} type="date" value={doc.issued || ''} onChange={e => setId(i, 'issued', e.target.value)} className={inCls} style={inSty} /></EditField>
         <EditField label="Expiry"><input disabled={!editDoc} type="date" value={doc.expiry || ''} onChange={e => setId(i, 'expiry', e.target.value)} className={inCls} style={inSty} /></EditField>
@@ -809,7 +818,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>}
           <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{corp ? 'Document' : 'Identification'}</div>
           <div className="grid grid-cols-2 gap-2.5">
-            <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, corp ? ID_TYPES_CORP : ID_TYPES_IND)}{(corp ? ID_TYPES_CORP : ID_TYPES_IND).map(t => <option key={t}>{t}</option>)}</select>{isHealthType(rec.idType) && <HealthCardNote />}</EditField>
+            <EditField label={corp ? 'Doc type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => setField('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, idTypesFor(rec.kind))}{idTypesFor(rec.kind).map(t => <option key={t}>{t}</option>)}</select>{isHealthType(rec.idType) && <HealthCardNote />}<SwitchedOffNote text={rec.idNotice} /></EditField>
             {!isHealthType(rec.idType) && <EditField label={corp ? 'Number' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => setField('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
             <EditField label="Expiry"><input disabled={!canEdit || isHealthType(rec.idType)} type="date" value={rec.idExpiry || ''} onChange={e => setField('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
             <EditField label="ID scan">{(rec.photo || rec.primaryHasScan) ? <div className="flex items-center gap-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={36} who={name} what={rec.idType || 'primary ID'} log={log} />{canEdit && <button onClick={() => setField('photo', null)} className="text-[11px]" style={{ color: CD.flag }}>Remove</button>}</div> : <label className="flex items-center gap-1.5 text-[11px] px-2 py-2 cursor-pointer justify-center" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="upload" s={12} /> Upload<input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={e => e.target.files[0] && onUpload('photo', e.target.files[0])} /></label>}</EditField>
@@ -1337,12 +1346,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identification (KYC){(rec.ids || []).length > 0 && <span style={{ color: CD.mute }}> · {1 + (rec.ids || []).length} on file</span>}</div>
                 <KV icon="id" label={corp ? 'Document' : 'ID type'} value={IDT.shownIdType(rec.idType)} />
+                <SwitchedOffNote text={rec.idNotice} />
                 {!isHealthType(rec.idType) && <KV icon="scroll" label="Number" value={rec.idNum} mono />}
                 <KV icon="calendar" label="Expiry" value={rec.idExpiry} />
                 {(rec.photo || rec.primaryHasScan) && <div className="mt-2"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={120} who={name} what={rec.idType || 'primary ID'} log={log} /></div>}
                 {(rec.ids || []).map((d, i) => (<div key={i} className="mt-3 pt-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                   <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Additional ID {i + 1}</div>
                   <KV icon="id" label="Type" value={IDT.shownIdType(d.type)} />
+                  <SwitchedOffNote text={d.notice} />
                   {!isHealthType(d.type) && <KV icon="scroll" label="Number" value={d.num} mono />}
                   <KV icon="calendar" label="Expiry" value={d.expiry} />
                   {(d.photo || d.hasScan) && <div className="mt-2"><IdScan src={d.photo} clientId={rec.clientId} documentId={d.documentId} hasScan={d.hasScan} height={100} who={name} what={d.type || "additional ID"} log={log} /></div>}
@@ -1399,6 +1410,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const canEdit = can('canEditKYC');
     const canExport = can('canExport');
     const store = useClientRecords();
+    /* The ID pickers below offer this shop's accepted types; redraw
+       when that list arrives or the owner changes it. */
+    window.CDOS.useAcceptedIdTypes();
     const [saveErr, setSaveErr] = useState('');
 
     /* Pull the desk's customer files from the server and lay them over
@@ -1597,6 +1611,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      able to call a customer identified from fields that never left the
      browser. */
   function RecordIdSheet({ name, rec, setClients, log, onClose, onDone }) {
+    window.CDOS.useAcceptedIdTypes();
     const [phase, setPhase] = useState('loading');
     const [file, setFile] = useState(rec || {});
     const startsFresh = !!(rec && isHealthType(rec.idType));
@@ -1728,6 +1743,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       }
     };
     const shown = phase === 'edit' ? Object.assign({}, file, draft) : file;
+    /* The "no longer accepts" line is about the type on file. Once a
+       different type is picked here it no longer applies. */
+    if (shown && file && shown.idType !== file.idType) shown.idNotice = '';
     return (
       <Portal>
         <div className="cd-tx-record fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }} onMouseDown={onClose}>
