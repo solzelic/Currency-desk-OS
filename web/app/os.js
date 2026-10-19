@@ -5269,17 +5269,75 @@
 })();
 
 /* ---- os-src/pin-issue-message.js ---- */
-/* Sentences for Issue a new PIN. The screen never repeats the server's
-   words. A code we know becomes one of these sentences. Anything else,
-   including Bad Request and a database error, is the same fallback. */
+/* Sentences for Issue a new PIN. The screen and the server both read
+   these words from here. The screen never repeats anything else the
+   server sends. */
+var PIN_ISSUE_COPY = {
+  role_exceeds_yours: "You can only issue a PIN for someone below your role.",
+  use_set_pin: "Set your own PIN from My account.",
+  not_found: "That person is not on this desk.",
+  unauthenticated: "Sign in again, then issue the PIN.",
+  forbidden: "Only the owner or a manager can issue a PIN.",
+  fallback: "The PIN was not issued. Try again.",
+};
+var PIN_ISSUE_OFFLINE = "No connection. The PIN was not issued.";
+
+function pinIssueRank(role) {
+  if (role === "Owner" || role === "administrator") return 4;
+  if (role === "Manager" || role === "branch_manager" || role === "compliance_officer") return 3;
+  if (role === "Senior teller" || role === "supervisor") return 2;
+  if (role === "Cashier" || role === "Trainee" || role === "teller" || role === "auditor") return 1;
+  return 0;
+}
+
+/* True when this person outranks the one who is signed in. */
+function pinIssueAbove(actorRole, targetRole) {
+  return pinIssueRank(targetRole) > pinIssueRank(actorRole);
+}
+
 function pinIssueFailure(status, body) {
-  const code = body && typeof body.error === "string" ? body.error : "";
-  if (code === "role_exceeds_yours") return "You can only issue a PIN for someone below your role.";
-  if (code === "use_set_pin") return "Set your own PIN from My account.";
-  if (code === "not_found" || status === 404) return "That person is not on this desk.";
-  if (code === "unauthenticated" || status === 401) return "Sign in again, then issue the PIN.";
-  if (code === "forbidden" || status === 403) return "Only the owner or a manager can issue a PIN.";
-  return "The PIN was not issued. Try again.";
+  var code = body && typeof body.error === "string" ? body.error : "";
+  if (code === "role_exceeds_yours") return PIN_ISSUE_COPY.role_exceeds_yours;
+  if (code === "use_set_pin") return PIN_ISSUE_COPY.use_set_pin;
+  if (code === "not_found" || status === 404) return PIN_ISSUE_COPY.not_found;
+  if (code === "unauthenticated" || status === 401) return PIN_ISSUE_COPY.unauthenticated;
+  if (code === "forbidden" || status === 403) return PIN_ISSUE_COPY.forbidden;
+  return PIN_ISSUE_COPY.fallback;
+}
+
+/* What the Employees button runs. A thrown request is no connection.
+   Any other failure is one of the sentences above. */
+async function issueStaffPin(loginId, fetchImpl) {
+  var go = fetchImpl || fetch;
+  try {
+    var res = await go("/api/staff/" + encodeURIComponent(loginId) + "/pin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: "{}",
+    });
+    var body = null;
+    if (res && typeof res.json === "function") {
+      try { body = await res.json(); } catch (parseErr) { body = null; }
+    }
+    var status = res && typeof res.status === "number" ? res.status : 0;
+    if (!res || res.ok === false || !body || typeof body.pin !== "string" || !/^\d{4}$/.test(body.pin)) {
+      return { ok: false, err: pinIssueFailure(status, body) };
+    }
+    return { ok: true, pin: body.pin };
+  } catch (err) {
+    return { ok: false, err: PIN_ISSUE_OFFLINE };
+  }
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    PIN_ISSUE_COPY: PIN_ISSUE_COPY,
+    PIN_ISSUE_OFFLINE: PIN_ISSUE_OFFLINE,
+    pinIssueFailure: pinIssueFailure,
+    pinIssueAbove: pinIssueAbove,
+    issueStaffPin: issueStaffPin,
+  };
 }
 
 
@@ -8220,7 +8278,7 @@ function pinIssueFailure(status, body) {
       style: {
         color: CD.mute
       }
-    }, "What you type at the staff sign-in. Only you know it \u2014 changing it signs out your other devices.")), /*#__PURE__*/React.createElement("div", {
+    }, "Only you know it. Changing it signs out your other devices.")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 flex justify-end"
     }, !pwForm ? /*#__PURE__*/React.createElement("button", {
       onClick: () => setPwForm({
@@ -10263,7 +10321,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontFamily: 'Space Mono, monospace',
             color: CD.faint
           }
-        }, "\u2022\u2022\u2022\u2022"), loginAcct ? /*#__PURE__*/React.createElement("button", {
+        }, "\u2022\u2022\u2022\u2022"), loginAcct && !pinIssueAbove(me.role, e.role) ? /*#__PURE__*/React.createElement("button", {
           type: "button",
           disabled: !!(newPin[e.id] && newPin[e.id].busy),
           onClick: async () => {
@@ -10273,40 +10331,23 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                 busy: true
               }
             }));
-            try {
-              const res = await fetch('/api/staff/' + encodeURIComponent(loginId) + '/pin', {
-                method: 'POST',
-                headers: {
-                  'content-type': 'application/json'
-                },
-                credentials: 'same-origin',
-                body: '{}'
-              });
-              const d = await res.json().catch(() => null);
-              if (!res.ok || !d || typeof d.pin !== 'string' || !/^\d{4}$/.test(d.pin)) {
-                setNewPin(m => ({
-                  ...m,
-                  [e.id]: {
-                    err: pinIssueFailure(res.status, d)
-                  }
-                }));
-                return;
-              }
+            const out = await issueStaffPin(loginId);
+            if (!out.ok) {
               setNewPin(m => ({
                 ...m,
                 [e.id]: {
-                  pin: d.pin
+                  err: out.err
                 }
               }));
-              log('Transaction PIN', e.name + ' · new PIN issued');
-            } catch {
-              setNewPin(m => ({
-                ...m,
-                [e.id]: {
-                  err: 'No connection. The PIN was not issued.'
-                }
-              }));
+              return;
             }
+            setNewPin(m => ({
+              ...m,
+              [e.id]: {
+                pin: out.pin
+              }
+            }));
+            log('Transaction PIN', e.name + ' · new PIN issued');
           },
           className: "text-[13px] font-semibold",
           style: {
@@ -10317,12 +10358,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             color: CD.ink,
             background: CD.panel
           }
-        }, newPin[e.id] && newPin[e.id].busy ? 'Issuing…' : 'Issue a new PIN') : /*#__PURE__*/React.createElement("span", {
+        }, newPin[e.id] && newPin[e.id].busy ? 'Issuing…' : 'Issue a new PIN') : loginAcct ? null : /*#__PURE__*/React.createElement("span", {
           className: "text-[12px]",
           style: {
             color: CD.ink
           }
-        }, "Create their sign-in first"))), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("div", {
+        }, "Create their sign-in first"))), loginAcct && pinIssueAbove(me.role, e.role) && /*#__PURE__*/React.createElement("div", {
+          className: "text-[13px] mt-2",
+          style: {
+            color: CD.ink,
+            lineHeight: 1.45
+          }
+        }, PIN_ISSUE_COPY.role_exceeds_yours), newPin[e.id] && newPin[e.id].err && /*#__PURE__*/React.createElement("div", {
           className: "text-[13px] mt-2",
           style: {
             color: CD.flag

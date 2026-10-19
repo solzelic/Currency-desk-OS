@@ -1396,7 +1396,7 @@
               <div className="pin-issue-actions">{myEmp ? <PinSetter onSave={setMyPin} /> :<span className="text-[12px]" style={{ color: CD.ink }}>Available once your account is set up</span>}</div>
             </div>
             <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-              <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Sign-in password</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>What you type at the staff sign-in. Only you know it — changing it signs out your other devices.</div></div>
+              <div className="min-w-0 flex-none" style={{ maxWidth: 230 }}><div className="text-sm" style={{ color: CD.ink }}>Sign-in password</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>Only you know it. Changing it signs out your other devices.</div></div>
               <div className="flex-1 flex justify-end">
                 {!pwForm ? (
                   <button onClick={() => setPwForm({ cur: '', a: '', b: '', msg: '', busy: false })} className="text-xs px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Change password…</button>
@@ -1904,26 +1904,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   {newPin[e.id] && newPin[e.id].pin
                     ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{newPin[e.id].pin}</span>
                     : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}
-                  {loginAcct ? <button type="button" disabled={!!(newPin[e.id] && newPin[e.id].busy)} onClick={async () => {
+                  {loginAcct && !pinIssueAbove(me.role, e.role) ? <button type="button" disabled={!!(newPin[e.id] && newPin[e.id].busy)} onClick={async () => {
                     setNewPin(m => ({ ...m, [e.id]: { busy: true } }));
-                    try {
-                      const res = await fetch('/api/staff/' + encodeURIComponent(loginId) + '/pin', {
-                        method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: '{}',
-                      });
-                      const d = await res.json().catch(() => null);
-                      if (!res.ok || !d || typeof d.pin !== 'string' || !/^\d{4}$/.test(d.pin)) {
-                        setNewPin(m => ({ ...m, [e.id]: { err: pinIssueFailure(res.status, d) } }));
-                        return;
-                      }
-                      setNewPin(m => ({ ...m, [e.id]: { pin: d.pin } }));
-                      log('Transaction PIN', e.name + ' · new PIN issued');
-                    } catch {
-                      setNewPin(m => ({ ...m, [e.id]: { err: 'No connection. The PIN was not issued.' } }));
-                    }
+                    const out = await issueStaffPin(loginId);
+                    if (!out.ok) { setNewPin(m => ({ ...m, [e.id]: { err: out.err } })); return; }
+                    setNewPin(m => ({ ...m, [e.id]: { pin: out.pin } }));
+                    log('Transaction PIN', e.name + ' · new PIN issued');
                   }} className="text-[13px] font-semibold" style={{ minHeight: 44, padding: '0 14px', border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}>{newPin[e.id] && newPin[e.id].busy ? 'Issuing…' : 'Issue a new PIN'}</button>
+                    : loginAcct ? null
                     : <span className="text-[12px]" style={{ color: CD.ink }}>Create their sign-in first</span>}
                 </div>
               </div>
+              {loginAcct && pinIssueAbove(me.role, e.role) && <div className="text-[13px] mt-2" style={{ color: CD.ink, lineHeight: 1.45 }}>{PIN_ISSUE_COPY.role_exceeds_yours}</div>}
               {newPin[e.id] && newPin[e.id].err && <div className="text-[13px] mt-2" style={{ color: CD.flag }}>{newPin[e.id].err}</div>}
               {newPin[e.id] && newPin[e.id].pin && <div className="text-[13px] mt-2" style={{ color: CD.ink, lineHeight: 1.45 }}>Read this to {e.name} now. It is shown once and cannot be looked up again. They change it the first time they use it.</div>}
             </div>

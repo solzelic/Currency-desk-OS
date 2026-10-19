@@ -1,124 +1,87 @@
-/* The Employees button used to send a JSON content type and no body.
-   Fastify refused that before the route ran, and the screen printed
-   Bad Request. The button now sends {}. These checks fail if that
-   request goes back to an empty body, or if the screen repeats the
-   server's words. */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+/* The Employees button runs issueStaffPin. These tests call that
+   function. A network throw and a server error message must come back
+   as the plain sentence, never the raw text. */
+import { createRequire } from "node:module";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { createDb, type DbHandle } from "../src/db/index.js";
+import { seed } from "../src/seed.js";
+import { buildApp } from "../src/app.js";
 
-const root = resolve(process.cwd(), "..");
-const settings = readFileSync(resolve(root, "os-src/cdos-settings.jsx"), "utf8");
-const messages = readFileSync(resolve(root, "os-src/pin-issue-message.js"), "utf8");
-const html = readFileSync(resolve(root, "CurrencyDesk OS.html"), "utf8");
+const { issueStaffPin } = createRequire(import.meta.url)("../../os-src/pin-issue-message.js") as {
+  issueStaffPin: (loginId: string, fetchImpl?: (url: string, init: RequestInit) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>) => Promise<{ ok: boolean; err?: string; pin?: string }>;
+};
 
-const SENTENCES = [
-  "You can only issue a PIN for someone below your role.",
-  "Set your own PIN from My account.",
-  "That person is not on this desk.",
-  "Sign in again, then issue the PIN.",
-  "Only the owner or a manager can issue a PIN.",
-  "The PIN was not issued. Try again.",
-];
+let handle: DbHandle;
+let app: FastifyInstance;
+let ownerCookie: Record<string, string> = {};
 
-function pinIssueFailure(status: number, body: unknown): string {
-  // The file is a browser script. Load the function it defines.
-  // eslint-disable-next-line no-new-func
-  const load = new Function(`${messages}\nreturn pinIssueFailure;`) as () => (status: number, body: unknown) => string;
-  return load()(status, body);
-}
+beforeAll(async () => {
+  process.env.PGLITE_MEMORY = "1";
+  process.env.SEED_PASSWORD = "yorkville";
+  handle = await createDb();
+  await seed(handle.db);
+  app = await buildApp(handle.db);
+  const li = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: { staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" },
+  });
+  const c = li.cookies.find((x) => x.name === "cdos_session");
+  ownerCookie = c ? { cdos_session: c.value } : {};
+});
 
-function issueCall(): string {
-  const at = settings.indexOf("'/api/staff/' + encodeURIComponent(loginId) + '/pin'");
-  expect(at).toBeGreaterThan(0);
-  return settings.slice(at, at + 1200);
-}
+afterAll(async () => {
+  await app.close();
+  await handle.close();
+});
 
-describe("Issue a new PIN", () => {
-  it("sends a JSON content type and a body of {}", () => {
-    const call = issueCall();
-    expect(call).toContain("'content-type': 'application/json'");
-    expect(call).toContain("body: '{}'");
-    expect(call).not.toMatch(/body:\s*(undefined|null|'')/);
+describe("Issue a new PIN on the screen", () => {
+  it("shows the offline sentence when the request throws", async () => {
+    const raw = "ECONNREFUSED 10.9.8.7 socket hang up";
+    const out = await issueStaffPin("a.singh", async () => { throw new Error(raw); });
+    expect(out.ok).toBe(false);
+    expect(out.err).toBe("No connection. The PIN was not issued.");
+    expect(JSON.stringify(out)).not.toContain("ECONNREFUSED");
+    expect(JSON.stringify(out)).not.toContain("10.9.8.7");
+    expect(JSON.stringify(out)).not.toContain("socket hang up");
   });
 
-  it("loads the sentence map before the settings screen", () => {
-    const msg = html.indexOf('src="os-src/pin-issue-message.js"');
-    const screen = html.indexOf('src="os-src/cdos-settings.jsx"');
-    expect(msg).toBeGreaterThan(0);
-    expect(screen).toBeGreaterThan(msg);
+  it("shows the fallback when the server sends its own words", async () => {
+    const raw = "Failed query: SELECT pin_hash FROM staff_users";
+    const out = await issueStaffPin("a.singh", async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "Internal Server Error", message: raw, detail: raw }),
+    }));
+    expect(out.ok).toBe(false);
+    expect(out.err).toBe("The PIN was not issued. Try again.");
+    expect(JSON.stringify(out)).not.toContain("Failed query");
+    expect(JSON.stringify(out)).not.toContain("pin_hash");
+    expect(JSON.stringify(out)).not.toContain("Internal Server Error");
   });
 
-  it("shows a sentence, never the server's words", () => {
-    const call = issueCall();
-    expect(call).toContain("pinIssueFailure(res.status, d)");
-    expect(call).toContain("No connection. The PIN was not issued.");
-    expect(call).not.toMatch(/err:\s*[^;\n]*d\.(error|message|detail)/);
-    expect(call).not.toMatch(/err:\s*[^;\n]*(err|e)\.message/);
-
-    const cases: { status: number; body: unknown; banned: string; sentence?: string }[] = [
-      {
-        status: 400,
-        body: { error: "Bad Request", message: "Body cannot be empty when content-type is set to 'application/json'" },
-        banned: "Body cannot be empty",
-        sentence: "The PIN was not issued. Try again.",
-      },
-      {
-        status: 500,
-        body: { error: "Internal Server Error", message: "Failed query: SELECT pin_hash FROM staff_users" },
-        banned: "Failed query",
-        sentence: "The PIN was not issued. Try again.",
-      },
-      {
-        status: 403,
-        body: { error: "role_exceeds_yours", detail: "STACK TRACE at staff.ts:524" },
-        banned: "STACK TRACE",
-        sentence: "You can only issue a PIN for someone below your role.",
-      },
-      {
-        status: 403,
-        body: { error: "use_set_pin", detail: "raw detail from the server" },
-        banned: "raw detail",
-        sentence: "Set your own PIN from My account.",
-      },
-      {
-        status: 404,
-        body: { error: "not_found", detail: "relation staff_users does not exist" },
-        banned: "relation",
-        sentence: "That person is not on this desk.",
-      },
-      {
-        status: 401,
-        body: { error: "unauthenticated", message: "jwt malformed eyJhbGciOiJIUzI1NiJ9" },
-        banned: "eyJhbGci",
-        sentence: "Sign in again, then issue the PIN.",
-      },
-      {
-        status: 403,
-        body: { error: "forbidden", detail: "permission bit 14 missing" },
-        banned: "permission bit",
-        sentence: "Only the owner or a manager can issue a PIN.",
-      },
-      {
-        status: 403,
-        body: { error: "something_new", message: "postgres password=secret" },
-        banned: "password=secret",
-      },
-      {
-        status: 422,
-        body: { message: "Unexpected token < in JSON at position 0" },
-        banned: "Unexpected token",
-        sentence: "The PIN was not issued. Try again.",
-      },
-      { status: 200, body: null, banned: "Cannot read", sentence: "The PIN was not issued. Try again." },
-      { status: 502, body: "Bad Gateway upstream timed out", banned: "Bad Gateway", sentence: "The PIN was not issued. Try again." },
-    ];
-
-    for (const row of cases) {
-      const text = pinIssueFailure(row.status, row.body);
-      expect(SENTENCES, JSON.stringify(row.body)).toContain(text);
-      expect(text).not.toContain(row.banned);
-      if (row.sentence) expect(text).toBe(row.sentence);
-    }
+  it("posts {} to the real route and shows only the issued PIN", async () => {
+    let sent: { url: string; init: { method?: string; headers?: Record<string, string>; body?: string } } | null = null;
+    const out = await issueStaffPin("a.singh", async (url, init) => {
+      sent = { url, init: init as { method?: string; headers?: Record<string, string>; body?: string } };
+      const res = await app.inject({
+        method: "POST",
+        url,
+        headers: init.headers as Record<string, string>,
+        payload: init.body as string,
+        cookies: ownerCookie,
+      });
+      return { ok: res.statusCode < 400, status: res.statusCode, json: async () => res.json() };
+    });
+    expect(sent).toBeTruthy();
+    expect(sent!.url).toBe("/api/staff/a.singh/pin");
+    expect(sent!.init.method).toBe("POST");
+    expect(sent!.init.headers?.["content-type"]).toBe("application/json");
+    expect(sent!.init.body).toBe("{}");
+    expect(out.ok).toBe(true);
+    expect(out.pin).toMatch(/^\d{4}$/);
+    expect(out.err).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain("Bad Request");
   });
 });

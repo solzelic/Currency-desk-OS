@@ -34,6 +34,7 @@
    the accounts that still have no credential, so nothing has to be
    inferred from silence.
    ============================================================ */
+import { createRequire } from "node:module";
 import type { FastifyInstance } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -47,6 +48,16 @@ import { esc } from "../emails/design.js";
 import { looksLikeCdId } from "../auth/cdid.js";
 import { suggestUsername, usernameTaken } from "../auth/username.js";
 import { clearPinAttempts, generatePin, hashPin } from "./pin.js";
+
+const { PIN_ISSUE_COPY } = createRequire(import.meta.url)("../../../os-src/pin-issue-message.js") as {
+  PIN_ISSUE_COPY: {
+    role_exceeds_yours: string;
+    use_set_pin: string;
+    not_found: string;
+    unauthenticated: string;
+    forbidden: string;
+  };
+};
 
 export const ROLE_RANK: Record<SessionUser["role"], number> = {
   teller: 1,
@@ -256,13 +267,13 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     const issuing = isPinIssue(req.method, req.url);
     if (!who) {
       reply.code(401).send(issuing
-        ? { error: "unauthenticated", detail: "Sign in again, then issue the PIN." }
+        ? { error: "unauthenticated", detail: PIN_ISSUE_COPY.unauthenticated }
         : { error: "unauthenticated" });
       return null;
     }
     if (ROLE_RANK[who.role] < ROLE_RANK.branch_manager) {
       reply.code(403).send(issuing
-        ? { error: "forbidden", detail: "Only the owner or a manager can issue a PIN." }
+        ? { error: "forbidden", detail: PIN_ISSUE_COPY.forbidden }
         : { error: "forbidden" });
       return null;
     }
@@ -520,10 +531,10 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     if (!who) return;
     const { staffId } = req.params as { staffId: string };
     const target = await findTarget(who.tenantId, staffId);
-    if (!target) return reply.code(404).send({ error: "not_found", detail: "That person is not on this desk." });
-    if (!canManage(who, target.role)) return reply.code(403).send({ error: "role_exceeds_yours", detail: "You can only issue a PIN for someone below your role." });
+    if (!target) return reply.code(404).send({ error: "not_found", detail: PIN_ISSUE_COPY.not_found });
+    if (!canManage(who, target.role)) return reply.code(403).send({ error: "role_exceeds_yours", detail: PIN_ISSUE_COPY.role_exceeds_yours });
     // your own PIN changes via /api/staff/pin, which asks for the current one
-    if (target.id === who.id) return reply.code(403).send({ error: "use_set_pin", detail: "Set your own PIN from My account." });
+    if (target.id === who.id) return reply.code(403).send({ error: "use_set_pin", detail: PIN_ISSUE_COPY.use_set_pin });
 
     const pin = generatePin();
     await db.update(schema.staffUsers).set({ pinHash: await hashPin(pin), pinSetAt: new Date(), pinMustChange: true }).where(eq(schema.staffUsers.id, target.id));

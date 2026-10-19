@@ -106,7 +106,19 @@ describe("issuing a PIN from the Employees screen", () => {
     expect(above.body).not.toContain("Bad Request");
     expect(above.json().detail).toBe("You can only issue a PIN for someone below your role.");
 
-    /* Setting your own PIN still needs a body. This route is the exception. */
+    const hired = await app.inject({
+      method: "POST", url: "/api/staff", cookies: ownerCookie,
+      payload: { staffId: "n.farah", name: "N. Farah", role: "branch_manager", password: "yorkville1" },
+    });
+    expect(hired.statusCode, hired.body).toBe(201);
+    const peer = await app.inject({
+      method: "POST", url: "/api/staff/n.farah/pin", cookies: managerCookie, ...jsonBody,
+    });
+    expect(peer.statusCode, peer.body).toBe(403);
+    expect(peer.json().error).toBe("role_exceeds_yours");
+    expect(peer.json().detail).toBe("You can only issue a PIN for someone below your role.");
+
+    /* Setting your own PIN still needs a body. */
     const own = await app.inject({
       method: "POST", url: "/api/staff/pin", cookies: ownerCookie, ...emptyJson,
     });
