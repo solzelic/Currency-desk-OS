@@ -13,15 +13,18 @@ var PIN_ISSUE_OFFLINE = "No connection. The PIN was not issued.";
 
 function pinIssueRank(role) {
   if (role === "Owner" || role === "administrator") return 4;
-  if (role === "Manager" || role === "branch_manager" || role === "compliance_officer") return 3;
-  if (role === "Senior teller" || role === "supervisor") return 2;
+  if (role === "Manager" || role === "branch_manager") return 3;
+  if (role === "Senior teller" || role === "supervisor" || role === "compliance_officer") return 2;
   if (role === "Cashier" || role === "Trainee" || role === "teller" || role === "auditor") return 1;
   return 0;
 }
 
-/* True when this person outranks the one who is signed in. */
-function pinIssueAbove(actorRole, targetRole) {
-  return pinIssueRank(targetRole) > pinIssueRank(actorRole);
+/* True when the server would refuse the Employees action.
+   An owner may act on another owner. Anyone else, and the signed-in person, is refused. */
+function pinIssueAbove(actorRole, targetRole, isSelf) {
+  var a = pinIssueRank(actorRole);
+  if (a < pinIssueRank("branch_manager") || isSelf) return true;
+  return a !== pinIssueRank("administrator") && pinIssueRank(targetRole) >= a;
 }
 
 function pinIssueFailure(status, body) {
@@ -64,6 +67,7 @@ if (typeof module !== "undefined" && module.exports) {
     PIN_ISSUE_COPY: PIN_ISSUE_COPY,
     PIN_ISSUE_OFFLINE: PIN_ISSUE_OFFLINE,
     pinIssueFailure: pinIssueFailure,
+    pinIssueRank: pinIssueRank,
     pinIssueAbove: pinIssueAbove,
     issueStaffPin: issueStaffPin,
   };

@@ -1,15 +1,19 @@
 /* The Employees button runs issueStaffPin. These tests call that
    function. A network throw and a server error message must come back
    as the plain sentence, never the raw text. */
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { ROLE_RANK } from "../src/routes/staff.js";
 
-const { issueStaffPin } = createRequire(import.meta.url)("../../os-src/pin-issue-message.js") as {
+const { issueStaffPin, pinIssueAbove, pinIssueRank } = createRequire(import.meta.url)("../../os-src/pin-issue-message.js") as {
   issueStaffPin: (loginId: string, fetchImpl?: (url: string, init: RequestInit) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>) => Promise<{ ok: boolean; err?: string; pin?: string }>;
+  pinIssueAbove: (actorRole: string, targetRole: string, isSelf?: boolean) => boolean;
+  pinIssueRank: (role: string) => number;
 };
 
 let handle: DbHandle;
@@ -83,5 +87,47 @@ describe("Issue a new PIN on the screen", () => {
     expect(out.pin).toMatch(/^\d{4}$/);
     expect(out.err).toBeUndefined();
     expect(JSON.stringify(out)).not.toContain("Bad Request");
+  });
+});
+
+describe("who the Employees buttons are hidden from", () => {
+  it("uses the server's ranks, including a compliance officer", () => {
+    for (const role of Object.keys(ROLE_RANK) as (keyof typeof ROLE_RANK)[]) {
+      expect(pinIssueRank(role), role).toBe(ROLE_RANK[role]);
+    }
+    expect(pinIssueRank("Owner")).toBe(ROLE_RANK.administrator);
+    expect(pinIssueRank("Manager")).toBe(ROLE_RANK.branch_manager);
+    expect(pinIssueRank("Senior teller")).toBe(ROLE_RANK.supervisor);
+    expect(pinIssueRank("Cashier")).toBe(ROLE_RANK.teller);
+    expect(pinIssueRank("Trainee")).toBe(ROLE_RANK.auditor);
+  });
+
+  it("hides Issue a new PIN wherever the server would refuse, including equal rank", () => {
+    expect(pinIssueAbove("Manager", "Owner")).toBe(true);
+    expect(pinIssueAbove("branch_manager", "administrator")).toBe(true);
+    expect(pinIssueAbove("branch_manager", "branch_manager")).toBe(true);
+    expect(pinIssueAbove("Manager", "Manager")).toBe(true);
+    expect(pinIssueAbove("Owner", "Cashier")).toBe(false);
+    expect(pinIssueAbove("branch_manager", "teller")).toBe(false);
+    expect(pinIssueAbove("compliance_officer", "teller")).toBe(true);
+    expect(pinIssueAbove("administrator", "administrator")).toBe(false);
+    expect(pinIssueAbove("administrator", "administrator", true)).toBe(true);
+  });
+
+  it("gates Issue a new PIN, Reset password, and Disable in the built screen", () => {
+    const os = readFileSync(new URL("../../web/app/os.js", import.meta.url), "utf8");
+    for (const label of ["Issue a new PIN", "Reset password", "Disable"]) {
+      const at = os.lastIndexOf(label);
+      expect(at, label).toBeGreaterThan(0);
+      expect(os.slice(Math.max(0, at - 1500), at), label).toMatch(/hideStaffBtn/);
+    }
+  });
+
+  it("keeps the My account password line exact, with no em dash or en dash", () => {
+    const src = readFileSync(new URL("../../os-src/cdos-settings.jsx", import.meta.url), "utf8");
+    const at = src.indexOf("Sign-in password");
+    const block = src.slice(at, at + 220);
+    expect(block).toContain("Only you know it. Changing it signs out your other devices.");
+    expect(block).not.toMatch(/[\u2014\u2013]/);
   });
 });

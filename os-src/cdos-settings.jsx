@@ -960,7 +960,7 @@
     </div>);
   }
 
-  function SettingsView({ perms, setPerms, settings, setSettings, me, serverRole, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
+  function SettingsView({ perms, setPerms, settings, setSettings, me, serverRole, serverStaffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin, pinOf }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
@@ -1747,6 +1747,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                flow (codeAuto was never set). From then on the username is fixed. */
             const loginId = (e.code || '').trim(); const found = loginId && srvStaff ? srvStaff[loginId] : null;
             const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
+            const hideStaffBtn = pinIssueAbove(serverRole || me.role, (loginAcct && loginAcct.role) || e.role, !!(serverStaffId && loginId === serverStaffId));
             // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
             const syncEmail = () => {
               if (!loginAcct) return;
@@ -1875,7 +1876,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                       <div className="flex items-center gap-2 mt-2.5" style={{ opacity: srvBusy ? 0.5 : 1, pointerEvents: srvBusy ? 'none' : 'auto' }}>
                         {!acct
                           ? <button onClick={doCreate} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>{mailTo ? 'Create sign-in & email it' : 'Create sign-in'}</button>
-                          : (<React.Fragment>
+                          : (!hideStaffBtn && <React.Fragment>
                               <input type="text" value={srvPw} onChange={ev => setSrvPw(ev.target.value)} placeholder="temporary password · min 8 chars" className="flex-1 text-[12px] px-2.5 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }} />
                               <button onClick={doReset} className="text-[11.5px] px-2.5 py-1.5 font-semibold flex-none" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Reset password</button>
                               <button onClick={doToggle} className="text-[11.5px] px-2.5 py-1.5 flex-none" style={{ border: `1px solid ${acct.active ? CD.flagSoft : CD.line}`, background: acct.active ? CD.flagSoft : 'transparent', color: acct.active ? CD.flag : CD.ink, borderRadius: 8 }}>{acct.active ? 'Disable' : 'Enable'}</button>
@@ -1904,7 +1905,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   {newPin[e.id] && newPin[e.id].pin
                     ? <span className="text-[15px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.ink }}>{newPin[e.id].pin}</span>
                     : <span className="text-[13px] font-bold tracking-[0.3em]" style={{ fontFamily: 'Space Mono, monospace', color: CD.faint }}>••••</span>}
-                  {loginAcct && !pinIssueAbove(me.role, e.role) ? <button type="button" disabled={!!(newPin[e.id] && newPin[e.id].busy)} onClick={async () => {
+                  {loginAcct && !hideStaffBtn ? <button type="button" disabled={!!(newPin[e.id] && newPin[e.id].busy)} onClick={async () => {
                     setNewPin(m => ({ ...m, [e.id]: { busy: true } }));
                     const out = await issueStaffPin(loginId);
                     if (!out.ok) { setNewPin(m => ({ ...m, [e.id]: { err: out.err } })); return; }
@@ -1915,7 +1916,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                     : <span className="text-[12px]" style={{ color: CD.ink }}>Create their sign-in first</span>}
                 </div>
               </div>
-              {loginAcct && pinIssueAbove(me.role, e.role) && <div className="text-[13px] mt-2" style={{ color: CD.ink, lineHeight: 1.45 }}>{PIN_ISSUE_COPY.role_exceeds_yours}</div>}
+              {loginAcct && hideStaffBtn && pinIssueRank(serverRole || me.role) >= pinIssueRank("branch_manager") && !(serverStaffId && loginId === serverStaffId) && <div className="text-[13px] mt-2" style={{ color: CD.ink, lineHeight: 1.45 }}>{PIN_ISSUE_COPY.role_exceeds_yours}</div>}
               {newPin[e.id] && newPin[e.id].err && <div className="text-[13px] mt-2" style={{ color: CD.flag }}>{newPin[e.id].err}</div>}
               {newPin[e.id] && newPin[e.id].pin && <div className="text-[13px] mt-2" style={{ color: CD.ink, lineHeight: 1.45 }}>Read this to {e.name} now. It is shown once and cannot be looked up again. They change it the first time they use it.</div>}
             </div>

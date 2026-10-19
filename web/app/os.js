@@ -5284,15 +5284,18 @@ var PIN_ISSUE_OFFLINE = "No connection. The PIN was not issued.";
 
 function pinIssueRank(role) {
   if (role === "Owner" || role === "administrator") return 4;
-  if (role === "Manager" || role === "branch_manager" || role === "compliance_officer") return 3;
-  if (role === "Senior teller" || role === "supervisor") return 2;
+  if (role === "Manager" || role === "branch_manager") return 3;
+  if (role === "Senior teller" || role === "supervisor" || role === "compliance_officer") return 2;
   if (role === "Cashier" || role === "Trainee" || role === "teller" || role === "auditor") return 1;
   return 0;
 }
 
-/* True when this person outranks the one who is signed in. */
-function pinIssueAbove(actorRole, targetRole) {
-  return pinIssueRank(targetRole) > pinIssueRank(actorRole);
+/* True when the server would refuse the Employees action.
+   An owner may act on another owner. Anyone else, and the signed-in person, is refused. */
+function pinIssueAbove(actorRole, targetRole, isSelf) {
+  var a = pinIssueRank(actorRole);
+  if (a < pinIssueRank("branch_manager") || isSelf) return true;
+  return a !== pinIssueRank("administrator") && pinIssueRank(targetRole) >= a;
 }
 
 function pinIssueFailure(status, body) {
@@ -5335,6 +5338,7 @@ if (typeof module !== "undefined" && module.exports) {
     PIN_ISSUE_COPY: PIN_ISSUE_COPY,
     PIN_ISSUE_OFFLINE: PIN_ISSUE_OFFLINE,
     pinIssueFailure: pinIssueFailure,
+    pinIssueRank: pinIssueRank,
     pinIssueAbove: pinIssueAbove,
     issueStaffPin: issueStaffPin,
   };
@@ -7268,6 +7272,7 @@ if (typeof module !== "undefined" && module.exports) {
     setSettings,
     me,
     serverRole,
+    serverStaffId,
     log,
     tickerCfg,
     setTicker,
@@ -9800,6 +9805,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const loginId = (e.code || '').trim();
         const found = loginId && srvStaff ? srvStaff[loginId] : null;
         const loginAcct = found && (e.codeAuto === undefined || e.codeLinked === true) ? found : null;
+        const hideStaffBtn = pinIssueAbove(serverRole || me.role, loginAcct && loginAcct.role || e.role, !!(serverStaffId && loginId === serverStaffId));
         // a work email edited after the sign-in exists goes to the server, which is where the next invitation is sent from
         const syncEmail = () => {
           if (!loginAcct) return;
@@ -10238,7 +10244,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               color: 'var(--cd-on-ink)',
               borderRadius: 8
             }
-          }, mailTo ? 'Create sign-in & email it' : 'Create sign-in') : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
+          }, mailTo ? 'Create sign-in & email it' : 'Create sign-in') : !hideStaffBtn && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
             type: "text",
             value: srvPw,
             onChange: ev => setSrvPw(ev.target.value),
@@ -10321,7 +10327,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             fontFamily: 'Space Mono, monospace',
             color: CD.faint
           }
-        }, "\u2022\u2022\u2022\u2022"), loginAcct && !pinIssueAbove(me.role, e.role) ? /*#__PURE__*/React.createElement("button", {
+        }, "\u2022\u2022\u2022\u2022"), loginAcct && !hideStaffBtn ? /*#__PURE__*/React.createElement("button", {
           type: "button",
           disabled: !!(newPin[e.id] && newPin[e.id].busy),
           onClick: async () => {
@@ -10363,7 +10369,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           style: {
             color: CD.ink
           }
-        }, "Create their sign-in first"))), loginAcct && pinIssueAbove(me.role, e.role) && /*#__PURE__*/React.createElement("div", {
+        }, "Create their sign-in first"))), loginAcct && hideStaffBtn && pinIssueRank(serverRole || me.role) >= pinIssueRank("branch_manager") && !(serverStaffId && loginId === serverStaffId) && /*#__PURE__*/React.createElement("div", {
           className: "text-[13px] mt-2",
           style: {
             color: CD.ink,
@@ -69011,6 +69017,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             setSettings,
             me,
             serverRole: srvUser && srvUser.role,
+            serverStaffId: srvUser && srvUser.staffId,
             log,
             tickerCfg,
             setTicker,
