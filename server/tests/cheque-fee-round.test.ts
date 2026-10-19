@@ -7,6 +7,7 @@ import { createContext, runInContext } from "node:vm";
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 import { chequeScheduleFee, feeFigureProblem, feePctCommit, feePctShown, feePctText, moneyShown } from "../src/ledger/chequeFee.js";
+import { FEE_PERCENT_PLACES } from "../src/routes/tenantState.js";
 import { DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
@@ -66,7 +67,7 @@ describe("cheque fee rounding", () => {
     expect(helperSrc).toContain("half a cent");
   });
 
-  it("limits a fee figure to what this reader can price", () => {
+  it("limits Fee % to 2 decimal places in the field and says so in amber", () => {
     expect(feePctText("")).toBe("");
     expect(feePctText("2")).toBe("2");
     expect(feePctText("2.")).toBe("2.");
@@ -115,5 +116,29 @@ describe("cheque fee rounding", () => {
     expect(feePctShown("2.120")).toBe("2.12");
     const decimal = helperSrc.slice(helperSrc.indexOf("string arithmetic"), helperSrc.indexOf("function feePctShown"));
     expect(decimal).not.toContain("toFixed");
+    const app = readFileSync(new URL("../../os-src/cdos-cheques-app.jsx", import.meta.url), "utf8");
+    const at = app.indexOf("CDOS_CHEQUE_FEE.feePctText");
+    const pct = app.slice(app.lastIndexOf("<input", at), app.indexOf("/>", at));
+    expect(pct).toContain('type="text"');
+    expect(pct).toContain('inputMode="decimal"');
+    expect(pct).toContain("onBlur");
+    expect(pct).not.toContain("next !== ''");
+    expect(pct).not.toContain('step="0.1"');
+    const bannerAt = app.indexOf('data-testid="fee-schedule-places"');
+    const banner = app.slice(bannerAt, bannerAt + 360);
+    expect(banner).toContain("CD.amberSoft");
+    expect(banner).toContain('n="alert"');
+    expect(banner).toContain("s={13}");
+    expect(banner).toContain("text-[13px]");
+    expect(banner).toContain("{places.detail}");
+    expect(pct).toContain("aria-invalid");
+    expect(pct).toContain("feePctCommit");
+    const minAt = app.indexOf('data-testid="fee-min"');
+    const min = app.slice(minAt, app.indexOf("/>", minAt));
+    expect(min).toContain("aria-invalid");
+    expect(min).toContain("moneyShown");
+    expect(app).toContain(`const FEE_PLACES = "${FEE_PERCENT_PLACES}"`);
+    expect(app).toContain("feePctShown(row.feePct)");
+    expect(app).toContain("feePctShown(t.feePct)");
   });
 });
