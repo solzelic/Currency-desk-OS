@@ -176,7 +176,6 @@ describe("PINs are checked by the server", () => {
     const state = {
       cdos_cheque_schedule_v1: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE),
       cdos_settings: {
-        deskName: "Desk 1",
         employees: [
           { id: "e1", name: "Maria Costa", code: "m.costa", pin: "4913", requirePin: true },
           { id: "e2", name: "Rana Haddad", code: "r.haddad", pin: "0000", requirePin: true },
