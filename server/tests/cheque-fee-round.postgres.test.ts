@@ -20,6 +20,17 @@ const schedule = (feePct: unknown, feeMin: unknown) =>
   JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) => row.id === "payroll" ? { ...row, feePct, feeMin } : row));
 
 async function desk(feePct: unknown = 2, feeMin: unknown = 5) {
+  /* seed() does not overwrite an existing entity. A prior file can leave
+     York FX on a GBP pack, and a CAD cheque is then refused as foreign.
+     Each case restates the Canadian pack seed() creates, then its own
+     schedule, customer, drawer, and session. */
+  await pool.query(
+    `UPDATE legal_entities
+        SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1',
+            jurisdiction_pack_version=1
+      WHERE id=$1 AND tenant_id=$2`,
+    [DEMO.legalEntityId, DEMO.tenantId],
+  );
   await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
   await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_sessions,ledger_till_balances,ledger_customers CASCADE");
   await pool.query(
