@@ -108,15 +108,10 @@
     return { text: rateAt(amountText, payoutRaw, MIN_RATE_PLACES), rounded: true };
   }
 
-  function effectiveRateText(amount, payout, minorPlaces) {
-    return effectiveRate(amount, payout, minorPlaces).text;
-  }
-
   return {
     MIN_RATE_PLACES: MIN_RATE_PLACES,
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
-    effectiveRateText: effectiveRateText,
   };
 });
