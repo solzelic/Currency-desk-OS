@@ -43,6 +43,7 @@ import {
 } from "./jurisdiction.js";
 import {
   LEDGER_SCALE,
+  isoMinorUnits,
   minorUnits,
   resolveDeskCurrencies,
 } from "./currencies.js";
@@ -60,6 +61,24 @@ const tillScope = (actor: LedgerActor) => [
 
 const money = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
+/* The same exception table, so a total can round each row in SQL.
+   Postgres rounds a numeric half away from zero, which is half up
+   for the positive amounts a payout is. */
+const minorPlaceSql = (column: string) => {
+  const arms = Object.entries(isoMinorUnits())
+    .map(([code, places]) => `WHEN '${code}' THEN ${places}`)
+    .join(" ");
+  return `CASE trim(${column}) ${arms} ELSE ${LEDGER_SCALE} END`;
+};
+/* A window that still contains the open day. Its end is in the future,
+   and the open day is the 24 hours that end then. A window that has
+   already ended is a closed day: every stored amount is shown as stored. */
+const openDayStart = (window: SummaryWindow): string | null => {
+  if (!window.to) return null;
+  const end = Date.parse(window.to);
+  if (!Number.isFinite(end) || end <= Date.now()) return null;
+  return new Date(end - 24 * 60 * 60 * 1000).toISOString();
+};
 const COST_PLACES = 12;
 
 /* An identification amount, including zero. Zero means every deal.
@@ -372,11 +391,24 @@ export class LedgerReportingService {
       /* "Which currencies did we make money on" — the question
          docs/COST_BASIS.md says the whole business turns on. Realized P&L
          belongs to the currency that LEFT the desk, because that is the
-         stock whose cost was consumed. */
+         stock whose cost was consumed.
+
+         A closed day shows the units that were stored. Rounding 200.80 yen
+         to 201 rewrites that day. The open day rounds each row to the
+         currency's own places and then adds, so the rows and the total
+         are the same number. Rounding the sum instead turns 100.4 + 100.4
+         into 201 while each row shows as 100. */
+      const openFrom = openDayStart(window);
       const byCurrency = await client.query(
         `SELECT t.to_currency AS currency,
                 count(*)::int AS deals,
-                sum(t.output_amount) AS sold,
+                sum(
+                  CASE
+                    WHEN $9::timestamptz IS NOT NULL AND t.posted_at >= $9
+                    THEN round(t.output_amount, ${minorPlaceSql("t.to_currency")})
+                    ELSE t.output_amount
+                  END
+                ) AS sold,
                 sum(t.realized_pnl_home) FILTER (
                   WHERE t.realized_pnl_home IS NOT NULL) AS realized_home,
                 count(*) FILTER (
@@ -391,7 +423,29 @@ export class LedgerReportingService {
             AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
           GROUP BY t.to_currency
           ORDER BY t.to_currency`,
-        [...tillScope(actor), home, window.from ?? null, window.to ?? null],
+        [...tillScope(actor), home, window.from ?? null, window.to ?? null, openFrom],
+      );
+      /* Same open-day rule as units sold, on each leg of the deal. */
+      const movement = await client.query(
+        `SELECT trim(currency) AS currency,
+                sum(CASE WHEN side = 'in' THEN amount ELSE 0 END) AS received,
+                sum(CASE WHEN side = 'out' THEN amount ELSE 0 END) AS paid_out
+           FROM (
+             SELECT leg.side, leg.currency,
+                    CASE WHEN $8::timestamptz IS NOT NULL AND t.posted_at >= $8
+                         THEN round(leg.amount, ${minorPlaceSql("leg.currency")})
+                         ELSE leg.amount END AS amount
+               FROM ledger_transactions t
+               LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+               CROSS JOIN LATERAL (VALUES ('in', t.from_currency, t.input_amount),
+                 ('out', t.to_currency, t.output_amount)) AS leg(side, currency, amount)
+              WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
+                AND t.workspace_id=$4 AND t.till_id=$5 AND r.reversal_id IS NULL
+                AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
+                AND ($6::timestamptz IS NULL OR t.posted_at >= $6)
+                AND ($7::timestamptz IS NULL OR t.posted_at < $7)
+           ) legs GROUP BY trim(currency) ORDER BY 1`,
+        [...tillScope(actor), window.from ?? null, window.to ?? null, openFrom],
       );
       await client.query("COMMIT");
 
@@ -460,6 +514,11 @@ export class LedgerReportingService {
             item.realized_home == null ? null : money(item.realized_home),
           pricedDeals: Number(item.priced),
         })),
+        movement: movement.rows.map((item) => {
+          const received = money(item.received ?? 0);
+          const paidOut = money(item.paid_out ?? 0);
+          return { currency: String(item.currency).trim(), received, paidOut, net: money(new Decimal(received).sub(paidOut)) };
+        }),
       });
     } catch (error) {
       await client.query("ROLLBACK");
@@ -802,6 +861,10 @@ export class LedgerReportingService {
               .map((code) => [code, minorUnits(code)] as const)
               .filter(([, places]) => places !== LEDGER_SCALE),
           ),
+          /* The same exception table quote and booking round with.
+             Absent means two places. Not minorUnits: that list is only
+             the codes this desk was asked about. */
+          scales: isoMinorUnits(),
         },
         /* A country pack is usually silent. The 2027 EU pack says so
            until the date the regulation applies. The baseline and the

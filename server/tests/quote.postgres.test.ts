@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import pg from "pg";
@@ -204,6 +205,63 @@ postgres("quote service against real PostgreSQL", () => {
     expect(message).not.toContain("direction and currencies disagree");
     expect(message).not.toContain("negative spread");
     expect(message).toMatch(/currency pair/);
+  });
+  it("quotes and posts whole yen and won, and refuses cents", async () => {
+    await pool.query(
+      `UPDATE rate_boards
+          SET board_rows = board_rows || '{"JPY":{"mid":0.009276,"show":true},"KRW":{"mid":0.00098,"show":true}}'::jsonb
+        WHERE id='board-1'`,
+    );
+    for (const code of ["JPY", "KRW"]) {
+      await pool.query(
+        "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,$6,500000)",
+        [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01", code],
+      );
+    }
+    const whole = async (to: string, mid: string) => {
+      const quoted = await app.inject({
+        method: "POST",
+        url: "/api/quotes",
+        cookies: await cookie(),
+        payload: { ...body, to, inputAmount: "100.00", feeCad: "0.00" },
+      });
+      expect(quoted.statusCode, quoted.body).toBe(201);
+      const q = quoted.json();
+      const raw = new Decimal(100).mul(new Decimal(1).div(mid).mul("0.97"));
+      const want = raw.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+      expect(new Decimal(q.outputAmount).eq(want)).toBe(true);
+      const posted = await app.inject({
+        method: "POST",
+        url: `/api/quotes/${q.quoteId}/post`,
+        cookies: await cookie(),
+        payload: postBody(`whole-${to}`),
+      });
+      expect(posted.statusCode, posted.body).toBe(201);
+      expect(new Decimal(posted.json().outputAmount).eq(want)).toBe(true);
+      expect(posted.json().receipt.lines).toContain(`Received: ${want.toFixed(0)} ${to}`);
+      const row = await pool.query(
+        "SELECT output_amount FROM ledger_transactions WHERE quote_id=$1",
+        [q.quoteId],
+      );
+      expect(new Decimal(row.rows[0].output_amount).eq(want)).toBe(true);
+    };
+    await whole("JPY", "0.009276");
+    await whole("KRW", "0.00098");
+    const refused = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: {
+        ...body,
+        from: "JPY",
+        to: "CAD",
+        inputAmount: "10000.55",
+        feeCad: "0.00",
+        direction: "customer_sell_foreign",
+      },
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().message).toMatch(/no minor unit/);
   });
   it("creates a customer-sell quote using We Buy and preserves old board terms", async () => {
     const created = await app.inject({

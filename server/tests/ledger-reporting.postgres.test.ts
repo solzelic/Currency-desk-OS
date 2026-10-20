@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
+import { isoMinorUnits } from "../src/ledger/currencies.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
@@ -204,6 +205,7 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(empty.realizedPnlHome).toBeNull();
     expect(empty.earningsHome).toBeNull();
     expect(empty.byCurrency).toEqual([]);
+    expect(empty.movement).toEqual([]);
   });
 
   it("counts one deal as one deal, at what it was actually worth", async () => {
@@ -257,6 +259,51 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(after.volumeHome).toBeNull();
     expect(after.realizedPnlHome).toBeNull();
     expect(after.byCurrency).toEqual([]);
+  });
+
+  it("shows a stored yen amount on a closed day, and rounds each open-day row before adding", async () => {
+    const past = new Date(Date.now() - 3 * 86400000).toISOString();
+    const insert = (id: string, amount: string, at: string, inbound = false) =>
+      pool.query(
+        `INSERT INTO ledger_transactions
+           (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
+            workspace_id, till_id, customer_id, actor_id, from_currency, to_currency,
+            input_amount, output_amount, rate, fee_cad, spread_cad, purpose,
+            source_of_funds, posted_at, deal_kind, received_instrument, disbursed_instrument,
+            jurisdiction_pack_id, jurisdiction_pack_version, home_currency)
+         VALUES
+           ($1, $2, $3, $4, $5, $6, $7, 'customer-demo', $3||':r.haddad',
+            ${inbound ? "'JPY', 'CAD', $8, 100.00" : "'CAD', 'JPY', 100.00, $8"}, 1, 0, 0, 'travel', 'salary', $9,
+            'exchange', 'cash', 'cash', 'pack-ca-v1', 1, 'CAD')`,
+        [id, `ref-${id}`, ...scope, amount, at],
+      );
+    await insert("jpy-old", "200.80", past);
+    const closed = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 4 * 86400000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() - 2 * 86400000).toISOString())}`,
+    );
+    expect(closed.byCurrency).toEqual([
+      expect.objectContaining({ currency: "JPY", deals: 1, sold: "200.80" }),
+    ]);
+
+    await insert("jpy-a", "100.40", new Date().toISOString()); await insert("jpy-b", "100.40", new Date().toISOString());
+    await insert("jpy-in-a", "100.40", new Date().toISOString(), true); await insert("jpy-in-b", "100.40", new Date().toISOString(), true);
+    const open = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+    );
+    const today = open.byCurrency.find((row: { currency: string }) => row.currency === "JPY");
+    expect(today).toMatchObject({ deals: 2, sold: "200.00" });
+    const paid = open.movement.find((row: { currency: string }) => row.currency === "JPY");
+    expect(paid).toMatchObject({ received: "200.00", paidOut: "200.00", net: "0.00" });
+    const stored = closed.movement.find((row: { currency: string }) => row.currency === "JPY");
+    expect(stored).toMatchObject({ paidOut: "200.80", net: "-200.80" });
+  });
+
+  it("shows a stored yen balance as stored", async () => {
+    await tillHolds("JPY", 200.8);
+    const held = await position();
+    const jpy = held.currencies.find((row: { currency: string }) => row.currency === "JPY");
+    expect(jpy.quantity).toBe("200.80");
+    expect(jpy.till.quantity).toBe("200.80");
   });
 
   it("only totals the window it was asked for", async () => {
@@ -389,6 +436,22 @@ postgres("the ledger answers for its own headline figures", () => {
       reportThreshold: "10000.00",
       reportCurrency: "CAD",
     });
+  });
+
+  it("sends the full exception table, where a missing code means 2 places", async () => {
+    const answer = (
+      await app.inject({
+        method: "GET",
+        url: "/api/ledger/jurisdiction",
+        cookies: await cookie(),
+      })
+    ).json();
+    const scales = answer.currencies.scales;
+    expect(scales).toEqual(isoMinorUnits());
+    expect(scales.JPY).toBe(0);
+    expect(scales.KRW).toBe(0);
+    expect(scales.KWD).toBe(3);
+    expect(Object.hasOwn(scales, "INR")).toBe(false);
   });
 
   it("refuses all three reads to a session that is not signed in", async () => {
