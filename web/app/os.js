@@ -3726,6 +3726,48 @@
   });
 })();
 
+/* ---- os-src/deal-words.js ---- */
+/* Words for a currency exchange. A cross is a deal where neither side
+   is the desk's home currency. Home pairs keep the one-sided sentence. */
+function exchangeWords(row, home) {
+  var inn = String((row && row.inCcy) || "");
+  var out = String((row && row.outCcy) || "");
+  var desk = String(home || "");
+  var cross = !!(inn && out && desk && inn !== desk && out !== desk);
+  if (cross) {
+    return {
+      cross: true,
+      pricing: "We bought " + inn + ", sold " + out,
+      row: "Bought " + inn + ", sold " + out,
+    };
+  }
+  var buy = !!(row && row.side === "buy");
+  var sell = !!(row && row.side === "sell");
+  if (!buy && !sell) {
+    if (out && out === desk) buy = true;
+    else if (inn && inn === desk) sell = true;
+  }
+  return {
+    cross: false,
+    pricing: buy ? "We bought " + inn : sell ? "We sold " + out : "Cross",
+    row: buy ? "Bought " + inn : sell ? "Sold " + out : "Exchange",
+  };
+}
+
+function ledgerLine(row, home) {
+  var words = exchangeWords(row, home);
+  var tail = row && row.priced === "override" ? " · hand-priced" : row && row.priced === "locked" ? " · rate locked" : "";
+  return (words.cross ? words.row : words.pricing) + tail;
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { exchangeWords: exchangeWords, ledgerLine: ledgerLine };
+}
+if (typeof window !== "undefined") {
+  window.CDOS = Object.assign(window.CDOS || {}, { exchangeWords: exchangeWords, ledgerLine: ledgerLine });
+}
+
+
 /* ---- os-src/cdos-modules.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — back-office modules
@@ -5422,7 +5464,7 @@
       v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
     }), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
       k: "Pricing",
-      v: row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross'
+      v: window.CDOS.exchangeWords(row, homeCcy()).pricing
     }), row.quoteRef && /*#__PURE__*/React.createElement(Line, {
       k: "Quote",
       v: `${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`
@@ -30284,7 +30326,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     if (t === 'Currency Exchange') {
       fromL = 'We received';
       toL = 'We paid out';
-      toS = row.side === 'buy' ? `Bought ${row.inCcy}` : row.side === 'sell' ? `Sold ${row.outCcy}` : 'Exchange';
+      toS = window.CDOS.exchangeWords(row, homeCcy()).row;
       center = shownDealRate(row);
     } else if (t === 'Remittance — Send') {
       fromL = 'Sender pays';
@@ -30370,7 +30412,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         row: row
       }), row.side && /*#__PURE__*/React.createElement(DRow, {
         k: "Priced",
-        v: `${row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross deal'}${row.priced === 'override' ? ' · hand-priced' : row.priced === 'locked' ? ' · rate locked' : ''}`
+        v: window.CDOS.ledgerLine(row, homeCcy())
       }), row.midRate && /*#__PURE__*/React.createElement(DRow, {
         k: "Spot at deal",
         v: `${row.midRate} ${row.outCcy}/${row.inCcy}`,
