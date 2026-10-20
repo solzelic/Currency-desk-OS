@@ -6,7 +6,12 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect } = React;
-  const { CD, Ic, fmt, num, crossRate, reportingLimit, deskPack, businessDate } = window.CDOS;
+  const { CD, Ic, fmt, num, formatPhoneMoney, currencyPlaces, crossRate, reportingLimit, deskPack, businessDate } = window.CDOS;
+  const groupedReceipt = (line) => String(line == null ? '' : line).replace(
+    /(\d+(?:\.\d+)?)(\s+)([A-Z]{3})\b/g,
+    (_all, raw, gap, code) => (String(raw).indexOf('.') >= 0 ? raw : num(raw)) + gap + code,
+  );
+  const moneyCode = (amount, code) => !code ? num(amount) : (currencyPlaces(code) === 0 ? `${num(amount)} ${code}` : formatPhoneMoney(amount, code));
   /* THE DESK'S OWN MONEY, AND ITS OWN REGULATOR.
 
      Every figure in this module was labelled CAD. The transfer store keeps
@@ -250,6 +255,7 @@ ${threshold == null ? ' No reporting line has been set for this desk, so nothing
 .r{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid #eee}.r .k{color:#777}.grn{color:#1f8a4c;font-weight:700}.big{text-align:center;margin:12px 0}.big .v{font-family:'Archivo';font-weight:800;font-size:26px}
 .ft{margin-top:14px;border-top:1px dashed #ccc;padding-top:10px;font-size:9px;color:#999;text-align:center;line-height:1.5}@page{margin:8mm}</style></head><body>
 <div class="h"><div class="b">${esc(biz)}</div><div class="s">Money transfer receipt</div></div>
+${Array.isArray(t.receiptLines) && t.receiptLines.length ? `<div style="margin:10px 0;padding:8px 0;border-top:1px solid #111;border-bottom:1px solid #111;font-size:12px;line-height:1.55">${t.receiptLines.map(line => `<div>${esc(groupedReceipt(line))}</div>`).join('')}</div>` : ''}
 <div class="r"><span class="k">Reference</span><span>${esc(t.ref)}</span></div>
 <div class="r"><span class="k">Date</span><span>${esc(t.date)}</span></div>
 <div class="r"><span class="k">Sender</span><span>${esc(t.senderName)}</span></div>
@@ -258,8 +264,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 <div class="r"><span class="k">Payout</span><span>${esc(window.CDOS._transfers.methodLabel(t.method))} · ${esc(t.partner)}</span></div>
 <div class="pin"><div class="l">Tracking PIN</div><div class="v">${esc(t.pin)}</div></div>
 <div class="big"><div style="font-size:10px;color:#777">${t.direction === 'send' ? 'Beneficiary receives' : 'Customer receives'}</div><div class="v grn">${num(t.recvAmt)} ${esc(t.direction === 'send' ? t.ccy : (homeCcy() || ''))}</div></div>
-<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${num(t.payAmt)} ${esc(t.direction === 'send' ? (homeCcy() || '') : t.ccy)}</span></div>
-<div class="r"><span class="k">Rate</span><span>${num(t.rate)}</span></div>
+<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${esc(moneyCode(t.payAmt, t.direction === 'send' ? (homeCcy() || '') : t.ccy))}</span></div>
+<div class="r"><span class="k">Rate</span><span>${esc(num(t.rate))} ${esc(t.direction === 'send' ? t.ccy : (homeCcy() || ''))}/${esc(t.direction === 'send' ? (homeCcy() || '') : t.ccy)}</span></div>
 <div class="r"><span class="k">Fee</span><span>${esc(fmtHome(t.fee))}</span></div>
 <div class="r"><span class="k">Status</span><span>${esc(statusLabel(t.status, t.direction))}</span></div>
 <div class="ft">${esc(settings.receiptDisclaimer || 'Keep this receipt. Funds payable on presentation of the tracking PIN and valid ID.')}</div>
@@ -451,7 +457,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       </div>
 
       {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('pipeline'); setDetailId(id); }} />}
-      {detail && <TransferDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} me={me} log={log} setTransfers={setTransfers} onClose={() => setDetailId(null)} onReceipt={(t) => printReceipt(t, beneficiaries, corridors, settings, log)} />}
+      {detail && <TransferDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} me={me} log={log} setTransfers={setTransfers} settings={settings} onClose={() => setDetailId(null)} onReceipt={(t) => printReceipt(t, beneficiaries, corridors, settings, log)} />}
     </div>);
   }
 

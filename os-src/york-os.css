@@ -1561,6 +1561,21 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
   }
   .win-body .overflow-hidden:has(table) table { min-width: 520px; }
+  /* The drawer movement is four short columns. A 520px floor
+     pushes Net off a phone, so this card stays inside its own width. */
+  .drawer-movement,
+  .drawer-movement table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100%;
+  }
+  .drawer-movement table { table-layout: fixed; }
+  .drawer-movement th,
+  .drawer-movement td {
+    white-space: nowrap;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
   /* A reference such as CD-261011-18284a was wrapping onto three
      lines inside a narrow column. One line, and the card scrolls. */
   .win-body .overflow-hidden:has(table) :is(th, td) { white-space: nowrap; }
@@ -2194,6 +2209,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .fixed.inset-0 .overflow-hidden:has(table) th,
   .fixed.inset-0 .overflow-hidden:has(table) td {
     white-space: nowrap !important;
+  }
+  /* In, Out, and Net have to sit on the phone. The 520px table
+     floor and the max-content width cut Net off at 360 to 430. */
+  .win-body .drawer-movement table,
+  .win-body .overflow-hidden:has(table) .drawer-movement table,
+  .fixed.inset-0 .overflow-hidden:has(table) .drawer-movement table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed;
   }
 
   /* A desktop grid of four or five stats becomes a strip of

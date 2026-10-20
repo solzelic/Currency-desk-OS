@@ -18,9 +18,27 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit } = window.CDOS;
+  const { CD, Ic, fmt, num, formatPhoneMoney, currencyPlaces, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit } = window.CDOS;
+  /* Group a bare whole amount that sits in front of a currency code.
+     num is the desk's own grouping. A figure that already has a decimal
+     keeps the places the book stored. */
+  const groupedReceipt = (line) => String(line == null ? '' : line).replace(
+    /(\d+(?:\.\d+)?)(\s+)([A-Z]{3})\b/g,
+    (_all, raw, gap, code) => (String(raw).indexOf('.') >= 0 ? raw : num(raw)) + gap + code,
+  );
+  const moneyCode = (amount, code) => currencyPlaces(code) === 0 ? `${num(amount)} ${code}` : formatPhoneMoney(amount, code);
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  /* A stored timeline stamp is already wall time, like 2026-10-20 09:00.
+     The desk clock is 12-hour unless Settings picked 24-hour. */
+  function timelineWhen(ts, timeFormat) {
+    const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/.exec(String(ts || ''));
+    const clock = window.CDOS && window.CDOS.deskTime;
+    if (!match || typeof clock !== 'function') return ts;
+    const date = new Date(match[1] + 'T' + match[2].padStart(2, '0') + ':' + match[3] + ':00');
+    if (isNaN(date.getTime())) return ts;
+    return match[1] + ' ' + clock(date, timeFormat);
+  }
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const cadOf = (amt, c) => c === 'CAD' ? (+amt || 0) : (+amt || 0) / (crossRate('CAD', c) || 1);
   /* Money as integer cents. The server adds the same figures with
@@ -512,6 +530,9 @@
            browser holds no cash figure of its own. */
         serverTransactionId: posted ? posted.transactionId : null,
         serverObligationId: posted ? posted.obligationId : null,
+        /* The book's receipt, word for word. The amount line is the
+           ledger's own text, including whether a whole yen keeps .00. */
+        receiptLines: posted && posted.receipt && Array.isArray(posted.receipt.lines) ? posted.receipt.lines.slice() : null,
         timeline: [{ status: 'created', ts: stamp(), by: me.name }], createdBy: me.name,
       };
       setTransfers(t => [transfer, ...t]);
@@ -671,7 +692,7 @@
   }
 
   /* ===================== TRANSFER DETAIL DRAWER ===================== */
-  function TransferDetail({ t, beneficiaries, corridors, me, log, setTransfers, onClose, onReceipt }) {
+  function TransferDetail({ t, beneficiaries, corridors, me, log, setTransfers, settings, onClose, onReceipt }) {
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
     const dir = t.direction;
@@ -694,6 +715,12 @@
           <button onClick={onClose} className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
         </div>
         <div className="px-5 py-4 space-y-5">
+          {Array.isArray(t.receiptLines) && t.receiptLines.length > 0 && (
+            <div data-ledger-receipt="1">
+              <div className="ledger-receipt-label text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.pinNote, fontFamily: 'Space Mono, monospace' }}>Ledger receipt</div>
+              <div style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, fontFamily: 'Space Mono, ui-monospace, monospace', fontSize: 12, lineHeight: 1.55, color: CD.ink, whiteSpace: 'pre-wrap', padding: '8px 10px' }}>{t.receiptLines.map(groupedReceipt).join('\n')}</div>
+            </div>
+          )}
           {/* tracking */}
           <div className="p-3 flex items-center justify-between" style={{ background: CD.ink, borderRadius: 11 }}>
             <div><div className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--cd-on-ink-soft)', fontFamily: 'Space Mono, monospace' }}>Tracking PIN</div><div className="text-lg font-bold text-white" style={{ fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>{t.pin}</div></div>
@@ -710,7 +737,7 @@
             {ben && ben.method === 'bank' && <DRow k="Account" v={`${ben.bank} · ${ben.account}`} mono />}
             {ben && ben.method === 'cash' && <DRow k="Pickup" v={ben.pickupCity} />}
             {ben && ben.method === 'wallet' && <DRow k="Wallet" v={ben.walletId} mono />}
-            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={`${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`} mono />
+            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={moneyCode(t.payAmt, dir === 'send' ? home : t.ccy)} mono />
             <DRow k="Rate" v={`${num(t.rate)} ${dir === 'send' ? t.ccy : home}/${dir === 'send' ? home : t.ccy}`} mono />
             <DRow k="Fee" v={fmt(t.fee, home)} mono />
             <DRow k={dir === 'send' ? 'Beneficiary gets' : 'Customer gets'} v={`${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`} mono accent={CD.green} />
@@ -729,7 +756,7 @@
                   </div>
                   <div className="pb-3" style={{ marginTop: 1 }}>
                     <div className="text-[13px] font-medium" style={{ color: done ? CD.ink : CD.faint }}>{statusLabel(k, dir)}{cur && <span className="ml-2 text-[10px] px-1.5 py-0.5" style={{ background: STATUS[k].soft, color: STATUS[k].ink, borderRadius: 4, fontFamily: 'Space Mono' }}>NOW</span>}</div>
-                    {evt && <div className="text-[11px]" style={{ color: CD.mute }}>{evt.ts} · {evt.by}{evt.note ? ` — ${evt.note}` : ''}</div>}
+                    {evt && <div className="text-[11px]" style={{ color: CD.mute }}>{timelineWhen(evt.ts, settings && settings.timeFormat)} · {evt.by}{evt.note ? ` — ${evt.note}` : ''}</div>}
                   </div>
                 </div>); })}
             </div>

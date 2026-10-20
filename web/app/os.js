@@ -37821,6 +37821,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     Ic,
     fmt,
     num,
+    formatPhoneMoney,
+    currencyPlaces,
     TODAY,
     STAFF,
     CCY,
@@ -37831,9 +37833,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     mkRef,
     reportingLimit
   } = window.CDOS;
+  /* Group a bare whole amount that sits in front of a currency code.
+     num is the desk's own grouping. A figure that already has a decimal
+     keeps the places the book stored. */
+  const groupedReceipt = line => String(line == null ? '' : line).replace(/(\d+(?:\.\d+)?)(\s+)([A-Z]{3})\b/g, (_all, raw, gap, code) => (String(raw).indexOf('.') >= 0 ? raw : num(raw)) + gap + code);
+  const moneyCode = (amount, code) => currencyPlaces(code) === 0 ? `${num(amount)} ${code}` : formatPhoneMoney(amount, code);
   const stamp = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
+  /* A stored timeline stamp is already wall time, like 2026-10-20 09:00.
+     The desk clock is 12-hour unless Settings picked 24-hour. */
+  function timelineWhen(ts, timeFormat) {
+    const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/.exec(String(ts || ''));
+    const clock = window.CDOS && window.CDOS.deskTime;
+    if (!match || typeof clock !== 'function') return ts;
+    const date = new Date(match[1] + 'T' + match[2].padStart(2, '0') + ':' + match[3] + ':00');
+    if (isNaN(date.getTime())) return ts;
+    return match[1] + ' ' + clock(date, timeFormat);
+  }
   const flagOf = c => {
     try {
       return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || '';
@@ -39055,6 +39072,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
            browser holds no cash figure of its own. */
         serverTransactionId: posted ? posted.transactionId : null,
         serverObligationId: posted ? posted.obligationId : null,
+        /* The book's receipt, word for word. The amount line is the
+           ledger's own text, including whether a whole yen keeps .00. */
+        receiptLines: posted && posted.receipt && Array.isArray(posted.receipt.lines) ? posted.receipt.lines.slice() : null,
         timeline: [{
           status: 'created',
           ts: stamp(),
@@ -39535,6 +39555,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     me,
     log,
     setTransfers,
+    settings,
     onClose,
     onReceipt
   }) {
@@ -39608,7 +39629,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.mute
     }))), /*#__PURE__*/React.createElement("div", {
       className: "px-5 py-4 space-y-5"
+    }, Array.isArray(t.receiptLines) && t.receiptLines.length > 0 && /*#__PURE__*/React.createElement("div", {
+      "data-ledger-receipt": "1"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "ledger-receipt-label text-[11px] uppercase tracking-widest mb-1",
+      style: {
+        color: CD.pinNote,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Ledger receipt"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: 'var(--cd-panel)',
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10,
+        fontFamily: 'Space Mono, ui-monospace, monospace',
+        fontSize: 12,
+        lineHeight: 1.55,
+        color: CD.ink,
+        whiteSpace: 'pre-wrap',
+        padding: '8px 10px'
+      }
+    }, t.receiptLines.map(groupedReceipt).join('\n'))), /*#__PURE__*/React.createElement("div", {
       className: "p-3 flex items-center justify-between",
       style: {
         background: CD.ink,
@@ -39661,7 +39702,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Customer pays' : 'Amount in',
-      v: `${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`,
+      v: moneyCode(t.payAmt, dir === 'send' ? home : t.ccy),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Rate",
@@ -39746,7 +39787,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         style: {
           color: CD.mute
         }
-      }, evt.ts, " \xB7 ", evt.by, evt.note ? ` — ${evt.note}` : '')));
+      }, timelineWhen(evt.ts, settings && settings.timeFormat), " \xB7 ", evt.by, evt.note ? ` — ${evt.note}` : '')));
     })), t.status === 'hold' && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 mt-1 text-[12px] flex items-center gap-1.5",
       style: {
@@ -39870,11 +39911,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     Ic,
     fmt,
     num,
+    formatPhoneMoney,
+    currencyPlaces,
     crossRate,
     reportingLimit,
     deskPack,
     businessDate
   } = window.CDOS;
+  const groupedReceipt = line => String(line == null ? '' : line).replace(/(\d+(?:\.\d+)?)(\s+)([A-Z]{3})\b/g, (_all, raw, gap, code) => (String(raw).indexOf('.') >= 0 ? raw : num(raw)) + gap + code);
+  const moneyCode = (amount, code) => !code ? num(amount) : currencyPlaces(code) === 0 ? `${num(amount)} ${code}` : formatPhoneMoney(amount, code);
   /* THE DESK'S OWN MONEY, AND ITS OWN REGULATOR.
       Every figure in this module was labelled CAD. The transfer store keeps
      the local leg of a send in the desk's own currency — which is what
@@ -40654,6 +40699,7 @@ ${threshold == null ? ' No reporting line has been set for this desk, so nothing
 .r{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid #eee}.r .k{color:#777}.grn{color:#1f8a4c;font-weight:700}.big{text-align:center;margin:12px 0}.big .v{font-family:'Archivo';font-weight:800;font-size:26px}
 .ft{margin-top:14px;border-top:1px dashed #ccc;padding-top:10px;font-size:9px;color:#999;text-align:center;line-height:1.5}@page{margin:8mm}</style></head><body>
 <div class="h"><div class="b">${esc(biz)}</div><div class="s">Money transfer receipt</div></div>
+${Array.isArray(t.receiptLines) && t.receiptLines.length ? `<div style="margin:10px 0;padding:8px 0;border-top:1px solid #111;border-bottom:1px solid #111;font-size:12px;line-height:1.55">${t.receiptLines.map(line => `<div>${esc(groupedReceipt(line))}</div>`).join('')}</div>` : ''}
 <div class="r"><span class="k">Reference</span><span>${esc(t.ref)}</span></div>
 <div class="r"><span class="k">Date</span><span>${esc(t.date)}</span></div>
 <div class="r"><span class="k">Sender</span><span>${esc(t.senderName)}</span></div>
@@ -40662,8 +40708,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 <div class="r"><span class="k">Payout</span><span>${esc(window.CDOS._transfers.methodLabel(t.method))} · ${esc(t.partner)}</span></div>
 <div class="pin"><div class="l">Tracking PIN</div><div class="v">${esc(t.pin)}</div></div>
 <div class="big"><div style="font-size:10px;color:#777">${t.direction === 'send' ? 'Beneficiary receives' : 'Customer receives'}</div><div class="v grn">${num(t.recvAmt)} ${esc(t.direction === 'send' ? t.ccy : homeCcy() || '')}</div></div>
-<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${num(t.payAmt)} ${esc(t.direction === 'send' ? homeCcy() || '' : t.ccy)}</span></div>
-<div class="r"><span class="k">Rate</span><span>${num(t.rate)}</span></div>
+<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${esc(moneyCode(t.payAmt, t.direction === 'send' ? homeCcy() || '' : t.ccy))}</span></div>
+<div class="r"><span class="k">Rate</span><span>${esc(num(t.rate))} ${esc(t.direction === 'send' ? t.ccy : homeCcy() || '')}/${esc(t.direction === 'send' ? homeCcy() || '' : t.ccy)}</span></div>
 <div class="r"><span class="k">Fee</span><span>${esc(fmtHome(t.fee))}</span></div>
 <div class="r"><span class="k">Status</span><span>${esc(statusLabel(t.status, t.direction))}</span></div>
 <div class="ft">${esc(settings.receiptDisclaimer || 'Keep this receipt. Funds payable on presentation of the tracking PIN and valid ID.')}</div>
@@ -41320,6 +41366,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       me: me,
       log: log,
       setTransfers: setTransfers,
+      settings: settings,
       onClose: () => setDetailId(null),
       onReceipt: t => printReceipt(t, beneficiaries, corridors, settings, log)
     }));
@@ -51488,6 +51535,8 @@ ${snap}`;
     perCadLive,
     fmt,
     num,
+    formatPhoneMoney,
+    currencyPlaces,
     dDiff,
     dealMargin,
     CCY,
@@ -51960,9 +52009,11 @@ ${snap}`;
   };
   function Card({
     children,
-    pad
+    pad,
+    className
   }) {
     return /*#__PURE__*/React.createElement("div", {
+      className: className,
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
@@ -52263,9 +52314,7 @@ ${snap}`;
       const byCcy = {},
         byType = {},
         feeTeller = {},
-        feeType = {},
-        drawerIn = {},
-        drawerOut = {};
+        feeType = {};
       live.forEach(r => {
         const v = homeEquiv(r.inAmt, r.inCcy, homeCcy),
           fee = +r.fee || 0,
@@ -52279,8 +52328,6 @@ ${snap}`;
         }
         feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee + sp;
         feeType[r.type] = (feeType[r.type] || 0) + fee + sp;
-        drawerIn[r.inCcy] = (drawerIn[r.inCcy] || 0) + (+r.inAmt || 0);
-        drawerOut[r.outCcy] = (drawerOut[r.outCcy] || 0) + (+r.outAmt || 0);
       });
       const reportable = live.filter(r => (flags[r.id] || {}).single);
       const stru = [];
@@ -52309,13 +52356,6 @@ ${snap}`;
         }
       });
       const sortE = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
-      const ccySet = Array.from(new Set([...Object.keys(drawerIn), ...Object.keys(drawerOut)]));
-      const drawer = ccySet.map(c => ({
-        ccy: c,
-        inA: drawerIn[c] || 0,
-        outA: drawerOut[c] || 0,
-        net: (drawerIn[c] || 0) - (drawerOut[c] || 0)
-      })).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
       const perTx = live.map(r => ({
         r,
         fee: +r.fee || 0,
@@ -52340,7 +52380,6 @@ ${snap}`;
         reportable,
         stru,
         kycGaps,
-        drawer,
         perTx,
         filed: reportable.filter(r => r.filed).length,
         /* CASH ON HAND AT CLOSE — the drawer, and the count of the drawer.
@@ -53115,56 +53154,77 @@ ${snap}`;
           data: data.byType,
           fmtV: v => fmt(v, homeCcy)
         }))), /*#__PURE__*/React.createElement(Card, {
-          pad: 0
+          pad: 0,
+          className: "drawer-movement"
         }, /*#__PURE__*/React.createElement("div", {
           style: {
             padding: '14px 16px 4px'
           }
-        }, /*#__PURE__*/React.createElement(SecTitle, null, "Cash drawer movement \xB7 in units")), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        }, /*#__PURE__*/React.createElement(SecTitle, null, "Cash drawer movement \xB7 in units")), !(book && book.movement) ? /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '10px 16px 14px',
+            fontSize: 11.5,
+            color: CD.faint
+          }
+        }, `The ledger has no answer. ${noBook}.`) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+          className: "drawer-movement-caption",
+          style: {
+            fontSize: 11,
+            color: CD.pinNote,
+            padding: '0 16px 8px',
+            margin: 0,
+            lineHeight: 1.35
+          }
+        }, "In is cash received. Out is cash paid out. Net is in minus out."), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
         }, "Currency"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Received (in)"), /*#__PURE__*/React.createElement("th", {
+        }, "In"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Paid out"), /*#__PURE__*/React.createElement("th", {
+        }, "Out"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Net position"))), /*#__PURE__*/React.createElement("tbody", null, data.drawer.map(d => /*#__PURE__*/React.createElement("tr", {
-          key: d.ccy
-        }, /*#__PURE__*/React.createElement("td", {
-          style: tdS
-        }, /*#__PURE__*/React.createElement("b", null, d.ccy)), /*#__PURE__*/React.createElement("td", {
-          style: {
-            ...tdS,
-            textAlign: 'right',
-            fontVariantNumeric: 'tabular-nums'
-          }
-        }, num(d.inA)), /*#__PURE__*/React.createElement("td", {
-          style: {
-            ...tdS,
-            textAlign: 'right',
-            fontVariantNumeric: 'tabular-nums'
-          }
-        }, num(d.outA)), /*#__PURE__*/React.createElement("td", {
-          style: {
-            ...tdS,
-            textAlign: 'right',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 600,
-            color: d.net >= 0 ? CD.green : CD.flag
-          }
-        }, d.net >= 0 ? '+' : '', num(d.net)))), data.drawer.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        }, "Net"))), /*#__PURE__*/React.createElement("tbody", null, book.movement.map(d => {
+          const net = Number(d.net);
+          const places = currencyPlaces(d.currency);
+          const cell = amount => places === 0 ? num(amount) : formatPhoneMoney(amount);
+          return /*#__PURE__*/React.createElement("tr", {
+            key: d.currency
+          }, /*#__PURE__*/React.createElement("td", {
+            style: tdS
+          }, /*#__PURE__*/React.createElement("b", null, d.currency)), /*#__PURE__*/React.createElement("td", {
+            style: {
+              ...tdS,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums'
+            }
+          }, cell(d.received)), /*#__PURE__*/React.createElement("td", {
+            style: {
+              ...tdS,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums'
+            }
+          }, cell(d.paidOut)), /*#__PURE__*/React.createElement("td", {
+            style: {
+              ...tdS,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: 600,
+              color: net >= 0 ? CD.green : CD.flag
+            }
+          }, net >= 0 ? '+' : '', cell(d.net)));
+        }), book.movement.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: tdS,
           colSpan: 4
-        }, "No movement in this period."))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Compliance snapshot"), /*#__PURE__*/React.createElement("div", {
+        }, "No movement in this period.")))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Compliance snapshot"), /*#__PURE__*/React.createElement("div", {
           style: {
             display: 'grid',
             gridTemplateColumns: 'repeat(3,1fr)',
