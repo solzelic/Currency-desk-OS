@@ -16,7 +16,15 @@ const babel = require(join(root, "node_modules/@babel/standalone/babel.js")) as 
 
 const read = (name: string) => readFileSync(join(root, name), "utf8");
 
-function screen() {
+type ScreenFns = {
+  currencyPlaces: (ccy: string) => number;
+  unitText: (n: number, ccy: string) => string;
+  fmt: (n: number, ccy: string) => string;
+  cashVariance: (counted: number, expected: number, ccy: string) => number;
+  storedRoundNote: (n: number, ccy: string) => string;
+};
+
+function screen(): ScreenFns {
   const store = new Map<string, string>();
   const localStorage = new Proxy(
     {
@@ -39,7 +47,7 @@ function screen() {
     addEventListener() {},
   };
   const window = {
-    CDOS: {} as Record<string, (...args: never[]) => unknown>,
+    CDOS: {} as ScreenFns,
     localStorage,
     document,
     addEventListener() {},
