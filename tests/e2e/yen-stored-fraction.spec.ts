@@ -4,7 +4,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
@@ -34,6 +34,24 @@ function contrastOf(fg: string, bg: string) {
   const light = Math.max(lum(over), lum(back));
   const dark = Math.min(lum(over), lum(back));
   return (light + 0.05) / (dark + 0.05);
+}
+
+async function panelContrast(target: Locator) {
+  const ink = await target.evaluate((el) => {
+    const fg = getComputedStyle(el).color;
+    let node: HTMLElement | null = el as HTMLElement;
+    let bg = "rgb(255, 255, 255)";
+    while (node) {
+      const painted = getComputedStyle(node).backgroundColor;
+      if (painted && painted !== "rgba(0, 0, 0, 0)" && painted !== "transparent") {
+        bg = painted;
+        break;
+      }
+      node = node.parentElement;
+    }
+    return { fg, bg };
+  });
+  return { ink, ratio: contrastOf(ink.fg, ink.bg) };
 }
 
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
@@ -152,10 +170,14 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
     return false;
   });
   expect(approxFollowsNote).toBe(false);
+  const countInk = await panelContrast(foot.locator(".till-stored-note"));
+  expect(countInk.ratio, "count stored line " + JSON.stringify(countInk.ink)).toBeGreaterThanOrEqual(4.5);
 
   await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
   await expect(jpy).toContainText("+1");
   await expect(jpy).toContainText("Rounded from 489,175.85 JPY");
+  const reconInk = await panelContrast(jpy.locator(".till-stored-note"));
+  expect(reconInk.ratio, "reconcile stored cell " + JSON.stringify(reconInk.ink)).toBeGreaterThanOrEqual(4.5);
 
   await page.locator('#appbar [data-app="reports"]').evaluate((el: HTMLElement) => el.click());
   await page.getByText("End-of-Day Sign-Off").first().click();
