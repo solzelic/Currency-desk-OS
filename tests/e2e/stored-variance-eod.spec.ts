@@ -87,8 +87,13 @@ test("an old yen count shows the variance that was saved", async ({ page }) => {
   await openSignOff(page);
   const table = page.locator("table").filter({ hasText: "In the drawer" });
   const jpy = table.locator("tr", { hasText: "JPY" }).first();
+  await expect(jpy).toContainText("99.85");
   await expect(jpy).toContainText("+0.15");
   await expect(jpy).not.toContainText("balanced");
+  const note = jpy.locator("xpath=following-sibling::tr[1]");
+  await expect(note).toContainText("Counted before whole-yen display. Variance shown as saved then.");
+  const total = table.locator("tr", { hasText: "Total" });
+  await expect(total).not.toContainText("balanced");
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "CSV" }).click();
