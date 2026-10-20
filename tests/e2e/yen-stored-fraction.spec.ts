@@ -3,10 +3,38 @@
    variance is counted minus the whole-unit expected. */
 import { createRequire } from "node:module";
 import path from "node:path";
-import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
+
+function channel(c: number) {
+  const s = c / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastOf(fg: string, bg: string) {
+  const read = (color: string) => {
+    const match = color.match(/rgba?\(([^)]+)\)/);
+    if (!match) throw new Error(color);
+    const [r, g, b, a] = match[1].split(",").map((part) => Number(part.trim()));
+    return { r, g, b, a: a == null ? 1 : a };
+  };
+  const back = read(bg);
+  const front = read(fg);
+  const over = front.a < 1
+    ? {
+        r: front.r * front.a + back.r * (1 - front.a),
+        g: front.g * front.a + back.g * (1 - front.a),
+        b: front.b * front.a + back.b * (1 - front.a),
+      }
+    : front;
+  const lum = (rgb: { r: number; g: number; b: number }) =>
+    0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+  const light = Math.max(lum(over), lum(back));
+  const dark = Math.min(lum(over), lum(back));
+  return (light + 0.05) / (dark + 0.05);
+}
 
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
 const { Pool } = requireFromServer("pg") as { Pool: new (c: { connectionString: string }) => { query: Function; end: () => Promise<void> } };
@@ -40,7 +68,7 @@ test.beforeAll(async () => {
     `INSERT INTO ledger_till_sessions
       (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
        session_number,business_date,status,opened_by,opened_at)
-     VALUES ('session-yen-fraction',$1,$2,$3,$4,$5,1,current_date,'open',$1||':a.singh',now())
+     VALUES ('session-yen-fraction',$1,$2,$3,$4,$5,1,current_date,'open',$1||':j.masri',now())
      ON CONFLICT (session_id) DO NOTHING`,
     [TENANT, ENTITY, BRANCH, WS, TILL],
   );
@@ -52,6 +80,8 @@ test.afterAll(async () => {
 
 async function openTill(page: Page) {
   await signInAtDesk(page, "j.masri");
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
   await page.locator('#appbar [data-app="till"]').click();
   await expect(page.getByRole("button", { name: /Reconcile & close/i }).first()).toBeVisible({ timeout: 45_000 });
   const switcher = page.locator('xpath=//button[@title="Switch till at this location" and not(ancestor::*[@id="tenantbar"])]');
@@ -135,6 +165,21 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await expect(eod).not.toContainText("Rounded from");
   const noteRow = eod.locator("xpath=following-sibling::tr[1]");
   await expect(noteRow).toContainText("Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.");
+  const ink = await noteRow.locator(".till-stored-line").evaluate((el) => {
+    const fg = getComputedStyle(el).color;
+    let node: HTMLElement | null = el as HTMLElement;
+    let bg = "rgb(255, 255, 255)";
+    while (node) {
+      const painted = getComputedStyle(node).backgroundColor;
+      if (painted && painted !== "rgba(0, 0, 0, 0)" && painted !== "transparent") {
+        bg = painted;
+        break;
+      }
+      node = node.parentElement;
+    }
+    return { fg, bg };
+  });
+  expect(contrastOf(ink.fg, ink.bg), JSON.stringify(ink)).toBeGreaterThanOrEqual(4.5);
 
   const figure = noteRow.locator(".till-stored-figure");
   await expect(figure).toBeVisible();
@@ -191,4 +236,51 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
       expect(lineFit!.inside, JSON.stringify(lineFit)).toBe(true);
     }
   }
+});
+
+async function saveYenCount(sessionId: string, counted: string, variance: string) {
+  const key = `yen-${counted}-${Date.now()}`;
+  await pool.query(
+    `INSERT INTO ledger_till_count_batches
+      (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+       till_id,count_kind,actor_id,idempotency_key,counted_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,
+             'interim',$3||':j.masri',$1,now())`,
+    [key, sessionId, TENANT, ENTITY, BRANCH, WS, TILL],
+  );
+  await pool.query(
+    `INSERT INTO ledger_till_counts
+      (batch_id,currency,expected_amount,counted_amount,variance_amount)
+     VALUES ($1,'JPY',489175.85,$2,$3)`,
+    [key, counted, variance],
+  );
+}
+
+test("end of day shows plus one for 489177 and minus one for 489175", async ({ page }) => {
+  await openTill(page);
+  const sessionId = await page.evaluate(async () => {
+    const answer = await fetch("/api/ledger/till-session").then((response) => response.json());
+    return answer.session && answer.session.sessionId;
+  });
+  expect(sessionId).toBeTruthy();
+  await saveYenCount(sessionId, "489177.00", "1.00");
+  await page.reload();
+  await landOnDesktop(page);
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await page.locator('#appbar [data-app="reports"]').click();
+  await page.getByText("End-of-Day Sign-Off").first().click();
+  await page.locator("#cdos-report-doc").waitFor({ state: "visible", timeout: 30_000 });
+  const variance = () => page.locator("table").filter({ hasText: "In the drawer" }).locator("tr", { hasText: "JPY" }).first().locator("td").nth(4);
+  await expect(variance()).toContainText("+1");
+  await expect(variance()).not.toContainText("-1");
+
+  await saveYenCount(sessionId, "489175.00", "-1.00");
+  await page.reload();
+  await landOnDesktop(page);
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await page.locator('#appbar [data-app="reports"]').click();
+  await page.getByText("End-of-Day Sign-Off").first().click();
+  await expect(variance()).toContainText("-1");
+  await expect(variance()).not.toContainText("+1");
 });

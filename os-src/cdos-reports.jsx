@@ -625,7 +625,7 @@
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: shown != null ? 600 : 400, color: shown == null ? CD.faint : off ? CD.flag : CD.green }}>{shown == null ? '—' : (shown === 0 ? '✓ balanced' : (shown > 0 ? '+' : '') + unitText(shown, x.ccy))}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy)}</td>
               </tr>,
-              note ? <tr key={x.ccy + '-stored'} className="till-stored-row"><td colSpan={6} style={{ ...tdS, color: CD.faint, fontWeight: 400, fontSize: 11, lineHeight: 1.35 }}><div className="till-stored-line">{cut[0]}<span className="till-stored-figure">{figure}</span>{cut.slice(1).join(figure)}</div></td></tr> : null]; })}
+              note ? <tr key={x.ccy + '-stored'} className="till-stored-row"><td colSpan={6} style={{ ...tdS, color: CD.pinNote, fontWeight: 400, fontSize: 11, lineHeight: 1.35 }}><div className="till-stored-line">{cut[0]}<span className="till-stored-figure">{figure}</span>{cut.slice(1).join(figure)}</div></td></tr> : null]; })}
               {(() => {
                 /* The counted and variance totals are only offered in the
                    desk's own money when every counted line can BE valued in

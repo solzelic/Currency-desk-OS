@@ -16872,7 +16872,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
       className: "till-stored-note",
       style: {
-        color: CD.faint,
+        color: CD.pinNote,
         marginTop: 2,
         lineHeight: 1.35
       }
@@ -17206,7 +17206,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, unitText(r.expected, r.c)), storedRoundNote(r.expected, r.c) ? /*#__PURE__*/React.createElement("div", {
         className: "till-stored-note",
         style: {
-          color: CD.faint,
+          color: CD.pinNote,
           fontWeight: 400,
           fontSize: 11,
           lineHeight: 1.35,
@@ -52903,7 +52903,7 @@ ${snap}`;
             colSpan: 6,
             style: {
               ...tdS,
-              color: CD.faint,
+              color: CD.pinNote,
               fontWeight: 400,
               fontSize: 11,
               lineHeight: 1.35
