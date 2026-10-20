@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
+import { isoMinorUnits } from "../src/ledger/currencies.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
@@ -432,7 +433,7 @@ postgres("the ledger answers for its own headline figures", () => {
     });
   });
 
-  it("sends the scale table the screen rounds with", async () => {
+  it("sends the full exception table, where a missing code means 2 places", async () => {
     const answer = (
       await app.inject({
         method: "GET",
@@ -440,8 +441,12 @@ postgres("the ledger answers for its own headline figures", () => {
         cookies: await cookie(),
       })
     ).json();
-    expect(answer.currencies.scales).toMatchObject({ JPY: 0, KRW: 0, KWD: 3 });
-    expect(Object.hasOwn(answer.currencies.scales, "CAD")).toBe(false);
+    const scales = answer.currencies.scales;
+    expect(scales).toEqual(isoMinorUnits());
+    expect(scales.JPY).toBe(0);
+    expect(scales.KRW).toBe(0);
+    expect(scales.KWD).toBe(3);
+    expect(Object.hasOwn(scales, "INR")).toBe(false);
   });
 
   it("refuses all three reads to a session that is not signed in", async () => {
