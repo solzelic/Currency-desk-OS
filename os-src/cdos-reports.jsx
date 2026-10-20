@@ -234,7 +234,7 @@
   }
   const thS = { textAlign: 'left', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: CD.mute, padding: '8px 10px', background: 'var(--cd-chip)', borderBottom: `1px solid ${CD.line}`, fontWeight: 600 };
   const tdS = { fontSize: 12, padding: '7px 10px', borderBottom: `1px solid ${CD.lineSoft}`, color: CD.ink };
-  function Card({ children, pad }) { return <div style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, padding: pad == null ? 16 : pad, marginBottom: 16 }}>{children}</div>; }
+  function Card({ children, pad, className }) { return <div className={className} style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, padding: pad == null ? 16 : pad, marginBottom: 16 }}>{children}</div>; }
   function Cols({ children }) { return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>{children}</div>; }
 
   /* ============================================================
@@ -753,8 +753,11 @@
             <Card><SecTitle>Pay-in volume by currency</SecTitle><Bars data={data.byCcy} fmtV={v => fmt(v, homeCcy)} /></Card>
             <Card><SecTitle>Volume by transaction type</SecTitle><Bars data={data.byType} fmtV={v => fmt(v, homeCcy)} /></Card>
           </Cols>
-          <Card pad={0}>
-            {/* The book rounds each open-day leg, then adds. A closed day stays stored. */}
+          <Card pad={0} className="drawer-movement">
+            {/* Units in and units out, not a home valuation — these are
+                counts of notes that crossed the counter and they are exact.
+                The home-currency headline above is the ledger's; this table
+                deliberately does not restate it at a rate. */}
             <div style={{ padding: '14px 16px 4px' }}><SecTitle>Cash drawer movement · in units</SecTitle></div>
             {!(book && book.movement)
               ? <div style={{ padding: '10px 16px 14px', fontSize: 11.5, color: CD.faint }}>{`The ledger has no answer. ${noBook}.`}</div>

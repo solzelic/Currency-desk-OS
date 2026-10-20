@@ -51984,9 +51984,11 @@ ${snap}`;
   };
   function Card({
     children,
-    pad
+    pad,
+    className
   }) {
     return /*#__PURE__*/React.createElement("div", {
+      className: className,
       style: {
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
@@ -53127,7 +53129,8 @@ ${snap}`;
           data: data.byType,
           fmtV: v => fmt(v, homeCcy)
         }))), /*#__PURE__*/React.createElement(Card, {
-          pad: 0
+          pad: 0,
+          className: "drawer-movement"
         }, /*#__PURE__*/React.createElement("div", {
           style: {
             padding: '14px 16px 4px'

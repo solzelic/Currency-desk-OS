@@ -78,11 +78,9 @@ async function openSummary(page: Page) {
 test("an unread book says so, and a read book shows the rounded drawer", async ({ page }) => {
   await page.route("**/api/ledger/summary**", (route) => route.abort());
   await openSummary(page);
-  const missed = await page.locator("#cdos-report-doc").innerText();
-  const missedAt = missed.indexOf("Cash drawer movement");
-  const missedDrawer = missedAt < 0 ? missed : missed.slice(missedAt, missedAt + 500);
-  expect(missedDrawer).toContain("The ledger has no answer");
-  expect(missedDrawer).not.toContain("200.8");
+  const missedDrawer = page.locator("#cdos-report-doc .drawer-movement");
+  await expect(missedDrawer).toContainText("The ledger has no answer");
+  await expect(missedDrawer).not.toContainText("200.8");
   await page.unroute("**/api/ledger/summary**");
 
   await page.reload();

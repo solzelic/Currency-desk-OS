@@ -25,10 +25,25 @@ const desk = {
     Ic: () => null,
     fmt: (n: unknown) => String(n ?? ""),
     num: (n: unknown) => String(n ?? ""),
-    deskPack: () => ({ homeCurrency: "CAD" }),
-    reportingLimit: () => ({}),
+    TODAY: "2026-10-20",
+    deskPack: () => ({ homeCurrency: "CAD", packId: "pack-ca-v1" }),
+    reportingLimit: () => ({ amount: null, currency: "CAD" }),
     crossRate: () => 1,
     businessDate: () => "2026-10-20",
+    priceDeal: () => ({ outAmt: 10825, rate: 108.25, midRate: 108.25, marginCad: 0, side: "sell" }),
+    newTx: (row: Record<string, unknown>) => ({ ...row, id: "tx-1", date: "2026-10-20", status: "ok" }),
+    mkRef: () => "CD-REF",
+    Backend: {
+      asMoney: (n: unknown) => String(n),
+      syncCustomer: async () => ({ customerId: "c1", externalRef: "e1" }),
+      postRemittanceSend: async () => ({
+        receipt: { lines: [LINE] },
+        obligationRef: "OB1",
+        transactionRef: "TX1",
+        transactionId: "id1",
+        obligationId: "ob1",
+      }),
+    },
   } as Record<string, unknown>,
   open: (_u: string, _n: string, _f: string) => {
     const written: string[] = [];
@@ -70,39 +85,51 @@ function loadJsx(file: string, patch?: (src: string) => string) {
   );
 }
 
-loadJsx("os-src/cdos-transfers.jsx");
+loadJsx("os-src/cdos-transfers.jsx", (src) => src
+  .replace("const [senderName, setSenderName] = useState('');", "const [senderName, setSenderName] = useState('A. Shah');")
+  .replace("const [benId, setBenId] = useState('');", "const [benId, setBenId] = useState('b1');")
+  .replace("const [partner, setPartner] = useState('');", "const [partner, setPartner] = useState('Partner');")
+  .replace("const [payAmt, setPayAmt] = useState('');", "const [payAmt, setPayAmt] = useState('100');")
+  .replace(
+    "return (<Portal><div className=\"fixed inset-0 flex items-center justify-center p-4\" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }}",
+    "window.__invokeCreate = create; return (<Portal><div className=\"fixed inset-0 flex items-center justify-center p-4\" style={{ background: 'var(--cd-scrim)', zIndex: 9200 }}",
+  ));
 loadJsx("os-src/cdos-transfers-app.jsx", (src) => src.replace(
   "window.CDOS = Object.assign(window.CDOS || {}, { Transfers });",
   "window.CDOS = Object.assign(window.CDOS || {}, { Transfers, printReceipt });",
 ));
 
-const transfer = {
-  id: "t-yen",
-  ref: "TR-YEN",
-  receiptLines: [LINE],
-  status: "created",
-  direction: "send",
-  date: "2026-10-20",
-  createdBy: "M. Costa",
-  pin: "4481",
-  senderName: "A. Shah",
-  beneficiaryId: "b1",
-  corridor: "c1",
-  method: "bank",
-  partner: "Partner",
-  recvAmt: 10825,
-  payAmt: 100,
-  ccy: "JPY",
-  rate: 108.25,
-  fee: 0,
-  timeline: [],
-};
-
 function draw(fn: unknown, props: unknown) {
   return renderToStaticMarkup(React.createElement(fn as never, props));
 }
 
-it("renders the ledger receipt on the transfer, and prints those lines", () => {
+it("posts a transfer and renders the ledger receipt, then prints those lines", async () => {
+  let captured: { receiptLines?: string[] | null } | null = null;
+  const modal = (desk.CDOS._transfers as { TransferModal: unknown }).TransferModal;
+  draw(modal, {
+    rows: [],
+    setRows: (fn: (rows: unknown[]) => unknown[]) => fn([]),
+    clients: { "A. Shah": { idType: "passport", idNum: "P123", idExpiry: "2030-01-01" } },
+    setClients: () => {},
+    settings: { transferRequirePurpose: false },
+    me: { name: "M. Costa" },
+    log() {},
+    corridors: [{ id: "PH", ccy: "JPY", country: "Japan", flag: "", active: true, partners: [{ name: "Partner", methods: ["cash"] }] }],
+    beneficiaries: [{ id: "b1", sender: "A. Shah", name: "Ben", corridor: "PH", method: "cash", partner: "Partner" }],
+    setBeneficiaries() {},
+    transfers: [],
+    setTransfers: (fn: (rows: unknown[]) => Array<{ receiptLines?: string[] | null }>) => {
+      captured = fn([])[0] ?? null;
+    },
+    onClose() {},
+    serverBacked: true,
+  });
+  const invoke = (desk as unknown as { __invokeCreate?: () => Promise<void> }).__invokeCreate;
+  if (!invoke) throw new Error("create was not reached");
+  await invoke();
+  if (!captured) throw new Error("the post did not record a transfer");
+  const transfer = captured;
+
   const detail = (desk.CDOS._transfers as { TransferDetail: unknown }).TransferDetail;
   const html = draw(detail, {
     t: transfer,
