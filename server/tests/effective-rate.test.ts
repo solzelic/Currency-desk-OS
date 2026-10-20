@@ -16,8 +16,6 @@ const { effectiveRate, boardRateText, MIN_RATE_PLACES, MAX_RATE_PLACES, RATE_NOT
   RATE_NOTE: string;
 };
 
-/* The desk amount line. maximumFractionDigits 2, with no minimum,
-   so 1234.5 stays one decimal. */
 const num = (n: number) =>
   new Intl.NumberFormat("en-CA", { maximumFractionDigits: 2 }).format(Number(n) || 0);
 
@@ -66,23 +64,12 @@ describe("effective rate", () => {
   });
 
   it("keeps 1,234.5 INR at one decimal and does not round 0.0118 to 0.01", () => {
-    const base = readFileSync(join(root, "os-src/cdos-base.jsx"), "utf8");
-    expect(base).toContain(
-      "const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);",
-    );
-    const modal = readFileSync(join(root, "os-src/cdos-txmodal.jsx"), "utf8");
-    expect(modal).toContain("num(out.amt)");
-    expect(modal).not.toContain("unitText");
     expect(`${num(1234.5)} INR`).toBe("1,234.5 INR");
-    /* 100 INR pays 1.18 USD. The ratio is 0.0118. Two-place rounding
-       of that ratio is 0.01. The line beside the payout is four places. */
     expect(num(0.0118)).toBe("0.01");
     const exact = effectiveRate("100.00", "1.18", 2);
     expect(exact).toEqual({ text: "0.0118", rounded: false });
     expect(`1 INR = ${exact.text} USD`).toBe("1 INR = 0.0118 USD");
     expect(exact.text).not.toBe("0.01");
-    /* 1,234.5 INR times 0.0118 is 14.5671, paid as 14.57. Six places
-       still miss, so the note is on and the rate stays 0.0118. */
     const rounded = effectiveRate("1234.5", "14.57", 2);
     expect(rounded).toEqual({ text: "0.0118", rounded: true });
     expect(`1 INR = ${rounded.text} USD`).toBe("1 INR = 0.0118 USD");
@@ -90,11 +77,9 @@ describe("effective rate", () => {
   });
 
   it("keeps four significant digits on a small rate", () => {
-    /* 1,000,000 KRW pays 725.40. Four places is 0.0007. */
     const krw = effectiveRate("1000000.00", "725.40", 2);
     expect(krw).toEqual({ text: "0.0007254", rounded: false });
     expect(krw.text).not.toBe("0.0007");
-    /* 1,000,000 pays 98.50. Four places half-up is 0.0001. */
     const idr = effectiveRate("1000000.00", "98.50", 2);
     expect(idr).toEqual({ text: "0.0000985", rounded: false });
     expect(idr.text).not.toBe("0.0001");
@@ -107,97 +92,132 @@ describe("effective rate", () => {
   });
 
   it("rounds half up, and does not truncate", () => {
-    /* 2,166.46 / 3,000 is 0.7221533. Half up at four places is 0.7222.
-       Cutting the remainder off would leave 0.7221. */
     const rate = effectiveRate("3000.00", "2166.46", 2);
     expect(rate).toEqual({ text: "0.7222", rounded: true });
     expect(rate.text).not.toBe("0.7221");
   });
 });
 
-function fnBody(source: string, name: string): string {
-  const at = source.indexOf("function " + name);
-  if (at < 0) throw new Error("missing " + name);
-  const paren = source.indexOf("(", at);
-  let depth = 0;
-  let i = paren;
-  for (; i < source.length; i += 1) {
-    if (source[i] === "(") depth += 1;
-    else if (source[i] === ")") {
-      depth -= 1;
-      if (depth === 0) break;
-    }
-  }
-  const open = source.indexOf("{", i);
-  depth = 0;
-  for (let j = open; j < source.length; j += 1) {
-    if (source[j] === "{") depth += 1;
-    else if (source[j] === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(at, j + 1);
-    }
-  }
-  throw new Error("unclosed " + name);
+
+const React = require("react") as { createElement: (...args: unknown[]) => unknown };
+const { renderToStaticMarkup } = require("react-dom/server") as { renderToStaticMarkup: (node: unknown) => string };
+const { transform } = require("@babel/standalone") as { transform: (src: string, opts: object) => { code: string | null } };
+
+function loadJsx(file: string, patch?: (src: string) => string) {
+  const real = require(join(root, "os-src/effective-rate.js")) as Record<string, unknown>;
+  const CD = new Proxy({}, { get: (_t, key) => "tok-" + String(key) });
+  const CDOS = new Proxy(real, {
+    get(target, key) {
+      if (key in target) return target[key as keyof typeof target];
+      if (key === "CD") return CD;
+      if (key === "currencyPlaces") return () => 2;
+      if (key === "num" || key === "fmt") return (n: unknown) => String(n ?? "");
+      if (key === "deskPack") return () => ({ homeCurrency: "CAD" });
+      if (key === "reportingLimit") return () => ({});
+      if (key === "CCY" || key === "TYPES" || key === "SEARCH_EXAMPLES") return [];
+      if (key === "Ic" || key === "CommitBtn" || key === "Absent") return () => null;
+      return () => 0;
+    },
+  });
+  const window = { CDOS };
+  const document = { addEventListener() {}, removeEventListener() {}, body: {}, activeElement: null };
+  const ReactDOM = { createPortal: (node: unknown) => node };
+  const g = globalThis as unknown as Record<string, unknown>;
+  g.window = window;
+  g.React = React;
+  g.ReactDOM = ReactDOM;
+  g.document = document;
+  let src = readFileSync(join(root, file), "utf8");
+  if (patch) src = patch(src);
+  const code = transform(src, { presets: ["react"], filename: file }).code;
+  if (!code) throw new Error(file);
+  new Function("React", "ReactDOM", "window", "document", code)(React, ReactDOM, window, document);
+  return CDOS;
 }
 
-describe("rate on the receipt, the deal, and the sheet", () => {
-  const modal = readFileSync(join(root, "os-src/cdos-txmodal.jsx"), "utf8");
-  const ledger = readFileSync(join(root, "os-src/cdos-ledger.jsx"), "utf8");
-  const modules = readFileSync(join(root, "os-src/cdos-modules.jsx"), "utf8");
-  const receipt = fnBody(modules, "ReceiptModal");
-  const shown = fnBody(ledger, "shownDealRate");
-  const note = fnBody(ledger, "RateNote");
-  const present = fnBody(modal, "PresentQuote");
+function lum(hex: string): number {
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return [0, 1, 2].reduce((sum, i) => sum + [0.2126, 0.7152, 0.0722][i]! * lin(parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255), 0);
+}
+function ratio(a: string, b: string): number {
+  return (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+}
+function theme(name: string): (key: string) => string {
+  const src = readFileSync(join(root, "os-src/cdos-base.jsx"), "utf8");
+  const at = src.indexOf(name + ": {");
+  const block = src.slice(at, src.indexOf("\n    }", at));
+  return (key) => {
+    const hit = block.match(new RegExp(key + ": '(#[0-9A-Fa-f]{6})'"));
+    if (!hit || !hit[1]) throw new Error(name + " " + key);
+    return hit[1];
+  };
+}
+function noteOnPaper(html: string, paper: string): string {
+  const color = html.match(/cd-rate-note" style="[^"]*color:([^;"]+)/)?.[1] || "";
+  const pinned = html.indexOf("cd-paper-island") >= 0 && html.indexOf("cd-rate-note") > html.indexOf("cd-paper-island");
+  if (color === "var(--cd-pin-note)") return theme(pinned ? "light" : "dark")("pinNote");
+  const css = readFileSync(join(root, "os-src/york-os.css"), "utf8");
+  const hit = css.slice(css.indexOf('html[data-cdtheme="dark"]')).match(/--faint:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)/);
+  if (!hit) throw new Error(color || "receipt note");
+  const hex = "#" + [hit[1], hit[2], hit[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
+  const ch = (h: string, i: number) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  const alpha = Number(hit[4]);
+  return "#" + [0, 1, 2].map((i) => Math.round(ch(hex, i) * alpha + ch(paper, i) * (1 - alpha)).toString(16).padStart(2, "0")).join("");
+}
 
-  it("prints the effective rate on the receipt, with the note when rounded", () => {
-    expect(receipt).toContain("effectiveRate(row.inAmt, row.outAmt");
-    expect(receipt).toContain("' = ' + priced.text + ' '");
-    expect(receipt).toContain("priced.rounded");
-    expect(receipt).toContain("cd-rate-note");
-    expect(receipt).toContain("RATE_NOTE");
-    expect(receipt).not.toMatch(/k="Rate" v=\{row\.rate\}/);
-    expect(receipt).not.toContain("row.rate +");
+const inr = {
+  inCcy: "INR", outCcy: "USD", inAmt: "1234.5", outAmt: "14.57", rate: "0.011802348123",
+  type: "Currency Exchange", fee: 0, date: "2026-10-20", teller: "M", ref: "LT",
+};
+
+describe("rendered rate", () => {
+  const modules = loadJsx("os-src/cdos-modules.jsx");
+  const ledger = loadJsx("os-src/cdos-ledger.jsx", (src) => src.replace(
+    "{ Ledger, TxModal, TxDetail, Tagged }",
+    "{ Ledger, TxModal, TxDetail, Tagged, RateNote, shownDealRate }",
+  ));
+  const modal = loadJsx("os-src/cdos-txmodal.jsx", (src) => src.replace(
+    "{ TxModal }",
+    "{ TxModal, PresentQuote, SheetRateNote }",
+  ));
+  const draw = (fn: unknown, props: unknown) => renderToStaticMarkup(React.createElement(fn as never, props));
+  const withRow = (over: Record<string, string>) => ({ ...inr, ...over });
+
+  it("prints the effective rate on the receipt, not the stored rate", () => {
+    const html = draw(modules.ReceiptModal, { row: inr, onClose() {}, settings: {} });
+    expect(html).toContain("1 INR = 0.0118 USD");
+    expect(html).not.toContain("0.011802348123");
+    expect(html).toContain(RATE_NOTE);
+    const quiet = draw(modules.ReceiptModal, { row: withRow({ inAmt: "100.00", outAmt: "1.18" }), onClose() {}, settings: {} });
+    expect(quiet).toContain("1 INR = 0.0118 USD");
+    expect(quiet).not.toContain("cd-rate-note");
   });
 
-  it("prints the effective rate on the deal detail, not the stored rate", () => {
-    expect(shown).toContain("dealRate(row)");
-    expect(shown).toContain("return `1 ${row.inCcy} = ${rate.text} ${row.outCcy}`");
-    expect(note).toContain("rate.rounded");
-    expect(note).toContain("RATE_NOTE");
-    expect(ledger).toContain('DRow k="Rate" v={shownDealRate(row)}');
+  it("prints the deal and the quote note only when the rate was rounded", () => {
+    const shown = ledger.shownDealRate as (row: typeof inr) => string;
+    expect(shown(inr)).toBe("1 INR = 0.0118 USD");
+    expect(draw(ledger.RateNote, { row: inr })).toContain(RATE_NOTE);
+    expect(draw(ledger.RateNote, { row: withRow({ inAmt: "100.00", outAmt: "1.18" }) })).toBe("");
+    expect(draw(modal.SheetRateNote, { on: true })).toContain("var(--cd-pin-note)");
+    expect(draw(modal.SheetRateNote, { on: false })).toBe("");
+    const quote = {
+      biz: "York", title: "Quote", tag: "CAD", giveLbl: "You give", give: "1",
+      rateLine: "1 CAD = 0.7221 USD", rateNote: RATE_NOTE, getLbl: "You receive", get: "2", foot: "no fee",
+    };
+    expect(draw(modal.PresentQuote, { q: quote, onClose() {} })).toContain("cd-rate-note");
+    expect(draw(modal.PresentQuote, { q: { ...quote, rateNote: "" }, onClose() {} })).not.toContain("cd-rate-note");
   });
 
-  it("keeps the note under the rate on the desk sheet", () => {
-    const pay = modal.indexOf(">Customer pays in<");
-    const receive = modal.indexOf(">Customer receives<", pay);
-    const exchange = modal.slice(pay, receive);
-    expect(exchange).toContain("cd-rate-note");
-    expect(exchange).toContain("RATE_NOTE");
-    expect(exchange).toContain("pricedRate(amtN, out.amt, outCcy).rounded");
-  });
-
-  it("puts the same note on the customer quote", () => {
-    expect(modal).toContain("rateNote:");
-    expect(present).toContain("q.rateNote");
-    expect(present).toContain("cd-rate-note");
-  });
-
-  it("colours the note with a theme token", () => {
-    expect(receipt).not.toContain("#6B6760");
-    expect(receipt).toContain("var(--faint)");
-    expect(note).not.toContain("#6B6760");
-    expect(note).toContain("var(--faint)");
-    expect(modal).not.toContain("#6B6760");
-    const ticket = modal.slice(modal.indexOf('className="cd-tx-ticket"'), modal.indexOf("margin chip"));
-    expect(ticket).toContain("cd-rate-note");
-    expect(ticket).not.toContain("rgba(255,255,255,0.62)");
-    expect(ticket).toContain("var(--cd-on-ink-soft)");
-  });
-
-  it("does not cut the board rate to four places", () => {
-    const line = modal.split("\n").find((row) => row.includes("const publishedRate"));
-    expect(line).toBeTruthy();
-    expect(line).not.toContain("toFixed(4)");
-    expect(line).toContain("boardRateText");
+  it("clears 4.5:1 on the sheet, the receipt paper, and the ink", () => {
+    for (const name of ["light", "dark"]) {
+      const tone = theme(name);
+      expect(ratio(tone("pinNote"), tone("panel"))).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(tone("pinNote"), tone("chip"))).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(tone("noteOnInk"), tone("ink"))).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(ratio(theme("dark")("pinNote"), theme("light")("panel"))).toBeLessThan(4.5);
+    const html = draw(modules.ReceiptModal, { row: inr, onClose() {}, settings: {} });
+    const paper = theme("light")("panel");
+    expect(ratio(noteOnPaper(html, paper), paper)).toBeGreaterThanOrEqual(4.5);
   });
 });

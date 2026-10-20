@@ -683,9 +683,6 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   }
   // split a "Name · Place" beneficiary string
   function benParts(b) { const s = String(b || ''); const i = s.indexOf('·'); return i < 0 ? { name: s.trim(), place: '' } : { name: s.slice(0, i).trim(), place: s.slice(i + 1).trim() }; }
-  /* The stored rate is the quote at 12 places. The figure on the deal
-     is the rate the payout came from. The note follows only when that
-     rate was rounded. */
   function dealRate(row) {
     if (!row || !row.inCcy || row.inCcy === row.outCcy || typeof effectiveRate !== 'function') return null;
     return effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy));
@@ -699,7 +696,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   function RateNote({ row }) {
     const rate = dealRate(row);
     if (!rate || !rate.rounded) return null;
-    return <div className="cd-rate-note text-[11px]" style={{ color: 'var(--faint)', lineHeight: '14px', marginTop: -2, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div>;
+    return <div className="cd-rate-note text-[11px]" style={{ color: 'var(--cd-pin-note)', lineHeight: '14px', marginTop: -2, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div>;
   }
   function TxFlow({ row }) {
     const t = row.type, ben = benParts(row.beneficiary), fee = +row.fee || 0;

@@ -3,16 +3,7 @@
 
 
 /* ---- os-src/effective-rate.js ---- */
-/* The rate shown next to a payout.
-   The payout is the figure of record. This is the rate that payout
-   came from. It always shows at least MIN_RATE_PLACES. It shows one
-   more place, up to MAX_RATE_PLACES, only when that rate times the
-   amount equals the payout with nothing left over. A rate smaller
-   than 0.001 keeps four significant digits, so 0.0007254 stays
-   0.0007254 and is not cut to 0.0007 or 0.0001. When no exact rate
-   fits, it shows that figure and the note. It is not the board rate.
-   The board field keeps the computed figure, trailing zeros dropped.
-   Display only. The stored rate and the payout stay as they are. */
+/* Rate beside a payout. Four places, more when they multiply out, four significant digits below 0.001. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -71,7 +62,6 @@
     return Number.isInteger(minorPlaces) && minorPlaces >= 0 && minorPlaces <= 8;
   }
 
-  /* The candidate at `places`, half up from the true ratio. */
   function rateAt(amountText, payoutRaw, places) {
     var aScale = decimalsOf(amountText);
     var pScale = decimalsOf(payoutRaw);
@@ -84,7 +74,6 @@
     return scaledText(rounded, places);
   }
 
-  /* True when rate × amount is the payout, with no leftover fraction. */
   function multipliesExactly(amountText, rateText, payoutRaw) {
     if (!rateText) return false;
     var aScale = decimalsOf(amountText);
@@ -100,10 +89,6 @@
     return prod * (10n ** BigInt(pScale - prodScale)) === payout;
   }
 
-  /* Places that keep four significant digits. 0.7221 stays at four.
-     0.0007254 needs seven. The search still stops at six for an
-     ordinary rate, and extends only when four places would hide the
-     digits. */
   function significantPlaces(amountText, payoutRaw) {
     var aScale = decimalsOf(amountText);
     var pScale = decimalsOf(payoutRaw);
@@ -114,8 +99,6 @@
     for (; k <= ABSOLUTE_CAP; k += 1) {
       if (payout * (10n ** BigInt(aScale + k)) >= amount * (10n ** BigInt(pScale))) break;
     }
-    /* 0.0118 and anything at least 0.001 already has its digits inside
-       four places. Only a smaller rate grows the figure. */
     if (k <= 3) return MIN_RATE_PLACES;
     var need = k + SIGNIFICANT_DIGITS - 1;
     if (need < MIN_RATE_PLACES) need = MIN_RATE_PLACES;
@@ -143,8 +126,6 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
-  /* The Board rate field. 0.00098 stays 0.00098. Four-place rounding
-     would show 0.0010, and Override would start from that. */
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
@@ -197,8 +178,9 @@
       text: '#0a0a0a',
       mute: 'rgba(10,10,10,0.55)',
       faint: 'rgba(10,10,10,0.4)',
-      /* 12px notes. #6b6b6b is 4.67:1 on the chip and 5.33:1 on white. */
+      /* #6b6b6b is 5.3:1 on white. #a9a9a9 is 8.4:1 on the black ticket. */
       pinNote: '#6b6b6b',
+      noteOnInk: '#a9a9a9',
       hoverSoft: 'rgba(10,10,10,0.04)',
       hover: 'rgba(10,10,10,0.06)',
       hoverStrong: 'rgba(10,10,10,0.10)',
@@ -237,8 +219,9 @@
       text: '#eceae3',
       mute: 'rgba(236,234,227,0.58)',
       faint: 'rgba(236,234,227,0.4)',
-      /* 6.5:1 on the night chip. */
+      /* #aea89f is 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
       pinNote: '#aea89f',
+      noteOnInk: '#5c574e',
       hoverSoft: 'rgba(255,255,255,0.05)',
       hover: 'rgba(255,255,255,0.07)',
       hoverStrong: 'rgba(255,255,255,0.12)',
@@ -5427,7 +5410,7 @@
       style: {
         fontSize: 11,
         lineHeight: '14px',
-        color: 'var(--faint)',
+        color: 'var(--cd-pin-note)',
         marginTop: 1,
         marginBottom: 4
       }
@@ -30258,9 +30241,6 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       place: s.slice(i + 1).trim()
     };
   }
-  /* The stored rate is the quote at 12 places. The figure on the deal
-     is the rate the payout came from. The note follows only when that
-     rate was rounded. */
   function dealRate(row) {
     if (!row || !row.inCcy || row.inCcy === row.outCcy || typeof effectiveRate !== 'function') return null;
     return effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy));
@@ -30279,7 +30259,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note text-[11px]",
       style: {
-        color: 'var(--faint)',
+        color: 'var(--cd-pin-note)',
         lineHeight: '14px',
         marginTop: -2,
         marginBottom: 4
@@ -34024,6 +34004,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     if (!rate.text) return 'Rate unavailable';
     return '1 ' + from + ' = ' + rate.text + ' ' + to;
   };
+  function SheetRateNote({
+    on
+  }) {
+    if (!on) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "cd-rate-note text-center",
+      style: {
+        fontSize: 11,
+        lineHeight: '14px',
+        color: 'var(--cd-pin-note)',
+        marginTop: 2
+      }
+    }, RATE_NOTE);
+  }
   const phoneMoney = (n, ccy) => {
     const fn = window.CDOS.formatPhoneMoney;
     return typeof fn === 'function' ? fn(n, ccy) : num(n) + (ccy ? ' ' + ccy : '');
@@ -35151,7 +35145,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         textAlign: 'center',
         fontSize: 14,
         lineHeight: '18px',
-        color: 'var(--cd-on-ink-soft)'
+        color: 'var(--cd-note-on-ink)'
       }
     }, q.rateNote) : null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -36640,15 +36634,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "swap",
       s: 13,
       c: CD.mute
-    }))), pricedRate(amtN, out.amt, outCcy).rounded ? /*#__PURE__*/React.createElement("div", {
-      className: "cd-rate-note text-center",
-      style: {
-        fontSize: 11,
-        lineHeight: '14px',
-        color: 'var(--faint)',
-        marginTop: 2
-      }
-    }, RATE_NOTE) : null), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
+    }))), /*#__PURE__*/React.createElement(SheetRateNote, {
+      on: pricedRate(amtN, out.amt, outCcy).rounded
+    })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: outCcy,
       onCcy: v => {
@@ -36954,15 +36942,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "arrowdown",
       s: 13,
       c: CD.faint
-    }), " ", rateShown(home, payoutCcy, amtN, out.amt)), pricedRate(amtN, out.amt, payoutCcy).rounded ? /*#__PURE__*/React.createElement("div", {
-      className: "cd-rate-note text-center",
-      style: {
-        fontSize: 11,
-        lineHeight: '14px',
-        color: 'var(--faint)',
-        marginTop: 2
-      }
-    }, RATE_NOTE) : null), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
+    }), " ", rateShown(home, payoutCcy, amtN, out.amt)), /*#__PURE__*/React.createElement(SheetRateNote, {
+      on: pricedRate(amtN, out.amt, payoutCcy).rounded
+    })), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: payoutCcy,
       readOnly: true,
@@ -37514,7 +37496,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         fontSize: 11,
         lineHeight: '14px',
-        color: 'var(--cd-on-ink-soft)',
+        color: 'var(--cd-note-on-ink)',
         marginTop: 4
       }
     }, RATE_NOTE) : null)), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {

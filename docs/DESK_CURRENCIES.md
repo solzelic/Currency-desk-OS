@@ -105,21 +105,13 @@ directions. `parseMoney` asks the currency: **there is no such thing as
 ¥1,234.56**, and a payout quoted that way is not a rounding nicety, it is a
 figure a teller cannot count out.
 
-The rate on the sheet, the summary, the receipt, and the booked deal
-is the rate the payout came from. It always shows at least four
-places, and five or six only when that rate times the amount equals
-the payout with nothing left over (`MIN_RATE_PLACES` and
-`MAX_RATE_PLACES` in `os-src/effective-rate.js`). Otherwise it shows
-four places and the note "Rate rounded. The amounts are exact." The
-note is small and grey under the rate on the sheet, and one line on
-the receipt. It appears only when the rate was rounded. The board
-rate is not the figure next to a payout. The editable field is labeled
-Board rate and keeps its own precision. The payout stays the ledger
-figure. The rate stored on the deal stays 12 places. 100.00 to 10825
-at zero places is `108.2500` with no note. On the desk, 1,234.5 INR
-stays one decimal, and 100 INR to 1.18 USD shows `1 INR = 0.0118 USD`
-at four places. 3,000.00 CAD to 2,166.31 USD shows `1 CAD = 0.7221 USD`
-and the note.
+The rate beside a payout shows at least four places, and five or six
+only when that rate times the amount is the payout
+(`os-src/effective-rate.js`). Otherwise it shows four places and
+"Rate rounded. The amounts are exact.", only when it was rounded.
+The Board rate field keeps its own figure. 100.00 to 10825 at zero
+places is `108.2500`. 100 INR to 1.18 USD is `1 INR = 0.0118 USD`.
+3,000.00 CAD to 2,166.31 USD is `1 CAD = 0.7221 USD` with the note.
 
 **Three-decimal currencies are refused, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then

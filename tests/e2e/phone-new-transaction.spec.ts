@@ -287,11 +287,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expect(page.getByText("$6.99")).toHaveCount(0);
     await expect(page.locator(".cd-tx")).not.toContainText("$6.99");
     await expect(page.getByRole("button", { name: /^Text quote$/ })).toHaveCount(0);
-    /* This preview pays 2,166.75 USD for 3,000.00 CAD. Five places
-       multiply out exactly, so the line is 0.72225 and there is no
-       note. The board field keeps its own precision, so those digits
-       can match. Fewer than four places, or more than six on this
-       pair, fails this. The rounded pair, 2,166.31, is in the rate unit test. */
+    /* 3,000 CAD pays 2,166.75 USD, so the ticket is 0.72225. The board field is separate. */
     const rateKicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
     await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.75");
     await expect(rateKicker).toHaveText("1 CAD = 0.72225 USD");
@@ -303,6 +299,13 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expect(page.locator(".cd-tx")).not.toContainText("Rate rounded. The amounts are exact.");
     const board = await page.locator(".cd-tx-rate").inputValue();
     expect(board, `board rate at ${width}`).toMatch(/^\d+\.\d+$/);
+    const amount = page.locator(".cd-money input").first();
+    await amount.fill("100");
+    await amount.blur();
+    await expect(page.locator(".cd-tx-ticket"), "ticket rate is not the board rate").not.toContainText(`1 CAD = ${board} USD`);
+    await amount.fill("3000");
+    await amount.blur();
+    await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.75");
     await expect(page.getByText("Board rate").first()).toBeVisible();
     await expect(page.locator(".cd-tx")).not.toContainText("Published rate");
     await expect(page.locator(".cd-tx-side")).toContainText(/We (buy|sell) [A-Z]{3}/);
@@ -563,6 +566,26 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   expect(await side.evaluate((el) => getComputedStyle(el).textTransform), "desk badge").toBe("uppercase");
   expect(await page.locator(".cd-tx-receive").evaluate((el) => getComputedStyle(el).color), "desk receive").toBe("rgb(31, 138, 76)");
   expect(await page.locator(".cd-tx-ticket-get").evaluate((el) => getComputedStyle(el).color), "desk ticket").toBe("rgb(127, 209, 163)");
+  await page.evaluate(() => {
+    const ccy = window.CDOS.CCY as string[];
+    if (ccy.indexOf("KRW") < 0) ccy.unshift("KRW");
+    localStorage.removeItem("yorkfx_board_order");
+  });
+  await page.locator(".cd-money button").nth(0).evaluate((el) => (el as HTMLElement).click());
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((el) => (el.textContent || "").trim().startsWith("KRW"));
+    if (btn instanceof HTMLElement) btn.click();
+  });
+  await page.locator(".cd-money button").nth(1).evaluate((el) => (el as HTMLElement).click());
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((el) => (el.textContent || "").trim().startsWith("USD"));
+    if (btn instanceof HTMLElement) btn.click();
+  });
+  await page.locator(".cd-money input").first().fill("1000000");
+  await page.getByRole("button", { name: /^Override$/ }).click();
+  await page.locator(".cd-tx-rate").fill("0.0007254");
+  await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 KRW = 0.0007254 USD");
+  await expect(page.locator(".cd-tx-ticket")).toContainText("1 KRW = 0.0007254 USD");
   if (hasLedger) {
     await expect(page.locator(".cd-tx-purpose")).toBeAttached();
     const border = await page.locator(".cd-tx-purpose").evaluate((el) => getComputedStyle(el).borderTopColor);

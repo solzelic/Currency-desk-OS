@@ -2984,11 +2984,6 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     letter-spacing: 0 !important;
     text-transform: none !important;
   }
-  /* The phone rule above wraps every flex row. The rate line is the
-     badge, the rate, and the swap. If the row wraps, the swap drops
-     onto its own row and sits off the rate. The rate text takes the
-     leftover width and wraps inside it. The swap stays on that row,
-     centred on the text. */
   .cd-tx-rate-line {
     flex-wrap: nowrap !important;
     align-items: center !important;
@@ -3002,8 +2997,6 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .cd-tx-rate-line > .cd-tx-kicker {
     min-width: 0;
-    /* The 430px rule sets nowrap on every span in a gap-2 row.
-       That keeps a chip on one line. This figure has to wrap. */
     white-space: normal !important;
   }
   .cd-tx-check-go {

@@ -1,13 +1,4 @@
-/* The rate shown next to a payout.
-   The payout is the figure of record. This is the rate that payout
-   came from. It always shows at least MIN_RATE_PLACES. It shows one
-   more place, up to MAX_RATE_PLACES, only when that rate times the
-   amount equals the payout with nothing left over. A rate smaller
-   than 0.001 keeps four significant digits, so 0.0007254 stays
-   0.0007254 and is not cut to 0.0007 or 0.0001. When no exact rate
-   fits, it shows that figure and the note. It is not the board rate.
-   The board field keeps the computed figure, trailing zeros dropped.
-   Display only. The stored rate and the payout stay as they are. */
+/* Rate beside a payout. Four places, more when they multiply out, four significant digits below 0.001. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -66,7 +57,6 @@
     return Number.isInteger(minorPlaces) && minorPlaces >= 0 && minorPlaces <= 8;
   }
 
-  /* The candidate at `places`, half up from the true ratio. */
   function rateAt(amountText, payoutRaw, places) {
     var aScale = decimalsOf(amountText);
     var pScale = decimalsOf(payoutRaw);
@@ -79,7 +69,6 @@
     return scaledText(rounded, places);
   }
 
-  /* True when rate × amount is the payout, with no leftover fraction. */
   function multipliesExactly(amountText, rateText, payoutRaw) {
     if (!rateText) return false;
     var aScale = decimalsOf(amountText);
@@ -95,10 +84,6 @@
     return prod * (10n ** BigInt(pScale - prodScale)) === payout;
   }
 
-  /* Places that keep four significant digits. 0.7221 stays at four.
-     0.0007254 needs seven. The search still stops at six for an
-     ordinary rate, and extends only when four places would hide the
-     digits. */
   function significantPlaces(amountText, payoutRaw) {
     var aScale = decimalsOf(amountText);
     var pScale = decimalsOf(payoutRaw);
@@ -109,8 +94,6 @@
     for (; k <= ABSOLUTE_CAP; k += 1) {
       if (payout * (10n ** BigInt(aScale + k)) >= amount * (10n ** BigInt(pScale))) break;
     }
-    /* 0.0118 and anything at least 0.001 already has its digits inside
-       four places. Only a smaller rate grows the figure. */
     if (k <= 3) return MIN_RATE_PLACES;
     var need = k + SIGNIFICANT_DIGITS - 1;
     if (need < MIN_RATE_PLACES) need = MIN_RATE_PLACES;
@@ -138,8 +121,6 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
-  /* The Board rate field. 0.00098 stays 0.00098. Four-place rounding
-     would show 0.0010, and Override would start from that. */
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
