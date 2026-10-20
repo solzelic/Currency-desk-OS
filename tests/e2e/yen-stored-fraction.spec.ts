@@ -207,6 +207,15 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   const reconInk = await panelContrast(reconNote.locator(".till-stored-note"));
   expect(reconInk.ratio, "reconcile stored row " + JSON.stringify(reconInk.ink)).toBeGreaterThanOrEqual(4.5);
 
+  /* The wide table. The close reads "and", and the expected total keeps
+     the two CAD places. num() drops the trailing zero, so 5,451.6 here
+     is the bug. */
+  const wideExpected = recon.locator("tfoot td").nth(2);
+  await expect(wideExpected).toHaveText("5,451.60");
+  const wideClose = page.locator(".till-recon-desk").getByRole("button", { name: "Close day and lock book" });
+  await expect(wideClose).toBeVisible();
+  await expect(page.locator(".till-recon-desk").getByRole("button", { name: /Close day & lock book/i })).toHaveCount(0);
+
   await page.locator('#appbar [data-app="reports"]').evaluate((el: HTMLElement) => el.click());
   await page.getByText("End-of-Day Sign-Off").first().click();
   const eodTable = page.locator("table").filter({ hasText: "In the drawer" });

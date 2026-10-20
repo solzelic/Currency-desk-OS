@@ -17274,7 +17274,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : unitText(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
@@ -17287,7 +17287,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag
       }
     }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)))))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-3 mt-3"
+      className: "till-recon-desk flex items-center gap-3 mt-3"
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
       disabled: closing || closeBlocked,
@@ -17308,7 +17308,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: closing ? 'checkcircle' : 'lock',
       s: 14,
       c: "var(--cd-on-ink)"
-    }), " ", closing ? 'Closing…' : 'Close day & lock book') : /*#__PURE__*/React.createElement("span", {
+    }), " ", closing ? 'Closing…' : 'Close day and lock book') : /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-2 px-3 py-2 text-[12px]",
       style: {
         background: 'var(--cd-chip)',
