@@ -46,5 +46,9 @@ describe("quote terms",()=>{
     expect(shown(() => { throw new Error("negative spread"); })).toMatch(/cost the desk/);
     expect(shown(() => { throw new Error("direction and currencies disagree"); })).toMatch(/paid in/);
     expect(shown(() => { throw new Error("invalid board terms"); })).toMatch(/rate board/);
+    const leaked = cashierQuoteMessage(new Error("relation ledger does not exist"));
+    expect(leaked).toBe("This quote could not be priced. Check the amount and the currencies.");
+    expect(leaked).not.toContain("relation");
+    expect(leaked).not.toContain("does not exist");
   });
 });

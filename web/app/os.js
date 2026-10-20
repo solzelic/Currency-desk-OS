@@ -5,10 +5,13 @@
 /* ---- os-src/effective-rate.js ---- */
 /* The rate shown next to a payout.
    The payout is the figure of record. This is the rate that payout
-   came from. It always shows at least MIN_RATE_PLACES. It shows five
-   or six only when that rate times the amount equals the payout with
-   nothing left over. Otherwise it shows four places and the note.
-   It is not the board rate.
+   came from. It always shows at least MIN_RATE_PLACES. It shows one
+   more place, up to MAX_RATE_PLACES, only when that rate times the
+   amount equals the payout with nothing left over. A rate smaller
+   than 0.001 keeps four significant digits, so 0.0007254 stays
+   0.0007254 and is not cut to 0.0007 or 0.0001. When no exact rate
+   fits, it shows that figure and the note. It is not the board rate.
+   The board field keeps the computed figure, trailing zeros dropped.
    Display only. The stored rate and the payout stay as they are. */
 (function (root, factory) {
   var api = factory();
@@ -17,6 +20,8 @@
 })(typeof window !== "undefined" ? window : globalThis, function () {
   var MIN_RATE_PLACES = 4;
   var MAX_RATE_PLACES = 6;
+  var SIGNIFICANT_DIGITS = 4;
+  var ABSOLUTE_CAP = 12;
   var RATE_NOTE = "Rate rounded. The amounts are exact.";
 
   function decimalsOf(text) {
@@ -95,14 +100,39 @@
     return prod * (10n ** BigInt(pScale - prodScale)) === payout;
   }
 
+  /* Places that keep four significant digits. 0.7221 stays at four.
+     0.0007254 needs seven. The search still stops at six for an
+     ordinary rate, and extends only when four places would hide the
+     digits. */
+  function significantPlaces(amountText, payoutRaw) {
+    var aScale = decimalsOf(amountText);
+    var pScale = decimalsOf(payoutRaw);
+    var amount = scaled(amountText, aScale);
+    var payout = scaled(payoutRaw, pScale);
+    if (amount <= 0n || payout <= 0n) return MIN_RATE_PLACES;
+    var k = 1;
+    for (; k <= ABSOLUTE_CAP; k += 1) {
+      if (payout * (10n ** BigInt(aScale + k)) >= amount * (10n ** BigInt(pScale))) break;
+    }
+    /* 0.0118 and anything at least 0.001 already has its digits inside
+       four places. Only a smaller rate grows the figure. */
+    if (k <= 3) return MIN_RATE_PLACES;
+    var need = k + SIGNIFICANT_DIGITS - 1;
+    if (need < MIN_RATE_PLACES) need = MIN_RATE_PLACES;
+    if (need > ABSOLUTE_CAP) need = ABSOLUTE_CAP;
+    return need;
+  }
+
   function effectiveRate(amount, payout, minorPlaces) {
     if (!knownPlaces(minorPlaces)) return { text: "", rounded: false };
     var amountText = moneyText(amount);
     var payoutRaw = moneyText(payout);
     if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "", rounded: false };
+    var show = significantPlaces(amountText, payoutRaw);
+    var ceiling = show > MAX_RATE_PLACES ? show : MAX_RATE_PLACES;
     var exact = "";
     var places = MIN_RATE_PLACES;
-    for (; places <= MAX_RATE_PLACES; places += 1) {
+    for (; places <= ceiling; places += 1) {
       var candidate = rateAt(amountText, payoutRaw, places);
       if (multipliesExactly(amountText, candidate, payoutRaw)) {
         exact = candidate;
@@ -110,7 +140,15 @@
       }
     }
     if (exact) return { text: exact, rounded: false };
-    return { text: rateAt(amountText, payoutRaw, MIN_RATE_PLACES), rounded: true };
+    return { text: rateAt(amountText, payoutRaw, show), rounded: true };
+  }
+
+  /* The Board rate field. 0.00098 stays 0.00098. Four-place rounding
+     would show 0.0010, and Override would start from that. */
+  function boardRateText(rate) {
+    var n = +rate;
+    if (!(n > 0) || !isFinite(n)) return "";
+    return n.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
   }
 
   return {
@@ -118,6 +156,7 @@
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
+    boardRateText: boardRateText,
   };
 });
 
@@ -5388,7 +5427,7 @@
       style: {
         fontSize: 11,
         lineHeight: '14px',
-        color: '#6B6760',
+        color: 'var(--faint)',
         marginTop: 1,
         marginBottom: 4
       }
@@ -30240,7 +30279,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note text-[11px]",
       style: {
-        color: '#6B6760',
+        color: 'var(--faint)',
         lineHeight: '14px',
         marginTop: -2,
         marginBottom: 4
@@ -33965,11 +34004,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const per = boardHomePerUnit(ccy);
     return per == null ? null : n * per;
   }
-  /* The editable field keeps the board rate, at the precision it
-     already had. The line next to the payout is the rate that payout
-     came from: at least four places, five or six only when exact. */
+  /* The editable field keeps the computed board rate. It does not
+     cut that figure to four places. The line next to the payout is
+     the rate that payout came from. */
   const RATE_NOTE = window.CDOS && window.CDOS.RATE_NOTE || 'Rate rounded. The amounts are exact.';
-  const publishedRate = r => r > 0 && isFinite(r) ? Number(r).toFixed(4) : '';
+  const publishedRate = r => window.CDOS.boardRateText ? window.CDOS.boardRateText(r) : '';
   const pricedRate = (amount, payout, ccy) => {
     if (typeof effectiveRate !== 'function') return {
       text: '',
@@ -35106,7 +35145,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         flex: 1,
         borderTop: '1px dashed var(--cd-on-ink-faint)'
       }
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    })), q.rateNote ? /*#__PURE__*/React.createElement("div", {
+      className: "cd-rate-note",
+      style: {
+        textAlign: 'center',
+        fontSize: 14,
+        lineHeight: '18px',
+        color: 'var(--cd-on-ink-soft)'
+      }
+    }, q.rateNote) : null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 17,
         color: 'var(--cd-on-ink-soft)'
@@ -36293,6 +36340,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       giveLbl: 'You pay',
       give: `${num(amtN)} ${home}`,
       rateLine: rateShown(home, payoutCcy, amtN, out.amt),
+      rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '',
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${num(out.amt)} ${payoutCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
@@ -36303,6 +36351,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       giveLbl: 'You give',
       give: `${num(amtN)} ${inCcy}`,
       rateLine: rateShown(inCcy, outCcy, amtN, out.amt),
+      rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '',
       getLbl: 'You receive',
       get: `${num(out.amt)} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
@@ -36596,7 +36645,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         fontSize: 11,
         lineHeight: '14px',
-        color: '#6B6760',
+        color: 'var(--faint)',
         marginTop: 2
       }
     }, RATE_NOTE) : null), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
@@ -36910,7 +36959,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         fontSize: 11,
         lineHeight: '14px',
-        color: '#6B6760',
+        color: 'var(--faint)',
         marginTop: 2
       }
     }, RATE_NOTE) : null), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
@@ -37465,7 +37514,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         fontSize: 11,
         lineHeight: '14px',
-        color: 'rgba(255,255,255,0.62)',
+        color: 'var(--cd-on-ink-soft)',
         marginTop: 4
       }
     }, RATE_NOTE) : null)), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {

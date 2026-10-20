@@ -48,7 +48,6 @@ export function cashierQuoteMessage(error: unknown): string {
   ) {
     return "This quote could not be priced. Check the currencies and the rate.";
   }
-  if (raw) return raw;
   return "This quote could not be priced. Check the amount and the currencies.";
 }
 

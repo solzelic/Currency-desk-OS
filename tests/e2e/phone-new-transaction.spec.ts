@@ -289,9 +289,9 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expect(page.getByRole("button", { name: /^Text quote$/ })).toHaveCount(0);
     /* This preview pays 2,166.75 USD for 3,000.00 CAD. Five places
        multiply out exactly, so the line is 0.72225 and there is no
-       note. The board field is a different figure. Fewer than four
-       places, more than six, or that board rate next to the payout,
-       fails this. The rounded pair, 2,166.31, is in the rate unit test. */
+       note. The board field keeps its own precision, so those digits
+       can match. Fewer than four places, or more than six on this
+       pair, fails this. The rounded pair, 2,166.31, is in the rate unit test. */
     const rateKicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
     await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.75");
     await expect(rateKicker).toHaveText("1 CAD = 0.72225 USD");
@@ -302,7 +302,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expect(page.locator(".cd-tx-ticket")).toContainText("1 CAD = 0.72225 USD");
     await expect(page.locator(".cd-tx")).not.toContainText("Rate rounded. The amounts are exact.");
     const board = await page.locator(".cd-tx-rate").inputValue();
-    expect(await rateKicker.innerText(), `board rate next to the payout at ${width}`).not.toBe(`1 CAD = ${board} USD`);
+    expect(board, `board rate at ${width}`).toMatch(/^\d+\.\d+$/);
     await expect(page.getByText("Board rate").first()).toBeVisible();
     await expect(page.locator(".cd-tx")).not.toContainText("Published rate");
     await expect(page.locator(".cd-tx-side")).toContainText(/We (buy|sell) [A-Z]{3}/);

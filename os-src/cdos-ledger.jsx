@@ -699,7 +699,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   function RateNote({ row }) {
     const rate = dealRate(row);
     if (!rate || !rate.rounded) return null;
-    return <div className="cd-rate-note text-[11px]" style={{ color: '#6B6760', lineHeight: '14px', marginTop: -2, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div>;
+    return <div className="cd-rate-note text-[11px]" style={{ color: 'var(--faint)', lineHeight: '14px', marginTop: -2, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div>;
   }
   function TxFlow({ row }) {
     const t = row.type, ben = benParts(row.beneficiary), fee = +row.fee || 0;
