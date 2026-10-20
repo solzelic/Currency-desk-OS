@@ -132,30 +132,33 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
 
   afterAll(async () => {
     /* The last test leaves York FX on the British pack. Put the seed
-       pack back, then read that desk. It has to be CAD on pack-ca-v1,
-       not GBP and not the British pack. No cheque source is changed. */
-    await pool.query(
-      `UPDATE legal_entities
-          SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1',
-              jurisdiction_pack_version=1
-        WHERE id=$1`,
-      [DEMO.legalEntityId],
-    );
-    const restored = await pool.query(
-      `SELECT home_currency, jurisdiction_pack_id
-         FROM legal_entities
-        WHERE id=$1`,
-      [DEMO.legalEntityId],
-    );
-    const desk = restored.rows[0];
-    expect(desk.home_currency).toBe("CAD");
-    expect(desk.home_currency).not.toBe("GBP");
-    expect(desk.jurisdiction_pack_id).toBe("pack-ca-v1");
-    expect(desk.jurisdiction_pack_id).not.toBe("pack-gb-v1");
-    await app.close();
-    await handle.close();
-    await pool.end();
-    delete process.env.LEDGER_DATABASE_URL;
+       pack back, then read that desk. It has to be CAD, pack-ca-v1,
+       version 1. The pool still closes if that read fails.
+       No cheque source is changed. */
+    try {
+      await pool.query(
+        `UPDATE legal_entities
+            SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1',
+                jurisdiction_pack_version=1
+          WHERE id=$1`,
+        [DEMO.legalEntityId],
+      );
+      const restored = await pool.query(
+        `SELECT home_currency, jurisdiction_pack_id, jurisdiction_pack_version
+           FROM legal_entities
+          WHERE id=$1`,
+        [DEMO.legalEntityId],
+      );
+      const desk = restored.rows[0];
+      expect(desk.home_currency).toBe("CAD");
+      expect(desk.jurisdiction_pack_id).toBe("pack-ca-v1");
+      expect(desk.jurisdiction_pack_version).toBe(1);
+    } finally {
+      await app.close();
+      await handle.close();
+      await pool.end();
+      delete process.env.LEDGER_DATABASE_URL;
+    }
   });
 
   beforeEach(async () => {
