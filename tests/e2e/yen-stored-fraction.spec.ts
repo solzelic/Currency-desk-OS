@@ -54,6 +54,113 @@ async function panelContrast(target: Locator) {
   return { ink, ratio: contrastOf(ink.fg, ink.bg) };
 }
 
+async function expectInk(target: Locator, label: string) {
+  const ink = await panelContrast(target);
+  expect(ink.ratio, label + " " + JSON.stringify(ink.ink)).toBeGreaterThanOrEqual(4.5);
+  return ink;
+}
+
+async function paintOf(target: Locator) {
+  return target.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+    return {
+      color: style.color,
+      background: style.backgroundColor,
+      size: style.fontSize,
+      weight: style.fontWeight,
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+    };
+  });
+}
+
+/* Scroll the reconcile list to its end, with a block in front of the
+   close so the bar is what lands at the bottom. The tab bar covers
+   that bottom edge. The close and its note have to finish above it. */
+async function assertCloseClearsDock(page: Page) {
+  const fit = await page.evaluate(() => {
+    const close = document.querySelector(".till-recon-close") as HTMLElement | null;
+    if (!close || !close.parentElement) return { error: "no close" };
+    let scroller: HTMLElement | null = close.parentElement;
+    while (scroller) {
+      const style = getComputedStyle(scroller);
+      if (/(auto|scroll)/.test(style.overflowY)) break;
+      scroller = scroller.parentElement;
+    }
+    if (!scroller) return { error: "no scroller" };
+    const before = document.createElement("div");
+    before.className = "seam-scroll-spacer";
+    before.style.height = "720px";
+    close.parentElement.insertBefore(before, close);
+    scroller.scrollTop = scroller.scrollHeight;
+    const box = (el: Element | null) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        top: Math.round(r.top),
+        bottom: Math.round(r.bottom),
+        left: Math.round(r.left),
+        right: Math.round(r.right),
+        height: Math.round(r.height),
+      };
+    };
+    const dock = box(document.querySelector("#phone-dock"));
+    const button = box(close.querySelector(".till-recon-close-btn"));
+    const note = box(close.querySelector(".till-recon-close-note"));
+    const overlap = (
+      a: { top: number; bottom: number; left: number; right: number } | null,
+      c: { top: number; bottom: number; left: number; right: number } | null,
+    ) => !!(a && c && a.bottom > c.top + 1 && a.top < c.bottom - 1 && a.right > c.left + 1 && a.left < c.right - 1);
+    const result = {
+      scrollTop: Math.round(scroller.scrollTop),
+      dock,
+      button,
+      note,
+      buttonHits: overlap(button, dock),
+      noteHits: overlap(note, dock),
+    };
+    before.remove();
+    scroller.scrollTop = 0;
+    return result;
+  });
+  expect(fit.buttonHits, JSON.stringify(fit)).toBe(false);
+  expect(fit.noteHits, JSON.stringify(fit)).toBe(false);
+  expect(fit.button && fit.dock && fit.button.bottom <= fit.dock.top + 1, JSON.stringify(fit)).toBe(true);
+  expect(fit.note && fit.dock && fit.note.bottom <= fit.dock.top + 1, JSON.stringify(fit)).toBe(true);
+}
+
+/* The pinned dock covers the bottom of the list until the teller
+   scrolls. The rounding note has to be able to sit fully above it. */
+async function assertNoteClearsClose(page: Page) {
+  const fit = await page.evaluate(() => {
+    const note = document.querySelector(".till-recon-note") as HTMLElement | null;
+    const close = document.querySelector(".till-recon-close") as HTMLElement | null;
+    if (!note || !close) return { error: "missing" };
+    let scroller: HTMLElement | null = note.parentElement;
+    while (scroller) {
+      const style = getComputedStyle(scroller);
+      if (/(auto|scroll)/.test(style.overflowY)) break;
+      scroller = scroller.parentElement;
+    }
+    if (!scroller) return { error: "no scroller" };
+    for (let i = 0; i < 8; i++) {
+      const gap = note.getBoundingClientRect().bottom - close.getBoundingClientRect().top;
+      if (gap <= 1) break;
+      scroller.scrollTop += gap + 8;
+    }
+    const nb = note.getBoundingClientRect();
+    const cb = close.getBoundingClientRect();
+    return {
+      noteBottom: Math.round(nb.bottom),
+      closeTop: Math.round(cb.top),
+      scrollTop: Math.round(scroller.scrollTop),
+      clear: nb.bottom <= cb.top + 1,
+    };
+  });
+  expect(fit.clear, JSON.stringify(fit)).toBe(true);
+}
+
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
 const { Pool } = requireFromServer("pg") as { Pool: new (c: { connectionString: string }) => { query: Function; end: () => Promise<void> } };
 
@@ -208,14 +315,222 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   const reconInk = await panelContrast(reconNote.locator(".till-stored-note"));
   expect(reconInk.ratio, "reconcile stored row " + JSON.stringify(reconInk.ink)).toBeGreaterThanOrEqual(4.5);
 
-  /* The wide table. The close reads "and", and the expected total keeps
-     the two CAD places. num() drops the trailing zero, so 5,451.6 here
-     is the bug. */
+  /* The wide table, at 600px and up. The close reads "and", and the
+     expected total keeps the two CAD places. num() drops the trailing
+     zero, so 5,451.6 here is the bug. */
   const wideExpected = recon.locator("tfoot td").nth(2);
   await expect(wideExpected).toHaveText("5,451.60");
   const wideClose = page.locator(".till-recon-desk").getByRole("button", { name: "Close day and lock book" });
   await expect(wideClose).toBeVisible();
   await expect(page.locator(".till-recon-desk").getByRole("button", { name: /Close day & lock book/i })).toHaveCount(0);
+  const list = page.locator(".till-recon-list");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expect(list).toBeVisible();
+  await expect(page.locator(".till-recon table")).toBeHidden();
+  await expect(list.locator(".till-recon-title")).toHaveText("Close the till");
+  const titlePaint = await paintOf(list.locator(".till-recon-title"));
+  expect(titlePaint.size).toBe("28px");
+  expect(["700", "bold"]).toContain(titlePaint.weight);
+  const lead = list.locator(".till-recon-lead");
+  await expect(lead).toHaveText("Count the cash in your drawer. We compare it to what the system expects, then lock the day.");
+  const leadPaint = await paintOf(lead);
+  expect(leadPaint.color).toBe("rgb(74, 74, 80)");
+  expect(leadPaint.size).toBe("15px");
+  await expectInk(lead, "lead");
+  const countStep = list.locator('.till-recon-step[data-step="Count"]');
+  const checkStep = list.locator('.till-recon-step[data-step="Check"]');
+  const closeStep = list.locator('.till-recon-step[data-step="Close"]');
+  await expect(countStep).toHaveAttribute("data-state", "current");
+  await expect(checkStep).toHaveAttribute("data-state", "upcoming");
+  await expect(closeStep).toHaveAttribute("data-state", "upcoming");
+  const countMark = await paintOf(countStep.locator(".till-recon-step-mark"));
+  expect(countMark.background).toBe("rgb(0, 0, 0)");
+  expect(countMark.color).toBe("rgb(255, 255, 255)");
+  expect(countMark.width).toBe(24);
+  expect(countMark.height).toBe(24);
+  for (const step of [checkStep, closeStep]) {
+    const mark = await paintOf(step.locator(".till-recon-step-mark"));
+    const label = await paintOf(step.locator(".till-recon-step-label"));
+    expect(mark.background).toBe("rgb(255, 255, 255)");
+    expect(label.color).toBe("rgb(108, 108, 112)");
+    await expectInk(step.locator(".till-recon-step-label"), "step");
+  }
+  await expectInk(countStep.locator(".till-recon-step-label"), "current step");
+  const progress = list.locator(".till-recon-progress");
+  await expect(progress).toHaveText("1 of 2 counted");
+  const progressPaint = await paintOf(progress);
+  expect(progressPaint.color).toBe("rgb(94, 94, 99)");
+  expect(progressPaint.size).toBe("13px");
+  await expectInk(progress, "progress");
+  const jpyCard = list.locator(".till-recon-item", { hasText: "JPY" });
+  const cadCard = list.locator(".till-recon-item", { hasText: "CAD" });
+  await expect(jpyCard.locator(".till-recon-name")).toHaveText("Japanese Yen");
+  const namePaint = await paintOf(jpyCard.locator(".till-recon-name"));
+  expect(namePaint.color).toBe("rgb(94, 94, 99)");
+  expect(namePaint.size).toBe("13px");
+  await expectInk(jpyCard.locator(".till-recon-name"), "name");
+  await expectInk(cadCard.locator(".till-recon-name"), "cad name");
+  await expect(jpyCard.locator(".till-recon-you")).toHaveText("You counted");
+  const youPaint = await paintOf(jpyCard.locator(".till-recon-you"));
+  expect(youPaint.color).toBe("rgb(94, 94, 99)");
+  expect(youPaint.size).toBe("12px");
+  await expectInk(jpyCard.locator(".till-recon-you"), "you counted");
+  await expect(jpyCard.locator(".till-recon-counted")).toHaveText("489,177");
+  await expect(jpyCard.locator(".till-recon-expected")).toHaveText("Expected 489,176");
+  const expectedPaint = await paintOf(jpyCard.locator(".till-recon-expected"));
+  expect(expectedPaint.color).toBe("rgb(94, 94, 99)");
+  await expectInk(jpyCard.locator(".till-recon-expected"), "expected");
+  await expectInk(cadCard.locator(".till-recon-expected"), "cad expected");
+  const overChip = jpyCard.locator(".till-recon-chip");
+  await expect(overChip).toHaveText("1 yen over");
+  const overPaint = await paintOf(overChip);
+  expect(overPaint.color).toBe("rgb(168, 50, 31)");
+  expect(overPaint.background).toBe("rgb(253, 236, 230)");
+  await expectInk(overChip, "over chip");
+  await expect(jpyCard.locator(".till-recon-note")).toHaveText("Expected is rounded from 489,175.85 from older deals.");
+  await expectInk(jpyCard.locator(".till-recon-note"), "rounding note");
+  const cadCount = cadCard.getByRole("button", { name: "Count" });
+  const cadTap = await paintOf(cadCount);
+  expect(cadTap.height).toBeGreaterThanOrEqual(44);
+  expect(cadTap.width).toBeGreaterThanOrEqual(88);
+  await expect(cadCard.locator(".till-recon-expected")).toHaveText("Expected 1,000.50");
+  const hint = list.locator(".till-recon-hint");
+  await expect(hint).toHaveText("Count every currency to see your total.");
+  await expect(list.locator(".till-recon-total-card")).toHaveCount(0);
+  await expectInk(hint, "hint");
+  const close = list.getByRole("button", { name: "Close the day" });
+  await expect(close).toBeDisabled();
+  const disabledPaint = await paintOf(close);
+  expect(disabledPaint.background).toBe("rgb(209, 209, 214)");
+  expect(disabledPaint.color).toBe("rgb(60, 60, 67)");
+  expect(disabledPaint.height).toBeGreaterThanOrEqual(50);
+  await expectInk(close, "disabled close");
+  const closeNote = list.locator(".till-recon-close-note");
+  await expect(closeNote).toHaveText("Count 1 more currency first.");
+  const notePaint = await paintOf(closeNote);
+  expect(notePaint.color).toBe("rgb(94, 94, 99)");
+  await expectInk(closeNote, "dock note");
+  const phoneCopy = await page.locator(".till-screen .overflow-auto").innerText();
+  expect(phoneCopy).not.toContain("&");
+  expect(phoneCopy).not.toMatch(/[—–]/);
+  expect(phoneCopy).not.toContain("1/2 counted");
+  await expect(page.getByText("1/2 counted").filter({ visible: true })).toHaveCount(0);
+  await expect(page.locator(".till-move").filter({ visible: true })).toHaveCount(0);
+  await expect(page.locator(".till-sessionline").filter({ visible: true })).toHaveCount(0);
+  await expect(page.locator(".till-statusline").filter({ visible: true })).toHaveCount(0);
+  await expect(page.locator(".till-recon-widehead")).toHaveCount(1);
+  await expect(page.locator(".till-recon-widehead")).toBeHidden();
+  const safetyStays = await page.evaluate(() => {
+    const host = document.querySelector(".till-on-reconcile");
+    if (!host) return { alert: true, open: true };
+    const probe = (className: string) => {
+      const el = document.createElement("div");
+      el.className = className;
+      el.textContent = "probe";
+      host.appendChild(el);
+      const hidden = getComputedStyle(el).display === "none";
+      el.remove();
+      return hidden;
+    };
+    return { alert: probe("till-alert"), open: probe("till-open-needed") };
+  });
+  expect(safetyStays.alert).toBe(false);
+  expect(safetyStays.open).toBe(false);
+  const refused = page.waitForRequest(
+    (req) => req.method() === "POST" && req.url().includes("/close"),
+    { timeout: 600 },
+  ).then(() => true, () => false);
+  await close.evaluate((el: HTMLElement) => el.click());
+  expect(await refused).toBe(false);
+  await expect(page.getByText("Review each drawer against expected")).toHaveCount(0);
+  await assertNoteClearsClose(page);
+  await assertCloseClearsDock(page);
+  await page.setViewportSize({ width: 430, height: 780 });
+  await assertCloseClearsDock(page);
+  await page.setViewportSize({ width: 360, height: 780 });
+
+  await cadCount.evaluate((el: HTMLElement) => el.click());
+  await page.getByRole("button", { name: /^Enter total$/ }).click();
+  await page.locator('input[placeholder="0.00"]').fill("1000.50");
+  await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
+  await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
+  await expect(hint).toHaveCount(0);
+  const overTotal = list.locator(".till-recon-total-card");
+  await expect(overTotal).toBeVisible();
+  const overDiff = overTotal.locator(".till-recon-diff");
+  await expect(overDiff).toHaveText("+0.01 · Over");
+  const overDiffPaint = await paintOf(overDiff);
+  expect(overDiffPaint.color).toBe("rgb(168, 50, 31)");
+  await expectInk(overDiff, "over difference");
+
+  await jpyCard.locator(".till-recon-code").evaluate((el: HTMLElement) => el.click());
+  await page.locator('input[placeholder="0.00"]').fill("489175");
+  await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
+  await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
+  const underChip = jpyCard.locator(".till-recon-chip");
+  await expect(underChip).toHaveText("1 yen under");
+  const underPaint = await paintOf(underChip);
+  expect(underPaint.color).toBe("rgb(168, 50, 31)");
+  expect(underPaint.background).toBe("rgb(253, 236, 230)");
+  await expectInk(underChip, "under chip");
+  const underDiff = list.locator(".till-recon-diff");
+  await expect(underDiff).toHaveText("-0.01 · Under");
+  expect((await paintOf(underDiff)).color).toBe("rgb(168, 50, 31)");
+  await expectInk(underDiff, "under difference");
+
+  await jpyCard.locator(".till-recon-code").evaluate((el: HTMLElement) => el.click());
+  await page.locator('input[placeholder="0.00"]').fill("489176");
+  await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
+  await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
+  await expect(countStep).toHaveAttribute("data-state", "done");
+  await expect(checkStep).toHaveAttribute("data-state", "current");
+  await expect(closeStep).toHaveAttribute("data-state", "upcoming");
+  const doneMark = await paintOf(countStep.locator(".till-recon-step-mark"));
+  expect(doneMark.background).toBe("rgb(29, 107, 69)");
+  expect(doneMark.color).toBe("rgb(255, 255, 255)");
+  await expect(progress).toHaveText("Both currencies counted");
+  for (const card of [jpyCard, cadCard]) {
+    const chip = card.locator(".till-recon-chip");
+    await expect(chip).toHaveText("Matches");
+    const chipPaint = await paintOf(chip);
+    expect(chipPaint.color).toBe("rgb(29, 107, 69)");
+    expect(chipPaint.background).toBe("rgb(229, 242, 234)");
+    await expectInk(chip, "match chip");
+  }
+  await expect(hint).toHaveCount(0);
+  const totalCard = list.locator(".till-recon-total-card");
+  await expect(totalCard).toBeVisible();
+  await expect(totalCard.locator(".till-recon-total-label")).toHaveText("TOTAL IN CAD");
+  await expectInk(totalCard.locator(".till-recon-total-label"), "total label");
+  for (const label of ["Expected", "Counted", "Difference"]) {
+    await expectInk(totalCard.locator(".till-recon-total-line", { hasText: label }).locator("span").first(), label);
+  }
+  await expect(totalCard.locator(".till-recon-total-expected")).toHaveText("5,451.60");
+  const diff = totalCard.locator(".till-recon-diff");
+  await expect(diff).toHaveText("0.00 · Balanced");
+  const diffPaint = await paintOf(diff);
+  expect(diffPaint.color).toBe("rgb(29, 107, 69)");
+  await expectInk(diff, "balanced difference");
+  await expect(close).toBeEnabled();
+  const readyPaint = await paintOf(close);
+  expect(readyPaint.background).toBe("rgb(0, 0, 0)");
+  expect(readyPaint.color).toBe("rgb(255, 255, 255)");
+  await expect(closeNote).toHaveText("This locks today's records. You can't edit them after.");
+  await expectInk(closeNote, "ready note");
+  const readyCopy = await page.locator(".till-screen .overflow-auto").innerText();
+  expect(readyCopy).not.toContain("&");
+  expect(readyCopy).not.toMatch(/[—–]/);
+  await page.setViewportSize({ width: 599, height: 780 });
+  await expect(list).toBeVisible();
+  await expect(page.locator(".till-recon table")).toBeHidden();
+  await page.setViewportSize({ width: 600, height: 780 });
+  await expect(list).toBeHidden();
+  await expect(page.locator(".till-recon table")).toBeVisible();
+  await expect(wideExpected).toHaveText("5,451.60");
+  await expect(wideClose).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 780 });
+  await expect(page.locator(".till-recon table")).toBeVisible();
+  await expect(list).toBeHidden();
 
   await page.locator('#appbar [data-app="reports"]').evaluate((el: HTMLElement) => el.click());
   await page.getByText("End-of-Day Sign-Off").first().click();
