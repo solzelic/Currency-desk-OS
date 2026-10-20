@@ -2353,6 +2353,42 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     margin-left: 0;
     text-align: left;
   }
+  /* Six nowrap columns, a 520px minimum, and a right-edge fade push
+     Expected and Variance off a 390px card. Source and Last count
+     step aside. The expected figure stays one line. The note wraps. */
+  .win-body .overflow-hidden.till-recon:has(table),
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) {
+    overflow-x: visible !important;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .win-body .overflow-hidden.till-recon:has(table) table,
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) table {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .win-body .overflow-hidden.till-recon:has(table) th:nth-child(2),
+  .win-body .overflow-hidden.till-recon:has(table) td:nth-child(2),
+  .win-body .overflow-hidden.till-recon:has(table) th:nth-child(4),
+  .win-body .overflow-hidden.till-recon:has(table) td:nth-child(4),
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) th:nth-child(2),
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) td:nth-child(2),
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) th:nth-child(4),
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) td:nth-child(4) {
+    display: none !important;
+  }
+  .win-body .overflow-hidden.till-recon:has(table) th,
+  .win-body .overflow-hidden.till-recon:has(table) td,
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) th,
+  .fixed.inset-0 .overflow-hidden.till-recon:has(table) td {
+    white-space: normal !important;
+  }
+  .till-recon .till-expected-figure { white-space: nowrap; }
+  .till-recon .till-stored-note {
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .win-body .till-count-foot .flex.items-end.justify-between > .flex-none {
     flex: 0 0 auto;
     width: auto;

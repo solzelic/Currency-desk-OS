@@ -17139,7 +17139,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace'
       }
     }, countedN, "/", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+      className: "overflow-hidden till-recon",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -17201,7 +17201,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.expected == null ? CD.faint : CD.ink
         }
-      }, r.expected == null ? '—' : unitText(r.expected, r.c), storedRoundNote(r.expected, r.c) ? /*#__PURE__*/React.createElement("div", {
+      }, r.expected == null ? '—' : /*#__PURE__*/React.createElement("span", {
+        className: "till-expected-figure"
+      }, unitText(r.expected, r.c)), storedRoundNote(r.expected, r.c) ? /*#__PURE__*/React.createElement("div", {
         className: "till-stored-note",
         style: {
           color: CD.faint,
