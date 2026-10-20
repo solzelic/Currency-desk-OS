@@ -724,7 +724,7 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-19**, test isolation. The document-reads suite's last case leaves York FX on the British pack, and the report-filings suite's last case does the same. Each file now puts the seed pack back (`CAD`, `pack-ca-v1`) before it ends, so the next suite is not booking in GBP. No cheque source changes.
+**2026-10-19**, test isolation. The document-reads suite's last case leaves York FX on the British pack, and the report-filings suite's last case does the same. Each file puts the seed pack back (`CAD`, `pack-ca-v1`) before it ends, then reads the York FX desk and requires CAD and `pack-ca-v1`. No cheque source changes.
 
 **2026-10-19**, menubar clock. The header uses the Audit Trail clock, in `settings.timezone`. A 12-hour desk reads 16:05 as 4:05 pm. A 24-hour desk still reads 16:05. The 12-hour box is the width of `12:45 pm`. The 24-hour box is the width of `23:59`. A stored zone the clock cannot read falls back to the browser zone, then UTC, and the menubar still shows a time.
 
