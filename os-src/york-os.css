@@ -2984,6 +2984,21 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     letter-spacing: 0 !important;
     text-transform: none !important;
   }
+  .cd-tx-rate-line {
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+  }
+  .cd-tx-rate-line > .cd-tx-side,
+  .cd-tx-rate-line > .cd-tx-swap {
+    flex: none;
+  }
+  .cd-tx-rate-line > .cd-tx-side {
+    white-space: nowrap;
+  }
+  .cd-tx-rate-line > .cd-tx-kicker {
+    min-width: 0;
+    white-space: normal !important;
+  }
   .cd-tx-check-go {
     display: flex;
     flex-direction: column;

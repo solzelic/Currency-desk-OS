@@ -2,6 +2,146 @@
    Edit os-src/*.jsx instead, then run: npm run build:os */
 
 
+/* ---- os-src/effective-rate.js ---- */
+/* Rate beside a payout. Four places, more when they multiply out, four significant digits below 0.001. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CDOS = Object.assign(root.CDOS || {}, api);
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  var MIN_RATE_PLACES = 4;
+  var MAX_RATE_PLACES = 6;
+  var SIGNIFICANT_DIGITS = 4;
+  var ABSOLUTE_CAP = 12;
+  var RATE_NOTE = "Rate rounded. The amounts are exact.";
+
+  function decimalsOf(text) {
+    var s = String(text);
+    var i = s.indexOf(".");
+    return i < 0 ? 0 : s.length - i - 1;
+  }
+
+  function scaled(text, scale) {
+    var raw = String(text).trim();
+    var neg = raw.charAt(0) === "-";
+    if (neg || raw.charAt(0) === "+") raw = raw.slice(1);
+    var parts = raw.split(".");
+    var whole = (parts[0] || "0").replace(/\D/g, "") || "0";
+    var frac = (parts[1] || "").replace(/\D/g, "");
+    var padded = (frac + "000000000000").slice(0, scale);
+    var n = BigInt(whole) * (10n ** BigInt(scale)) + BigInt(padded || "0");
+    return neg ? -n : n;
+  }
+
+  function halfUpDiv(num, den) {
+    var sign = (num < 0n) === (den < 0n) ? 1n : -1n;
+    var an = num < 0n ? -num : num;
+    var ad = den < 0n ? -den : den;
+    if (ad === 0n) return null;
+    var q = an / ad;
+    var rem = an % ad;
+    return sign * (rem * 2n >= ad ? q + 1n : q);
+  }
+
+  function scaledText(n, scale) {
+    var neg = n < 0n;
+    var abs = (neg ? -n : n).toString().padStart(scale + 1, "0");
+    var body = scale === 0 ? abs : abs.slice(0, abs.length - scale) + "." + abs.slice(abs.length - scale);
+    return (neg ? "-" : "") + body;
+  }
+
+  function moneyText(value) {
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number" && isFinite(value)) {
+      return value.toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+    }
+    return "";
+  }
+
+  function knownPlaces(minorPlaces) {
+    return Number.isInteger(minorPlaces) && minorPlaces >= 0 && minorPlaces <= 8;
+  }
+
+  function rateAt(amountText, payoutRaw, places) {
+    var aScale = decimalsOf(amountText);
+    var pScale = decimalsOf(payoutRaw);
+    var aInt = scaled(amountText, aScale);
+    if (aInt === 0n) return "";
+    var num = scaled(payoutRaw, pScale) * (10n ** BigInt(aScale + places));
+    var den = aInt * (10n ** BigInt(pScale));
+    var rounded = halfUpDiv(num, den);
+    if (rounded == null) return "";
+    return scaledText(rounded, places);
+  }
+
+  function multipliesExactly(amountText, rateText, payoutRaw) {
+    if (!rateText) return false;
+    var aScale = decimalsOf(amountText);
+    var rScale = decimalsOf(rateText);
+    var pScale = decimalsOf(payoutRaw);
+    var prod = scaled(amountText, aScale) * scaled(rateText, rScale);
+    var prodScale = aScale + rScale;
+    var payout = scaled(payoutRaw, pScale);
+    if (prodScale >= pScale) {
+      var div = 10n ** BigInt(prodScale - pScale);
+      return prod % div === 0n && prod / div === payout;
+    }
+    return prod * (10n ** BigInt(pScale - prodScale)) === payout;
+  }
+
+  function significantPlaces(amountText, payoutRaw) {
+    var aScale = decimalsOf(amountText);
+    var pScale = decimalsOf(payoutRaw);
+    var amount = scaled(amountText, aScale);
+    var payout = scaled(payoutRaw, pScale);
+    if (amount <= 0n || payout <= 0n) return MIN_RATE_PLACES;
+    var k = 1;
+    for (; k <= ABSOLUTE_CAP; k += 1) {
+      if (payout * (10n ** BigInt(aScale + k)) >= amount * (10n ** BigInt(pScale))) break;
+    }
+    if (k <= 3) return MIN_RATE_PLACES;
+    var need = k + SIGNIFICANT_DIGITS - 1;
+    if (need < MIN_RATE_PLACES) need = MIN_RATE_PLACES;
+    if (need > ABSOLUTE_CAP) need = ABSOLUTE_CAP;
+    return need;
+  }
+
+  function effectiveRate(amount, payout, minorPlaces) {
+    if (!knownPlaces(minorPlaces)) return { text: "", rounded: false };
+    var amountText = moneyText(amount);
+    var payoutRaw = moneyText(payout);
+    if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "", rounded: false };
+    var show = significantPlaces(amountText, payoutRaw);
+    var ceiling = show > MAX_RATE_PLACES ? show : MAX_RATE_PLACES;
+    var exact = "";
+    var places = MIN_RATE_PLACES;
+    for (; places <= ceiling; places += 1) {
+      var candidate = rateAt(amountText, payoutRaw, places);
+      if (multipliesExactly(amountText, candidate, payoutRaw)) {
+        exact = candidate;
+        break;
+      }
+    }
+    if (exact) return { text: exact, rounded: false };
+    return { text: rateAt(amountText, payoutRaw, show), rounded: true };
+  }
+
+  function boardRateText(rate) {
+    var n = +rate;
+    if (!(n > 0) || !isFinite(n)) return "";
+    return n.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  return {
+    MIN_RATE_PLACES: MIN_RATE_PLACES,
+    MAX_RATE_PLACES: MAX_RATE_PLACES,
+    RATE_NOTE: RATE_NOTE,
+    effectiveRate: effectiveRate,
+    boardRateText: boardRateText,
+  };
+});
+
+
 /* ---- os-src/cdos-base.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — base layer
@@ -38,8 +178,9 @@
       text: '#0a0a0a',
       mute: 'rgba(10,10,10,0.55)',
       faint: 'rgba(10,10,10,0.4)',
-      /* 12px notes. #6b6b6b is 4.67:1 on the chip and 5.33:1 on white. */
+      /* #6b6b6b is 5.3:1 on white. #a9a9a9 is 8.4:1 on the black ticket. */
       pinNote: '#6b6b6b',
+      noteOnInk: '#a9a9a9',
       hoverSoft: 'rgba(10,10,10,0.04)',
       hover: 'rgba(10,10,10,0.06)',
       hoverStrong: 'rgba(10,10,10,0.10)',
@@ -78,8 +219,9 @@
       text: '#eceae3',
       mute: 'rgba(236,234,227,0.58)',
       faint: 'rgba(236,234,227,0.4)',
-      /* 6.5:1 on the night chip. */
+      /* #aea89f is 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
       pinNote: '#aea89f',
+      noteOnInk: '#5c574e',
       hoverSoft: 'rgba(255,255,255,0.05)',
       hover: 'rgba(255,255,255,0.07)',
       hoverStrong: 'rgba(255,255,255,0.12)',
@@ -3610,6 +3752,9 @@
     perCadLive,
     fmt,
     num,
+    currencyPlaces,
+    effectiveRate,
+    RATE_NOTE,
     dDiff,
     counterCashIn,
     counterCashOut
@@ -5180,6 +5325,9 @@
   }) {
     const s = settings || {};
     const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
+    const fx = !!(row.inCcy && row.outCcy && row.inCcy !== row.outCcy);
+    const priced = fx && typeof effectiveRate === 'function' ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy)) : null;
+    const rateValue = !fx ? row.rate : priced && priced.text ? '1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy : 'Rate unavailable';
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -5256,8 +5404,17 @@
       v: `${num(row.inAmt)} ${row.inCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Rate",
-      v: row.rate
-    }), /*#__PURE__*/React.createElement(Line, {
+      v: rateValue
+    }), fx && priced && priced.rounded ? /*#__PURE__*/React.createElement("div", {
+      className: "cd-rate-note",
+      style: {
+        fontSize: 11,
+        lineHeight: '14px',
+        color: 'var(--cd-pin-note)',
+        marginTop: 1,
+        marginBottom: 4
+      }
+    }, RATE_NOTE || 'Rate rounded. The amounts are exact.') : null, /*#__PURE__*/React.createElement(Line, {
       k: "Pay-out",
       v: `${num(row.outAmt)} ${row.outCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
@@ -28188,7 +28345,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     reportingLimit,
     useDeskFacts,
     deskPack,
-    sumDealHome
+    sumDealHome,
+    currencyPlaces,
+    effectiveRate,
+    RATE_NOTE
   } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY, ONCE.
@@ -30081,6 +30241,31 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       place: s.slice(i + 1).trim()
     };
   }
+  function dealRate(row) {
+    if (!row || !row.inCcy || row.inCcy === row.outCcy || typeof effectiveRate !== 'function') return null;
+    return effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy));
+  }
+  function shownDealRate(row) {
+    if (!row || !row.inCcy || row.inCcy === row.outCcy) return String(row && row.rate != null ? row.rate : '');
+    const rate = dealRate(row);
+    if (!rate || !rate.text) return 'Rate unavailable';
+    return `1 ${row.inCcy} = ${rate.text} ${row.outCcy}`;
+  }
+  function RateNote({
+    row
+  }) {
+    const rate = dealRate(row);
+    if (!rate || !rate.rounded) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "cd-rate-note text-[11px]",
+      style: {
+        color: 'var(--cd-pin-note)',
+        lineHeight: '14px',
+        marginTop: -2,
+        marginBottom: 4
+      }
+    }, RATE_NOTE || 'Rate rounded. The amounts are exact.');
+  }
   function TxFlow({
     row
   }) {
@@ -30100,18 +30285,18 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       fromL = 'We received';
       toL = 'We paid out';
       toS = row.side === 'buy' ? `Bought ${row.inCcy}` : row.side === 'sell' ? `Sold ${row.outCcy}` : 'Exchange';
-      center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      center = shownDealRate(row);
     } else if (t === 'Remittance — Send') {
       fromL = 'Sender pays';
       toL = 'Beneficiary gets';
       toS = ben.name + (ben.place ? ` · ${ben.place}` : '');
-      center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      center = shownDealRate(row);
     } else if (t === 'Remittance — Receive') {
       fromL = 'Received';
       fromS = `from ${row.inCcy}`;
       toL = 'Paid to recipient';
       toS = row.customer || '';
-      center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      center = shownDealRate(row);
     } else if (t === 'Cheque Cashing') {
       fromL = 'Cheque face';
       fromS = row.notes || 'Cheque deposited';
@@ -30179,8 +30364,10 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       title = 'Exchange';
       rows = [custRow, /*#__PURE__*/React.createElement(DRow, {
         k: "Rate",
-        v: `${row.rate} ${row.outCcy}/${row.inCcy}`,
+        v: shownDealRate(row),
         mono: true
+      }), /*#__PURE__*/React.createElement(RateNote, {
+        row: row
       }), row.side && /*#__PURE__*/React.createElement(DRow, {
         k: "Priced",
         v: `${row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross deal'}${row.priced === 'override' ? ' · hand-priced' : row.priced === 'locked' ? ' · rate locked' : ''}`
@@ -30207,9 +30394,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         mono: true,
         accent: CD.green
       }), /*#__PURE__*/React.createElement(DRow, {
-        k: "Exchange rate",
-        v: `${row.rate} ${row.outCcy}/${row.inCcy}`,
+        k: "Rate",
+        v: shownDealRate(row),
         mono: true
+      }), /*#__PURE__*/React.createElement(RateNote, {
+        row: row
       }), row.notes && /*#__PURE__*/React.createElement(DRow, {
         k: "Purpose",
         v: row.notes
@@ -30226,9 +30415,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         mono: true,
         accent: CD.green
       }), /*#__PURE__*/React.createElement(DRow, {
-        k: "Exchange rate",
-        v: `${row.rate} ${row.outCcy}/${row.inCcy}`,
+        k: "Rate",
+        v: shownDealRate(row),
         mono: true
+      }), /*#__PURE__*/React.createElement(RateNote, {
+        row: row
       }), row.notes && /*#__PURE__*/React.createElement(DRow, {
         k: "Source / note",
         v: row.notes
@@ -33753,6 +33944,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     crossRate,
     fmt,
     num,
+    currencyPlaces,
+    effectiveRate,
     mkRef,
     nowTime,
     newTx,
@@ -33791,8 +33984,40 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const per = boardHomePerUnit(ccy);
     return per == null ? null : n * per;
   }
-  const shownRate = r => r > 0 && isFinite(r) ? num(r) : 'Rate unavailable';
-  const formatPhoneRate = r => r > 0 && isFinite(r) ? Number(r).toFixed(4) : 'Rate unavailable';
+  /* The editable field keeps the computed board rate. It does not
+     cut that figure to four places. The line next to the payout is
+     the rate that payout came from. */
+  const RATE_NOTE = window.CDOS && window.CDOS.RATE_NOTE || 'Rate rounded. The amounts are exact.';
+  const publishedRate = r => window.CDOS.boardRateText ? window.CDOS.boardRateText(r) : '';
+  const pricedRate = (amount, payout, ccy) => {
+    if (typeof effectiveRate !== 'function') return {
+      text: '',
+      rounded: false
+    };
+    return effectiveRate(amount, payout, currencyPlaces(ccy)) || {
+      text: '',
+      rounded: false
+    };
+  };
+  const dealRateLine = (from, to, amount, payout) => {
+    const rate = pricedRate(amount, payout, to);
+    if (!rate.text) return 'Rate unavailable';
+    return '1 ' + from + ' = ' + rate.text + ' ' + to;
+  };
+  function SheetRateNote({
+    on
+  }) {
+    if (!on) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "cd-rate-note text-center",
+      style: {
+        fontSize: 11,
+        lineHeight: '14px',
+        color: 'var(--cd-pin-note)',
+        marginTop: 2
+      }
+    }, RATE_NOTE);
+  }
   const phoneMoney = (n, ccy) => {
     const fn = window.CDOS.formatPhoneMoney;
     return typeof fn === 'function' ? fn(n, ccy) : num(n) + (ccy ? ' ' + ccy : '');
@@ -34914,7 +35139,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         flex: 1,
         borderTop: '1px dashed var(--cd-on-ink-faint)'
       }
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    })), q.rateNote ? /*#__PURE__*/React.createElement("div", {
+      className: "cd-rate-note",
+      style: {
+        textAlign: 'center',
+        fontSize: 14,
+        lineHeight: '18px',
+        color: 'var(--cd-note-on-ink)'
+      }
+    }, q.rateNote) : null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 17,
         color: 'var(--cd-on-ink-soft)'
@@ -35056,7 +35289,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       [k]: true
     });
     const openBorder = (k, filled) => (!phoneSheet || touched[k]) && !filled ? CD.flag : CD.line;
-    const rateShown = r => phoneSheet ? formatPhoneRate(r) : shownRate(r);
+    const rateShown = (from, to, amount, payout) => dealRateLine(from, to, amount, payout);
     const selectedChip = useRef(null);
     useEffect(() => {
       if (!phoneSheet || !selectedChip.current) return;
@@ -36100,7 +36333,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: `${dest.flag} ${dest.country}`,
       giveLbl: 'You pay',
       give: `${num(amtN)} ${home}`,
-      rateLine: `1 ${home} = ${rateShown(rateN)} ${payoutCcy}`,
+      rateLine: rateShown(home, payoutCcy, amtN, out.amt),
+      rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '',
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${num(out.amt)} ${payoutCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
@@ -36110,7 +36344,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
       give: `${num(amtN)} ${inCcy}`,
-      rateLine: `1 ${inCcy} = ${rateShown(rateN)} ${outCcy}`,
+      rateLine: rateShown(inCcy, outCcy, amtN, out.amt),
+      rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '',
       getLbl: 'You receive',
       get: `${num(out.amt)} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
@@ -36368,7 +36603,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       big: true,
       autoFocus: true
     })), /*#__PURE__*/React.createElement("div", {
-      className: "cd-tx-rate-line flex items-center justify-center gap-2 py-2"
+      className: "py-2"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-rate-line flex items-center justify-center gap-2"
     }, /*#__PURE__*/React.createElement("span", {
       "data-side": pricing.side || '',
       className: "cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide",
@@ -36384,7 +36621,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "1 ", inCcy, " = ", rateShown(rateN), " ", outCcy), /*#__PURE__*/React.createElement("button", {
+    }, rateShown(inCcy, outCcy, amtN, out.amt)), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       "aria-label": "Swap",
@@ -36397,7 +36634,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "swap",
       s: 13,
       c: CD.mute
-    }))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
+    }))), /*#__PURE__*/React.createElement(SheetRateNote, {
+      on: pricedRate(amtN, out.amt, outCcy).rounded
+    })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: outCcy,
       onCcy: v => {
@@ -36414,17 +36653,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-rate-field"
     }, /*#__PURE__*/React.createElement(Lbl, {
       hint: override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'
-    }, "Rate"), /*#__PURE__*/React.createElement("div", {
+    }, "Board rate"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center",
       style: {
         ...inSty,
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : rateShown(rateN),
+      value: override ? manualRate : publishedRate(rateN) || 'Rate unavailable',
       onFocus: () => {
         if (!override && !lockLive) {
-          setManualRate(pricing.deskRate > 0 ? phoneSheet ? formatPhoneRate(pricing.deskRate) : num(pricing.deskRate) : '');
+          setManualRate(publishedRate(pricing.deskRate));
           setOverride(true);
         }
       },
@@ -36499,7 +36738,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           setOverride(false);
           setManualRate('');
         } else {
-          setManualRate(num(pricing.deskRate));
+          setManualRate(publishedRate(pricing.deskRate));
           setOverride(true);
           setLock(null);
         }
@@ -36692,7 +36931,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       big: true,
       autoFocus: true
     }), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-center gap-2 py-2 text-[11px]",
+      className: "py-2"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-center gap-2 text-[11px]",
       style: {
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
@@ -36701,7 +36942,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "arrowdown",
       s: 13,
       c: CD.faint
-    }), " 1 ", home, " = ", rateShown(rateN), " ", payoutCcy), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
+    }), " ", rateShown(home, payoutCcy, amtN, out.amt)), /*#__PURE__*/React.createElement(SheetRateNote, {
+      on: pricedRate(amtN, out.amt, payoutCcy).rounded
+    })), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
       value: out.amt ? num(out.amt) : '—',
       ccy: payoutCcy,
       readOnly: true,
@@ -37237,7 +37480,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'rgba(127,209,163,0.7)'
       }
     }, out.ccy)))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between",
       style: {
         borderTop: '1px solid var(--cd-on-ink-faint)',
         marginTop: 12,
@@ -37245,9 +37487,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontSize: 11,
         color: 'var(--cd-on-ink-soft)'
       }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker"
-    }, isExchange || isSend ? `1 ${isExchange ? inCcy : home} = ${rateShown(rateN)} ${out.ccy}` : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'))), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, isExchange || isSend ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), (isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
+      className: "cd-rate-note",
+      style: {
+        fontSize: 11,
+        lineHeight: '14px',
+        color: 'var(--cd-note-on-ink)',
+        marginTop: 4
+      }
+    }, RATE_NOTE) : null)), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',

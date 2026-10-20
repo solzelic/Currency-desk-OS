@@ -12,7 +12,8 @@
   const {
     CD, Ic, TYPES, CCY, crossRate, perCadLive, fmt, num, mkRef, nowTime, newTx,
     computeFlags, dDiff, makeSearch, SEARCH_EXAMPLES, priceDeal, spreadOf, dealMargin, CommitBtn,
-    Absent, businessDate, reportingLimit, useDeskFacts, deskPack, sumDealHome
+    Absent, businessDate, reportingLimit, useDeskFacts, deskPack, sumDealHome,
+    currencyPlaces, effectiveRate, RATE_NOTE
   } = window.CDOS;
 
   /* THE DESK'S OWN CURRENCY, ONCE.
@@ -682,6 +683,21 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   }
   // split a "Name · Place" beneficiary string
   function benParts(b) { const s = String(b || ''); const i = s.indexOf('·'); return i < 0 ? { name: s.trim(), place: '' } : { name: s.slice(0, i).trim(), place: s.slice(i + 1).trim() }; }
+  function dealRate(row) {
+    if (!row || !row.inCcy || row.inCcy === row.outCcy || typeof effectiveRate !== 'function') return null;
+    return effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy));
+  }
+  function shownDealRate(row) {
+    if (!row || !row.inCcy || row.inCcy === row.outCcy) return String(row && row.rate != null ? row.rate : '');
+    const rate = dealRate(row);
+    if (!rate || !rate.text) return 'Rate unavailable';
+    return `1 ${row.inCcy} = ${rate.text} ${row.outCcy}`;
+  }
+  function RateNote({ row }) {
+    const rate = dealRate(row);
+    if (!rate || !rate.rounded) return null;
+    return <div className="cd-rate-note text-[11px]" style={{ color: 'var(--cd-pin-note)', lineHeight: '14px', marginTop: -2, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div>;
+  }
   function TxFlow({ row }) {
     const t = row.type, ben = benParts(row.beneficiary), fee = +row.fee || 0;
     let fromL = 'Paid in', fromV = num(row.inAmt), fromC = row.inCcy, fromS = row.customer || 'Walk-in';
@@ -690,15 +706,15 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     if (t === 'Currency Exchange') {
       fromL = 'We received'; toL = 'We paid out';
       toS = row.side === 'buy' ? `Bought ${row.inCcy}` : row.side === 'sell' ? `Sold ${row.outCcy}` : 'Exchange';
-      center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      center = shownDealRate(row);
     } else if (t === 'Remittance — Send') {
       fromL = 'Sender pays'; toL = 'Beneficiary gets';
       toS = ben.name + (ben.place ? ` · ${ben.place}` : '');
-      center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      center = shownDealRate(row);
     } else if (t === 'Remittance — Receive') {
       fromL = 'Received'; fromS = `from ${row.inCcy}`;
       toL = 'Paid to recipient'; toS = row.customer || '';
-      center = `${row.rate} ${row.outCcy}/${row.inCcy}`;
+      center = shownDealRate(row);
     } else if (t === 'Cheque Cashing') {
       fromL = 'Cheque face'; fromS = row.notes || 'Cheque deposited';
       toL = 'Cash paid out'; toS = `less ${fmtHome(fee)} fee`;
@@ -727,7 +743,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     if (t === 'Currency Exchange') {
       title = 'Exchange';
       rows = [custRow,
-        <DRow k="Rate" v={`${row.rate} ${row.outCcy}/${row.inCcy}`} mono />,
+        <DRow k="Rate" v={shownDealRate(row)} mono />,
+        <RateNote row={row} />,
         row.side && <DRow k="Priced" v={`${row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross deal'}${row.priced === 'override' ? ' · hand-priced' : row.priced === 'locked' ? ' · rate locked' : ''}`} />,
         row.midRate && <DRow k="Spot at deal" v={`${row.midRate} ${row.outCcy}/${row.inCcy}`} mono />,
         row.quoteRef && <DRow k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} mono />];
@@ -737,14 +754,16 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         <DRow k="Beneficiary" v={ben.name || '—'} />,
         ben.place && <DRow k="Destination" v={ben.place} />,
         <DRow k="Beneficiary gets" v={`${num(row.outAmt)} ${row.outCcy}`} mono accent={CD.green} />,
-        <DRow k="Exchange rate" v={`${row.rate} ${row.outCcy}/${row.inCcy}`} mono />,
+        <DRow k="Rate" v={shownDealRate(row)} mono />,
+        <RateNote row={row} />,
         row.notes && <DRow k="Purpose" v={row.notes} />];
     } else if (t === 'Remittance — Receive') {
       title = 'Remittance — inbound';
       rows = [custRow,
         <DRow k="Received" v={`${num(row.inAmt)} ${row.inCcy}`} mono />,
         <DRow k="Paid to recipient" v={`${num(row.outAmt)} ${row.outCcy}`} mono accent={CD.green} />,
-        <DRow k="Exchange rate" v={`${row.rate} ${row.outCcy}/${row.inCcy}`} mono />,
+        <DRow k="Rate" v={shownDealRate(row)} mono />,
+        <RateNote row={row} />,
         row.notes && <DRow k="Source / note" v={row.notes} />];
     } else if (t === 'Cheque Cashing') {
       title = 'Cheque';
