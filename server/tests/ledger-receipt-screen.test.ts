@@ -25,6 +25,11 @@ const desk = {
     Ic: () => null,
     fmt: (n: unknown) => String(n ?? ""),
     num: (n: unknown) => String(n ?? ""),
+    currencyPlaces: () => 2,
+    formatPhoneMoney: (n: unknown, code?: string) => {
+      const text = Number(n).toFixed(2);
+      return code ? text + " " + code : text;
+    },
     TODAY: "2026-10-20",
     deskPack: () => ({ homeCurrency: "CAD", packId: "pack-ca-v1" }),
     reportingLimit: () => ({ amount: null, currency: "CAD" }),
