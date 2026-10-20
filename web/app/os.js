@@ -53151,16 +53151,22 @@ ${snap}`;
              says which currencies it could not price. */
           const counted = data.cash.filter(x => x.counted != null);
           const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
-          const shownLines = counted.map(x => varianceShown(x));
+          const shownLines = counted.map(x => ({
+            ...varianceShown(x),
+            ccy: x.ccy
+          }));
           const vParts = shownLines.map((line, i) => homeEquiv(line.shown == null ? 0 : line.shown, counted[i].ccy, homeCcy));
           const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
           const vTot = vParts.length && vParts.every(p => p != null) ? vParts.reduce((s, p) => s + p, 0) : null;
           /* A saved variance smaller than half a cent of home currency
              is still the variance. Calling that total balanced would
-             contradict the line above it. */
+             contradict the line above it. The row is labeled in home
+             currency, so the figure keeps the currency it was saved in.
+             0.15 yen is about 0.0014 CAD, and printing +0.15 alone
+             would read as 0.15 CAD. */
           const legacyOff = shownLines.filter(line => line.legacy && line.shown != null && line.shown !== 0);
           const homeWouldBalance = vTot == null || Math.abs(vTot) < 0.005;
-          const savedTotal = legacyOff.length && homeWouldBalance ? legacyOff.map(line => (line.shown > 0 ? '+' : '') + Number(line.shown).toFixed(2)).join(', ') : null;
+          const savedTotal = legacyOff.length && homeWouldBalance ? legacyOff.map(line => (line.shown > 0 ? '+' : '') + Number(line.shown).toFixed(2) + ' ' + line.ccy).join(', ') : null;
           const off = savedTotal != null || vTot != null && Math.abs(vTot) > 0.005;
           const varianceMissing = savedTotal == null && vTot == null;
           const varianceTotal = savedTotal != null ? savedTotal : varianceMissing ? '—' : Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, homeCcy);
@@ -53201,7 +53207,7 @@ ${snap}`;
             color: CD.faint,
             padding: '8px 16px 2px'
           }
-        }, "Every figure in this table is the server ledger's, except the variance. A count that stored its expected shows the counted figure minus the expected balance in whole units, the same difference the count screen shows. A count from before that field shows the variance that was saved. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. A count taken before whole-yen display says so on that line instead, and the total uses the variance that was saved. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
+        }, "Every figure in this table is the server ledger's, except the variance. A count that stored its expected shows the counted figure minus the expected balance in whole units, the same difference the count screen shows. A count from before that field shows the variance that was saved. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. A count taken before whole-yen display says so on that line instead, and the total names that saved variance with its currency. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {

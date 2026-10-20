@@ -100,6 +100,8 @@ test("an old yen count shows the variance that was saved", async ({ page }) => {
   const total = table.locator("tr", { hasText: "Total" });
   await expect(total).toContainText("+0.15");
   await expect(total).not.toContainText("balanced");
+  const totalVariance = total.locator("td").nth(3);
+  await expect(totalVariance).toHaveText("+0.15 JPY");
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "CSV" }).click();
