@@ -116,7 +116,9 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   const jpy = recon.locator("tr").filter({ hasText: "JPY" }).first();
   const cad = recon.locator("tr").filter({ hasText: "CAD" }).first();
   await expect(jpy).toContainText("489,176");
-  await expect(jpy).toContainText("Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.");
+  await expect(jpy).not.toContainText("Rounded from");
+  const openingNote = jpy.locator("xpath=following-sibling::tr[1]");
+  await expect(openingNote).toContainText("Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.");
   await expect(cad).toContainText("1,000.50");
   await expect(cad).not.toContainText("Rounded from");
 
@@ -175,9 +177,35 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
 
   await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
   await expect(jpy).toContainText("+1");
-  await expect(jpy).toContainText("Rounded from 489,175.85 JPY");
-  const reconInk = await panelContrast(jpy.locator(".till-stored-note"));
-  expect(reconInk.ratio, "reconcile stored cell " + JSON.stringify(reconInk.ink)).toBeGreaterThanOrEqual(4.5);
+  await expect(jpy).not.toContainText("Rounded from");
+  await page.setViewportSize({ width: 360, height: 780 });
+  await jpy.scrollIntoViewIfNeeded();
+  const reconSpan = await jpy.evaluate((row) => {
+    const cells = Array.from(row.querySelectorAll("td"));
+    const expected = cells[2];
+    const next = row.nextElementSibling;
+    const note = next ? next.querySelector(".till-stored-note") : null;
+    const cell = note ? note.closest("td") : null;
+    const table = row.closest("table");
+    const rowBox = row.getBoundingClientRect();
+    const tableBox = table ? table.getBoundingClientRect() : { width: 0 };
+    const cellBox = cell ? cell.getBoundingClientRect() : { width: 0 };
+    return {
+      noteInsideExpected: !!(expected && expected.querySelector(".till-stored-note")),
+      rowHeight: Math.round(rowBox.height),
+      colspan: cell ? cell.getAttribute("colspan") : null,
+      cellWidth: Math.round(cellBox.width),
+      tableWidth: Math.round(tableBox.width),
+    };
+  });
+  expect(reconSpan.noteInsideExpected, JSON.stringify(reconSpan)).toBe(false);
+  expect(reconSpan.colspan, JSON.stringify(reconSpan)).toBe("6");
+  expect(reconSpan.cellWidth, JSON.stringify(reconSpan)).toBeGreaterThanOrEqual(reconSpan.tableWidth - 2);
+  expect(reconSpan.rowHeight, JSON.stringify(reconSpan)).toBeLessThanOrEqual(80);
+  const reconNote = jpy.locator("xpath=following-sibling::tr[1]");
+  await expect(reconNote).toContainText("Rounded from 489,175.85 JPY");
+  const reconInk = await panelContrast(reconNote.locator(".till-stored-note"));
+  expect(reconInk.ratio, "reconcile stored row " + JSON.stringify(reconInk.ink)).toBeGreaterThanOrEqual(4.5);
 
   await page.locator('#appbar [data-app="reports"]').evaluate((el: HTMLElement) => el.click());
   await page.getByText("End-of-Day Sign-Off").first().click();

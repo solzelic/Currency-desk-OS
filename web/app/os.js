@@ -17174,7 +17174,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2 text-right"
     }, "Variance"))), /*#__PURE__*/React.createElement("tbody", null, recon.map(r => {
       const ls = lastSaved[r.c];
-      return /*#__PURE__*/React.createElement("tr", {
+      const note = storedRoundNote(r.expected, r.c);
+      return [/*#__PURE__*/React.createElement("tr", {
         key: r.c,
         style: {
           borderTop: `1px solid ${CD.lineSoft}`
@@ -17203,16 +17204,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, r.expected == null ? '—' : /*#__PURE__*/React.createElement("span", {
         className: "till-expected-figure"
-      }, unitText(r.expected, r.c)), storedRoundNote(r.expected, r.c) ? /*#__PURE__*/React.createElement("div", {
-        className: "till-stored-note",
-        style: {
-          color: CD.pinNote,
-          fontWeight: 400,
-          fontSize: 11,
-          lineHeight: 1.35,
-          marginTop: 2
-        }
-      }, storedRoundNote(r.expected, r.c)) : null), /*#__PURE__*/React.createElement("td", {
+      }, unitText(r.expected, r.c))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           color: ls ? CD.mute : CD.faint
@@ -17251,7 +17243,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
+      }, r.variance == null ? '—' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c))), note ? /*#__PURE__*/React.createElement("tr", {
+        key: r.c + '-stored',
+        className: "till-stored-row"
+      }, /*#__PURE__*/React.createElement("td", {
+        colSpan: 6,
+        className: "px-3 py-2",
+        style: {
+          color: CD.pinNote,
+          fontWeight: 400,
+          fontSize: 11,
+          lineHeight: 1.35
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "till-stored-note"
+      }, note))) : null];
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,

@@ -2355,8 +2355,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     right: 0;
     bottom: 0;
   }
-  /* Reconcile still names the figure inside the Expected cell.
-     The sign-off does not: that row is .till-stored-row, full width. */
+  /* Reconcile and the sign-off name the figure on .till-stored-row,
+     a full-width row under the currency. The 180px right edge is
+     only for a note that still lives inside a cell. */
   table .till-stored-note {
     display: block;
     white-space: normal;
@@ -2410,6 +2411,12 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-width: none;
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+  .till-recon tr.till-stored-row .till-stored-note {
+    max-width: none;
+    margin-left: 0;
+    text-align: left;
+    overflow-wrap: break-word;
   }
   .win-body .till-count-foot .flex.items-end.justify-between > .flex-none {
     flex: 0 0 auto;
