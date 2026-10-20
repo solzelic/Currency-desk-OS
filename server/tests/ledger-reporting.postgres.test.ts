@@ -205,6 +205,7 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(empty.realizedPnlHome).toBeNull();
     expect(empty.earningsHome).toBeNull();
     expect(empty.byCurrency).toEqual([]);
+    expect(empty.movement).toEqual([]);
   });
 
   it("counts one deal as one deal, at what it was actually worth", async () => {
@@ -291,6 +292,10 @@ postgres("the ledger answers for its own headline figures", () => {
     );
     const today = open.byCurrency.find((row: { currency: string }) => row.currency === "JPY");
     expect(today).toMatchObject({ deals: 2, sold: "200.00" });
+    const paid = open.movement.find((row: { currency: string }) => row.currency === "JPY");
+    expect(paid).toMatchObject({ received: "0.00", paidOut: "200.00", net: "-200.00" });
+    const stored = closed.movement.find((row: { currency: string }) => row.currency === "JPY");
+    expect(stored).toMatchObject({ paidOut: "200.80", net: "-200.80" });
   });
 
   it("shows a stored yen balance as stored", async () => {

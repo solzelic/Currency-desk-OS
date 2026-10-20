@@ -52287,9 +52287,7 @@ ${snap}`;
       const byCcy = {},
         byType = {},
         feeTeller = {},
-        feeType = {},
-        drawerIn = {},
-        drawerOut = {};
+        feeType = {};
       live.forEach(r => {
         const v = homeEquiv(r.inAmt, r.inCcy, homeCcy),
           fee = +r.fee || 0,
@@ -52303,8 +52301,6 @@ ${snap}`;
         }
         feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee + sp;
         feeType[r.type] = (feeType[r.type] || 0) + fee + sp;
-        drawerIn[r.inCcy] = (drawerIn[r.inCcy] || 0) + (+r.inAmt || 0);
-        drawerOut[r.outCcy] = (drawerOut[r.outCcy] || 0) + (+r.outAmt || 0);
       });
       const reportable = live.filter(r => (flags[r.id] || {}).single);
       const stru = [];
@@ -52333,13 +52329,6 @@ ${snap}`;
         }
       });
       const sortE = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
-      const ccySet = Array.from(new Set([...Object.keys(drawerIn), ...Object.keys(drawerOut)]));
-      const drawer = ccySet.map(c => ({
-        ccy: c,
-        inA: drawerIn[c] || 0,
-        outA: drawerOut[c] || 0,
-        net: (drawerIn[c] || 0) - (drawerOut[c] || 0)
-      })).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
       const perTx = live.map(r => ({
         r,
         fee: +r.fee || 0,
@@ -52364,7 +52353,6 @@ ${snap}`;
         reportable,
         stru,
         kycGaps,
-        drawer,
         perTx,
         filed: reportable.filter(r => r.filed).length,
         /* CASH ON HAND AT CLOSE — the drawer, and the count of the drawer.
@@ -53144,7 +53132,13 @@ ${snap}`;
           style: {
             padding: '14px 16px 4px'
           }
-        }, /*#__PURE__*/React.createElement(SecTitle, null, "Cash drawer movement \xB7 in units")), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        }, /*#__PURE__*/React.createElement(SecTitle, null, "Cash drawer movement \xB7 in units")), !(book && book.movement) ? /*#__PURE__*/React.createElement("div", {
+          style: {
+            padding: '10px 16px 14px',
+            fontSize: 11.5,
+            color: CD.faint
+          }
+        }, `The ledger has no answer. ${noBook}.`) : /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
         }, "Currency"), /*#__PURE__*/React.createElement("th", {
           style: {
@@ -53161,31 +53155,34 @@ ${snap}`;
             ...thS,
             textAlign: 'right'
           }
-        }, "Net position"))), /*#__PURE__*/React.createElement("tbody", null, data.drawer.map(d => /*#__PURE__*/React.createElement("tr", {
-          key: d.ccy
-        }, /*#__PURE__*/React.createElement("td", {
-          style: tdS
-        }, /*#__PURE__*/React.createElement("b", null, d.ccy)), /*#__PURE__*/React.createElement("td", {
-          style: {
-            ...tdS,
-            textAlign: 'right',
-            fontVariantNumeric: 'tabular-nums'
-          }
-        }, num(d.inA)), /*#__PURE__*/React.createElement("td", {
-          style: {
-            ...tdS,
-            textAlign: 'right',
-            fontVariantNumeric: 'tabular-nums'
-          }
-        }, num(d.outA)), /*#__PURE__*/React.createElement("td", {
-          style: {
-            ...tdS,
-            textAlign: 'right',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 600,
-            color: d.net >= 0 ? CD.green : CD.flag
-          }
-        }, d.net >= 0 ? '+' : '', num(d.net)))), data.drawer.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        }, "Net position"))), /*#__PURE__*/React.createElement("tbody", null, book.movement.map(d => {
+          const net = Number(d.net);
+          return /*#__PURE__*/React.createElement("tr", {
+            key: d.currency
+          }, /*#__PURE__*/React.createElement("td", {
+            style: tdS
+          }, /*#__PURE__*/React.createElement("b", null, d.currency)), /*#__PURE__*/React.createElement("td", {
+            style: {
+              ...tdS,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums'
+            }
+          }, num(d.received)), /*#__PURE__*/React.createElement("td", {
+            style: {
+              ...tdS,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums'
+            }
+          }, num(d.paidOut)), /*#__PURE__*/React.createElement("td", {
+            style: {
+              ...tdS,
+              textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: 600,
+              color: net >= 0 ? CD.green : CD.flag
+            }
+          }, net >= 0 ? '+' : '', num(d.net)));
+        }), book.movement.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: tdS,
           colSpan: 4
         }, "No movement in this period."))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Compliance snapshot"), /*#__PURE__*/React.createElement("div", {
