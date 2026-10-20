@@ -6,7 +6,7 @@ import type pg from "pg";
 import { branchZone as branchZoneOnClient } from "./branch-zone.js";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
-import { assertTradeable, parseMoney } from "./currencies.js";
+import { assertTradeable, parseMoney, roundTo } from "./currencies.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, refuseTillHeld, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
@@ -83,9 +83,18 @@ async function branchBusinessDate(
 
 const fixed = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
-/* Expected is the balance the ledger stored. Rounding it to a whole yen
-   turns a real 0.15 difference into a drawer that looks balanced. */
+/* Expected on the count row is the balance the ledger stored, at two
+   places. The variance subtracts that figure after roundTo, which uses
+   the currency's minor units and half up. A count does not rewrite the
+   stored balance. */
 const expectedIn = (value: Decimal.Value) => fixed(value);
+export function recordedVariance(
+  counted: string,
+  expected: string,
+  currency: string,
+): string {
+  return fixed(new Decimal(counted).minus(roundTo(new Decimal(expected), currency)));
+}
 const countedIn = (value: string, currency: string) =>
   fixed(parseMoney(value, currency, "Count", "0"));
 const sessionJson = (row: Record<string, unknown>, zone = "America/Toronto") => ({
@@ -430,14 +439,16 @@ export class TillControlService {
           const countedAmount = countedIn(String(counted), currency);
           await client.query(
             `INSERT INTO ledger_till_counts
-              (batch_id,currency,expected_amount,counted_amount,variance_amount)
-             VALUES ($1,$2,$3,$4,$5)`,
+              (batch_id,currency,expected_amount,counted_amount,variance_amount,
+               stored_expected_amount)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
             [
               batchId,
               currency,
               expected,
               countedAmount,
-              fixed(new Decimal(countedAmount).minus(expected)),
+              recordedVariance(countedAmount, expected, currency),
+              expected,
             ],
           );
         }
@@ -565,14 +576,16 @@ export class TillControlService {
         const counted = countedIn(String(counts[currency]), currency);
         await client.query(
           `INSERT INTO ledger_till_counts
-            (batch_id,currency,expected_amount,counted_amount,variance_amount)
-           VALUES ($1,$2,$3,$4,$5)`,
+            (batch_id,currency,expected_amount,counted_amount,variance_amount,
+             stored_expected_amount)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
           [
             batchId,
             currency,
             expected,
             counted,
-            fixed(new Decimal(counted).minus(expected)),
+            recordedVariance(counted, expected, currency),
+            expected,
           ],
         );
         await client.query(
@@ -658,9 +671,17 @@ export class TillControlService {
         const counted = countedIn(String(counts[currency]), currency);
         await client.query(
           `INSERT INTO ledger_till_counts
-            (batch_id,currency,expected_amount,counted_amount,variance_amount)
-           VALUES ($1,$2,$3,$4,$5)`,
-          [batchId, currency, expected, counted, fixed(new Decimal(counted).minus(expected))],
+            (batch_id,currency,expected_amount,counted_amount,variance_amount,
+             stored_expected_amount)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [
+            batchId,
+            currency,
+            expected,
+            counted,
+            recordedVariance(counted, expected, currency),
+            expected,
+          ],
         );
         await client.query(
           `UPDATE ledger_till_balances SET available_amount=$1

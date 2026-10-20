@@ -132,7 +132,7 @@ postgres("a till close after the drawer has moved", () => {
     await reset();
   });
 
-  it("keeps a stored yen fraction in the expected balance and the variance", async () => {
+  it("keeps a stored yen fraction on the balance and saves a zero variance", async () => {
     const teller = await cookie();
     await pool.query(
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',99.85)",
@@ -148,12 +148,97 @@ postgres("a till close after the drawer has moved", () => {
     });
     expect(counted.statusCode).toBe(201);
     const row = await pool.query(
-      `SELECT expected_amount, counted_amount, variance_amount
+      `SELECT expected_amount, counted_amount, variance_amount, stored_expected_amount
          FROM ledger_till_counts WHERE currency = 'JPY'`,
     );
     expect(row.rows[0].expected_amount).toBe("99.85");
+    expect(row.rows[0].stored_expected_amount).toBe("99.85");
     expect(row.rows[0].counted_amount).toBe("100.00");
-    expect(row.rows[0].variance_amount).toBe("0.15");
+    expect(row.rows[0].variance_amount).toBe("0.00");
+    expect((await book(teller)).balances.JPY).toBe("99.85");
+  });
+
+  it("saves zero when the count matches yen rounded half up, and keeps the stored balance", async () => {
+    const teller = await cookie();
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "jpy-489176", counts: { JPY: "489176.00" } },
+    });
+    expect(counted.statusCode, counted.body).toBe(201);
+    const row = await pool.query(
+      `SELECT expected_amount, counted_amount, variance_amount, stored_expected_amount
+         FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].expected_amount).toBe("489175.85");
+    expect(row.rows[0].stored_expected_amount).toBe("489175.85");
+    expect(row.rows[0].counted_amount).toBe("489176.00");
+    expect(row.rows[0].variance_amount).toBe("0.00");
+    expect((await book(teller)).balances.JPY).toBe("489175.85");
+  });
+
+  it("saves one yen when the count is one above the rounded expected", async () => {
+    const teller = await cookie();
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "jpy-489177", counts: { JPY: "489177.00" } },
+    });
+    expect(counted.statusCode, counted.body).toBe(201);
+    const row = await pool.query(
+      `SELECT variance_amount, stored_expected_amount
+         FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].stored_expected_amount).toBe("489175.85");
+    expect(row.rows[0].variance_amount).toBe("1.00");
+    expect((await book(teller)).balances.JPY).toBe("489175.85");
+  });
+
+  it("keeps a two-decimal variance and still refuses a three-decimal count", async () => {
+    const teller = await cookie();
+    await pool.query(
+      `UPDATE ledger_till_balances SET available_amount = 99.85
+        WHERE tenant_id=$1 AND till_id=$2 AND currency='CAD'`,
+      [scope[0], scope[4]],
+    );
+    const cad = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "cad-fraction", counts: { CAD: "100.00" } },
+    });
+    expect(cad.statusCode, cad.body).toBe(201);
+    const cadRow = await pool.query(
+      `SELECT expected_amount, variance_amount, stored_expected_amount
+         FROM ledger_till_counts WHERE currency = 'CAD'`,
+    );
+    expect(cadRow.rows[0].expected_amount).toBe("99.85");
+    expect(cadRow.rows[0].stored_expected_amount).toBe("99.85");
+    expect(cadRow.rows[0].variance_amount).toBe("0.15");
+    expect((await book(teller)).balances.CAD).toBe("99.85");
+
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'KWD',1.23)",
+      scope,
+    );
+    const kwd = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "kwd-count", counts: { KWD: "1.24" } },
+    });
+    expect(kwd.statusCode, kwd.body).toBe(422);
+    expect(kwd.json().code).toBe("UNSUPPORTED_CURRENCY");
   });
 
   it("refuses a fractional yen count", async () => {
