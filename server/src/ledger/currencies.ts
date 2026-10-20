@@ -137,9 +137,6 @@ export function parseMoney(
   const carried = carriable(currency);
   if (!carried.ok) throw new LedgerError("UNSUPPORTED_CURRENCY", carried.reason);
 
-  /* A stored numeric(24,2) reads back with two places, including ".00"
-     on a whole yen. That string is the same amount. A digit that is
-     not already the rounded amount is a figure the currency cannot pay. */
   const offScale =
     places === 0
       ? `${field} is not a whole number of ${currency}. ${currency} has no minor unit.`

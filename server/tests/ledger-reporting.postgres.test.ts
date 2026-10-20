@@ -263,7 +263,7 @@ postgres("the ledger answers for its own headline figures", () => {
 
   it("shows a stored yen amount on a closed day, and rounds each open-day row before adding", async () => {
     const past = new Date(Date.now() - 3 * 86400000).toISOString();
-    const insert = (id: string, amount: string, at: string) =>
+    const insert = (id: string, amount: string, at: string, inbound = false) =>
       pool.query(
         `INSERT INTO ledger_transactions
            (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
@@ -273,7 +273,7 @@ postgres("the ledger answers for its own headline figures", () => {
             jurisdiction_pack_id, jurisdiction_pack_version, home_currency)
          VALUES
            ($1, $2, $3, $4, $5, $6, $7, 'customer-demo', $3||':r.haddad',
-            'CAD', 'JPY', 100.00, $8, 1, 0, 0, 'travel', 'salary', $9,
+            ${inbound ? "'JPY', 'CAD', $8, 100.00" : "'CAD', 'JPY', 100.00, $8"}, 1, 0, 0, 'travel', 'salary', $9,
             'exchange', 'cash', 'cash', 'pack-ca-v1', 1, 'CAD')`,
         [id, `ref-${id}`, ...scope, amount, at],
       );
@@ -285,15 +285,15 @@ postgres("the ledger answers for its own headline figures", () => {
       expect.objectContaining({ currency: "JPY", deals: 1, sold: "200.80" }),
     ]);
 
-    await insert("jpy-a", "100.40", new Date().toISOString());
-    await insert("jpy-b", "100.40", new Date().toISOString());
+    await insert("jpy-a", "100.40", new Date().toISOString()); await insert("jpy-b", "100.40", new Date().toISOString());
+    await insert("jpy-in-a", "100.40", new Date().toISOString(), true); await insert("jpy-in-b", "100.40", new Date().toISOString(), true);
     const open = await summary(
       `?from=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
     );
     const today = open.byCurrency.find((row: { currency: string }) => row.currency === "JPY");
     expect(today).toMatchObject({ deals: 2, sold: "200.00" });
     const paid = open.movement.find((row: { currency: string }) => row.currency === "JPY");
-    expect(paid).toMatchObject({ received: "0.00", paidOut: "200.00", net: "-200.00" });
+    expect(paid).toMatchObject({ received: "200.00", paidOut: "200.00", net: "0.00" });
     const stored = closed.movement.find((row: { currency: string }) => row.currency === "JPY");
     expect(stored).toMatchObject({ paidOut: "200.80", net: "-200.80" });
   });
