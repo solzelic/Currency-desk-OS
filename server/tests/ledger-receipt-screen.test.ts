@@ -118,7 +118,7 @@ it("renders the ledger receipt on the transfer, and prints those lines", () => {
   expect(html).toContain(LINE);
   expect(html).not.toContain("10825.00");
 
-  const opened = (desk.open as (u: string, n: string, f: string) => { written: string[] })("", "", "");
+  const opened = desk.open("", "", "");
   const print = desk.CDOS.printReceipt as (...args: unknown[]) => void;
   const realOpen = desk.open;
   desk.open = () => opened;
