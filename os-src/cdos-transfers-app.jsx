@@ -250,7 +250,6 @@ ${threshold == null ? ' No reporting line has been set for this desk, so nothing
 .r{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid #eee}.r .k{color:#777}.grn{color:#1f8a4c;font-weight:700}.big{text-align:center;margin:12px 0}.big .v{font-family:'Archivo';font-weight:800;font-size:26px}
 .ft{margin-top:14px;border-top:1px dashed #ccc;padding-top:10px;font-size:9px;color:#999;text-align:center;line-height:1.5}@page{margin:8mm}</style></head><body>
 <div class="h"><div class="b">${esc(biz)}</div><div class="s">Money transfer receipt</div></div>
-${Array.isArray(t.receiptLines) && t.receiptLines.length ? `<div style="margin:10px 0;padding:8px 0;border-top:1px solid #111;border-bottom:1px solid #111;font-size:12px;line-height:1.55">${t.receiptLines.map(line => `<div>${esc(line)}</div>`).join('')}</div>` : ''}
 <div class="r"><span class="k">Reference</span><span>${esc(t.ref)}</span></div>
 <div class="r"><span class="k">Date</span><span>${esc(t.date)}</span></div>
 <div class="r"><span class="k">Sender</span><span>${esc(t.senderName)}</span></div>

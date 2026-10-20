@@ -391,12 +391,24 @@ export class LedgerReportingService {
       /* "Which currencies did we make money on" — the question
          docs/COST_BASIS.md says the whole business turns on. Realized P&L
          belongs to the currency that LEFT the desk, because that is the
-         stock whose cost was consumed. */
+         stock whose cost was consumed.
+
+         A closed day shows the units that were stored. Rounding 200.80 yen
+         to 201 rewrites that day. The open day rounds each row to the
+         currency's own places and then adds, so the rows and the total
+         are the same number. Rounding the sum instead turns 100.4 + 100.4
+         into 201 while each row shows as 100. */
       const openFrom = openDayStart(window);
       const byCurrency = await client.query(
         `SELECT t.to_currency AS currency,
                 count(*)::int AS deals,
-                sum(CASE WHEN $9::timestamptz IS NOT NULL AND t.posted_at >= $9 THEN round(t.output_amount, ${minorPlaceSql("t.to_currency")}) ELSE t.output_amount END) AS sold,
+                sum(
+                  CASE
+                    WHEN $9::timestamptz IS NOT NULL AND t.posted_at >= $9
+                    THEN round(t.output_amount, ${minorPlaceSql("t.to_currency")})
+                    ELSE t.output_amount
+                  END
+                ) AS sold,
                 sum(t.realized_pnl_home) FILTER (
                   WHERE t.realized_pnl_home IS NOT NULL) AS realized_home,
                 count(*) FILTER (

@@ -512,9 +512,6 @@
            browser holds no cash figure of its own. */
         serverTransactionId: posted ? posted.transactionId : null,
         serverObligationId: posted ? posted.obligationId : null,
-        /* The book's receipt, word for word. The amount line is the
-           ledger's own text, including whether a whole yen keeps .00. */
-        receiptLines: posted && posted.receipt && Array.isArray(posted.receipt.lines) ? posted.receipt.lines.slice() : null,
         timeline: [{ status: 'created', ts: stamp(), by: me.name }], createdBy: me.name,
       };
       setTransfers(t => [transfer, ...t]);
@@ -697,12 +694,6 @@
           <button onClick={onClose} className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
         </div>
         <div className="px-5 py-4 space-y-5">
-          {Array.isArray(t.receiptLines) && t.receiptLines.length > 0 && (
-            <div data-ledger-receipt="1">
-              <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Ledger receipt</div>
-              <div style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, fontFamily: 'Space Mono, ui-monospace, monospace', fontSize: 12, lineHeight: 1.55, color: CD.ink, whiteSpace: 'pre-wrap', padding: '8px 10px' }}>{t.receiptLines.join('\n')}</div>
-            </div>
-          )}
           {/* tracking */}
           <div className="p-3 flex items-center justify-between" style={{ background: CD.ink, borderRadius: 11 }}>
             <div><div className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--cd-on-ink-soft)', fontFamily: 'Space Mono, monospace' }}>Tracking PIN</div><div className="text-lg font-bold text-white" style={{ fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>{t.pin}</div></div>
