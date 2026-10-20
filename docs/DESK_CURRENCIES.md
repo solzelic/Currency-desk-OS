@@ -127,11 +127,16 @@ places is `108.2500`. 100 INR to 1.18 USD is `1 INR = 0.0118 USD`.
 
 A closed day's report shows the units that were stored. An open day
 rounds each row to the currency's places and then adds those rows, so
-the rows and the total agree. The count screen shows the till's
-expected figure in minor units, so 99.85 yen reads 100, and it rounds
-the difference the same way. The book still stores 99.85. Before the
-scales table loads, and if that load fails, the screen uses the ISO
-minor units, and it never shows a third decimal.
+the rows and the total agree. The count, the reconcile, and the
+end-of-day drawer show whole units. The cash variance is the counted
+figure minus that whole-unit expected, so 489,176 against a stored
+489,175.85 yen reads expected 489,176 and balanced, and 489,177 reads
++1 over. When the stored expected is off the minor-unit grid, one grey
+line under Expected reads: Rounded from 489,175.85 JPY stored from
+older deals. It clears when the ledger is trued up. A figure already
+on the grid, including 1,000.50 CAD, has no line. The book still stores
+489,175.85. Before the scales table loads, and if that load fails, the
+screen uses the ISO minor units, and it never shows a third decimal.
 
 **Three-decimal currencies are refused on an exchange, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then

@@ -2310,6 +2310,28 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     align-items: flex-end;
     column-gap: 10px;
   }
+  /* Expected, and the stored-fraction line under it, sit on their own
+     row. Save count stays on the counted row and cannot cover them. */
+  .win-body .till-count-foot .till-count-row {
+    position: relative;
+    flex-wrap: wrap !important;
+  }
+  .win-body .till-count-foot .till-count-row:has(.till-stored-note) { padding-bottom: 78px; }
+  .win-body .till-count-foot .till-count-row:not(:has(.till-stored-note)) { padding-bottom: 28px; }
+  .till-expected-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+  table .till-stored-note {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-width: 180px;
+    margin-left: auto;
+    text-align: right;
+  }
   .win-body .till-count-foot .flex.items-end.justify-between > .flex-none {
     flex: 0 0 auto;
     width: auto;

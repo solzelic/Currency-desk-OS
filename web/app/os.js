@@ -1214,6 +1214,23 @@
   const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
   /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
   const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
+  const roundMinor = (n, places) => window.CDOS.roundMinor(n, places);
+  /* Counted minus expected, each already in whole units. Rounding the
+     raw gap is a different number: 100 against 99.5 yen is balanced,
+     because both whole-unit figures are 100. */
+  const cashVariance = (counted, expected, ccy) => {
+    if (counted == null || expected == null || !isFinite(Number(counted)) || !isFinite(Number(expected))) return null;
+    const places = currencyPlaces(ccy);
+    return roundMinor(roundMinor(Number(counted), places) - roundMinor(Number(expected), places), places);
+  };
+  /* Empty when the stored figure is already on the minor-unit grid.
+     1,000.50 CAD at two places is whole. 99.85 yen is not. */
+  const storedRoundNote = (n, ccy) => {
+    if (n == null || n === '' || !isFinite(Number(n))) return '';
+    const places = currencyPlaces(ccy);
+    if (Math.abs(Number(n) - roundMinor(Number(n), places)) <= 1e-8) return '';
+    return 'Rounded from ' + storedText(n, ccy) + ' ' + ccy + ' stored from older deals. It clears when the ledger is trued up.';
+  };
   const formatPhoneMoney = (n, ccy) => {
     const body = unitText(n, ccy);
     return ccy ? body + ' ' + ccy : body;
@@ -2260,6 +2277,8 @@
     num,
     unitText,
     storedText,
+    cashVariance,
+    storedRoundNote,
     formatPhoneMoney,
     dDiff,
     mkRef,
@@ -14626,9 +14645,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     fmt,
     num,
     unitText,
-    storedText,
-    roundMinor,
-    currencyPlaces,
+    cashVariance,
+    storedRoundNote,
     crossRate,
     perCadLive,
     dDiff,
@@ -15735,7 +15753,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
     const isCounted = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) > 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
-    const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
+    const countedCcys = useMemo(() => {
+      const keys = new Set(CCYS);
+      Object.keys(quick).forEach(k => keys.add(k));
+      Object.keys(counts).forEach(k => keys.add(k));
+      return [...keys].filter(isCounted);
+    }, [counts, quick, mode]);
     const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
     const serverBalancesReady = !serverBacked || serverBalances !== null;
     // the currencies the server actually keeps a till balance for. The close
@@ -15896,7 +15919,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const recon = reconCcys.map(c => {
       const expected = expectedOf(c);
       const counted = countedCcys.includes(c) ? ccyTotal(c) : null;
-      const variance = counted == null ? null : roundMinor(counted - expected, currencyPlaces(c));
+      const variance = counted == null || expected == null ? null : cashVariance(counted, expected, c);
       return {
         c,
         expected,
@@ -16746,7 +16769,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         marginTop: 8
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-end justify-between gap-4 pt-3",
+      className: "till-count-row flex items-end justify-between gap-4 pt-3",
       style: {
         borderTop: `1px solid ${CD.line}`
       }
@@ -16807,14 +16830,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderLeft: `1px solid ${CD.line}`
       }
     }, ccy)), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-1.5 flex items-center gap-2 flex-wrap",
+      className: "till-expected-wrap text-[11px] mt-1.5",
       style: {
         color: CD.faint
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
       title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
-      className: "inline-flex items-center gap-1.5",
+      className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
       style: {
         border: 0,
         background: 'transparent',
@@ -16831,7 +16854,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         userSelect: 'none'
       }
     }, unitText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
-      const v = roundMinor(ccyTotal(ccy) - expectedOf(ccy), currencyPlaces(ccy));
+      const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy);
       const off = v !== 0;
       return /*#__PURE__*/React.createElement("b", {
         style: {
@@ -16846,7 +16869,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
       c: CD.faint
-    })), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), /*#__PURE__*/React.createElement("div", {
+    })), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
+      className: "till-stored-note",
+      style: {
+        color: CD.faint,
+        marginTop: 2,
+        lineHeight: 1.35
+      }
+    }, storedRoundNote(expectedOf(ccy), ccy)) : null, ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), /*#__PURE__*/React.createElement("div", {
       className: "till-counted-when text-[11px] mt-1",
       style: {
         color: CD.faint
@@ -17171,7 +17201,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.expected == null ? CD.faint : CD.ink
         }
-      }, r.expected == null ? '—' : unitText(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? '—' : unitText(r.expected, r.c), storedRoundNote(r.expected, r.c) ? /*#__PURE__*/React.createElement("div", {
+        className: "till-stored-note",
+        style: {
+          color: CD.faint,
+          fontWeight: 400,
+          fontSize: 11,
+          lineHeight: 1.35,
+          marginTop: 2
+        }
+      }, storedRoundNote(r.expected, r.c)) : null), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           color: ls ? CD.mute : CD.faint
@@ -17210,7 +17249,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
+      }, r.variance == null ? '—' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
@@ -51687,6 +51726,9 @@ ${snap}`;
     formatPhoneMoney,
     currencyPlaces,
     storedText,
+    unitText,
+    cashVariance,
+    storedRoundNote,
     dDiff,
     dealMargin,
     CCY,
@@ -52805,7 +52847,9 @@ ${snap}`;
             textAlign: 'right'
           }
         }, "In the safe"))), /*#__PURE__*/React.createElement("tbody", null, data.cash.map(x => {
-          const off = x.variance != null && Math.abs(x.variance) > 0.005;
+          const shown = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+          const off = shown != null && shown !== 0;
+          const note = storedRoundNote(x.units, x.ccy);
           return /*#__PURE__*/React.createElement("tr", {
             key: x.ccy
           }, /*#__PURE__*/React.createElement("td", {
@@ -52817,7 +52861,16 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null ? CD.faint : CD.ink
             }
-          }, x.units == null ? '— not in this drawer' : storedText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy), note ? /*#__PURE__*/React.createElement("div", {
+            className: "till-stored-note",
+            style: {
+              color: CD.faint,
+              fontWeight: 400,
+              fontSize: 11,
+              lineHeight: 1.35,
+              marginTop: 2
+            }
+          }, note) : null), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -52831,15 +52884,15 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.counted == null ? CD.faint : CD.ink
             }
-          }, x.counted == null ? '— not counted' : storedText(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, x.counted == null ? '— not counted' : unitText(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
-              fontWeight: x.variance != null ? 600 : 400,
-              color: x.variance == null ? CD.faint : off ? CD.flag : CD.green
+              fontWeight: shown != null ? 600 : 400,
+              color: shown == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + storedText(x.variance, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, shown == null ? '—' : shown === 0 ? '✓ balanced' : (shown > 0 ? '+' : '') + unitText(shown, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -52856,7 +52909,10 @@ ${snap}`;
              says which currencies it could not price. */
           const counted = data.cash.filter(x => x.counted != null);
           const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
-          const vParts = counted.map(x => homeEquiv(x.variance == null ? 0 : x.variance, x.ccy, homeCcy));
+          const vParts = counted.map(x => {
+            const shown = x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+            return homeEquiv(shown == null ? 0 : shown, x.ccy, homeCcy);
+          });
           const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
           const vTot = vParts.length && vParts.every(p => p != null) ? vParts.reduce((s, p) => s + p, 0) : null;
           const off = vTot != null && Math.abs(vTot) > 0.005;
@@ -52897,7 +52953,7 @@ ${snap}`;
             color: CD.faint,
             padding: '8px 16px 2px'
           }
-        }, "Every figure in this table is the server ledger's. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " and ", /*#__PURE__*/React.createElement("b", null, "variance"), " are what the ledger recorded when the count was taken, measured against the expected balance at that moment. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
+        }, "Every figure in this table is the server ledger's, except the variance, which is the counted figure minus the expected balance in whole units, the same difference the count screen shows. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under it names the figure the book still holds. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {

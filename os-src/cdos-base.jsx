@@ -809,6 +809,23 @@
   const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
   /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
   const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
+  const roundMinor = (n, places) => window.CDOS.roundMinor(n, places);
+  /* Counted minus expected, each already in whole units. Rounding the
+     raw gap is a different number: 100 against 99.5 yen is balanced,
+     because both whole-unit figures are 100. */
+  const cashVariance = (counted, expected, ccy) => {
+    if (counted == null || expected == null || !isFinite(Number(counted)) || !isFinite(Number(expected))) return null;
+    const places = currencyPlaces(ccy);
+    return roundMinor(roundMinor(Number(counted), places) - roundMinor(Number(expected), places), places);
+  };
+  /* Empty when the stored figure is already on the minor-unit grid.
+     1,000.50 CAD at two places is whole. 99.85 yen is not. */
+  const storedRoundNote = (n, ccy) => {
+    if (n == null || n === '' || !isFinite(Number(n))) return '';
+    const places = currencyPlaces(ccy);
+    if (Math.abs(Number(n) - roundMinor(Number(n), places)) <= 1e-8) return '';
+    return 'Rounded from ' + storedText(n, ccy) + ' ' + ccy + ' stored from older deals. It clears when the ledger is trued up.';
+  };
   const formatPhoneMoney = (n, ccy) => {
     const body = unitText(n, ccy);
     return ccy ? body + ' ' + ccy : body;
@@ -1405,7 +1422,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, cashVariance, storedRoundNote, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */

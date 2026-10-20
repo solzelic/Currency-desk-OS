@@ -17,7 +17,7 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const HKEY = 'cdos_report_history_v1';
   const AKEY = 'cdos_report_access_v1';
-  const { CD, Ic, TYPES, crossRate, perCadLive, fmt, num, formatPhoneMoney, currencyPlaces, storedText, dDiff, dealMargin, CCY,
+  const { CD, Ic, TYPES, crossRate, perCadLive, fmt, num, formatPhoneMoney, currencyPlaces, storedText, unitText, cashVariance, storedRoundNote, dDiff, dealMargin, CCY,
     businessDate, businessDayWindow, reportingLimit, useDeskFacts, deskPack, Absent } = window.CDOS;
   /* The desk's own reporting line, in the desk's own currency. This file
      used to print `THRESHOLD` — a hardcoded 10,000 Canadian dollars — in
@@ -609,12 +609,16 @@
               <div style={{ padding: '10px 16px 14px', fontSize: 11.5, color: CD.faint }}>{held.loading ? 'Reading the ledger…' : `This till has no cash balances on the ledger${held.error ? ' — ' + held.error : ''}. Nothing is printed here rather than a figure from somewhere else.`}</div>
             ) : (<>
             <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>In the drawer</th><th style={{ ...thS, textAlign: 'right' }}>{homeCcy} value</th><th style={{ ...thS, textAlign: 'right' }}>Counted</th><th style={{ ...thS, textAlign: 'right' }}>Variance</th><th style={{ ...thS, textAlign: 'right' }}>In the safe</th></tr></thead>
-              <tbody>{data.cash.map(x => { const off = x.variance != null && Math.abs(x.variance) > 0.005; return (<tr key={x.ccy}>
+              <tbody>{data.cash.map(x => {
+                const shown = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+                const off = shown != null && shown !== 0;
+                const note = storedRoundNote(x.units, x.ccy);
+                return (<tr key={x.ccy}>
                 <td style={tdS}><b>{x.ccy}</b></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : storedText(x.units, x.ccy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)}{note ? <div className="till-stored-note" style={{ color: CD.faint, fontWeight: 400, fontSize: 11, lineHeight: 1.35, marginTop: 2 }}>{note}</div> : null}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : fmt(x.home, homeCcy)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : storedText(x.counted, x.ccy)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: x.variance != null ? 600 : 400, color: x.variance == null ? CD.faint : off ? CD.flag : CD.green }}>{x.variance == null ? '—' : (Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + storedText(x.variance, x.ccy))}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : unitText(x.counted, x.ccy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: shown != null ? 600 : 400, color: shown == null ? CD.faint : off ? CD.flag : CD.green }}>{shown == null ? '—' : (shown === 0 ? '✓ balanced' : (shown > 0 ? '+' : '') + unitText(shown, x.ccy))}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy)}</td>
               </tr>); })}
               {(() => {
@@ -626,7 +630,10 @@
                    says which currencies it could not price. */
                 const counted = data.cash.filter(x => x.counted != null);
                 const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
-                const vParts = counted.map(x => homeEquiv(x.variance == null ? 0 : x.variance, x.ccy, homeCcy));
+                const vParts = counted.map(x => {
+                  const shown = x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+                  return homeEquiv(shown == null ? 0 : shown, x.ccy, homeCcy);
+                });
                 const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
                 const vTot = vParts.length && vParts.every(p => p != null) ? vParts.reduce((s, p) => s + p, 0) : null;
                 const off = vTot != null && Math.abs(vTot) > 0.005;
@@ -645,7 +652,7 @@
                 sheet that belongs to no transaction. The history lives in
                 docs/GENERATED_DOCUMENTS.md and in the comment above. */}
             <div style={{ fontSize: 10.5, color: CD.faint, padding: '8px 16px 2px' }}>
-              Every figure in this table is the server ledger's. <b>In the drawer</b> is this till's own balance — not the branch's, which would also include the safe. <b>Counted</b> and <b>variance</b> are what the ledger recorded when the count was taken, measured against the expected balance at that moment. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. <b>In the safe</b> is shown for information and is never netted into a variance.
+              Every figure in this table is the server ledger's, except the variance, which is the counted figure minus the expected balance in whole units, the same difference the count screen shows. <b>In the drawer</b> is this till's own balance — not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under it names the figure the book still holds. <b>Counted</b> is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. <b>In the safe</b> is shown for information and is never netted into a variance.
             </div>
             </>)}
           </Card>

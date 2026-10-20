@@ -1,4 +1,8 @@
+/* The formatters the screens call, loaded the same way the page loads them:
+   minor-units-format.js, then cdos-base.jsx. A direct require of the helper
+   file stays green if the screen stops using it. */
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,56 +10,110 @@ import { expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const { displayPlaces, roundMinor, unitAmount, moneyAmount } = require(
-  join(root, "os-src/minor-units-format.js"),
-) as {
-  displayPlaces: (code: string, scales: Record<string, number> | null) => number;
-  roundMinor: (n: number, places: number) => number;
-  unitAmount: (n: number | string, code: string, scales: Record<string, number> | null) => string;
-  moneyAmount: (n: number | string, code: string, scales: Record<string, number> | null) => string;
+const babel = require(join(root, "node_modules/@babel/standalone/babel.js")) as {
+  transform: (code: string, opts: { presets: string[]; filename: string }) => { code: string };
 };
 
 const read = (name: string) => readFileSync(join(root, name), "utf8");
 
-it("shows a stored two-place yen figure as whole units", () => {
-  expect(displayPlaces("JPY", { JPY: 0 })).toBe(0);
-  expect(unitAmount("200.80", "JPY", { JPY: 0 })).toBe("201");
-  expect(unitAmount("200.00", "JPY", { JPY: 0 })).toBe("200");
-  expect(unitAmount("200.80", "JPY", null)).toBe("201");
+function screen() {
+  const store = new Map<string, string>();
+  const localStorage = new Proxy(
+    {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => store.set(k, String(v)),
+      removeItem: (k: string) => store.delete(k),
+    },
+    {
+      ownKeys: () => [...store.keys()],
+      getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+    },
+  );
+  const el = () => ({ style: {}, appendChild() {}, setAttribute() {} });
+  const document = {
+    documentElement: { style: {}, setAttribute() {} },
+    head: { appendChild() {} },
+    body: {},
+    createElement: () => el(),
+    getElementById: () => null,
+    addEventListener() {},
+  };
+  const window = {
+    CDOS: {} as Record<string, (...args: never[]) => unknown>,
+    localStorage,
+    document,
+    addEventListener() {},
+    dispatchEvent() {},
+    matchMedia: () => ({ matches: false, addListener() {}, addEventListener() {} }),
+  };
+  const context = vm.createContext({
+    window,
+    document,
+    localStorage,
+    self: window,
+    React: { useState: (v: unknown) => [v, () => {}] },
+    console,
+    Intl,
+    Number,
+    String,
+    Object,
+    Array,
+    Math,
+    JSON,
+    Date,
+    isNaN,
+    isFinite,
+    parseFloat,
+    parseInt,
+    setTimeout,
+    clearTimeout,
+    CustomEvent: class CustomEvent {},
+    navigator: { language: "en-CA" },
+  });
+  vm.runInContext(read("os-src/minor-units-format.js"), context);
+  vm.runInContext(
+    babel.transform(read("os-src/cdos-base.jsx"), { presets: ["react"], filename: "cdos-base.jsx" }).code,
+    context,
+  );
+  return window.CDOS;
+}
+
+const C = screen();
+const till = read("os-src/cdos-till.jsx");
+const reports = read("os-src/cdos-reports.jsx");
+
+it("shows stored yen through the formatter the screens call", () => {
+  expect(C.currencyPlaces("JPY")).toBe(0);
+  expect(C.currencyPlaces("KWD")).toBe(2);
+  expect(C.unitText(99.85, "JPY")).toBe("100");
+  expect(C.unitText(489175.85, "JPY")).toBe("489,176");
 });
 
-it("caps a three-decimal currency at two places", () => {
-  expect(displayPlaces("KWD", { KWD: 3 })).toBe(2);
-  expect(displayPlaces("KWD", null)).toBe(2);
-  expect(unitAmount(1.235, "KWD", { KWD: 3 })).toBe("1.24");
-  expect(unitAmount(1.235, "KWD", null)).toBe("1.24");
+it("keeps the currency mark on home money", () => {
+  expect(C.fmt(200, "CAD")).toBe("$200.00");
+  expect(C.currencyPlaces("CAD")).toBe(2);
 });
 
-it("rounds the till expected figure and the count difference to minor units", () => {
-  expect(unitAmount(99.85, "JPY", { JPY: 0 })).toBe("100");
-  expect(roundMinor(0.15000000002328306, 0)).toBe(0);
-  expect(roundMinor(100 - 99.85, 0)).toBe(0);
-  expect(roundMinor(0.15000000000000568, 2)).toBe(0.15);
-  expect(unitAmount(0.15, "CAD", { CAD: 2 })).toBe("0.15");
+it("subtracts whole-unit expected, and names a stored fraction", () => {
+  expect(C.cashVariance(489176, 489175.85, "JPY")).toBe(0);
+  expect(C.cashVariance(489177, 489175.85, "JPY")).toBe(1);
+  expect(C.cashVariance(100, 99.5, "JPY")).toBe(0);
+  expect(C.cashVariance(100, 99.85, "CAD")).toBe(0.15);
+  expect(C.storedRoundNote(489175.85, "JPY")).toBe(
+    "Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.",
+  );
+  expect(C.storedRoundNote(1000.5, "CAD")).toBe("");
+  expect(C.storedRoundNote(99.85, "JPY")).toContain("99.85 JPY");
 });
 
-it("formats home currency before the scales table loads", () => {
-  expect(displayPlaces("CAD", null)).toBe(2);
-  expect(displayPlaces("INR", null)).toBe(2);
-  expect(displayPlaces("KRW", null)).toBe(0);
-  expect(moneyAmount(200, "CAD", null)).toBe("$200.00");
-});
-
-it("draws the till expected figure and the difference through those places", () => {
-  const till = read("os-src/cdos-till.jsx");
-  const base = read("os-src/cdos-base.jsx");
-  expect(till).toContain("unitText(expectedOf(ccy), ccy)");
-  expect(till).toContain("roundMinor(ccyTotal(ccy) - expectedOf(ccy), currencyPlaces(ccy))");
-  expect(till).toContain("roundMinor(counted - expected, currencyPlaces(c))");
-  expect(till).toContain("unitText(r.expected, r.c)");
-  expect(till).not.toContain("storedText(expectedOf(ccy), ccy)");
-  expect(till).not.toContain("storedText(v, ccy)");
-  expect(base).toContain("displayPlaces(code, _currencies && _currencies.scales)");
-  expect(base).not.toContain("if (!scales) return null");
-  expect(read("CurrencyDesk OS.html")).toContain('src="os-src/minor-units-format.js"');
+it("draws that variance and the stored line on the count, reconcile, and end of day", () => {
+  expect(till).toContain("cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy)");
+  expect(till).toContain("cashVariance(counted, expected, c)");
+  expect(till).toContain("storedRoundNote(expectedOf(ccy), ccy)");
+  expect(till).toContain("storedRoundNote(r.expected, r.c)");
+  expect(till).not.toContain("ccyTotal(ccy) - expectedOf(ccy)");
+  expect(till).not.toContain("counted - expected");
+  expect(reports).toContain("cashVariance(x.counted, x.countedExpected, x.ccy)");
+  expect(reports).toContain("storedRoundNote(x.units, x.ccy)");
+  expect(reports).toContain("unitText(x.units, x.ccy)");
 });
