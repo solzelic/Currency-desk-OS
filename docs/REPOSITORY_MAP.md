@@ -128,10 +128,12 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   `docs/CLIENT_RECORDS.md`, "Accepted IDs, per shop".
 - Migration `048_till_count_stored_expected` adds
   `ledger_till_counts.stored_expected_amount`. It is the unrounded
-  expected, saved next to the variance. Older rows are backfilled from
-  `expected_amount`. The variance itself is counted minus `roundTo` of
-  that expected. The till balance is not rewritten. 047 is the previous
-  file, so this one is 048.
+  expected, saved next to the variance on a new count. Older rows stay
+  NULL. The migration does not backfill them and does not recalculate
+  `variance_amount`. The count row is already append-only, so the field
+  cannot be updated. The variance on a new row is counted minus
+  `roundTo` of that expected. The till balance is not rewritten. 047
+  is the previous file, so this one is 048.
 
 ## Test commands
 

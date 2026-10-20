@@ -84,8 +84,8 @@ async function branchBusinessDate(
 const fixed = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
 /* Expected on the count row is the balance the ledger stored, at two
-   places. The variance subtracts that figure after roundTo, which uses
-   the currency's minor units and half up. A count does not rewrite the
+   places. The variance is counted minus roundTo of that figure. The
+   rounding rule is written on roundTo. A count does not rewrite the
    stored balance. */
 const expectedIn = (value: Decimal.Value) => fixed(value);
 export function recordedVariance(
@@ -138,6 +138,7 @@ export class TillControlService {
     const counts = await client.query(
       `SELECT DISTINCT ON (c.currency)
               c.currency,c.expected_amount,c.counted_amount,c.variance_amount,
+              c.stored_expected_amount,
               b.batch_id,b.count_kind,b.actor_id,b.counted_at
          FROM ledger_till_count_batches b
          JOIN ledger_till_counts c ON c.batch_id=b.batch_id
@@ -160,6 +161,7 @@ export class TillControlService {
             expected: row.expected_amount,
             counted: row.counted_amount,
             variance: row.variance_amount,
+            storedExpected: row.stored_expected_amount,
             actorId: row.actor_id,
             countedAt: new Date(row.counted_at).toISOString(),
           },

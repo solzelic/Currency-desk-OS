@@ -202,6 +202,101 @@ postgres("a till close after the drawer has moved", () => {
     expect(row.rows[0].stored_expected_amount).toBe("489175.85");
     expect(row.rows[0].variance_amount).toBe("1.00");
     expect((await book(teller)).balances.JPY).toBe("489175.85");
+    expect(counted.json().latestCounts.JPY).toMatchObject({
+      expected: "489175.85",
+      counted: "489177.00",
+      variance: "1.00",
+      storedExpected: "489175.85",
+    });
+  });
+
+  it("saves minus one yen when the count is one below the rounded expected", async () => {
+    const teller = await cookie();
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "jpy-489175", counts: { JPY: "489175.00" } },
+    });
+    expect(counted.statusCode, counted.body).toBe(201);
+    const row = await pool.query(
+      `SELECT variance_amount, stored_expected_amount
+         FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].stored_expected_amount).toBe("489175.85");
+    expect(row.rows[0].variance_amount).toBe("-1.00");
+    expect((await book(teller)).balances.JPY).toBe("489175.85");
+    expect(counted.json().latestCounts.JPY.storedExpected).toBe("489175.85");
+    expect(counted.json().latestCounts.JPY.variance).toBe("-1.00");
+  });
+
+  it("refuses an update to the stored expected, and keeps the saved figure", async () => {
+    const teller = await cookie();
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "jpy-write-once", counts: { JPY: "489176.00" } },
+    });
+    expect(counted.statusCode, counted.body).toBe(201);
+    await expect(
+      pool.query(
+        "UPDATE ledger_till_counts SET stored_expected_amount = 0 WHERE currency = 'JPY'",
+      ),
+    ).rejects.toThrow(/append-only/);
+    const row = await pool.query(
+      `SELECT stored_expected_amount, variance_amount
+         FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].stored_expected_amount).toBe("489175.85");
+    expect(row.rows[0].variance_amount).toBe("0.00");
+  });
+
+  it("leaves an old count null and does not recalculate its variance", async () => {
+    await pool.query(
+      "DELETE FROM schema_migrations WHERE migration_id = '048_till_count_stored_expected'",
+    );
+    await pool.query("ALTER TABLE ledger_till_counts DROP COLUMN stored_expected_amount");
+    try {
+      await pool.query(
+        `INSERT INTO ledger_till_count_batches
+          (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+           till_id,count_kind,actor_id,idempotency_key,counted_at)
+         VALUES ('batch-old','session-1',$1,$2,$3,$4,$5,'interim',$1||':a.singh','old-count',now())`,
+        scope,
+      );
+      await pool.query(
+        `INSERT INTO ledger_till_counts
+          (batch_id,currency,expected_amount,counted_amount,variance_amount)
+         VALUES ('batch-old','JPY',99.85,100.00,0.15)`,
+      );
+      await runMigrations(pool);
+      const row = await pool.query(
+        `SELECT stored_expected_amount, variance_amount
+           FROM ledger_till_counts WHERE batch_id = 'batch-old'`,
+      );
+      expect(row.rows[0].stored_expected_amount).toBeNull();
+      expect(row.rows[0].variance_amount).toBe("0.15");
+      const teller = await cookie();
+      const session = await app.inject({
+        method: "GET",
+        url: "/api/ledger/till-session",
+        cookies: teller,
+      });
+      expect(session.statusCode, session.body).toBe(200);
+      expect(session.json().latestCounts.JPY.storedExpected).toBeNull();
+      expect(session.json().latestCounts.JPY.variance).toBe("0.15");
+    } finally {
+      await runMigrations(pool);
+    }
   });
 
   it("keeps a two-decimal variance and still refuses a three-decimal count", async () => {
