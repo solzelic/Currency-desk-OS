@@ -92,11 +92,14 @@ test("an unread book says so, and a read book shows the rounded drawer", async (
   await page.locator('#appbar [data-app="reports"]').click();
   await page.getByText("Period Summary").first().click();
   await page.locator("#cdos-report-doc").waitFor({ state: "visible", timeout: 30_000 });
-  const table = page.locator("#cdos-report-doc table").filter({ hasText: "Paid out" });
+  const table = page.locator("#cdos-report-doc .drawer-movement table");
   const row = table.locator("tr", { hasText: "JPY" });
   await expect(row).toBeVisible({ timeout: 20_000 });
   const text = await row.innerText();
   expect(text).not.toContain("200.8");
   expect(text).not.toContain("200.80");
-  expect(text).toMatch(/200(?!\.\d)/);
+  const cells = row.locator("td");
+  await expect(cells.nth(1)).toHaveText("0");
+  await expect(cells.nth(2)).toHaveText("200");
+  await expect(cells.nth(3)).toHaveText("-200");
 });

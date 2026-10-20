@@ -37834,6 +37834,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   const stamp = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
+  /* A stored timeline stamp is already wall time, like 2026-10-20 09:00.
+     The desk clock is 12-hour unless Settings picked 24-hour. */
+  function timelineWhen(ts, timeFormat) {
+    const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/.exec(String(ts || ''));
+    const clock = window.CDOS && window.CDOS.deskTime;
+    if (!match || typeof clock !== 'function') return ts;
+    const date = new Date(match[1] + 'T' + match[2].padStart(2, '0') + ':' + match[3] + ':00');
+    if (isNaN(date.getTime())) return ts;
+    return match[1] + ' ' + clock(date, timeFormat);
+  }
   const flagOf = c => {
     try {
       return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || '';
@@ -39538,6 +39548,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     me,
     log,
     setTransfers,
+    settings,
     onClose,
     onReceipt
   }) {
@@ -39614,9 +39625,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, Array.isArray(t.receiptLines) && t.receiptLines.length > 0 && /*#__PURE__*/React.createElement("div", {
       "data-ledger-receipt": "1"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] uppercase tracking-widest mb-1",
+      className: "ledger-receipt-label text-[11px] uppercase tracking-widest mb-1",
       style: {
-        color: CD.faint,
+        color: CD.pinNote,
         fontFamily: 'Space Mono, monospace'
       }
     }, "Ledger receipt"), /*#__PURE__*/React.createElement("div", {
@@ -39769,7 +39780,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         style: {
           color: CD.mute
         }
-      }, evt.ts, " \xB7 ", evt.by, evt.note ? ` — ${evt.note}` : '')));
+      }, timelineWhen(evt.ts, settings && settings.timeFormat), " \xB7 ", evt.by, evt.note ? ` — ${evt.note}` : '')));
     })), t.status === 'hold' && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 mt-1 text-[12px] flex items-center gap-1.5",
       style: {
@@ -41344,6 +41355,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       me: me,
       log: log,
       setTransfers: setTransfers,
+      settings: settings,
       onClose: () => setDetailId(null),
       onReceipt: t => printReceipt(t, beneficiaries, corridors, settings, log)
     }));

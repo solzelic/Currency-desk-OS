@@ -452,7 +452,7 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
       </div>
 
       {modal && <TransferModal {...{ rows, setRows, clients, setClients, settings, me, log, corridors, beneficiaries, setBeneficiaries, transfers, setTransfers, serverBacked, onServerPosted: onTillChanged }} onClose={() => setModal(false)} onDone={(id) => { setModal(false); setTab('pipeline'); setDetailId(id); }} />}
-      {detail && <TransferDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} me={me} log={log} setTransfers={setTransfers} onClose={() => setDetailId(null)} onReceipt={(t) => printReceipt(t, beneficiaries, corridors, settings, log)} />}
+      {detail && <TransferDetail t={detail} beneficiaries={beneficiaries} corridors={corridors} me={me} log={log} setTransfers={setTransfers} settings={settings} onClose={() => setDetailId(null)} onReceipt={(t) => printReceipt(t, beneficiaries, corridors, settings, log)} />}
     </div>);
   }
 

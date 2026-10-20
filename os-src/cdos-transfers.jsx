@@ -21,6 +21,16 @@
   const { CD, Ic, fmt, num, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit } = window.CDOS;
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  /* A stored timeline stamp is already wall time, like 2026-10-20 09:00.
+     The desk clock is 12-hour unless Settings picked 24-hour. */
+  function timelineWhen(ts, timeFormat) {
+    const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/.exec(String(ts || ''));
+    const clock = window.CDOS && window.CDOS.deskTime;
+    if (!match || typeof clock !== 'function') return ts;
+    const date = new Date(match[1] + 'T' + match[2].padStart(2, '0') + ':' + match[3] + ':00');
+    if (isNaN(date.getTime())) return ts;
+    return match[1] + ' ' + clock(date, timeFormat);
+  }
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
   const cadOf = (amt, c) => c === 'CAD' ? (+amt || 0) : (+amt || 0) / (crossRate('CAD', c) || 1);
   /* Money as integer cents. The server adds the same figures with
@@ -674,7 +684,7 @@
   }
 
   /* ===================== TRANSFER DETAIL DRAWER ===================== */
-  function TransferDetail({ t, beneficiaries, corridors, me, log, setTransfers, onClose, onReceipt }) {
+  function TransferDetail({ t, beneficiaries, corridors, me, log, setTransfers, settings, onClose, onReceipt }) {
     const ben = beneficiaries.find(b => b.id === t.beneficiaryId);
     const cor = corridors.find(c => c.id === t.corridor) || {};
     const dir = t.direction;
@@ -699,7 +709,7 @@
         <div className="px-5 py-4 space-y-5">
           {Array.isArray(t.receiptLines) && t.receiptLines.length > 0 && (
             <div data-ledger-receipt="1">
-              <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Ledger receipt</div>
+              <div className="ledger-receipt-label text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.pinNote, fontFamily: 'Space Mono, monospace' }}>Ledger receipt</div>
               <div style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, fontFamily: 'Space Mono, ui-monospace, monospace', fontSize: 12, lineHeight: 1.55, color: CD.ink, whiteSpace: 'pre-wrap', padding: '8px 10px' }}>{t.receiptLines.join('\n')}</div>
             </div>
           )}
@@ -738,7 +748,7 @@
                   </div>
                   <div className="pb-3" style={{ marginTop: 1 }}>
                     <div className="text-[13px] font-medium" style={{ color: done ? CD.ink : CD.faint }}>{statusLabel(k, dir)}{cur && <span className="ml-2 text-[10px] px-1.5 py-0.5" style={{ background: STATUS[k].soft, color: STATUS[k].ink, borderRadius: 4, fontFamily: 'Space Mono' }}>NOW</span>}</div>
-                    {evt && <div className="text-[11px]" style={{ color: CD.mute }}>{evt.ts} · {evt.by}{evt.note ? ` — ${evt.note}` : ''}</div>}
+                    {evt && <div className="text-[11px]" style={{ color: CD.mute }}>{timelineWhen(evt.ts, settings && settings.timeFormat)} · {evt.by}{evt.note ? ` — ${evt.note}` : ''}</div>}
                   </div>
                 </div>); })}
             </div>
