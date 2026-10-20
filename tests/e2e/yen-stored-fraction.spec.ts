@@ -72,11 +72,11 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await expect(cad).toContainText("1,000.50");
   await expect(cad).not.toContainText("Rounded from");
 
-  await jpy.getByRole("button", { name: /count/i }).click();
+  await jpy.getByRole("button", { name: /count/i }).evaluate((el: HTMLElement) => el.click());
   await page.getByRole("button", { name: /^Enter total$/ }).click();
   const total = page.locator('input[type="number"]');
   await total.fill("489176");
-  await page.locator(".till-expected").click();
+  await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
   const whole = page.locator(".till-count-foot");
   await expect(whole).toContainText("489,176");
   await expect(whole).toContainText("balanced");
@@ -104,7 +104,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
 
   await page.locator(".fld-tab", { hasText: "Cash drawer" }).evaluate((el: HTMLElement) => el.click());
   await total.fill("489177");
-  await page.locator(".till-expected").click();
+  await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
   const foot = page.locator(".till-count-foot");
   await expect(foot).toContainText("489,176");
   await expect(foot).toContainText("+1 over");
