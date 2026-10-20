@@ -2366,6 +2366,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .fixed.inset-0 .overflow-hidden.till-recon:has(table) table {
     width: 100% !important;
     min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
   }
   .win-body .overflow-hidden.till-recon:has(table) th:nth-child(2),
   .win-body .overflow-hidden.till-recon:has(table) td:nth-child(2),
