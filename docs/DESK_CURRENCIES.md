@@ -115,9 +115,11 @@ note is small and grey under the rate on the sheet, and one line on
 the receipt. It appears only when the rate was rounded. The board
 rate is not the figure next to a payout. The editable field is labeled
 Board rate and keeps its own precision. The payout stays the ledger
-figure. The rate stored on the deal stays 12 places. 100 CAD to
-10,825 JPY shows `1 CAD = 108.2500 JPY` with no note. 3,000.00 CAD to
-2,166.31 USD shows `1 CAD = 0.7221 USD` and the note.
+figure. The rate stored on the deal stays 12 places. 100.00 to 10825
+at zero places is `108.2500` with no note. On the desk, 1,234.5 INR
+stays one decimal, and 100 INR to 1.18 USD shows `1 INR = 0.0118 USD`
+at four places. 3,000.00 CAD to 2,166.31 USD shows `1 CAD = 0.7221 USD`
+and the note.
 
 **Three-decimal currencies are refused, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then
