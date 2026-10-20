@@ -35912,7 +35912,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           to: outCcy,
           inputAmount: window.CDOS.Backend.asMoney(amtN),
           feeCad: window.CDOS.Backend.asMoney(feeN),
-          direction: inCcy === home ? 'customer_buy_foreign' : 'customer_sell_foreign'
+          /* Sell only when the customer is paid in the home currency.
+             Neither side home, such as INR for USD on a CAD desk, is a cross. */
+          direction: inCcy === home ? 'customer_buy_foreign' : outCcy === home ? 'customer_sell_foreign' : 'customer_cross'
         });
         if ((override || lockLive) && Math.abs(Number(quote.customerRate) - rateN) > 0.000000000001) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
