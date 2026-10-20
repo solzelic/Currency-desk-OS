@@ -53075,9 +53075,10 @@ ${snap}`;
           const savedExpected = legacy && x.countedExpected != null ? storedText(x.countedExpected, x.ccy) : '';
           const varianceLabel = shown == null ? '—' : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy);
           /* A count from before the stored-expected column keeps the
-             expected it was saved with, beside the variance it was
-             saved with. The grey line says that, instead of describing
-             a later rounding. */
+             expected it was saved with in the drawer column, in the
+             same ink as any other drawer figure. The variance column
+             shows only the difference that was saved. The grey line
+             says that, instead of describing a later rounding. */
           const legacyNote = 'Counted before whole-yen display. Variance shown as saved then.';
           const note = legacy ? legacyNote : storedRoundNote(x.units, x.ccy);
           const figure = legacy ? '' : storedText(x.units, x.ccy);
@@ -53093,9 +53094,9 @@ ${snap}`;
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
-              color: x.units == null ? CD.faint : CD.ink
+              color: x.units == null && !savedExpected ? CD.faint : CD.ink
             }
-          }, x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, savedExpected ? savedExpected : x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -53117,9 +53118,7 @@ ${snap}`;
               fontWeight: shown != null ? 600 : 400,
               color: shown == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, savedExpected ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
-            className: "till-saved-expected"
-          }, savedExpected), " ", varianceLabel) : varianceLabel), /*#__PURE__*/React.createElement("td", {
+          }, varianceLabel), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',

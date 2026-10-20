@@ -232,6 +232,92 @@ postgres("a till close after the drawer has moved", () => {
     expect(row.rows[0].variance_amount).toBe("0.00");
   });
 
+  it("saves plus one when a close counts 489177", async () => {
+    const manager = await cookie("r.haddad");
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await book(manager);
+    const closed = await close(manager, {
+      idempotencyKey: "close-yen-plus",
+      counts: { ...counted.balances, JPY: "489177.00" },
+      note: "one yen over",
+      balanceGeneration: counted.balanceGeneration,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    const row = await pool.query(
+      `SELECT variance_amount FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].variance_amount).toBe("1.00");
+  });
+
+  it("saves minus one when a close counts 489175", async () => {
+    const manager = await cookie("r.haddad");
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await book(manager);
+    const closed = await close(manager, {
+      idempotencyKey: "close-yen-minus",
+      counts: { ...counted.balances, JPY: "489175.00" },
+      note: "one yen short",
+      balanceGeneration: counted.balanceGeneration,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    const row = await pool.query(
+      `SELECT variance_amount FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].variance_amount).toBe("-1.00");
+  });
+
+  it("saves plus one when a handover counts 489177", async () => {
+    const manager = await cookie("r.haddad");
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await book(manager);
+    const handed = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/handover",
+      cookies: manager,
+      payload: {
+        idempotencyKey: "handover-yen-plus",
+        counts: { ...counted.balances, JPY: "489177.00" },
+      },
+    });
+    expect(handed.statusCode, handed.body).toBe(201);
+    const row = await pool.query(
+      `SELECT variance_amount FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].variance_amount).toBe("1.00");
+  });
+
+  it("saves minus one when a handover counts 489175", async () => {
+    const manager = await cookie("r.haddad");
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await book(manager);
+    const handed = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/handover",
+      cookies: manager,
+      payload: {
+        idempotencyKey: "handover-yen-minus",
+        counts: { ...counted.balances, JPY: "489175.00" },
+      },
+    });
+    expect(handed.statusCode, handed.body).toBe(201);
+    const row = await pool.query(
+      `SELECT variance_amount FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].variance_amount).toBe("-1.00");
+  });
+
   it("saves one yen when the count is one above the rounded expected", async () => {
     const teller = await cookie();
     await pool.query(
