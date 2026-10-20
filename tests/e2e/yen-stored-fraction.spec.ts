@@ -135,7 +135,10 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
   await expect(jpy).toContainText("balanced");
   await expect(jpy).not.toContainText("0.15");
-  await page.setViewportSize({ width: 390, height: 780 });
+  await page.setViewportSize({ width: 1280, height: 780 });
+  await expect(page.locator(".till-recon table")).toBeVisible();
+  await expect(page.locator(".till-recon-list")).toHaveCount(1);
+  await expect(page.locator(".till-recon-list")).toBeHidden();
   const reconFit = await recon.evaluate((table) => {
     const card = table.closest(".till-recon");
     const edge = card ? card.getBoundingClientRect().right : 0;
@@ -150,7 +153,6 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
     expect(header, label).toBeTruthy();
     expect(header!.right).toBeLessThanOrEqual(reconFit.edge + 1);
   }
-  await page.setViewportSize({ width: 1280, height: 780 });
 
   await page.locator(".fld-tab", { hasText: "Cash drawer" }).evaluate((el: HTMLElement) => el.click());
   await total.fill("489177");
@@ -178,7 +180,6 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
   await expect(jpy).toContainText("+1");
   await expect(jpy).not.toContainText("Rounded from");
-  await page.setViewportSize({ width: 360, height: 780 });
   await jpy.scrollIntoViewIfNeeded();
   const reconSpan = await jpy.evaluate((row) => {
     const cells = Array.from(row.querySelectorAll("td"));
