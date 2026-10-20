@@ -2756,10 +2756,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-denom > [data-tour="till-count"] { margin-bottom: 6px !important; }
   .till-chip { flex: none; }
   /* The reconcile close is the last row of its scroller, and that
-     scroller runs under the tab bar. Stick it one bar up, plus 8px,
-     and leave that same space after it so the end of the scroll parks
-     there. The note stays at least 8px above the tab bar. */
-  .till-recon-close { bottom: calc(var(--phone-bar-h) + 8px); }
+     scroller runs under the tab bar. Stick it one bar up, so it stays
+     on screen while the list moves. The pad after it is one bar plus
+     8px, and that extra 8px is the gap. Without the pad the note sits
+     flush on the tab bar once the list is scrolled to the end. */
+  .till-recon-close { bottom: var(--phone-bar-h); }
   .till-recon-dock-pad {
     display: block;
     height: calc(var(--phone-bar-h) + 8px);

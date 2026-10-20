@@ -184,6 +184,8 @@ async function assertCloseClearsDock(page: Page) {
   });
   expect(fit.buttonHits, JSON.stringify(fit)).toBe(false);
   expect(fit.noteHits, JSON.stringify(fit)).toBe(false);
+  /* The 8px is the pad after the close. Sticky only clears the tab
+     bar, so removing that pad leaves the note flush with #phone-dock. */
   expect(fit.gap, JSON.stringify(fit)).toBeGreaterThanOrEqual(8);
 }
 
