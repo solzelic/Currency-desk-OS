@@ -130,7 +130,7 @@ rounds each row to the currency's places and then adds those rows, so
 the rows and the total agree. The till's expected figure is the stored
 balance. Rounding it would hide a real variance.
 
-**Three-decimal currencies are refused, out loud, with the reason.** The
+**Three-decimal currencies are refused on an exchange, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then
 watch every amount quietly lose its third decimal is worse off than one told
 plainly that the ledger does not carry it yet. Widening 47 `numeric(24,2)`
