@@ -17,7 +17,7 @@
   const { useState, useMemo, useEffect, useRef } = React;
   const HKEY = 'cdos_report_history_v1';
   const AKEY = 'cdos_report_access_v1';
-  const { CD, Ic, TYPES, crossRate, perCadLive, fmt, num, dDiff, dealMargin, CCY,
+  const { CD, Ic, TYPES, crossRate, perCadLive, fmt, num, formatPhoneMoney, currencyPlaces, dDiff, dealMargin, CCY,
     businessDate, businessDayWindow, reportingLimit, useDeskFacts, deskPack, Absent } = window.CDOS;
   /* The desk's own reporting line, in the desk's own currency. This file
      used to print `THRESHOLD` — a hardcoded 10,000 Canadian dollars — in
@@ -761,15 +761,16 @@
             <div style={{ padding: '14px 16px 4px' }}><SecTitle>Cash drawer movement · in units</SecTitle></div>
             {!(book && book.movement)
               ? <div style={{ padding: '10px 16px 14px', fontSize: 11.5, color: CD.faint }}>{`The ledger has no answer. ${noBook}.`}</div>
-              : <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>Received (in)</th><th style={{ ...thS, textAlign: 'right' }}>Paid out</th><th style={{ ...thS, textAlign: 'right' }}>Net position</th></tr></thead>
-              <tbody>{book.movement.map(d => { const net = Number(d.net); return (<tr key={d.currency}>
+              : <><p className="drawer-movement-caption" style={{ fontSize: 11, color: CD.pinNote, padding: '0 16px 8px', margin: 0, lineHeight: 1.35 }}>In is cash received. Out is cash paid out. Net is in minus out.</p>
+              <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>In</th><th style={{ ...thS, textAlign: 'right' }}>Out</th><th style={{ ...thS, textAlign: 'right' }}>Net</th></tr></thead>
+              <tbody>{book.movement.map(d => { const net = Number(d.net); const places = currencyPlaces(d.currency); const cell = (amount) => places === 0 ? num(amount) : formatPhoneMoney(amount); return (<tr key={d.currency}>
                 <td style={tdS}><b>{d.currency}</b></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(d.received)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(d.paidOut)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: net >= 0 ? CD.green : CD.flag }}>{net >= 0 ? '+' : ''}{num(d.net)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cell(d.received)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{cell(d.paidOut)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: net >= 0 ? CD.green : CD.flag }}>{net >= 0 ? '+' : ''}{cell(d.net)}</td>
               </tr>); })}
               {book.movement.length === 0 && <tr><td style={tdS} colSpan={4}>No movement in this period.</td></tr>}
-              </tbody></table>}
+              </tbody></table></>}
           </Card>
           <Card>
             <SecTitle>Compliance snapshot</SecTitle>

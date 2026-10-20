@@ -7,6 +7,34 @@ import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
 import type { Page } from "@playwright/test";
 
+function channel(c: number) {
+  const s = c / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastOf(fg: string, bg: string) {
+  const read = (color: string) => {
+    const match = color.match(/rgba?\(([^)]+)\)/);
+    if (!match) throw new Error(color);
+    const [r, g, b, a] = match[1].split(",").map((part) => Number(part.trim()));
+    return { r, g, b, a: a == null ? 1 : a };
+  };
+  const back = read(bg);
+  const front = read(fg);
+  const over = front.a < 1
+    ? {
+        r: front.r * front.a + back.r * (1 - front.a),
+        g: front.g * front.a + back.g * (1 - front.a),
+        b: front.b * front.a + back.b * (1 - front.a),
+      }
+    : front;
+  const lum = (rgb: { r: number; g: number; b: number }) =>
+    0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+  const light = Math.max(lum(over), lum(back));
+  const dark = Math.min(lum(over), lum(back));
+  return (light + 0.05) / (dark + 0.05);
+}
+
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
@@ -102,4 +130,49 @@ test("an unread book says so, and a read book shows the rounded drawer", async (
   await expect(cells.nth(1)).toHaveText("0");
   await expect(cells.nth(2)).toHaveText("200");
   await expect(cells.nth(3)).toHaveText("-200");
+  const cad = table.locator("tr", { hasText: "CAD" });
+  await expect(cad.locator("td").nth(1)).toHaveText("200.00");
+  await expect(cad.locator("td").nth(2)).toHaveText("0.00");
+  await expect(cad.locator("td").nth(3)).toHaveText("+200.00");
+  await expect(table.locator("thead th").nth(1)).toHaveText("In");
+  await expect(table.locator("thead th").nth(2)).toHaveText("Out");
+  await expect(table.locator("thead th").nth(3)).toHaveText("Net");
+  const caption = page.locator(".drawer-movement-caption");
+  await expect(caption).toHaveText("In is cash received. Out is cash paid out. Net is in minus out.");
+  const ink = await caption.evaluate((el) => {
+    const fg = getComputedStyle(el).color;
+    let node: HTMLElement | null = el as HTMLElement;
+    let bg = "rgb(255, 255, 255)";
+    while (node) {
+      const painted = getComputedStyle(node).backgroundColor;
+      if (painted && painted !== "rgba(0, 0, 0, 0)" && painted !== "transparent") {
+        bg = painted;
+        break;
+      }
+      node = node.parentElement;
+    }
+    return { fg, bg };
+  });
+  expect(contrastOf(ink.fg, ink.bg), JSON.stringify(ink)).toBeGreaterThanOrEqual(4.5);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.locator(".drawer-movement").scrollIntoViewIfNeeded();
+  const fit = await page.locator(".drawer-movement").evaluate((card) => {
+    const box = card.getBoundingClientRect();
+    const headers = Array.from(card.querySelectorAll("thead th")).map((th) => {
+      const range = document.createRange();
+      range.selectNodeContents(th);
+      const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+      const right = rects.reduce((max, r) => Math.max(max, r.right), 0);
+      const left = rects.reduce((min, r) => Math.min(min, r.left), box.right);
+      return { text: (th.textContent || "").trim(), left, right };
+    });
+    return { edge: box.right, view: window.innerWidth, headers };
+  });
+  for (const label of ["In", "Out", "Net"]) {
+    const header = fit.headers.find((h) => h.text === label);
+    expect(header, label).toBeTruthy();
+    expect(header!.right, label).toBeLessThanOrEqual(fit.edge + 1);
+    expect(header!.right, label).toBeLessThanOrEqual(fit.view + 1);
+    expect(header!.left, label).toBeGreaterThanOrEqual(0);
+  }
 });

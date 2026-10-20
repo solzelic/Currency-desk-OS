@@ -89,7 +89,10 @@ async function openDetail(page: Page) {
 test("the ledger receipt label clears 4.5:1 and names the beneficiary", async ({ page }) => {
   await openDetail(page);
   const detail = page.locator("[data-ledger-receipt='1']");
-  await expect(detail).toContainText("Beneficiary receives: 10825 JPY");
+  await expect(detail).toContainText("Beneficiary receives: 10,825 JPY");
+  await expect(detail).not.toContainText("10825");
+  const pays = page.getByText("Customer pays", { exact: true }).locator("xpath=..");
+  await expect(pays).toContainText("100.00 CAD");
   await expect(page.getByText("Aya Tanaka · Parent", { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("undefined");
 
@@ -110,4 +113,12 @@ test("the ledger receipt label clears 4.5:1 and names the beneficiary", async ({
   expect(contrastOf(colors.fg, colors.bg)).toBeGreaterThanOrEqual(4.5);
   await expect(page.getByText(/2026-10-20 9:00 am/)).toBeVisible();
   await expect(page.locator("body")).not.toContainText("2026-10-20 09:00");
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Print receipt" }).click();
+  const printed = await popupPromise;
+  await expect(printed.locator("body")).toContainText("Beneficiary receives: 10,825 JPY");
+  await expect(printed.locator("body")).toContainText("100.00 CAD");
+  await expect(printed.locator("body")).toContainText("108.25 JPY/CAD");
+  await expect(printed.locator("body")).not.toContainText("10825");
 });

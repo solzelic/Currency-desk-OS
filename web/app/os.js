@@ -37821,6 +37821,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     Ic,
     fmt,
     num,
+    formatPhoneMoney,
+    currencyPlaces,
     TODAY,
     STAFF,
     CCY,
@@ -37831,6 +37833,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     mkRef,
     reportingLimit
   } = window.CDOS;
+  /* Group a bare whole amount that sits in front of a currency code.
+     num is the desk's own grouping. A figure that already has a decimal
+     keeps the places the book stored. */
+  const groupedReceipt = line => String(line == null ? '' : line).replace(/(\d+(?:\.\d+)?)(\s+)([A-Z]{3})\b/g, (_all, raw, gap, code) => (String(raw).indexOf('.') >= 0 ? raw : num(raw)) + gap + code);
+  const moneyCode = (amount, code) => currencyPlaces(code) === 0 ? `${num(amount)} ${code}` : formatPhoneMoney(amount, code);
   const stamp = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
@@ -39642,7 +39649,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         whiteSpace: 'pre-wrap',
         padding: '8px 10px'
       }
-    }, t.receiptLines.join('\n'))), /*#__PURE__*/React.createElement("div", {
+    }, t.receiptLines.map(groupedReceipt).join('\n'))), /*#__PURE__*/React.createElement("div", {
       className: "p-3 flex items-center justify-between",
       style: {
         background: CD.ink,
@@ -39695,7 +39702,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: dir === 'send' ? 'Customer pays' : 'Amount in',
-      v: `${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`,
+      v: moneyCode(t.payAmt, dir === 'send' ? home : t.ccy),
       mono: true
     }), /*#__PURE__*/React.createElement(DRow, {
       k: "Rate",
@@ -39904,11 +39911,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     Ic,
     fmt,
     num,
+    formatPhoneMoney,
+    currencyPlaces,
     crossRate,
     reportingLimit,
     deskPack,
     businessDate
   } = window.CDOS;
+  const groupedReceipt = line => String(line == null ? '' : line).replace(/(\d+(?:\.\d+)?)(\s+)([A-Z]{3})\b/g, (_all, raw, gap, code) => (String(raw).indexOf('.') >= 0 ? raw : num(raw)) + gap + code);
+  const moneyCode = (amount, code) => !code ? num(amount) : currencyPlaces(code) === 0 ? `${num(amount)} ${code}` : formatPhoneMoney(amount, code);
   /* THE DESK'S OWN MONEY, AND ITS OWN REGULATOR.
       Every figure in this module was labelled CAD. The transfer store keeps
      the local leg of a send in the desk's own currency — which is what
@@ -40688,7 +40699,7 @@ ${threshold == null ? ' No reporting line has been set for this desk, so nothing
 .r{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid #eee}.r .k{color:#777}.grn{color:#1f8a4c;font-weight:700}.big{text-align:center;margin:12px 0}.big .v{font-family:'Archivo';font-weight:800;font-size:26px}
 .ft{margin-top:14px;border-top:1px dashed #ccc;padding-top:10px;font-size:9px;color:#999;text-align:center;line-height:1.5}@page{margin:8mm}</style></head><body>
 <div class="h"><div class="b">${esc(biz)}</div><div class="s">Money transfer receipt</div></div>
-${Array.isArray(t.receiptLines) && t.receiptLines.length ? `<div style="margin:10px 0;padding:8px 0;border-top:1px solid #111;border-bottom:1px solid #111;font-size:12px;line-height:1.55">${t.receiptLines.map(line => `<div>${esc(line)}</div>`).join('')}</div>` : ''}
+${Array.isArray(t.receiptLines) && t.receiptLines.length ? `<div style="margin:10px 0;padding:8px 0;border-top:1px solid #111;border-bottom:1px solid #111;font-size:12px;line-height:1.55">${t.receiptLines.map(line => `<div>${esc(groupedReceipt(line))}</div>`).join('')}</div>` : ''}
 <div class="r"><span class="k">Reference</span><span>${esc(t.ref)}</span></div>
 <div class="r"><span class="k">Date</span><span>${esc(t.date)}</span></div>
 <div class="r"><span class="k">Sender</span><span>${esc(t.senderName)}</span></div>
@@ -40697,8 +40708,8 @@ ${ben ? `<div class="r"><span class="k">Beneficiary</span><span>${esc(ben.name)}
 <div class="r"><span class="k">Payout</span><span>${esc(window.CDOS._transfers.methodLabel(t.method))} · ${esc(t.partner)}</span></div>
 <div class="pin"><div class="l">Tracking PIN</div><div class="v">${esc(t.pin)}</div></div>
 <div class="big"><div style="font-size:10px;color:#777">${t.direction === 'send' ? 'Beneficiary receives' : 'Customer receives'}</div><div class="v grn">${num(t.recvAmt)} ${esc(t.direction === 'send' ? t.ccy : homeCcy() || '')}</div></div>
-<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${num(t.payAmt)} ${esc(t.direction === 'send' ? homeCcy() || '' : t.ccy)}</span></div>
-<div class="r"><span class="k">Rate</span><span>${num(t.rate)}</span></div>
+<div class="r"><span class="k">${t.direction === 'send' ? 'Paid in' : 'Amount in'}</span><span>${esc(moneyCode(t.payAmt, t.direction === 'send' ? homeCcy() || '' : t.ccy))}</span></div>
+<div class="r"><span class="k">Rate</span><span>${esc(num(t.rate))} ${esc(t.direction === 'send' ? t.ccy : homeCcy() || '')}/${esc(t.direction === 'send' ? homeCcy() || '' : t.ccy)}</span></div>
 <div class="r"><span class="k">Fee</span><span>${esc(fmtHome(t.fee))}</span></div>
 <div class="r"><span class="k">Status</span><span>${esc(statusLabel(t.status, t.direction))}</span></div>
 <div class="ft">${esc(settings.receiptDisclaimer || 'Keep this receipt. Funds payable on presentation of the tracking PIN and valid ID.')}</div>
@@ -51524,6 +51535,8 @@ ${snap}`;
     perCadLive,
     fmt,
     num,
+    formatPhoneMoney,
+    currencyPlaces,
     dDiff,
     dealMargin,
     CCY,
@@ -53153,25 +53166,36 @@ ${snap}`;
             fontSize: 11.5,
             color: CD.faint
           }
-        }, `The ledger has no answer. ${noBook}.`) : /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        }, `The ledger has no answer. ${noBook}.`) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+          className: "drawer-movement-caption",
+          style: {
+            fontSize: 11,
+            color: CD.pinNote,
+            padding: '0 16px 8px',
+            margin: 0,
+            lineHeight: 1.35
+          }
+        }, "In is cash received. Out is cash paid out. Net is in minus out."), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
         }, "Currency"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Received (in)"), /*#__PURE__*/React.createElement("th", {
+        }, "In"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Paid out"), /*#__PURE__*/React.createElement("th", {
+        }, "Out"), /*#__PURE__*/React.createElement("th", {
           style: {
             ...thS,
             textAlign: 'right'
           }
-        }, "Net position"))), /*#__PURE__*/React.createElement("tbody", null, book.movement.map(d => {
+        }, "Net"))), /*#__PURE__*/React.createElement("tbody", null, book.movement.map(d => {
           const net = Number(d.net);
+          const places = currencyPlaces(d.currency);
+          const cell = amount => places === 0 ? num(amount) : formatPhoneMoney(amount);
           return /*#__PURE__*/React.createElement("tr", {
             key: d.currency
           }, /*#__PURE__*/React.createElement("td", {
@@ -53182,13 +53206,13 @@ ${snap}`;
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums'
             }
-          }, num(d.received)), /*#__PURE__*/React.createElement("td", {
+          }, cell(d.received)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums'
             }
-          }, num(d.paidOut)), /*#__PURE__*/React.createElement("td", {
+          }, cell(d.paidOut)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -53196,11 +53220,11 @@ ${snap}`;
               fontWeight: 600,
               color: net >= 0 ? CD.green : CD.flag
             }
-          }, net >= 0 ? '+' : '', num(d.net)));
+          }, net >= 0 ? '+' : '', cell(d.net)));
         }), book.movement.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
           style: tdS,
           colSpan: 4
-        }, "No movement in this period."))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Compliance snapshot"), /*#__PURE__*/React.createElement("div", {
+        }, "No movement in this period.")))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SecTitle, null, "Compliance snapshot"), /*#__PURE__*/React.createElement("div", {
           style: {
             display: 'grid',
             gridTemplateColumns: 'repeat(3,1fr)',

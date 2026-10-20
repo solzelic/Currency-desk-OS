@@ -18,7 +18,15 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit } = window.CDOS;
+  const { CD, Ic, fmt, num, formatPhoneMoney, currencyPlaces, TODAY, STAFF, CCY, crossRate, priceDeal, dealMargin, newTx, mkRef, reportingLimit } = window.CDOS;
+  /* Group a bare whole amount that sits in front of a currency code.
+     num is the desk's own grouping. A figure that already has a decimal
+     keeps the places the book stored. */
+  const groupedReceipt = (line) => String(line == null ? '' : line).replace(
+    /(\d+(?:\.\d+)?)(\s+)([A-Z]{3})\b/g,
+    (_all, raw, gap, code) => (String(raw).indexOf('.') >= 0 ? raw : num(raw)) + gap + code,
+  );
+  const moneyCode = (amount, code) => currencyPlaces(code) === 0 ? `${num(amount)} ${code}` : formatPhoneMoney(amount, code);
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   /* A stored timeline stamp is already wall time, like 2026-10-20 09:00.
@@ -710,7 +718,7 @@
           {Array.isArray(t.receiptLines) && t.receiptLines.length > 0 && (
             <div data-ledger-receipt="1">
               <div className="ledger-receipt-label text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.pinNote, fontFamily: 'Space Mono, monospace' }}>Ledger receipt</div>
-              <div style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, fontFamily: 'Space Mono, ui-monospace, monospace', fontSize: 12, lineHeight: 1.55, color: CD.ink, whiteSpace: 'pre-wrap', padding: '8px 10px' }}>{t.receiptLines.join('\n')}</div>
+              <div style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, fontFamily: 'Space Mono, ui-monospace, monospace', fontSize: 12, lineHeight: 1.55, color: CD.ink, whiteSpace: 'pre-wrap', padding: '8px 10px' }}>{t.receiptLines.map(groupedReceipt).join('\n')}</div>
             </div>
           )}
           {/* tracking */}
@@ -729,7 +737,7 @@
             {ben && ben.method === 'bank' && <DRow k="Account" v={`${ben.bank} · ${ben.account}`} mono />}
             {ben && ben.method === 'cash' && <DRow k="Pickup" v={ben.pickupCity} />}
             {ben && ben.method === 'wallet' && <DRow k="Wallet" v={ben.walletId} mono />}
-            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={`${num(t.payAmt)} ${dir === 'send' ? home : t.ccy}`} mono />
+            <DRow k={dir === 'send' ? 'Customer pays' : 'Amount in'} v={moneyCode(t.payAmt, dir === 'send' ? home : t.ccy)} mono />
             <DRow k="Rate" v={`${num(t.rate)} ${dir === 'send' ? t.ccy : home}/${dir === 'send' ? home : t.ccy}`} mono />
             <DRow k="Fee" v={fmt(t.fee, home)} mono />
             <DRow k={dir === 'send' ? 'Beneficiary gets' : 'Customer gets'} v={`${num(t.recvAmt)} ${dir === 'send' ? t.ccy : home}`} mono accent={CD.green} />
