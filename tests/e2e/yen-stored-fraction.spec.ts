@@ -80,6 +80,19 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await expect(foot).toContainText("489,176");
   await expect(foot).toContainText("+1 over");
   await expect(foot).toContainText("Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.");
+  const expectedLine = foot.locator(".till-expected");
+  await expect(expectedLine).toContainText("≈");
+  const approxFollowsNote = await foot.evaluate((el) => {
+    const note = el.querySelector(".till-stored-note");
+    if (!note || !note.parentElement) return false;
+    let n: ChildNode | null = note.nextSibling;
+    while (n) {
+      if ((n.textContent || "").includes("≈")) return true;
+      n = n.nextSibling;
+    }
+    return false;
+  });
+  expect(approxFollowsNote).toBe(false);
 
   await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
   await expect(jpy).toContainText("+1");
@@ -87,7 +100,40 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
 
   await page.locator('#appbar [data-app="reports"]').evaluate((el: HTMLElement) => el.click());
   await page.getByText("End-of-Day Sign-Off").first().click();
-  const eod = page.locator("table").filter({ hasText: "In the drawer" }).locator("tr", { hasText: "JPY" }).first();
+  const eodTable = page.locator("table").filter({ hasText: "In the drawer" });
+  const eod = eodTable.locator("tr", { hasText: "JPY" }).first();
   await expect(eod).toContainText("489,176");
-  await expect(eod).toContainText("Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.");
+  await expect(eod).not.toContainText("Rounded from");
+  const noteRow = eod.locator("xpath=following-sibling::tr[1]");
+  await expect(noteRow).toContainText("Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.");
+
+  await page.setViewportSize({ width: 360, height: 780 });
+  const figure = noteRow.locator(".till-stored-figure");
+  await expect(figure).toBeVisible();
+  const proof = await figure.evaluate((el) => {
+    const texts = Array.from(el.childNodes).filter((n) => n.nodeType === Node.TEXT_NODE && (n.textContent || "").length > 0);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const cell = el.closest("td");
+    const table = el.closest("table");
+    const cols = table ? table.querySelectorAll("thead th").length : 0;
+    return {
+      textNodes: texts.length,
+      text: texts.map((n) => n.textContent || "").join(""),
+      rects: range.getClientRects().length,
+      whiteSpace: getComputedStyle(el).whiteSpace,
+      colspan: cell ? cell.getAttribute("colspan") : "",
+      cols,
+      cellWidth: cell ? Math.round(cell.getBoundingClientRect().width) : 0,
+      tableWidth: table ? Math.round(table.getBoundingClientRect().width) : 0,
+    };
+  });
+  expect(proof.textNodes).toBe(1);
+  expect(proof.text).toBe("489,175.85");
+  expect(proof.rects).toBe(1);
+  expect(proof.whiteSpace).toBe("nowrap");
+  expect(proof.colspan).toBe(String(proof.cols));
+  expect(proof.cols).toBe(6);
+  expect(proof.cellWidth).toBe(proof.tableWidth);
+  expect(proof.cellWidth).toBeGreaterThan(200);
 });

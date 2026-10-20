@@ -1727,6 +1727,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
    phone the till name is already on the line above. */
 .till-statusline > span:first-child::before { content: "· "; }
 
+/* End-of-day sign-off. The stored figure is a row under the currency,
+   across every column. The number stays one piece. The sentence may wrap. */
+.till-stored-row > td {
+  white-space: normal !important;
+  text-align: left;
+  max-width: none;
+  overflow-wrap: normal;
+}
+.till-stored-figure { white-space: nowrap; }
+
 /* ============================================================
    PHONE BOTTOM BAR
    Off at desktop width. At 430px the header and the bar replace
@@ -2325,6 +2335,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     right: 0;
     bottom: 0;
   }
+  /* Reconcile still names the figure inside the Expected cell.
+     The sign-off does not: that row is .till-stored-row, full width. */
   table .till-stored-note {
     display: block;
     white-space: normal;
@@ -2332,6 +2344,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-width: 180px;
     margin-left: auto;
     text-align: right;
+  }
+  table tr.till-stored-row > td {
+    display: table-cell;
+    white-space: normal !important;
+    overflow-wrap: normal;
+    max-width: none;
+    margin-left: 0;
+    text-align: left;
   }
   .win-body .till-count-foot .flex.items-end.justify-between > .flex-none {
     flex: 0 0 auto;

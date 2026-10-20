@@ -1069,9 +1069,9 @@
                     <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{unitText(expectedOf(ccy), ccy)} {ccy}</b>
                     {isCounted(ccy) && (() => { const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy); const off = v !== 0; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
                     <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
+                    {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
                   </button>
                   {storedRoundNote(expectedOf(ccy), ccy) ? <div className="till-stored-note" style={{ color: CD.faint, marginTop: 2, lineHeight: 1.35 }}>{storedRoundNote(expectedOf(ccy), ccy)}</div> : null}
-                  {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
                 </div>
                 <div className="till-counted-when text-[11px] mt-1" style={{ color: CD.faint }}>{(() => { const ts = countedAt[ccy]; return ts ? <span>Last counted <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{sinceLabel(ts)}</b> · {atLabel(ts)}</span> : <span>Not counted yet today</span>; })()}</div>
               </div>

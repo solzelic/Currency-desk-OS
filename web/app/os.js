@@ -16869,14 +16869,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
       c: CD.faint
-    })), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
+    }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
       className: "till-stored-note",
       style: {
         color: CD.faint,
         marginTop: 2,
         lineHeight: 1.35
       }
-    }, storedRoundNote(expectedOf(ccy), ccy)) : null, ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), /*#__PURE__*/React.createElement("div", {
+    }, storedRoundNote(expectedOf(ccy), ccy)) : null), /*#__PURE__*/React.createElement("div", {
       className: "till-counted-when text-[11px] mt-1",
       style: {
         color: CD.faint
@@ -52850,7 +52850,11 @@ ${snap}`;
           const shown = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
           const off = shown != null && shown !== 0;
           const note = storedRoundNote(x.units, x.ccy);
-          return /*#__PURE__*/React.createElement("tr", {
+          const figure = storedText(x.units, x.ccy);
+          const cut = figure ? note.split(figure) : [note];
+          /* The stored figure is the next row, across every column.
+             Inside the drawer cell it wraps, and the number breaks. */
+          return [/*#__PURE__*/React.createElement("tr", {
             key: x.ccy
           }, /*#__PURE__*/React.createElement("td", {
             style: tdS
@@ -52861,16 +52865,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null ? CD.faint : CD.ink
             }
-          }, x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy), note ? /*#__PURE__*/React.createElement("div", {
-            className: "till-stored-note",
-            style: {
-              color: CD.faint,
-              fontWeight: 400,
-              fontSize: 11,
-              lineHeight: 1.35,
-              marginTop: 2
-            }
-          }, note) : null), /*#__PURE__*/React.createElement("td", {
+          }, x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -52899,7 +52894,21 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: CD.mute
             }
-          }, x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy)));
+          }, x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy))), note ? /*#__PURE__*/React.createElement("tr", {
+            key: x.ccy + '-stored',
+            className: "till-stored-row"
+          }, /*#__PURE__*/React.createElement("td", {
+            colSpan: 6,
+            style: {
+              ...tdS,
+              color: CD.faint,
+              fontWeight: 400,
+              fontSize: 11,
+              lineHeight: 1.35
+            }
+          }, cut[0], /*#__PURE__*/React.createElement("span", {
+            className: "till-stored-figure"
+          }, figure), cut.slice(1).join(figure))) : null];
         }), (() => {
           /* The counted and variance totals are only offered in the
              desk's own money when every counted line can BE valued in
@@ -52953,7 +52962,7 @@ ${snap}`;
             color: CD.faint,
             padding: '8px 16px 2px'
           }
-        }, "Every figure in this table is the server ledger's, except the variance, which is the counted figure minus the expected balance in whole units, the same difference the count screen shows. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under it names the figure the book still holds. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
+        }, "Every figure in this table is the server ledger's, except the variance, which is the counted figure minus the expected balance in whole units, the same difference the count screen shows. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {

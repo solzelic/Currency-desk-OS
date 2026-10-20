@@ -124,4 +124,8 @@ it("draws that variance and the stored line on the count, reconcile, and end of 
   expect(reports).toContain("cashVariance(x.counted, x.countedExpected, x.ccy)");
   expect(reports).toContain("storedRoundNote(x.units, x.ccy)");
   expect(reports).toContain("unitText(x.units, x.ccy)");
+  expect(reports).toContain('className="till-stored-row"');
+  expect(reports).toContain('className="till-stored-figure"');
+  expect(reports).toContain("colSpan={6}");
+  expect(till).toContain("· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}");
 });
