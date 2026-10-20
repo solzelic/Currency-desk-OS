@@ -52816,6 +52816,9 @@ ${snap}`;
               counted: record && record.counted != null ? Number(record.counted) : null,
               countedExpected: record && record.expected != null ? Number(record.expected) : null,
               variance: record && record.variance != null ? Number(record.variance) : null,
+              /* null means the column was saved empty. undefined means the
+                 session did not send the field. Those are different rows. */
+              storedExpected: record && Object.prototype.hasOwnProperty.call(record, 'storedExpected') ? record.storedExpected == null ? null : Number(record.storedExpected) : undefined,
               countedAt: record ? record.countedAt : null
             };
           }).filter(x => x.units != null || x.counted != null || x.vaultUnits != null);
@@ -52931,6 +52934,18 @@ ${snap}`;
         const totalCashHome = cashComplete ? drawerRows.reduce((s, x) => s + x.home, 0) : null;
         const unvalued = drawerRows.filter(x => x.home == null).map(x => x.ccy);
         const openRpt = data.reportable.length - data.filed;
+        /* A count that stored its expected shows the whole-unit difference.
+           A count from before that column shows the variance that was saved.
+           100 against 99.85 yen was saved as 0.15. Rounding both sides
+           would call that balanced. */
+        const varianceShown = x => {
+          const whole = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+          const legacy = x.storedExpected === null && x.variance != null && x.counted != null;
+          return {
+            shown: legacy ? x.variance : whole,
+            legacy
+          };
+        };
         /* Earnings by teller, from the book — GET /api/ledger/summary's
            byActor block. This panel used to be summed in the browser and on
            the desk that was audited it named three tellers with money beside
@@ -53052,7 +53067,10 @@ ${snap}`;
             textAlign: 'right'
           }
         }, "In the safe"))), /*#__PURE__*/React.createElement("tbody", null, data.cash.map(x => {
-          const shown = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+          const {
+            shown,
+            legacy
+          } = varianceShown(x);
           const off = shown != null && shown !== 0;
           const note = storedRoundNote(x.units, x.ccy);
           const figure = storedText(x.units, x.ccy);
@@ -53092,7 +53110,7 @@ ${snap}`;
               fontWeight: shown != null ? 600 : 400,
               color: shown == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, shown == null ? '—' : shown === 0 ? '✓ balanced' : (shown > 0 ? '+' : '') + unitText(shown, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, shown == null ? '—' : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -53126,7 +53144,9 @@ ${snap}`;
           const counted = data.cash.filter(x => x.counted != null);
           const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
           const vParts = counted.map(x => {
-            const shown = x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+            const {
+              shown
+            } = varianceShown(x);
             return homeEquiv(shown == null ? 0 : shown, x.ccy, homeCcy);
           });
           const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
@@ -53169,7 +53189,7 @@ ${snap}`;
             color: CD.faint,
             padding: '8px 16px 2px'
           }
-        }, "Every figure in this table is the server ledger's, except the variance, which is the counted figure minus the expected balance in whole units, the same difference the count screen shows. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
+        }, "Every figure in this table is the server ledger's, except the variance. A count that stored its expected shows the counted figure minus the expected balance in whole units, the same difference the count screen shows. A count from before that field shows the variance that was saved. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {

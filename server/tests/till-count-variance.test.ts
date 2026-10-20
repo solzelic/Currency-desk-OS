@@ -38,6 +38,9 @@ it("rounds half a minor unit up, and keeps a whole unit short", () => {
 });
 
 it("matches the variance the count screen draws", () => {
+  expect(Number(recordedVariance("101.00", "100.50", "JPY"))).toBe(
+    shown.cashVariance(101, 100.5, "JPY"),
+  );
   expect(Number(recordedVariance("489176.00", "489175.85", "JPY"))).toBe(
     shown.cashVariance(489176, 489175.85, "JPY"),
   );
@@ -50,4 +53,5 @@ it("matches the variance the count screen draws", () => {
   expect(Number(recordedVariance("489175.00", "489175.85", "JPY"))).toBe(
     shown.cashVariance(489175, 489175.85, "JPY"),
   );
+  expect(shown.cashVariance(101, 100.5, "JPY")).toBe(0);
 });

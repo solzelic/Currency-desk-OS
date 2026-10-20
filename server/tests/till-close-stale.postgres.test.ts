@@ -182,6 +182,56 @@ postgres("a till close after the drawer has moved", () => {
     expect((await book(teller)).balances.JPY).toBe("489175.85");
   });
 
+  it("saves zero when a close counts the rounded yen", async () => {
+    const manager = await cookie("r.haddad");
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await book(manager);
+    const closed = await close(manager, {
+      idempotencyKey: "close-yen-whole",
+      counts: { ...counted.balances, JPY: "489176.00" },
+      note: "yen on the grid",
+      balanceGeneration: counted.balanceGeneration,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    const row = await pool.query(
+      `SELECT variance_amount, stored_expected_amount
+         FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].stored_expected_amount).toBe("489175.85");
+    expect(row.rows[0].variance_amount).toBe("0.00");
+  });
+
+  it("saves zero when a handover counts the rounded yen", async () => {
+    const manager = await cookie("r.haddad");
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
+      scope,
+    );
+    const counted = await book(manager);
+    const handed = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/handover",
+      cookies: manager,
+      payload: {
+        idempotencyKey: "handover-yen-whole",
+        counts: { ...counted.balances, JPY: "489176.00" },
+      },
+    });
+    expect(handed.statusCode, handed.body).toBe(201);
+    const row = await pool.query(
+      `SELECT b.count_kind, c.variance_amount, c.stored_expected_amount
+         FROM ledger_till_counts c
+         JOIN ledger_till_count_batches b ON b.batch_id = c.batch_id
+        WHERE c.currency = 'JPY'`,
+    );
+    expect(row.rows[0].count_kind).toBe("close");
+    expect(row.rows[0].stored_expected_amount).toBe("489175.85");
+    expect(row.rows[0].variance_amount).toBe("0.00");
+  });
+
   it("saves one yen when the count is one above the rounded expected", async () => {
     const teller = await cookie();
     await pool.query(

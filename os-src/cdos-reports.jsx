@@ -462,6 +462,11 @@
               counted: record && record.counted != null ? Number(record.counted) : null,
               countedExpected: record && record.expected != null ? Number(record.expected) : null,
               variance: record && record.variance != null ? Number(record.variance) : null,
+              /* null means the column was saved empty. undefined means the
+                 session did not send the field. Those are different rows. */
+              storedExpected: record && Object.prototype.hasOwnProperty.call(record, 'storedExpected')
+                ? (record.storedExpected == null ? null : Number(record.storedExpected))
+                : undefined,
               countedAt: record ? record.countedAt : null,
             };
           }).filter(x => x.units != null || x.counted != null || x.vaultUnits != null);
@@ -568,6 +573,15 @@
         const totalCashHome = cashComplete ? drawerRows.reduce((s, x) => s + x.home, 0) : null;
         const unvalued = drawerRows.filter(x => x.home == null).map(x => x.ccy);
         const openRpt = data.reportable.length - data.filed;
+        /* A count that stored its expected shows the whole-unit difference.
+           A count from before that column shows the variance that was saved.
+           100 against 99.85 yen was saved as 0.15. Rounding both sides
+           would call that balanced. */
+        const varianceShown = (x) => {
+          const whole = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+          const legacy = x.storedExpected === null && x.variance != null && x.counted != null;
+          return { shown: legacy ? x.variance : whole, legacy };
+        };
         /* Earnings by teller, from the book — GET /api/ledger/summary's
            byActor block. This panel used to be summed in the browser and on
            the desk that was audited it named three tellers with money beside
@@ -610,7 +624,7 @@
             ) : (<>
             <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>In the drawer</th><th style={{ ...thS, textAlign: 'right' }}>{homeCcy} value</th><th style={{ ...thS, textAlign: 'right' }}>Counted</th><th style={{ ...thS, textAlign: 'right' }}>Variance</th><th style={{ ...thS, textAlign: 'right' }}>In the safe</th></tr></thead>
               <tbody>{data.cash.map(x => {
-                const shown = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+                const { shown, legacy } = varianceShown(x);
                 const off = shown != null && shown !== 0;
                 const note = storedRoundNote(x.units, x.ccy);
                 const figure = storedText(x.units, x.ccy);
@@ -622,7 +636,7 @@
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null ? CD.faint : CD.ink }}>{x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : fmt(x.home, homeCcy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : unitText(x.counted, x.ccy)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: shown != null ? 600 : 400, color: shown == null ? CD.faint : off ? CD.flag : CD.green }}>{shown == null ? '—' : (shown === 0 ? '✓ balanced' : (shown > 0 ? '+' : '') + unitText(shown, x.ccy))}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: shown != null ? 600 : 400, color: shown == null ? CD.faint : off ? CD.flag : CD.green }}>{shown == null ? '—' : (shown === 0 ? '✓ balanced' : legacy ? ((shown > 0 ? '+' : '') + Number(shown).toFixed(2)) : ((shown > 0 ? '+' : '') + unitText(shown, x.ccy)))}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy)}</td>
               </tr>,
               note ? <tr key={x.ccy + '-stored'} className="till-stored-row"><td colSpan={6} style={{ ...tdS, color: CD.pinNote, fontWeight: 400, fontSize: 11, lineHeight: 1.35 }}><div className="till-stored-line">{cut[0]}<span className="till-stored-figure">{figure}</span>{cut.slice(1).join(figure)}</div></td></tr> : null]; })}
@@ -636,7 +650,7 @@
                 const counted = data.cash.filter(x => x.counted != null);
                 const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
                 const vParts = counted.map(x => {
-                  const shown = x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+                  const { shown } = varianceShown(x);
                   return homeEquiv(shown == null ? 0 : shown, x.ccy, homeCcy);
                 });
                 const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
@@ -657,7 +671,7 @@
                 sheet that belongs to no transaction. The history lives in
                 docs/GENERATED_DOCUMENTS.md and in the comment above. */}
             <div style={{ fontSize: 10.5, color: CD.faint, padding: '8px 16px 2px' }}>
-              Every figure in this table is the server ledger's, except the variance, which is the counted figure minus the expected balance in whole units, the same difference the count screen shows. <b>In the drawer</b> is this till's own balance — not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. <b>Counted</b> is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. <b>In the safe</b> is shown for information and is never netted into a variance.
+              Every figure in this table is the server ledger's, except the variance. A count that stored its expected shows the counted figure minus the expected balance in whole units, the same difference the count screen shows. A count from before that field shows the variance that was saved. <b>In the drawer</b> is this till's own balance — not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. <b>Counted</b> is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. <b>In the safe</b> is shown for information and is never netted into a variance.
             </div>
             </>)}
           </Card>
