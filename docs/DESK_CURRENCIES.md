@@ -103,7 +103,18 @@ Every amount in this codebase was validated as `\d+(\.\d{1,2})?` and stored
 as `numeric(24,2)`. That is right for most of the world and wrong in both
 directions. `parseMoney` asks the currency: **there is no such thing as
 ¥1,234.56**, and a payout quoted that way is not a rounding nicety, it is a
-figure a teller cannot count out.
+figure a teller cannot count out. Quote terms, an override, and
+booking all round a payout with `roundTo` in that same file, half up
+to the currency's own places, and the spread is what is left of the
+home value after both legs are rounded. An input that is not already
+on that scale is refused in a sentence that names the currency.
+`10000.55` yen is not a yen amount. A stored `10781.00` is, because
+the column reads back two places. The rate stored on the deal stays
+the quote rate at 12 places. Three-decimal rounding still keeps
+three places in `roundTo`. The ledger still does not store those
+currencies. A remittance face amount in one of them is still accepted
+at two decimal places, which is what the column holds, and a third
+decimal is refused. An exchange in that currency is still refused.
 
 The rate beside a payout shows at least four places, and five or six
 only when that rate times the amount is the payout
@@ -112,6 +123,12 @@ only when that rate times the amount is the payout
 The Board rate field keeps its own figure. 100.00 to 10825 at zero
 places is `108.2500`. 100 INR to 1.18 USD is `1 INR = 0.0118 USD`.
 3,000.00 CAD to 2,166.31 USD is `1 CAD = 0.7221 USD` with the note.
+
+
+A closed day's report shows the units that were stored. An open day
+rounds each row to the currency's places and then adds those rows, so
+the rows and the total agree. The till's expected figure is the stored
+balance. Rounding it would hide a real variance.
 
 **Three-decimal currencies are refused, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then

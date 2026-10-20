@@ -69,7 +69,7 @@ import {
   aeDueDiligenceBlocks,
   aePurposeDecision,
 } from "./uae-exchange.js";
-import { assertTradeable } from "./currencies.js";
+import { assertTradeable, fixedIn, parseMoney, roundTo } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -151,17 +151,6 @@ const scope = (actor: LedgerActor) => [
   actor.workspaceId,
   actor.tillId,
 ];
-const decimal = (value: string, min: Decimal.Value) => {
-  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(value))
-    throw new LedgerError("INVALID_REQUEST", "Invalid decimal amount.");
-  const out = new Decimal(value);
-  if (out.lt(min) || out.gt("1000000000"))
-    throw new LedgerError(
-      "INVALID_REQUEST",
-      "Amount outside the permitted range.",
-    );
-  return out.toDecimalPlaces(2);
-};
 const fixed = (value: Decimal, places = 2) =>
   value.toDecimalPlaces(places).toFixed(places);
 
@@ -814,12 +803,12 @@ export class LedgerService {
           "CUSTOMER_NOT_FOUND",
           "Customer is not in the active workspace.",
         );
-      const input = decimal(quote.inputAmount, "0.01"),
-        output = decimal(quote.outputAmount, "0"),
-        fee = decimal(quote.feeCad, "0"),
+      const input = parseMoney(quote.inputAmount, quote.from, "Amount", "0.01"),
+        output = parseMoney(quote.outputAmount, quote.to, "Payout", "0"),
+        fee = parseMoney(quote.feeCad, home, "Fee", "0"),
         mid = new Decimal(quote.marketMid),
         rate = new Decimal(quote.customerRate),
-        spread = decimal(quote.spreadCad, "0");
+        spread = parseMoney(quote.spreadCad, home, "Spread", "0");
       /* Both sides are foreign, so both are inventory and neither rate can
          be inferred. A cross must carry both or there is nothing to value
          it with — and valuing it off one mid would price the pair
@@ -840,8 +829,8 @@ export class LedgerService {
       const toMid = sideMid(quote.to, quote.toMid);
       /* What the deal is worth to the desk, in the currency its book is
          kept in, taken on each side at that side's own rate. */
-      const inputHome = input.mul(fromMid).toDecimalPlaces(2);
-      const outputCad = output.mul(toMid).toDecimalPlaces(2);
+      const inputHome = roundTo(input.mul(fromMid), home);
+      const outputCad = roundTo(output.mul(toMid), home);
       /* Cash for a sale of foreign exchange, India only. The rupee the
          customer pays, not the fee. A purchase is not this check. */
       assertIndiaSaleCash(pack, quote.from, quote.to, input);
@@ -1104,9 +1093,9 @@ export class LedgerService {
             `Receipt ${transactionRef}`,
             `Customer: ${customer.rows[0].name}`,
             `Quote: ${quote.quoteId}`,
-            `Paid exchange: ${fixed(input)} ${quote.from}`,
-            `Fee paid separately: ${home} ${fixed(fee)}`,
-            `Received: ${fixed(output)} ${quote.to}`,
+            `Paid exchange: ${fixedIn(input, quote.from)} ${quote.from}`,
+            `Fee paid separately: ${home} ${fixedIn(fee, home)}`,
+            `Received: ${fixedIn(output, quote.to)} ${quote.to}`,
             ...(serbia.receiptFacts?.side
               ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]
               : []),
@@ -1383,8 +1372,8 @@ export class LedgerService {
           "RATE_NOT_AVAILABLE",
           `This till has no rate for ${!fromRate ? request.from : request.to}.`,
         );
-      const input = decimal(request.inputAmount, "0.01");
-      const fee = decimal(request.feeCad, "0");
+      const input = parseMoney(request.inputAmount, request.from, "Amount", "0.01");
+      const fee = parseMoney(request.feeCad, pack.homeCurrency, "Fee", "0");
       const rate = toRate.div(fromRate).toDecimalPlaces(12);
       // Legacy direct posting has no commercial adjustment. Quote posting
       // supplies frozen customer rate and spread through postFrozenQuote.
@@ -1392,10 +1381,10 @@ export class LedgerService {
          own currency, kept because renaming a column is not free. The
          figure it produces is home currency, whatever the pack says home
          is — which is why it is no longer called `inputCad`. */
-      const inputHome = input.div(fromRate).toDecimalPlaces(2);
-      const output = input.mul(rate).toDecimalPlaces(2);
-      const outputCad = output.div(toRate).toDecimalPlaces(2);
-      const spread = inputHome.sub(outputCad).toDecimalPlaces(2);
+      const inputHome = roundTo(input.div(fromRate), pack.homeCurrency);
+      const output = roundTo(input.mul(rate), request.to);
+      const outputCad = roundTo(output.div(toRate), pack.homeCurrency);
+      const spread = inputHome.sub(outputCad);
       assertIndiaSaleCash(pack, request.from, request.to, input);
       const phValue = await philippinesExchangeGuard(client, pack, {
         from: request.from,
@@ -1519,9 +1508,9 @@ export class LedgerService {
             "CurrencyDesk OS",
             `Receipt ${transactionRef}`,
             `Customer: ${customer.rows[0].name}`,
-            `Paid exchange: ${fixed(input)} ${request.from}`,
+            `Paid exchange: ${fixedIn(input, request.from)} ${request.from}`,
             `Fee paid separately: CAD ${fixed(fee)}`,
-            `Received: ${fixed(output)} ${request.to}`,
+            `Received: ${fixedIn(output, request.to)} ${request.to}`,
             ...(serbia.receiptFacts?.side
               ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]
               : []),

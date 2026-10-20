@@ -174,6 +174,42 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
 
   /* ---------------- remittance — send ---------------- */
 
+  it("still posts a two-decimal remittance in each three-decimal currency", async () => {
+    for (const code of ["JOD", "KWD", "BHD", "OMR", "IQD", "TND", "LYD"]) {
+      const sent = (await service.remittanceSend(teller, {
+        ...send,
+        idempotencyKey: `send-${code}`,
+        reference: `TR-${code}`,
+        payoutCurrency: code,
+        payoutAmount: "10.50",
+      })) as { faceCurrency: string; faceAmount: string; receipt: { lines: string[] } };
+      expect(sent.faceCurrency).toBe(code);
+      expect(sent.faceAmount).toBe("10.50");
+      expect(sent.receipt.lines.join("\n")).toContain(`10.50 ${code}`);
+      const paid = (await service.remittanceReceive(teller, {
+        ...receive,
+        idempotencyKey: `recv-${code}`,
+        reference: `TR-R-${code}`,
+        sentCurrency: code,
+        sentAmount: "10.50",
+      })) as { faceCurrency: string; faceAmount: string; receipt: { lines: string[] } };
+      expect(paid.faceCurrency).toBe(code);
+      expect(paid.faceAmount).toBe("10.50");
+      expect(paid.receipt.lines.join("\n")).toContain(`10.50 ${code}`);
+    }
+  });
+
+  it("still refuses a third decimal on a dinar remittance", async () => {
+    await expect(
+      service.remittanceSend(teller, {
+        ...send,
+        idempotencyKey: "send-kwd-3",
+        payoutCurrency: "KWD",
+        payoutAmount: "1.234",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+  });
+
   it("takes the cash in, books the payout as owed, and claims only the fee", async () => {
     const posted = (await service.remittanceSend(teller, send)) as Record<string, string>;
 

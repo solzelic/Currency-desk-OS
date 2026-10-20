@@ -132,6 +132,30 @@ postgres("a till close after the drawer has moved", () => {
     await reset();
   });
 
+  it("keeps a stored yen fraction in the expected balance and the variance", async () => {
+    const teller = await cookie();
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',99.85)",
+      scope,
+    );
+    const balances = await book(teller);
+    expect(balances.balances.JPY).toBe("99.85");
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "jpy-fraction", counts: { JPY: "100.00" } },
+    });
+    expect(counted.statusCode).toBe(201);
+    const row = await pool.query(
+      `SELECT expected_amount, counted_amount, variance_amount
+         FROM ledger_till_counts WHERE currency = 'JPY'`,
+    );
+    expect(row.rows[0].expected_amount).toBe("99.85");
+    expect(row.rows[0].counted_amount).toBe("100.00");
+    expect(row.rows[0].variance_amount).toBe("0.15");
+  });
+
   it("refuses a till close when money moved after the count", async () => {
     const teller = await cookie();
     const manager = await cookie("r.haddad");
