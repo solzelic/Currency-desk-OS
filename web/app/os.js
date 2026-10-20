@@ -14682,8 +14682,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }
   };
   /* No currency carries its own unit word. The last word of the name
-     is the one the phone chip speaks: Japanese Yen is "yen". These
-     units do not take an English plural. */
+     is the one the phone chip speaks: Japanese Yen is "yen", and
+     Kuwaiti Dinar is "dinar". Yen, won, yuan, baht, and rand do not
+     take an English plural. Krone, krona, and real do not take an -s. */
   const UNIT_UNCHANGED = {
     yen: 1,
     won: 1,
@@ -14691,9 +14692,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     baht: 1,
     rand: 1
   };
+  const UNIT_PLURAL = {
+    krone: 'kroner',
+    krona: 'kronor',
+    real: 'reais'
+  };
   const unitWord = (c, n) => {
     const last = (nameOf(c).split(' ').pop() || c).toLowerCase();
     if (Math.abs(Number(n)) === 1 || UNIT_UNCHANGED[last]) return last;
+    if (UNIT_PLURAL[last]) return UNIT_PLURAL[last];
     return last + 's';
   };
   const phoneRoundNote = (n, ccy) => storedRoundNote(n, ccy) ? 'Expected is rounded from ' + storedText(n, ccy) + ' from older deals.' : '';

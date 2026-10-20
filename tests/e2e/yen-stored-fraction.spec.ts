@@ -176,6 +176,7 @@ async function assertCloseClearsDock(page: Page) {
       note,
       buttonHits: overlap(button, dock),
       noteHits: overlap(note, dock),
+      gap: dock && note ? dock.top - note.bottom : null,
     };
     before.remove();
     scroller.scrollTop = 0;
@@ -183,8 +184,7 @@ async function assertCloseClearsDock(page: Page) {
   });
   expect(fit.buttonHits, JSON.stringify(fit)).toBe(false);
   expect(fit.noteHits, JSON.stringify(fit)).toBe(false);
-  expect(fit.button && fit.dock && fit.button.bottom <= fit.dock.top + 1, JSON.stringify(fit)).toBe(true);
-  expect(fit.note && fit.dock && fit.note.bottom <= fit.dock.top + 1, JSON.stringify(fit)).toBe(true);
+  expect(fit.gap, JSON.stringify(fit)).toBeGreaterThanOrEqual(8);
 }
 
 /* The pinned dock covers the bottom of the list until the teller
@@ -529,9 +529,10 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   expect(await refused).toBe(false);
   await expect(page.getByText("Review each drawer against expected")).toHaveCount(0);
   await assertNoteClearsClose(page);
-  await assertCloseClearsDock(page);
-  await page.setViewportSize({ width: 430, height: 780 });
-  await assertCloseClearsDock(page);
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 780 });
+    await assertCloseClearsDock(page);
+  }
   await page.setViewportSize({ width: 360, height: 780 });
 
   await cadCount.evaluate((el: HTMLElement) => el.click());
@@ -697,6 +698,69 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
       expect(lineFit!.rects.length).toBeGreaterThan(0);
       expect(lineFit!.inside, JSON.stringify(lineFit)).toBe(true);
     }
+  }
+});
+
+test("a phone chip says dinar, kroner, kronor, and reais", async ({ page }) => {
+  const ws = "ws-unit-words";
+  const till = "till-unit-words";
+  await pool.query(
+    `INSERT INTO workspaces (id,tenant_id,legal_entity_id,branch_id,till_id)
+     VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+    [ws, TENANT, ENTITY, BRANCH, till],
+  );
+  for (const [currency, amount] of [
+    ["KWD", "10.00"],
+    ["DKK", "100.00"],
+    ["NOK", "100.00"],
+    ["SEK", "100.00"],
+    ["BRL", "100.00"],
+  ] as const) {
+    await pool.query(
+      `INSERT INTO ledger_till_balances
+        (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency)
+       DO UPDATE SET available_amount = EXCLUDED.available_amount`,
+      [TENANT, ENTITY, BRANCH, ws, till, currency, amount],
+    );
+  }
+  await pool.query(
+    `INSERT INTO ledger_till_sessions
+      (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+       session_number,business_date,status,opened_by,opened_at)
+     VALUES ('session-unit-words',$1,$2,$3,$4,$5,8,current_date,'open',$1||':j.masri',now())
+     ON CONFLICT (session_id) DO NOTHING`,
+    [TENANT, ENTITY, BRANCH, ws, till],
+  );
+  await signInAtDesk(page, "j.masri");
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await page.locator('#appbar [data-app="till"]').click();
+  await expect(page.getByRole("button", { name: /Reconcile & close/i }).first()).toBeVisible({ timeout: 45_000 });
+  const switcher = page.locator('xpath=//button[@title="Switch till at this location" and not(ancestor::*[@id="tenantbar"])]');
+  await switcher.click();
+  await page.getByRole("button", { name: till }).click();
+  await page.getByRole("button", { name: /Switch till|Take over till/i }).last().click();
+  await expect(page.getByText(new RegExp("ledger till\\s+" + till)).first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: /Reconcile & close/i }).first().click();
+  await page.setViewportSize({ width: 360, height: 780 });
+
+  const counted = [
+    ["KWD", "11.00", "1.00 dinar over"],
+    ["DKK", "102", "2.00 kroner over"],
+    ["NOK", "102", "2.00 kroner over"],
+    ["SEK", "102", "2.00 kronor over"],
+    ["BRL", "102", "2.00 reais over"],
+  ] as const;
+  for (const [code, amount, chip] of counted) {
+    const card = page.locator(".till-recon-item").filter({ hasText: code }).first();
+    await card.getByRole("button", { name: "Count" }).evaluate((el: HTMLElement) => el.click());
+    await page.getByRole("button", { name: /^Enter total$/ }).click();
+    await page.locator('input[placeholder="0.00"]').fill(amount);
+    await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
+    await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
+    await expect(card.locator(".till-recon-chip")).toHaveText(chip);
   }
 });
 

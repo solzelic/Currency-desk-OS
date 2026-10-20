@@ -2756,12 +2756,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-denom > [data-tour="till-count"] { margin-bottom: 6px !important; }
   .till-chip { flex: none; }
   /* The reconcile close is the last row of its scroller, and that
-     scroller runs under the tab bar. Stick it one bar up, and leave
-     a bar of space after it so the end of the scroll parks there. */
-  .till-recon-close { bottom: var(--phone-bar-h); }
+     scroller runs under the tab bar. Stick it one bar up, plus 8px,
+     and leave that same space after it so the end of the scroll parks
+     there. The note stays at least 8px above the tab bar. */
+  .till-recon-close { bottom: calc(var(--phone-bar-h) + 8px); }
   .till-recon-dock-pad {
     display: block;
-    height: var(--phone-bar-h);
+    height: calc(var(--phone-bar-h) + 8px);
     flex: none;
   }
   .till-count-foot {
