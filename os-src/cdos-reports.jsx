@@ -402,15 +402,13 @@
       const inP = rows.filter(r => inWindow(r.date) && matchesScope(r));
       const live = inP.filter(r => r.status !== 'void');
       let vol = 0, fees = 0, spread = 0;
-      const byCcy = {}, byType = {}, feeTeller = {}, feeType = {}, drawerIn = {}, drawerOut = {};
+      const byCcy = {}, byType = {}, feeTeller = {}, feeType = {};
       live.forEach(r => {
         const v = homeEquiv(r.inAmt, r.inCcy, homeCcy), fee = +r.fee || 0, sp = spreadOf(r);
         vol += (v || 0); fees += fee; spread += sp;
         if (v != null) { byCcy[r.inCcy] = (byCcy[r.inCcy] || 0) + v; byType[r.type] = (byType[r.type] || 0) + v; }
         feeTeller[r.teller] = (feeTeller[r.teller] || 0) + fee + sp;
         feeType[r.type] = (feeType[r.type] || 0) + fee + sp;
-        drawerIn[r.inCcy] = (drawerIn[r.inCcy] || 0) + (+r.inAmt || 0);
-        drawerOut[r.outCcy] = (drawerOut[r.outCcy] || 0) + (+r.outAmt || 0);
       });
       const reportable = live.filter(r => (flags[r.id] || {}).single);
       const stru = []; const seen = new Set();
@@ -418,15 +416,12 @@
       const kycGaps = []; const seenK = new Set();
       live.forEach(r => { const f = flags[r.id] || {}; if (f.kyc && f.kyc !== 'ok' && f.idNeeded && !seenK.has(r.customer)) { seenK.add(r.customer); kycGaps.push({ customer: r.customer, issue: f.kyc }); } });
       const sortE = o => Object.entries(o).sort((a, b) => b[1] - a[1]);
-      const ccySet = Array.from(new Set([...Object.keys(drawerIn), ...Object.keys(drawerOut)]));
-      const drawer = ccySet.map(c => ({ ccy: c, inA: drawerIn[c] || 0, outA: drawerOut[c] || 0, net: (drawerIn[c] || 0) - (drawerOut[c] || 0) }))
-        .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
       const perTx = live.map(r => ({ r, fee: +r.fee || 0, sp: spreadOf(r), vol: homeEquiv(r.inAmt, r.inCcy, homeCcy) }))
         .map(o => ({ ...o, earned: o.fee + o.sp })).sort((a, b) => b.earned - a.earned);
       return {
         inP, live, vol, fees, spread, rev: fees + spread, n: live.length,
         byCcy: sortE(byCcy), byType: sortE(byType), feeTeller: sortE(feeTeller), feeType: sortE(feeType),
-        reportable, stru, kycGaps, drawer, perTx,
+        reportable, stru, kycGaps, perTx,
         filed: reportable.filter(r => r.filed).length,
         /* CASH ON HAND AT CLOSE — the drawer, and the count of the drawer.
 
@@ -759,20 +754,19 @@
             <Card><SecTitle>Volume by transaction type</SecTitle><Bars data={data.byType} fmtV={v => fmt(v, homeCcy)} /></Card>
           </Cols>
           <Card pad={0}>
-            {/* Units in and units out, not a home valuation — these are
-                counts of notes that crossed the counter and they are exact.
-                The home-currency headline above is the ledger's; this table
-                deliberately does not restate it at a rate. */}
+            {/* The book rounds each open-day leg, then adds. A closed day stays stored. */}
             <div style={{ padding: '14px 16px 4px' }}><SecTitle>Cash drawer movement · in units</SecTitle></div>
-            <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>Received (in)</th><th style={{ ...thS, textAlign: 'right' }}>Paid out</th><th style={{ ...thS, textAlign: 'right' }}>Net position</th></tr></thead>
-              <tbody>{data.drawer.map(d => (<tr key={d.ccy}>
-                <td style={tdS}><b>{d.ccy}</b></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(d.inA)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(d.outA)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: d.net >= 0 ? CD.green : CD.flag }}>{d.net >= 0 ? '+' : ''}{num(d.net)}</td>
-              </tr>))}
-              {data.drawer.length === 0 && <tr><td style={tdS} colSpan={4}>No movement in this period.</td></tr>}
-              </tbody></table>
+            {!(book && book.movement)
+              ? <div style={{ padding: '10px 16px 14px', fontSize: 11.5, color: CD.faint }}>{`The ledger has no answer. ${noBook}.`}</div>
+              : <table><thead><tr><th style={thS}>Currency</th><th style={{ ...thS, textAlign: 'right' }}>Received (in)</th><th style={{ ...thS, textAlign: 'right' }}>Paid out</th><th style={{ ...thS, textAlign: 'right' }}>Net position</th></tr></thead>
+              <tbody>{book.movement.map(d => { const net = Number(d.net); return (<tr key={d.currency}>
+                <td style={tdS}><b>{d.currency}</b></td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(d.received)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{num(d.paidOut)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: net >= 0 ? CD.green : CD.flag }}>{net >= 0 ? '+' : ''}{num(d.net)}</td>
+              </tr>); })}
+              {book.movement.length === 0 && <tr><td style={tdS} colSpan={4}>No movement in this period.</td></tr>}
+              </tbody></table>}
           </Card>
           <Card>
             <SecTitle>Compliance snapshot</SecTitle>
