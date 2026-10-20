@@ -2310,15 +2310,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     align-items: flex-end;
     column-gap: 10px;
   }
-  /* Expected, and the stored-fraction line under it, sit on their own
-     row. Save count stays on the counted row and cannot cover them. */
-  .win-body .till-count-foot .till-count-row {
+  /* A stored fraction names itself under Expected. That line sits in
+     its own band so Save count cannot cover it. A plain count keeps
+     Expected in the flow: pulling it out and padding the panel hid a
+     denomination row at 360. */
+  .win-body .till-count-foot .till-count-row:has(.till-stored-note) {
     position: relative;
     flex-wrap: wrap !important;
+    padding-bottom: 78px;
   }
-  .win-body .till-count-foot .till-count-row:has(.till-stored-note) { padding-bottom: 78px; }
-  .win-body .till-count-foot .till-count-row:not(:has(.till-stored-note)) { padding-bottom: 28px; }
-  .till-expected-wrap {
+  .win-body .till-count-foot .till-count-row:has(.till-stored-note) .till-expected-wrap {
     position: absolute;
     left: 0;
     right: 0;

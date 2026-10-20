@@ -64,8 +64,9 @@ async function openTill(page: Page) {
 test("a stored yen fraction is named, a whole cad figure is not, and a real gap still shows", async ({ page }) => {
   await openTill(page);
   await page.getByRole("button", { name: /Reconcile & close/i }).first().click();
-  const jpy = page.locator("tr").filter({ hasText: "JPY" }).first();
-  const cad = page.locator("tr").filter({ hasText: "CAD" }).first();
+  const recon = page.locator("table").filter({ hasText: "Expected" });
+  const jpy = recon.locator("tr").filter({ hasText: "JPY" }).first();
+  const cad = recon.locator("tr").filter({ hasText: "CAD" }).first();
   await expect(jpy).toContainText("489,176");
   await expect(jpy).toContainText("Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.");
   await expect(cad).toContainText("1,000.50");
