@@ -127,10 +127,11 @@ places is `108.2500`. 100 INR to 1.18 USD is `1 INR = 0.0118 USD`.
 
 A closed day's report shows the units that were stored. An open day
 rounds each row to the currency's places and then adds those rows, so
-the rows and the total agree. The till's expected figure is the stored
-balance. Rounding it would hide a real variance. The screen reads
-places from this table once the desk has loaded it, and it does not
-guess a scale before that.
+the rows and the total agree. The count screen shows the till's
+expected figure in minor units, so 99.85 yen reads 100, and it rounds
+the difference the same way. The book still stores 99.85. Before the
+scales table loads, and if that load fails, the screen uses the ISO
+minor units, and it never shows a third decimal.
 
 **Three-decimal currencies are refused on an exchange, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then

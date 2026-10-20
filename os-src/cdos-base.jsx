@@ -503,15 +503,12 @@
      ============================================================ */
   let _currencies = null;
   const deskCurrencies = () => _currencies;
-  /** How many decimal places this currency is paid in.
-      Null until the server table has loaded. Two once it has, unless
-      the table names the code. Nothing here asks the browser. */
-  const currencyPlaces = (code) => {
-    const scales = _currencies && _currencies.scales;
-    if (!scales) return null;
-    const c = String(code || '').toUpperCase();
-    return Object.prototype.hasOwnProperty.call(scales, c) ? scales[c] : 2;
-  };
+  /** How many decimal places this currency is shown with.
+      The server scales table wins once it has loaded. Before that,
+      and when the load fails, ISO minor units apply. Never more than
+      two: the ledger stores two. */
+  const displayPlaces = window.CDOS.displayPlaces;
+  const currencyPlaces = (code) => displayPlaces(code, _currencies && _currencies.scales);
   const fractionDigitsHeld = (n) => {
     const text = String(n);
     const dot = text.indexOf('.');
@@ -519,9 +516,9 @@
     const frac = text.slice(dot + 1).replace(/[^0-9].*$/, '');
     return frac.length;
   };
-  /* known places, or the digits the figure already holds when the
-     table has not loaded. keepStored shows a balance that is not on
-     those places, so 99.85 yen is not drawn as 100. */
+  /* Places from currencyPlaces. keepStored shows a balance that is
+     not on those places, so a report can still read 99.85 yen back.
+     A new figure does not keep those digits. */
   const digitsFor = (n, ccy, keepStored) => {
     const known = currencyPlaces(ccy);
     const held = fractionDigitsHeld(n);
@@ -804,16 +801,13 @@
   const fmt = (n, c) => {
     if (n == null || n === '' || isNaN(n)) return '';
     const code = c || 'CAD';
-    const known = currencyPlaces(code);
     const digits = digitsFor(n, code, false);
-    if (known == null) return formatDigits(n, digits);
     return new Intl.NumberFormat('en-CA', { style: 'currency', currency: code, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n));
   };
   const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
-  /* Grouped digits in the currency's own places. Display only.
-     Before the table loads, the digits already on the figure. */
+  /* Grouped digits in the currency's own places. 99.85 yen is 100. */
   const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
-  /* A stored balance. Extra places stay, so a variance is not rounded away. */
+  /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
   const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
   const formatPhoneMoney = (n, ccy) => {
     const body = unitText(n, ccy);

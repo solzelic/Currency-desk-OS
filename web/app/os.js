@@ -142,6 +142,69 @@
 });
 
 
+/* ---- os-src/minor-units-format.js ---- */
+/* Screen places for a currency. ISO minor units when the server table
+   has not loaded, then never more than two: the ledger stores two.
+   The exception list matches server/src/ledger/currencies.ts. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CDOS = Object.assign(root.CDOS || {}, api);
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  var ISO = {
+    BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
+    PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+    BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  };
+
+  function displayPlaces(code, scales) {
+    var c = String(code || "").toUpperCase();
+    var places = 2;
+    if (scales && Object.prototype.hasOwnProperty.call(scales, c) && typeof scales[c] === "number") {
+      places = scales[c];
+    } else if (Object.prototype.hasOwnProperty.call(ISO, c)) {
+      places = ISO[c];
+    }
+    if (typeof places !== "number" || !isFinite(places)) places = 2;
+    if (places > 2) places = 2;
+    if (places < 0) places = 0;
+    return places;
+  }
+
+  /* Half up, in the places the screen will actually draw. */
+  function roundMinor(n, places) {
+    var p = places;
+    if (typeof p !== "number" || !isFinite(p)) p = 2;
+    if (p > 2) p = 2;
+    if (p < 0) p = 0;
+    var value = Number(Number(n).toFixed(p));
+    return Object.is(value, -0) ? 0 : value;
+  }
+
+  function unitAmount(n, code, scales) {
+    var places = displayPlaces(code, scales);
+    return new Intl.NumberFormat("en-CA", {
+      minimumFractionDigits: places,
+      maximumFractionDigits: places,
+    }).format(roundMinor(n, places));
+  }
+
+  function moneyAmount(n, code, scales) {
+    if (n == null || n === "" || isNaN(n)) return "";
+    var places = displayPlaces(code, scales);
+    var ccy = code || "CAD";
+    return new Intl.NumberFormat("en-CA", {
+      style: "currency",
+      currency: ccy,
+      minimumFractionDigits: places,
+      maximumFractionDigits: places,
+    }).format(roundMinor(n, places));
+  }
+
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+});
+
+
 /* ---- os-src/cdos-base.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — base layer
@@ -744,15 +807,12 @@
      ============================================================ */
   let _currencies = null;
   const deskCurrencies = () => _currencies;
-  /** How many decimal places this currency is paid in.
-      Null until the server table has loaded. Two once it has, unless
-      the table names the code. Nothing here asks the browser. */
-  const currencyPlaces = code => {
-    const scales = _currencies && _currencies.scales;
-    if (!scales) return null;
-    const c = String(code || '').toUpperCase();
-    return Object.prototype.hasOwnProperty.call(scales, c) ? scales[c] : 2;
-  };
+  /** How many decimal places this currency is shown with.
+      The server scales table wins once it has loaded. Before that,
+      and when the load fails, ISO minor units apply. Never more than
+      two: the ledger stores two. */
+  const displayPlaces = window.CDOS.displayPlaces;
+  const currencyPlaces = code => displayPlaces(code, _currencies && _currencies.scales);
   const fractionDigitsHeld = n => {
     const text = String(n);
     const dot = text.indexOf('.');
@@ -760,9 +820,9 @@
     const frac = text.slice(dot + 1).replace(/[^0-9].*$/, '');
     return frac.length;
   };
-  /* known places, or the digits the figure already holds when the
-     table has not loaded. keepStored shows a balance that is not on
-     those places, so 99.85 yen is not drawn as 100. */
+  /* Places from currencyPlaces. keepStored shows a balance that is
+     not on those places, so a report can still read 99.85 yen back.
+     A new figure does not keep those digits. */
   const digitsFor = (n, ccy, keepStored) => {
     const known = currencyPlaces(ccy);
     const held = fractionDigitsHeld(n);
@@ -1139,9 +1199,7 @@
   const fmt = (n, c) => {
     if (n == null || n === '' || isNaN(n)) return '';
     const code = c || 'CAD';
-    const known = currencyPlaces(code);
     const digits = digitsFor(n, code, false);
-    if (known == null) return formatDigits(n, digits);
     return new Intl.NumberFormat('en-CA', {
       style: 'currency',
       currency: code,
@@ -1152,10 +1210,9 @@
   const num = n => new Intl.NumberFormat('en-CA', {
     maximumFractionDigits: 2
   }).format(Number(n) || 0);
-  /* Grouped digits in the currency's own places. Display only.
-     Before the table loads, the digits already on the figure. */
+  /* Grouped digits in the currency's own places. 99.85 yen is 100. */
   const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
-  /* A stored balance. Extra places stay, so a variance is not rounded away. */
+  /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
   const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
   const formatPhoneMoney = (n, ccy) => {
     const body = unitText(n, ccy);
@@ -14570,6 +14627,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     num,
     unitText,
     storedText,
+    roundMinor,
+    currencyPlaces,
     crossRate,
     perCadLive,
     dDiff,
@@ -15837,7 +15896,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const recon = reconCcys.map(c => {
       const expected = expectedOf(c);
       const counted = countedCcys.includes(c) ? ccyTotal(c) : null;
-      const variance = counted == null ? null : counted - expected;
+      const variance = counted == null ? null : roundMinor(counted - expected, currencyPlaces(c));
       return {
         c,
         expected,
@@ -16771,9 +16830,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         transition: 'filter .15s',
         userSelect: 'none'
       }
-    }, storedText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
-      const v = ccyTotal(ccy) - expectedOf(ccy);
-      const off = Math.abs(v) >= 0.005;
+    }, unitText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
+      const v = roundMinor(ccyTotal(ccy) - expectedOf(ccy), currencyPlaces(ccy));
+      const off = v !== 0;
       return /*#__PURE__*/React.createElement("b", {
         style: {
           color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
@@ -16782,7 +16841,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           transition: 'filter .15s',
           userSelect: 'none'
         }
-      }, off ? `${v > 0 ? '+' : ''}${storedText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
+      }, off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
     })(), /*#__PURE__*/React.createElement(Ic, {
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
@@ -17112,7 +17171,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.expected == null ? CD.faint : CD.ink
         }
-      }, r.expected == null ? '—' : num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? '—' : unitText(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           color: ls ? CD.mute : CD.faint
@@ -17151,7 +17210,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
