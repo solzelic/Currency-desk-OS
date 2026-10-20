@@ -166,5 +166,29 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
     expect(proof.cols).toBe(6);
     expect(proof.cellWidth).toBe(proof.tableWidth);
     expect(proof.cellWidth).toBeGreaterThan(200);
+    if (width === 360 || width === 390) {
+      const lineFit = await noteRow.evaluate((row) => {
+        const line = row.querySelector(".till-stored-line");
+        const card = row.closest(".report-scroll") || row.closest("#cdos-report-doc");
+        if (!line || !card) return null;
+        const box = card.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(line);
+        const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+        return {
+          text: line.textContent || "",
+          rects: rects.map((r) => ({ left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) })),
+          cardLeft: Math.round(box.left),
+          cardRight: Math.round(box.right),
+          cardWidth: Math.round(box.width),
+          lineWidth: Math.round(line.getBoundingClientRect().width),
+          inside: rects.every((r) => r.left >= box.left - 1 && r.right <= box.right + 1),
+        };
+      });
+      expect(lineFit, "stored line").toBeTruthy();
+      expect(lineFit!.text).toContain("It clears when the ledger is trued up.");
+      expect(lineFit!.rects.length).toBeGreaterThan(0);
+      expect(lineFit!.inside, JSON.stringify(lineFit)).toBe(true);
+    }
   }
 });

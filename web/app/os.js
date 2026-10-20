@@ -52908,9 +52908,11 @@ ${snap}`;
               fontSize: 11,
               lineHeight: 1.35
             }
+          }, /*#__PURE__*/React.createElement("div", {
+            className: "till-stored-line"
           }, cut[0], /*#__PURE__*/React.createElement("span", {
             className: "till-stored-figure"
-          }, figure), cut.slice(1).join(figure))) : null];
+          }, figure), cut.slice(1).join(figure)))) : null];
         }), (() => {
           /* The counted and variance totals are only offered in the
              desk's own money when every counted line can BE valued in
@@ -54857,6 +54859,7 @@ ${snap}`;
       n: "printer",
       s: 15
     }), " Print / PDF"))), /*#__PURE__*/React.createElement("div", {
+      className: "report-scroll",
       style: {
         flex: 1,
         overflow: 'auto',

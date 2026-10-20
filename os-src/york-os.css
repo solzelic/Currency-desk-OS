@@ -1736,6 +1736,26 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   overflow-wrap: normal;
 }
 .till-stored-figure { white-space: nowrap; }
+/* The sign-off table is wider than a phone card, and this row used to
+   scroll away with it. Stick the sentence to the visible left edge and
+   wrap it inside the card. The stored figure stays one line. */
+@media (max-width: 430px) {
+  .report-scroll { container-type: inline-size; }
+  .till-stored-line {
+    position: sticky;
+    left: 0;
+    box-sizing: border-box;
+    /* The document padding and the cell padding push this row past
+       the card. Pull it back and wrap it inside the visible width. */
+    margin-left: -48px;
+    width: calc(100cqi - 16px);
+    max-width: calc(100cqi - 16px);
+    white-space: normal;
+    overflow-wrap: break-word;
+    background: var(--cd-panel);
+  }
+  .till-stored-line .till-stored-figure { white-space: nowrap; }
+}
 
 /* ============================================================
    PHONE BOTTOM BAR

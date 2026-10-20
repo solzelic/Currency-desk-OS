@@ -625,7 +625,7 @@
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: shown != null ? 600 : 400, color: shown == null ? CD.faint : off ? CD.flag : CD.green }}>{shown == null ? '—' : (shown === 0 ? '✓ balanced' : (shown > 0 ? '+' : '') + unitText(shown, x.ccy))}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy)}</td>
               </tr>,
-              note ? <tr key={x.ccy + '-stored'} className="till-stored-row"><td colSpan={6} style={{ ...tdS, color: CD.faint, fontWeight: 400, fontSize: 11, lineHeight: 1.35 }}>{cut[0]}<span className="till-stored-figure">{figure}</span>{cut.slice(1).join(figure)}</td></tr> : null]; })}
+              note ? <tr key={x.ccy + '-stored'} className="till-stored-row"><td colSpan={6} style={{ ...tdS, color: CD.faint, fontWeight: 400, fontSize: 11, lineHeight: 1.35 }}><div className="till-stored-line">{cut[0]}<span className="till-stored-figure">{figure}</span>{cut.slice(1).join(figure)}</div></td></tr> : null]; })}
               {(() => {
                 /* The counted and variance totals are only offered in the
                    desk's own money when every counted line can BE valued in
@@ -1161,7 +1161,7 @@
           <button onClick={() => printReport(titleOf(meta))} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="printer" s={15} /> Print / PDF</button>
         </div>
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '22px' }}>
+      <div className="report-scroll" style={{ flex: 1, overflow: 'auto', padding: '22px' }}>
         <div id="cdos-report-doc" style={{ maxWidth: 820, margin: '0 auto', background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 4, boxShadow: '0 8px 30px -12px var(--cd-shade)', padding: '34px 38px' }}>
           {renderDoc(active)}
           <DocFoot />
