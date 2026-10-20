@@ -72,6 +72,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **A cross receipt names both currencies.** When neither side is the home currency, the receipt Pricing line says "We bought INR, sold USD", and the deal row and the ledger Priced row say "Bought INR, sold USD". USD paid in and INR paid out reverses both sentences. A pair that includes the home currency still says "We bought USD" or "We sold USD" on the receipt and the Priced row, and "Bought USD" or "Sold USD" on the deal row.
+
 - **An INR sell for USD posts.** On a CAD desk the teller pays in INR and pays out USD. Neither side is the home currency, so the deal is a cross. The desk was sending `customer_sell_foreign` whenever the currency paid in was not home, and the server answered 400, "Transaction direction does not match the currency pair." The server rule is unchanged: home paid in is `customer_buy_foreign`, home paid out is `customer_sell_foreign`, and neither side home is `customer_cross`. The desk now sends that same direction.
 
 - **The menubar clock follows the desk's time format and timezone.** Settings → Time format defaults to 12-hour. The header was a hard-coded 24-hour clock, so 16:05 stayed 16:05. It now uses the same clock as the Audit Trail (`deskTime`). With 12-hour set, 16:05 reads 4:05 pm. With 24-hour set, it stays 16:05. The hour is `settings.timezone` (America/Toronto unless the desk changed it), the zone the localization screen stores, not the browser zone. A stored zone Intl cannot read falls back to the browser zone, then UTC, the same order as the filing offset, so the menubar stays up. The time box is the widest reading for that mode: `12:45 pm` on a 12-hour desk, `23:59` on a 24-hour desk. 9:59 am and 12:45 pm are the same width, and a 24-hour desk is the width of its own time. At 430px and below, the phone header replaces the menubar and that header has no clock.
@@ -725,6 +727,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-20**, cross deal words. Neither side home reads "We bought INR, sold USD" on the receipt and "Bought INR, sold USD" on the deal row and the ledger Priced row. The reverse pair names USD first. A home pair still reads "We bought USD" or "We sold USD".
 
 **2026-10-20**, INR sold for USD. The desk direction follows the currencies and the home currency. A CAD desk selling INR for USD sends `customer_cross`. A pair with the home currency paid out still sends `customer_sell_foreign`. A pair with the home currency paid in still sends `customer_buy_foreign`. The server check is the same rule it already enforced.
 

@@ -705,7 +705,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     let center = '';
     if (t === 'Currency Exchange') {
       fromL = 'We received'; toL = 'We paid out';
-      toS = row.side === 'buy' ? `Bought ${row.inCcy}` : row.side === 'sell' ? `Sold ${row.outCcy}` : 'Exchange';
+      toS = window.CDOS.exchangeWords(row, homeCcy()).row;
       center = shownDealRate(row);
     } else if (t === 'Remittance — Send') {
       fromL = 'Sender pays'; toL = 'Beneficiary gets';
@@ -745,7 +745,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       rows = [custRow,
         <DRow k="Rate" v={shownDealRate(row)} mono />,
         <RateNote row={row} />,
-        row.side && <DRow k="Priced" v={`${row.side === 'buy' ? `We bought ${row.inCcy}` : row.side === 'sell' ? `We sold ${row.outCcy}` : 'Cross deal'}${row.priced === 'override' ? ' · hand-priced' : row.priced === 'locked' ? ' · rate locked' : ''}`} />,
+        row.side && <DRow k="Priced" v={window.CDOS.ledgerLine(row, homeCcy())} />,
         row.midRate && <DRow k="Spot at deal" v={`${row.midRate} ${row.outCcy}/${row.inCcy}`} mono />,
         row.quoteRef && <DRow k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} mono />];
     } else if (t === 'Remittance — Send') {
