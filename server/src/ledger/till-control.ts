@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { civilDate, civilToday } from "../civil-date.js";
+import { civilDate, civilTodayInZone } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { currentBasis } from "./cost-basis.js";
@@ -63,6 +63,30 @@ const scope = (actor: LedgerActor) => [
   actor.workspaceId,
   actor.tillId,
 ];
+
+/* The day this branch is trading. `branches.timezone` is the clock
+   the location keeps. The process zone, and UTC, are not that day.
+   A missing table (a ledger database that does not hold the desk
+   rows) falls back to the column's own default. */
+async function branchBusinessDate(
+  client: pg.PoolClient,
+  branchId: string,
+  now: Date,
+): Promise<string> {
+  let zone = "America/Toronto";
+  try {
+    const found = await client.query(
+      "SELECT timezone FROM branches WHERE id = $1",
+      [branchId],
+    );
+    const stored = String(found.rows[0]?.timezone ?? "").trim();
+    if (stored) zone = stored;
+  } catch (error) {
+    if ((error as { code?: string }).code !== "42P01") throw error;
+  }
+  return civilTodayInZone(now, zone);
+}
+
 const fixed = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
 /* Expected is the balance the ledger stored. Rounding it to a whole yen
@@ -320,7 +344,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            civilToday(now),
+            await branchBusinessDate(client, actor.branchId, now),
             actor.userId,
             now,
           ],
@@ -664,7 +688,7 @@ export class TillControlService {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10)`,
         [
           sessionId, ...scope(actor), next.rows[0].session_number,
-          now.toISOString().slice(0, 10), actor.userId, now,
+          await branchBusinessDate(client, actor.branchId, now), actor.userId, now,
         ],
       );
       await this.audit(client, actor, "till.session.handover", sessionId, `from=${opener}`, now);
