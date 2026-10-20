@@ -16144,6 +16144,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const phoneBalanced = phoneTotalsKnown && Math.abs(totalVarHome) <= tolHome + 0.005;
     const phoneDiff = !phoneTotalsKnown ? '' : phoneBalanced ? unitText(totalVarHome, homeCcy) + ' · Balanced' : (totalVarHome > 0 ? '+' : '') + unitText(totalVarHome, homeCcy) + (totalVarHome > 0 ? ' · Over' : ' · Under');
     const phoneCloseNote = !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : phoneRemaining > 0 ? 'Count ' + phoneRemaining + ' more ' + (phoneRemaining === 1 ? 'currency' : 'currencies') + ' first.' : "This locks today's records. You can't edit them after.";
+    /* Wide reconcile ink. The app mute grey is 4.40:1 and the app green
+       on its soft fill is 3.65:1. This screen uses the phone colours. */
+    const reconInk = '#5E5E63';
+    const reconGreen = '#1D6B45';
+    const reconGreenSoft = '#E5F2EA';
     const phoneChip = r => {
       if (r.counted == null || r.variance == null) return null;
       if (r.variance === 0) return {
@@ -16153,7 +16158,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const abs = Math.abs(r.variance);
       const over = r.variance > 0;
       return {
-        text: unitText(abs, r.c) + ' ' + unitWord(r.c, abs) + (over ? ' over' : ' under'),
+        text: unitText(abs, r.c) + ' ' + unitWord(r.c, abs) + (over ? ' over' : ' short'),
         tone: over ? 'over' : 'under'
       };
     };
@@ -16196,7 +16201,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Cash Drawer"), /*#__PURE__*/React.createElement("div", {
       className: "till-meta text-[11px] flex items-center gap-1 flex-wrap",
       style: {
-        color: CD.mute
+        color: reconInk
       }
     }, stationName ? /*#__PURE__*/React.createElement("b", {
       className: "till-station",
@@ -16324,17 +16329,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-statusline"
     }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
-        color: serverBalanceError ? CD.flag : serverBalancesReady ? CD.green : CD.mute
+        color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk
       }
     }, "\xB7 ", serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'), serverBacked && ledgerTill && /*#__PURE__*/React.createElement("span", {
       title: "The till the server ledger is answering for",
       style: {
-        color: ledgerAmbiguous ? CD.brass : CD.faint
+        color: ledgerAmbiguous ? CD.brass : reconInk
       }
     }, "\xB7 ledger till ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono, monospace',
-        color: ledgerAmbiguous ? CD.brass : CD.mute
+        color: ledgerAmbiguous ? CD.brass : reconInk
       }
     }, ledgerTill.tillId))))), /*#__PURE__*/React.createElement("div", {
       className: "till-actions flex items-center gap-1.5 flex-none ml-auto"
@@ -16352,7 +16357,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           border: `1px solid ${CD.lineSoft}`,
           borderRadius: 8,
           background: 'var(--cd-chip)',
-          color: CD.mute
+          color: reconInk
         },
         title: serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'
       }, serverBacked ? 'In drawer · ledger' : 'Float in drawer', " ", /*#__PURE__*/React.createElement("b", {
@@ -16384,14 +16389,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         title: "Floats are issued & returned at the vault",
         className: "till-vault flex items-center gap-1 text-[11px] px-2.5 py-1.5",
         style: {
-          color: CD.mute,
+          color: reconInk,
           border: 0,
           background: 'transparent'
         }
       }, /*#__PURE__*/React.createElement(Ic, {
         n: "vaultsafe",
         s: 13,
-        c: CD.mute
+        c: reconInk
       }), " Vault \u203A"));
     })())), /*#__PURE__*/React.createElement("div", {
       className: "till-tabwrap"
@@ -16507,14 +16512,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`,
-        color: CD.mute
+        color: reconInk
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         width: 6,
         height: 6,
         borderRadius: '50%',
-        background: CD.green,
+        background: reconGreen,
         flex: 'none'
       }
     }), /*#__PURE__*/React.createElement("span", null, "Session ", /*#__PURE__*/React.createElement("b", {
@@ -16525,7 +16530,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
       className: "ml-auto flex-none",
       style: {
-        color: CD.faint
+        color: reconInk
       }
     }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
@@ -16608,17 +16613,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        color: CD.mute
+        color: reconInk
       }
     }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.operator : '—'), current && current.role ? /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
-        color: CD.faint
+        color: reconInk
       }
     }, " \xB7 ", current.role) : null), /*#__PURE__*/React.createElement("div", {
       className: "text-[10.5px]",
       style: {
-        color: CD.faint
+        color: reconInk
       }
     }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
@@ -17176,38 +17181,49 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       "data-tour": "till-reconcile",
       className: "p-4"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "till-recon-widehead flex items-center justify-between mb-3"
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "till-recon-widehead mb-3"
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 12,
+        maxWidth: '100%'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold",
       style: {
         color: CD.ink
       }
-    }, "Reconcile & close \u2014 Day ", day && day.num || 1), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
-      style: {
-        color: CD.mute
-      }
-    }, serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals", " \xB7 counted is your physical count \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("span", {
+    }, "Reconcile & close \u2014 Day ", day && day.num || 1), /*#__PURE__*/React.createElement("span", {
       className: "text-[11px] px-2.5 py-1",
       style: {
-        background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)',
-        color: countedN === recon.length ? CD.green : CD.mute,
+        flex: 'none',
+        background: countedN === recon.length ? reconGreenSoft : 'var(--cd-chip)',
+        color: countedN === recon.length ? reconGreen : reconInk,
         borderRadius: 999,
         fontFamily: 'Space Mono, monospace'
       }
     }, countedN, "/", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden till-recon",
+      className: "text-[11px]",
+      style: {
+        color: reconInk,
+        marginTop: 2
+      }
+    }, serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals", " \xB7 counted is your physical count \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
+      className: "till-recon",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
-        borderRadius: 10
+        borderRadius: 10,
+        overflowX: 'auto',
+        overflowY: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("table", {
       className: "w-full text-sm border-collapse"
     }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         background: 'var(--cd-chip)',
-        color: CD.mute
+        color: reconInk
       },
       className: "text-[11px] uppercase tracking-wide text-left"
     }, /*#__PURE__*/React.createElement("th", {
@@ -17215,12 +17231,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Currency"), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, /*#__PURE__*/React.createElement("span", {
-      title: serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault — not editable here',
+      title: serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault. Not editable here',
       className: "inline-flex items-center gap-1"
     }, serverBacked ? 'Source' : 'Opening · vault', " ", /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
       s: 10,
-      c: CD.faint
+      c: reconInk
     }))), /*#__PURE__*/React.createElement("th", {
       className: "px-3 py-2 text-right"
     }, "Expected"), /*#__PURE__*/React.createElement("th", {
@@ -17248,10 +17264,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, flagOf(r.c)), " ", r.c), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
-        title: serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer — change it with Issue float / Return at the vault, never by typing',
+        title: serverBacked ? 'Authoritative server ledger' : 'What the vault issued to this drawer. Change it with Issue float or Return at the vault, never by typing',
         style: {
           fontVariantNumeric: 'tabular-nums',
-          color: serverBacked ? CD.green : CD.mute
+          color: serverBacked ? reconGreen : reconInk
         }
       }, serverBacked ? 'Server ledger' : '—'), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
@@ -17264,7 +17280,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, unitText(r.expected, r.c))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
-          color: ls ? CD.mute : CD.faint
+          color: reconInk
         }
       }, ls ? /*#__PURE__*/React.createElement("span", {
         title: `${num(ls.amt)} ${r.c} · ${atLabel(ls.ts)}${ls.by ? ' · ' + ls.by : ''}`,
@@ -17273,11 +17289,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           borderBottom: `1px dotted ${CD.line}`,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, sinceLabel(ls.ts)) : '— never'), /*#__PURE__*/React.createElement("td", {
+      }, sinceLabel(ls.ts)) : 'Never'), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
-          color: r.counted == null ? CD.faint : CD.ink,
+          color: r.counted == null ? reconInk : CD.ink,
           fontWeight: r.counted == null ? 400 : 700
         }
       }, r.counted == null ? /*#__PURE__*/React.createElement("button", {
@@ -17287,7 +17303,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         },
         className: "text-[11px] underline",
         style: {
-          color: CD.mute
+          color: reconInk
         }
       }, "count \u2192") : /*#__PURE__*/React.createElement("span", {
         title: countedAt[r.c] ? 'Counted ' + sinceLabel(countedAt[r.c]) + ' · ' + atLabel(countedAt[r.c]) : '',
@@ -17298,9 +17314,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
-          color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
+          color: r.variance == null ? reconInk : !offOf(r) ? reconGreen : CD.flag
         }
-      }, r.variance == null ? '—' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c))), note ? /*#__PURE__*/React.createElement("tr", {
+      }, r.variance == null ? 'Not counted' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c))), note ? /*#__PURE__*/React.createElement("tr", {
         key: r.c + '-stored',
         className: "till-stored-row"
       }, /*#__PURE__*/React.createElement("td", {
@@ -17329,7 +17345,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2 text-right font-semibold",
       style: {
         fontVariantNumeric: 'tabular-nums',
-        color: CD.mute
+        color: reconInk
       }
     }, totalExpHome == null ? '—' : unitText(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
@@ -17337,13 +17353,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? '—' : unitText(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
-        color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag
+        color: totalVarHome == null ? reconInk : Math.abs(totalVarHome) <= tolHome + 0.005 ? reconGreen : CD.flag
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)))))), /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + unitText(totalVarHome, homeCcy)))))), /*#__PURE__*/React.createElement("div", {
       className: "till-recon-list"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-recon-head"
@@ -17479,9 +17495,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }), " Closing the day isn\u2019t in your role \u2014 the owner enables it in Settings \u203A Permissions."), canCloseDay && closeBlocked && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
-        color: serverBalanceError ? CD.flag : CD.mute
+        color: serverBalanceError ? CD.flag : reconInk
       }
-    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing — the close writes your count back as the balance`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
+    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.flag
@@ -17489,7 +17505,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, offRows.length, " drawer(s) off"), canCloseDay && offRows.length === 0 && countedN > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
-        color: CD.green
+        color: reconGreen
       }
     }, "All counted drawers balanced")), offLedgerCcys.length > 0 && /*#__PURE__*/React.createElement("div", {
       className: "till-recon-offledger mt-2 text-[11px] px-3 py-2",
@@ -17505,9 +17521,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, offLedgerCcys.join(', ')), ". These are recorded in your local history only and are left out of the close, so they can\u2019t disturb a real balance."), /*#__PURE__*/React.createElement("p", {
       className: "till-recon-fine mt-2 text-[11px]",
       style: {
-        color: CD.faint
+        color: reconInk
       }
-    }, serverBacked ? /*#__PURE__*/React.createElement(React.Fragment, null, "The server ledger is the source of ", /*#__PURE__*/React.createElement("b", null, "expected"), " cash, including posted exchanges, reversals and vault movements. Closing writes each ", /*#__PURE__*/React.createElement("b", null, "counted"), " figure back as the till\u2019s balance.") : /*#__PURE__*/React.createElement(React.Fragment, null, "The vault issues your ", /*#__PURE__*/React.createElement("b", null, "opening"), " and the day's deals produce ", /*#__PURE__*/React.createElement("b", null, "expected"), "."), " Your physical count is ", /*#__PURE__*/React.createElement("b", null, "counted"), ", and ", /*#__PURE__*/React.createElement("b", null, "variance"), " = counted \u2212 expected \u2014 it lands on the operator. Closing locks the ledger until the next day is opened."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
+    }, serverBacked ? /*#__PURE__*/React.createElement(React.Fragment, null, "The server ledger is the source of ", /*#__PURE__*/React.createElement("b", null, "expected"), " cash, including posted exchanges, reversals and vault movements. Closing writes each ", /*#__PURE__*/React.createElement("b", null, "counted"), " figure back as the till\u2019s balance.") : /*#__PURE__*/React.createElement(React.Fragment, null, "The vault issues your ", /*#__PURE__*/React.createElement("b", null, "opening"), " and the day's deals produce ", /*#__PURE__*/React.createElement("b", null, "expected"), "."), " Your physical count is ", /*#__PURE__*/React.createElement("b", null, "counted"), ", and ", /*#__PURE__*/React.createElement("b", null, "variance"), " is counted minus expected. It lands on the operator. Closing locks the ledger until the next day is opened."))), tab === 'history' && /*#__PURE__*/React.createElement("div", {
       className: "p-4"
     }, (() => {
       const _tRec = (_ab && _ab.tills || []).find(t => t.id === (station && station.tillId));

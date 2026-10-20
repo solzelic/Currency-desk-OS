@@ -56,8 +56,65 @@ async function panelContrast(target: Locator) {
 
 async function expectInk(target: Locator, label: string) {
   const ink = await panelContrast(target);
+  console.log("CONTRAST " + label + " " + ink.ratio.toFixed(2) + " " + JSON.stringify(ink.ink));
   expect(ink.ratio, label + " " + JSON.stringify(ink.ink)).toBeGreaterThanOrEqual(4.5);
   return ink;
+}
+
+/* Phone checks leave the till scrolled to the bottom. Put it back
+   at the top, then bring the heading to the start of its scroller,
+   before asking whether the operator covers it. */
+async function revealWideHead(page: Page) {
+  await page.evaluate(() => {
+    document.querySelectorAll(".win-body, .till-screen, .overflow-auto").forEach((node) => {
+      const el = node as HTMLElement;
+      el.scrollTop = 0;
+      el.scrollLeft = 0;
+    });
+    const head = document.querySelector(".till-recon-widehead");
+    if (head) head.scrollIntoView({ block: "start", inline: "nearest" });
+  });
+}
+
+/* The heading and the count chip have to be on screen, uncovered by
+   the operator strip. */
+async function shownClear(target: Locator, cover: string) {
+  const fit = await target.evaluate((el, coverSel) => {
+    const r = el.getBoundingClientRect();
+    const coverEl = document.querySelector(coverSel);
+    const c = coverEl ? coverEl.getBoundingClientRect() : null;
+    const hit = (x: number, y: number) => {
+      const node = document.elementFromPoint(x, y) as HTMLElement | null;
+      const ok = !!node && (node === el || el.contains(node));
+      return {
+        ok,
+        name: node ? node.tagName + "." + String(node.className).slice(0, 80) : "none",
+      };
+    };
+    /* Edge centres, not the square corners. A pill's corners sit
+       outside its border, so those points hit whatever is behind it. */
+    const midX = (r.left + r.right) / 2;
+    const midY = (r.top + r.bottom) / 2;
+    const pts = [
+      [midX, r.top + 1],
+      [midX, Math.max(r.top + 1, r.bottom - 1)],
+      [r.left + 1, midY],
+      [Math.max(r.left + 1, r.right - 1), midY],
+    ];
+    const seen = pts.map(([x, y]) => hit(x, y));
+    const overlap = !!(c && r.bottom > c.top + 1 && r.top < c.bottom - 1 && r.right > c.left + 1 && r.left < c.right - 1);
+    return {
+      inside: r.width > 8 && r.height > 8 && r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth,
+      hits: seen.every((point) => point.ok),
+      at: seen.map((point) => point.name),
+      overlap,
+      top: Math.round(r.top),
+      bottom: Math.round(r.bottom),
+      left: Math.round(r.left),
+      right: Math.round(r.right),
+    };
+  }, cover);
+  expect(fit.inside && fit.hits && !fit.overlap, JSON.stringify(fit)).toBe(true);
 }
 
 async function paintOf(target: Locator) {
@@ -320,6 +377,32 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
      zero, so 5,451.6 here is the bug. */
   const wideExpected = recon.locator("tfoot td").nth(2);
   await expect(wideExpected).toHaveText("5,451.60");
+  const wideCounted = recon.locator("tfoot td").nth(4);
+  await expect(wideCounted).toHaveText("4,451.11");
+  const wideHead = page.locator(".till-recon-widehead");
+  const wideTitle = wideHead.locator("div").first();
+  const wideCount = wideHead.locator("span").last();
+  await expect(wideTitle).toContainText("Reconcile & close");
+  await expect(wideCount).toHaveText("1/2 counted");
+  await revealWideHead(page);
+  await shownClear(wideTitle, ".till-operator");
+  await shownClear(wideCount, ".till-operator");
+  await expect(cad).toContainText("Never");
+  await expect(cad).not.toContainText("\u2014");
+  const caption = page.locator(".till-recon-fine");
+  expect(await caption.innerText()).not.toMatch(/[—–]/);
+  await expectInk(wideCount, "wide count chip");
+  await expectInk(caption, "caption");
+  await expectInk(cad.locator("td").nth(3), "never");
+  await expectInk(wideHead.locator("div.text-\\[11px\\]"), "wide subtitle");
+  await expectInk(recon.locator("thead th").first(), "wide header");
+  await expectInk(wideExpected, "wide expected total");
+  await expectInk(page.getByText("On the drawer:", { exact: true }), "on the drawer");
+  await expectInk(page.locator(".till-operator .text-\\[10\\.5px\\]"), "operator since");
+  await expectInk(page.locator(".till-sessionline"), "session line");
+  await expectInk(page.locator(".till-sessionline .ml-auto"), "session count");
+  await expectInk(page.locator(".till-pill"), "in drawer");
+  await expectInk(page.locator(".till-vault"), "vault label");
   const wideClose = page.locator(".till-recon-desk").getByRole("button", { name: "Close day and lock book" });
   await expect(wideClose).toBeVisible();
   await expect(page.locator(".till-recon-desk").getByRole("button", { name: /Close day & lock book/i })).toHaveCount(0);
@@ -327,6 +410,8 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.setViewportSize({ width: 360, height: 780 });
   await expect(list).toBeVisible();
   await expect(page.locator(".till-recon table")).toBeHidden();
+  await expect(page.locator(".till-vault").filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByText(/Vault/).filter({ visible: true })).toHaveCount(0);
   await expect(list.locator(".till-recon-title")).toHaveText("Close the till");
   const titlePaint = await paintOf(list.locator(".till-recon-title"));
   expect(titlePaint.size).toBe("28px");
@@ -468,7 +553,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
   await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
   const underChip = jpyCard.locator(".till-recon-chip");
-  await expect(underChip).toHaveText("1 yen under");
+  await expect(underChip).toHaveText("1 yen short");
   const underPaint = await paintOf(underChip);
   expect(underPaint.color).toBe("rgb(168, 50, 31)");
   expect(underPaint.background).toBe("rgb(253, 236, 230)");
@@ -523,6 +608,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.setViewportSize({ width: 599, height: 780 });
   await expect(list).toBeVisible();
   await expect(page.locator(".till-recon table")).toBeHidden();
+  await expect(page.locator(".till-vault").filter({ visible: true })).toHaveCount(0);
   await page.setViewportSize({ width: 600, height: 780 });
   await expect(list).toBeHidden();
   await expect(page.locator(".till-recon table")).toBeVisible();
@@ -531,6 +617,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.setViewportSize({ width: 1280, height: 780 });
   await expect(page.locator(".till-recon table")).toBeVisible();
   await expect(list).toBeHidden();
+  await expect(recon.locator("tfoot td").nth(4)).toHaveText("5,451.60");
 
   await page.locator('#appbar [data-app="reports"]').evaluate((el: HTMLElement) => el.click());
   await page.getByText("End-of-Day Sign-Off").first().click();

@@ -1741,6 +1741,41 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
    Colours here are the phone mockup. The app mute grey is about
    4.40:1 and is not used on this list. */
 .till-recon-list { display: none; }
+/* The operator strip used to stay put while the reconcile heading
+   scrolled underneath it. The strip does not stick. The count chip
+   sits beside the heading, inside the window. The till window used
+   to grow to the session line, so the chip painted past the right
+   edge. The body stays the window width, and the table scrolls
+   inside its card. */
+.till-operator { position: static; }
+#desktop .win:has(.till-screen) > .win-body {
+  min-width: 0;
+}
+.till-screen {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.till-screen > .flex-1 {
+  min-width: 0;
+  min-height: 0;
+}
+.till-sessionline {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.till-sessionline > span { min-width: 0; }
+.till-recon-widehead {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--cd-paper, #f4f3f0);
+}
+.till-recon-widehead > div { min-width: 0; }
 @media (max-width: 599px) {
   .till-recon { display: none !important; }
   .till-recon-desk,
@@ -1752,7 +1787,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-on-reconcile .till-switch-note,
   .till-on-reconcile .till-operator,
   .till-on-reconcile .till-recon-widehead,
-  .till-on-reconcile .till-recon-offledger { display: none !important; }
+  .till-on-reconcile .till-recon-offledger,
+  .till-on-reconcile .till-vault { display: none !important; }
   .till-recon-list {
     display: flex;
     flex-direction: column;
