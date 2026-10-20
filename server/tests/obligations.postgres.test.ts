@@ -210,6 +210,33 @@ postgres("obligation lines on a real PostgreSQL ledger", () => {
     ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
+  it("refuses a fractional yen or won remittance, and the receipt reads 10825 JPY", async () => {
+    for (const code of ["JPY", "KRW"]) {
+      await expect(
+        service.remittanceSend(teller, {
+          ...send,
+          idempotencyKey: `send-${code}-fraction`,
+          reference: `TR-${code}-fraction`,
+          payoutCurrency: code,
+          payoutAmount: "1.50",
+        }),
+      ).rejects.toMatchObject({
+        code: "INVALID_REQUEST",
+        message: `Payout amount is not a whole number of ${code}. ${code} has no minor unit.`,
+      });
+    }
+    const sent = (await service.remittanceSend(teller, {
+      ...send,
+      idempotencyKey: "send-jpy-whole",
+      reference: "TR-JPY-10825",
+      payoutCurrency: "JPY",
+      payoutAmount: "10825",
+    })) as { receipt: { lines: string[] } };
+    const lines = sent.receipt.lines.join("\n");
+    expect(lines).toContain("10825 JPY");
+    expect(lines).not.toContain("10825.00");
+  });
+
   it("takes the cash in, books the payout as owed, and claims only the fee", async () => {
     const posted = (await service.remittanceSend(teller, send)) as Record<string, string>;
 

@@ -432,6 +432,18 @@ postgres("the ledger answers for its own headline figures", () => {
     });
   });
 
+  it("sends the scale table the screen rounds with", async () => {
+    const answer = (
+      await app.inject({
+        method: "GET",
+        url: "/api/ledger/jurisdiction",
+        cookies: await cookie(),
+      })
+    ).json();
+    expect(answer.currencies.scales).toMatchObject({ JPY: 0, KRW: 0, KWD: 3 });
+    expect(Object.hasOwn(answer.currencies.scales, "CAD")).toBe(false);
+  });
+
   it("refuses all three reads to a session that is not signed in", async () => {
     for (const path of ["summary", "position", "jurisdiction"]) {
       const answer = await app.inject({ method: "GET", url: `/api/ledger/${path}` });

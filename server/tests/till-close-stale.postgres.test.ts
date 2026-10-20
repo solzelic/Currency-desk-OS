@@ -156,6 +156,28 @@ postgres("a till close after the drawer has moved", () => {
     expect(row.rows[0].variance_amount).toBe("0.15");
   });
 
+  it("refuses a fractional yen count", async () => {
+    const teller = await cookie();
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',99.85)",
+      scope,
+    );
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "jpy-cents", counts: { JPY: "100.50" } },
+    });
+    expect(counted.statusCode, counted.body).toBe(422);
+    expect(counted.json().code).toBe("INVALID_REQUEST");
+    expect(counted.json().message).toBe(
+      "Count is not a whole number of JPY. JPY has no minor unit.",
+    );
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_till_counts")).rows[0].n,
+    ).toBe(0);
+  });
+
   it("refuses a till close when money moved after the count", async () => {
     const teller = await cookie();
     const manager = await cookie("r.haddad");

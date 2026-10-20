@@ -536,6 +536,50 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     expect(receipt.json().lines.join(" ")).toContain("Demo Customer");
   });
 
+  it("rounds a legacy direct post to whole yen", async () => {
+    const scope = [
+      DEMO.tenantId,
+      DEMO.legalEntityId,
+      DEMO.branchId,
+      DEMO.workspaceId,
+      "till-01",
+    ];
+    await pool.query(
+      "INSERT INTO ledger_rates VALUES ($1,$2,$3,$4,'JPY',110.456)",
+      scope.slice(0, 4),
+    );
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',200000)",
+      scope,
+    );
+    /* 100 CAD at 110.456 is 11045.60. Whole yen, half up, is 11046.
+       Two stored places keep that as 11046.00. Two-place rounding
+       of the product is 11045.60. */
+    const posted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/exchanges",
+      cookies: await cookie(),
+      payload: {
+        idempotencyKey: "legacy-jpy",
+        customerId: "customer-demo",
+        from: "CAD",
+        to: "JPY",
+        inputAmount: "100.00",
+        feeCad: "0.00",
+        purpose: "Travel",
+        sourceOfFunds: "Cash",
+      },
+    });
+    expect(posted.statusCode, posted.body).toBe(201);
+    expect(posted.json().outputAmount).toBe("11046.00");
+    expect(posted.json().receipt.lines).toContain("Received: 11046 JPY");
+    const row = await pool.query(
+      "SELECT output_amount FROM ledger_transactions WHERE transaction_id=$1",
+      [posted.json().transactionId],
+    );
+    expect(row.rows[0].output_amount).toBe("11046.00");
+  });
+
   it("deduplicates posting and derives authorization from the staff record", async () => {
     const cookies = await cookie();
     const first = await app.inject({
