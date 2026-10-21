@@ -315,6 +315,72 @@ postgres("a till session takes the branch's civil day", () => {
     }
   });
 
+  /* The same missing table on the session read and on handover. Open
+     is covered above. These two also ask for the zone while they hold
+     a till transaction. */
+  it("reads the session and hands the till over when branches is missing", async () => {
+    const owner = await login("j.masri");
+    const teller = await login("m.costa");
+    const headers = { "x-workspace-id": DEMO.workspaceId };
+    const opened = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/open",
+      cookies: owner,
+      headers,
+    });
+    expect(opened.statusCode, opened.body).toBe(201);
+    await pool.query(
+      `INSERT INTO ledger_till_balances
+        (tenant_id, legal_entity_id, branch_id, workspace_id, till_id, currency, available_amount)
+       VALUES ($1, $2, $3, $4, 'till-01', 'CAD', 100.00)
+       ON CONFLICT (tenant_id, legal_entity_id, branch_id, workspace_id, till_id, currency)
+       DO NOTHING`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId],
+    );
+    const balances = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-balances",
+      cookies: owner,
+      headers,
+    });
+    expect(balances.statusCode, balances.body).toBe(200);
+    const counts = Object.fromEntries(
+      Object.entries(balances.json().balances as Record<string, string>).map(([currency, amount]) => [
+        currency,
+        Number(amount).toFixed(2),
+      ]),
+    );
+    const opener = String(opened.json().session.openedBy);
+    const taker = opener.endsWith(":m.costa") ? owner : teller;
+    const takerId = opener.endsWith(":m.costa") ? "j.masri" : "m.costa";
+    await pool.query("ALTER TABLE branches RENAME TO branches_held");
+    try {
+      const session = await app.inject({
+        method: "GET",
+        url: "/api/ledger/till-session",
+        cookies: owner,
+        headers,
+      });
+      expect(session.statusCode, session.body).toBe(200);
+      expect(session.json().session.status).toBe("open");
+      expect(session.json().session.timezone).toBe(TORONTO);
+      const handed = await app.inject({
+        method: "POST",
+        url: "/api/ledger/till-sessions/handover",
+        cookies: taker,
+        headers,
+        payload: { idempotencyKey: `missing-branches-hand-${Date.now()}`, counts },
+      });
+      expect(handed.statusCode, handed.body).toBe(201);
+      expect(handed.json().session.status).toBe("open");
+      expect(handed.json().session.timezone).toBe(TORONTO);
+      expect(handed.json().session.businessDate).toBe(civilTodayInZone(new Date(), TORONTO));
+      expect(String(handed.json().session.openedBy)).toContain(takerId);
+    } finally {
+      await pool.query("ALTER TABLE branches_held RENAME TO branches");
+    }
+  });
+
   it("stamps 11:55 pm in Toronto as the Toronto day", async () => {
     const at = new Date(LATE_TORONTO);
     expect(clockLabel(TORONTO, at)).toBe(`${TORONTO_DAY} 23:55`);

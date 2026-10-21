@@ -103,6 +103,15 @@ postgres("cash-move replay uses the rolled-back connection", () => {
       connectionTimeoutMillis: 0,
     });
     let committed = false;
+    const service = TillControlService.prototype as unknown as {
+      replayMovement(
+        client: pg.PoolClient,
+        who: LedgerActor,
+        movement: typeof input,
+      ): Promise<{ movement: { movementId: string } } | null>;
+    };
+    const originalReplay = service.replayMovement;
+    let replayHits = 0;
     try {
       await holder.query("BEGIN");
       await holder.query(
@@ -118,6 +127,13 @@ postgres("cash-move replay uses the rolled-back connection", () => {
         ],
       );
       const tills = new TillControlService(burst);
+      /* The early read returns this movement too, once the winner has
+         committed. Counting the calls is what shows the loser went
+         through replayMovement, which is the branch a 422 never reaches. */
+      service.replayMovement = async function (this: TillControlService, ...args) {
+        replayHits += 1;
+        return originalReplay.apply(this, args);
+      };
       const raced = Promise.all(
         Array.from({ length: RACE_COUNT }, () => tills.moveCash(actor(), input)),
       );
@@ -152,7 +168,12 @@ postgres("cash-move replay uses the rolled-back connection", () => {
         [TENANT, KEY],
       );
       expect(stored.rows[0].n).toBe("1");
+      /* Four connections were inside the race. Each of those lost the
+         unique index and read the winner back. The ones still queued
+         see the committed row on the first read, so they do not. */
+      expect(replayHits).toBe(POOL_MAX);
     } finally {
+      service.replayMovement = originalReplay;
       if (!committed) await holder.query("ROLLBACK");
       holder.release();
       await burst.end();
