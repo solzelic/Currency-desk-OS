@@ -610,6 +610,7 @@ export class QuoteService {
     if (!thirdParty && thirdPartyName?.trim())
       throw new LedgerError("INVALID_REQUEST", "Third-party name requires third-party status.");
     const client = await this.pool.connect();
+    let released = false;
     try {
       await client.query("BEGIN");
       const role = await this.principal(client, actor, "quote:post");
@@ -639,6 +640,15 @@ export class QuoteService {
       if (new Date(q.expires_at).getTime() <= Date.now())
         throw new LedgerError("QUOTE_EXPIRED", "Quote has expired.");
       await client.query("COMMIT");
+      /* The quote check is its own transaction, and it has committed.
+         The deal is the next transaction, on its own connection, inside
+         postFrozenQuote: the frozen terms, the idempotency row, and the
+         journal commit together there, and a serialization failure
+         retries there. Holding this connection while that one is
+         acquired waits forever once every connection is in the same
+         wait. The pool has no acquire timeout. */
+      client.release();
+      released = true;
       return this.forReader(
         role,
         await this.ledger.postFrozenQuote(
@@ -674,10 +684,10 @@ export class QuoteService {
         false,
       );
     } catch (e) {
-      await client.query("ROLLBACK");
+      if (!released) await client.query("ROLLBACK");
       throw e;
     } finally {
-      client.release();
+      if (!released) client.release();
     }
   }
 }
