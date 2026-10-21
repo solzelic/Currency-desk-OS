@@ -17237,7 +17237,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           cursor: countedAt[r.c] ? 'help' : 'default'
         }
-      }, num(r.counted))), /*#__PURE__*/React.createElement("td", {
+      }, unitText(r.counted, r.c))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',

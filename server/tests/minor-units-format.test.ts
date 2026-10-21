@@ -19,6 +19,7 @@ const read = (name: string) => readFileSync(join(root, name), "utf8");
 type ScreenFns = {
   currencyPlaces: (ccy: string) => number;
   unitText: (n: number, ccy: string) => string;
+  num: (n: number) => string;
   fmt: (n: number, ccy: string) => string;
   cashVariance: (counted: number, expected: number, ccy: string) => number;
   storedRoundNote: (n: number, ccy: string) => string;
@@ -127,6 +128,16 @@ it("subtracts whole-unit expected, and names a stored fraction", () => {
   );
   expect(C.storedRoundNote(1000.5, "CAD")).toBe("");
   expect(C.storedRoundNote(99.85, "JPY")).toContain("99.85 JPY");
+});
+
+it("keeps two decimals on a whole count, and yen stays whole", () => {
+  expect(C.unitText(20000, "CAD")).toBe("20,000.00");
+  expect(C.unitText(5000, "USD")).toBe("5,000.00");
+  expect(C.unitText(489177, "JPY")).toBe("489,177");
+  /* num() drops the trailing zeros, so the wide Counted cell must not use it. */
+  expect(C.num(20000)).toBe("20,000");
+  expect(C.num(5000)).toBe("5,000");
+  expect(till).toContain("{unitText(r.counted, r.c)}");
 });
 
 it("draws that variance and the stored line on the count, reconcile, and end of day", () => {
