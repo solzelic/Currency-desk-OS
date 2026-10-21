@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { civilDate, civilTodayInZone } from "../civil-date.js";
+import { branchZone } from "./branch-day.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { branchZone as branchZoneOnClient } from "./branch-zone.js";
@@ -64,30 +65,6 @@ const scope = (actor: LedgerActor) => [
   actor.workspaceId,
   actor.tillId,
 ];
-
-/* The clock the location keeps. The process zone, and UTC, are not
-   that clock. A missing table (a ledger database that does not hold
-   the desk rows) falls back to the column's own default. The read
-   uses its own connection. Queried inside the till transaction, a
-   missing table aborts that transaction, and catching the error
-   does not bring it back. */
-async function branchZone(
-  client: pg.Pool | pg.PoolClient,
-  branchId: string,
-): Promise<string> {
-  let zone = "America/Toronto";
-  try {
-    const found = await client.query(
-      "SELECT timezone FROM branches WHERE id = $1",
-      [branchId],
-    );
-    const stored = String(found.rows[0]?.timezone ?? "").trim();
-    if (stored) zone = stored;
-  } catch (error) {
-    if ((error as { code?: string }).code !== "42P01") throw error;
-  }
-  return zone;
-}
 
 /* The day this branch is trading. `branches.timezone` is the clock
    the location keeps. The process zone, and UTC, are not that day.
