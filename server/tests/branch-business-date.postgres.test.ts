@@ -8,14 +8,15 @@
    in Toronto is already the next UTC day.
 
    The screens build the window from the session's business date, at
-   local midnight in the branch zone (cdos-base.jsx businessDayWindow).
-   This process stays on UTC, so the test computes those same bounds
-   in the branch zone. The seam in tests/e2e/ledger-drawer-movement.spec.ts
-   seeds the browser's civil day itself. This test asks the server to
+   midnight in the branch zone (cdos-base.jsx businessDayWindow). The
+   bounds below are computed in that zone, so the process zone does
+   not move them. The seam in tests/e2e/ledger-drawer-movement.spec.ts
+   seeds the branch's civil day itself. This test asks the server to
    stamp it, by opening the till. */
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { civilTodayInZone } from "../src/civil-date.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
@@ -43,15 +44,6 @@ const cookieOf = (res: { cookies: { name: string; value: string }[] }) => {
   if (!c) throw new Error("sign-in did not set a session cookie");
   return { cdos_session: c.value };
 };
-
-function assertUtcProcess() {
-  const probe = new Date("2026-06-15T12:00:00.000Z");
-  if (probe.getTimezoneOffset() !== 0) {
-    throw new Error(
-      `This test runs with the server process on TZ=UTC. The offset was ${probe.getTimezoneOffset()} minutes.`,
-    );
-  }
-}
 
 function zoneOffsetMs(timeZone: string, utcMs: number): number {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -118,7 +110,6 @@ function clockLabel(timeZone: string, at: Date): string {
 
 postgres("a till session takes the branch's civil day", () => {
   beforeAll(async () => {
-    assertUtcProcess();
     process.env.DATABASE_URL = url;
     handle = await createDb();
     pool = new pg.Pool({ connectionString: url });
@@ -301,6 +292,27 @@ postgres("a till session takes the branch's civil day", () => {
       day: JERUSALEM_DAY,
       place: "Jerusalem late",
     });
+  });
+
+  /* A ledger database can hold till rows and no desk rows. The zone
+     read used to sit inside the open transaction, so a missing
+     branches table aborted it and the open came back 500. */
+  it("opens when the branches table is missing, on the column default", async () => {
+    const owner = await login("j.masri");
+    await pool.query("ALTER TABLE branches RENAME TO branches_held");
+    try {
+      const opened = await app.inject({
+        method: "POST",
+        url: "/api/ledger/till-sessions/open",
+        cookies: owner,
+        headers: { "x-workspace-id": DEMO.workspaceId },
+      });
+      expect(opened.statusCode, opened.body).toBe(201);
+      expect(opened.json().session.timezone).toBe(TORONTO);
+      expect(opened.json().session.businessDate).toBe(civilTodayInZone(new Date(), TORONTO));
+    } finally {
+      await pool.query("ALTER TABLE branches_held RENAME TO branches");
+    }
   });
 
   it("stamps 11:55 pm in Toronto as the Toronto day", async () => {

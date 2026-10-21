@@ -66,7 +66,10 @@ const scope = (actor: LedgerActor) => [
 
 /* The clock the location keeps. The process zone, and UTC, are not
    that clock. A missing table (a ledger database that does not hold
-   the desk rows) falls back to the column's own default. */
+   the desk rows) falls back to the column's own default. The read
+   uses its own connection. Queried inside the till transaction, a
+   missing table aborts that transaction, and catching the error
+   does not bring it back. */
 async function branchZone(
   client: pg.Pool | pg.PoolClient,
   branchId: string,
@@ -88,13 +91,14 @@ async function branchZone(
 /* The day this branch is trading. `branches.timezone` is the clock
    the location keeps. The process zone, and UTC, are not that day.
    A missing table (a ledger database that does not hold the desk
-   rows) falls back to the column's own default. */
+   rows) falls back to the column's own default. `pool` is not the
+   till transaction: the zone is read before that transaction uses it. */
 async function branchBusinessDate(
-  client: pg.PoolClient,
+  pool: pg.Pool,
   branchId: string,
   now: Date,
 ): Promise<string> {
-  return civilTodayInZone(now, await branchZone(client, branchId));
+  return civilTodayInZone(now, await branchZone(pool, branchId));
 }
 
 const fixed = (value: Decimal.Value) =>
@@ -152,7 +156,7 @@ export class TillControlService {
         ORDER BY c.currency,b.counted_at DESC,c.count_id DESC`,
       [session.rows[0].session_id],
     );
-    const zone = await branchZone(client, actor.branchId);
+    const zone = await branchZone(this.pool, actor.branchId);
     return {
       session: sessionJson(session.rows[0], zone),
       latestCounts: Object.fromEntries(
@@ -357,7 +361,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            await branchBusinessDate(client, actor.branchId, now),
+            await branchBusinessDate(this.pool, actor.branchId, now),
             actor.userId,
             now,
           ],
@@ -701,7 +705,7 @@ export class TillControlService {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10)`,
         [
           sessionId, ...scope(actor), next.rows[0].session_number,
-          await branchBusinessDate(client, actor.branchId, now), actor.userId, now,
+          await branchBusinessDate(this.pool, actor.branchId, now), actor.userId, now,
         ],
       );
       await this.audit(client, actor, "till.session.handover", sessionId, `from=${opener}`, now);
