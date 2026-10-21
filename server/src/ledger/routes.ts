@@ -24,7 +24,7 @@ import {
 import { CurrencyService } from "./currency-control.js";
 import { BranchLocationService } from "./branch-location.js";
 import { currencyCode } from "./currencies.js";
-import { isRetryable } from "./retry.js";
+import { isRetryable, LEDGER_BUSY_MESSAGE } from "./retry.js";
 import {
   ChequeService,
   type ChequeCashInput,
@@ -356,7 +356,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       app.log.warn(error, "ledger contention after retries");
       return reply.code(409).send({
         code: "LEDGER_BUSY",
-        message: "The ledger is handling another change to this till. Nothing was posted. Try again.",
+        message: LEDGER_BUSY_MESSAGE,
       });
     }
     if (!(error instanceof LedgerError)) {

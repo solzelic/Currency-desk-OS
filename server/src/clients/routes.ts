@@ -25,7 +25,7 @@ import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { ensureLedgerPrincipal } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
-import { isRetryable } from "../ledger/retry.js";
+import { isRetryable, LEDGER_BUSY_MESSAGE } from "../ledger/retry.js";
 import { ClientRecordService } from "./records.js";
 import { AcceptedIdTypeService, OWNER_ONLY } from "./accepted-id-types.js";
 
@@ -195,7 +195,7 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       app.log.warn(error, "client records contention after retries");
       return reply.code(409).send({
         code: "LEDGER_BUSY",
-        message: "Another change to this customer is being recorded. Nothing was saved — try again.",
+        message: LEDGER_BUSY_MESSAGE,
       });
     }
     if (!(error instanceof LedgerError)) {

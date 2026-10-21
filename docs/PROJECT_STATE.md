@@ -78,7 +78,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 - **A cross receipt names both currencies.** When neither side is the home currency, the receipt Pricing line says "We bought INR, sold USD", and the deal row and the ledger Priced row say "Bought INR, sold USD". USD paid in and INR paid out reverses both sentences. A pair that includes the home currency still says "We bought USD" or "We sold USD" on the receipt and the Priced row, and "Bought USD" or "Sold USD" on the deal row.
 
-- **A serialization retry doubles its wait, then spreads it.** Six attempts. The wait is 25ms, then 50, then 100, and so on, plus a spread as wide as that wait. After the sixth abort the caller hears that the ledger is busy and nothing was posted. The database code on that error is still 40001, so the route answers LEDGER_BUSY.
+- **A serialization retry doubles its wait, then spreads it.** Six attempts. The wait is 25ms, then 50, then 100, and so on, plus a spread as wide as that wait. After the sixth abort every route answers with one sentence: "The ledger is busy. Nothing was saved. Please try again." The database code on that error is still 40001, so the route answers LEDGER_BUSY.
 
 - **An INR sell for USD posts.** On a CAD desk the teller pays in INR and pays out USD. Neither side is the home currency, so the deal is a cross. The desk was sending `customer_sell_foreign` whenever the currency paid in was not home, and the server answered 400, "Transaction direction does not match the currency pair." The server rule is unchanged: home paid in is `customer_buy_foreign`, home paid out is `customer_sell_foreign`, and neither side home is `customer_cross`. The desk now sends that same direction.
 

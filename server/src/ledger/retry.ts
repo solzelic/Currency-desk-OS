@@ -29,9 +29,10 @@
    and then adds a spread as wide as that wait. A fixed delay put every
    loser of the same wave on the same millisecond, and a handover of
    twenty-four tills was still aborted on the sixth try. If a movement
-   still cannot get through, the caller gets a clear error — the ledger
-   is busy, nothing was posted — and the database code stays on it so
-   the route can answer LEDGER_BUSY.
+   still cannot get through, the caller gets one sentence: the ledger
+   is busy, nothing was saved, please try again. The database code
+   stays on that error so the route can answer LEDGER_BUSY. Every
+   route sends that same sentence.
    ============================================================ */
 
 /** PostgreSQL codes that mean "run it again", not "it was wrong". */
@@ -44,6 +45,12 @@ export const isRetryable = (error: unknown): boolean =>
   !!error &&
   typeof error === "object" &&
   RETRYABLE.has(String((error as { code?: unknown }).code ?? ""));
+
+/* One sentence for every route that maps a retry that ran out.
+   No em dash and no en dash. "Saved" covers a post, a quote, and a
+   customer file. The route sends this string. It does not write its own. */
+export const LEDGER_BUSY_MESSAGE =
+  "The ledger is busy. Nothing was saved. Please try again.";
 
 /* 25, 50, 100, 200, 400. Capped so a longer try-count cannot sleep for
    seconds. The spread is as wide as the wait: two writers that aborted
@@ -58,10 +65,10 @@ const exhaustedRetry = (tries: number, cause: unknown): Error => {
   const code = String((cause as { code?: unknown } | null)?.code ?? "40001");
   return Object.assign(
     new Error(
-      `The ledger is busy after ${tries} attempts. Nothing was posted. Try again.`,
+      LEDGER_BUSY_MESSAGE,
       cause instanceof Error ? { cause } : undefined,
     ),
-    { code },
+    { code, attempts: tries },
   );
 };
 
