@@ -16872,7 +16872,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
       className: "till-stored-note",
       style: {
-        color: CD.faint,
+        color: CD.pinNote,
         marginTop: 2,
         lineHeight: 1.35
       }
@@ -17174,7 +17174,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "px-3 py-2 text-right"
     }, "Variance"))), /*#__PURE__*/React.createElement("tbody", null, recon.map(r => {
       const ls = lastSaved[r.c];
-      return /*#__PURE__*/React.createElement("tr", {
+      const note = storedRoundNote(r.expected, r.c);
+      return [/*#__PURE__*/React.createElement("tr", {
         key: r.c,
         style: {
           borderTop: `1px solid ${CD.lineSoft}`
@@ -17203,16 +17204,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, r.expected == null ? '—' : /*#__PURE__*/React.createElement("span", {
         className: "till-expected-figure"
-      }, unitText(r.expected, r.c)), storedRoundNote(r.expected, r.c) ? /*#__PURE__*/React.createElement("div", {
-        className: "till-stored-note",
-        style: {
-          color: CD.faint,
-          fontWeight: 400,
-          fontSize: 11,
-          lineHeight: 1.35,
-          marginTop: 2
-        }
-      }, storedRoundNote(r.expected, r.c)) : null), /*#__PURE__*/React.createElement("td", {
+      }, unitText(r.expected, r.c))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           color: ls ? CD.mute : CD.faint
@@ -17245,13 +17237,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           cursor: countedAt[r.c] ? 'help' : 'default'
         }
-      }, num(r.counted))), /*#__PURE__*/React.createElement("td", {
+      }, unitText(r.counted, r.c))), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right font-semibold",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
+      }, r.variance == null ? '—' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c))), note ? /*#__PURE__*/React.createElement("tr", {
+        key: r.c + '-stored',
+        className: "till-stored-row"
+      }, /*#__PURE__*/React.createElement("td", {
+        colSpan: 6,
+        className: "px-3 py-2",
+        style: {
+          color: CD.pinNote,
+          fontWeight: 400,
+          fontSize: 11,
+          lineHeight: 1.35
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "till-stored-note"
+      }, note))) : null];
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
@@ -17268,7 +17274,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.mute
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : unitText(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "px-3 py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
@@ -17281,7 +17287,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag
       }
     }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)))))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-3 mt-3"
+      className: "till-recon-desk flex items-center gap-3 mt-3"
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
       disabled: closing || closeBlocked,
@@ -17302,7 +17308,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: closing ? 'checkcircle' : 'lock',
       s: 14,
       c: "var(--cd-on-ink)"
-    }), " ", closing ? 'Closing…' : 'Close day & lock book') : /*#__PURE__*/React.createElement("span", {
+    }), " ", closing ? 'Closing…' : 'Close day and lock book') : /*#__PURE__*/React.createElement("span", {
       className: "flex items-center gap-2 px-3 py-2 text-[12px]",
       style: {
         background: 'var(--cd-chip)',
@@ -52903,14 +52909,16 @@ ${snap}`;
             colSpan: 6,
             style: {
               ...tdS,
-              color: CD.faint,
+              color: CD.pinNote,
               fontWeight: 400,
               fontSize: 11,
               lineHeight: 1.35
             }
+          }, /*#__PURE__*/React.createElement("div", {
+            className: "till-stored-line"
           }, cut[0], /*#__PURE__*/React.createElement("span", {
             className: "till-stored-figure"
-          }, figure), cut.slice(1).join(figure))) : null];
+          }, figure), cut.slice(1).join(figure)))) : null];
         }), (() => {
           /* The counted and variance totals are only offered in the
              desk's own money when every counted line can BE valued in
@@ -54857,6 +54865,7 @@ ${snap}`;
       n: "printer",
       s: 15
     }), " Print / PDF"))), /*#__PURE__*/React.createElement("div", {
+      className: "report-scroll",
       style: {
         flex: 1,
         overflow: 'auto',

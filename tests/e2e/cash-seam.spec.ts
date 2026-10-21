@@ -149,7 +149,7 @@ test("closing writes the counted figure back, and refuses to guess one", async (
   await saveDrawerCount(page);
 
   await clickDrawerTab(page, /Reconcile & close/i);
-  const closeButton = page.getByRole("button", { name: /Close day & lock book/i }).first();
+  const closeButton = page.locator(".till-recon-desk").getByRole("button", { name: "Close day and lock book" });
   await expect(closeButton).toBeDisabled();
   await expect(page.getByText(/Count all \d+ drawers? before closing/)).toBeVisible();
 
@@ -162,8 +162,8 @@ test("closing writes the counted figure back, and refuses to guess one", async (
   }
   await saveDrawerCount(page);
   await clickDrawerTab(page, /Reconcile & close/i);
-  await page.getByRole("button", { name: /Close day & lock book/i }).first().click();
-  await page.getByRole("button", { name: /Close day & lock book/i }).last().click();
+  await closeButton.click();
+  await page.getByRole("button", { name: /Close day & lock book/i }).filter({ visible: true }).last().click();
 
   await expect
     .poll(async () => (await book.session())?.status, { timeout: 20_000 })

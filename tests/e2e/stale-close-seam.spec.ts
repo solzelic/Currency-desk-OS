@@ -153,8 +153,11 @@ async function postFortyCad(page: Page, key: string) {
 
 async function closeTheDay(page: Page) {
   await clickDrawerTab(page, /Reconcile & close/i);
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).first());
-  await press(page.getByRole("button", { name: /Close day & lock book/i }).last());
+  /* Below 600px the desk button is hidden and the phone button says
+     "Close the day". The confirm in the review still says "&". Press
+     whichever opener is on screen, then the confirm that is on screen. */
+  await press(page.getByRole("button", { name: /Close the day|Close day (?:&|and) lock book/i }).filter({ visible: true }).first());
+  await press(page.getByRole("button", { name: /Close day & lock book/i }).filter({ visible: true }).last());
 }
 
 test("a close after money moved is refused, on screen and in the book", async ({ page }, testInfo) => {
