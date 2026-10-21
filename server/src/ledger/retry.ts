@@ -25,13 +25,13 @@
    retry that races a genuine duplicate still lands on the duplicate path
    rather than posting twice.
 
-   Bounded, but not stingy: six attempts over about a third of a second.
-   The contention here is not a thundering herd — it is a teller's write
-   against the screen behind them refreshing, and a couple of tills at a
-   busy counter — and giving up in ninety milliseconds turns an ordinary
-   overlap into an error message. If a movement still cannot get through,
-   the desk is contending on something structural, and answering "the
-   ledger is busy, try again" is more honest than grinding forever.
+   Bounded: six attempts. The wait doubles each time, starting at 25ms,
+   and then adds a spread as wide as that wait. A fixed delay put every
+   loser of the same wave on the same millisecond, and a handover of
+   twenty-four tills was still aborted on the sixth try. If a movement
+   still cannot get through, the caller gets a clear error — the ledger
+   is busy, nothing was posted — and the database code stays on it so
+   the route can answer LEDGER_BUSY.
    ============================================================ */
 
 /** PostgreSQL codes that mean "run it again", not "it was wrong". */
@@ -44,6 +44,26 @@ export const isRetryable = (error: unknown): boolean =>
   !!error &&
   typeof error === "object" &&
   RETRYABLE.has(String((error as { code?: unknown }).code ?? ""));
+
+/* 25, 50, 100, 200, 400. Capped so a longer try-count cannot sleep for
+   seconds. The spread is as wide as the wait: two writers that aborted
+   together draw different delays and one of them commits first. */
+const retryWaitMs = (attempt: number): number => {
+  const exponential = Math.min(25 * 2 ** attempt, 800);
+  const spread = Math.floor(Math.random() * exponential);
+  return exponential + spread;
+};
+
+const exhaustedRetry = (tries: number, cause: unknown): Error => {
+  const code = String((cause as { code?: unknown } | null)?.code ?? "40001");
+  return Object.assign(
+    new Error(
+      `The ledger is busy after ${tries} attempts. Nothing was posted. Try again.`,
+      cause instanceof Error ? { cause } : undefined,
+    ),
+    { code },
+  );
+};
 
 /**
  * Run `attempt` until it succeeds, it fails for a reason that is not the
@@ -64,14 +84,10 @@ export async function withSerializationRetry<T>(
     } catch (error) {
       if (!isRetryable(error)) throw error;
       last = error;
-      /* A little backoff, growing, so two contending writers stop landing
-         on each other. Not random: a desk has a handful of tills, not a
-         thundering herd, and a predictable delay is easier to reason about
-         from a log. */
       if (i < tries - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 25 * (i + 1)));
+        await new Promise((resolve) => setTimeout(resolve, retryWaitMs(i)));
       }
     }
   }
-  throw last;
+  throw exhaustedRetry(tries, last);
 }
