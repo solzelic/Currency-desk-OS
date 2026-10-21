@@ -64,14 +64,12 @@ const scope = (actor: LedgerActor) => [
   actor.tillId,
 ];
 
-/* The day this branch is trading. `branches.timezone` is the clock
-   the location keeps. The process zone, and UTC, are not that day.
-   A missing table (a ledger database that does not hold the desk
-   rows) falls back to the column's own default. */
-async function branchBusinessDate(
-  client: pg.PoolClient,
+/* The clock the location keeps. The process zone, and UTC, are not
+   that clock. A missing table (a ledger database that does not hold
+   the desk rows) falls back to the column's own default. */
+async function branchZone(
+  client: pg.Pool | pg.PoolClient,
   branchId: string,
-  now: Date,
 ): Promise<string> {
   let zone = "America/Toronto";
   try {
@@ -84,7 +82,19 @@ async function branchBusinessDate(
   } catch (error) {
     if ((error as { code?: string }).code !== "42P01") throw error;
   }
-  return civilTodayInZone(now, zone);
+  return zone;
+}
+
+/* The day this branch is trading. `branches.timezone` is the clock
+   the location keeps. The process zone, and UTC, are not that day.
+   A missing table (a ledger database that does not hold the desk
+   rows) falls back to the column's own default. */
+async function branchBusinessDate(
+  client: pg.PoolClient,
+  branchId: string,
+  now: Date,
+): Promise<string> {
+  return civilTodayInZone(now, await branchZone(client, branchId));
 }
 
 const fixed = (value: Decimal.Value) =>
@@ -94,7 +104,7 @@ const fixed = (value: Decimal.Value) =>
 const expectedIn = (value: Decimal.Value) => fixed(value);
 const countedIn = (value: string, currency: string) =>
   fixed(parseMoney(value, currency, "Count", "0"));
-const sessionJson = (row: Record<string, unknown>) => ({
+const sessionJson = (row: Record<string, unknown>, zone = "America/Toronto") => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
   businessDate: (() => {
@@ -102,6 +112,7 @@ const sessionJson = (row: Record<string, unknown>) => ({
     if (!day) throw new Error("Till session is missing its business date");
     return day;
   })(),
+  timezone: zone,
   status: row.status,
   openedBy: row.opened_by,
   openedAt: new Date(row.opened_at as string | Date).toISOString(),
@@ -141,8 +152,9 @@ export class TillControlService {
         ORDER BY c.currency,b.counted_at DESC,c.count_id DESC`,
       [session.rows[0].session_id],
     );
+    const zone = await branchZone(client, actor.branchId);
     return {
-      session: sessionJson(session.rows[0]),
+      session: sessionJson(session.rows[0], zone),
       latestCounts: Object.fromEntries(
         counts.rows.map((row) => [
           row.currency.trim(),
@@ -198,6 +210,7 @@ export class TillControlService {
     legalEntityId: string;
     branchId: string;
   }) {
+    const zone = await branchZone(this.pool, scopeIn.branchId);
     const result = await this.pool.query(
       `SELECT DISTINCT ON (workspace_id)
               workspace_id,till_id,session_id,session_number,status,
@@ -210,7 +223,7 @@ export class TillControlService {
     return new Map(
       result.rows.map((row) => [
         String(row.workspace_id),
-        sessionJson(row as Record<string, unknown>),
+        sessionJson(row as Record<string, unknown>, zone),
       ]),
     );
   }

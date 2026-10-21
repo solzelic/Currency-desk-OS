@@ -274,11 +274,10 @@ export class LedgerReportingService {
    *
    * `from` and `to` are instants, and the CALLER decides where its day
    * begins. That is deliberate: a business day is a fact about a branch's
-   * clock, and this server does not reliably know which timezone a branch
-   * keeps — inventing one here would put every "today" figure an hour or
-   * ten out without ever looking wrong. The till session carries the
-   * business date the desk itself is working under, and the desk turns
-   * that into the window it asks for.
+   * clock, and inventing one inside this total would put every "today"
+   * figure an hour or ten out without ever looking wrong. The till session
+   * carries the business date and `branches.timezone`. The desk turns that
+   * date into midnight in that zone, and that is the window it asks for.
    *
    * Reversed transactions are excluded from every total and counted
    * separately. A void is not a deal that earned nothing; it is a deal

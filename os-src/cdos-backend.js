@@ -457,7 +457,8 @@
          posted", which is the only window that needs no timezone to be
          right. The server deliberately does not decide where a day starts
          — see businessDayWindow() in cdos-base.jsx, which builds the
-         window from the till session's own business date. */
+         window from the till session's business date at midnight in
+         the session's branch zone. */
       loadLedgerSummary: function (window) {
         var query = [];
         if (window && window.from) query.push("from=" + encodeURIComponent(window.from));

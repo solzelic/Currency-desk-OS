@@ -217,6 +217,7 @@ postgres("a till session takes the branch's civil day", () => {
     });
     expect(opened.statusCode, opened.body).toBe(201);
     expect(opened.json().session.businessDate).toBe(input.day);
+    expect(opened.json().session.timezone).toBe(input.zone);
     const customer = await app.inject({
       method: "POST",
       url: "/api/ledger/customers",
@@ -266,6 +267,7 @@ postgres("a till session takes the branch's civil day", () => {
     });
     expect(handed.statusCode, handed.body).toBe(201);
     expect(handed.json().session.businessDate).toBe(input.day);
+    expect(handed.json().session.timezone).toBe(input.zone);
     const day = handed.json().session.businessDate as string;
     const reports = branchDayWindow(day, input.zone, 1);
     const endOfDay = branchDayWindow(day, input.zone, 1);
