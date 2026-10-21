@@ -72,7 +72,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **A till's business date is the branch's civil day.** Opening a till and handing it over stamp `branches.timezone`. The process zone is not that day. With the server on UTC, a till opened at 00:05 IDT is the Jerusalem day, and one opened at 11:55 pm in Toronto is still the Toronto day. Reports, the till end-of-day sheet, and the dashboard build their window from that date, so the deal stays in the day. A cheque reference and a hold date read the same session day.
+- **A till's business date is the branch's civil day.** Opening a till and handing it over stamp `branches.timezone`. The process zone is not that day. With the server on UTC, a till opened at 00:05 IDT is the Jerusalem day, and one opened at 11:55 pm in Toronto is still the Toronto day. Reports, the till end-of-day sheet, and the dashboard turn that date into a window at midnight in the browser's zone. A laptop in the branch's zone includes the day's deals. A laptop in a different zone asks for a different pair of instants, and the sheet prints no transactions. The window still has to be midnight in `branches.timezone`. A cheque reference and a hold date read the same session day.
 
 - **A cross receipt names both currencies.** When neither side is the home currency, the receipt Pricing line says "We bought INR, sold USD", and the deal row and the ledger Priced row say "Bought INR, sold USD". USD paid in and INR paid out reverses both sentences. A pair that includes the home currency still says "We bought USD" or "We sold USD" on the receipt and the Priced row, and "Bought USD" or "Sold USD" on the deal row.
 
