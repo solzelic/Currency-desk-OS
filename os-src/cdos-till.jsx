@@ -13,7 +13,7 @@
      DAY — the till session's `business_date`, which the server decides. A
      drawer counted at 00:20 belongs to the session that was open, not to the
      calendar. See the note on wallClock/businessDate in cdos-base.jsx. */
-  const { CD, Ic, fmt, num, unitText, cashVariance, storedRoundNote, crossRate, perCadLive, dDiff, STAFF } = window.CDOS;
+  const { CD, Ic, fmt, num, unitText, storedText, cashVariance, storedRoundNote, crossRate, perCadLive, dDiff, STAFF } = window.CDOS;
 
   // denominations per currency — { v: face value in that ccy, t: 'bill' | 'coin' }
   const DEN = {
@@ -29,6 +29,19 @@
   };
   const CCYS = Object.keys(DEN);
   const flagOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).flag : '') || ''; } catch (e) { return ''; } };
+  const nameOf = (c) => { try { return (typeof CUR !== 'undefined' ? (CUR.find(x => x.code === c) || {}).name : '') || ''; } catch (e) { return ''; } };
+  /* No currency carries its own unit word. The last word of the name
+     is the one the phone chip speaks: Japanese Yen is "yen". These
+     units do not take an English plural. */
+  const UNIT_UNCHANGED = { yen: 1, won: 1, yuan: 1, baht: 1, rand: 1 };
+  const unitWord = (c, n) => {
+    const last = ((nameOf(c).split(' ').pop() || c)).toLowerCase();
+    if (Math.abs(Number(n)) === 1 || UNIT_UNCHANGED[last]) return last;
+    return last + 's';
+  };
+  const phoneRoundNote = (n, ccy) => storedRoundNote(n, ccy)
+    ? 'Expected is rounded from ' + storedText(n, ccy) + ' from older deals.'
+    : '';
   const denLabel = (v) => v >= 1 ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : (Math.round(v * 100) + '¢');
   /* `cadOf` stood here — a module-level conversion into Canadian dollars,
      used by every total on this screen. It is gone. The rate board is quoted
@@ -859,7 +872,41 @@
       };
     }, [tab]);
 
-    return (<div ref={tillRootRef} className="till-screen flex flex-col" style={{ height: '100%', background: CD.paper, position: 'relative' }}>
+    const allPhoneCounted = recon.length > 0 && countedN === recon.length;
+    const phoneRemaining = Math.max(0, recon.length - countedN);
+    const phoneProgress = !allPhoneCounted
+      ? countedN + ' of ' + recon.length + ' counted'
+      : recon.length === 2
+        ? 'Both currencies counted'
+        : 'All ' + recon.length + ' ' + (recon.length === 1 ? 'currency' : 'currencies') + ' counted';
+    const phoneSteps = [
+      { n: '1', label: 'Count', state: allPhoneCounted ? 'done' : 'current' },
+      { n: '2', label: 'Check', state: allPhoneCounted ? 'current' : 'upcoming' },
+      { n: '3', label: 'Close', state: 'upcoming' },
+    ];
+    const phoneTotalsKnown = allPhoneCounted && totalExpHome != null && totalCountHome != null && totalVarHome != null;
+    const phoneBalanced = phoneTotalsKnown && Math.abs(totalVarHome) <= tolHome + 0.005;
+    const phoneDiff = !phoneTotalsKnown ? ''
+      : phoneBalanced
+        ? unitText(totalVarHome, homeCcy) + ' · Balanced'
+        : (totalVarHome > 0 ? '+' : '') + unitText(totalVarHome, homeCcy) + (totalVarHome > 0 ? ' · Over' : ' · Under');
+    const phoneCloseNote = !serverBalancesReady
+      ? (serverBalanceError || 'Waiting for server balances')
+      : !sessionOpen
+        ? 'Open the till before closing it'
+        : !recon.length
+          ? 'This till has no ledger balances yet'
+          : phoneRemaining > 0
+            ? 'Count ' + phoneRemaining + ' more ' + (phoneRemaining === 1 ? 'currency' : 'currencies') + ' first.'
+            : "This locks today's records. You can't edit them after.";
+    const phoneChip = (r) => {
+      if (r.counted == null || r.variance == null) return null;
+      if (r.variance === 0) return { text: 'Matches', tone: 'match' };
+      const abs = Math.abs(r.variance);
+      const over = r.variance > 0;
+      return { text: unitText(abs, r.c) + ' ' + unitWord(r.c, abs) + (over ? ' over' : ' under'), tone: over ? 'over' : 'under' };
+    };
+    return (<div ref={tillRootRef} className={'till-screen flex flex-col' + (tab === 'reconcile' ? ' till-on-reconcile' : '')} style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       {/* header + tabs */}
       <div data-tour="till" className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="till-head flex items-center gap-2.5 pb-3">
@@ -934,14 +981,14 @@
           </div>
         )}
         {switchNote && (
-          <div className="flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
+          <div className="till-switch-note flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
             <Ic n="wallet" s={13} c={CD.brass} />
             <span className="flex-1 min-w-0">{switchNote}</span>
             <button onClick={() => setSwitchNote('')} className="flex-none grid place-items-center" style={{ width: 22, height: 22, borderRadius: 6, border: 0, background: 'transparent', color: CD.mute }}><Ic n="x" s={12} c={CD.mute} /></button>
           </div>
         )}
         {!serverSession && serverBalancesReady && (
-          <div className="flex items-center gap-3 px-4 py-2.5 flex-none" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}` }}>
+          <div className="till-open-needed flex items-center gap-3 px-4 py-2.5 flex-none" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}` }}>
             <span className="grid place-items-center flex-none" style={{ width: 28, height: 28, borderRadius: 8, background: CD.brass }}><Ic n="lock" s={14} c="var(--cd-on-ink)" /></span>
             <div className="flex-1 min-w-0 leading-tight">
               <div className="text-[12.5px] font-semibold" style={{ color: CD.ink }}>This till hasn’t been opened</div>
@@ -958,13 +1005,13 @@
           </div>
         )}
         {sessionClosed && (
-          <div className="flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
+          <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
             <Ic n="lock" s={12} c="#3a7a56" />
             <span>Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {clockOf(new Date(serverSession.closedAt).getTime())}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
           </div>
         )}
         {(sessionErr || serverBalanceError) && (
-          <div className="flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]" style={{ background: CD.flagSoft, borderBottom: `1px solid ${CD.line}`, color: CD.flag }}>
+          <div className="till-alert flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]" style={{ background: CD.flagSoft, borderBottom: `1px solid ${CD.line}`, color: CD.flag }}>
             <Ic n="alert" s={13} c={CD.flag} />
             <span className="flex-1 min-w-0">{sessionErr || serverBalanceError}</span>
             <button onClick={() => { setSessionErr(''); refreshTill().catch(error => setServerBalanceError(error.message || 'Server balances unavailable')); }} className="flex-none text-[11px] font-semibold px-2.5 py-1" style={{ border: `1px solid ${CD.flag}`, borderRadius: 7, color: CD.flag, background: 'transparent' }}>Retry</button>
@@ -987,7 +1034,7 @@
         }) : null;
       })()}
       {stripOpen ? (
-      <div className="flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
+      <div className="till-operator flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
           <div className="min-w-0 leading-tight">
@@ -1001,7 +1048,7 @@
         </div>
       </div>
       ) : (
-      <div className="flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
+      <div className="till-operator flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
       </div>
       )}
@@ -1140,7 +1187,7 @@
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px] flex-none" style={{ color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Owner / permitted staff only</span>}
           </div>
         </div>) : (<div data-tour="till-reconcile" className="p-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="till-recon-widehead flex items-center justify-between mb-3">
             <div><div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div><div className="text-[11px]" style={{ color: CD.mute }}>{serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals"} · counted is your physical count · {countedN} of {recon.length} counted</div></div>
             <span className="text-[11px] px-2.5 py-1" style={{ background: countedN === recon.length ? CD.greenSoft : 'var(--cd-chip)', color: countedN === recon.length ? CD.green : CD.mute, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>
           </div>
@@ -1156,6 +1203,67 @@
               </tr>,
               note ? <tr key={r.c + '-stored'} className="till-stored-row"><td colSpan={6} className="px-3 py-2" style={{ color: CD.pinNote, fontWeight: 400, fontSize: 11, lineHeight: 1.35 }}><div className="till-stored-note">{note}</div></td></tr> : null]; })}</tbody><tfoot><tr style={{ borderTop: `2px solid ${CD.line}`, background: 'var(--cd-chip)' }}><td className="px-3 py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td></td><td className="px-3 py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{totalExpHome == null ? '—' : unitText(totalExpHome, homeCcy)}</td><td></td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{totalCountHome == null ? '—' : num(totalCountHome)}</td><td className="px-3 py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) <= tolHome + 0.005 ? CD.green : CD.flag }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)}</td></tr></tfoot></table>
           </div>
+          <div className="till-recon-list">
+            <div className="till-recon-head">
+              <h1 className="till-recon-title">Close the till</h1>
+              <p className="till-recon-lead">Count the cash in your drawer. We compare it to what the system expects, then lock the day.</p>
+            </div>
+            <div className="till-recon-steps">
+              {phoneSteps.map((step, i) => (
+                <div key={step.label} className="till-recon-step-wrap">
+                  {i > 0 ? <span className="till-recon-step-line" /> : null}
+                  <div className="till-recon-step" data-step={step.label} data-state={step.state}>
+                    <span className="till-recon-step-mark">{step.state === 'done' ? '\u2713' : step.n}</span>
+                    <span className="till-recon-step-label">{step.label}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="till-recon-progress">{phoneProgress}</p>
+            <div className="till-recon-card">
+              {recon.map(r => {
+                const note = phoneRoundNote(r.expected, r.c);
+                const chip = phoneChip(r);
+                return (<div key={r.c} className="till-recon-item">
+                  <div className="till-recon-item-main">
+                    <div className="till-recon-id">
+                      <span className="till-recon-flag">{flagOf(r.c)}</span>
+                      <div>
+                        <button type="button" className="till-recon-code" onClick={() => { setCcy(r.c); setTab('count'); }}>{r.c}</button>
+                        <div className="till-recon-name">{nameOf(r.c)}</div>
+                      </div>
+                    </div>
+                    <div className="till-recon-figs">
+                      {r.counted == null
+                        ? <button type="button" onClick={() => { setCcy(r.c); setTab('count'); }} className="till-recon-count">Count</button>
+                        : <>
+                            <div className="till-recon-you">You counted</div>
+                            <div className="till-recon-counted">{unitText(r.counted, r.c)}</div>
+                          </>}
+                      <div className="till-recon-expected">{'Expected ' + (r.expected == null ? '' : unitText(r.expected, r.c))}</div>
+                      {chip ? <span className={'till-recon-chip ' + chip.tone}>{chip.text}</span> : null}
+                    </div>
+                  </div>
+                  {note ? <div className="till-recon-note">{note}</div> : null}
+                </div>);
+              })}
+            </div>
+            {phoneTotalsKnown ? (
+              <div className="till-recon-total-card">
+                <div className="till-recon-total-label">{'TOTAL IN ' + (homeCcy || '')}</div>
+                <div className="till-recon-total-line"><span>Expected</span><b className="till-recon-total-expected">{unitText(totalExpHome, homeCcy)}</b></div>
+                <div className="till-recon-total-line"><span>Counted</span><b>{unitText(totalCountHome, homeCcy)}</b></div>
+                <div className="till-recon-total-line"><span>Difference</span><b className={'till-recon-diff ' + (phoneBalanced ? 'is-balanced' : 'is-off')}>{phoneDiff}</b></div>
+              </div>
+            ) : (
+              <div className="till-recon-hint">Count every currency to see your total.</div>
+            )}
+            {canCloseDay ? <div className="till-recon-close">
+              <button type="button" onClick={clickClose} disabled={closing || closeBlocked} className="till-recon-close-btn" style={{ background: closing ? CD.green : closeBlocked ? '#D1D1D6' : '#000', color: closeBlocked && !closing ? '#3C3C43' : '#fff', opacity: 1 }}>{closing ? 'Closing…' : 'Close the day'}</button>
+              <span className="till-recon-close-note">{phoneCloseNote}</span>
+            </div> : null}
+            <div className="till-recon-dock-pad" />
+          </div>
           <div className="till-recon-desk flex items-center gap-3 mt-3">
             {canCloseDay
               ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer') : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day and lock book'}</button>
@@ -1164,8 +1272,8 @@
             {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length} drawer(s) off</span>}
             {canCloseDay && offRows.length === 0 && countedN > 0 && <span className="text-[11px]" style={{ color: CD.green }}>All counted drawers balanced</span>}
           </div>
-          {offLedgerCcys.length > 0 && <div className="mt-2 text-[11px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Counted but not on the server ledger: <b style={{ color: CD.ink }}>{offLedgerCcys.join(', ')}</b>. These are recorded in your local history only and are left out of the close, so they can’t disturb a real balance.</div>}
-          <p className="mt-2 text-[11px]" style={{ color: CD.faint }}>{serverBacked ? <>The server ledger is the source of <b>expected</b> cash, including posted exchanges, reversals and vault movements. Closing writes each <b>counted</b> figure back as the till’s balance.</> : <>The vault issues your <b>opening</b> and the day's deals produce <b>expected</b>.</>} Your physical count is <b>counted</b>, and <b>variance</b> = counted − expected — it lands on the operator. Closing locks the ledger until the next day is opened.</p>
+          {offLedgerCcys.length > 0 && <div className="till-recon-offledger mt-2 text-[11px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Counted but not on the server ledger: <b style={{ color: CD.ink }}>{offLedgerCcys.join(', ')}</b>. These are recorded in your local history only and are left out of the close, so they can’t disturb a real balance.</div>}
+          <p className="till-recon-fine mt-2 text-[11px]" style={{ color: CD.faint }}>{serverBacked ? <>The server ledger is the source of <b>expected</b> cash, including posted exchanges, reversals and vault movements. Closing writes each <b>counted</b> figure back as the till’s balance.</> : <>The vault issues your <b>opening</b> and the day's deals produce <b>expected</b>.</>} Your physical count is <b>counted</b>, and <b>variance</b> = counted − expected — it lands on the operator. Closing locks the ledger until the next day is opened.</p>
         </div>))}
 
         {/* ===== HISTORY ===== */}

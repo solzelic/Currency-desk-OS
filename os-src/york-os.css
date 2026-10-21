@@ -1736,6 +1736,231 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   overflow-wrap: normal;
 }
 .till-stored-figure { white-space: nowrap; }
+/* Below 600px Reconcile is the phone close. At 600px and up this
+   list stays hidden and the table is the one Head of Design passed.
+   Colours here are the phone mockup. The app mute grey is about
+   4.40:1 and is not used on this list. */
+.till-recon-list { display: none; }
+@media (max-width: 599px) {
+  .till-recon { display: none !important; }
+  .till-recon-desk,
+  .till-recon-fine { display: none !important; }
+  .till-on-reconcile .till-move,
+  .till-on-reconcile .till-statusline,
+  .till-on-reconcile .till-sessionline,
+  .till-on-reconcile .till-scope-note,
+  .till-on-reconcile .till-switch-note,
+  .till-on-reconcile .till-operator,
+  .till-on-reconcile .till-recon-widehead,
+  .till-on-reconcile .till-recon-offledger { display: none !important; }
+  .till-recon-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .till-recon-head { display: flex; flex-direction: column; gap: 6px; }
+  .till-recon-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.15;
+    color: #000;
+  }
+  .till-recon-lead {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.4;
+    color: #4A4A50;
+  }
+  .till-recon-steps { display: flex; align-items: center; }
+  .till-recon-step-wrap { display: flex; align-items: center; min-width: 0; }
+  .till-recon-step-wrap + .till-recon-step-wrap { flex: 1; }
+  .till-recon-step { display: flex; align-items: center; gap: 6px; flex: none; }
+  .till-recon-step-line {
+    flex: 1;
+    height: 2px;
+    min-width: 8px;
+    margin: 0 8px;
+    background: #D1D1D6;
+  }
+  .till-recon-step-mark {
+    width: 24px;
+    height: 24px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .till-recon-step-label { font-size: 13px; font-weight: 600; line-height: 1; }
+  .till-recon-step[data-state="current"] .till-recon-step-mark { background: #000; color: #fff; }
+  .till-recon-step[data-state="current"] .till-recon-step-label { color: #000; }
+  .till-recon-step[data-state="done"] .till-recon-step-mark { background: #1D6B45; color: #fff; }
+  .till-recon-step[data-state="done"] .till-recon-step-label { color: #1D6B45; }
+  .till-recon-step[data-state="upcoming"] .till-recon-step-mark {
+    background: #fff;
+    color: #6C6C70;
+    border: 1.5px solid #AEAEB2;
+  }
+  .till-recon-step[data-state="upcoming"] .till-recon-step-label { color: #6C6C70; }
+  .till-recon-progress {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.3;
+    color: #5E5E63;
+  }
+  .till-recon-card { background: #fff; border-radius: 14px; }
+  .till-recon-item { padding: 14px; }
+  .till-recon-item + .till-recon-item { border-top: 1px solid #E6E6EB; }
+  .till-recon-item-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .till-recon-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .till-recon-flag { font-size: 22px; line-height: 1; }
+  .till-recon-code {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 17px;
+    font-weight: 600;
+    color: #000;
+    text-align: left;
+  }
+  .till-recon-name { margin-top: 1px; font-size: 13px; line-height: 1.3; color: #5E5E63; }
+  .till-recon-figs {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    flex: none;
+  }
+  .till-recon-you { font-size: 12px; line-height: 1.2; color: #5E5E63; }
+  .till-recon-counted {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: #000;
+  }
+  .till-recon-expected {
+    font-size: 13px;
+    line-height: 1.3;
+    color: #5E5E63;
+    font-variant-numeric: tabular-nums;
+  }
+  .till-recon-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    margin-top: 2px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .till-recon-chip.match { color: #1D6B45; background: #E5F2EA; }
+  .till-recon-chip.over,
+  .till-recon-chip.under { color: #A8321F; background: #FDECE6; }
+  .till-recon-count {
+    min-width: 88px;
+    min-height: 44px;
+    height: 44px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 12px;
+    background: #000;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .till-recon-note {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: #5E5E63;
+  }
+  .till-recon-hint {
+    border: 1.5px dashed #C7C7CC;
+    border-radius: 14px;
+    background: #F2F2F7;
+    color: #5E5E63;
+    padding: 14px 16px;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+  .till-recon-total-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .till-recon-total-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #5E5E63;
+    margin-bottom: 8px;
+  }
+  .till-recon-total-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 14px;
+    color: #5E5E63;
+    font-variant-numeric: tabular-nums;
+  }
+  .till-recon-total-line + .till-recon-total-line { margin-top: 4px; }
+  .till-recon-total-line b {
+    color: #000;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .till-recon-diff.is-balanced { color: #1D6B45; }
+  .till-recon-diff.is-off { color: #A8321F; }
+  .till-recon-close {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    background: #fff;
+    padding-top: 4px;
+  }
+  .till-recon-dock-pad { display: none; }
+  .till-recon-close-btn {
+    width: 100%;
+    height: 50px;
+    min-height: 50px;
+    border: 0;
+    border-radius: 14px;
+    padding: 0 16px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .till-recon-close-btn:disabled {
+    opacity: 1;
+    background: #D1D1D6 !important;
+    color: #3C3C43 !important;
+  }
+  .till-recon-close-note {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: #5E5E63;
+  }
+}
 /* The sign-off table is wider than a phone card, and this row used to
    scroll away with it. Stick the sentence to the visible left edge and
    wrap it inside the card. The stored figure stays one line. */
@@ -2494,6 +2719,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   }
   .till-denom > [data-tour="till-count"] { margin-bottom: 6px !important; }
   .till-chip { flex: none; }
+  /* The reconcile close is the last row of its scroller, and that
+     scroller runs under the tab bar. Stick it one bar up, and leave
+     a bar of space after it so the end of the scroll parks there. */
+  .till-recon-close { bottom: var(--phone-bar-h); }
+  .till-recon-dock-pad {
+    display: block;
+    height: var(--phone-bar-h);
+    flex: none;
+  }
   .till-count-foot {
     position: sticky !important;
     bottom: var(--phone-bar-h) !important;
