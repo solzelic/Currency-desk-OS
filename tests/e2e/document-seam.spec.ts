@@ -277,9 +277,17 @@ test("the sign-off sheet is the ledger's own figures, on the desk's own day", as
 
   await page.reload();
   const server = book(page);
+  const till = await server.session();
+  /* The sheet's window is the session's business date at midnight in the
+     branch zone. The wall clock can be the next day. Wait until the page
+     is on the session's day, or this read and the sheet ask for different
+     instants. */
+  await page.waitForFunction((day) => {
+    const cdos = window.CDOS;
+    return !!(cdos && typeof cdos.businessDate === "function" && cdos.businessDate() === day);
+  }, till.session.businessDate);
   const day = await server.summary(await todayWindow(page));
   const held = await server.position();
-  const till = await server.session();
   const pack = (await server.jurisdiction()).pack;
 
   await generate(page, /End-of-Day Sign-Off/);

@@ -32,3 +32,29 @@ export function civilToday(now: Date = new Date()): string {
   if (!day) throw new Error("Invalid date");
   return day;
 }
+
+/* The calendar day of `now` in an IANA zone. The process zone is not
+   consulted. A till opened at 00:05 in Asia/Jerusalem is that city's
+   day when the process is on UTC, and 23:55 in America/Toronto is
+   still that city's day after UTC has rolled. */
+export function civilTodayInZone(now: Date, timeZone: string): string {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+  } catch {
+    throw new Error(`Not a timezone: ${timeZone}`);
+  }
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const year = pick("year");
+  const month = pick("month");
+  const day = pick("day");
+  if (!/^\d{4}$/.test(year) || !/^\d{2}$/.test(month) || !/^\d{2}$/.test(day)) {
+    throw new Error(`Not a timezone: ${timeZone}`);
+  }
+  return `${year}-${month}-${day}`;
+}

@@ -62,7 +62,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 | Published rate board | Server (`/api/rates`, publish cycle). `localStorage` on the storefront is a cache, never a second book |
 | Tenant / session identity | Server sessions + CD-IDs; the server mints all identifiers. Switching staff replaces the session. The name on a deal is that session |
 | Frontend truth | Sources: `os-src/`, `design/` (site, onboarding, emails), the root shells. `web/` and `web/app/` are generated output — never edited directly, CI-gated for staleness |
-| Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. The menubar clock is a clock. It follows the desk timezone (`settings.timezone`) and the desk's time format, 12-hour unless the desk set 24-hour. |
+| Calendar days | An ID expiry, a date of birth, a cheque received day, a hold until day, and the till's business date are calendar days. Postgres stores the day. The desk reads that same year, month, and day. The machine zone does not move them. A till session and a handover stamp the branch's own timezone (`branches.timezone`), so a process on UTC still writes the branch's civil day. The menubar clock is a clock. It follows the desk timezone (`settings.timezone`) and the desk's time format, 12-hour unless the desk set 24-hour. |
 
 ## Production/build surfaces
 
@@ -71,6 +71,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 · `server/API` (`/api/*`).
 
 ## Current active work
+
+- **A till's business date is the branch's civil day.** Opening a till and handing it over stamp `branches.timezone`. The process zone is not that day. With the server on UTC, a till opened at 00:05 IDT is the Jerusalem day, and one opened at 11:55 pm in Toronto is still the Toronto day. Reports, the till end-of-day sheet, and the dashboard turn that date into a window at midnight in `branches.timezone`, which the till session carries. A browser in another zone still asks for the branch's day, so a manager in Israel reading a Toronto till sees that till's deals. A cheque reference and a hold date read the same session day. A database with no branches table still opens: the zone is read on its own connection and falls back to America/Toronto. A CD- deal reference still takes the UTC day.
 
 - **A cross receipt names both currencies.** When neither side is the home currency, the receipt Pricing line says "We bought INR, sold USD", and the deal row and the ledger Priced row say "Bought INR, sold USD". USD paid in and INR paid out reverses both sentences. A pair that includes the home currency still says "We bought USD" or "We sold USD" on the receipt and the Priced row, and "Bought USD" or "Sold USD" on the deal row.
 

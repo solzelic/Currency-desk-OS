@@ -601,23 +601,66 @@
       const B = window.CDOS && window.CDOS.Backend;
       if (!B) return businessDate();
       const answer = await B.loadTillSession();
+      if (answer && answer.session && answer.session.timezone) setBranchZone(answer.session.timezone);
       if (answer && answer.session && answer.session.businessDate) setBusinessDate(answer.session.businessDate);
     } catch (e) {/* no session, no server, or not signed in: the clock stands in */}
     return businessDate();
   }
-  /* The window a "today" figure covers, as two instants, from the desk's
-     own midnight. The server deliberately refuses to guess this — see the
-     note on LedgerReportingService.summary — because a business day
-     belongs to a branch's clock and this browser is standing in the
-     branch. `days` looks back that many days from the business date. */
+  /* The window a "today" figure covers, as two instants, from midnight
+     in the branch's zone. `branches.timezone` is that clock — the same
+     one that stamps the till session — and the session carries it.
+     The server deliberately refuses to guess this — see the note on
+     LedgerReportingService.summary — because a business day belongs to
+     a branch's clock. A browser in another zone still asks for the
+     branch's day. `days` looks back that many days from the business
+     date. The column default stands in until the session has been read. */
+  let _branchZone = "America/Toronto";
+  const setBranchZone = zone => {
+    const next = zone && String(zone).trim();
+    if (next) _branchZone = next;
+    return _branchZone;
+  };
+  function zoneOffsetMs(timeZone, utcMs) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).formatToParts(new Date(utcMs));
+    const pick = type => {
+      const part = parts.find(item => item.type === type);
+      return Number(part ? part.value : "0");
+    };
+    let hour = pick("hour");
+    if (hour === 24) hour = 0;
+    return Date.UTC(pick("year"), pick("month") - 1, pick("day"), hour, pick("minute"), pick("second")) - utcMs;
+  }
+  function midnightInZone(day, timeZone) {
+    const bits = String(day).split("-").map(Number);
+    const year = bits[0];
+    const month = bits[1];
+    const date = bits[2];
+    const guess = Date.UTC(year, month - 1, date);
+    const first = guess - zoneOffsetMs(timeZone, guess);
+    return new Date(guess - zoneOffsetMs(timeZone, first));
+  }
+  function shiftCivilDay(day, n) {
+    const bits = String(day).split("-").map(Number);
+    const year = bits[0];
+    const month = bits[1];
+    const date = bits[2];
+    return new Date(Date.UTC(year, month - 1, date + n, 12)).toISOString().slice(0, 10);
+  }
   function businessDayWindow(days) {
-    const end = new Date(businessDate() + 'T00:00:00');
-    end.setDate(end.getDate() + 1);
-    const start = new Date(end);
-    start.setDate(start.getDate() - Math.max(1, days || 1));
+    const endDay = shiftCivilDay(businessDate(), 1);
+    const startDay = shiftCivilDay(endDay, -Math.max(1, days || 1));
     return {
-      from: start.toISOString(),
-      to: end.toISOString()
+      from: midnightInZone(startDay, _branchZone).toISOString(),
+      to: midnightInZone(endDay, _branchZone).toISOString()
     };
   }
   const TODAY = wallClock();
@@ -2975,7 +3018,8 @@
          posted", which is the only window that needs no timezone to be
          right. The server deliberately does not decide where a day starts
          — see businessDayWindow() in cdos-base.jsx, which builds the
-         window from the till session's own business date. */
+         window from the till session's business date at midnight in
+         the session's branch zone. */
       loadLedgerSummary: function (window) {
         var query = [];
         if (window && window.from) query.push("from=" + encodeURIComponent(window.from));

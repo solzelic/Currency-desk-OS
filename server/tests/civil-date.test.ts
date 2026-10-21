@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { civilDate, civilToday } from "../src/civil-date.js";
+import { civilDate, civilToday, civilTodayInZone } from "../src/civil-date.js";
 
 /* The driver builds a date column as local midnight. Formatting that
    instant with toISOString() is the previous civil day in Asia/Jerusalem
@@ -18,6 +18,15 @@ describe("civil dates", () => {
     expect(civilDate(null)).toBeNull();
     expect(civilDate("")).toBeNull();
     expect(civilToday(new Date(2030, 3, 1, 15, 2))).toBe("2030-04-01");
+  });
+
+  it("reads the named zone rather than the process zone", () => {
+    const early = new Date("2026-10-20T21:05:00.000Z");
+    expect(civilTodayInZone(early, "Asia/Jerusalem")).toBe("2026-10-21");
+    expect(civilTodayInZone(early, "America/Toronto")).toBe("2026-10-20");
+    expect(civilTodayInZone(new Date("2026-10-21T20:55:00.000Z"), "Asia/Jerusalem")).toBe("2026-10-21");
+    expect(civilTodayInZone(new Date("2026-10-22T03:55:00.000Z"), "America/Toronto")).toBe("2026-10-21");
+    expect(() => civilTodayInZone(early, "Not/AZone")).toThrow(/timezone/);
   });
 
   it("refuses a value that is not a calendar day", () => {
