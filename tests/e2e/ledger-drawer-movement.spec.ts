@@ -3,16 +3,21 @@
    cannot read says the ledger has no answer, and does not print the
    browser's own sum of those rows.
 
-   The till's business date is the civil day the browser is standing
-   in. The desk turns that day into a window at local midnight. A UTC
-   date is still the previous day at 00:05 in Asia/Jerusalem, and the
-   open drawer's yen then falls outside the window. */
+   The till's business date is the civil day the branch is trading.
+   Yorkville stores America/Toronto. The desk turns that day into a
+   window at midnight in the branch zone, not the browser's. A UTC
+   date is still the previous day at 00:05 in Asia/Jerusalem, and
+   seeding the browser's day puts the open drawer's yen outside the
+   Toronto window. */
 import { createRequire } from "node:module";
 import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 const ISRAEL = "Asia/Jerusalem";
+/* Yorkville's branches.timezone. The window is midnight here, whichever
+   zone the browser is standing in. */
+const BRANCH_ZONE = "America/Toronto";
 
 /* YYYY-MM-DD in a named zone. en-CA's parts are the year, the month,
    and the day, so the string does not depend on the machine's locale. */
@@ -60,14 +65,17 @@ function zonedInstant(timeZone: string, day: string, hour: number, minute: numbe
   return new Date(utcGuess - zoneOffsetMs(timeZone, first));
 }
 
-/* 00:05 or 23:55 on a Jerusalem day whose next midnight is still ahead
-   of the server clock. The open-day total rounds only while that
-   midnight is in the future. */
+/* 00:05 or 23:55 on a Jerusalem day whose branch window is still
+   open. The open-day total rounds only while that window's end is
+   in the future. The end is the next midnight in the branch zone.
+   Jerusalem midnight is hours later, so waiting on it leaves the
+   Toronto day already closed. */
 function israelClock(hour: number, minute: number): Date {
   let day = civilDay(ISRAEL, new Date());
   let instant = zonedInstant(ISRAEL, day, hour, minute);
-  const end = zonedInstant(ISRAEL, addCivilDay(day), 0, 0);
-  if (end.getTime() - Date.now() < 2 * 60 * 60 * 1000) {
+  const windowEnd = (at: Date) =>
+    zonedInstant(BRANCH_ZONE, addCivilDay(civilDay(BRANCH_ZONE, at)), 0, 0);
+  if (windowEnd(instant).getTime() - Date.now() < 2 * 60 * 60 * 1000) {
     day = addCivilDay(day);
     instant = zonedInstant(ISRAEL, day, hour, minute);
   }
@@ -83,9 +91,10 @@ function israelClock(hour: number, minute: number): Date {
 }
 
 /* The day written on the till session. The desk builds its window
-   from this day at local midnight in the browser's zone, so the
-   stored day is that zone's civil day. The UTC date is the previous
-   day at 00:05 in Asia/Jerusalem, and the window has already ended. */
+   from this day at midnight in the branch's zone, so the stored day
+   is that zone's civil day. The UTC date is the previous day at
+   00:05 in Asia/Jerusalem, and a window built from the Jerusalem
+   day has already ended in Toronto. */
 function tradingDay(timeZone: string, at: Date): string {
   return civilDay(timeZone, at);
 }
@@ -177,13 +186,12 @@ async function seedBook(input: {
 test.beforeAll(async () => {
   pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
   const at = new Date();
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   await seedBook({
     workspace: WS,
     till: TILL,
     session: "session-drawer-book",
     tag: "drawer-jpy",
-    businessDate: tradingDay(zone, at),
+    businessDate: tradingDay(BRANCH_ZONE, at),
     postedAt: at,
   });
 });
@@ -298,10 +306,11 @@ test("an unread book says so, and a read book shows the rounded drawer", async (
   }
 });
 
-/* The same open drawer, with the browser standing in Jerusalem.
-   00:05 IDT is 21:05 UTC the day before (22:05 UTC while Israel is on
-   standard time). 11:55 pm is still that UTC day, so a UTC business
-   date happens to name the right window. */
+/* The same open drawer, with the browser standing in Jerusalem
+   and the till at Yorkville. 00:05 IDT is 21:05 UTC the day before
+   (22:05 UTC while Israel is on standard time). 11:55 pm is still
+   that UTC day. The stored day is Toronto's. The Toronto window of
+   the Jerusalem date starts the next morning and misses 00:05. */
 test.describe("the open drawer around Jerusalem midnight", () => {
   test.use({ timezoneId: ISRAEL });
 
@@ -315,7 +324,7 @@ test.describe("the open drawer around Jerusalem midnight", () => {
       till: "till-drawer-0005",
       session: "session-drawer-0005",
       tag: "drawer-0005",
-      businessDate: tradingDay(ISRAEL, at),
+      businessDate: tradingDay(BRANCH_ZONE, at),
       postedAt: at,
     });
     await page.clock.install({ time: at });
@@ -331,7 +340,7 @@ test.describe("the open drawer around Jerusalem midnight", () => {
       till: "till-drawer-2355",
       session: "session-drawer-2355",
       tag: "drawer-2355",
-      businessDate: tradingDay(ISRAEL, at),
+      businessDate: tradingDay(BRANCH_ZONE, at),
       postedAt: at,
     });
     await page.clock.install({ time: at });
