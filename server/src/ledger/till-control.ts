@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { civilDate, civilTodayInZone } from "../civil-date.js";
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { branchZone as branchZoneOnClient } from "./branch-zone.js";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable, parseMoney } from "./currencies.js";
@@ -91,14 +92,16 @@ async function branchZone(
 /* The day this branch is trading. `branches.timezone` is the clock
    the location keeps. The process zone, and UTC, are not that day.
    A missing table (a ledger database that does not hold the desk
-   rows) falls back to the column's own default. `pool` is not the
-   till transaction: the zone is read before that transaction uses it. */
+   rows) falls back to the column's own default. `client` is the
+   till transaction. The zone is read on that connection, inside a
+   savepoint, so a missing table does not abort the transaction. */
 async function branchBusinessDate(
-  pool: pg.Pool,
+  client: pg.PoolClient,
   branchId: string,
   now: Date,
-): Promise<string> {
-  return civilTodayInZone(now, await branchZone(pool, branchId));
+): Promise<{ zone: string; day: string }> {
+  const zone = await branchZoneOnClient(client, branchId);
+  return { zone, day: civilTodayInZone(now, zone) };
 }
 
 const fixed = (value: Decimal.Value) =>
@@ -133,6 +136,7 @@ export class TillControlService {
   private async currentWithClient(
     client: pg.PoolClient,
     actor: LedgerActor,
+    zoneOnClient?: string,
   ) {
     const session = await client.query(
       `SELECT *
@@ -156,7 +160,9 @@ export class TillControlService {
         ORDER BY c.currency,b.counted_at DESC,c.count_id DESC`,
       [session.rows[0].session_id],
     );
-    const zone = await branchZone(this.pool, actor.branchId);
+    /* Open and handover pass the zone they already read on `client`.
+       The other callers still read it through the pool. */
+    const zone = zoneOnClient ?? (await branchZone(this.pool, actor.branchId));
     return {
       session: sessionJson(session.rows[0], zone),
       latestCounts: Object.fromEntries(
@@ -334,6 +340,8 @@ export class TillControlService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "till:count");
+      const now = new Date();
+      const clock = await branchBusinessDate(client, actor.branchId, now);
       const existing = await client.query(
         `SELECT *
            FROM ledger_till_sessions
@@ -350,7 +358,6 @@ export class TillControlService {
               AND workspace_id=$4 AND till_id=$5`,
           scope(actor),
         );
-        const now = new Date();
         const sessionId = `till_session_${randomUUID()}`;
         await client.query(
           `INSERT INTO ledger_till_sessions
@@ -361,7 +368,7 @@ export class TillControlService {
             sessionId,
             ...scope(actor),
             next.rows[0].session_number,
-            await branchBusinessDate(this.pool, actor.branchId, now),
+            clock.day,
             actor.userId,
             now,
           ],
@@ -375,7 +382,7 @@ export class TillControlService {
           now,
         );
       }
-      const response = await this.currentWithClient(client, actor);
+      const response = await this.currentWithClient(client, actor, clock.zone);
       await client.query("COMMIT");
       return response;
     } catch (error) {
@@ -642,9 +649,11 @@ export class TillControlService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "till:count");
+      const now = new Date();
+      const clock = await branchBusinessDate(client, actor.branchId, now);
       const session = await this.openSession(client, actor);
       if (session.opened_by === actor.userId) {
-        const response = await this.currentWithClient(client, actor);
+        const response = await this.currentWithClient(client, actor, clock.zone);
         await client.query("COMMIT");
         return response;
       }
@@ -659,7 +668,6 @@ export class TillControlService {
       }
       const opener = session.opened_by as string;
       const batchId = `till_close_${randomUUID()}`;
-      const now = new Date();
       await client.query(
         `INSERT INTO ledger_till_count_batches
           (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
@@ -705,11 +713,11 @@ export class TillControlService {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open',$9,$10)`,
         [
           sessionId, ...scope(actor), next.rows[0].session_number,
-          await branchBusinessDate(this.pool, actor.branchId, now), actor.userId, now,
+          clock.day, actor.userId, now,
         ],
       );
       await this.audit(client, actor, "till.session.handover", sessionId, `from=${opener}`, now);
-      const response = await this.currentWithClient(client, actor);
+      const response = await this.currentWithClient(client, actor, clock.zone);
       await client.query("COMMIT");
       return response;
     } catch (error) {
