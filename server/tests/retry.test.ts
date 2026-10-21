@@ -16,8 +16,8 @@
    These tests hold the two halves of the fix. The retry itself, and the
    rule that a genuine abort is never dressed up as a fault.
    ============================================================ */
-import { describe, expect, it } from "vitest";
-import { isRetryable, withSerializationRetry } from "../src/ledger/retry.js";
+import { describe, expect, it, vi } from "vitest";
+import { isRetryable, LEDGER_BUSY_MESSAGE, withSerializationRetry } from "../src/ledger/retry.js";
 
 /** What `pg` throws when PostgreSQL aborts a serializable transaction. */
 const pgError = (code: string) =>
@@ -69,11 +69,71 @@ describe("retrying a serialized transaction", () => {
     expect(attempts).toBe(1);
   });
 
+  it("gives up cleanly with a clear error after N tries", async () => {
+    /* Six identical waits left a wave of till opens still aborted on
+       the last try. The bound stays. What comes back is the one busy
+       sentence, and it keeps the database code so the route can answer
+       LEDGER_BUSY. */
+    const tries = 4;
+    let attempts = 0;
+    const error = await withSerializationRetry(async () => {
+      attempts += 1;
+      throw pgError("40001");
+    }, tries).then(
+      () => {
+        throw new Error("the retry resolved");
+      },
+      (caught: unknown) => caught,
+    );
+    expect(attempts).toBe(tries);
+    expect(error).toMatchObject({
+      code: "40001",
+      message: LEDGER_BUSY_MESSAGE,
+    });
+    expect((error as { cause?: unknown }).cause).toMatchObject({ code: "40001" });
+  });
+
+  async function waitsFor(random: number): Promise<number[]> {
+    const waits: number[] = [];
+    const real = globalThis.setTimeout;
+    vi.spyOn(Math, "random").mockReturnValue(random);
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: (...args: unknown[]) => void,
+      ms?: number,
+    ) => {
+      waits.push(ms ?? 0);
+      return real(fn, 0);
+    }) as typeof setTimeout);
+    try {
+      await expect(
+        withSerializationRetry(async () => {
+          throw pgError("40001");
+        }, 4),
+      ).rejects.toMatchObject({ code: "40001", message: LEDGER_BUSY_MESSAGE });
+    } finally {
+      vi.restoreAllMocks();
+    }
+    return waits;
+  }
+
+  it("doubles the wait each time and adds a spread", async () => {
+    /* 25, 50, 100, each plus floor(0.5 * that wait). */
+    expect(await waitsFor(0.5)).toEqual([37, 75, 150]);
+  });
+
+  it("with random at 0 the spread is zero", async () => {
+    expect(await waitsFor(0)).toEqual([25, 50, 100]);
+  });
+
+  it("with random just under 1 the spread is one short of the wait", async () => {
+    expect(await waitsFor(0.999999999999)).toEqual([49, 99, 199]);
+  });
+
   it("gives up rather than grinding, and says what it gave up on", async () => {
     /* Bounded on purpose. A desk that cannot get a movement through in six
        attempts is contending on something structural, and "the ledger is
        busy, try again" is more honest than holding the connection open.
-       The error that comes back is still the database's own, so the route
+       The error that comes back keeps the database code, so the route
        can recognise it and answer LEDGER_BUSY rather than 500. */
     let attempts = 0;
     await expect(

@@ -5,7 +5,7 @@ import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { type Db } from "../db/index.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
-import { isRetryable } from "../ledger/retry.js";
+import { isRetryable, LEDGER_BUSY_MESSAGE } from "../ledger/retry.js";
 import { ensureLedgerPrincipal } from "../ledger/principal.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { currencyCode } from "../ledger/currencies.js";
@@ -25,7 +25,7 @@ async function actor(req:FastifyRequest):Promise<Resolution>{const user=await re
      rolled back whole and nothing was written. Answering 500 INTERNAL_ERROR
      is wrong in both halves and sends a teller hunting for a problem with a
      quote that was perfectly good. Same mapping as the ledger routes. */
-  function fail(reply:any,error:unknown){if(isRetryable(error)){app.log.warn(error,"quote contention after retries");return reply.code(409).send({code:"LEDGER_BUSY",message:"The desk is recording another change to this till. Nothing was quoted — try again."});}if(!(error instanceof LedgerError)){app.log.error(error,"quote route failure");return reply.code(500).send({code:"INTERNAL_ERROR"});}const status=error.code==="AUTHORIZATION_DENIED"||error.code==="SCOPE_DENIED"?403:error.code==="INVALID_REQUEST"?400:error.code==="IDEMPOTENCY_IN_PROGRESS"||error.code==="TILL_HELD"?409:422;return reply.code(status).send({code:error.code,message:error.message});}
+  function fail(reply:any,error:unknown){if(isRetryable(error)){app.log.warn(error,"quote contention after retries");return reply.code(409).send({code:"LEDGER_BUSY",message:LEDGER_BUSY_MESSAGE});}if(!(error instanceof LedgerError)){app.log.error(error,"quote route failure");return reply.code(500).send({code:"INTERNAL_ERROR"});}const status=error.code==="AUTHORIZATION_DENIED"||error.code==="SCOPE_DENIED"?403:error.code==="INVALID_REQUEST"?400:error.code==="IDEMPOTENCY_IN_PROGRESS"||error.code==="TILL_HELD"?409:422;return reply.code(status).send({code:error.code,message:error.message});}
 async function current(req:FastifyRequest,reply:any){const result=await actor(req);if(result.kind==="unauthenticated"){reply.code(401).send({code:"AUTHENTICATION_REQUIRED"});return null;}if(result.kind==="plan_denied"){reply.code(403).send({code:"PLAN_NOT_ENTITLED"});return null;}if(result.kind==="scope_denied"){reply.code(403).send({code:"SCOPE_DENIED"});return null;}return result.actor;}
 app.post("/api/quotes",async(req,reply)=>{const body=createBody.safeParse(req.body);if(!body.success)return reply.code(400).send({code:"INVALID_REQUEST"});try{const a=await current(req,reply);return a?reply.code(201).send(await service.create(a,body.data)):undefined;}catch(e){return fail(reply,e);}});
 app.get("/api/quotes/:quoteId",async(req,reply)=>{try{const a=await current(req,reply);return a?reply.send(await service.get(a,(req.params as any).quoteId)):undefined;}catch(e){return fail(reply,e);}});
