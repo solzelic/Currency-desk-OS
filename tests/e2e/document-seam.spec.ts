@@ -38,6 +38,13 @@
 import { test, expect, hasLedger, signInAtDesk, rendered } from "./fixtures";
 import type { Page } from "@playwright/test";
 
+/* The sheet's window is local midnight of the till's business date, and
+   that date is the branch's civil day. Yorkville keeps America/Toronto.
+   The civil-dates job sets the process zone and the browser follows it;
+   this file stands the browser in the branch, so the day's deals stay
+   inside the sheet. */
+test.use({ timezoneId: "America/Toronto" });
+
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
