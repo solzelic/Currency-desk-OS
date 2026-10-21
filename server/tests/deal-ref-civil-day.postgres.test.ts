@@ -48,7 +48,7 @@ postgres("a deal reference uses the branch's civil day", () => {
     handle = await createDb();
     pool = new pg.Pool({ connectionString: url });
     await pool.query(
-      "TRUNCATE ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
+      "TRUNCATE ledger_obligation_events,ledger_obligations,ledger_cheque_events,ledger_cheques,ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals,rate_boards,market_rates CASCADE",
     );
     await seed(handle.db);
     await pool.query(
@@ -160,4 +160,151 @@ postgres("a deal reference uses the branch's civil day", () => {
     expect(evening.slice(0, 10)).not.toBe(morning.slice(0, 10));
     expect(evening).not.toBe(morning);
   });
+
+  const headers = { "x-workspace-id": DEMO.workspaceId };
+
+  async function onJerusalem() {
+    await pool.query("UPDATE branches SET timezone=$1 WHERE id=$2", [JERUSALEM, DEMO.branchId]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(JUST_AFTER));
+    return login("j.masri");
+  }
+
+  async function posted(owner: { cdos_session: string }, url: string, payload: Record<string, unknown>) {
+    const res = await app.inject({ method: "POST", url, cookies: owner, headers, payload });
+    expect(res.statusCode, res.body).toBe(201);
+    return res.json() as Record<string, unknown>;
+  }
+
+  function branchDay(ref: unknown, prefix: string) {
+    expect(String(ref)).toMatch(new RegExp(`^${prefix}-261021-[0-9A-Fa-f]{6}$`));
+  }
+
+  it("stamps a posted quote with the branch day", async () => {
+    expect(utcStamp(JUST_AFTER)).toBe("261020");
+    await pool.query(
+      "INSERT INTO market_rates (id,provider,mids,fetched_at) VALUES ('snap-ref','test','{\"USD\":1.4}',$1)",
+      [JUST_AFTER],
+    );
+    await pool.query(
+      `INSERT INTO rate_boards
+         (id,tenant_id,legal_entity_id,branch_id,buy_margin,sell_margin,board_rows,market_snapshot_id,published_at)
+       VALUES ('board-ref',$1,$2,$3,0.02,0.03,'{"USD":{"mid":1.4,"show":true}}','snap-ref',$4)`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, JUST_AFTER],
+    );
+    const owner = await onJerusalem();
+    const quote = await posted(owner, "/api/quotes", {
+      customerId,
+      from: "CAD",
+      to: "USD",
+      inputAmount: "20.00",
+      feeCad: "0.00",
+      direction: "customer_buy_foreign",
+    });
+    const deal = await posted(owner, `/api/quotes/${quote.quoteId}/post`, {
+      idempotencyKey: "quote-ref-day",
+      purpose: "Travel",
+      sourceOfFunds: "Employment income",
+      thirdParty: false,
+    });
+    branchDay(deal.transactionRef, "CD");
+  });
+
+  it("stamps an obligation reference, its deal, and the settlement", async () => {
+    expect(utcStamp(JUST_AFTER)).toBe("261020");
+    const owner = await onJerusalem();
+    const bill = await posted(owner, "/api/ledger/bill-payments", {
+      idempotencyKey: "bill-ref-day",
+      customerId,
+      reference: "hydro-21",
+      billAmount: "20.00",
+      feeAmount: "1.00",
+      biller: "Hydro",
+      accountRef: "4451",
+      purpose: "Utilities",
+      sourceOfFunds: "Employment income",
+      thirdParty: false,
+    });
+    branchDay(bill.transactionRef, "CD");
+    branchDay(bill.obligationRef, "BP");
+    const settled = await posted(owner, `/api/ledger/obligations/${bill.obligationId}/settlement`, {
+      idempotencyKey: "bill-settle-day",
+      amountHome: "20.00",
+    });
+    branchDay(settled.transactionRef, "CD");
+  });
+
+  it("stamps a cashed cheque and its clearance", async () => {
+    expect(utcStamp(JUST_AFTER)).toBe("261020");
+    const owner = await onJerusalem();
+    const cashed = await posted(owner, "/api/ledger/cheques", {
+      idempotencyKey: "chq-ref-day",
+      customerId,
+      chequeNumber: "88421",
+      maker: "Northbridge Imports Ltd.",
+      draweeBank: "RBC Royal Bank",
+      chequeType: "business",
+      typeLabel: "Business",
+      currency: "CAD",
+      faceAmount: "50.00",
+      feeAmount: "2.00",
+      holdDays: 0,
+      endorsed: true,
+    });
+    branchDay(cashed.transactionRef, "CD");
+    const cashedCheque = cashed.cheque as { chequeId: string };
+    const cleared = await posted(owner, `/api/ledger/cheques/${cashedCheque.chequeId}/clearance`, {
+      idempotencyKey: "chq-clear-day",
+    });
+    branchDay(cleared.transactionRef, "CD");
+  });
+
+  /* Forty posts at once is more than the pool. A second connection
+     taken while each post holds one never returns. A 409 is the
+     serializable retry giving up; the teller posts that key again.
+     The hang has no answer to retry. */
+  it("finishes 40 deals on one till", async () => {
+    const owner = await login("j.masri");
+    const pending = Array.from({ length: 40 }, (_, n) => `burst-${n}`);
+    const refs: string[] = [];
+    const started = Date.now();
+    const deal = (key: string) => app.inject({
+      method: "POST",
+      url: "/api/ledger/exchanges",
+      cookies: owner,
+      headers,
+      payload: {
+        idempotencyKey: key,
+        customerId,
+        from: "CAD",
+        to: "USD",
+        inputAmount: "10.00",
+        feeCad: "0.00",
+        purpose: "Travel",
+        sourceOfFunds: "Employment income",
+        thirdParty: false,
+      },
+    });
+    while (pending.length > 0) {
+      const left = 15_000 - (Date.now() - started);
+      const wave = await Promise.race([
+        Promise.all(pending.map((key) => deal(key))),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`40 deals hung past 15s with ${refs.length} posted`)), Math.max(left, 0));
+        }),
+      ]);
+      const again: string[] = [];
+      pending.forEach((key, index) => {
+        const res = wave[index];
+        if (!res) throw new Error(`${key} did not answer`);
+        if (res.statusCode === 201) refs.push(String(res.json().transactionRef));
+        else if (res.statusCode === 409) again.push(key);
+        else throw new Error(`${key} ${res.statusCode} ${res.body}`);
+      });
+      pending.splice(0, pending.length, ...again);
+    }
+    expect(refs).toHaveLength(40);
+    expect(new Set(refs).size).toBe(40);
+    for (const ref of refs) expect(ref).toMatch(/^CD-\d{6}-[0-9a-f]{6}$/);
+  }, 20_000);
 });

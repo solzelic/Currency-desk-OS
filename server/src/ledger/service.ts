@@ -997,7 +997,7 @@ export class LedgerService {
 
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${await branchRefDay(this.pool, actor.branchId, now)}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${await branchRefDay(client, actor.branchId, now)}-${transactionId.slice(-6)}`;
 
       /* The stock leaves here, BEFORE the journal is written, because the
          journal has to carry the figure the disposal actually produced.
@@ -1489,7 +1489,7 @@ export class LedgerService {
         );
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${await branchRefDay(this.pool, actor.branchId, now)}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${await branchRefDay(client, actor.branchId, now)}-${transactionId.slice(-6)}`;
       const response = {
         transactionId,
         transactionRef,

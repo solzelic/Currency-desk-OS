@@ -559,7 +559,7 @@ export class ObligationService {
     kind: ObligationKind,
     now: Date,
   ): Promise<string> {
-    const day = await branchRefDay(this.pool, actor.branchId, now);
+    const day = await branchRefDay(client, actor.branchId, now);
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const candidate = `${OBLIGATION_REF_PREFIX[kind]}-${day}-${randomUUID()
         .replace(/-/g, "")
@@ -800,7 +800,7 @@ export class ObligationService {
 
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${await branchRefDay(this.pool, actor.branchId, now)}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${await branchRefDay(client, actor.branchId, now)}-${transactionId.slice(-6)}`;
       await this.writeTransaction(client, actor, {
         transactionId,
         transactionRef,
@@ -1088,7 +1088,7 @@ export class ObligationService {
 
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${await branchRefDay(this.pool, actor.branchId, now)}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${await branchRefDay(client, actor.branchId, now)}-${transactionId.slice(-6)}`;
       const settling = ending === "settled";
       /* No pack: new deals paused; voids and settling existing deals
          still work. Paying out or writing off an obligation already on

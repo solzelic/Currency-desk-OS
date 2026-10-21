@@ -539,7 +539,7 @@ export class ChequeService {
 
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${await branchRefDay(this.pool, actor.branchId, now)}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${await branchRefDay(client, actor.branchId, now)}-${transactionId.slice(-6)}`;
       const chequeId = `chq_${randomUUID()}`;
 
       /* The desk's own reference, minted HERE. The browser used to mint
@@ -789,7 +789,7 @@ export class ChequeService {
       const face = new Decimal(cheque.face_amount);
       const now = new Date();
       const transactionId = `tx_${randomUUID()}`;
-      const transactionRef = `CD-${await branchRefDay(this.pool, actor.branchId, now)}-${transactionId.slice(-6)}`;
+      const transactionRef = `CD-${await branchRefDay(client, actor.branchId, now)}-${transactionId.slice(-6)}`;
 
       /* ---- the two settlement journals ----
 
