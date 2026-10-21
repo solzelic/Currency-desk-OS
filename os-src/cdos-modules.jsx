@@ -7,7 +7,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, currencyPlaces, effectiveRate, RATE_NOTE, dDiff, counterCashIn, counterCashOut } = window.CDOS;
+  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, currencyPlaces, effectiveRate, RATE_NOTE, unitText, dDiff, counterCashIn, counterCashOut } = window.CDOS;
 
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -498,7 +498,7 @@
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
           <Line k="Reference" v={row.ref || '—'} /><Line k="Date" v={row.date} /><Line k="Customer" v={row.customer || '—'} /><Line k="Type" v={row.type} /><Line k="Teller" v={row.teller} />
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
-          <Line k="Pay-in" v={`${num(row.inAmt)} ${row.inCcy}`} /><Line k="Rate" v={rateValue} />{fx && priced && priced.rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-pin-note)', marginTop: 1, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div> : null}<Line k="Pay-out" v={`${num(row.outAmt)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
+          <Line k="Pay-in" v={`${unitText(row.inAmt, row.inCcy)} ${row.inCcy}`} /><Line k="Rate" v={rateValue} />{fx && priced && priced.rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-pin-note)', marginTop: 1, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div> : null}<Line k="Pay-out" v={`${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
           {row.type !== 'Cheque Cashing' && row.side && <Line k="Pricing" v={window.CDOS.exchangeWords(row, homeCcy()).pricing} />}
           {row.quoteRef && <Line k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} />}
           {row.serverReceipt && <><div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} /><Line k="Server receipt" v={row.serverReceipt.receiptId} /><div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div></>}

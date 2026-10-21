@@ -503,12 +503,35 @@
      ============================================================ */
   let _currencies = null;
   const deskCurrencies = () => _currencies;
-  /** How many decimal places this currency is actually paid in. */
-  const currencyPlaces = (code) => {
-    const known = _currencies && _currencies.minorUnits;
-    const stated = known && known[String(code || '').toUpperCase()];
-    return typeof stated === 'number' ? stated : 2;
+  /** How many decimal places this currency is shown with.
+      The server scales table wins once it has loaded. Before that,
+      and when the load fails, ISO minor units apply. Three places
+      stay three. The ledger still stores two. */
+  const displayPlaces = window.CDOS.displayPlaces;
+  const currencyPlaces = (code) => displayPlaces(code, _currencies && _currencies.scales);
+  const fractionDigitsHeld = (n) => {
+    const text = String(n);
+    const dot = text.indexOf('.');
+    if (dot < 0) return 0;
+    const frac = text.slice(dot + 1).replace(/[^0-9].*$/, '');
+    return frac.length;
   };
+  /* Places from currencyPlaces. keepStored shows a balance that is
+     not on those places, so a report can still read 99.85 yen back.
+     A new figure does not keep those digits. */
+  const digitsFor = (n, ccy, keepStored) => {
+    const known = currencyPlaces(ccy);
+    const held = fractionDigitsHeld(n);
+    if (known == null) return held;
+    if (!keepStored) return known;
+    const value = Number(n);
+    if (!isFinite(value)) return known;
+    const scale = Math.pow(10, known);
+    const rounded = Math.round((value + Number.EPSILON) * scale) / scale;
+    if (Math.abs(value - rounded) > 1e-8) return Math.max(known, held);
+    return known;
+  };
+  const formatDigits = (n, digits) => new Intl.NumberFormat('en-CA', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n) || 0);
   /** Does this desk deal in it? True where nobody has restricted anything. */
   const deskTrades = (code) => {
     const want = String(code || '').toUpperCase();
@@ -775,12 +798,36 @@
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
 
-  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: c || 'CAD', maximumFractionDigits: 2 }).format(Number(n));
+  const fmt = (n, c) => {
+    if (n == null || n === '' || isNaN(n)) return '';
+    const code = c || 'CAD';
+    const digits = digitsFor(n, code, false);
+    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: code, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n));
+  };
   const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
-  /* Phone ticket amounts: grouped digits, two places, then the code.
-     '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
+  /* Grouped digits in the currency's own places. 99.85 yen is 100. */
+  const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
+  /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
+  const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
+  const roundMinor = (n, places) => window.CDOS.roundMinor(n, places);
+  /* Counted minus expected, each already in whole units. Rounding the
+     raw gap is a different number: 100 against 99.5 yen is balanced,
+     because both whole-unit figures are 100. */
+  const cashVariance = (counted, expected, ccy) => {
+    if (counted == null || expected == null || !isFinite(Number(counted)) || !isFinite(Number(expected))) return null;
+    const places = currencyPlaces(ccy);
+    return roundMinor(roundMinor(Number(counted), places) - roundMinor(Number(expected), places), places);
+  };
+  /* Empty when the stored figure is already on the minor-unit grid.
+     1,000.50 CAD at two places is whole. 99.85 yen is not. */
+  const storedRoundNote = (n, ccy) => {
+    if (n == null || n === '' || !isFinite(Number(n))) return '';
+    const places = currencyPlaces(ccy);
+    if (Math.abs(Number(n) - roundMinor(Number(n), places)) <= 1e-8) return '';
+    return 'Rounded from ' + storedText(n, ccy) + ' ' + ccy + ' stored from older deals. It clears when the ledger is trued up.';
+  };
   const formatPhoneMoney = (n, ccy) => {
-    const body = new Intl.NumberFormat('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
+    const body = unitText(n, ccy);
     return ccy ? body + ' ' + ccy : body;
   };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
@@ -1375,7 +1422,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, cashVariance, storedRoundNote, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */

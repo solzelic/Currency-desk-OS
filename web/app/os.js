@@ -142,6 +142,69 @@
 });
 
 
+/* ---- os-src/minor-units-format.js ---- */
+/* Screen places for a currency. ISO minor units when the server table
+   has not loaded. Three-place currencies stay at three on the screen.
+   The ledger still stores two. The list matches server/src/ledger/currencies.ts. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CDOS = Object.assign(root.CDOS || {}, api);
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  var ISO = {
+    BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
+    PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+    BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  };
+
+  function displayPlaces(code, scales) {
+    var c = String(code || "").toUpperCase();
+    var places = 2;
+    if (scales && Object.prototype.hasOwnProperty.call(scales, c) && typeof scales[c] === "number") {
+      places = scales[c];
+    } else if (Object.prototype.hasOwnProperty.call(ISO, c)) {
+      places = ISO[c];
+    }
+    if (typeof places !== "number" || !isFinite(places)) places = 2;
+    if (places > 3) places = 3;
+    if (places < 0) places = 0;
+    return places;
+  }
+
+  /* Half up, in the places the screen will actually draw. */
+  function roundMinor(n, places) {
+    var p = places;
+    if (typeof p !== "number" || !isFinite(p)) p = 2;
+    if (p > 3) p = 3;
+    if (p < 0) p = 0;
+    var value = Number(Number(n).toFixed(p));
+    return Object.is(value, -0) ? 0 : value;
+  }
+
+  function unitAmount(n, code, scales) {
+    var places = displayPlaces(code, scales);
+    return new Intl.NumberFormat("en-CA", {
+      minimumFractionDigits: places,
+      maximumFractionDigits: places,
+    }).format(roundMinor(n, places));
+  }
+
+  function moneyAmount(n, code, scales) {
+    if (n == null || n === "" || isNaN(n)) return "";
+    var places = displayPlaces(code, scales);
+    var ccy = code || "CAD";
+    return new Intl.NumberFormat("en-CA", {
+      style: "currency",
+      currency: ccy,
+      minimumFractionDigits: places,
+      maximumFractionDigits: places,
+    }).format(roundMinor(n, places));
+  }
+
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+});
+
+
 /* ---- os-src/cdos-base.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — base layer
@@ -744,12 +807,38 @@
      ============================================================ */
   let _currencies = null;
   const deskCurrencies = () => _currencies;
-  /** How many decimal places this currency is actually paid in. */
-  const currencyPlaces = code => {
-    const known = _currencies && _currencies.minorUnits;
-    const stated = known && known[String(code || '').toUpperCase()];
-    return typeof stated === 'number' ? stated : 2;
+  /** How many decimal places this currency is shown with.
+      The server scales table wins once it has loaded. Before that,
+      and when the load fails, ISO minor units apply. Three places
+      stay three. The ledger still stores two. */
+  const displayPlaces = window.CDOS.displayPlaces;
+  const currencyPlaces = code => displayPlaces(code, _currencies && _currencies.scales);
+  const fractionDigitsHeld = n => {
+    const text = String(n);
+    const dot = text.indexOf('.');
+    if (dot < 0) return 0;
+    const frac = text.slice(dot + 1).replace(/[^0-9].*$/, '');
+    return frac.length;
   };
+  /* Places from currencyPlaces. keepStored shows a balance that is
+     not on those places, so a report can still read 99.85 yen back.
+     A new figure does not keep those digits. */
+  const digitsFor = (n, ccy, keepStored) => {
+    const known = currencyPlaces(ccy);
+    const held = fractionDigitsHeld(n);
+    if (known == null) return held;
+    if (!keepStored) return known;
+    const value = Number(n);
+    if (!isFinite(value)) return known;
+    const scale = Math.pow(10, known);
+    const rounded = Math.round((value + Number.EPSILON) * scale) / scale;
+    if (Math.abs(value - rounded) > 1e-8) return Math.max(known, held);
+    return known;
+  };
+  const formatDigits = (n, digits) => new Intl.NumberFormat('en-CA', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  }).format(Number(n) || 0);
   /** Does this desk deal in it? True where nobody has restricted anything. */
   const deskTrades = code => {
     const want = String(code || '').toUpperCase();
@@ -1107,21 +1196,43 @@
     if (!book) return '';
     return Object.keys(book).sort().map(k => k + ':' + (+book[k]).toFixed(6)).join('|');
   }
-  const fmt = (n, c) => n == null || n === '' || isNaN(n) ? '' : new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency: c || 'CAD',
-    maximumFractionDigits: 2
-  }).format(Number(n));
+  const fmt = (n, c) => {
+    if (n == null || n === '' || isNaN(n)) return '';
+    const code = c || 'CAD';
+    const digits = digitsFor(n, code, false);
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    }).format(Number(n));
+  };
   const num = n => new Intl.NumberFormat('en-CA', {
     maximumFractionDigits: 2
   }).format(Number(n) || 0);
-  /* Phone ticket amounts: grouped digits, two places, then the code.
-     '2,166.75 USD'. The desk ticket keeps num() and the code apart. */
+  /* Grouped digits in the currency's own places. 99.85 yen is 100. */
+  const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
+  /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
+  const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
+  const roundMinor = (n, places) => window.CDOS.roundMinor(n, places);
+  /* Counted minus expected, each already in whole units. Rounding the
+     raw gap is a different number: 100 against 99.5 yen is balanced,
+     because both whole-unit figures are 100. */
+  const cashVariance = (counted, expected, ccy) => {
+    if (counted == null || expected == null || !isFinite(Number(counted)) || !isFinite(Number(expected))) return null;
+    const places = currencyPlaces(ccy);
+    return roundMinor(roundMinor(Number(counted), places) - roundMinor(Number(expected), places), places);
+  };
+  /* Empty when the stored figure is already on the minor-unit grid.
+     1,000.50 CAD at two places is whole. 99.85 yen is not. */
+  const storedRoundNote = (n, ccy) => {
+    if (n == null || n === '' || !isFinite(Number(n))) return '';
+    const places = currencyPlaces(ccy);
+    if (Math.abs(Number(n) - roundMinor(Number(n), places)) <= 1e-8) return '';
+    return 'Rounded from ' + storedText(n, ccy) + ' ' + ccy + ' stored from older deals. It clears when the ledger is trued up.';
+  };
   const formatPhoneMoney = (n, ccy) => {
-    const body = new Intl.NumberFormat('en-CA', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(Number(n) || 0);
+    const body = unitText(n, ccy);
     return ccy ? body + ' ' + ccy : body;
   };
   const dDiff = (a, b) => (new Date(b) - new Date(a)) / 86400000;
@@ -2164,6 +2275,10 @@
     perCadLive,
     fmt,
     num,
+    unitText,
+    storedText,
+    cashVariance,
+    storedRoundNote,
     formatPhoneMoney,
     dDiff,
     mkRef,
@@ -3841,6 +3956,7 @@ if (typeof window !== "undefined") {
     currencyPlaces,
     effectiveRate,
     RATE_NOTE,
+    unitText,
     dDiff,
     counterCashIn,
     counterCashOut
@@ -5487,7 +5603,7 @@ if (typeof window !== "undefined") {
       }
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Pay-in",
-      v: `${num(row.inAmt)} ${row.inCcy}`
+      v: `${unitText(row.inAmt, row.inCcy)} ${row.inCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Rate",
       v: rateValue
@@ -5502,7 +5618,7 @@ if (typeof window !== "undefined") {
       }
     }, RATE_NOTE || 'Rate rounded. The amounts are exact.') : null, /*#__PURE__*/React.createElement(Line, {
       k: "Pay-out",
-      v: `${num(row.outAmt)} ${row.outCcy}`
+      v: `${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Fee",
       v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
@@ -14528,6 +14644,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     Ic,
     fmt,
     num,
+    unitText,
+    cashVariance,
+    storedRoundNote,
     crossRate,
     perCadLive,
     dDiff,
@@ -15634,7 +15753,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
     const isCounted = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) > 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
-    const countedCcys = useMemo(() => CCYS.filter(isCounted), [counts, quick, mode]);
+    const countedCcys = useMemo(() => {
+      const keys = new Set(CCYS);
+      Object.keys(quick).forEach(k => keys.add(k));
+      Object.keys(counts).forEach(k => keys.add(k));
+      return [...keys].filter(isCounted);
+    }, [counts, quick, mode]);
     const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
     const serverBalancesReady = !serverBacked || serverBalances !== null;
     // the currencies the server actually keeps a till balance for. The close
@@ -15795,7 +15919,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const recon = reconCcys.map(c => {
       const expected = expectedOf(c);
       const counted = countedCcys.includes(c) ? ccyTotal(c) : null;
-      const variance = counted == null ? null : counted - expected;
+      const variance = counted == null || expected == null ? null : cashVariance(counted, expected, c);
       return {
         c,
         expected,
@@ -16645,7 +16769,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         marginTop: 8
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-end justify-between gap-4 pt-3",
+      className: "till-count-row flex items-end justify-between gap-4 pt-3",
       style: {
         borderTop: `1px solid ${CD.line}`
       }
@@ -16669,7 +16793,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("input", {
       type: "text",
       inputMode: "decimal",
-      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : num(ccyTotal(ccy)),
+      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
       readOnly: ccyMode(ccy) !== 'total',
       onFocus: () => {
         if (ccyMode(ccy) !== 'total') {
@@ -16706,14 +16830,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderLeft: `1px solid ${CD.line}`
       }
     }, ccy)), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-1.5 flex items-center gap-2 flex-wrap",
+      className: "till-expected-wrap text-[11px] mt-1.5",
       style: {
         color: CD.faint
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
       title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
-      className: "inline-flex items-center gap-1.5",
+      className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
       style: {
         border: 0,
         background: 'transparent',
@@ -16729,9 +16853,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         transition: 'filter .15s',
         userSelect: 'none'
       }
-    }, num(expectedOf(ccy)), " ", ccy), isCounted(ccy) && (() => {
-      const v = ccyTotal(ccy) - expectedOf(ccy);
-      const off = Math.abs(v) > 0.005;
+    }, unitText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
+      const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy);
+      const off = v !== 0;
       return /*#__PURE__*/React.createElement("b", {
         style: {
           color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
@@ -16740,12 +16864,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           transition: 'filter .15s',
           userSelect: 'none'
         }
-      }, off ? `${v > 0 ? '+' : ''}${num(v)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
+      }, off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
     })(), /*#__PURE__*/React.createElement(Ic, {
       n: revealExp[ccy] ? 'power' : 'lock',
       s: 11,
       c: CD.faint
-    })), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), /*#__PURE__*/React.createElement("div", {
+    }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
+      className: "till-stored-note",
+      style: {
+        color: CD.faint,
+        marginTop: 2,
+        lineHeight: 1.35
+      }
+    }, storedRoundNote(expectedOf(ccy), ccy)) : null), /*#__PURE__*/React.createElement("div", {
       className: "till-counted-when text-[11px] mt-1",
       style: {
         color: CD.faint
@@ -17008,7 +17139,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace'
       }
     }, countedN, "/", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
-      className: "overflow-hidden",
+      className: "overflow-hidden till-recon",
       style: {
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -17070,7 +17201,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.expected == null ? CD.faint : CD.ink
         }
-      }, r.expected == null ? '—' : num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? '—' : /*#__PURE__*/React.createElement("span", {
+        className: "till-expected-figure"
+      }, unitText(r.expected, r.c)), storedRoundNote(r.expected, r.c) ? /*#__PURE__*/React.createElement("div", {
+        className: "till-stored-note",
+        style: {
+          color: CD.faint,
+          fontWeight: 400,
+          fontSize: 11,
+          lineHeight: 1.35,
+          marginTop: 2
+        }
+      }, storedRoundNote(r.expected, r.c)) : null), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2 text-right",
         style: {
           color: ls ? CD.mute : CD.faint
@@ -17109,7 +17251,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontVariantNumeric: 'tabular-nums',
           color: r.variance == null ? CD.mute : !offOf(r) ? CD.green : CD.flag
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? '—' : r.variance === 0 ? '\u2713 balanced' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`,
@@ -34032,6 +34174,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     num,
     currencyPlaces,
     effectiveRate,
+    unitText,
     mkRef,
     nowTime,
     newTx,
@@ -35618,6 +35761,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       amt: amtN,
       ccy: home
     }; // MO / Bill: face value out
+    /* Once the server has priced the deal, that figure is the one on
+       the ticket. The local preview is only what shows before then. */
+    const shownOut = serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy ? serverQuote.outputAmount : out.amt;
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -36420,22 +36566,22 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       title: 'Send money',
       tag: `${dest.flag} ${dest.country}`,
       giveLbl: 'You pay',
-      give: `${num(amtN)} ${home}`,
+      give: `${unitText(amtN, home)} ${home}`,
       rateLine: rateShown(home, payoutCcy, amtN, out.amt),
       rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '',
       getLbl: `${benName || 'Beneficiary'} receives`,
-      get: `${num(out.amt)} ${payoutCcy}`,
+      get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
     } : {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Your quote',
       tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
-      give: `${num(amtN)} ${inCcy}`,
+      give: `${unitText(amtN, inCcy)} ${inCcy}`,
       rateLine: rateShown(inCcy, outCcy, amtN, out.amt),
       rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '',
       getLbl: 'You receive',
-      get: `${num(out.amt)} ${outCcy}`,
+      get: `${unitText(shownOut, outCcy)} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
@@ -36725,7 +36871,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }))), /*#__PURE__*/React.createElement(SheetRateNote, {
       on: pricedRate(amtN, out.amt, outCcy).rounded
     })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
-      value: out.amt ? num(out.amt) : '—',
+      value: shownOut ? unitText(shownOut, outCcy) : '—',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);
@@ -37033,7 +37179,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), " ", rateShown(home, payoutCcy, amtN, out.amt)), /*#__PURE__*/React.createElement(SheetRateNote, {
       on: pricedRate(amtN, out.amt, payoutCcy).rounded
     })), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
-      value: out.amt ? num(out.amt) : '—',
+      value: out.amt ? unitText(out.amt, payoutCcy) : '—',
       ccy: payoutCcy,
       readOnly: true,
       accent: CD.green,
@@ -37517,7 +37663,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontVariantNumeric: 'tabular-nums',
         lineHeight: 1.1
       }
-    }, phoneSheet ? phoneMoney(amtN > 0 ? isExchange || isCheque || isReceive ? amtN : amtN + feeN : 0, isExchange ? inCcy : isReceive ? out.ccy : home) : /*#__PURE__*/React.createElement(React.Fragment, null, amtN > 0 ? num(isExchange || isCheque || isReceive ? amtN : amtN + feeN) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, phoneSheet ? phoneMoney(amtN > 0 ? isExchange || isCheque || isReceive ? amtN : amtN + feeN : 0, isExchange ? inCcy : isReceive ? out.ccy : home) : /*#__PURE__*/React.createElement(React.Fragment, null, amtN > 0 ? unitText(isExchange || isCheque || isReceive ? amtN : amtN + feeN, isExchange ? inCcy : isReceive ? out.ccy : home) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -37561,7 +37707,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: '#7fd1a3',
         lineHeight: 1.1
       }
-    }, phoneSheet ? phoneMoney(out.amt || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, out.amt ? num(out.amt) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, shownOut ? unitText(shownOut, out.ccy) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -37690,7 +37836,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.green
       }
-    }, "Frozen quote \xB7 ", serverQuote.inputAmount, " ", serverQuote.from, " \u2192 ", serverQuote.outputAmount, " ", serverQuote.to, " \xB7 expires ", new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', {
+    }, "Frozen quote \xB7 ", unitText(serverQuote.inputAmount, serverQuote.from), " ", serverQuote.from, " \u2192 ", unitText(serverQuote.outputAmount, serverQuote.to), " ", serverQuote.to, " \xB7 expires ", new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
@@ -51581,6 +51727,10 @@ ${snap}`;
     num,
     formatPhoneMoney,
     currencyPlaces,
+    storedText,
+    unitText,
+    cashVariance,
+    storedRoundNote,
     dDiff,
     dealMargin,
     CCY,
@@ -52457,9 +52607,9 @@ ${snap}`;
               /* null, not zero: a currency held only in the safe has no
                  drawer balance, and a drawer line of 0.00 against a
                  counted figure would read as a variance. */
-              units: till ? Number(till.quantity) : null,
+              units: till ? till.quantity : null,
               home: till && till.marketValueHome != null ? Number(till.marketValueHome) : null,
-              vaultUnits: row.vault ? Number(row.vault.quantity) : null,
+              vaultUnits: row.vault ? row.vault.quantity : null,
               counted: record && record.counted != null ? Number(record.counted) : null,
               countedExpected: record && record.expected != null ? Number(record.expected) : null,
               variance: record && record.variance != null ? Number(record.variance) : null,
@@ -52510,11 +52660,25 @@ ${snap}`;
        a confident one, because SUM() treats a blank and a zero identically
        but a reader does not. */
     const csvMoney = v => v == null ? '' : Number(v).toFixed(2);
+    /* Stored units. A whole yen stays whole. A stored 200.80 stays 200.80.
+       Before the table loads, the digits already on the figure. */
+    const csvUnits = (v, ccy) => {
+      if (v == null || v === '') return '';
+      const known = currencyPlaces(ccy);
+      const text = String(v);
+      const held = text.indexOf('.') < 0 ? 0 : text.split('.')[1].replace(/[^0-9].*$/, '').length;
+      if (known == null) return text;
+      const value = Number(v);
+      const scale = Math.pow(10, known);
+      const rounded = Math.round((value + Number.EPSILON) * scale) / scale;
+      const digits = Math.abs(value - rounded) > 1e-8 ? Math.max(known, held) : known;
+      return value.toFixed(digits);
+    };
     const csvFor = id => {
       const s = periodBook.summary;
       if (id === 'endofday') {
         const d = dayBook.summary;
-        return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'], ...data.cash.map(x => [x.ccy, csvMoney(x.units), csvMoney(x.home), csvMoney(x.counted), csvMoney(x.variance), csvMoney(x.vaultUnits)]), [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''], [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''], [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''], [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''], [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''], ['Reportable', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
+        return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'], ...data.cash.map(x => [x.ccy, csvUnits(x.units, x.ccy), csvMoney(x.home), csvUnits(x.counted, x.ccy), csvUnits(x.variance, x.ccy), csvUnits(x.vaultUnits, x.ccy)]), [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''], [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''], [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''], [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''], [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''], ['Reportable', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
       }
       if (id === 'pnl') {
         const hstRate = settings && settings.hstRate != null ? +settings.hstRate : 13;
@@ -52685,8 +52849,14 @@ ${snap}`;
             textAlign: 'right'
           }
         }, "In the safe"))), /*#__PURE__*/React.createElement("tbody", null, data.cash.map(x => {
-          const off = x.variance != null && Math.abs(x.variance) > 0.005;
-          return /*#__PURE__*/React.createElement("tr", {
+          const shown = x.counted == null || x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+          const off = shown != null && shown !== 0;
+          const note = storedRoundNote(x.units, x.ccy);
+          const figure = storedText(x.units, x.ccy);
+          const cut = figure ? note.split(figure) : [note];
+          /* The stored figure is the next row, across every column.
+             Inside the drawer cell it wraps, and the number breaks. */
+          return [/*#__PURE__*/React.createElement("tr", {
             key: x.ccy
           }, /*#__PURE__*/React.createElement("td", {
             style: tdS
@@ -52697,7 +52867,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null ? CD.faint : CD.ink
             }
-          }, x.units == null ? '— not in this drawer' : num(x.units)), /*#__PURE__*/React.createElement("td", {
+          }, x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -52711,22 +52881,36 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.counted == null ? CD.faint : CD.ink
             }
-          }, x.counted == null ? '— not counted' : num(x.counted)), /*#__PURE__*/React.createElement("td", {
+          }, x.counted == null ? '— not counted' : unitText(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
-              fontWeight: x.variance != null ? 600 : 400,
-              color: x.variance == null ? CD.faint : off ? CD.flag : CD.green
+              fontWeight: shown != null ? 600 : 400,
+              color: shown == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, x.variance == null ? '—' : Math.abs(x.variance) < 0.005 ? '✓ balanced' : (x.variance > 0 ? '+' : '') + num(x.variance)), /*#__PURE__*/React.createElement("td", {
+          }, shown == null ? '—' : shown === 0 ? '✓ balanced' : (shown > 0 ? '+' : '') + unitText(shown, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
               color: CD.mute
             }
-          }, x.vaultUnits == null ? '—' : num(x.vaultUnits)));
+          }, x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy))), note ? /*#__PURE__*/React.createElement("tr", {
+            key: x.ccy + '-stored',
+            className: "till-stored-row"
+          }, /*#__PURE__*/React.createElement("td", {
+            colSpan: 6,
+            style: {
+              ...tdS,
+              color: CD.faint,
+              fontWeight: 400,
+              fontSize: 11,
+              lineHeight: 1.35
+            }
+          }, cut[0], /*#__PURE__*/React.createElement("span", {
+            className: "till-stored-figure"
+          }, figure), cut.slice(1).join(figure))) : null];
         }), (() => {
           /* The counted and variance totals are only offered in the
              desk's own money when every counted line can BE valued in
@@ -52736,7 +52920,10 @@ ${snap}`;
              says which currencies it could not price. */
           const counted = data.cash.filter(x => x.counted != null);
           const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
-          const vParts = counted.map(x => homeEquiv(x.variance == null ? 0 : x.variance, x.ccy, homeCcy));
+          const vParts = counted.map(x => {
+            const shown = x.countedExpected == null ? null : cashVariance(x.counted, x.countedExpected, x.ccy);
+            return homeEquiv(shown == null ? 0 : shown, x.ccy, homeCcy);
+          });
           const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
           const vTot = vParts.length && vParts.every(p => p != null) ? vParts.reduce((s, p) => s + p, 0) : null;
           const off = vTot != null && Math.abs(vTot) > 0.005;
@@ -52777,7 +52964,7 @@ ${snap}`;
             color: CD.faint,
             padding: '8px 16px 2px'
           }
-        }, "Every figure in this table is the server ledger's. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " and ", /*#__PURE__*/React.createElement("b", null, "variance"), " are what the ledger recorded when the count was taken, measured against the expected balance at that moment. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
+        }, "Every figure in this table is the server ledger's, except the variance, which is the counted figure minus the expected balance in whole units, the same difference the count screen shows. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {
@@ -53184,7 +53371,7 @@ ${snap}`;
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, num(c.sold)), /*#__PURE__*/React.createElement("td", {
+        }, storedText(c.sold, c.currency)), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
@@ -53642,7 +53829,7 @@ ${snap}`;
             textAlign: 'right',
             fontVariantNumeric: 'tabular-nums'
           }
-        }, num(c.sold)), /*#__PURE__*/React.createElement("td", {
+        }, storedText(c.sold, c.currency)), /*#__PURE__*/React.createElement("td", {
           style: {
             ...tdS,
             textAlign: 'right',
