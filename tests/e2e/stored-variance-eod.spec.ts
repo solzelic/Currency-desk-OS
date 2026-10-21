@@ -5,7 +5,7 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
@@ -87,8 +87,21 @@ test("an old yen count shows the variance that was saved", async ({ page }) => {
   await openSignOff(page);
   const table = page.locator("table").filter({ hasText: "In the drawer" });
   const jpy = table.locator("tr", { hasText: "JPY" }).first();
-  await expect(jpy).toContainText("+0.15");
+  const drawer = jpy.locator("td").nth(1);
+  const counted = jpy.locator("td").nth(3);
+  const variance = jpy.locator("td").nth(4);
+  await expect(drawer).toContainText("99.85");
+  await expect(variance).toContainText("+0.15");
+  await expect(variance).not.toContainText("99.85");
+  await expect(counted).toContainText("100");
   await expect(jpy).not.toContainText("balanced");
+  const note = jpy.locator("xpath=following-sibling::tr[1]");
+  await expect(note).toContainText("Counted before whole-yen display. Variance shown as saved then.");
+  const total = table.locator("tr", { hasText: "Total" });
+  await expect(total).toContainText("+0.15");
+  await expect(total).not.toContainText("balanced");
+  const totalVariance = total.locator("td").nth(3);
+  await expect(totalVariance).toHaveText("+0.15 JPY");
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "CSV" }).click();
@@ -106,4 +119,80 @@ test("an old yen count shows the variance that was saved", async ({ page }) => {
   expect(saved.rows[0].stored_expected_amount).toBeNull();
   expect(saved.rows[0].variance).toBe("0.15");
   expect(cells[4]).toBe(saved.rows[0].variance);
+});
+
+test("end of day shows plus one and minus one for a stored yen expected", async ({ page }) => {
+  const till = "till-yen-sign";
+  const ws = "ws-yen-sign";
+  const scope = [TENANT, ENTITY, BRANCH, ws, till];
+  await pool.query(
+    `INSERT INTO workspaces (id,tenant_id,legal_entity_id,branch_id,till_id)
+     VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+    [ws, TENANT, ENTITY, BRANCH, till],
+  );
+  await pool.query(
+    `INSERT INTO ledger_till_balances
+      (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount)
+     VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)
+     ON CONFLICT (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency)
+     DO UPDATE SET available_amount = EXCLUDED.available_amount`,
+    scope,
+  );
+  await pool.query(
+    `INSERT INTO ledger_till_sessions
+      (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+       session_number,business_date,status,opened_by,opened_at)
+     VALUES ('session-yen-sign',$1,$2,$3,$4,$5,1,current_date,'open',$1||':j.masri',now())
+     ON CONFLICT (session_id) DO NOTHING`,
+    scope,
+  );
+  await signInAtDesk(page, "j.masri");
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await page.locator('#appbar [data-app="till"]').click();
+  const switcher = page.locator('xpath=//button[@title="Switch till at this location" and not(ancestor::*[@id="tenantbar"])]');
+  await switcher.click();
+  await page.getByRole("button", { name: till }).click();
+  await page.getByRole("button", { name: /Switch till|Take over till/i }).last().click();
+  await expect(page.getByText(new RegExp("ledger till\\s+" + till)).first()).toBeVisible({ timeout: 20_000 });
+  const sessionId = await page.evaluate(async () => {
+    const answer = await fetch("/api/ledger/till-session").then((response) => response.json());
+    return answer.session && answer.session.sessionId;
+  });
+  expect(sessionId).toBeTruthy();
+
+  const save = async (counted: string, variance: string) => {
+    const key = `sign-${counted}-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO ledger_till_count_batches
+        (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+         till_id,count_kind,actor_id,idempotency_key,counted_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'interim',$3||':j.masri',$1,now())`,
+      [key, sessionId, ...scope],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_counts
+        (batch_id,currency,expected_amount,counted_amount,variance_amount,stored_expected_amount)
+       VALUES ($1,'JPY',489175.85,$2,$3,489175.85)`,
+      [key, counted, variance],
+    );
+  };
+  const varianceCell = () => page.locator("table").filter({ hasText: "In the drawer" }).locator("tr", { hasText: "JPY" }).first().locator("td").nth(4);
+  const openSheet = async () => {
+    await page.reload();
+    await landOnDesktop(page);
+    if (await skip.isVisible().catch(() => false)) await skip.click();
+    await page.locator('#appbar [data-app="reports"]').click();
+    await page.getByText("End-of-Day Sign-Off").first().click();
+    await page.locator("#cdos-report-doc").waitFor({ state: "visible", timeout: 30_000 });
+  };
+
+  await save("489177.00", "1.00");
+  await openSheet();
+  await expect(varianceCell()).toContainText("+1");
+  await expect(varianceCell()).not.toContainText("-1");
+  await save("489175.00", "-1.00");
+  await openSheet();
+  await expect(varianceCell()).toContainText("-1");
+  await expect(varianceCell()).not.toContainText("+1");
 });

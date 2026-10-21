@@ -53072,8 +53072,16 @@ ${snap}`;
             legacy
           } = varianceShown(x);
           const off = shown != null && shown !== 0;
-          const note = storedRoundNote(x.units, x.ccy);
-          const figure = storedText(x.units, x.ccy);
+          const savedExpected = legacy && x.countedExpected != null ? storedText(x.countedExpected, x.ccy) : '';
+          const varianceLabel = shown == null ? '—' : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy);
+          /* A count from before the stored-expected column keeps the
+             expected it was saved with in the drawer column, in the
+             same ink as any other drawer figure. The variance column
+             shows only the difference that was saved. The grey line
+             says that, instead of describing a later rounding. */
+          const legacyNote = 'Counted before whole-yen display. Variance shown as saved then.';
+          const note = legacy ? legacyNote : storedRoundNote(x.units, x.ccy);
+          const figure = legacy ? '' : storedText(x.units, x.ccy);
           const cut = figure ? note.split(figure) : [note];
           /* The stored figure is the next row, across every column.
              Inside the drawer cell it wraps, and the number breaks. */
@@ -53086,9 +53094,9 @@ ${snap}`;
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
-              color: x.units == null ? CD.faint : CD.ink
+              color: x.units == null && !savedExpected ? CD.faint : CD.ink
             }
-          }, x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, savedExpected ? savedExpected : x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -53110,7 +53118,7 @@ ${snap}`;
               fontWeight: shown != null ? 600 : 400,
               color: shown == null ? CD.faint : off ? CD.flag : CD.green
             }
-          }, shown == null ? '—' : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, varianceLabel), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -53131,9 +53139,9 @@ ${snap}`;
             }
           }, /*#__PURE__*/React.createElement("div", {
             className: "till-stored-line"
-          }, cut[0], /*#__PURE__*/React.createElement("span", {
+          }, figure ? /*#__PURE__*/React.createElement(React.Fragment, null, cut[0], /*#__PURE__*/React.createElement("span", {
             className: "till-stored-figure"
-          }, figure), cut.slice(1).join(figure)))) : null];
+          }, figure), cut.slice(1).join(figure)) : note))) : null];
         }), (() => {
           /* The counted and variance totals are only offered in the
              desk's own money when every counted line can BE valued in
@@ -53143,15 +53151,25 @@ ${snap}`;
              says which currencies it could not price. */
           const counted = data.cash.filter(x => x.counted != null);
           const ctParts = counted.map(x => homeEquiv(x.counted, x.ccy, homeCcy));
-          const vParts = counted.map(x => {
-            const {
-              shown
-            } = varianceShown(x);
-            return homeEquiv(shown == null ? 0 : shown, x.ccy, homeCcy);
-          });
+          const shownLines = counted.map(x => ({
+            ...varianceShown(x),
+            ccy: x.ccy
+          }));
+          const vParts = shownLines.map((line, i) => homeEquiv(line.shown == null ? 0 : line.shown, counted[i].ccy, homeCcy));
           const ctTot = ctParts.length && ctParts.every(p => p != null) ? ctParts.reduce((s, p) => s + p, 0) : null;
           const vTot = vParts.length && vParts.every(p => p != null) ? vParts.reduce((s, p) => s + p, 0) : null;
-          const off = vTot != null && Math.abs(vTot) > 0.005;
+          /* A saved variance smaller than half a cent of home currency
+             is still the variance. Calling that total balanced would
+             contradict the line above it. The row is labeled in home
+             currency, so the figure keeps the currency it was saved in.
+             0.15 yen is about 0.0014 CAD, and printing +0.15 alone
+             would read as 0.15 CAD. */
+          const legacyOff = shownLines.filter(line => line.legacy && line.shown != null && line.shown !== 0);
+          const homeWouldBalance = vTot == null || Math.abs(vTot) < 0.005;
+          const savedTotal = legacyOff.length && homeWouldBalance ? legacyOff.map(line => (line.shown > 0 ? '+' : '') + Number(line.shown).toFixed(2) + ' ' + line.ccy).join(', ') : null;
+          const off = savedTotal != null || vTot != null && Math.abs(vTot) > 0.005;
+          const varianceMissing = savedTotal == null && vTot == null;
+          const varianceTotal = savedTotal != null ? savedTotal : varianceMissing ? '—' : Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, homeCcy);
           return /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
@@ -53178,9 +53196,9 @@ ${snap}`;
               textAlign: 'right',
               fontWeight: 700,
               fontVariantNumeric: 'tabular-nums',
-              color: vTot == null ? CD.faint : off ? CD.flag : CD.green
+              color: varianceMissing ? CD.faint : off ? CD.flag : CD.green
             }
-          }, vTot == null ? '—' : Math.abs(vTot) < 0.005 ? '✓ balanced' : (vTot > 0 ? '+' : '') + fmt(vTot, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, varianceTotal), /*#__PURE__*/React.createElement("td", {
             style: tdS
           }));
         })())), /*#__PURE__*/React.createElement("div", {
@@ -53189,7 +53207,7 @@ ${snap}`;
             color: CD.faint,
             padding: '8px 16px 2px'
           }
-        }, "Every figure in this table is the server ledger's, except the variance. A count that stored its expected shows the counted figure minus the expected balance in whole units, the same difference the count screen shows. A count from before that field shows the variance that was saved. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
+        }, "Every figure in this table is the server ledger's, except the variance. A count that stored its expected shows the counted figure minus the expected balance in whole units, the same difference the count screen shows. A count from before that field shows the variance that was saved. ", /*#__PURE__*/React.createElement("b", null, "In the drawer"), " is this till's own balance \u2014 not the branch's, which would also include the safe. When that stored balance is off the currency's grid, the grey line under the currency names the figure the book still holds. A count taken before whole-yen display says so on that line instead, and the total names that saved variance with its currency. ", /*#__PURE__*/React.createElement("b", null, "Counted"), " is what the ledger recorded when the count was taken. A currency not counted says so; a currency the branch has never published a rate for cannot be valued and says so. ", /*#__PURE__*/React.createElement("b", null, "In the safe"), " is shown for information and is never netted into a variance."))), /*#__PURE__*/React.createElement(Card, {
           pad: 0
         }, /*#__PURE__*/React.createElement("div", {
           style: {
