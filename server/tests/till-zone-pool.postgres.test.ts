@@ -1,13 +1,23 @@
 /* Opening a till, and handing one over, read branches.timezone while
-   their transaction already holds a connection. That read used to
-   check out a second connection from the same pool. The pool has no
-   acquire timeout, so once every connection is inside that
-   transaction the server waits forever.
+   their transaction already holds a connection. Two reads, both after
+   BEGIN and both before the client is released:
 
-   The burst below is larger than the pool. On the pool read, this
+     openOnce and handoverOnce call branchBusinessDate, which reads
+     the zone for the business date stamped on the new session.
+
+     Both then call currentWithClient, which reads the zone again for
+     the session it returns.
+
+   Each of those used to check out a second connection from the pool.
+   The pool has no acquire timeout, so once every connection is inside
+   that transaction the server waits forever.
+
+   The burst below is larger than the pool. On either pool read, this
    test hits its own timeout and fails. It does not hang the runner.
-   After the read moves onto the transaction's own connection, every
-   open and every handover finishes, on the branch's civil day. */
+   After both reads move onto the transaction's own connection, every
+   open and every handover finishes, on the branch's civil day. The
+   business date is the branchBusinessDate read. The timezone on the
+   result is the currentWithClient read. */
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { civilTodayInZone } from "../src/civil-date.js";

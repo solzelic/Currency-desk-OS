@@ -136,7 +136,6 @@ export class TillControlService {
   private async currentWithClient(
     client: pg.PoolClient,
     actor: LedgerActor,
-    zoneOnClient?: string,
   ) {
     const session = await client.query(
       `SELECT *
@@ -160,9 +159,10 @@ export class TillControlService {
         ORDER BY c.currency,b.counted_at DESC,c.count_id DESC`,
       [session.rows[0].session_id],
     );
-    /* Open and handover pass the zone they already read on `client`.
-       The other callers still read it through the pool. */
-    const zone = zoneOnClient ?? (await branchZone(this.pool, actor.branchId));
+    /* Open and handover call this before they release `client`.
+       The zone is read on that connection. A pool read here waits
+       for a second connection while the till transaction still holds one. */
+    const zone = await branchZoneOnClient(client, actor.branchId);
     return {
       session: sessionJson(session.rows[0], zone),
       latestCounts: Object.fromEntries(
@@ -382,7 +382,7 @@ export class TillControlService {
           now,
         );
       }
-      const response = await this.currentWithClient(client, actor, clock.zone);
+      const response = await this.currentWithClient(client, actor);
       await client.query("COMMIT");
       return response;
     } catch (error) {
@@ -653,7 +653,7 @@ export class TillControlService {
       const clock = await branchBusinessDate(client, actor.branchId, now);
       const session = await this.openSession(client, actor);
       if (session.opened_by === actor.userId) {
-        const response = await this.currentWithClient(client, actor, clock.zone);
+        const response = await this.currentWithClient(client, actor);
         await client.query("COMMIT");
         return response;
       }
@@ -717,7 +717,7 @@ export class TillControlService {
         ],
       );
       await this.audit(client, actor, "till.session.handover", sessionId, `from=${opener}`, now);
-      const response = await this.currentWithClient(client, actor, clock.zone);
+      const response = await this.currentWithClient(client, actor);
       await client.query("COMMIT");
       return response;
     } catch (error) {
