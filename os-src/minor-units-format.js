@@ -36,6 +36,20 @@
     return Object.is(value, -0) ? 0 : value;
   }
 
+  /* Add the rows, then round once. Rounding each row to cents and then
+     adding is a different number: 1.004 and 1.004 are 2.01 together
+     and 2.00 if each row is rounded first. */
+  function sumHomeMinor(values, places) {
+    var sum = 0;
+    var i;
+    for (i = 0; i < values.length; i++) {
+      var n = Number(values[i]);
+      if (!isFinite(n)) return null;
+      sum += n;
+    }
+    return roundMinor(sum, places);
+  }
+
   function unitAmount(n, code, scales) {
     var places = displayPlaces(code, scales);
     return new Intl.NumberFormat("en-CA", {
@@ -56,5 +70,5 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
 });

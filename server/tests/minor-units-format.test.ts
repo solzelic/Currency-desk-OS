@@ -23,6 +23,7 @@ type ScreenFns = {
   fmt: (n: number, ccy: string) => string;
   cashVariance: (counted: number, expected: number, ccy: string) => number;
   storedRoundNote: (n: number, ccy: string) => string;
+  sumHomeMinor: (values: number[], places: number) => number;
 };
 
 function screen(): ScreenFns {
@@ -138,6 +139,22 @@ it("keeps two decimals on a whole count, and yen stays whole", () => {
   expect(C.num(20000)).toBe("20,000");
   expect(C.num(5000)).toBe("5,000");
   expect(till).toContain("{unitText(r.counted, r.c)}");
+});
+
+/* Per-row rounding is a different total. 4,451.104 plus 0.004 is
+   4,451.10 if each row is rounded to cents first, and 4,451.11 if
+   the rows are added and rounded once. */
+it("rounds a home total once, after the rows are added", () => {
+  const sum = C.sumHomeMinor;
+  const perRow = (rows: number[]) => rows.reduce((s, n) => s + Number(n.toFixed(2)), 0);
+  const dust = [4451.104, 0.004];
+  expect(perRow(dust)).toBe(4451.1);
+  expect(sum(dust, 2)).toBe(4451.11);
+  const halves = [1.004, 1.004];
+  expect(perRow(halves)).toBe(2);
+  expect(sum(halves, 2)).toBe(2.01);
+  expect(sum([489177 / 109.9], 2)).toBe(4451.11);
+  expect(till).toContain("window.CDOS.sumHomeMinor(values, window.CDOS.displayPlaces(homeCcy))");
 });
 
 it("draws that variance and the stored line on the count, reconcile, and end of day", () => {

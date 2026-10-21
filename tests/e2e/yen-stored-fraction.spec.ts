@@ -177,6 +177,8 @@ async function assertCloseClearsDock(page: Page) {
       buttonHits: overlap(button, dock),
       noteHits: overlap(note, dock),
       gap: dock && note ? dock.top - note.bottom : null,
+      pad: getComputedStyle(close).paddingBottom,
+      closeBg: getComputedStyle(close).backgroundColor,
     };
     before.remove();
     scroller.scrollTop = 0;
@@ -184,9 +186,13 @@ async function assertCloseClearsDock(page: Page) {
   });
   expect(fit.buttonHits, JSON.stringify(fit)).toBe(false);
   expect(fit.noteHits, JSON.stringify(fit)).toBe(false);
-  /* The 8px is the pad after the close. Sticky only clears the tab
-     bar, so removing that pad leaves the note flush with #phone-dock. */
-  expect(fit.gap, JSON.stringify(fit)).toBeGreaterThanOrEqual(8);
+  /* 12px of the dock's own white sits under the caption. The pad
+     after the close is only the tab bar, so page colour does not
+     show between the caption and #phone-dock. */
+  expect(fit.pad, JSON.stringify(fit)).toBe("12px");
+  expect(fit.closeBg, JSON.stringify(fit)).toBe("rgb(255, 255, 255)");
+  expect(fit.gap, JSON.stringify(fit)).toBeGreaterThanOrEqual(12);
+  expect(fit.gap, JSON.stringify(fit)).toBeLessThanOrEqual(16);
 }
 
 /* The pinned dock covers the bottom of the list until the teller
@@ -384,7 +390,8 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   const wideHead = page.locator(".till-recon-widehead");
   const wideTitle = wideHead.locator("div").first();
   const wideCount = wideHead.locator("span").last();
-  await expect(wideTitle).toContainText("Reconcile & close");
+  await expect(wideTitle).toContainText("Reconcile and close, day");
+  expect(await wideTitle.innerText()).not.toMatch(/[—–&]/);
   await expect(wideCount).toHaveText("1/2 counted");
   await revealWideHead(page);
   await shownClear(wideTitle, ".till-operator");
@@ -749,13 +756,13 @@ test("a phone chip says dinar, kroner, kronor, and reais", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 });
 
   const counted = [
-    ["KWD", "11.00", "1.00 dinar over"],
-    ["DKK", "102", "2.00 kroner over"],
-    ["NOK", "102", "2.00 kroner over"],
-    ["SEK", "102", "2.00 kronor over"],
-    ["BRL", "102", "2.00 reais over"],
+    ["KWD", "11.00", "1.000 dinar over", "Expected 10.000", "11.000"],
+    ["DKK", "101", "1.00 krone over", "Expected 100.00", "101.00"],
+    ["NOK", "102", "2.00 kroner over", "Expected 100.00", "102.00"],
+    ["SEK", "101", "1.00 krona over", "Expected 100.00", "101.00"],
+    ["BRL", "101", "1.00 real over", "Expected 100.00", "101.00"],
   ] as const;
-  for (const [code, amount, chip] of counted) {
+  for (const [code, amount, chip, expected, countedText] of counted) {
     const card = page.locator(".till-recon-item").filter({ hasText: code }).first();
     await card.getByRole("button", { name: "Count" }).evaluate((el: HTMLElement) => el.click());
     await page.getByRole("button", { name: /^Enter total$/ }).click();
@@ -763,6 +770,8 @@ test("a phone chip says dinar, kroner, kronor, and reais", async ({ page }) => {
     await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
     await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
     await expect(card.locator(".till-recon-chip")).toHaveText(chip);
+    await expect(card.locator(".till-recon-expected")).toHaveText(expected);
+    await expect(card.locator(".till-recon-counted")).toHaveText(countedText);
   }
 });
 

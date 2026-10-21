@@ -181,6 +181,20 @@
     return Object.is(value, -0) ? 0 : value;
   }
 
+  /* Add the rows, then round once. Rounding each row to cents and then
+     adding is a different number: 1.004 and 1.004 are 2.01 together
+     and 2.00 if each row is rounded first. */
+  function sumHomeMinor(values, places) {
+    var sum = 0;
+    var i;
+    for (i = 0; i < values.length; i++) {
+      var n = Number(values[i]);
+      if (!isFinite(n)) return null;
+      sum += n;
+    }
+    return roundMinor(sum, places);
+  }
+
   function unitAmount(n, code, scales) {
     var places = displayPlaces(code, scales);
     return new Intl.NumberFormat("en-CA", {
@@ -201,7 +215,7 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
 });
 
 
@@ -15248,9 +15262,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        show and the screen says which currencies it is holding instead. */
     const canTotal = homeCcy === 'CAD';
     const homeOf = (amt, ccy) => !homeCcy ? null : ccy === homeCcy ? +amt || 0 : canTotal ? (+amt || 0) / (crossRate('CAD', ccy) || 1) : null;
+    /* One rounding, on the sum. Rounding each row's home amount and then
+       adding turns 4,451.104 plus 0.004 into 4,451.10. The sum is 4,451.11. */
     const totalHome = parts => {
       const values = parts.map(([amt, ccy]) => homeOf(amt, ccy));
-      return values.length && values.every(v => v != null) ? values.reduce((s, v) => s + v, 0) : null;
+      if (!values.length || values.some(v => v == null)) return null;
+      return window.CDOS.sumHomeMinor(values, window.CDOS.displayPlaces(homeCcy));
     };
     /* A total this screen cannot produce, said once. */
     const fmtHome = v => v == null ? '—' : fmt(v, homeCcy);
@@ -16009,7 +16026,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         earnedCurrency: book && book.homeCurrency || homeCcy || null,
         earnedWhy: book ? earnedHome == null ? 'nothing posted on this trading day' : null : dayBook.error || 'the ledger could not be reached',
         businessDate: serverSession && serverSession.businessDate || window.CDOS.businessDate(),
-        note: offRows.length ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}` : 'All counted drawers balanced'
+        note: offRows.length ? `${offRows.length === 1 ? '1 drawer off' : offRows.length + ' drawers off'}${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}` : 'All counted drawers balanced'
       };
       if (serverBacked) {
         if (!serverSession || serverSession.status !== 'open') {
@@ -16334,7 +16351,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
       className: "till-statusline"
-    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length, " drawer(s) counted"), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length === 1 ? '1 drawer counted' : countedCcys.length + ' drawers counted'), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk
       }
@@ -17201,7 +17218,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.ink
       }
-    }, "Reconcile & close \u2014 Day ", day && day.num || 1), /*#__PURE__*/React.createElement("span", {
+    }, "Reconcile and close, day ", day && day.num || 1), /*#__PURE__*/React.createElement("span", {
       className: "text-[11px] px-2.5 py-1",
       style: {
         flex: 'none',
@@ -17216,7 +17233,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: reconInk,
         marginTop: 2
       }
-    }, serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals", " \xB7 counted is your physical count \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
+    }, serverBacked ? 'Expected is the server till balance' : "Opening comes from the vault · expected = opening + today's deals", " \xB7 counted is your physical count \xB7 ", countedN, " of ", recon.length, " counted")), /*#__PURE__*/React.createElement("div", {
       className: "till-recon",
       style: {
         border: `1px solid ${CD.line}`,
@@ -17509,7 +17526,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.flag
       }
-    }, offRows.length, " drawer(s) off"), canCloseDay && offRows.length === 0 && countedN > 0 && /*#__PURE__*/React.createElement("span", {
+    }, offRows.length === 1 ? '1 drawer off' : offRows.length + ' drawers off'), canCloseDay && offRows.length === 0 && countedN > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: reconGreen
@@ -17996,7 +18013,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 8,
         color: CD.mute
       }
-    }, recon.length - countedN, " drawer(s) not counted yet \u2014 they'll lock at expected with no variance. Go back and count them first if you want a true close.")), /*#__PURE__*/React.createElement("div", {
+    }, recon.length - countedN, " ", recon.length - countedN === 1 ? 'drawer' : 'drawers', " not counted yet. They will lock at expected with no variance. Go back and count them first if you want a true close.")), /*#__PURE__*/React.createElement("div", {
       className: "px-5 py-3 flex items-center justify-between gap-3 flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`

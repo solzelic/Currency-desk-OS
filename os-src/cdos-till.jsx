@@ -272,9 +272,12 @@
        show and the screen says which currencies it is holding instead. */
     const canTotal = homeCcy === 'CAD';
     const homeOf = (amt, ccy) => !homeCcy ? null : ccy === homeCcy ? (+amt || 0) : (canTotal ? (+amt || 0) / (crossRate('CAD', ccy) || 1) : null);
+    /* One rounding, on the sum. Rounding each row's home amount and then
+       adding turns 4,451.104 plus 0.004 into 4,451.10. The sum is 4,451.11. */
     const totalHome = (parts) => {
       const values = parts.map(([amt, ccy]) => homeOf(amt, ccy));
-      return values.length && values.every(v => v != null) ? values.reduce((s, v) => s + v, 0) : null;
+      if (!values.length || values.some(v => v == null)) return null;
+      return window.CDOS.sumHomeMinor(values, window.CDOS.displayPlaces(homeCcy));
     };
     /* A total this screen cannot produce, said once. */
     const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy);
@@ -755,7 +758,7 @@
         earnedWhy: book ? (earnedHome == null ? 'nothing posted on this trading day' : null) : (dayBook.error || 'the ledger could not be reached'),
         businessDate: (serverSession && serverSession.businessDate) || window.CDOS.businessDate(),
         note: offRows.length
-          ? `${offRows.length} drawer(s) off${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}`
+          ? `${offRows.length === 1 ? '1 drawer off' : offRows.length + ' drawers off'}${offSumHome == null ? '' : ` · ${fmt(offSumHome, homeCcy)} net`}`
           : 'All counted drawers balanced',
       };
       if (serverBacked) {
@@ -934,7 +937,7 @@
               </div>)}
             </span>) : (stationTill ? <b className="till-pick" style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span className="till-statusline">
-            <span>{serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length} drawer(s) counted</span>
+            <span>{serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length === 1 ? '1 drawer counted' : countedCcys.length + ' drawers counted'}</span>
             {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk }}>· {serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
             {/* the ledger's own name for the drawer these figures belong to —
                 the picker to the left names a local till, which is a different
@@ -1197,10 +1200,10 @@
         </div>) : (<div data-tour="till-reconcile" className="p-4">
           <div className="till-recon-widehead mb-3">
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, maxWidth: '100%' }}>
-              <div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile & close — Day {day && day.num || 1}</div>
+              <div className="text-sm font-semibold" style={{ color: CD.ink }}>Reconcile and close, day {day && day.num || 1}</div>
               <span className="text-[11px] px-2.5 py-1" style={{ flex: 'none', background: countedN === recon.length ? reconGreenSoft : 'var(--cd-chip)', color: countedN === recon.length ? reconGreen : reconInk, borderRadius: 999, fontFamily: 'Space Mono, monospace' }}>{countedN}/{recon.length} counted</span>
             </div>
-            <div className="text-[11px]" style={{ color: reconInk, marginTop: 2 }}>{serverBacked ? 'Expected is the authoritative server till balance' : "Opening comes from the vault · expected = opening + today's deals"} · counted is your physical count · {countedN} of {recon.length} counted</div>
+            <div className="text-[11px]" style={{ color: reconInk, marginTop: 2 }}>{serverBacked ? 'Expected is the server till balance' : "Opening comes from the vault · expected = opening + today's deals"} · counted is your physical count · {countedN} of {recon.length} counted</div>
           </div>
           <div className="till-recon" style={{ border: `1px solid ${CD.line}`, background: CD.panel, borderRadius: 10, overflowX: 'auto', overflowY: 'hidden' }}>
             <table className="w-full text-sm border-collapse"><thead><tr style={{ background: 'var(--cd-chip)', color: reconInk }} className="text-[11px] uppercase tracking-wide text-left"><th className="px-3 py-2">Currency</th><th className="px-3 py-2 text-right"><span title={serverBacked ? 'Expected balance comes directly from the authoritative server ledger' : 'Issued by the vault. Not editable here'} className="inline-flex items-center gap-1">{serverBacked ? 'Source' : 'Opening · vault'} <Ic n="lock" s={10} c={reconInk} /></span></th><th className="px-3 py-2 text-right">Expected</th><th className="px-3 py-2 text-right">Last count</th><th className="px-3 py-2 text-right">Counted now</th><th className="px-3 py-2 text-right">Variance</th></tr></thead>
@@ -1280,7 +1283,7 @@
               ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer') : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day and lock book'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px]" style={{ background: 'var(--cd-chip)', borderRadius: 9, color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Closing the day isn’t in your role — the owner enables it in Settings › Permissions.</span>}
             {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: serverBalanceError ? CD.flag : reconInk }}>{!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`}</span>}
-            {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length} drawer(s) off</span>}
+            {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length === 1 ? '1 drawer off' : offRows.length + ' drawers off'}</span>}
             {canCloseDay && offRows.length === 0 && countedN > 0 && <span className="text-[11px]" style={{ color: reconGreen }}>All counted drawers balanced</span>}
           </div>
           {offLedgerCcys.length > 0 && <div className="till-recon-offledger mt-2 text-[11px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>Counted but not on the server ledger: <b style={{ color: CD.ink }}>{offLedgerCcys.join(', ')}</b>. These are recorded in your local history only and are left out of the close, so they can’t disturb a real balance.</div>}
@@ -1386,7 +1389,7 @@
               </tr>); })}</tbody>
               <tfoot><tr style={{ borderTop: `2px solid ${CD.line}` }}><td className="py-2 font-semibold" style={{ color: CD.ink }}>Total{homeCcy ? ' · ' + homeCcy : ''}</td><td className="py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{totalExpHome == null ? '—' : num(totalExpHome)}</td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, fontFamily: 'Space Mono, monospace' }}>{totalCountHome == null ? '—' : num(totalCountHome)}</td><td></td><td className="py-2 text-right font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag, fontFamily: 'Space Mono, monospace' }}>{totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome)}</td></tr></tfoot>
             </table>
-            {countedN < recon.length && <div className="mt-3 text-[11.5px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>{recon.length - countedN} drawer(s) not counted yet — they'll lock at expected with no variance. Go back and count them first if you want a true close.</div>}
+            {countedN < recon.length && <div className="mt-3 text-[11.5px] px-3 py-2" style={{ background: 'var(--cd-chip)', borderRadius: 8, color: CD.mute }}>{recon.length - countedN} {recon.length - countedN === 1 ? 'drawer' : 'drawers'} not counted yet. They will lock at expected with no variance. Go back and count them first if you want a true close.</div>}
           </div>
           <div className="px-5 py-3 flex items-center justify-between gap-3 flex-none" style={{ borderTop: `1px solid ${CD.line}` }}>
             <button onClick={() => { setConfirmClose(false); setTab('count'); }} className="text-sm font-medium px-3.5 py-2" style={{ color: CD.ink, border: `1px solid ${CD.line}`, borderRadius: 9, background: 'transparent' }}>← Back to count</button>
