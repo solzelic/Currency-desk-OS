@@ -13,6 +13,7 @@ var CUR = [
   { code:'CNY', name:'Chinese Yuan',      flag:'🇨🇳', perCad:5.284,    chg:-0.03 },
   { code:'INR', name:'Indian Rupee',      flag:'🇮🇳', perCad:60.31,    chg: 0.04 },
   { code:'AED', name:'UAE Dirham',        flag:'🇦🇪', perCad:2.6926,   chg:-0.02 },
+  { code:'KWD', name:'Kuwaiti Dinar',     flag:'🇰🇼', perCad:0.2232,   chg: 0.00 },
   { code:'PHP', name:'Philippine Peso',   flag:'🇵🇭', perCad:41.15,    chg: 0.09 },
   { code:'MXN', name:'Mexican Peso',      flag:'🇲🇽', perCad:12.42,    chg: 0.17 },
   { code:'KRW', name:'South Korean Won',  flag:'🇰🇷', perCad:982.4,    chg:-0.11 },

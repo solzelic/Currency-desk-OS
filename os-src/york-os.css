@@ -1741,6 +1741,41 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
    Colours here are the phone mockup. The app mute grey is about
    4.40:1 and is not used on this list. */
 .till-recon-list { display: none; }
+/* The operator strip used to stay put while the reconcile heading
+   scrolled underneath it. The strip does not stick. The count chip
+   sits beside the heading, inside the window. The till window used
+   to grow to the session line, so the chip painted past the right
+   edge. The body stays the window width, and the table scrolls
+   inside its card. */
+.till-operator { position: static; }
+#desktop .win:has(.till-screen) > .win-body {
+  min-width: 0;
+}
+.till-screen {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.till-screen > .flex-1 {
+  min-width: 0;
+  min-height: 0;
+}
+.till-sessionline {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.till-sessionline > span { min-width: 0; }
+.till-recon-widehead {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--cd-paper, #f4f3f0);
+}
+.till-recon-widehead > div { min-width: 0; }
 @media (max-width: 599px) {
   .till-recon { display: none !important; }
   .till-recon-desk,
@@ -1752,7 +1787,8 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-on-reconcile .till-switch-note,
   .till-on-reconcile .till-operator,
   .till-on-reconcile .till-recon-widehead,
-  .till-on-reconcile .till-recon-offledger { display: none !important; }
+  .till-on-reconcile .till-recon-offledger,
+  .till-on-reconcile .till-vault { display: none !important; }
   .till-recon-list {
     display: flex;
     flex-direction: column;
@@ -2720,12 +2756,48 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-denom > [data-tour="till-count"] { margin-bottom: 6px !important; }
   .till-chip { flex: none; }
   /* The reconcile close is the last row of its scroller, and that
-     scroller runs under the tab bar. Stick it one bar up, and leave
-     a bar of space after it so the end of the scroll parks there. */
-  .till-recon-close { bottom: var(--phone-bar-h); }
+     scroller runs under the tab bar. Stick it one bar up, so it stays
+     on screen while the list moves. The 12px under the caption is
+     padding on the close, in the dock colour, so the background runs
+     down to the tab bar. The pad after the close is only the tab bar.
+     An extra gap there is page colour under the caption. */
+  /* A short list leaves the close in normal flow, and the 14px
+     flex gap under it is page colour. The list fills the column,
+     the close drops to the bottom, and the pad tucks up over that
+     gap so the white runs into the tab bar. */
+  .till-on-reconcile.till-screen {
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .till-on-reconcile.till-screen > .overflow-auto {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0;
+    overflow: auto !important;
+    display: flex !important;
+    flex-direction: column;
+  }
+  .till-on-reconcile.till-screen > .overflow-auto > .p-4 {
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding-bottom: 0;
+  }
+  .till-on-reconcile .till-recon-list {
+    flex: 1 0 auto;
+  }
+  .till-recon-close {
+    bottom: var(--phone-bar-h);
+    margin-top: auto;
+    padding-bottom: 12px;
+  }
   .till-recon-dock-pad {
     display: block;
     height: var(--phone-bar-h);
+    margin-top: -14px;
+    background: #fff;
     flex: none;
   }
   .till-count-foot {

@@ -56,8 +56,65 @@ async function panelContrast(target: Locator) {
 
 async function expectInk(target: Locator, label: string) {
   const ink = await panelContrast(target);
+  console.log("CONTRAST " + label + " " + ink.ratio.toFixed(2) + " " + JSON.stringify(ink.ink));
   expect(ink.ratio, label + " " + JSON.stringify(ink.ink)).toBeGreaterThanOrEqual(4.5);
   return ink;
+}
+
+/* Phone checks leave the till scrolled to the bottom. Put it back
+   at the top, then bring the heading to the start of its scroller,
+   before asking whether the operator covers it. */
+async function revealWideHead(page: Page) {
+  await page.evaluate(() => {
+    document.querySelectorAll(".win-body, .till-screen, .overflow-auto").forEach((node) => {
+      const el = node as HTMLElement;
+      el.scrollTop = 0;
+      el.scrollLeft = 0;
+    });
+    const head = document.querySelector(".till-recon-widehead");
+    if (head) head.scrollIntoView({ block: "start", inline: "nearest" });
+  });
+}
+
+/* The heading and the count chip have to be on screen, uncovered by
+   the operator strip. */
+async function shownClear(target: Locator, cover: string) {
+  const fit = await target.evaluate((el, coverSel) => {
+    const r = el.getBoundingClientRect();
+    const coverEl = document.querySelector(coverSel);
+    const c = coverEl ? coverEl.getBoundingClientRect() : null;
+    const hit = (x: number, y: number) => {
+      const node = document.elementFromPoint(x, y) as HTMLElement | null;
+      const ok = !!node && (node === el || el.contains(node));
+      return {
+        ok,
+        name: node ? node.tagName + "." + String(node.className).slice(0, 80) : "none",
+      };
+    };
+    /* Edge centres, not the square corners. A pill's corners sit
+       outside its border, so those points hit whatever is behind it. */
+    const midX = (r.left + r.right) / 2;
+    const midY = (r.top + r.bottom) / 2;
+    const pts = [
+      [midX, r.top + 1],
+      [midX, Math.max(r.top + 1, r.bottom - 1)],
+      [r.left + 1, midY],
+      [Math.max(r.left + 1, r.right - 1), midY],
+    ];
+    const seen = pts.map(([x, y]) => hit(x, y));
+    const overlap = !!(c && r.bottom > c.top + 1 && r.top < c.bottom - 1 && r.right > c.left + 1 && r.left < c.right - 1);
+    return {
+      inside: r.width > 8 && r.height > 8 && r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth,
+      hits: seen.every((point) => point.ok),
+      at: seen.map((point) => point.name),
+      overlap,
+      top: Math.round(r.top),
+      bottom: Math.round(r.bottom),
+      left: Math.round(r.left),
+      right: Math.round(r.right),
+    };
+  }, cover);
+  expect(fit.inside && fit.hits && !fit.overlap, JSON.stringify(fit)).toBe(true);
 }
 
 async function paintOf(target: Locator) {
@@ -119,6 +176,9 @@ async function assertCloseClearsDock(page: Page) {
       note,
       buttonHits: overlap(button, dock),
       noteHits: overlap(note, dock),
+      gap: dock && note ? dock.top - note.bottom : null,
+      pad: getComputedStyle(close).paddingBottom,
+      closeBg: getComputedStyle(close).backgroundColor,
     };
     before.remove();
     scroller.scrollTop = 0;
@@ -126,8 +186,13 @@ async function assertCloseClearsDock(page: Page) {
   });
   expect(fit.buttonHits, JSON.stringify(fit)).toBe(false);
   expect(fit.noteHits, JSON.stringify(fit)).toBe(false);
-  expect(fit.button && fit.dock && fit.button.bottom <= fit.dock.top + 1, JSON.stringify(fit)).toBe(true);
-  expect(fit.note && fit.dock && fit.note.bottom <= fit.dock.top + 1, JSON.stringify(fit)).toBe(true);
+  /* 12px of the dock's own white sits under the caption. The pad
+     after the close is only the tab bar, so page colour does not
+     show between the caption and #phone-dock. */
+  expect(fit.pad, JSON.stringify(fit)).toBe("12px");
+  expect(fit.closeBg, JSON.stringify(fit)).toBe("rgb(255, 255, 255)");
+  expect(fit.gap, JSON.stringify(fit)).toBeGreaterThanOrEqual(12);
+  expect(fit.gap, JSON.stringify(fit)).toBeLessThanOrEqual(16);
 }
 
 /* The pinned dock covers the bottom of the list until the teller
@@ -320,6 +385,33 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
      zero, so 5,451.6 here is the bug. */
   const wideExpected = recon.locator("tfoot td").nth(2);
   await expect(wideExpected).toHaveText("5,451.60");
+  const wideCounted = recon.locator("tfoot td").nth(4);
+  await expect(wideCounted).toHaveText("4,451.11");
+  const wideHead = page.locator(".till-recon-widehead");
+  const wideTitle = wideHead.locator("div").first();
+  const wideCount = wideHead.locator("span").last();
+  await expect(wideTitle).toContainText("Reconcile and close, day");
+  expect(await wideTitle.innerText()).not.toMatch(/[—–&]/);
+  await expect(wideCount).toHaveText("1/2 counted");
+  await revealWideHead(page);
+  await shownClear(wideTitle, ".till-operator");
+  await shownClear(wideCount, ".till-operator");
+  await expect(cad).toContainText("Never");
+  await expect(cad).not.toContainText("\u2014");
+  const caption = page.locator(".till-recon-fine");
+  expect(await caption.innerText()).not.toMatch(/[—–]/);
+  await expectInk(wideCount, "wide count chip");
+  await expectInk(caption, "caption");
+  await expectInk(cad.locator("td").nth(3), "never");
+  await expectInk(wideHead.locator("div.text-\\[11px\\]"), "wide subtitle");
+  await expectInk(recon.locator("thead th").first(), "wide header");
+  await expectInk(wideExpected, "wide expected total");
+  await expectInk(page.getByText("On the drawer:", { exact: true }), "on the drawer");
+  await expectInk(page.locator(".till-operator .text-\\[10\\.5px\\]"), "operator since");
+  await expectInk(page.locator(".till-sessionline"), "session line");
+  await expectInk(page.locator(".till-sessionline .ml-auto"), "session count");
+  await expectInk(page.locator(".till-pill"), "in drawer");
+  await expectInk(page.locator(".till-vault"), "vault label");
   const wideClose = page.locator(".till-recon-desk").getByRole("button", { name: "Close day and lock book" });
   await expect(wideClose).toBeVisible();
   await expect(page.locator(".till-recon-desk").getByRole("button", { name: /Close day & lock book/i })).toHaveCount(0);
@@ -327,6 +419,8 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.setViewportSize({ width: 360, height: 780 });
   await expect(list).toBeVisible();
   await expect(page.locator(".till-recon table")).toBeHidden();
+  await expect(page.locator(".till-vault").filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByText(/Vault/).filter({ visible: true })).toHaveCount(0);
   await expect(list.locator(".till-recon-title")).toHaveText("Close the till");
   const titlePaint = await paintOf(list.locator(".till-recon-title"));
   expect(titlePaint.size).toBe("28px");
@@ -444,9 +538,10 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   expect(await refused).toBe(false);
   await expect(page.getByText("Review each drawer against expected")).toHaveCount(0);
   await assertNoteClearsClose(page);
-  await assertCloseClearsDock(page);
-  await page.setViewportSize({ width: 430, height: 780 });
-  await assertCloseClearsDock(page);
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 780 });
+    await assertCloseClearsDock(page);
+  }
   await page.setViewportSize({ width: 360, height: 780 });
 
   await cadCount.evaluate((el: HTMLElement) => el.click());
@@ -468,7 +563,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
   await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
   const underChip = jpyCard.locator(".till-recon-chip");
-  await expect(underChip).toHaveText("1 yen under");
+  await expect(underChip).toHaveText("1 yen short");
   const underPaint = await paintOf(underChip);
   expect(underPaint.color).toBe("rgb(168, 50, 31)");
   expect(underPaint.background).toBe("rgb(253, 236, 230)");
@@ -523,6 +618,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.setViewportSize({ width: 599, height: 780 });
   await expect(list).toBeVisible();
   await expect(page.locator(".till-recon table")).toBeHidden();
+  await expect(page.locator(".till-vault").filter({ visible: true })).toHaveCount(0);
   await page.setViewportSize({ width: 600, height: 780 });
   await expect(list).toBeHidden();
   await expect(page.locator(".till-recon table")).toBeVisible();
@@ -531,6 +627,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await page.setViewportSize({ width: 1280, height: 780 });
   await expect(page.locator(".till-recon table")).toBeVisible();
   await expect(list).toBeHidden();
+  await expect(recon.locator("tfoot td").nth(4)).toHaveText("5,451.60");
 
   await page.locator('#appbar [data-app="reports"]').evaluate((el: HTMLElement) => el.click());
   await page.getByText("End-of-Day Sign-Off").first().click();
@@ -610,6 +707,71 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
       expect(lineFit!.rects.length).toBeGreaterThan(0);
       expect(lineFit!.inside, JSON.stringify(lineFit)).toBe(true);
     }
+  }
+});
+
+test("a phone chip says dinar, kroner, kronor, and reais", async ({ page }) => {
+  const ws = "ws-unit-words";
+  const till = "till-unit-words";
+  await pool.query(
+    `INSERT INTO workspaces (id,tenant_id,legal_entity_id,branch_id,till_id)
+     VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+    [ws, TENANT, ENTITY, BRANCH, till],
+  );
+  for (const [currency, amount] of [
+    ["KWD", "10.00"],
+    ["DKK", "100.00"],
+    ["NOK", "100.00"],
+    ["SEK", "100.00"],
+    ["BRL", "100.00"],
+  ] as const) {
+    await pool.query(
+      `INSERT INTO ledger_till_balances
+        (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency)
+       DO UPDATE SET available_amount = EXCLUDED.available_amount`,
+      [TENANT, ENTITY, BRANCH, ws, till, currency, amount],
+    );
+  }
+  await pool.query(
+    `INSERT INTO ledger_till_sessions
+      (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+       session_number,business_date,status,opened_by,opened_at)
+     VALUES ('session-unit-words',$1,$2,$3,$4,$5,8,current_date,'open',$1||':j.masri',now())
+     ON CONFLICT (session_id) DO NOTHING`,
+    [TENANT, ENTITY, BRANCH, ws, till],
+  );
+  await signInAtDesk(page, "j.masri");
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await page.locator('#appbar [data-app="till"]').click();
+  await expect(page.getByRole("button", { name: /Reconcile & close/i }).first()).toBeVisible({ timeout: 45_000 });
+  const switcher = page.locator('xpath=//button[@title="Switch till at this location" and not(ancestor::*[@id="tenantbar"])]');
+  await switcher.click();
+  await page.getByRole("button", { name: till }).click();
+  await page.getByRole("button", { name: /Switch till|Take over till/i }).last().click();
+  await expect(page.getByText(new RegExp("ledger till\\s+" + till)).first()).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: /Reconcile & close/i }).first().click();
+  await page.setViewportSize({ width: 360, height: 780 });
+
+  const counted = [
+    ["KWD", "11.00", "1.000 dinar over", "Expected 10.000", "11.000"],
+    ["DKK", "101", "1.00 krone over", "Expected 100.00", "101.00"],
+    ["NOK", "102", "2.00 kroner over", "Expected 100.00", "102.00"],
+    ["SEK", "101", "1.00 krona over", "Expected 100.00", "101.00"],
+    ["BRL", "101", "1.00 real over", "Expected 100.00", "101.00"],
+  ] as const;
+  for (const [code, amount, chip, expected, countedText] of counted) {
+    const card = page.locator(".till-recon-item").filter({ hasText: code }).first();
+    await card.getByRole("button", { name: "Count" }).evaluate((el: HTMLElement) => el.click());
+    await page.getByRole("button", { name: /^Enter total$/ }).click();
+    await page.locator('input[placeholder="0.00"]').fill(amount);
+    await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
+    await page.locator('[data-tour="till-reconcile-tab"]').evaluate((el: HTMLElement) => el.click());
+    await expect(card.locator(".till-recon-chip")).toHaveText(chip);
+    await expect(card.locator(".till-recon-expected")).toHaveText(expected);
+    await expect(card.locator(".till-recon-counted")).toHaveText(countedText);
   }
 });
 
