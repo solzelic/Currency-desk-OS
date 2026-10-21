@@ -259,6 +259,46 @@ postgres("a deal reference uses the branch's civil day", () => {
     branchDay(cleared.transactionRef, "CD");
   });
 
+  /* 23:55 in Toronto is already the next UTC day. With the branches
+     table renamed away, the post still returns, and the ref is the
+     Toronto day. A read that aborts the transaction hangs or comes
+     back 500. */
+  it("posts when the branches table is missing, on the Toronto day", async () => {
+    expect(utcStamp(LATE_TORONTO)).toBe("261022");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(LATE_TORONTO));
+    const owner = await login("j.masri");
+    await pool.query("ALTER TABLE branches RENAME TO branches_held");
+    try {
+      const deal = await Promise.race([
+        app.inject({
+          method: "POST",
+          url: "/api/ledger/exchanges",
+          cookies: owner,
+          headers,
+          payload: {
+            idempotencyKey: "missing-branches",
+            customerId,
+            from: "CAD",
+            to: "USD",
+            inputAmount: "10.00",
+            feeCad: "0.00",
+            purpose: "Travel",
+            sourceOfFunds: "Employment income",
+            thirdParty: false,
+          },
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("missing-branches post hung")), 15_000);
+        }),
+      ]);
+      expect(deal.statusCode, deal.body).toBe(201);
+      expect(deal.json().transactionRef).toMatch(/^CD-261021-[0-9a-f]{6}$/);
+    } finally {
+      await pool.query("ALTER TABLE branches_held RENAME TO branches");
+    }
+  }, 20_000);
+
   /* Forty posts at once is more than the pool. A second connection
      taken while each post holds one never returns. A 409 is the
      serializable retry giving up; the teller posts that key again.
