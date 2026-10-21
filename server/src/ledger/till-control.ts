@@ -973,7 +973,11 @@ export class TillControlService {
          is the same one. A different body is the same refusal as the
          read above. A 23505 from any other constraint is not this key. */
       if (cashMoveKeyConflict(error)) {
-        const replayed = await this.replayMovement(actor, input);
+        /* This connection is idle. The move was rolled back. The winner
+           has committed, which is what raised the unique violation.
+           Reading that movement on a new connection waits forever once
+           every connection is a loser of the same race. */
+        const replayed = await this.replayMovement(client, actor, input);
         if (replayed) return replayed;
       }
       throw error;
@@ -982,8 +986,11 @@ export class TillControlService {
     }
   }
 
-  private async replayMovement(actor: LedgerActor, input: MovementInput) {
-    const client = await this.pool.connect();
+  private async replayMovement(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+    input: MovementInput,
+  ) {
     try {
       await client.query("BEGIN");
       const existing = await client.query(
@@ -1006,8 +1013,6 @@ export class TillControlService {
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
-    } finally {
-      client.release();
     }
   }
 
