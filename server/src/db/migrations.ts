@@ -54,6 +54,8 @@ export const migrations: readonly Migration[] = [
   ["046_staff_contact_email", "src/db/migrations/046_staff_contact_email.sql"],
   /* 047 is the ID types a shop accepts. NULL follows the pack. */
   ["047_accepted_id_types", "src/db/migrations/047_accepted_id_types.sql"],
+  /* 048 is the unrounded expected saved beside a count's variance. */
+  ["048_till_count_stored_expected", "src/db/migrations/048_till_count_stored_expected.sql"],
 ] as const;
 
 export async function runMigrations(

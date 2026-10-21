@@ -160,11 +160,15 @@ export function parseMoney(
 }
 
 /**
- * Round a computed figure to what the currency can actually be paid in.
+ * The one rounding rule. Half up, by the currency's minor units
+ * (`isoMinorUnits` / `minorUnits`). The ledger and receipts use this
+ * function. A till variance calls it and does not define another.
  *
- * A payout, a converted amount, a fee — anything the ledger works out
+ * A payout, a converted amount, a fee. Anything the ledger works out
  * rather than being handed. `1234.56` yen becomes `1235`, because the
  * alternative is a receipt asking for money that does not exist.
+ * Half a minor unit rounds up: `100.5` yen becomes `101`, and `1.005`
+ * dollars becomes `1.01`.
  */
 export function roundTo(amount: Decimal, currency: string): Decimal {
   return amount.toDecimalPlaces(minorUnits(currency), Decimal.ROUND_HALF_UP);

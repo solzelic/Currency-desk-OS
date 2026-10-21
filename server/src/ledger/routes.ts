@@ -635,7 +635,9 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
          to the person who does not hold the till. */
       if (current.session && current.session.openedBy !== actor.userId) {
         for (const figure of Object.values(current.latestCounts)) {
-          delete (figure as { expected?: unknown }).expected;
+          const row = figure as { expected?: unknown; storedExpected?: unknown };
+          delete row.expected;
+          delete row.storedExpected;
         }
       }
       return reply.send(current);
