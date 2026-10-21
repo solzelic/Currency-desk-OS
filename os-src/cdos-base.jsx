@@ -505,8 +505,8 @@
   const deskCurrencies = () => _currencies;
   /** How many decimal places this currency is shown with.
       The server scales table wins once it has loaded. Before that,
-      and when the load fails, ISO minor units apply. Never more than
-      two: the ledger stores two. */
+      and when the load fails, ISO minor units apply. Three places
+      stay three. The ledger still stores two. */
   const displayPlaces = window.CDOS.displayPlaces;
   const currencyPlaces = (code) => displayPlaces(code, _currencies && _currencies.scales);
   const fractionDigitsHeld = (n) => {

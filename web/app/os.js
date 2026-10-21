@@ -144,8 +144,8 @@
 
 /* ---- os-src/minor-units-format.js ---- */
 /* Screen places for a currency. ISO minor units when the server table
-   has not loaded, then never more than two: the ledger stores two.
-   The exception list matches server/src/ledger/currencies.ts. */
+   has not loaded. Three-place currencies stay at three on the screen.
+   The ledger still stores two. The list matches server/src/ledger/currencies.ts. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -166,7 +166,7 @@
       places = ISO[c];
     }
     if (typeof places !== "number" || !isFinite(places)) places = 2;
-    if (places > 2) places = 2;
+    if (places > 3) places = 3;
     if (places < 0) places = 0;
     return places;
   }
@@ -175,7 +175,7 @@
   function roundMinor(n, places) {
     var p = places;
     if (typeof p !== "number" || !isFinite(p)) p = 2;
-    if (p > 2) p = 2;
+    if (p > 3) p = 3;
     if (p < 0) p = 0;
     var value = Number(Number(n).toFixed(p));
     return Object.is(value, -0) ? 0 : value;
@@ -809,8 +809,8 @@
   const deskCurrencies = () => _currencies;
   /** How many decimal places this currency is shown with.
       The server scales table wins once it has loaded. Before that,
-      and when the load fails, ISO minor units apply. Never more than
-      two: the ledger stores two. */
+      and when the load fails, ISO minor units apply. Three places
+      stay three. The ledger still stores two. */
   const displayPlaces = window.CDOS.displayPlaces;
   const currencyPlaces = code => displayPlaces(code, _currencies && _currencies.scales);
   const fractionDigitsHeld = n => {

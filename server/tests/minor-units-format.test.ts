@@ -92,7 +92,21 @@ const reports = read("os-src/cdos-reports.jsx");
 
 it("shows stored yen through the formatter the screens call", () => {
   expect(C.currencyPlaces("JPY")).toBe(0);
-  expect(C.currencyPlaces("KWD")).toBe(2);
+  expect(C.currencyPlaces("KWD")).toBe(3);
+  expect(C.currencyPlaces("BHD")).toBe(3);
+  expect(C.currencyPlaces("OMR")).toBe(3);
+  expect(C.currencyPlaces("JOD")).toBe(3);
+  expect(C.currencyPlaces("IQD")).toBe(3);
+  expect(C.currencyPlaces("LYD")).toBe(3);
+  expect(C.currencyPlaces("TND")).toBe(3);
+  expect(C.unitText(10, "KWD")).toBe("10.000");
+  expect(C.unitText(1, "KWD")).toBe("1.000");
+  expect(C.unitText(10, "BHD")).toBe("10.000");
+  expect(C.unitText(10, "OMR")).toBe("10.000");
+  expect(C.unitText(10, "JOD")).toBe("10.000");
+  expect(C.unitText(10, "IQD")).toBe("10.000");
+  expect(C.unitText(10, "LYD")).toBe("10.000");
+  expect(C.unitText(10, "TND")).toBe("10.000");
   expect(C.unitText(99.85, "JPY")).toBe("100");
   expect(C.unitText(489175.85, "JPY")).toBe("489,176");
 });
@@ -107,6 +121,7 @@ it("subtracts whole-unit expected, and names a stored fraction", () => {
   expect(C.cashVariance(489177, 489175.85, "JPY")).toBe(1);
   expect(C.cashVariance(100, 99.5, "JPY")).toBe(0);
   expect(C.cashVariance(100, 99.85, "CAD")).toBe(0.15);
+  expect(C.cashVariance(10.001, 10, "KWD")).toBe(0.001);
   expect(C.storedRoundNote(489175.85, "JPY")).toBe(
     "Rounded from 489,175.85 JPY stored from older deals. It clears when the ledger is trued up.",
   );
