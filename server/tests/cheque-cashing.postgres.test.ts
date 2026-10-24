@@ -31,6 +31,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { CHEQUE_FEE_SCHEDULE_KEY, DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -59,6 +60,15 @@ async function reset(options: { openTill?: boolean; cad?: number } = {}) {
   await pool.query(
     "INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING",
     [DEMO.tenantId],
+  );
+  /* A 1,000 business cheque is 35.00 on this schedule (3.5%, no minimum).
+     A 40.00 business cheque is 1.40. The payload fee is not the price. */
+  const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) =>
+    row.id === "business" ? { ...row, feePct: 3.5, feeMin: 0 } : row));
+  await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
+  await pool.query(
+    "INSERT INTO tenant_state (tenant_id, state, version) VALUES ($1, $2::jsonb, 1)",
+    [DEMO.tenantId, JSON.stringify({ [CHEQUE_FEE_SCHEDULE_KEY]: schedule })],
   );
   await pool.query(
     `INSERT INTO legal_entities (id,tenant_id,name,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
@@ -271,8 +281,6 @@ postgres("cheque cashing on the ledger", () => {
     await runMigrations(pool);
     handle = await createDb();
     await seed(handle.db);
-    /* This file books the fee in the payload. The seed's schedule would replace it. */
-    await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
     app = await buildApp(handle.db);
   });
 
@@ -910,10 +918,11 @@ postgres("cheque cashing on the ledger", () => {
   });
 
   /* Two taps of one open form used to be two keys, because the key was
-     built from the clock. Cheque 1002841 (face 40.00, fee 1.00) was then
-     paid twice and 78.00 left the drawer — the net, twice. A second live
-     cheque with the same number, payer and bank is the same paper, and
-     the book has to refuse it even when the keys differ. */
+     built from the clock. Cheque 1002841 (face 40.00, payload fee 1.00)
+     was then paid twice and 78.00 left the drawer, the net, twice. This
+     test still sends 1.00. The schedule books 1.40. A second live cheque
+     with the same number, payer and bank is the same paper, and the book
+     has to refuse it even when the keys differ. */
   it("pays cheque 1002841 once when a second tap arrives under a new key", async () => {
     const cookies = await cookie();
     const paper = {
@@ -930,7 +939,7 @@ postgres("cheque cashing on the ledger", () => {
     expect(second.statusCode).toBe(409);
     expect(second.json().code).toBe("CHEQUE_ALREADY_HELD");
     expect(second.json().message).toMatch(/already cashed/i);
-    expect(await tillCad()).toBe("4961.00");
+    expect(await tillCad()).toBe("4961.40");
     expect(
       (await pool.query(
         "SELECT count(*)::int AS n FROM ledger_cheques WHERE cheque_number='1002841'",
@@ -968,9 +977,9 @@ postgres("cheque cashing on the ledger", () => {
     expect(undone.statusCode, undone.body).toBe(201);
     const again = await cashCheque(cookies, { ...paper, idempotencyKey: "live-d" });
     expect(again.statusCode, again.body).toBe(201);
-    /* Four cashes of 39, and the first of them reversed, so three nets
-       have left: 5000 − 117 = 4883. */
-    expect(await tillCad()).toBe("4883.00");
+    /* Four cashes of 38.60, and the first of them reversed, so three nets
+       have left: 5000 - 115.80 = 4884.20. The schedule prices 40.00 at 1.40. */
+    expect(await tillCad()).toBe("4884.20");
   });
 
   it("clears once however many times the request arrives", async () => {

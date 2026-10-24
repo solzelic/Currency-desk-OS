@@ -3,6 +3,7 @@
    two sets separated by a space. Either configured secret may pass. */
 import * as crypto from "node:crypto";
 import type { IdvOutcome, IdvProvider, IdvResult, IdvStart, IdvWebhookInput } from "../../provider.js";
+import { personaConnection } from "../persona.js";
 
 const WINDOW_MS = 5 * 60 * 1000;
 const ATTEMPTS = 3;
@@ -72,9 +73,10 @@ export async function startPersonaCheck(
   deps: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<{ providerRef: string }> {
   const env = deps.env ?? process.env;
-  const key = env.PERSONA_API_KEY?.trim() ?? "";
-  const template = env.PERSONA_TEMPLATE_ID?.trim() ?? "";
-  if (!key || !template) throw new Error("not_connected");
+  const creds = personaConnection(input, env);
+  if (!creds) throw new Error("not_connected");
+  const key = creds.apiKey;
+  const template = creds.templateId;
   const base = (env.PERSONA_API_BASE?.trim() || PERSONA_API_BASE_DEFAULT).replace(/\/$/, "");
   const fetchImpl = deps.fetch ?? fetch;
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));

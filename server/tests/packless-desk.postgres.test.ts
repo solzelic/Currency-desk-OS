@@ -320,7 +320,7 @@ postgres("a desk with no country pack uses the baseline", () => {
         chequeType: "personal",
         typeLabel: "Personal",
         currency: "RSD",
-        faceAmount: "0.01",
+        faceAmount: "100.00",
         feeAmount: "0.00",
         holdDays: 0,
       },
