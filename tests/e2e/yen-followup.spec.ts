@@ -158,6 +158,35 @@ function noDash(text: string) {
   expect(text).not.toContain("\u2013");
 }
 
+/* A clipped column still has its full text in the DOM. The table
+   either fits its own box, or it is the sideways scroller. */
+async function assertNoClip(page: Page) {
+  const table = page.locator("#cdos-report-doc table").filter({ hasText: "Variance" }).first();
+  await expect(table).toBeVisible();
+  const ok = await table.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const tableOk = el.scrollWidth <= el.clientWidth || style.overflowX === "auto";
+    const head = Array.from(el.querySelectorAll("th")).find((th) => (th.textContent || "").trim() === "Variance");
+    if (!head) return false;
+    const headOk = head.scrollWidth <= head.clientWidth;
+    let scroller: HTMLElement | null = el.parentElement;
+    let canReach = false;
+    const headRight = head.getBoundingClientRect().right;
+    while (scroller) {
+      const scroll = getComputedStyle(scroller).overflowX;
+      if (scroll === "auto" || scroll === "scroll") {
+        const box = scroller.getBoundingClientRect();
+        canReach = headRight <= box.left + scroller.scrollWidth + 1;
+        break;
+      }
+      if (scroll === "hidden" || scroll === "clip") return false;
+      scroller = scroller.parentElement;
+    }
+    return tableOk && headOk && canReach;
+  });
+  expect(ok).toBe(true);
+}
+
 async function sheetCell(page: Page, ccy: string, header: string) {
   const table = page.locator("table").filter({ hasText: "In the drawer" });
   const headers = await table.locator("thead th").evaluateAll((ths) =>
@@ -267,6 +296,15 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
   for (const width of [360, 390, 430, 1280]) {
     await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     await page.locator("[data-tour='till']").scrollIntoViewIfNeeded();
+    const bannerFits = await page.locator(".till-statusline").first().evaluate((el) => el.scrollWidth <= el.clientWidth);
+    expect(bannerFits).toBe(true);
+    const panelWide = await page.evaluate(() => {
+      const desk = document.getElementById("desktop");
+      const win = document.querySelector(".win:has(.till-screen)");
+      if (!desk || !win) return false;
+      return Math.abs(win.getBoundingClientRect().width - desk.getBoundingClientRect().width) <= 1;
+    });
+    expect(panelWide).toBe(true);
     const tillName = `till_${width}.png`;
     const tillShot = `${SHOTS}/${tillName}`;
     await page.screenshot({ path: tillShot });
@@ -280,6 +318,14 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
     await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     const table = page.locator("table").filter({ hasText: "In the drawer" });
     await table.scrollIntoViewIfNeeded();
+    await assertNoClip(page);
+    const varianceHead = table.locator("th", { hasText: "Variance" });
+    await varianceHead.evaluate((el) => el.scrollIntoView({ inline: "end", block: "nearest" }));
+    const varianceOnScreen = await varianceHead.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 8 && r.left >= -1 && r.right <= window.innerWidth + 1 && el.scrollWidth <= el.clientWidth + 1;
+    });
+    expect(varianceOnScreen).toBe(true);
     const eodName = `eod_counted_${width}.png`;
     const eodShot = `${SHOTS}/${eodName}`;
     await page.screenshot({ path: eodShot });
