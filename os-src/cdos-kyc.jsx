@@ -452,7 +452,7 @@
      ==================================================================== */
   function daysAgo(ms) { return Math.floor((Date.now() - ms) / 86400000); }
   const NUDGE_CTA = { quick: { label: 'Run quick check · $3.99', ic: 'search' }, verify: { label: 'Run verify check · $6.99', ic: 'id' }, plus: { label: 'Run Verify Plus · $14.99', ic: 'shield' } };
-  function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired }) {
+  function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired, onRecordId }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
     if (!name) return null;
@@ -504,13 +504,19 @@
     const BLUE = '#2B50E2';
     const c = force ? CD.flag : BLUE;
     const cta = NUDGE_CTA[tier];
+    const persona = personaConnected();
+    const recordInstead = !persona && (idMissing || idRequired || idExpired);
     return (<div className="cd-tx-nudge flex items-start gap-2.5 p-3 mb-2" style={{ background: force ? CD.flagSoft : 'rgba(43,80,226,.07)', border: `1px solid ${force ? CD.flag : 'rgba(43,80,226,.32)'}`, borderRadius: 11 }}>
-      <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--cd-paper)' }}><Ic n={force ? 'alert' : cta.ic} s={15} c={c} /></span>
+      <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--cd-paper)' }}><Ic n={force ? 'alert' : (recordInstead ? 'id' : cta.ic)} s={15} c={c} /></span>
       <div className="flex-1 min-w-0">
         <div className="text-[12.5px] font-semibold" style={{ color: force ? CD.flag : BLUE }}>{title}</div>
         <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>{reason}</div>
         <div className="flex items-center gap-2 mt-2">
-          <button onClick={() => onRun && onRun(tier)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n={cta.ic} s={13} c="var(--cd-on-ink)" /> {cta.label}</button>
+          {persona
+            ? <button onClick={() => onRun && onRun(tier)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n={cta.ic} s={13} c="var(--cd-on-ink)" /> {cta.label}</button>
+            : recordInstead
+              ? <button type="button" onClick={() => onRecordId && onRecordId(name)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="id" s={13} c="var(--cd-on-ink)" /> Record the ID</button>
+              : null}
           {!force && <button onClick={() => setDismissed(true)} className="px-2 py-1.5 text-[12px] font-medium" style={{ color: CD.mute }}>Not now</button>}
         </div>
       </div>

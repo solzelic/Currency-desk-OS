@@ -14,6 +14,10 @@
     CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, currencyPlaces, effectiveRate, unitText, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
   } = window.CDOS;
+  /* The sentence a refusal uses when a deal needs ID. The checklist
+     and the Record ID button key off it, so the refusal and the fix
+     path stay the same words. */
+  const ID_NEEDED = "ID needed for this amount. Record the customer's ID.";
   const deskHome = () => {
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     return (pack && pack.homeCurrency) || 'CAD';
@@ -261,7 +265,7 @@
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
-              {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const st = (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = st === 'verified'; const onfile = st === 'ID on file'; return (
+              {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const standing = c.idStanding && c.idStanding.label ? c.idStanding : null; const st = standing ? standing.label : (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = standing ? standing.tone === 'ok' : st === 'verified'; const onfile = standing ? false : st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
                   <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
                 </button>); })}
@@ -387,7 +391,7 @@
     return window.matchMedia('(max-width: 599px)').matches;
   }
 
-  function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted }) {
+  function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted, onRecordId }) {
     const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => { const s = new Set(Object.keys(clients)); live.forEach(r => r.customer && s.add(r.customer)); return Array.from(s).sort(); }, [clients, live]);
@@ -674,7 +678,16 @@
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : (regime.idAt == null ? null : regime.idAt);
     const rec = clients[customer];
-    const kyc = (!rec || !rec.idType || !rec.idNum) ? 'missing' : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
+    /* A server-backed file uses the server's standing. Reading the
+       primary document here is how a secondary passport, or a primary
+       that only says "Not stated", used to disagree with the gate. */
+    /* The server's object, when the file came from it. The checklist
+       shows its reason in those words. A record with no object still
+       falls through to the fields on the screen. */
+    const standing = rec && rec.idStanding && rec.idStanding.label ? rec.idStanding : null;
+    const kyc = standing ? (standing.tone === 'ok' ? 'ok' : standing.label === 'Expired' ? 'expired' : 'missing')
+      : (!rec || !rec.idType || !rec.idNum) ? 'missing'
+      : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
@@ -757,7 +770,9 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? (phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file`) : null });
+    const serverNeedsId = serverError === ID_NEEDED;
+    const blockedReason = standing && standing.reason ? standing.reason : (phoneSheet ? 'ID not recorded yet' : ID_NEEDED);
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk && !serverNeedsId, warn: !!customer && (!idOk || serverNeedsId), label: standing && !idOk ? standing.label : `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : (!idOk || serverNeedsId) ? blockedReason : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -808,6 +823,14 @@
     const onPick = (n) => { setCustomer(n); setQuery(n); };
     const onAddNew = () => setAddFlow(true);
     const onClear = () => { setQuery(''); setCustomer(''); };
+    /* Opens the client file on the identity documents. The modal
+       closes because the file sits under it; the teller records the
+       ID and comes back to the deal. */
+    const leaveForId = () => {
+      if (typeof onRecordId === 'function') onRecordId(customer);
+      onClose();
+    };
+    const showRecordId = idRequired && !!String(customer || '').trim() && (!idOk || serverError === ID_NEEDED);
 
     const applyTqWith = (val) => {
       const { r, err } = tgFind(val);
@@ -1170,7 +1193,7 @@
               {customer && window.CDOS.ClientIdViewer &&
                 React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log, compact: true })}
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && (!phoneSheet || personaOn) &&
-                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
+                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl), onRecordId: leaveForId })}
               {/* Phone only, and display:none at a desk width so the 1280
                   dialog does not move. This is not an ID form. It opens
                   the client file's identity editor, which writes the
@@ -1435,6 +1458,10 @@
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
+                {/* The phone sheet already offers Record the ID in the
+                    scroll. A second button in this bar makes the footer
+                    taller than the phone layout allows. */}
+                {showRecordId && !phoneSheet && <button type="button" data-testid="record-id" onClick={leaveForId} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Record ID</button>}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
                     Frozen quote · {unitText(serverQuote.inputAmount, serverQuote.from)} {serverQuote.from} → {unitText(serverQuote.outputAmount, serverQuote.to)} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
