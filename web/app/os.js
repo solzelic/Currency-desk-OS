@@ -16215,7 +16215,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     return /*#__PURE__*/React.createElement("div", {
       ref: tillRootRef,
-      className: 'till-screen flex flex-col' + (tab === 'reconcile' ? ' till-on-reconcile' : ''),
+      className: 'till-frame flex flex-col' + (tab === 'reconcile' ? ' till-on-reconcile' : ''),
       style: {
         height: '100%',
         background: CD.paper,
@@ -16734,7 +16734,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontSize: 8
       }
     }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto"
+      className: "till-screen flex-1"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
       className: "till-count-sheet p-4 pb-0"
     }, /*#__PURE__*/React.createElement("div", {
@@ -16871,177 +16873,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setCount: setCount
     }))))), /*#__PURE__*/React.createElement("div", {
       className: "till-scroll-pad"
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "till-count-foot",
-      style: {
-        position: 'sticky',
-        bottom: 0,
-        background: CD.paper,
-        paddingTop: 10,
-        marginTop: 8
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "till-count-row flex items-end justify-between gap-4 pt-3",
-      style: {
-        borderTop: `1px solid ${CD.line}`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "till-count-main min-w-0"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, ccy, " counted"), /*#__PURE__*/React.createElement("div", {
-      className: "till-counted flex items-center",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        maxWidth: 220,
-        marginTop: 3,
-        background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent'
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "text",
-      inputMode: "decimal",
-      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
-      readOnly: ccyMode(ccy) !== 'total',
-      onFocus: () => {
-        if (ccyMode(ccy) !== 'total') {
-          setMode(o => ({
-            ...o,
-            [ccy]: 'total'
-          }));
-          setQuick(o => ({
-            ...o,
-            [ccy]: String(denTotal(ccy) || '')
-          }));
-        }
-      },
-      onChange: e => {
-        setQuick(o => ({
-          ...o,
-          [ccy]: e.target.value.replace(/[^0-9.]/g, '')
-        }));
-        stampCount(ccy);
-      },
-      className: "min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
-      style: {
-        width: 150,
-        fontVariantNumeric: 'tabular-nums',
-        fontFamily: 'Space Mono, monospace',
-        color: CD.ink,
-        cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2.5 text-[11px]",
-      style: {
-        color: CD.mute,
-        fontFamily: 'Space Mono, monospace',
-        borderLeft: `1px solid ${CD.line}`
-      }
-    }, ccy)), /*#__PURE__*/React.createElement("div", {
-      className: "till-expected-wrap text-[11px] mt-1.5",
-      style: {
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? copy.hideExpected : copy.showExpected,
-      className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
-      style: {
-        border: 0,
-        background: 'transparent',
-        padding: 0,
-        cursor: 'pointer',
-        color: 'inherit'
-      }
-    }, /*#__PURE__*/React.createElement("span", null, "Expected"), /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.mute,
-        fontFamily: 'Space Mono, monospace',
-        filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
-        transition: 'filter .15s',
-        userSelect: 'none'
-      }
-    }, unitText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
-      const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy);
-      const off = v !== 0;
-      return /*#__PURE__*/React.createElement("b", {
-        style: {
-          color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
-          fontFamily: 'Space Mono, monospace',
-          filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
-          transition: 'filter .15s',
-          userSelect: 'none'
-        }
-      }, off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
-    })(), /*#__PURE__*/React.createElement(Ic, {
-      n: revealExp[ccy] ? 'power' : 'lock',
-      s: 11,
-      c: CD.faint
-    }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
-      className: "till-stored-note",
-      style: {
-        color: CD.pinNote,
-        marginTop: 2,
-        lineHeight: 1.35
-      }
-    }, storedRoundNote(expectedOf(ccy), ccy)) : null), /*#__PURE__*/React.createElement("div", {
-      className: "till-counted-when text-[11px] mt-1",
-      style: {
-        color: CD.faint
-      }
-    }, (() => {
-      const ts = countedAt[ccy];
-      return ts ? /*#__PURE__*/React.createElement("span", null, "Last counted ", /*#__PURE__*/React.createElement("b", {
-        style: {
-          color: CD.mute,
-          fontFamily: 'Space Mono, monospace'
-        }
-      }, sinceLabel(ts)), " \xB7 ", atLabel(ts)) : /*#__PURE__*/React.createElement("span", null, "Not counted yet today");
-    })())), /*#__PURE__*/React.createElement("div", {
-      className: "text-right flex-none till-grand"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "till-grand-label text-[10px] uppercase tracking-widest",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Total drawer", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("div", {
-      className: "till-grand-num",
-      "data-absent": grandHome == null ? '1' : undefined,
-      style: {
-        fontSize: 24,
-        fontWeight: 800,
-        color: grandHome == null ? CD.faint : CD.ink,
-        fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1.1
-      },
-      title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
-    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
-      onClick: saveSnapshot,
-      disabled: saved || !sessionOpen || tillBusy === 'count',
-      title: !sessionOpen ? 'Open the till before saving a count' : '',
-      className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
-      style: {
-        background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)',
-        borderRadius: 9,
-        marginLeft: 'auto',
-        cursor: sessionOpen ? 'pointer' : 'not-allowed',
-        transition: 'background .25s ease, transform .12s ease'
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: saved ? 'checkcircle' : 'checkcircle',
-      s: 15,
-      c: "var(--cd-on-ink)"
-    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
-      className: "till-count-hint text-[10.5px] py-2",
-      style: {
-        color: CD.faint
-      }
-    }, "Counting denominations updates the total live \xB7 or tap the counted figure to type it in directly \xB7 expected comes from the ledger float."))), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
+    })), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
       "data-tour": "till-reconcile",
       className: "p-5 flex flex-col",
       style: {
@@ -17882,7 +17714,173 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.faint
       }
-    }, "A snapshot is saved each time you count the drawer. Click any day to see its full denomination breakdown.")))), confirmClose && /*#__PURE__*/React.createElement("div", {
+    }, "A snapshot is saved each time you count the drawer. Click any day to see its full denomination breakdown."))))), tab === 'count' && /*#__PURE__*/React.createElement("div", {
+      className: "till-count-foot flex-none",
+      style: {
+        background: CD.paper
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-count-row flex items-end justify-between gap-4 pt-3",
+      style: {
+        borderTop: `1px solid ${CD.line}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-count-main min-w-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, ccy, " counted"), /*#__PURE__*/React.createElement("div", {
+      className: "till-counted flex items-center",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        maxWidth: 220,
+        marginTop: 3,
+        background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent'
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      inputMode: "decimal",
+      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
+      readOnly: ccyMode(ccy) !== 'total',
+      onFocus: () => {
+        if (ccyMode(ccy) !== 'total') {
+          setMode(o => ({
+            ...o,
+            [ccy]: 'total'
+          }));
+          setQuick(o => ({
+            ...o,
+            [ccy]: String(denTotal(ccy) || '')
+          }));
+        }
+      },
+      onChange: e => {
+        setQuick(o => ({
+          ...o,
+          [ccy]: e.target.value.replace(/[^0-9.]/g, '')
+        }));
+        stampCount(ccy);
+      },
+      className: "min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
+      style: {
+        width: 150,
+        fontVariantNumeric: 'tabular-nums',
+        fontFamily: 'Space Mono, monospace',
+        color: CD.ink,
+        cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "px-2.5 text-[11px]",
+      style: {
+        color: CD.mute,
+        fontFamily: 'Space Mono, monospace',
+        borderLeft: `1px solid ${CD.line}`
+      }
+    }, ccy)), /*#__PURE__*/React.createElement("div", {
+      className: "till-expected-wrap text-[11px] mt-1.5",
+      style: {
+        color: CD.faint
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => toggleReveal(ccy),
+      title: revealExp[ccy] ? copy.hideExpected : copy.showExpected,
+      className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
+      style: {
+        border: 0,
+        background: 'transparent',
+        padding: 0,
+        cursor: 'pointer',
+        color: 'inherit'
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Expected"), /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.mute,
+        fontFamily: 'Space Mono, monospace',
+        filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
+        transition: 'filter .15s',
+        userSelect: 'none'
+      }
+    }, unitText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
+      const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy);
+      const off = v !== 0;
+      return /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
+          fontFamily: 'Space Mono, monospace',
+          filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
+          transition: 'filter .15s',
+          userSelect: 'none'
+        }
+      }, off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
+    })(), /*#__PURE__*/React.createElement(Ic, {
+      n: revealExp[ccy] ? 'power' : 'lock',
+      s: 11,
+      c: CD.faint
+    }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
+      className: "till-stored-note",
+      style: {
+        color: CD.pinNote,
+        marginTop: 2,
+        lineHeight: 1.35
+      }
+    }, storedRoundNote(expectedOf(ccy), ccy)) : null), /*#__PURE__*/React.createElement("div", {
+      className: "till-counted-when text-[11px] mt-1",
+      style: {
+        color: CD.faint
+      }
+    }, (() => {
+      const ts = countedAt[ccy];
+      return ts ? /*#__PURE__*/React.createElement("span", null, "Last counted ", /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: CD.mute,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, sinceLabel(ts)), " \xB7 ", atLabel(ts)) : /*#__PURE__*/React.createElement("span", null, "Not counted yet today");
+    })())), /*#__PURE__*/React.createElement("div", {
+      className: "text-right flex-none till-grand"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-grand-label text-[10px] uppercase tracking-widest",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Total drawer", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("div", {
+      className: "till-grand-num",
+      "data-absent": grandHome == null ? '1' : undefined,
+      style: {
+        fontSize: 24,
+        fontWeight: 800,
+        color: grandHome == null ? CD.faint : CD.ink,
+        fontVariantNumeric: 'tabular-nums',
+        lineHeight: 1.1
+      },
+      title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
+    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
+      onClick: saveSnapshot,
+      disabled: saved || !sessionOpen || tillBusy === 'count',
+      title: !sessionOpen ? 'Open the till before saving a count' : '',
+      className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
+      style: {
+        background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)',
+        borderRadius: 9,
+        marginLeft: 'auto',
+        cursor: sessionOpen ? 'pointer' : 'not-allowed',
+        transition: 'background .25s ease, transform .12s ease'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: saved ? 'checkcircle' : 'checkcircle',
+      s: 15,
+      c: "var(--cd-on-ink)"
+    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
+      className: "till-count-hint text-[10.5px] py-2",
+      style: {
+        color: CD.faint
+      }
+    }, "Counting denominations updates the total live \xB7 or tap the counted figure to type it in directly \xB7 expected comes from the ledger float.")), confirmClose && /*#__PURE__*/React.createElement("div", {
       style: {
         position: 'absolute',
         inset: 0,

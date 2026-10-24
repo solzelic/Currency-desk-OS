@@ -293,7 +293,7 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
   mkdirSync(REPO_SHOTS, { recursive: true });
   await page.locator('#appbar [data-app="till"]').click();
   await expect(page.locator(".till-counted-when")).toContainText("4:30 pm");
-  for (const width of [360, 390, 430, 1280]) {
+  for (const width of [360, 390, 430, 600, 1280]) {
     await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     await page.locator("[data-tour='till']").scrollIntoViewIfNeeded();
     const bannerFits = await page.locator(".till-statusline").first().evaluate((el) => el.scrollWidth <= el.clientWidth);
@@ -350,7 +350,7 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
   await page.locator('#appbar [data-app="reports"]').click();
   await page.getByText("End-of-Day Sign-Off").first().click();
   await doc.waitFor({ state: "visible", timeout: 30_000 });
-  for (const width of [360, 390, 430, 1280]) {
+  for (const width of [360, 390, 430, 600, 1280]) {
     await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     const table = page.locator("table").filter({ hasText: "In the drawer" });
     await table.scrollIntoViewIfNeeded();

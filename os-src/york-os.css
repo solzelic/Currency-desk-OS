@@ -1784,17 +1784,40 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-width: none !important;
   }
 }
+/* The header, the session line, and the multi-till banner stay put
+   and wrap. The denomination list is the piece that scrolls, and the
+   count panel sits under that list instead of covering it. */
+.till-frame {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .till-screen {
+  flex: 1 1 auto;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: auto;
 }
-.till-screen > .flex-1 {
-  min-width: 0;
+.till-screen > .overflow-auto {
+  overflow: visible;
+  height: auto;
+  max-height: none;
   min-height: 0;
+}
+.till-count-foot {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  background: var(--cd-paper, #f4f3f0);
 }
 .till-sessionline {
   min-width: 0;
@@ -2438,27 +2461,32 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: 1 0 100% !important;
     width: 100% !important;
     margin-left: 0 !important;
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch;
+    gap: 6px;
   }
   [data-tour="till"] .till-pill {
-    grid-column: 1 / -1;
-    width: 100%;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
     min-height: 44px;
     box-sizing: border-box;
-    justify-content: space-between;
+    justify-content: flex-start;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
   [data-tour="till"] .till-move,
   [data-tour="till"] .till-vault {
-    width: 100%;
+    flex: none;
+    width: auto;
     min-height: 44px;
     box-sizing: border-box;
     justify-content: center;
   }
-  /* History stays one whole label. The bar uses the window width,
-     and the fade that was cutting the last word is gone. A second
-     row hid a denomination. */
+  /* History stays one whole label. The bar's box is the window, so
+     the last tab is inside the screen instead of past a hidden edge. */
   [data-tour="till"] .till-tabwrap {
     display: block;
     position: relative;
@@ -2468,6 +2496,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex-wrap: nowrap !important;
     overflow: hidden !important;
     max-height: none !important;
+    width: calc(100% + 32px);
+    max-width: none;
+    box-sizing: border-box;
     margin-left: -16px !important;
     margin-right: -16px !important;
     padding-left: 6px !important;
@@ -2768,17 +2799,22 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .till-count-main .flex.flex-wrap { flex-wrap: nowrap !important; }
   .till-counted-when { display: none; }
   .till-count-hint { display: none; }
-  /* One column. The header, the session line, and the hand-off
-     scroll away with the denomination rows. The count panel sticks
-     just above the bar. Nothing is drawn behind the panel. */
+  /* The list scrolls in its own area. The count panel is the band
+     under that area, sitting on the phone bar. The window itself
+     runs under the bar, so the frame stops one bar up. */
   #desktop .win:has(.till-screen) > .win-body {
     overflow: hidden !important;
   }
+  .till-frame:not(.till-on-reconcile) {
+    position: absolute !important;
+    top: 0;
+    right: 0;
+    bottom: var(--phone-bar-h);
+    left: 0;
+    height: auto !important;
+  }
   .till-screen {
-    height: 100%;
-    max-height: 100%;
     overflow: auto;
-    display: block !important;
     -webkit-overflow-scrolling: touch;
   }
   .till-screen > .overflow-auto {
@@ -2820,6 +2856,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     margin-bottom: 6px;
   }
   .till-denom > [data-tour="till-count"] { margin-bottom: 6px !important; }
+  .till-den-row { padding-top: 3px !important; padding-bottom: 3px !important; }
   .till-chip { flex: none; }
   /* The reconcile close is the last row of its scroller, and that
      scroller runs under the tab bar. Stick it one bar up, so it stays
@@ -2831,12 +2868,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      flex gap under it is page colour. The list fills the column,
      the close drops to the bottom, and the pad tucks up over that
      gap so the white runs into the tab bar. */
-  .till-on-reconcile.till-screen {
+  .till-frame.till-on-reconcile {
+    height: 100%;
+  }
+  .till-frame.till-on-reconcile .till-screen {
     display: flex !important;
     flex-direction: column;
     overflow: hidden;
   }
-  .till-on-reconcile.till-screen > .overflow-auto {
+  .till-frame.till-on-reconcile .till-screen > .overflow-auto {
     flex: 1 1 auto !important;
     height: auto !important;
     min-height: 0;
@@ -2844,7 +2884,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     display: flex !important;
     flex-direction: column;
   }
-  .till-on-reconcile.till-screen > .overflow-auto > .p-4 {
+  .till-frame.till-on-reconcile .till-screen > .overflow-auto > .p-4 {
     flex: 1 0 auto;
     display: flex;
     flex-direction: column;
@@ -2867,16 +2907,16 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     flex: none;
   }
   .till-count-foot {
-    position: sticky !important;
-    bottom: var(--phone-bar-h) !important;
+    position: relative !important;
+    bottom: auto !important;
     z-index: 5;
     margin-top: 0 !important;
-    margin-left: -16px;
-    margin-right: -16px;
-    padding-top: 8px !important;
+    margin-left: 0;
+    margin-right: 0;
+    padding-top: 4px !important;
     padding-left: 16px !important;
     padding-right: 16px !important;
-    padding-bottom: 8px !important;
+    padding-bottom: 4px !important;
     background: var(--cd-paper, #f4f3f0) !important;
   }
   /* Content scrolls under the bar. This padding is the bar plus
@@ -2891,14 +2931,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      denominations under the panel at 360. */
   [data-tour="till"].flex-none { padding-top: 6px !important; }
   [data-tour="till"] .till-head { row-gap: 4px; padding-bottom: 6px; }
-  .till-screen > .flex-none.flex { padding-top: 4px !important; padding-bottom: 4px !important; }
-  .till-screen > .flex.justify-between { flex-wrap: nowrap !important; }
-  .till-screen > .flex.justify-between > .min-w-0 { flex-wrap: nowrap !important; }
-  .till-screen > .flex.justify-between > .min-w-0 > .min-w-0 {
+  .till-frame > .flex-none.flex { padding-top: 4px !important; padding-bottom: 4px !important; }
+  .till-frame > .flex.justify-between { flex-wrap: nowrap !important; }
+  .till-frame > .flex.justify-between > .min-w-0 { flex-wrap: nowrap !important; }
+  .till-frame > .flex.justify-between > .min-w-0 > .min-w-0 {
     flex: 1 1 auto !important;
     min-width: 0 !important;
   }
-  .till-screen > .flex.justify-between .leading-tight > div {
+  .till-frame > .flex.justify-between .leading-tight > div {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

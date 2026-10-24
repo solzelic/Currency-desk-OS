@@ -921,7 +921,7 @@
       const over = r.variance > 0;
       return { text: unitText(abs, r.c) + ' ' + unitWord(r.c, abs) + (over ? ' over' : ' short'), tone: over ? 'over' : 'under' };
     };
-    return (<div ref={tillRootRef} className={'till-screen flex flex-col' + (tab === 'reconcile' ? ' till-on-reconcile' : '')} style={{ height: '100%', background: CD.paper, position: 'relative' }}>
+    return (<div ref={tillRootRef} className={'till-frame flex flex-col' + (tab === 'reconcile' ? ' till-on-reconcile' : '')} style={{ height: '100%', background: CD.paper, position: 'relative' }}>
       {/* header + tabs */}
       <div data-tour="till" className="px-4 pt-3 flex-none" style={{ background: CD.panel }}>
         <div className="till-head flex items-center gap-2.5 pb-3">
@@ -1067,7 +1067,8 @@
       </div>
       )}
 
-      <div className="flex-1 overflow-auto">
+      <div className="till-screen flex-1">
+      <div className="overflow-auto">
 
         {/* ===== COUNT ===== */}
         {tab === 'count' && (<div className="till-count-sheet p-4 pb-0">
@@ -1115,35 +1116,6 @@
           {/* Phone only. The spacer is the count panel plus 16px, so the
               last denomination can scroll clear of the panel. */}
           <div className="till-scroll-pad" />
-          {/* per-currency footer — counted (typeable), expected, then the grand total */}
-          <div className="till-count-foot" style={{ position: 'sticky', bottom: 0, background: CD.paper, paddingTop: 10, marginTop: 8 }}>
-            <div className="till-count-row flex items-end justify-between gap-4 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
-              <div className="till-count-main min-w-0">
-                <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
-                <div className="till-counted flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
-                  <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : unitText(ccyTotal(ccy), ccy)} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
-                  <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
-                </div>
-                <div className="till-expected-wrap text-[11px] mt-1.5" style={{ color: CD.faint }}>
-                  <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? copy.hideExpected : copy.showExpected} className="till-expected inline-flex items-center gap-1.5 flex-wrap" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
-                    <span>Expected</span>
-                    <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{unitText(expectedOf(ccy), ccy)} {ccy}</b>
-                    {isCounted(ccy) && (() => { const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy); const off = v !== 0; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
-                    <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
-                    {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
-                  </button>
-                  {storedRoundNote(expectedOf(ccy), ccy) ? <div className="till-stored-note" style={{ color: CD.pinNote, marginTop: 2, lineHeight: 1.35 }}>{storedRoundNote(expectedOf(ccy), ccy)}</div> : null}
-                </div>
-                <div className="till-counted-when text-[11px] mt-1" style={{ color: CD.faint }}>{(() => { const ts = countedAt[ccy]; return ts ? <span>Last counted <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{sinceLabel(ts)}</b> · {atLabel(ts)}</span> : <span>Not counted yet today</span>; })()}</div>
-              </div>
-              <div className="text-right flex-none till-grand">
-                <div className="till-grand-label text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
-                <div className="till-grand-num" data-absent={grandHome == null ? '1' : undefined} style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? (canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against') : ''}>{fmtHome(grandHome)}</div>
-                <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
-              </div>
-            </div>
-            <div className="till-count-hint text-[10.5px] py-2" style={{ color: CD.faint }}>Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.</div>
-          </div>
         </div>)}
 
         {/* THE CLOSED-OUT FIGURES. Read from the ledger for the trading day,
@@ -1370,6 +1342,37 @@
           </div>)}
         </div>)}
       </div>
+      </div>
+      {tab === 'count' && (
+        <div className="till-count-foot flex-none" style={{ background: CD.paper }}>
+          <div className="till-count-row flex items-end justify-between gap-4 pt-3" style={{ borderTop: `1px solid ${CD.line}` }}>
+            <div className="till-count-main min-w-0">
+              <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
+              <div className="till-counted flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
+                <input type="text" inputMode="decimal" value={ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : unitText(ccyTotal(ccy), ccy)} readOnly={ccyMode(ccy) !== 'total'} onFocus={() => { if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
+                <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
+              </div>
+              <div className="till-expected-wrap text-[11px] mt-1.5" style={{ color: CD.faint }}>
+                <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? copy.hideExpected : copy.showExpected} className="till-expected inline-flex items-center gap-1.5 flex-wrap" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
+                  <span>Expected</span>
+                  <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{unitText(expectedOf(ccy), ccy)} {ccy}</b>
+                  {isCounted(ccy) && (() => { const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy); const off = v !== 0; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
+                  <Ic n={revealExp[ccy] ? 'power' : 'lock'} s={11} c={CD.faint} />
+                  {ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && <span>· ≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</span>}
+                </button>
+                {storedRoundNote(expectedOf(ccy), ccy) ? <div className="till-stored-note" style={{ color: CD.pinNote, marginTop: 2, lineHeight: 1.35 }}>{storedRoundNote(expectedOf(ccy), ccy)}</div> : null}
+              </div>
+              <div className="till-counted-when text-[11px] mt-1" style={{ color: CD.faint }}>{(() => { const ts = countedAt[ccy]; return ts ? <span>Last counted <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{sinceLabel(ts)}</b> · {atLabel(ts)}</span> : <span>Not counted yet today</span>; })()}</div>
+            </div>
+            <div className="text-right flex-none till-grand">
+              <div className="till-grand-label text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
+              <div className="till-grand-num" data-absent={grandHome == null ? '1' : undefined} style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? (canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against') : ''}>{fmtHome(grandHome)}</div>
+              <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
+            </div>
+          </div>
+          <div className="till-count-hint text-[10.5px] py-2" style={{ color: CD.faint }}>Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.</div>
+        </div>
+      )}
       {/* ===== CLOSE-OUT REVIEW MODAL ===== */}
       {confirmClose && (<div style={{ position: 'absolute', inset: 0, zIndex: 60, background: 'rgba(24,21,17,0.46)', display: 'grid', placeItems: 'center', padding: 20 }} onClick={() => setConfirmClose(false)}>
         <div onClick={e => e.stopPropagation()} className="flex flex-col" style={{ width: 'min(580px, 100%)', maxHeight: '100%', background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', overflow: 'hidden' }}>
