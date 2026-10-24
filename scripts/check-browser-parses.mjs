@@ -87,7 +87,7 @@ if (existsSync(osDir)) {
 
 // ---- standalone browser scripts ---------------------------------------
 // shared/id-document-types.js is loaded by the OS shell and by the server.
-for (const f of ["yorkfx-converter.js", "shared/id-document-types.js"]) {
+for (const f of ["yorkfx-converter.js", "shared/id-document-types.js", "shared/counter-cash.js"]) {
   const p = path.join(ROOT, f);
   if (existsSync(p)) parse(readFileSync(p, "utf8"), f, false);
 }

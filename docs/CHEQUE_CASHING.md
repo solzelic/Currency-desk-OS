@@ -269,13 +269,17 @@ would be the same mistake as transcribing a regulator's form from memory
 `server/src/db/migrations/012_jurisdiction_reports.sql`. So the fact is
 recorded, and the rule is left to the pack.
 
-**Known gap, stated plainly:** the browser's aggregation engine
-(`aggClusters` in `os-src/cdos-compliance.jsx`) still measures cash-in as
-`cadIn(r)` — the `from` leg of any row — and therefore counts the full
-face of a cashed cheque toward a large-cash aggregate. That was true
-before this change and is still true after it; what is new is that the
-row now carries `receivedInstrument`, so the engine has something true to
-consult when a pack can say what "cash" means where the desk trades.
+**Cash-in, stated plainly:** the browser's aggregation engine
+(`aggClusters` in `os-src/cdos-compliance.jsx`) measures cash-in with
+`counterCashIn`, which calls `cashLegs` in `shared/counter-cash.js`.
+A cashed cheque puts no cash in. The till summary
+(`GET /api/ledger/summary`, the Cash drawer movement card) uses that
+same function. Cash paid to the customer is cash out. The face is not
+cash in. A 1,000.00 cheque cashed for 965.00 beside a 100.00 cash
+exchange shows CAD in 100.00 and CAD out 965.00. Pay-in volume still
+includes the face, because that figure is the home-currency size of the
+deal, not cash across the counter. The drawer expected at close is the
+till balance, which already moved only by the cash paid out.
 
 ## Who can change the fee
 

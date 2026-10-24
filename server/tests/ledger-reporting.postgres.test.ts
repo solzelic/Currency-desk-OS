@@ -298,6 +298,38 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(stored).toMatchObject({ paidOut: "200.80", net: "-200.80" });
   });
 
+  /* A cashed cheque hands the desk a piece of paper and pays cash out.
+     The face is the input amount. Counting it as cash received makes the
+     drawer look like it took in money it never held. The cash that left
+     is the net paid to the customer. A cash exchange in the same window
+     still counts, so the cheque is left out rather than the whole total. */
+  it("counts cash paid out on a cheque, and does not count the face as cash in", async () => {
+    const at = new Date().toISOString();
+    const book = (id: string, from: string, to: string, input: string, output: string, kind: string, received: string, disbursed: string) =>
+      pool.query(
+        `INSERT INTO ledger_transactions
+           (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
+            workspace_id, till_id, customer_id, actor_id, from_currency, to_currency,
+            input_amount, output_amount, rate, fee_cad, spread_cad, purpose,
+            source_of_funds, posted_at, deal_kind, received_instrument, disbursed_instrument,
+            jurisdiction_pack_id, jurisdiction_pack_version, home_currency)
+         VALUES
+           ($1, $2, $3, $4, $5, $6, $7, 'customer-demo', $3||':r.haddad',
+            $8, $9, $10, $11, 1, 0, 0, 'travel', 'salary', $12,
+            $13, $14, $15, 'pack-ca-v1', 1, 'CAD')`,
+        [id, `ref-${id}`, ...scope, from, to, input, output, at, kind, received, disbursed],
+      );
+    await book("chq-face", "CAD", "CAD", "1000.00", "965.00", "cheque_cashing", "cheque", "cash");
+    await book("fx-cash", "CAD", "USD", "100.00", "70.00", "exchange", "cash", "cash");
+    const bookSummary = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+    );
+    const cad = bookSummary.movement.find((row: { currency: string }) => row.currency === "CAD");
+    const usd = bookSummary.movement.find((row: { currency: string }) => row.currency === "USD");
+    expect(cad).toMatchObject({ received: "100.00", paidOut: "965.00", net: "-865.00" });
+    expect(usd).toMatchObject({ received: "0.00", paidOut: "70.00", net: "-70.00" });
+  });
+
   it("shows a stored yen balance as stored", async () => {
     await tillHolds("JPY", 200.8);
     const held = await position();
