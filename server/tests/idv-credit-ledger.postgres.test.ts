@@ -18,6 +18,9 @@ const B_BRANCH = "br-idv-credit-b";
 const B_USER = `${B_TENANT}:b.owner`;
 const PLATFORM_STAFF = "p.admin";
 const PLATFORM_USER = `${DEMO.tenantId}:${PLATFORM_STAFF}`;
+/* Not j.masri. Other files leave that staff id active in platform_users. */
+const SHOP_ADMIN = "idv.shop";
+const SHOP_ADMIN_USER = `${DEMO.tenantId}:${SHOP_ADMIN}`;
 const APP_ROLE = "idv_credit_app";
 let pool: pg.Pool;
 let handle: DbHandle;
@@ -89,6 +92,14 @@ postgres("idv credit ledger", () => {
        ON CONFLICT (email) DO UPDATE SET role = 'owner', status = 'active'`,
       [PLATFORM_STAFF],
     );
+    await pool.query(
+      `INSERT INTO staff_users (id, tenant_id, legal_entity_id, branch_id, staff_id, name, role, authorized_branch_ids, password_hash)
+       SELECT $1, tenant_id, legal_entity_id, branch_id, $2, 'Shop Admin', 'administrator', '[]'::jsonb, password_hash
+       FROM staff_users WHERE staff_id = 'j.masri' AND tenant_id = $3
+       ON CONFLICT DO NOTHING`,
+      [SHOP_ADMIN_USER, SHOP_ADMIN, DEMO.tenantId],
+    );
+    await pool.query("DELETE FROM platform_users WHERE email = $1", [SHOP_ADMIN]);
     await pool.query(`
       DO $$ BEGIN
         CREATE ROLE idv_credit_app LOGIN PASSWORD 'idv-credit-app';
@@ -98,16 +109,17 @@ postgres("idv credit ledger", () => {
     `);
     await pool.query("GRANT ALL ON TABLE idv_credit_ledger TO idv_credit_app");
     cookies.owner = await signIn("j.masri", DEMO.tenantId);
+    cookies.shop = await signIn(SHOP_ADMIN, DEMO.tenantId);
     cookies.teller = await signIn("m.costa", DEMO.tenantId);
     cookies.b = await signIn("b.owner", B_TENANT);
     cookies.platform = await signIn(PLATFORM_STAFF, DEMO.tenantId);
   });
   afterAll(async () => {
     if (pool) {
-      await pool.query("DELETE FROM sessions WHERE user_id = ANY($1)", [[B_USER, PLATFORM_USER]]);
+      await pool.query("DELETE FROM sessions WHERE user_id = ANY($1)", [[B_USER, PLATFORM_USER, SHOP_ADMIN_USER]]);
       await pool.query("DELETE FROM audit_events WHERE tenant_id = $1", [B_TENANT]);
-      await pool.query("DELETE FROM staff_users WHERE id = ANY($1)", [[B_USER, PLATFORM_USER]]);
-      await pool.query("DELETE FROM platform_users WHERE email = $1", [PLATFORM_STAFF]);
+      await pool.query("DELETE FROM staff_users WHERE id = ANY($1)", [[B_USER, PLATFORM_USER, SHOP_ADMIN_USER]]);
+      await pool.query("DELETE FROM platform_users WHERE email = ANY($1)", [[PLATFORM_STAFF, SHOP_ADMIN]]);
       await pool.query("DELETE FROM branches WHERE id = $1", [B_BRANCH]);
       await pool.query("DELETE FROM legal_entities WHERE id = $1", [B_SHOP]);
       await pool.query("DELETE FROM tenants WHERE id = $1", [B_TENANT]);
@@ -204,7 +216,7 @@ postgres("idv credit ledger", () => {
     const beforeA = (await readCredits(pool, DEMO.legalEntityId)).balance;
     const beforeB = (await readCredits(pool, B_SHOP)).balance;
     process.env.IDV_CREDIT_SANDBOX = "1";
-    const shopAdmin = await hit("POST", "owner", { payload: { amount: 3 } });
+    const shopAdmin = await hit("POST", "shop", { payload: { amount: 3 } });
     expect(shopAdmin.statusCode).toBe(403);
     expect(shopAdmin.json().code).toBe("AUTHORIZATION_DENIED");
     const teller = await hit("POST", "teller", { payload: { amount: 4 } });
