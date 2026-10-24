@@ -4,9 +4,15 @@
    A closed session is still the latest session, and the drawer then
    does not offer Open the till. This closes the seeded York till's
    sessions and moves them off that drawer, and puts the four opening
-   figures back. It is registered only for a local test run. */
+   figures back. The production server does not import this file. */
+import { createRequire } from "node:module";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
+
+const require = createRequire(import.meta.url);
+const parseConnectionString = require("pg-connection-string") as (
+  value: string,
+) => { host?: string | null };
 
 const SEEDED_TILL = [
   "tnt-yorkfx",
@@ -16,18 +22,29 @@ const SEEDED_TILL = [
   "till-01",
 ];
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/* The host node-pg will dial. pg-connection-string lets ?host= replace
+   the host written in the URL. An empty result is PGHOST, then the
+   driver's own default, localhost. Nothing here is logged. */
+export function driverHost(env: NodeJS.ProcessEnv, databaseUrl: string): string | null {
+  let parsedHost = "";
+  try {
+    const parsed = parseConnectionString(databaseUrl);
+    parsedHost = typeof parsed.host === "string" ? parsed.host : "";
+  } catch {
+    return null;
+  }
+  const chosen = parsedHost.trim() || (env.PGHOST ?? "").trim() || "localhost";
+  return chosen.replace(/^\[|\]$/g, "");
+}
 
 export function testDeskResetEnabled(env: NodeJS.ProcessEnv, databaseUrl: string): boolean {
-  if (env.NODE_ENV === "production" || env.STAGING === "true") return false;
+  if (env.NODE_ENV !== "test" && env.NODE_ENV !== "development") return false;
   if (env.CD_TEST_RESET !== "1") return false;
   if (!databaseUrl) return false;
-  let host = "";
-  try {
-    host = new URL(databaseUrl).hostname.replace(/^\[|\]$/g, "");
-  } catch {
-    return false;
-  }
+  const host = driverHost(env, databaseUrl);
+  if (!host || host.includes(",") || host.includes("/")) return false;
   return LOCAL_HOSTS.has(host);
 }
 
@@ -79,8 +96,13 @@ export async function resetSeededDesk(client: pg.PoolClient): Promise<number> {
   return retired.rowCount ?? 0;
 }
 
-export function registerTestDeskReset(app: FastifyInstance, pool: pg.Pool, databaseUrl: string): void {
-  if (!testDeskResetEnabled(process.env, databaseUrl)) return;
+export function registerTestDeskReset(
+  app: FastifyInstance,
+  pool: pg.Pool,
+  databaseUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (!testDeskResetEnabled(env, databaseUrl)) return;
   app.post("/api/test/reset-desk", async (_req, reply) => {
     const client = await pool.connect();
     try {

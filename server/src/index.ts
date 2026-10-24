@@ -6,7 +6,9 @@ try {
   /* no .env — fine */
 }
 
-import { createDb } from "./db/index.js";
+import { pathToFileURL } from "node:url";
+import type { FastifyInstance } from "fastify";
+import { createDb, type Db } from "./db/index.js";
 import { seed, DEMO } from "./seed.js";
 import {
   ensureDemoStaff,
@@ -27,7 +29,8 @@ for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVE
 if (process.env.NODE_ENV === "production" && (!process.env.DATABASE_URL || !process.env.SEED_PASSWORD)) throw new Error("DATABASE_URL and SEED_PASSWORD are required in production.");
 if (process.env.NODE_ENV === "production" && !process.env.PLATFORM_MFA_KEY?.trim()) throw new Error("PLATFORM_MFA_KEY is required in production.");
 
-const handle = await createDb();
+export async function bootServer(): Promise<{ app: FastifyInstance; db: Db }> {
+  const handle = await createDb();
 // seed on every boot — it's idempotent (onConflictDoNothing throughout), so
 // an empty database gets the demo tenant/staff/board and an existing one is
 // untouched. First boot on Render provisions Neon automatically this way.
@@ -117,35 +120,49 @@ if (shouldPopulateDemoDesk()) {
   }
 }
 
-const app = await buildApp(handle.db);
-// custom-domain → site map: buildApp loads it once; keep it fresh so a
-// domain recorded on another instance (or straight in the DB) takes effect
-setInterval(() => void refreshSiteDomains(handle.db).catch(() => {}), 60 * 1000).unref();
-const port = Number(process.env.PORT ?? 8787);
-// bind all interfaces in production (Render/Railway route external traffic);
-// loopback-only in dev
-const host = process.env.HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
-await app.listen({ port, host });
-console.log(`currencydesk-server on http://${host}:${port}`);
+  const app = await buildApp(handle.db);
+  // custom-domain → site map: buildApp loads it once; keep it fresh so a
+  // domain recorded on another instance (or straight in the DB) takes effect
+  setInterval(() => void refreshSiteDomains(handle.db).catch(() => {}), 60 * 1000).unref();
+  return { app, db: handle.db };
+}
 
-// live market rates: pull the provider at most once per RATES_SYNC_MINUTES
-// (default 60 → 24/day), decided by the age of the newest snapshot in the
-// database. Because the gate is in the DB, not process memory, restarts don't
-// re-pull — a Render free-tier instance that sleeps and cold-starts all day
-// still pulls ~24 times, not once per wake. RATES_SYNC=off disables it.
-if (process.env.RATES_SYNC !== "off") {
-  const minutes = Math.max(1, Number(process.env.RATES_SYNC_MINUTES ?? 60));
-  const gapMs = minutes * 60 * 1000;
-  // a small grace so the on-the-hour check reliably clears the gate instead of
-  // just missing it and waiting a whole extra cycle
-  const gateMs = Math.max(gapMs - 60 * 1000, gapMs * 0.5);
-  // check often enough to pull promptly after a cold start, but the DB gate
-  // caps actual provider calls at one per gap regardless of check frequency
-  const checkMs = Math.min(gapMs, 15 * 60 * 1000);
-  const run = async () => {
-    const r = await syncMarketRatesIfStale(handle.db, DEMO.branchId, gateMs);
-    console.log(`[rates-sync] ${r.skipped ? "skip" : r.ok ? "ok" : "FAILED"} — ${r.detail}`);
-  };
-  void run();
-  setInterval(run, checkMs).unref();
+export async function listenServer(app: FastifyInstance, db: Db): Promise<void> {
+  const port = Number(process.env.PORT ?? 8787);
+  // bind all interfaces in production (Render/Railway route external traffic);
+  // loopback-only in dev
+  const host = process.env.HOST ?? (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+  await app.listen({ port, host });
+  console.log(`currencydesk-server on http://${host}:${port}`);
+
+  // live market rates: pull the provider at most once per RATES_SYNC_MINUTES
+  // (default 60 → 24/day), decided by the age of the newest snapshot in the
+  // database. Because the gate is in the DB, not process memory, restarts don't
+  // re-pull — a Render free-tier instance that sleeps and cold-starts all day
+  // still pulls ~24 times, not once per wake. RATES_SYNC=off disables it.
+  if (process.env.RATES_SYNC !== "off") {
+    const minutes = Math.max(1, Number(process.env.RATES_SYNC_MINUTES ?? 60));
+    const gapMs = minutes * 60 * 1000;
+    // a small grace so the on-the-hour check reliably clears the gate instead of
+    // just missing it and waiting a whole extra cycle
+    const gateMs = Math.max(gapMs - 60 * 1000, gapMs * 0.5);
+    // check often enough to pull promptly after a cold start, but the DB gate
+    // caps actual provider calls at one per gap regardless of check frequency
+    const checkMs = Math.min(gapMs, 15 * 60 * 1000);
+    const run = async () => {
+      const r = await syncMarketRatesIfStale(db, DEMO.branchId, gateMs);
+      console.log(`[rates-sync] ${r.skipped ? "skip" : r.ok ? "ok" : "FAILED"} — ${r.detail}`);
+    };
+    void run();
+    setInterval(run, checkMs).unref();
+  }
+}
+
+/* Importing this module must not listen. The seam harness boots through
+   bootServer and registers its own route before listenServer. */
+const invokedDirectly = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) {
+  const started = await bootServer();
+  await listenServer(started.app, started.db);
 }
