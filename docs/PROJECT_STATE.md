@@ -72,7 +72,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **The module strip uses one icon stroke.** Dark mode paints every tab icon with the green accent (`--cd-green`, `#36ad6d`), including Reports and Pricing. Those two had kept only the green part of a two-tone drawing, so Reports read as a short tick and Pricing as a slash. Light mode uses one ink stroke, `#17140F`. A selected tab is bold and has a 3px bar. Each tab is at least 44px tall.
+- **The module strip uses one icon stroke.** In dark mode the selected tab's icon is the green accent (`--cd-green`, `#36ad6d`) and the other icons are `#eceae3` at 72% opacity. Reports and Pricing had kept only the green part of a two-tone drawing, so Reports read as a short tick and Pricing as a slash. Light mode uses one ink stroke, `#17140F`. A selected tab is bold and has a 3px bar. Each tab is at least 44px tall. The strip keeps about 88px clear at the right so the last tab, scrolled to the end, sits fully left of the floating store and ID buttons.
 
 - **Posting a quote returns the quote connection before the deal checks one out.** The quote check commits first. The deal is still its own serializable transaction: frozen terms, the idempotency row, and the journal commit together, and a replay of that post returns the same deal. The quote connection is back in the pool before that transaction starts, so a full pool of posts no longer waits forever for a second connection. A single post after that burst gets a connection.
 

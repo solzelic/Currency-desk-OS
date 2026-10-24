@@ -83,6 +83,10 @@ function contrast(a: number[], b: number[]): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+function over(stroke: number[], ground: number[], opacity: number): number[] {
+  return stroke.map((part, i) => part * opacity + ground[i]! * (1 - opacity));
+}
+
 function pixel(img: { width: number; rgba: Uint8Array }, x: number, y: number): number[] {
   const i = (y * img.width + x) * 4;
   return [img.rgba[i]!, img.rgba[i + 1]!, img.rgba[i + 2]!];
@@ -99,6 +103,7 @@ type Reading = {
   labelPoint: { x: number; y: number };
   labelCenter: { x: number; y: number };
   hit: string;
+  iconOpacity: number;
   iconPoint: { x: number; y: number };
   height: number;
   width: number;
@@ -146,9 +151,9 @@ async function readNav(page: Page): Promise<Reading[]> {
           const owner = el && el.closest("[data-app]");
           return owner ? owner.getAttribute("data-app") || "" : "";
         })(),
-        /* The top of the tab sits above the glyph and the label,
-           so this pixel is the bar behind the icon. */
-        iconPoint: { x: box.left + box.width / 2, y: box.top + 3 },
+        iconOpacity: Number(getComputedStyle(tab.querySelector("svg") || tab).opacity) || 1,
+        /* Left padding, clear of the glyph and the label. */
+        iconPoint: { x: box.left + 8, y: box.top + box.height / 2 },
         height: box.height,
         width: box.width,
         active: tab.classList.contains("is-active"),
@@ -192,6 +197,10 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
             const tab = document.querySelector("#appbar [data-app='reports']");
             if (strip && tab instanceof HTMLElement) strip.scrollLeft = Math.max(0, tab.offsetLeft - 12);
           });
+          if (width >= 600) {
+            await page.locator("#appbar [data-app='reports']").click();
+            await expect(page.locator("#appbar [data-app='reports']")).toHaveClass(/is-active/);
+          }
         }
         const file = path.join(SHOTS, `${process.env.NAV_SHOT}-${theme}-${width}.png`);
         await page.screenshot({ path: file });
@@ -230,21 +239,24 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
       const rows = await readNav(page);
       const { sample } = await paint(page);
       const ink = "rgb(23, 20, 15)";
+      const quiet = "rgb(236, 234, 227)";
       expect(rows.map((row) => row.id)).toEqual(expect.arrayContaining(["reports", "pricing"]));
       for (const row of rows) {
         expect(row.shapes, row.id).toBeGreaterThan(0);
-        expect(row.strokes, `${theme} ${width} ${row.id}`).toEqual([theme === "dark" ? token : ink]);
+        const strokeName = theme === "light" ? ink : row.active ? token : quiet;
+        expect(row.strokes, `${theme} ${width} ${row.id}`).toEqual([strokeName]);
+        expect(row.iconOpacity, `${theme} ${width} ${row.id} opacity`).toBeCloseTo(theme === "dark" && !row.active ? 0.72 : 1, 2);
         expect(row.widths, row.id).toEqual(["1.75px"]);
         expect(row.effects, row.id).toEqual(["non-scaling-stroke"]);
         expect(row.height, row.id).toBeGreaterThanOrEqual(44);
         expect(row.width, row.id).toBeGreaterThanOrEqual(44);
-        const onScreen = row.iconPoint.x >= 24 && row.iconPoint.x <= width - 120 && row.iconPoint.y >= 8;
-        const labelOnScreen = row.labelCenter.x >= 24 && row.labelCenter.x <= width - 120 && row.labelCenter.y >= 8;
+        const onScreen = row.iconPoint.x >= 16 && row.iconPoint.x <= width - 100 && row.iconPoint.y >= 8;
+        const labelOnScreen = row.labelCenter.x >= 16 && row.labelCenter.x <= width - 100 && row.labelCenter.y >= 8;
         if (labelOnScreen) expect(row.hit, `${theme} ${width} ${row.id} hit`).toBe(row.id);
         if (onScreen) {
           const ground = sample(row.iconPoint.x, row.iconPoint.y);
           const stroke = row.strokes[0]!.match(/\d+/g)!.slice(0, 3).map(Number);
-          const iconRatio = contrast(stroke, ground);
+          const iconRatio = contrast(over(stroke, ground, row.iconOpacity), ground);
           const labelRatio = contrast(row.label, ground);
           expect(iconRatio, `${theme} ${width} ${row.id} icon`).toBeGreaterThanOrEqual(3);
           expect(labelRatio, `${theme} ${width} ${row.id} label`).toBeGreaterThanOrEqual(4.5);
@@ -266,6 +278,22 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
       const pricing = rows.find((row) => row.id === "pricing");
       expect(reports?.shapes).toBeGreaterThanOrEqual(4);
       expect(pricing?.shapes).toBeGreaterThanOrEqual(3);
+      await page.evaluate(() => {
+        const strip = document.getElementById("appbar");
+        if (strip) strip.scrollLeft = strip.scrollWidth;
+      });
+      const end = await page.evaluate(() => {
+        const tabs = [...document.querySelectorAll("#appbar .app-btn")];
+        const last = tabs[tabs.length - 1];
+        const rail = document.querySelector(".edge-rail .rail-trio");
+        return {
+          id: last ? last.getAttribute("data-app") : "",
+          tabRight: last ? last.getBoundingClientRect().right : 0,
+          buttonLeft: rail ? rail.getBoundingClientRect().left : 0,
+        };
+      });
+      expect(end.tabRight, `${theme} ${width} ${end.id} clears the rail`).toBeLessThan(end.buttonLeft);
+      seen.push(`${theme} ${width} end ${end.id} tab ${end.tabRight.toFixed(0)} rail ${end.buttonLeft.toFixed(0)}`);
     }
   }
   console.log(seen.join("\n"));
