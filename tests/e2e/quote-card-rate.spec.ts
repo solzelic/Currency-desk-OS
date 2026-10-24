@@ -19,55 +19,28 @@ const Decimal = requireRoot("./server/node_modules/decimal.js") as new (v: strin
 
 const SHOTS = "/opt/cursor/artifacts/quote-card";
 
-/* The payout is dollars the till has to be holding. A teller cannot
-   float the drawer, so a supervisor tops it up and hands it back. */
-async function stockUsd(request: APIRequestContext) {
+/* Post as the person who already holds the till. Taking it over
+   leaves the next file unable to post. A short drawer is topped up
+   by that same person when they are allowed to move cash. */
+async function quoteTeller(request: APIRequestContext): Promise<string> {
   const login = async (staffId: string) => {
     const res = await request.post("/api/auth/login", {
       data: { staffId, password: "yorkville", tenantId: "tnt-yorkfx" },
     });
     expect(res.ok(), `login ${staffId}`).toBe(true);
   };
-  const heldBy = async (staffId: string) => {
-    const me = await request.get("/api/auth/me");
-    const id = String(((await me.json()) as { user?: { id?: string } }).user?.id ?? "");
-    const session = await request.get("/api/ledger/till-session");
-    expect(session.ok()).toBe(true);
-    const body = (await session.json()) as { session?: { status?: string; openedBy?: string } };
-    const opener = String(body.session?.openedBy ?? "");
-    return body.session?.status === "open" && (opener === id || opener.endsWith(`:${staffId}`));
+  const session = async () => {
+    const res = await request.get("/api/ledger/till-session");
+    expect(res.ok()).toBe(true);
+    return (await res.json()) as { session?: { status?: string; openedBy?: string } };
   };
-  const balances = async () => {
+  const usd = async () => {
     const res = await request.get("/api/ledger/till-balances");
     expect(res.ok()).toBe(true);
-    return ((await res.json()) as { balances?: Record<string, string> }).balances ?? {};
+    const body = (await res.json()) as { balances?: Record<string, string> };
+    return Number(body.balances?.USD ?? 0);
   };
-  const take = async (key: string) => {
-    const counts: Record<string, string> = {};
-    for (const [currency, amount] of Object.entries(await balances())) {
-      counts[currency] = Number(amount).toFixed(2);
-    }
-    const handed = await request.post("/api/ledger/till-sessions/handover", {
-      data: { idempotencyKey: key, counts },
-    });
-    expect(handed.ok(), await handed.text()).toBe(true);
-  };
-  await login("m.costa");
-  const usd = Number((await balances()).USD ?? 0);
-  if (await heldBy("m.costa") && usd >= 2500) return;
-  await login("a.singh");
-  if (!(await heldBy("a.singh"))) {
-    const session = await request.get("/api/ledger/till-session");
-    const open = ((await session.json()) as { session?: { status?: string } }).session?.status === "open";
-    if (!open) {
-      const opened = await request.post("/api/ledger/till-sessions/open", { data: {} });
-      expect(opened.ok() || opened.status() === 409, await opened.text()).toBe(true);
-    } else {
-      await take(`quote-card-take-${Date.now()}`);
-    }
-  }
-  const have = Number((await balances()).USD ?? 0);
-  if (have < 2500) {
+  const topUp = async (have: number) => {
     const answer = await request.post("/api/ledger/till-movements", {
       data: {
         idempotencyKey: `quote-card-usd-${Date.now()}`,
@@ -80,9 +53,26 @@ async function stockUsd(request: APIRequestContext) {
       },
     });
     expect(answer.ok(), await answer.text()).toBe(true);
+  };
+  await login("a.singh");
+  const current = await session();
+  const opener = String(current.session?.openedBy ?? "");
+  const staffId = opener.includes(":") ? opener.slice(opener.lastIndexOf(":") + 1) : opener;
+  const have = await usd();
+  if (current.session?.status !== "open") {
+    if (have < 2500) {
+      const opened = await request.post("/api/ledger/till-sessions/open", { data: {} });
+      expect(opened.ok() || opened.status() === 409, await opened.text()).toBe(true);
+      await topUp(have);
+      return "a.singh";
+    }
+    return "m.costa";
   }
-  await login("m.costa");
-  if (!(await heldBy("m.costa"))) await take(`quote-card-back-${Date.now()}`);
+  if (have < 2500) {
+    await login(staffId || "a.singh");
+    await topUp(have);
+  }
+  return staffId || "m.costa";
 }
 
 async function dismissTour(page: Page) {
@@ -90,8 +80,8 @@ async function dismissTour(page: Page) {
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
-async function openDeal(page: Page) {
-  await signInAtDesk(page, "m.costa");
+async function openDeal(page: Page, staffId: string) {
+  await signInAtDesk(page, staffId);
   await dismissTour(page);
   const button = page.getByRole("button", { name: /^New transaction$/i }).first();
   await expect(button).toBeVisible({ timeout: 30_000 });
@@ -121,7 +111,7 @@ async function openDeal(page: Page) {
 }
 
 test("the quote card renders the server rate", async ({ page, request }, testInfo) => {
-  await stockUsd(request);
+  const teller = await quoteTeller(request);
   await page.addInitScript(() => {
     const raw = localStorage.getItem("cdos_clients_v1");
     const clients = raw ? JSON.parse(raw) : {};
@@ -134,7 +124,7 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
     localStorage.setItem("cdos_clients_v1", JSON.stringify(clients));
   });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await openDeal(page);
+  await openDeal(page, teller);
   await page.locator(".cd-tx-customer input").fill("Lina");
   await page.locator(".cd-tx-suggest button", { hasText: "Lina Farah" }).click();
   const amount = page.locator(".cd-money input").first();
