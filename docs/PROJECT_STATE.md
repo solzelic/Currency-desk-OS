@@ -777,8 +777,13 @@ readable and is not rewritten. An incoming type is matched to
 this catalogue. A known alias is stored as the catalogue name
 (`Driver licence` and `Driver's License` as `Driver's Licence`,
 `PR Card` as `Permanent Resident Card`, `Citizenship Card` as the
-certificate label). A type that is not listed is stored as given
-and is not accepted, so it does not make the client Identified.
+certificate label). A birth certificate, the pre-2012 citizenship
+card, and a Secure Certificate of Indian Status are on this ledger
+catalogue and can be filed, even though the shop list does not
+name them as their own codes. A new filing of a type on neither
+list is refused with 422 `ID_TYPE_NOT_IN_CATALOGUE`. A row already
+stored under a name that is not listed is left as given and is
+not accepted, so it does not make the client Identified.
 A row already stored under an old spelling is not rewritten; the
 catalogue still classifies that spelling. A non-photo document does not identify
 the client. An
@@ -847,7 +852,7 @@ identification line is refused.
 
 **2026-10-19**, Settings → Accepted IDs. The owner switches catalogue ID types on and off per shop; NULL follows the pack, and every type the catalogue accepts is on by default in every pack. Packs lock types in code (`server/src/ledger/id-type-rules.ts`); the health card is locked everywhere, with Canada's FINTRAC and Ontario note. The route is every role's to read and the owner's to change; a locked type and a list with no photo ID are 422, and a change is an audit row with no document number. A switched-off type is refused on add and on change (`ID_TYPE_NOT_ACCEPTED_HERE`); one already on file reads in full with its status and a quiet notice. The pickers follow the list. Migration 047. 041 is still claimed by open draft #132, 042 by #130, and 043 by #138.
 
-**2026-10-19**, ID-type catalogue and health cards. One list, `shared/id-document-types.js`, loaded by the server and by the desk. A type outside it is 422 `ID_TYPE_NOT_IN_CATALOGUE`. A health card is 422 `HEALTH_CARD_NOT_ID`, "Health cards can't be used as ID. Record a current photo ID." The BC Services Card is accepted. A health number is not in any client read, search, report, register, CSV, LCTR or STR field, or the saved desk document. It does not identify a file. Stored rows are not rewritten and stored numbers are not blanked. No migration.
+**2026-10-19**, ID-type catalogue and health cards. One list, `shared/id-document-types.js`, loaded by the server and by the desk. A type outside it is 422 `ID_TYPE_NOT_IN_CATALOGUE`, except a birth certificate, `Canadian citizenship card (pre-2012)`, and a Secure Certificate of Indian Status, which the ledger catalogue accepts and a new filing may store. A health card is 422 `HEALTH_CARD_NOT_ID`, "Health cards can't be used as ID. Record a current photo ID." The BC Services Card is accepted. A health number is not in any client read, search, report, register, CSV, LCTR or STR field, or the saved desk document. It does not identify a file. Stored rows are not rewritten and stored numbers are not blanked. No migration.
 
 **2026-10-18**, names and comments. Every tracked file name was checked against CONTRIBUTING, and every comment and doc line against the code. Statements the code contradicts were corrected; nothing that could not be shown wrong was changed. `server/src/state/defaultChequeSchedule.ts` is `default-cheque-schedule.ts`. `tenantState.ts` and `settingsWrite.ts` keep their names until the open pull requests that edit or import them have landed. The desk no longer carries an uncalled function that made up an address and an ID number from a name. The Cross-Border EFT report no longer says transfers do not post; it says the page is built from the Transfers app's own records. The owner ended the PR freeze.
 

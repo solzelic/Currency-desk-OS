@@ -104,7 +104,7 @@ import {
   standingForVerdict,
   type ClientIdFile,
 } from "../ledger/id-on-file.js";
-import { displayDocumentType } from "../ledger/id-document-types.mjs";
+import { displayDocumentType, resolveIncomingType } from "../ledger/id-document-types.mjs";
 
 /* Scope is two columns, and it is two columns on purpose. Compare
    `scope()` in the ledger services, which is five. */
@@ -1244,8 +1244,15 @@ export class ClientRecordService {
     actor: LedgerActor,
     docType: string,
   ): Promise<{ label: string; code?: string; shop?: AcceptedIdTypes }> {
+    /* The gate catalogue names the paper the till will accept. The
+       shared list names what this shop can switch off. A type on the
+       gate list is stored under that list's name, including a birth
+       certificate and the pre-2012 citizenship card. A health card is
+       refused by either list. A type on neither list is refused. */
+    const gate = resolveIncomingType(docType);
+    if (gate.refused) throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
     const result = normaliseForWrite(docType);
-    if (result.ok && !result.code) return { label: result.label };
+    if (result.ok && !result.code && !gate.known) return { label: result.label };
     if (!result.ok && result.code === "HEALTH_CARD_NOT_ID")
       throw new LedgerError(result.code, result.detail);
     const client = await this.pool.connect();
@@ -1255,9 +1262,12 @@ export class ClientRecordService {
     } finally {
       client.release();
     }
-    if (!result.ok)
-      throw new LedgerError(result.code, notInCatalogueSentence(acceptedLabels(shop)));
-    return { label: result.label, code: result.code, shop };
+    if (result.ok && result.code) {
+      return { label: gate.known ? gate.stored : result.label, code: result.code, shop };
+    }
+    if (gate.known) return { label: gate.stored };
+    if (!result.ok) throw new LedgerError(result.code, notInCatalogueSentence(acceptedLabels(shop)));
+    return { label: result.label };
   }
 
   private async hasPrimary(client: pg.PoolClient, clientId: string) {

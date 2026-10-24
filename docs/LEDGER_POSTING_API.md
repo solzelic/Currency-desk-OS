@@ -110,8 +110,11 @@ accepted. Creating one, or changing a document's type to one, is
 The same refusal covers OHIP, OHIP card, RAMQ, RAMQ card, MSP,
 MSP card, Alberta Health, Alberta Health Card, and Care Card, in
 any case, spacing, or punctuation. A health card already stored is left as it is and is still
-returned. A type that is not in the catalogue is stored as given
-and is not accepted, so the client is not Identified. A stored
+returned. A new filing of a type on neither the shop list nor
+this catalogue is 422 `ID_TYPE_NOT_IN_CATALOGUE`. A row already
+stored under a name that is not in the catalogue is left as given
+and is not accepted, so the client is not Identified. A birth
+certificate can be filed. It is not photo ID. A stored
 `Citizenship Card` is returned as `Citizenship
 certificate (2012 or later, no photo)`, and a new filing of that
 old name is stored as the certificate label. A row already stored

@@ -38184,7 +38184,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), showRecordId && /*#__PURE__*/React.createElement("button", {
+    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), showRecordId && !phoneSheet && /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "record-id",
       onClick: leaveForId,

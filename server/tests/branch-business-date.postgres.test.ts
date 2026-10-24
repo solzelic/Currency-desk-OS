@@ -20,6 +20,7 @@ import { civilTodayInZone } from "../src/civil-date.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -214,9 +215,10 @@ postgres("a till session takes the branch's civil day", () => {
       url: "/api/ledger/customers",
       cookies: opener,
       headers,
-      payload: { name: "Walk-in", risk: "normal", idStatus: "verified" },
+      payload: { name: "Walk-in", risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
+    await fileTypedId(pool, customer.json().customerId as string);
     const deal = await app.inject({
       method: "POST",
       url: "/api/ledger/exchanges",

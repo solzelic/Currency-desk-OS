@@ -6,6 +6,7 @@ import {
   displayDocumentType,
   expiredPhotoSql,
   idDocumentTypeJoinSql,
+  isHealthCardType,
   nonPhotoSql,
   photoMissingExpirySql,
 } from "./id-document-types.mjs";
@@ -360,9 +361,10 @@ export async function displayedDocuments(
   );
   for (const row of found.rows) {
     const expires = row.expires_on;
+    const health = isHealthCardType(row.doc_type);
     out.set(row.client_id as string, {
       docType: displayDocumentType(row.doc_type),
-      docNumber: row.doc_number == null ? null : String(row.doc_number),
+      docNumber: health || row.doc_number == null ? null : String(row.doc_number),
       expiresOn: expires == null ? null : new Date(expires as string | Date).toISOString().slice(0, 10),
       isPrimary: row.is_primary === true,
     });

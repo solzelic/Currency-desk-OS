@@ -74,8 +74,11 @@ ID, with a number that survives stripping whitespace and invisible
 characters, and an expiry on or after the branch's business date. A
 blank expiry counts only for `Canadian citizenship card (pre-2012)`.
 A health card is never accepted, including a provincial name such
-as OHIP or RAMQ. A new document is stored under the catalogue name
-when the type is known, and as given when it is not. A type that
+as OHIP or RAMQ. A new document on the ledger catalogue is stored under that
+catalogue's name, including a birth certificate, the pre-2012
+citizenship card, and a Secure Certificate of Indian Status. A
+type on neither list is refused. A row already stored under an
+unlisted name is left as given. A type that
 is not in the catalogue is not ID on file. A non-photo document is not ID on
 file. The primary document is what the desk shows
 (`displayedDocument`); it is not what decides the standing. The client
@@ -272,7 +275,10 @@ it. It is not on the health-card list. Neither is a bare "Medicare" or
 
 A document add or a type change (`POST|PATCH
 /api/clients/:clientId/documents`) stores the catalogue label, so
-"PR Card" is stored as "Permanent Resident Card". A type the catalogue
+"PR Card" is stored as "Permanent Resident Card". A birth
+certificate, a Canadian citizenship card (pre-2012), and a Secure
+Certificate of Indian Status are on the ledger catalogue and can
+be filed. Any other type the shop catalogue
 does not list is **422** `{ error: "ID_TYPE_NOT_IN_CATALOGUE", detail }`,
 and the detail names the types this shop accepts. "Not stated" is not a
 type: it is the placeholder the desk writes when Add ID opens a row

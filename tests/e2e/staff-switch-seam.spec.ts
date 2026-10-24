@@ -138,7 +138,7 @@ test("switching from the avatar menu posts the deal as the next person", async (
     const sessionBody = await session.json().catch(() => ({}));
     const customer = await fetch("/api/ledger/customers", {
       method: "POST", headers,
-      body: JSON.stringify({ name: "Switch customer", risk: "normal", idStatus: "verified" }),
+      body: JSON.stringify({ name: "Switch customer", risk: "normal" }),
     });
     const customerBody = await customer.json().catch(() => ({}));
     const quote = await fetch("/api/quotes", {

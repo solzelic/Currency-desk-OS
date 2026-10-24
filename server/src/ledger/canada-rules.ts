@@ -28,6 +28,7 @@
    ============================================================ */
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { branchZone } from "./branch-zone.js";
 import { idKindForDeal } from "./compliance-gate.js";
 import type { JurisdictionPack } from "./jurisdiction.js";
 
@@ -317,20 +318,6 @@ function zonedMidnight(at: Date, timeZone: string): Date {
   const corrected = zoneOffsetMs(new Date(start), timeZone);
   if (corrected !== offset) start = guess - corrected;
   return new Date(start);
-}
-
-async function branchZone(client: pg.PoolClient, branchId: string): Promise<string> {
-  try {
-    const found = await client.query(
-      "SELECT timezone FROM branches WHERE id = $1",
-      [branchId],
-    );
-    const zone = String(found.rows[0]?.timezone ?? "").trim();
-    if (zone) return zone;
-  } catch (error) {
-    if ((error as { code?: string }).code !== "42P01") throw error;
-  }
-  return "America/Toronto";
 }
 
 /* Cash the desk received, in home currency, inside the window, for

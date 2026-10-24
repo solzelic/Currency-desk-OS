@@ -1458,7 +1458,10 @@
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
-                {showRecordId && <button type="button" data-testid="record-id" onClick={leaveForId} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Record ID</button>}
+                {/* The phone sheet already offers Record the ID in the
+                    scroll. A second button in this bar makes the footer
+                    taller than the phone layout allows. */}
+                {showRecordId && !phoneSheet && <button type="button" data-testid="record-id" onClick={leaveForId} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Record ID</button>}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
                     Frozen quote · {unitText(serverQuote.inputAmount, serverQuote.from)} {serverQuote.from} → {unitText(serverQuote.outputAmount, serverQuote.to)} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

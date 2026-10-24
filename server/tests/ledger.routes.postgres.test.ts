@@ -1281,8 +1281,9 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     });
     expect(read.statusCode, read.body).toBe(200);
     expect(read.json().documents).toEqual([
-      expect.objectContaining({ docType: "Health Card", docNumber: "HC-1" }),
+      expect.objectContaining({ docType: "Health Card" }),
     ]);
+    expect(read.json().documents[0].docNumber).toBeUndefined();
     expect(read.json().idStanding).toEqual({
       status: "missing",
       label: "Missing ID",
@@ -1437,11 +1438,33 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
   it("stores an unknown ID type as given and does not treat it as ID on file", async () => {
     const cookies = await cookie();
     const client = await openClient(cookies, "Library card");
-    const filed = await fileDocument(cookies, client.clientId, {
-      docType: "Library card",
-      docNumber: "LIB-1",
-      expiresOn: "2031-05-01",
+    /* A new filing of a type on neither list is refused. A row already
+       stored under that name is left as given and is not Identified. */
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/clients/${client.clientId}/documents`,
+      cookies,
+      payload: { docType: "Library card", docNumber: "LIB-NEW", expiresOn: "2031-05-01" },
     });
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().code).toBe("ID_TYPE_NOT_IN_CATALOGUE");
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+       SELECT $2, client_id, tenant_id, legal_entity_id, 'Library card', 'LIB-1', '2031-05-01', true
+         FROM desk_clients WHERE client_id = $1`,
+      [client.clientId, `doc_lib_${client.clientId}`],
+    );
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/clients/${client.clientId}`,
+      cookies,
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    const filed = read.json() as {
+      idStanding: { status: string; label: string; detail: string; reason: string; tone: string };
+      displayedDocument: { docType: string } | null;
+    };
     expect(filed.idStanding).toEqual({
       status: "missing",
       label: "Missing ID",
@@ -1555,11 +1578,22 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
   it("does not treat a laminated Certificate of Indian Status as a photo ID", async () => {
     const cookies = await cookie();
     const client = await openClient(cookies, "Laminated status");
-    const filed = await fileDocument(cookies, client.clientId, {
-      docType: "Certificate of Indian Status",
-      docNumber: "CIS-1",
-      expiresOn: "2031-05-01",
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+       SELECT $2, client_id, tenant_id, legal_entity_id, 'Certificate of Indian Status', 'CIS-1', '2031-05-01', true
+         FROM desk_clients WHERE client_id = $1`,
+      [client.clientId, `doc_cis_${client.clientId}`],
+    );
+    const read = await app.inject({
+      method: "GET",
+      url: `/api/clients/${client.clientId}`,
+      cookies,
     });
+    expect(read.statusCode, read.body).toBe(200);
+    const filed = read.json() as {
+      idStanding: { status: string; label: string; detail: string; reason: string; tone: string };
+    };
     expect(filed.idStanding).toEqual({
       status: "missing",
       label: "Missing ID",

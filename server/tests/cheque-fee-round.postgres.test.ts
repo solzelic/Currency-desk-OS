@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { fileTypedId } from "./typed-id.js";
 import { CHEQUE_FEE_SCHEDULE_KEY, DEFAULT_CHEQUE_SCHEDULE, FEE_MAX_PLACES, FEE_MIN_PLACES, FEE_PERCENT_PLACES } from "../src/routes/tenantState.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -41,6 +42,7 @@ async function desk(feePct: unknown = 2, feeMin: unknown = 5) {
     "INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status) VALUES ('customer-demo',$1,$2,$3,$4,'Jakob Miller','Normal','verified')",
     scope.slice(0, 4),
   );
+  await fileTypedId(pool, "customer-demo");
   await pool.query(
     "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'CAD',5000)",
     scope,
