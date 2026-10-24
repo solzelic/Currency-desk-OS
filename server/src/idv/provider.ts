@@ -1,4 +1,6 @@
-/* Swappable identity check. Sandbox step: interface, signature, inquiry map. */
+/* Swappable identity check. Sandbox step: interface, signature, inquiry map.
+   Shop settings use IdvSettingsProvider. The webhook uses IdvProvider.
+   The two stay separate so neither adapter has to implement the other. */
 
 export type IdvOutcome = "pending" | "approved" | "declined" | "review" | "failed" | "expired" | "unknown";
 
@@ -24,4 +26,12 @@ export interface IdvProvider {
   startCheck(input: IdvStart): Promise<{ providerRef: string }>;
   verifyWebhook(input: IdvWebhookInput): boolean;
   parseResult(body: unknown): IdvResult | null;
+}
+
+/* Field rules for per-shop settings. */
+export type IdvFieldIssue = "template" | "reference";
+
+export interface IdvSettingsProvider {
+  id: string;
+  fieldIssue(input: { apiKeyRef: string | null; templateId: string | null }): IdvFieldIssue | null;
 }
