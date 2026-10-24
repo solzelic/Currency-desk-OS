@@ -19,7 +19,8 @@
       desk: '#e6e4de', paper: '#f4f3f0', paperSoft: '#faf9f6', panel: '#ffffff',
       chip: '#f1f0ec', chipDeep: '#e3e0d8',
       line: 'rgba(10,10,10,0.14)', lineSoft: 'rgba(10,10,10,0.07)',
-      text: '#0a0a0a', mute: 'rgba(10,10,10,0.55)', faint: 'rgba(10,10,10,0.4)',
+      /* #707070 is darker than #767676 on white, and it is the off-white floor. */
+      text: '#0a0a0a', mute: '#707070', faint: '#707070',
       /* #6b6b6b is 5.3:1 on white. #a9a9a9 is 8.4:1 on the black ticket. */
       pinNote: '#6b6b6b',
       noteOnInk: '#a9a9a9',

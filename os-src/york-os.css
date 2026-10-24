@@ -11,11 +11,11 @@
   --bar: #ffffff;
   --edge: #111111;       /* hard 1px window/edge ink */
   --soft: rgba(10,10,10,0.55);
-  --faint: rgba(10,10,10,0.4);
+  --faint: #707070;
   --hair: rgba(10,10,10,0.10);
   --line: rgba(10,10,10,0.14);
   --lineSoft: rgba(10,10,10,0.07);
-  --mute: rgba(10,10,10,0.55);
+  --mute: #707070;
   --green: #1f8a4c;
   --accent: #e0a106;     /* amber, matches the lock state */
   --glass-bar: rgba(250,249,246,0.4);
