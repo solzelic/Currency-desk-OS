@@ -571,33 +571,44 @@ button { font-family: inherit; }
 /* ============================================================
    APP SUB-BAR  (the "sub bar within the main bar")
    ============================================================ */
-#appbar {
-  height: 60px; flex: none;
+/* The clip is the box that ends before the store and ID buttons.
+   112px is the rail inset, the two buttons, the gap, and air, so a
+   tab cannot sit against them. The tabs scroll in #appbar, which
+   fills this box. The fade is painted on the clip, so it stays on
+   the visible cut instead of riding the end of the scroll content.
+   It stays off while editing so the remove notches stay visible. */
+.appbar-clip {
   position: relative;
-  width: calc(100% - 96px);
+  z-index: 350;
+  flex: none;
+  align-self: flex-start;
+  min-width: 0;
+  width: calc(100% - 112px);
+  max-width: calc(100% - 112px);
+  height: 60px;
+  overflow: hidden;
+}
+.appbar-clip::after {
+  content: "";
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(90deg, transparent, var(--desk));
+}
+.appbar-clip:has(#appbar.editing)::after { content: none; }
+#appbar {
+  height: 100%; width: 100%;
+  position: relative;
+  z-index: 1;
   display: flex; align-items: center; gap: 0;
   background: rgba(255,255,255,0.375);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--hair);
   padding: 0 8px;
-  z-index: 350;
   overflow-x: auto; overflow-y: hidden;
   scroll-behavior: auto; overscroll-behavior-x: contain;
-}
-/* The strip ends 96px before the row, so a tab cannot sit under
-   the store and ID buttons. A short painted fade marks that edge.
-   It stays off while editing so the remove notches stay visible. */
-#appbar:not(.editing)::after {
-  content: "";
-  position: sticky;
-  right: 0;
-  flex: 0 0 22px;
-  width: 22px;
-  align-self: stretch;
-  margin-left: -22px;
-  pointer-events: none;
-  z-index: 4;
-  background: linear-gradient(90deg, transparent, var(--desk));
 }
 .app-btn {
   display: flex; align-items: center; gap: 10px;
@@ -648,7 +659,7 @@ button { font-family: inherit; }
    In dark mode the selected icon is the green accent and the
    others are the light ink at 72% opacity. A selected tab is
    bold and has a bar, and the hit area is at least 44px.
-   The strip width stops before the floating store and ID buttons. */
+   The clip width stops before the floating store and ID buttons. */
 #appbar .app-btn {
   flex-shrink: 0;
   min-width: 44px;
@@ -701,7 +712,7 @@ html[data-cdtheme="dark"] #appbar .app-btn:focus-visible { outline-color: #eceae
 .fld-tab.on { background: var(--ft, #1D6B45); color: #fff; }
 .fld-tab.on:hover { color: #fff; }
 /* click the CurrencyDesk logo to collapse the tenant + app rows for more desktop room */
-#tenantbar.collapsed, #appbar.collapsed { display: none; }
+#tenantbar.collapsed, #appbar.collapsed, .appbar-clip:has(#appbar.collapsed) { display: none; }
 .edge-rail.collapsed { display: none; }
 
 /* ============================================================
@@ -2095,7 +2106,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      window title (traffic lights, the title dot, the tile
      grid), the resize grip, and the desk watermark stay off
      every phone screen. */
-  #menubar, #tenantbar, #appbar, .edge-rail,
+  #menubar, #tenantbar, #appbar, .appbar-clip, .edge-rail,
   #desktop .win > .win-bar,
   #desktop .win-lights,
   #desktop .win-dot,

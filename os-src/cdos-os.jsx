@@ -2637,7 +2637,8 @@
         {profileButton('phone')}
       </header>
 
-      {/* APP SUB-BAR */}
+      {/* APP SUB-BAR. The clip ends before the store and ID buttons. */}
+      <div className="appbar-clip">
       <div id="appbar" role="tablist" aria-label="Modules" ref={appbarRef} className={(editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')}>
         {visibleApps.map(id => {
           const w = wins.find(x => x.id === id);
@@ -2656,6 +2657,7 @@
           </div>);
         })}
         <div className="appbar-spacer"></div>
+      </div>
       </div>
 
       {/* RIGHT EDGE — store + ID on the app row */}

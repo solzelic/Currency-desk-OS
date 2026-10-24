@@ -296,22 +296,71 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
       const pricing = rows.find((row) => row.id === "pricing");
       expect(reports?.shapes).toBeGreaterThanOrEqual(4);
       expect(pricing?.shapes).toBeGreaterThanOrEqual(3);
-      await page.evaluate(() => {
+      const measureClearance = () => page.evaluate(() => {
         const strip = document.getElementById("appbar");
-        if (strip) strip.scrollLeft = strip.scrollWidth;
-      });
-      const end = await page.evaluate(() => {
-        const tabs = [...document.querySelectorAll("#appbar .app-btn")];
-        const last = tabs[tabs.length - 1];
         const rail = document.querySelector(".edge-rail .rail-trio");
+        const box = strip ? strip.getBoundingClientRect() : null;
+        const style = strip ? getComputedStyle(strip) : null;
+        const buttonLeft = rail ? rail.getBoundingClientRect().left : 0;
+        const tabs = !strip || !box ? [] : [...strip.querySelectorAll(".app-btn")].flatMap((tab) => {
+          const rect = tab.getBoundingClientRect();
+          if (rect.right <= box.left + 1 || rect.left >= box.right - 1) return [];
+          const label = tab.querySelector(".al");
+          const labelBox = label ? label.getBoundingClientRect() : rect;
+          return [{
+            id: tab.getAttribute("data-app") || "",
+            right: Math.min(rect.right, box.right),
+            labelRight: Math.min(labelBox.right, box.right),
+          }];
+        });
         return {
-          id: last ? last.getAttribute("data-app") : "",
-          tabRight: last ? last.getBoundingClientRect().right : 0,
-          buttonLeft: rail ? rail.getBoundingClientRect().left : 0,
+          id: strip?.id || "",
+          tag: strip?.tagName || "",
+          computed: style ? Number.parseFloat(style.width) || 0 : 0,
+          right: box ? box.right : 0,
+          left: box ? box.left : 0,
+          buttonLeft,
+          tabs,
         };
       });
-      expect(end.tabRight, `${theme} ${width} ${end.id} clears the rail`).toBeLessThan(end.buttonLeft);
-      seen.push(`${theme} ${width} end ${end.id} tab ${end.tabRight.toFixed(0)} rail ${end.buttonLeft.toFixed(0)}`);
+      for (const where of ["start", "end"] as const) {
+        await page.evaluate((mode) => {
+          const strip = document.getElementById("appbar");
+          if (!strip) return;
+          strip.scrollLeft = mode === "end" ? strip.scrollWidth : 0;
+        }, where);
+        const reading = await measureClearance();
+        expect(reading.id, `${theme} ${width} ${where} tab container`).toBe("appbar");
+        expect(reading.tag, `${theme} ${width} ${where} tab container`).toBe("DIV");
+        expect(Math.abs(reading.computed - (reading.right - reading.left)), `${theme} ${width} ${where} computed width`).toBeLessThan(1);
+        expect(reading.tabs.length, `${theme} ${width} ${where} visible tabs`).toBeGreaterThan(0);
+        expect(reading.right, `${theme} ${width} ${where} strip clears the buttons`).toBeLessThan(reading.buttonLeft - 8);
+        for (const tab of reading.tabs) {
+          expect(tab.right, `${theme} ${width} ${where} ${tab.id} tab`).toBeLessThan(reading.buttonLeft - 8);
+          expect(tab.labelRight, `${theme} ${width} ${where} ${tab.id} label`).toBeLessThan(reading.buttonLeft - 8);
+        }
+        const fade = await page.evaluate(() => {
+          const clip = document.querySelector(".appbar-clip");
+          const strip = document.getElementById("appbar");
+          if (!clip || !strip) return null;
+          const painted = getComputedStyle(clip, "::after");
+          const host = clip.getBoundingClientRect();
+          return {
+            content: painted.content,
+            position: painted.position,
+            width: Number.parseFloat(painted.width) || 0,
+            right: host.right,
+            sticky: getComputedStyle(strip, "::after").content,
+          };
+        });
+        expect(fade, `${theme} ${width} ${where} fade`).not.toBeNull();
+        expect(fade!.position, `${theme} ${width} ${where} fade`).toBe("absolute");
+        expect(fade!.content, `${theme} ${width} ${where} fade`).not.toBe("none");
+        expect(fade!.width, `${theme} ${width} ${where} fade`).toBeGreaterThanOrEqual(22);
+        expect(Math.abs(fade!.right - reading.right), `${theme} ${width} ${where} fade on the cut`).toBeLessThan(1);
+        expect(fade!.sticky, `${theme} ${width} ${where} sticky fade`).toBe("none");
+        seen.push(`${theme} ${width} ${where} #${reading.id} ${reading.computed.toFixed(0)}px right ${reading.right.toFixed(0)} buttons ${reading.buttonLeft.toFixed(0)} tabs ${reading.tabs.map((tab) => `${tab.id}:${tab.right.toFixed(0)}/${tab.labelRight.toFixed(0)}`).join(" ")}`);
+      }
     }
   }
 

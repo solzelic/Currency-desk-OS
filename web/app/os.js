@@ -70679,6 +70679,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement("i", {
       className: "phone-till-dot"
     }), /*#__PURE__*/React.createElement("span", null, day.closed ? 'Till closed' : 'Till open')), profileButton('phone')), /*#__PURE__*/React.createElement("div", {
+      className: "appbar-clip"
+    }, /*#__PURE__*/React.createElement("div", {
       id: "appbar",
       role: "tablist",
       "aria-label": "Modules",
@@ -70745,7 +70747,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       })));
     }), /*#__PURE__*/React.createElement("div", {
       className: "appbar-spacer"
-    })), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement("div", {
       className: 'edge-rail' + (chromeCollapsed ? ' collapsed' : '')
     }, /*#__PURE__*/React.createElement("div", {
       className: "rail-cell rail-menu"
