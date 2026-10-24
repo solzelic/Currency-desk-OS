@@ -572,8 +572,8 @@ button { font-family: inherit; }
    APP SUB-BAR  (the "sub bar within the main bar")
    ============================================================ */
 #appbar {
-  height: 58px; flex: none;
-  display: flex; align-items: stretch; gap: 0;
+  height: 60px; flex: none;
+  display: flex; align-items: center; gap: 0;
   background: rgba(255,255,255,0.375);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--hair);
@@ -631,6 +631,32 @@ button { font-family: inherit; }
 .app-btn.is-active { background: #F6F1E8; }
 .app-btn.is-active::after { height: 3px; background: var(--c); }
 .app-btn.is-active .al { color: #17140F; font-weight: 700; }
+/* One stroke for every module tab. The artwork keeps its own ink
+   on window icons. On this strip the whole glyph is one weight,
+   so Reports stays a document and Pricing stays a percent sign.
+   Dark mode uses the green accent. A selected tab is bold and
+   has a bar, and the hit area is at least 44px. */
+#appbar .app-btn {
+  min-width: 44px;
+  height: 44px;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+#appbar .app-btn .ai svg,
+#appbar .app-btn .ai svg * {
+  stroke: #17140F;
+  stroke-width: 1.75px;
+  vector-effect: non-scaling-stroke;
+  transition: none;
+}
+#appbar .app-btn.is-active::after { height: 3px; background: #17140F; }
+html[data-cdtheme="dark"] #appbar .app-btn .ai svg,
+html[data-cdtheme="dark"] #appbar .app-btn .ai svg * { stroke: var(--cd-green); }
+#appbar .app-btn .al { transition: none; }
+html[data-cdtheme="dark"] #appbar .app-btn .al,
+html[data-cdtheme="dark"] #appbar .app-btn.is-active .al { color: #eceae3; }
+html[data-cdtheme="dark"] #appbar .app-btn.is-active::after { background: var(--cd-green); }
+html[data-cdtheme="dark"] #appbar .app-btn.open::after { background: rgba(236, 234, 227, 0.55); }
 .app-btn.open.min { background: none; }
 .app-btn.open.min::after { background: var(--accent); }
 .appbar-spacer { flex: 1; min-width: 8px; }
