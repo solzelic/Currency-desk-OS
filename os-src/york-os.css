@@ -674,8 +674,13 @@ html[data-cdtheme="dark"] #appbar .app-btn.is-active .ai svg { opacity: 1; }
 #appbar .app-btn .al { transition: none; }
 html[data-cdtheme="dark"] #appbar .app-btn .al,
 html[data-cdtheme="dark"] #appbar .app-btn.is-active .al { color: #eceae3; }
+html[data-cdtheme="dark"] #appbar .app-btn.open:not(.is-active)::after { background: rgba(236, 234, 227, 0.55); }
 html[data-cdtheme="dark"] #appbar .app-btn.is-active::after { background: var(--cd-green); }
-html[data-cdtheme="dark"] #appbar .app-btn.open::after { background: rgba(236, 234, 227, 0.55); }
+#appbar .app-btn:focus-visible {
+  outline: 2px solid #17140F;
+  outline-offset: -3px;
+}
+html[data-cdtheme="dark"] #appbar .app-btn:focus-visible { outline-color: #eceae3; }
 .app-btn.open.min { background: none; }
 .app-btn.open.min::after { background: var(--accent); }
 .appbar-spacer { flex: 1; min-width: 8px; }

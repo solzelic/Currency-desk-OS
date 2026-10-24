@@ -180,7 +180,7 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
   await dismissTour(page);
   await settle(page);
 
-  if (process.env.NAV_SHOT) {
+  if (process.env.NAV_SHOT && process.env.NAV_SHOT !== "states") {
     mkdirSync(SHOTS, { recursive: true });
     for (const theme of ["dark", "light"] as const) {
       await page.evaluate((mode) => {
@@ -288,6 +288,8 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
         if (row.active) {
           expect(row.weight, row.id).toBeGreaterThanOrEqual(700);
           expect(row.bar, row.id).toBeGreaterThanOrEqual(3);
+          const want = (theme === "dark" ? token : ink).match(/\d+/g)!.slice(0, 3).map(Number);
+          expect(row.barColor, `${theme} ${width} ${row.id} bar colour`).toEqual(want);
         }
       }
       const reports = rows.find((row) => row.id === "reports");
@@ -312,5 +314,111 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
       seen.push(`${theme} ${width} end ${end.id} tab ${end.tabRight.toFixed(0)} rail ${end.buttonLeft.toFixed(0)}`);
     }
   }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const tabs = page.locator("#appbar .app-btn");
+  const tabCount = await tabs.count();
+  expect(tabCount).toBeGreaterThan(2);
+  for (let i = 0; i < tabCount; i++) {
+    await expect(tabs.nth(i)).toHaveAttribute("role", "tab");
+    await expect(tabs.nth(i)).toHaveJSProperty("tabIndex", 0);
+  }
+  await expect(page.locator("#appbar .app-btn[aria-selected='true']")).toHaveCount(1);
+  const firstId = await tabs.first().getAttribute("data-app");
+  await tabs.first().focus();
+  await page.keyboard.press("ArrowRight");
+  const movedId = await page.evaluate(() => document.activeElement?.getAttribute("data-app"));
+  expect(movedId, "ArrowRight moves to the next tab").not.toBe(firstId);
+  await page.keyboard.press("ArrowLeft");
+  await expect(tabs.first()).toBeFocused();
+  const pricing = page.locator("#appbar [data-app='pricing']");
+  await pricing.focus();
+  await page.keyboard.press("Enter");
+  await expect(pricing).toHaveClass(/is-active/);
+  await expect(pricing).toHaveAttribute("aria-selected", "true");
+  const dashboard = page.locator("#appbar [data-app='dashboard']");
+  await dashboard.focus();
+  await page.keyboard.press("Space");
+  await expect(dashboard).toHaveClass(/is-active/);
+  await expect(dashboard).toHaveAttribute("aria-selected", "true");
+
+  const rings: string[] = [];
+  for (const theme of ["dark", "light"] as const) {
+    await page.evaluate((mode) => {
+      (window as unknown as { CDOS: { theme: { set: (value: string) => void } } }).CDOS.theme.set(mode);
+    }, theme);
+    await page.waitForTimeout(400);
+    await page.mouse.move(0, 0);
+    await tabs.first().focus();
+    await page.keyboard.press("ArrowRight");
+    const ring = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!(el instanceof HTMLElement)) return null;
+      const style = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      return {
+        id: el.getAttribute("data-app"),
+        visible: el.matches(":focus-visible"),
+        outline: style.outlineColor,
+        width: Number.parseFloat(style.outlineWidth) || 0,
+        left: box.left,
+        top: box.top,
+        boxWidth: box.width,
+        boxHeight: box.height,
+      };
+    });
+    expect(ring?.visible, `${theme} focus ring`).toBe(true);
+    expect(ring!.width, `${theme} focus ring`).toBeGreaterThanOrEqual(2);
+    const { sample } = await paint(page);
+    const outline = ring!.outline.match(/\d+/g)!.slice(0, 3).map(Number);
+    const x = ring!.left + ring!.boxWidth / 2;
+    let painted: number[] | null = null;
+    for (let y = ring!.top + 1; y < ring!.top + 12; y += 1) {
+      const point = sample(x, y);
+      const delta = Math.abs(point[0]! - outline[0]!) + Math.abs(point[1]! - outline[1]!) + Math.abs(point[2]! - outline[2]!);
+      if (delta < 48) { painted = point; break; }
+    }
+    expect(painted, `${theme} focus ring is painted`).not.toBeNull();
+    const ground = sample(ring!.left + 10, ring!.top + ring!.boxHeight / 2);
+    const ratio = contrast(painted!, ground);
+    expect(ratio, `${theme} focus ring contrast`).toBeGreaterThanOrEqual(3);
+    rings.push(`${theme} focus ${ring!.id} ${ratio.toFixed(2)} ring ${painted!.map((n) => Math.round(n)).join(",")} ground ${ground.map((n) => Math.round(n)).join(",")}`);
+  }
+
+  if (process.env.NAV_SHOT === "states") {
+    for (const theme of ["dark", "light"] as const) {
+      await page.evaluate((mode) => {
+        (window as unknown as { CDOS: { theme: { set: (value: string) => void } } }).CDOS.theme.set(mode);
+      }, theme);
+      await page.waitForTimeout(400);
+      for (const width of [1280, 600] as const) {
+        await page.setViewportSize({ width, height: 800 });
+        await settle(page);
+        await page.mouse.move(0, 0);
+        await page.evaluate(() => {
+          const strip = document.getElementById("appbar");
+          const tab = document.querySelector("#appbar [data-app='reports']");
+          if (strip && tab instanceof HTMLElement) strip.scrollLeft = Math.max(0, tab.offsetLeft - 12);
+        });
+        const reports = page.locator("#appbar [data-app='reports']");
+        await reports.click();
+        await expect(reports).toHaveClass(/is-active/);
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: path.join(SHOTS, `selected-${theme}-${width}.png`) });
+        const idle = page.locator("#appbar [data-app='reports'] + .app-btn");
+        await idle.evaluate((el) => el.scrollIntoView({ block: "nearest", inline: "nearest" }));
+        await idle.hover();
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: path.join(SHOTS, `hover-${theme}-${width}.png`) });
+        await page.mouse.move(0, 0);
+        await idle.focus();
+        await page.keyboard.press("ArrowRight");
+        await page.keyboard.press("ArrowLeft");
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: path.join(SHOTS, `focus-${theme}-${width}.png`) });
+      }
+    }
+  }
   console.log(seen.join("\n"));
+  console.log(rings.join("\n"));
 });

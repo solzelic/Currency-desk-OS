@@ -68753,6 +68753,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        figure can be read on the sheet itself. The dock gate is
        unchanged: a cashier still has no Reports icon. */
     window.CDOS.openApp = openApp;
+    function onTabKey(e, id) {
+      if (editApps) return;
+      const tabs = [...e.currentTarget.parentElement.querySelectorAll(":scope > .app-btn")];
+      const index = tabs.indexOf(e.currentTarget);
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openApp(id);
+        return;
+      }
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      const step = e.key === "ArrowRight" ? 1 : tabs.length - 1;
+      const next = tabs[(index + step) % tabs.length];
+      if (next) next.focus();
+    }
     const closeWin = id => {
       if (id === 'store') setEditApps(false);
       setWins(ws => ws.filter(w => w.id !== id));
@@ -70665,6 +70680,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "phone-till-dot"
     }), /*#__PURE__*/React.createElement("span", null, day.closed ? 'Till closed' : 'Till open')), profileButton('phone')), /*#__PURE__*/React.createElement("div", {
       id: "appbar",
+      role: "tablist",
+      "aria-label": "Modules",
       ref: appbarRef,
       className: (editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')
     }, visibleApps.map(id => {
@@ -70675,6 +70692,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return /*#__PURE__*/React.createElement("div", {
         key: id,
         "data-app": id,
+        role: "tab",
+        tabIndex: 0,
+        "aria-selected": activeBase === id,
         className: cls,
         style: {
           '--c': APP_ACCENT[id] || CD.ink,
@@ -70682,6 +70702,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             animationDelay: APP_ORDER.indexOf(id) % 5 * -0.11 + 's'
           } : {})
         },
+        onKeyDown: e => onTabKey(e, id),
         onClick: () => {
           if (!editApps) openApp(id);
         }

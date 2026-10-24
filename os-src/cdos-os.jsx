@@ -1844,6 +1844,21 @@
        figure can be read on the sheet itself. The dock gate is
        unchanged: a cashier still has no Reports icon. */
     window.CDOS.openApp = openApp;
+    function onTabKey(e, id) {
+      if (editApps) return;
+      const tabs = [...e.currentTarget.parentElement.querySelectorAll(":scope > .app-btn")];
+      const index = tabs.indexOf(e.currentTarget);
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openApp(id);
+        return;
+      }
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      const step = e.key === "ArrowRight" ? 1 : tabs.length - 1;
+      const next = tabs[(index + step) % tabs.length];
+      if (next) next.focus();
+    }
     const closeWin = (id) => { if (id === 'store') setEditApps(false); setWins(ws => ws.filter(w => w.id !== id)); };
     const minWin = (id) => setWins(ws => ws.map(w => w.id === id ? { ...w, min: true } : w));
     const zoomWin = (id) => {
@@ -2623,15 +2638,16 @@
       </header>
 
       {/* APP SUB-BAR */}
-      <div id="appbar" ref={appbarRef} className={(editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')}>
+      <div id="appbar" role="tablist" aria-label="Modules" ref={appbarRef} className={(editApps ? 'editing' : '') + (chromeCollapsed ? ' collapsed' : '')}>
         {visibleApps.map(id => {
           const w = wins.find(x => x.id === id);
           const removing = removingApps.includes(id);
           const alertN = alerts.str + alerts.id + alerts.rpt + jViol.length;
           const cls = 'app-btn' + (w ? ' open' : '') + (w && w.min ? ' min' : '')
             + (editApps && !removing ? ' jiggle' : '') + (removing ? ' removing' : '') + (dragApp === id ? ' dragging' : '') + (activeBase === id ? ' is-active' : '');
-          return (<div key={id} data-app={id} className={cls}
+          return (<div key={id} data-app={id} role="tab" tabIndex={0} aria-selected={activeBase === id} className={cls}
             style={{ '--c': APP_ACCENT[id] || CD.ink, ...(editApps ? { animationDelay: (APP_ORDER.indexOf(id) % 5) * -0.11 + 's' } : {}) }}
+            onKeyDown={(e) => onTabKey(e, id)}
             onClick={() => { if (!editApps) openApp(id); }}>
             {editApps && <button className="app-badge remove" title="Remove from dock — moves to the Store" onClick={(e) => { e.stopPropagation(); animateRemove(id); }}><Ic n="minus" s={13} c="var(--cd-on-ink)" /></button>}
             <span className="ai"><Ic n={APPMETA[id].icon} s={22} c={APP_ACCENT[id] || CD.ink} />{id === 'ledger' && alertN > 0 ? <span className="dock-badge" title={`${alertN} flagged — click to view`} onClick={(e) => { if (!editApps) { e.stopPropagation(); jumpAlerts(); } }}>{alertN}</span> : null}</span>
