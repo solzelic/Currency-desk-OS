@@ -1,0 +1,238 @@
+import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
+import type { Page } from "@playwright/test";
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as { Pool: new (config: { connectionString: string }) => { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, string>[] }>; end: () => Promise<void> } };
+test.skip(!hasLedger, "needs SEAM_DATABASE_URL");
+const SHOTS = path.join("docs", "pr-shots", "quote-truth");
+const WIDTHS = [360, 390, 430, 600, 1280] as const;
+function sameMoney(left: string, right: string): boolean {
+  const part = (value: string) => {
+    const match = value.replace(/,/g, "").trim().match(/-?\d+(?:\.\d+)?/);
+    if (!match) throw new Error(`not money: ${value}`);
+    const [whole, frac = ""] = match[0].replace("-", "").split(".");
+    return { neg: match[0].startsWith("-"), body: `${whole}${frac}`.replace(/^0+(?=\d)/, ""), scale: frac.length };
+  };
+  const a = part(left), b = part(right), scale = Math.max(a.scale, b.scale);
+  const pad = (p: { body: string; scale: number }) => p.body + "0".repeat(scale - p.scale);
+  return a.neg === b.neg && pad(a) === pad(b);
+}
+function expectSame(left: string, right: string, label: string) {
+  expect(sameMoney(left, right), `${label}: ${left} vs ${right}`).toBe(true);
+}
+async function takeTill(page: Page) {
+  const open = await page.evaluate(async () => {
+    const me = await fetch("/api/auth/me").then((r) => r.json());
+    const id = String(me.user?.id ?? "");
+    const session = await fetch("/api/ledger/till-session").then((r) => r.json());
+    const opener = String(session.session?.openedBy ?? "");
+    const mine = session.session?.status === "open" && (opener === id || opener.endsWith(":" + id));
+    let balances: Record<string, string> = (await fetch("/api/ledger/till-balances").then((r) => r.json())).balances ?? {};
+    if (!Object.keys(balances).length) {
+      const seeded = await fetch("/api/ledger/opening-balances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ balances: { CAD: "20000.00", USD: "8000.00" } }) });
+      if (!seeded.ok) return await seeded.text();
+      balances = (await fetch("/api/ledger/till-balances").then((r) => r.json())).balances ?? {};
+    }
+    if (mine) return "open";
+    if (session.session?.status === "open") {
+      const counts: Record<string, string> = {};
+      for (const [c, v] of Object.entries(balances)) counts[c] = Number(v).toFixed(2);
+      const handed = await fetch("/api/ledger/till-sessions/handover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotencyKey: "qt-" + Date.now(), counts }) });
+      return handed.ok ? "open" : await handed.text();
+    }
+    const res = await fetch("/api/ledger/till-sessions/open", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    return res.ok || res.status === 409 ? "open" : await res.text();
+  });
+  expect(open, "till open").toBe("open");
+}
+async function openExchange(page: Page) {
+  const button = () => page.getByRole("button", { name: /^New transaction$/i }).first();
+  await expect(button()).toBeVisible({ timeout: 30_000 });
+  await takeTill(page);
+  if (await page.locator(".cdos-tour-skip").isVisible().catch(() => false)) await page.locator(".cdos-tour-skip").click();
+  if (!(await page.evaluate(async () => (await fetch("/api/ledger/till-session").then((r) => r.json())).session?.status === "open"))) {
+    await page.reload();
+    await landOnDesktop(page);
+  }
+  await expect(button()).toBeEnabled({ timeout: 30_000 });
+  await button().click();
+  await expect(page.locator(".cd-tx")).toBeVisible();
+}
+async function pickCurrency(page: Page, which: 0 | 1, code: string) {
+  await page.locator(".cd-money button").nth(which).evaluate((el) => (el as HTMLElement).click());
+  const option = page.locator("[style*='z-index: 99998'] button").filter({ hasText: new RegExp("^" + code) }).first();
+  await option.evaluate((el) => (el as HTMLElement).click());
+}
+async function fillDeal(page: Page, amount: string, fee = "") {
+  await page.locator(".cd-tx-customer input").fill("Quote Truth");
+  const money = page.locator(".cd-money input").first();
+  await money.fill(amount);
+  await money.blur();
+  if (fee) await page.locator(".cd-tx-fee").fill(fee);
+  const purpose = page.locator(".cd-tx-purpose");
+  if (await purpose.count()) {
+    await purpose.fill("Personal travel");
+    await page.locator(".cd-tx-source").fill("Employment income");
+  }
+}
+async function showFrozenCard(page: Page) {
+  const show = page.getByRole("button", { name: /Show customer the quote/i });
+  await expect(show).toBeDisabled();
+  await page.locator(".cd-tx-go").click();
+  await expect(page.locator(".cd-tx-go")).toContainText(/Post frozen quote/, { timeout: 20_000 });
+  await expect(show).toBeEnabled();
+  await show.click();
+  await expect(page.locator("[data-quote-face]")).toBeVisible();
+}
+async function postFrozen(page: Page) {
+  await page.keyboard.press("Escape");
+  const posted = page.waitForResponse((res) => res.url().includes("/post") && res.request().method() === "POST");
+  await page.locator(".cd-tx-go").click();
+  const res = await posted;
+  expect(res.ok(), await res.text()).toBeTruthy();
+  return res.json();
+}
+async function tillOut(pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, string>[] }> }, transactionId: string, currency: string) {
+  const till = await pool.query(
+    `SELECT m.amount::text AS amount FROM ledger_till_movements m
+      WHERE m.transaction_id = $1 AND m.direction = 'out' AND m.currency = $2`,
+    [transactionId, currency],
+  );
+  return till.rows[0].amount;
+}
+async function topUp(page: Page, currency: string, amount: string, key: string) {
+  await takeTill(page);
+  const topped = await page.evaluate(async ({ currency, amount, key }) => {
+    const res = await fetch("/api/ledger/till-movements", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idempotencyKey: key, direction: "in", currency, amount, counterpartyType: "bank", counterpartyRef: "quote-truth", reason: `${currency} for the quote truth deal` }),
+    });
+    return { status: res.status, body: await res.text() };
+  }, { currency, amount, key });
+  expect([201, 409], topped.body).toContain(topped.status);
+  await page.evaluate((code) => {
+    const ccy = (window as unknown as { CDOS: { CCY: string[] } }).CDOS.CCY;
+    if (ccy.indexOf(code) < 0) ccy.push(code);
+  }, currency);
+}
+test("CAD to USD: the card, the deal, and the till pay one amount", async ({ page }) => {
+  test.setTimeout(120_000);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page, "a.singh");
+    await openExchange(page);
+    await fillDeal(page, "1000");
+    await expect(page.locator(".cd-tx-receive")).toHaveText("722.10", { timeout: 20_000 });
+    await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.722103704355 USD");
+    await showFrozenCard(page);
+    mkdirSync(SHOTS, { recursive: true });
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: width < 600 ? 780 : 900 });
+      const face = page.locator("[data-quote-face]");
+      await expect(face).toBeVisible();
+      await page.screenshot({ path: path.join(SHOTS, `card-${width}.png`), fullPage: false });
+      const box = await face.locator("[data-quote-rate]").boundingBox();
+      const view = page.viewportSize();
+      expect(box && view && box.x >= -1 && box.x + box.width <= view.width + 1, `rate fits ${width}`).toBeTruthy();
+    }
+    const card = (await page.locator("[data-quote-get]").innerText()).replace(/\s+/g, " ");
+    const rate = (await page.locator("[data-quote-rate]").innerText()).replace(/\s+/g, " ");
+    expect(card).toContain("722.10");
+    expect(card).not.toContain("722.25");
+    expect(rate).toContain("0.722103704355");
+    const body = await postFrozen(page);
+    expectSame(body.outputAmount, "722.10", "posted");
+    expect(String(body.rate)).toContain("0.722103704355");
+    expectSame(await tillOut(pool, body.transactionId, "USD"), "722.10", "till");
+    expectSame(card, "722.10", "card");
+  } finally {
+    await pool.end();
+  }
+});
+test("USD to JPY pays whole yen on the card, the deal, and the till", async ({ page }) => {
+  test.setTimeout(120_000);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page, "r.haddad");
+    await topUp(page, "JPY", "500000.00", "quote-truth-jpy-in");
+    await openExchange(page);
+    await pickCurrency(page, 0, "USD");
+    await pickCurrency(page, 1, "JPY");
+    await fillDeal(page, "100");
+    await showFrozenCard(page);
+    const card = (await page.locator("[data-quote-get]").innerText()).replace(/\s+/g, " ");
+    expect(card).toMatch(/[\d,]+ JPY/);
+    expect(card).not.toMatch(/\.\d/);
+    const body = await postFrozen(page);
+    expect(String(body.outputAmount)).not.toMatch(/\.\d*[1-9]/);
+    expectSame(card, String(body.outputAmount), "jpy card");
+    expectSame(String(body.outputAmount), await tillOut(pool, body.transactionId, "JPY"), "jpy till");
+  } finally {
+    await pool.end();
+  }
+});
+test("CAD to KWD keeps three decimal places on the card, the deal, and the till", async ({ page }) => {
+  test.setTimeout(120_000);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page, "r.haddad");
+    const published = await page.evaluate(async () => {
+      const board = (await fetch("/api/rates").then((r) => r.json())).board;
+      const rows = { ...(board.rows || {}), KWD: { mid: 4.48123, show: true } };
+      const res = await fetch("/api/rates/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ buyMargin: Number(board.buyMargin), sellMargin: Number(board.sellMargin), rows, order: [...(board.order || Object.keys(rows)), "KWD"] }),
+      });
+      return res.status;
+    });
+    expect(published, "KWD on the board").toBe(200);
+    await topUp(page, "KWD", "1000.00", "quote-truth-kwd-in");
+    await openExchange(page);
+    await pickCurrency(page, 1, "KWD");
+    await fillDeal(page, "250");
+    await showFrozenCard(page);
+    const card = (await page.locator("[data-quote-get]").innerText()).replace(/\s+/g, " ");
+    expect(card).toMatch(/\d+\.\d{3} KWD/);
+    const body = await postFrozen(page);
+    expect(String(body.outputAmount)).toMatch(/^\d+\.\d{3}$/);
+    expectSame(card, String(body.outputAmount), "kwd card");
+    expectSame(String(body.outputAmount), await tillOut(pool, body.transactionId, "KWD"), "kwd till");
+  } finally {
+    await pool.end();
+  }
+});
+test("a pay-in with a fee pays the quoted amount, and the fee is its own till movement", async ({ page }) => {
+  test.setTimeout(120_000);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page, "a.singh");
+    await openExchange(page);
+    await page.locator(".cd-tx-swap").click();
+    await fillDeal(page, "100", "5.00");
+    await showFrozenCard(page);
+    const card = (await page.locator("[data-quote-get]").innerText()).replace(/\s+/g, " ");
+    expect(card).toContain("CAD");
+    const body = await postFrozen(page);
+    expectSame(card, String(body.outputAmount), "fee card");
+    const moves = await pool.query(
+      `SELECT direction, currency, amount::text AS amount FROM ledger_till_movements WHERE transaction_id = $1`,
+      [body.transactionId],
+    );
+    const out = moves.rows.find((row) => row.direction === "out" && row.currency === "CAD");
+    const fee = moves.rows.find((row) => row.direction === "in" && row.currency === "CAD" && sameMoney(row.amount, "5.00"));
+    expect(out, JSON.stringify(moves.rows)).toBeTruthy();
+    expect(fee, JSON.stringify(moves.rows)).toBeTruthy();
+    expectSame(String(body.outputAmount), out!.amount, "fee till");
+    expectSame(String(body.feeCad), "5.00", "fee");
+  } finally {
+    await pool.end();
+  }
+});

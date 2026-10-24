@@ -25,8 +25,8 @@
      3. A desk that HAS stated its set gets exactly that, and a refusal
         that names the set rather than a list compiled into the binary.
      4. Minor units are ISO 4217, not two-for-everything. There is no
-        such thing as ¥1,234.56, and a three-decimal dinar is refused
-        out loud rather than truncated into a numeric(24,2) column.
+        such thing as ¥1,234.56, and a three-decimal dinar keeps its
+        third place rather than being truncated into two.
    ============================================================ */
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -98,15 +98,12 @@ describe("minor units are the currency's, not two for everything", () => {
     }
   });
 
-  it("refuses a three-decimal currency out loud rather than truncating it", () => {
-    const answer = carriable("KWD");
-    expect(answer.ok).toBe(false);
-    /* The reason has to say what would happen, because the alternative
-       — a numeric(24,2) column quietly eating the third place on every
-       dinar — is invisible until somebody reconciles a year of them. */
-    if (!answer.ok) expect(answer.reason).toMatch(/three decimal places/i);
-    expect(carriable("BHD").ok).toBe(false);
-    expect(carriable("JOD").ok).toBe(false);
+  it("keeps a three-decimal amount and refuses a fourth place", () => {
+    expect(carriable("KWD")).toEqual({ ok: true });
+    expect(carriable("BHD").ok).toBe(true);
+    expect(carriable("JOD").ok).toBe(true);
+    expect(parseMoney("1.234", "KWD", "Amount").toString()).toBe("1.234");
+    expect(() => parseMoney("1.2345", "KWD", "Amount")).toThrow(/3 decimal/);
     expect(carriable("USD").ok).toBe(true);
   });
 
@@ -188,13 +185,9 @@ postgres("what a desk is permitted to hold", () => {
     }
   });
 
-  it("still refuses what the ledger genuinely cannot hold, stated or not", async () => {
+  it("lets an unrestricted desk trade a three-decimal currency", async () => {
     const desk = await resolve();
-    const answer = tradeable(desk, "KWD");
-    expect(answer.ok).toBe(false);
-    /* Not "this desk does not trade it" — the ledger cannot carry it,
-       which is a different sentence and a different fix. */
-    if (!answer.ok) expect(answer.reason).toMatch(/three decimal places/i);
+    expect(tradeable(desk, "KWD")).toEqual({ ok: true });
   });
 
   /* ---- and what a stated set actually does ---- */
@@ -216,13 +209,11 @@ postgres("what a desk is permitted to hold", () => {
     }
   });
 
-  it("never lets a stated set include something the ledger cannot carry", async () => {
+  it("keeps a three-decimal currency an owner named", async () => {
     await deskStates(["USD", "KWD", "PHP"]);
     const desk = await resolve();
-    /* The dinar is dropped from the set rather than sitting in it as a
-       currency that half-works. `carriable` is what explains why. */
-    expect(desk.stated).toEqual(["CAD", "PHP", "USD"]);
-    expect(tradeable(desk, "KWD").ok).toBe(false);
+    expect(desk.stated).toEqual(["CAD", "KWD", "PHP", "USD"]);
+    expect(tradeable(desk, "KWD")).toEqual({ ok: true });
   });
 
   it("keeps the home currency in the set whatever the owner typed", async () => {

@@ -116,10 +116,7 @@ export class CurrencyService {
               "INVALID_REQUEST",
               `"${raw}" is not a currency code.`,
             );
-          /* Refused rather than silently dropped. Somebody typing KWD
-             into this box has to be told the ledger cannot hold it —
-             finding out later, from a teller who cannot take a dinar, is
-             the version of this that wastes a day. */
+          /* Refused here, not discovered later on a deal. */
           const carried = carriable(code);
           if (!carried.ok)
             throw new LedgerError("UNSUPPORTED_CURRENCY", carried.reason);

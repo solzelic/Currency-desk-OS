@@ -99,7 +99,7 @@ The book itself meets the standard. Two adjacent money paths do not.
 | `server/src/ledger/*.ts` + `decimal.js` | Arithmetic is Decimal. Rounding is `toDecimalPlaces(2)` / `ROUND_HALF_UP`, set once (`quotes/terms.ts`, `quotes/service.ts`). |
 | Frozen quote terms | `quotes` stores `market_mid`, `customer_rate`, amounts; posting consumes the stored rate (`docs/QUOTE_INVARIANTS.md`). |
 | Append-only | No `UPDATE`/`DELETE` of `ledger_transactions`. Reversals are new rows that reference the original. `ledger_audit_events` is the trail. |
-| Currency in the type | Ledger amounts travel with a `char(3)` currency. Three-decimal currencies are refused out loud (`server/src/ledger/currencies.ts`) rather than truncated. |
+| Currency in the type | Ledger amounts travel with a `char(3)` currency. A three-decimal exchange payout is stored at three places (`server/src/ledger/currencies.ts`). A fourth place is refused. |
 | One book | `docs/CASH_OWNERSHIP_INVARIANTS.md`. Browser `position()` is a headstone (`os-src/cdos-base.jsx` ~628). |
 
 **Fail on two non-ledger money paths — storefront holds and board
@@ -313,7 +313,7 @@ opened as a side effect of reading it.
 | #32 Resend rotation | Ops. An operator confirms in Resend + Render; there is nothing to commit. |
 | Render free-tier sleep; Neon CU-hours | Paid infra. Sol’s call. Not a PR. |
 | Shop-Ready Core walkthrough | Named next priority in PROJECT_STATE. A proof, not a standards fix. Open only after A (multi-till) if the walkthrough would add a second till. |
-| Three-decimal currency columns | `currencies.ts` refuses them on purpose. Widening ~47 `numeric(24,2)` columns is its own change. |
+| Three-decimal currency columns | Migration 053 stores them. A remittance face stays at two places. |
 | ID / cheque images → object storage | Known (`docs/ROAD_TO_DEPLOYMENT.md`, #29 historically). Not a standards-audit job. |
 | Authorization-as-hook | Named in ARCHITECTURE §8. Structural; do not sneak it into A–H. |
 | One schema mechanism (DDL vs migrations) | Named in ARCHITECTURE §8. Do not “simplify” it inside another slice. |

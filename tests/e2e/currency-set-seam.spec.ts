@@ -107,7 +107,7 @@ test("clearing the field hands the question back rather than emptying the set", 
   await expect(page.getByText(/No set stated/i).first()).toBeVisible();
 });
 
-test("a currency the ledger cannot carry is refused on the screen that named it", async ({
+test("a three-decimal currency can be named on the screen", async ({
   page,
 }) => {
   await signInAtDesk(page, "j.masri");
@@ -117,12 +117,10 @@ test("a currency the ledger cannot carry is refused on the screen that named it"
   await field(page).fill("USD, KWD");
   await field(page).press("Enter");
 
-  /* Told here, with the reason, rather than discovered weeks later by a
-     teller who cannot take a dinar with a customer in front of them. */
-  await expect(page.getByText(/three decimal places/i).first()).toBeVisible({
-    timeout: 15_000,
-  });
-  expect((await book(page).currencies()).stated).toBeNull();
+  await expect
+    .poll(async () => (await book(page).currencies()).stated, { timeout: 15_000 })
+    .toEqual(["CAD", "KWD", "USD"]);
+  await expect(page.getByText(/three decimal places/i)).toHaveCount(0);
 });
 
 test("a teller cannot reach the setting, and could not use it if they did", async ({

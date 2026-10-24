@@ -287,25 +287,24 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expect(page.getByText("$6.99")).toHaveCount(0);
     await expect(page.locator(".cd-tx")).not.toContainText("$6.99");
     await expect(page.getByRole("button", { name: /^Text quote$/ })).toHaveCount(0);
-    /* 3,000 CAD pays 2,166.75 USD, so the ticket is 0.72225. The board field is separate. */
+    /* 3,000 CAD pays 2,166.31 USD. The ticket and the board field are that server rate. */
     const rateKicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
-    await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.75");
-    await expect(rateKicker).toHaveText("1 CAD = 0.72225 USD");
+    await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.31", { timeout: 20_000 });
+    await expect(rateKicker).toHaveText("1 CAD = 0.722103704355 USD");
     const shown = ((await rateKicker.innerText()).match(/(\d+\.\d+)/) || [])[1] || "";
     const shownPlaces = (shown.split(".")[1] || "").length;
-    expect(shownPlaces, `rate places at ${width}`).toBeGreaterThanOrEqual(4);
-    expect(shownPlaces, `rate places at ${width}`).toBeLessThanOrEqual(6);
-    await expect(page.locator(".cd-tx-ticket")).toContainText("1 CAD = 0.72225 USD");
+    expect(shownPlaces, `rate places at ${width}`).toBe(12);
+    await expect(page.locator(".cd-tx-ticket")).toContainText("1 CAD = 0.722103704355 USD");
     await expect(page.locator(".cd-tx")).not.toContainText("Rate rounded. The amounts are exact.");
     const board = await page.locator(".cd-tx-rate").inputValue();
-    expect(board, `board rate at ${width}`).toMatch(/^\d+\.\d+$/);
+    expect(board, `board rate at ${width}`).toBe("0.722103704355");
     const amount = page.locator(".cd-money input").first();
     await amount.fill("100");
     await amount.blur();
-    await expect(page.locator(".cd-tx-ticket"), "ticket rate is not the board rate").not.toContainText(`1 CAD = ${board} USD`);
+    await expect(page.locator(".cd-tx-ticket"), "ticket rate is the server rate").toContainText(`1 CAD = ${board} USD`);
     await amount.fill("3000");
     await amount.blur();
-    await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.75");
+    await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.31");
     await expect(page.getByText("Board rate").first()).toBeVisible();
     await expect(page.locator(".cd-tx")).not.toContainText("Published rate");
     await expect(page.locator(".cd-tx-side")).toContainText(/We (buy|sell) [A-Z]{3}/);

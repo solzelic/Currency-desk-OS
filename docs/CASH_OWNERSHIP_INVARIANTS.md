@@ -140,10 +140,9 @@ coverage:
   money routes, with a matching list in the browser — so a desk running
   this product's own Philippine corridor could not put a peso in a till.
   The set is data now, on `legal_entities.traded_currencies`, and where an
-  owner has stated none the ledger restricts nothing. Three-decimal
-  currencies are the one genuine remaining limit and are refused with the
-  reason, because the amount columns hold two places. See
-  DESK_CURRENCIES.md.
+  owner has stated none the ledger restricts nothing. A three-decimal
+  exchange payout is stored at three places. A remittance face in one of
+  those currencies stays at two. See DESK_CURRENCIES.md.
 - Every deal line the desk trades now posts: currency exchange, cheque
   cashing, remittance send, remittance receive, bill payment and money
   order. Cheque cashing was the first of the five to come across and the

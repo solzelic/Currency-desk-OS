@@ -15,9 +15,12 @@ uses the board's **We Sell** margin. `customer_sell_foreign` means foreign
 currency to CAD and uses **We Buy**. `customerRate` is always output units per
 input unit; `marketMid` remains CAD per unit of foreign currency.
 
-Endpoints: `POST /api/quotes`, `GET /api/quotes/:quoteId`,
+Endpoints: `POST /api/quotes/preview`, `POST /api/quotes`, `GET /api/quotes/:quoteId`,
 `POST /api/quotes/:quoteId/cancel`, `POST /api/quotes/:quoteId/override`, and
-`POST /api/quotes/:quoteId/post`.
+`POST /api/quotes/:quoteId/post`. Preview takes the same pair, amount, fee,
+and direction, runs `calculateQuoteTerms`, and writes nothing. The exchange
+card shows only a frozen quote: both amounts and `customerRate`. The figure
+on the card before that freeze is the preview.
 
 Active quotes expire after `QUOTE_TTL_SECONDS` (60 seconds by default).
 `RATE_BOARD_MAX_AGE_SECONDS` defaults to 300. `QUOTE_OVERRIDE_MAX_DEVIATION`
