@@ -807,6 +807,16 @@
   const num = (n) => new Intl.NumberFormat('en-CA', { maximumFractionDigits: 2 }).format(Number(n) || 0);
   /* Grouped digits in the currency's own places. 99.85 yen is 100. */
   const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
+  /* One currency on the card uses the symbol. Two or more name the code. */
+  const feePayCopy = (feeAmount, payAmount, currency, several) => {
+    const shown = (amount) => several
+      ? currency + " " + unitText(amount, currency)
+      : fmt(amount, currency);
+    return {
+      feeLine: "Service fee: " + shown(feeAmount) + ", added to the total",
+      payLine: "You pay: " + shown(payAmount),
+    };
+  };
   /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
   const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
   const roundMinor = (n, places) => window.CDOS.roundMinor(n, places);
@@ -1422,7 +1432,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, cashVariance, storedRoundNote, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, feePayCopy, storedText, cashVariance, storedRoundNote, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */

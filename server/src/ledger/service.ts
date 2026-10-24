@@ -70,7 +70,7 @@ import {
   aeDueDiligenceBlocks,
   aePurposeDecision,
 } from "./uae-exchange.js";
-import { assertTradeable, fixedIn, parseMoney, roundTo } from "./currencies.js";
+import { assertTradeable, feePayLines, fixedIn, parseMoney, roundTo } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -1096,6 +1096,9 @@ export class LedgerService {
             `Quote: ${quote.quoteId}`,
             `Paid exchange: ${fixedIn(input, quote.from)} ${quote.from}`,
             `Fee paid separately: ${home} ${fixedIn(fee, home)}`,
+            ...(quote.from === home && fee.gt(0)
+              ? feePayLines(home, fixedIn(fee, home), fixedIn(input.add(fee), home))
+              : []),
             `Received: ${fixedIn(output, quote.to)} ${quote.to}`,
             ...(serbia.receiptFacts?.side
               ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]
@@ -1511,6 +1514,9 @@ export class LedgerService {
             `Customer: ${customer.rows[0].name}`,
             `Paid exchange: ${fixedIn(input, request.from)} ${request.from}`,
             `Fee paid separately: CAD ${fixed(fee)}`,
+            ...(request.from === pack.homeCurrency && fee.gt(0)
+              ? feePayLines(pack.homeCurrency, fixedIn(fee, pack.homeCurrency), fixedIn(input.add(fee), pack.homeCurrency))
+              : []),
             `Received: ${fixedIn(output, request.to)} ${request.to}`,
             ...(serbia.receiptFacts?.side
               ? [`Exchange: ${serbia.receiptFacts.side} ${serbia.receiptFacts.basis}`]

@@ -7,7 +7,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useRef, useEffect } = React;
-  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, currencyPlaces, effectiveRate, RATE_NOTE, unitText, dDiff, counterCashIn, counterCashOut } = window.CDOS;
+  const { CD, Ic, TYPES, CCY, businessDate, reportingLimit, crossRate, perCadLive, fmt, num, currencyPlaces, effectiveRate, RATE_NOTE, unitText, feePayCopy, dDiff, counterCashIn, counterCashOut } = window.CDOS;
 
 
   /* THE DESK'S OWN CURRENCY. The exchange receipt printed its fee as
@@ -486,6 +486,10 @@
     const rateValue = !fx ? row.rate : (priced && priced.text
       ? ('1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy)
       : 'Rate unavailable');
+    const homeNow = homeCcy();
+    const pay = row.fee > 0 && homeNow && row.inCcy === homeNow
+      ? feePayCopy(row.fee, +((Number(row.inAmt) || 0) + (Number(row.fee) || 0)).toFixed(2), homeNow, row.inCcy !== row.outCcy)
+      : null;
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="overflow-hidden cd-paper-island" style={{ width: 340, background: CD.panel, border: `1px solid ${CD.ink}` }}>
         <div id="rcpt" className="p-5" style={{ fontFamily: 'Space Mono, ui-monospace, monospace' }}>
@@ -499,6 +503,7 @@
           <Line k="Reference" v={row.ref || '—'} /><Line k="Date" v={row.date} /><Line k="Customer" v={row.customer || '—'} /><Line k="Type" v={row.type} /><Line k="Teller" v={row.teller} />
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
           <Line k="Pay-in" v={`${unitText(row.inAmt, row.inCcy)} ${row.inCcy}`} /><Line k="Rate" v={rateValue} />{fx && priced && priced.rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-pin-note)', marginTop: 1, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div> : null}<Line k="Pay-out" v={`${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
+          {pay ? <div className="text-[11px] mt-2" style={{ color: CD.ink, lineHeight: '16px' }}><div>{pay.feeLine}</div><div>{pay.payLine}</div></div> : null}
           {row.type !== 'Cheque Cashing' && row.side && <Line k="Pricing" v={window.CDOS.exchangeWords(row, homeCcy()).pricing} />}
           {row.quoteRef && <Line k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} />}
           {row.serverReceipt && <><div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} /><Line k="Server receipt" v={row.serverReceipt.receiptId} /><div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div></>}

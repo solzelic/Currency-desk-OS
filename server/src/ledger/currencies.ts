@@ -179,6 +179,14 @@ export function fixedIn(amount: Decimal, currency: string): string {
   return roundTo(amount, currency).toFixed(minorUnits(currency));
 }
 
+/** The quote and the receipt name the fee and the amount the customer pays. */
+export function feePayLines(home: string, fee: string, total: string): string[] {
+  return [
+    `Service fee: ${home} ${fee}, added to the total`,
+    `You pay: ${home} ${total}`,
+  ];
+}
+
 /* ============================================================
    WHAT THIS DESK TRADES
 

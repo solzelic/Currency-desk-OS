@@ -5,6 +5,19 @@ import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
+import { feePayLines } from "./currencies.js";
+
+function addMoney(left: string, right: string): string {
+  const cents = (value: string) => {
+    const negative = value.trim().startsWith("-");
+    const [whole, frac = ""] = value.trim().replace("-", "").split(".");
+    return (negative ? -1 : 1) * Number(whole + (frac + "00").slice(0, 2));
+  };
+  const sum = cents(left) + cents(right);
+  const sign = sum < 0 ? "-" : "";
+  const text = String(Math.abs(sum)).padStart(3, "0");
+  return sign + text.slice(0, -2) + "." + text.slice(-2);
+}
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -377,6 +390,9 @@ export class LedgerProvisioningService {
         );
       }
       const row = result.rows[0];
+      const home = String(row.home_currency || "CAD").trim();
+      const from = String(row.from_currency || "").trim();
+      const fee = String(row.fee_cad ?? "0");
       await client.query("COMMIT");
       return redactDeskEarnings(role, {
         receiptId: `rcpt_${row.transaction_id}`,
@@ -388,8 +404,11 @@ export class LedgerProvisioningService {
           `Receipt ${row.transaction_ref}`,
           `Customer: ${row.customer_name}`,
           ...(row.quote_id ? [`Quote: ${row.quote_id}`] : []),
-          `Paid exchange: ${row.input_amount} ${row.from_currency.trim()}`,
+          `Paid exchange: ${row.input_amount} ${from}`,
           `Fee paid separately: CAD ${row.fee_cad}`,
+          ...(from === home && Number(fee) > 0
+            ? feePayLines(home, fee, addMoney(String(row.input_amount), fee))
+            : []),
           `Received: ${row.output_amount} ${row.to_currency.trim()}`,
         ],
       });

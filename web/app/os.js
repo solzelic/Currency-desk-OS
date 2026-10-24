@@ -1226,6 +1226,14 @@
   }).format(Number(n) || 0);
   /* Grouped digits in the currency's own places. 99.85 yen is 100. */
   const unitText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, false));
+  /* One currency on the card uses the symbol. Two or more name the code. */
+  const feePayCopy = (feeAmount, payAmount, currency, several) => {
+    const shown = amount => several ? currency + " " + unitText(amount, currency) : fmt(amount, currency);
+    return {
+      feeLine: "Service fee: " + shown(feeAmount) + ", added to the total",
+      payLine: "You pay: " + shown(payAmount)
+    };
+  };
   /* A stored balance. Extra places stay, so a report can still show 99.85 yen. */
   const storedText = (n, ccy) => formatDigits(n, digitsFor(n, ccy, true));
   const roundMinor = (n, places) => window.CDOS.roundMinor(n, places);
@@ -2290,6 +2298,7 @@
     fmt,
     num,
     unitText,
+    feePayCopy,
     storedText,
     cashVariance,
     storedRoundNote,
@@ -3971,6 +3980,7 @@ if (typeof window !== "undefined") {
     effectiveRate,
     RATE_NOTE,
     unitText,
+    feePayCopy,
     dDiff,
     counterCashIn,
     counterCashOut
@@ -5544,6 +5554,8 @@ if (typeof window !== "undefined") {
     const fx = !!(row.inCcy && row.outCcy && row.inCcy !== row.outCcy);
     const priced = fx && typeof effectiveRate === 'function' ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy)) : null;
     const rateValue = !fx ? row.rate : priced && priced.text ? '1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy : 'Rate unavailable';
+    const homeNow = homeCcy();
+    const pay = row.fee > 0 && homeNow && row.inCcy === homeNow ? feePayCopy(row.fee, +((Number(row.inAmt) || 0) + (Number(row.fee) || 0)).toFixed(2), homeNow, row.inCcy !== row.outCcy) : null;
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -5636,7 +5648,13 @@ if (typeof window !== "undefined") {
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Fee",
       v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
-    }), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
+    }), pay ? /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px] mt-2",
+      style: {
+        color: CD.ink,
+        lineHeight: '16px'
+      }
+    }, /*#__PURE__*/React.createElement("div", null, pay.feeLine), /*#__PURE__*/React.createElement("div", null, pay.payLine)) : null, row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
       k: "Pricing",
       v: window.CDOS.exchangeWords(row, homeCcy()).pricing
     }), row.quoteRef && /*#__PURE__*/React.createElement(Line, {
@@ -29317,6 +29335,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       return () => document.removeEventListener('keydown', h);
     }, [onClose]);
     const sideLabel = q.side === 'buy' ? `We buy ${q.inCcy}` : q.side === 'sell' ? `We sell ${q.outCcy}` : `${q.inCcy} → ${q.outCcy}`;
+    const home = homeCcy();
+    const pay = q.fee > 0 && home && q.inCcy === home && window.CDOS.feePayCopy ? window.CDOS.feePayCopy(q.fee, +((Number(q.inAmt) || 0) + (Number(q.fee) || 0)).toFixed(2), home, q.inCcy !== q.outCcy) : null;
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0",
       style: {
@@ -29425,14 +29445,22 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       className: "flex items-center justify-between px-10 py-6",
       style: {
         borderTop: '1px solid var(--cd-on-ink-faint)',
-        background: 'var(--cd-ink-strong)'
+        background: 'var(--cd-ink-strong)',
+        flexWrap: 'wrap',
+        gap: 12
       }
-    }, /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         color: 'var(--cd-on-ink-soft)',
-        fontSize: 14
+        fontSize: 14,
+        lineHeight: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        flex: '1 1 240px',
+        minWidth: 0
       }
-    }, q.fee > 0 ? `Includes ${fmtHome(q.fee)} service fee · ` : '', q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'), /*#__PURE__*/React.createElement("button", {
+    }, pay ? /*#__PURE__*/React.createElement("span", null, pay.feeLine) : null, pay ? /*#__PURE__*/React.createElement("span", null, pay.payLine) : null, /*#__PURE__*/React.createElement("span", null, q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market')), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "flex items-center gap-2 px-5 py-2.5 font-semibold",
       style: {
@@ -34378,6 +34406,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     currencyPlaces,
     effectiveRate,
     unitText,
+    feePayCopy,
     mkRef,
     nowTime,
     newTx,
@@ -35597,14 +35626,22 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "flex items-center justify-between px-10 py-6",
       style: {
         borderTop: '1px solid var(--cd-on-ink-faint)',
-        background: 'var(--cd-ink-strong)'
+        background: 'var(--cd-ink-strong)',
+        flexWrap: 'wrap',
+        gap: 12
       }
-    }, /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         color: 'var(--cd-on-ink-soft)',
-        fontSize: 14
+        fontSize: 14,
+        lineHeight: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        flex: '1 1 240px',
+        minWidth: 0
       }
-    }, q.foot), /*#__PURE__*/React.createElement("button", {
+    }, q.feeLine ? /*#__PURE__*/React.createElement("span", null, q.feeLine) : null, q.payLine ? /*#__PURE__*/React.createElement("span", null, q.payLine) : null, q.foot ? /*#__PURE__*/React.createElement("span", null, q.foot) : null), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "flex items-center gap-2 px-5 py-2.5 font-semibold",
       style: {
@@ -36763,7 +36800,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onDone && onDone(tx.id);
     };
 
-    // present-quote payload (exchange + send)
+    // present-quote payload (exchange + send). The fee is home currency.
+    // It adds to what the customer pays only when they pay in that currency.
+    const payTotal = +(amtN + feeN).toFixed(2);
+    const sendPay = isSend && feeN > 0 ? feePayCopy(feeN, payTotal, home, home !== payoutCcy) : null;
+    const exchangePay = !isSend && feeN > 0 && inCcy === home ? feePayCopy(feeN, payTotal, home, inCcy !== outCcy) : null;
+    const quotePay = isSend ? sendPay : exchangePay;
     const presentQ = isSend ? {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Send money',
@@ -36774,7 +36816,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '',
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
+      feeLine: quotePay ? quotePay.feeLine : '',
+      payLine: quotePay ? quotePay.payLine : '',
+      foot: quotePay ? '' : 'No service fee'
     } : {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Your quote',
@@ -36785,7 +36829,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '',
       getLbl: 'You receive',
       get: `${unitText(shownOut, outCcy)} ${outCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
+      feeLine: quotePay ? quotePay.feeLine : '',
+      payLine: quotePay ? quotePay.payLine : '',
+      foot: quotePay ? '' : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
     };
 
     /* ---------------- render ---------------- */

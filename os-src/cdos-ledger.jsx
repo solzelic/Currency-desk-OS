@@ -217,6 +217,10 @@
   function PresentQuote({ q, onClose }) {
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
     const sideLabel = q.side === 'buy' ? `We buy ${q.inCcy}` : q.side === 'sell' ? `We sell ${q.outCcy}` : `${q.inCcy} → ${q.outCcy}`;
+    const home = homeCcy();
+    const pay = q.fee > 0 && home && q.inCcy === home && window.CDOS.feePayCopy
+      ? window.CDOS.feePayCopy(q.fee, +((Number(q.inAmt) || 0) + (Number(q.fee) || 0)).toFixed(2), home, q.inCcy !== q.outCcy)
+      : null;
     return ReactDOM.createPortal(
       <div className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-10 pt-8 pb-4" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
@@ -243,8 +247,12 @@
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
-          <span style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14 }}>{q.fee > 0 ? `Includes ${fmtHome(q.fee)} service fee · ` : ''}{q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'}</span>
+        <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14, lineHeight: '20px', display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 240px', minWidth: 0 }}>
+            {pay ? <span>{pay.feeLine}</span> : null}
+            {pay ? <span>{pay.payLine}</span> : null}
+            <span>{q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'}</span>
+          </div>
           <button onClick={onClose} className="flex items-center gap-2 px-5 py-2.5 font-semibold" style={{ background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
         </div>
       </div>, document.body);

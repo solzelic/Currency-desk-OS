@@ -11,7 +11,7 @@
 (function () {
   const { useState, useMemo, useRef, useEffect, useSyncExternalStore } = React;
   const {
-    CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, currencyPlaces, effectiveRate, unitText, mkRef, nowTime, newTx,
+    CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, currencyPlaces, effectiveRate, unitText, feePayCopy, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
   } = window.CDOS;
   const deskHome = () => {
@@ -347,8 +347,12 @@
           {q.rateNote ? <div className="cd-rate-note" style={{ textAlign: 'center', fontSize: 14, lineHeight: '18px', color: 'var(--cd-note-on-ink)' }}>{q.rateNote}</div> : null}
           <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.getLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: '#7fd1a3', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.get}</div></div>
         </div>
-        <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
-          <span style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14 }}>{q.foot}</span>
+        <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14, lineHeight: '20px', display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 240px', minWidth: 0 }}>
+            {q.feeLine ? <span>{q.feeLine}</span> : null}
+            {q.payLine ? <span>{q.payLine}</span> : null}
+            {q.foot ? <span>{q.foot}</span> : null}
+          </div>
           <button onClick={onClose} className="flex items-center gap-2 px-5 py-2.5 font-semibold" style={{ background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
         </div>
       </div>, document.body);
@@ -1064,10 +1068,15 @@
       onDone && onDone(tx.id);
     };
 
-    // present-quote payload (exchange + send)
+    // present-quote payload (exchange + send). The fee is home currency.
+    // It adds to what the customer pays only when they pay in that currency.
+    const payTotal = +(amtN + feeN).toFixed(2);
+    const sendPay = isSend && feeN > 0 ? feePayCopy(feeN, payTotal, home, home !== payoutCcy) : null;
+    const exchangePay = !isSend && feeN > 0 && inCcy === home ? feePayCopy(feeN, payTotal, home, inCcy !== outCcy) : null;
+    const quotePay = isSend ? sendPay : exchangePay;
     const presentQ = isSend
-      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${unitText(amtN, home)} ${home}`, rateLine: rateShown(home, payoutCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '', getLbl: `${benName || 'Beneficiary'} receives`, get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
-      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${unitText(amtN, inCcy)} ${inCcy}`, rateLine: rateShown(inCcy, outCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '', getLbl: 'You receive', get: `${unitText(shownOut, outCcy)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
+      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${unitText(amtN, home)} ${home}`, rateLine: rateShown(home, payoutCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '', getLbl: `${benName || 'Beneficiary'} receives`, get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`, feeLine: quotePay ? quotePay.feeLine : '', payLine: quotePay ? quotePay.payLine : '', foot: quotePay ? '' : 'No service fee' }
+      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${unitText(amtN, inCcy)} ${inCcy}`, rateLine: rateShown(inCcy, outCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '', getLbl: 'You receive', get: `${unitText(shownOut, outCcy)} ${outCcy}`, feeLine: quotePay ? quotePay.feeLine : '', payLine: quotePay ? quotePay.payLine : '', foot: quotePay ? '' : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
