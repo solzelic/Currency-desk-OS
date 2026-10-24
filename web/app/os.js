@@ -5670,10 +5670,7 @@ if (typeof window !== "undefined") {
     }, RATE_NOTE || 'Rate rounded. The amounts are exact.') : null, /*#__PURE__*/React.createElement(Line, {
       k: "Pay-out",
       v: `${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`
-    }), /*#__PURE__*/React.createElement(Line, {
-      k: "Fee",
-      v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
-    }), onTop && /*#__PURE__*/React.createElement("div", {
+    }), onTop ? /*#__PURE__*/React.createElement("div", {
       "data-testid": "receipt-fee",
       style: {
         marginTop: 8,
@@ -5681,7 +5678,10 @@ if (typeof window !== "undefined") {
         lineHeight: '20px',
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("div", null, onTop.feeLine), /*#__PURE__*/React.createElement("div", null, onTop.payLine)), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
+    }, /*#__PURE__*/React.createElement("div", null, onTop.feeLine), /*#__PURE__*/React.createElement("div", null, onTop.payLine)) : /*#__PURE__*/React.createElement(Line, {
+      k: "Fee",
+      v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
+    }), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
       k: "Pricing",
       v: window.CDOS.exchangeWords(row, homeCcy()).pricing
     }), row.quoteRef && /*#__PURE__*/React.createElement(Line, {

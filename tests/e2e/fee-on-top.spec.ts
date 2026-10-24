@@ -57,14 +57,36 @@ test("a 1,000 CAD deal shows the fee on top on the card, the receipt, and the ti
   await dismissTour(page);
   const book = ledger(page);
   await book.ensureOpeningBalances({ CAD: "25000.00", USD: "12000.00" });
-  await page.evaluate(async () => {
-    const opened = await fetch("/api/ledger/till-sessions/open", {
+  const tillHold = await page.evaluate(async () => {
+    const me = await fetch("/api/auth/me", { credentials: "same-origin" }).then((r) => r.json());
+    const staffId = String(me.user?.id ?? "");
+    const current = await fetch("/api/ledger/till-session", { credentials: "same-origin" }).then((r) => r.json());
+    const opener = String(current.session?.openedBy ?? "");
+    const mine = opener === staffId || opener.endsWith(":" + staffId);
+    if (current.session?.status !== "open") {
+      const opened = await fetch("/api/ledger/till-sessions/open", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: "{}",
+      });
+      if (!opened.ok) throw new Error(await opened.text());
+      return { kind: "opened" as const };
+    }
+    if (mine) return { kind: "mine" as const };
+    const heldNow = await fetch("/api/ledger/till-balances", { credentials: "same-origin" }).then((r) => r.json());
+    const counts: Record<string, string> = {};
+    for (const [currency, amount] of Object.entries(heldNow.balances ?? {})) {
+      counts[currency] = Number(amount).toFixed(2);
+    }
+    const handed = await fetch("/api/ledger/till-sessions/handover", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
-      body: "{}",
+      body: JSON.stringify({ idempotencyKey: `fee-take-${Date.now()}`, counts }),
     });
-    if (!opened.ok && opened.status !== 409) throw new Error(await opened.text());
+    if (!handed.ok) throw new Error(await handed.text());
+    return { kind: "took" as const, opener };
   });
   await page.reload();
   await landOnDesktop(page);
@@ -133,7 +155,7 @@ test("a 1,000 CAD deal shows the fee on top on the card, the receipt, and the ti
   expect(box!.width).toBeGreaterThanOrEqual(44);
 
   if (process.env.FEE_SHOTS === "1") {
-    for (const width of [360, 390, 430, 1280]) {
+    for (const width of [360, 390, 430, 600, 1280]) {
       await page.setViewportSize({ width, height: width < 500 ? 800 : 900 });
       await page.screenshot({ path: `docs/pr-shots/fee-on-top/quote-${width}.png` });
     }
@@ -158,6 +180,7 @@ test("a 1,000 CAD deal shows the fee on top on the card, the receipt, and the ti
   const receipt = page.getByTestId("receipt-fee");
   await expect(receipt).toContainText(FEE_LINE);
   await expect(receipt).toContainText(PAY_LINE);
+  await expect(page.locator("#rcpt").getByText("Fee", { exact: true })).toHaveCount(0);
 
   const deal = await page.evaluate(async (wanted) => {
     const body = await fetch("/api/ledger/transactions?limit=20", { credentials: "same-origin" }).then((r) => r.json());
@@ -170,4 +193,49 @@ test("a 1,000 CAD deal shows the fee on top on the card, the receipt, and the ti
   }));
   expect(single).toEqual({ feeLine: DOLLAR_FEE, payLine: DOLLAR_PAY });
   await expect.poll(async () => Number((await book.till()).CAD ?? 0), { timeout: 15_000 }).toBeCloseTo(before + 1002.5, 2);
+
+  if (tillHold.kind === "opened") {
+    const closed = await page.evaluate(async () => {
+      const held = await fetch("/api/ledger/till-balances", { credentials: "same-origin" }).then((r) => r.json());
+      const counts: Record<string, string> = {};
+      for (const [currency, amount] of Object.entries(held.balances ?? {})) counts[currency] = Number(amount).toFixed(2);
+      const current = await fetch("/api/ledger/till-session", { credentials: "same-origin" }).then((r) => r.json());
+      const answer = await fetch(`/api/ledger/till-sessions/${current.session.sessionId}/close`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          idempotencyKey: `fee-close-${Date.now()}`,
+          counts,
+          balanceGeneration: held.balanceGeneration,
+          note: "Fee seam counted the drawer",
+        }),
+      });
+      return answer.ok ? "ok" : await answer.text();
+    });
+    expect(closed).toBe("ok");
+  }
+  if (tillHold.kind === "took") {
+    const returned = await page.evaluate(async (opener) => {
+      const staffId = opener.includes(":") ? opener.slice(opener.lastIndexOf(":") + 1) : opener;
+      const login = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ staffId, password: "yorkville", tenantId: "tnt-yorkfx" }),
+      });
+      if (!login.ok) return await login.text();
+      const held = await fetch("/api/ledger/till-balances", { credentials: "same-origin" }).then((r) => r.json());
+      const counts: Record<string, string> = {};
+      for (const [currency, amount] of Object.entries(held.balances ?? {})) counts[currency] = Number(amount).toFixed(2);
+      const handed = await fetch("/api/ledger/till-sessions/handover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ idempotencyKey: `fee-return-${Date.now()}`, counts }),
+      });
+      return handed.ok ? "ok" : await handed.text();
+    }, tillHold.opener);
+    expect(returned).toBe("ok");
+  }
 });
