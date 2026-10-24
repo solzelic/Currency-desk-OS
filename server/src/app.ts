@@ -32,6 +32,7 @@ import { registerLedgerRoutes } from "./ledger/routes.js";
 import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sites.js";
 import { registerQuoteRoutes } from "./quotes/routes.js";
 import { registerBillingRoutes } from "./routes/billing.js";
+import { registerIdvShopConfigRoutes } from "./idv/shop-config.js";
 import { registerClientRoutes } from "./clients/routes.js";
 import { registerGrowthRoutes, type GrowthDependencies } from "./growth/routes.js";
 import { registerIdvRoutes, type IdvRouteOptions } from "./idv/routes.js";
@@ -231,6 +232,8 @@ export async function buildApp(
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
   registerBillingRoutes(app, db);
+  /* Per-shop identity-verification settings. Off until an owner turns them on. */
+  registerIdvShopConfigRoutes(app, db);
   const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
   if (ledgerDatabaseUrl) {
     registerLedgerRoutes(app, db, ledgerDatabaseUrl);
