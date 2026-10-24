@@ -15,7 +15,15 @@ export type IdvResult = {
   inquiryStatus?: "in progress" | "needs review";
 };
 
-export type IdvStart = { referenceId: string; shopId: string; branchId: string; tellerId: string };
+export type IdvStart = {
+  referenceId: string;
+  shopId: string;
+  branchId: string;
+  tellerId: string;
+  apiKeyRef?: string | null;
+  templateId?: string | null;
+  shopCode?: string;
+};
 
 export type IdvWebhookInput = {
   rawBody: Buffer;
@@ -25,6 +33,7 @@ export type IdvWebhookInput = {
 
 export interface IdvProvider {
   readonly name: string;
+  ready?(input: IdvStart): boolean;
   startCheck(input: IdvStart): Promise<{ providerRef: string }>;
   verifyWebhook(input: IdvWebhookInput): boolean;
   parseResult(body: unknown): IdvResult | null;
@@ -35,5 +44,5 @@ export type IdvFieldIssue = "template" | "reference";
 
 export interface IdvSettingsProvider {
   id: string;
-  fieldIssue(input: { apiKeyRef: string | null; templateId: string | null }): IdvFieldIssue | null;
+  fieldIssue(input: { apiKeyRef: string | null; templateId: string | null; shopCode?: string }): IdvFieldIssue | null;
 }

@@ -1,6 +1,7 @@
 /* Webhook providers and start providers. The route asks this map.
    Provider names and env vars stay in the adapter. */
 import type { IdvProvider } from "./provider.js";
+import { personaConnection } from "./providers/persona.js";
 import { createPersonaProvider, startPersonaCheck } from "./providers/persona/index.js";
 
 const PERSONA = "persona";
@@ -19,15 +20,17 @@ export function webhookProviders(options?: IdvRouteOptions): Record<string, IdvP
   return { [PERSONA]: createPersonaProvider(options?.env) };
 }
 
-/* null: known, but the key or template is unset. Absent: unknown provider. */
+/* null: the caller passed no provider. Absent: unknown provider.
+   The adapter decides whether this shop's key name and template connect. */
 export function startProviders(options?: IdvRouteOptions): Record<string, IdvProvider | null> {
   if (options?.providers) return { ...options.providers };
   const env = options?.env ?? process.env;
-  if (!env.PERSONA_API_KEY?.trim() || !env.PERSONA_TEMPLATE_ID?.trim()) return { [PERSONA]: null };
+  const deps = { env, fetch: options?.fetch, sleep: options?.sleep };
   return {
     [PERSONA]: {
       name: PERSONA,
-      startCheck(input) { return startPersonaCheck(input, { env, fetch: options?.fetch, sleep: options?.sleep }); },
+      ready(input) { return personaConnection(input, env) !== null; },
+      startCheck(input) { return startPersonaCheck(input, deps); },
       verifyWebhook() { return false; },
       parseResult() { return null; },
     },

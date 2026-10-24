@@ -102,25 +102,25 @@ describe("per-shop identity verification settings", () => {
 
   it("lets shop A neither read nor write shop B", async () => {
     const savedB = await write("b", {
-      apiKeyRef: "SHOP_B_REF", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false, shopId: DEMO.legalEntityId,
+      apiKeyRef: "PERSONA_API_KEY_SHOP_B", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false, shopId: DEMO.legalEntityId,
     });
     expect(savedB.statusCode, savedB.body).toBe(200);
     expect(savedB.json().shopId).toBe(B.legalEntityId);
     expect(savedB.json().provider).toBe(PROVIDER);
     const savedA = await write("owner", {
-      apiKeyRef: "SANDBOX_SHARED", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false, shopId: B.legalEntityId,
+      apiKeyRef: "PERSONA_API_KEY_YORKFX", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false, shopId: B.legalEntityId,
     });
     expect(savedA.json()).toEqual({
-      shopId: DEMO.legalEntityId, provider: PROVIDER, apiKeyRef: "SANDBOX_SHARED", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false,
+      shopId: DEMO.legalEntityId, provider: PROVIDER, apiKeyRef: "PERSONA_API_KEY_YORKFX", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false,
     });
     expect((await read("owner", `?shopId=${B.legalEntityId}`)).json()).toMatchObject({
-      shopId: DEMO.legalEntityId, apiKeyRef: "SANDBOX_SHARED",
+      shopId: DEMO.legalEntityId, apiKeyRef: "PERSONA_API_KEY_YORKFX",
     });
     expect((await read("b", `?shopId=${DEMO.legalEntityId}`)).json()).toMatchObject({
-      shopId: B.legalEntityId, apiKeyRef: "SHOP_B_REF", checksEnabled: false,
+      shopId: B.legalEntityId, apiKeyRef: "PERSONA_API_KEY_SHOP_B", checksEnabled: false,
     });
-    expect(await stored(B.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "SHOP_B_REF", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false });
-    expect(await stored(DEMO.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "SANDBOX_SHARED", checksEnabled: false });
+    expect(await stored(B.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "PERSONA_API_KEY_SHOP_B", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false });
+    expect(await stored(DEMO.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "PERSONA_API_KEY_YORKFX", checksEnabled: false });
   });
 
   it("refuses a key value and leaves both shops unchanged", async () => {
@@ -138,7 +138,7 @@ describe("per-shop identity verification settings", () => {
       expect(await stored(DEMO.legalEntityId)).toEqual(beforeA);
       expect(await stored(B.legalEntityId)).toEqual(beforeB);
     }
-    const field = await write("owner", { apiKey: "not-stored", apiKeyRef: "SANDBOX_SHARED" });
+    const field = await write("owner", { apiKey: "not-stored", apiKeyRef: "PERSONA_API_KEY_YORKFX" });
     expect(field.statusCode).toBe(400);
     expect(field.json().message).toBe("This route does not accept that field.");
     expect(JSON.stringify(field.json()) + logged.join("")).not.toContain("not-stored");
@@ -164,7 +164,7 @@ describe("per-shop identity verification settings", () => {
   });
 
   it("stays off when the flag is omitted, and a teller still signs in", async () => {
-    const res = await write("owner", { apiKeyRef: "SANDBOX_SHARED", templateId: "itmpl_shop_a", retentionDays: 1825 });
+    const res = await write("owner", { apiKeyRef: "PERSONA_API_KEY_YORKFX", templateId: "itmpl_shop_a", retentionDays: 1825 });
     expect(res.json().checksEnabled).toBe(false);
     expect(res.json().provider).toBe(PROVIDER);
     const teller = await app.inject({
@@ -172,5 +172,82 @@ describe("per-shop identity verification settings", () => {
       payload: { staffId: "m.costa", password: DEMO.password, tenantId: DEMO.tenantId },
     });
     expect(teller.statusCode).toBe(200);
+  });
+
+  it("accepts only this shop's key name and returns that name", async () => {
+    const own = "PERSONA_API_KEY_YORKFX";
+    const shared = "PERSONA_API_KEY";
+    const other = "PERSONA_API_KEY_SHOP_B";
+    const saved = await write("owner", { apiKeyRef: own, templateId: "itmpl_shop_a", checksEnabled: false });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json().apiKeyRef).toBe(own);
+    expect(Object.keys(saved.json()).sort()).toEqual(["apiKeyRef", "checksEnabled", "provider", "retentionDays", "shopId", "templateId"]);
+    expect((await read("owner")).json().apiKeyRef).toBe(own);
+    const sharedSave = await write("owner", { apiKeyRef: shared });
+    expect(sharedSave.statusCode, sharedSave.body).toBe(200);
+    expect(sharedSave.json().apiKeyRef).toBe(shared);
+    expect((await read("owner")).json().apiKeyRef).toBe(shared);
+    const refused = await write("owner", { apiKeyRef: other, checksEnabled: true });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body.includes(other)).toBe(false);
+    expect(logged.join("").includes(other)).toBe(false);
+    expect((await read("owner")).json().apiKeyRef).toBe(shared);
+    const shopB = await write("b", { apiKeyRef: other });
+    expect(shopB.statusCode, shopB.body).toBe(200);
+    expect(shopB.json().apiKeyRef).toBe(other);
+    const crossed = await write("b", { apiKeyRef: own });
+    expect(crossed.statusCode).toBe(400);
+    expect(crossed.body.includes(own)).toBe(false);
+  });
+
+  it("refuses a value that looks like a key and does not repeat it", async () => {
+    const before = await stored(DEMO.legalEntityId);
+    const message = "Put an environment variable name, not a key.";
+    const values = [
+      "persona_sandbox_fake_name_only",
+      "sk_test_FAKECHECKVALUE000000000000",
+      "key_fake_check_value_not_a_name",
+      "k7Qm9xL2pV4nR8wT1cY6bH3dF5sJ0aZeU8iO3",
+    ];
+    for (const apiKeyRef of values) {
+      const refused = await write("owner", { apiKeyRef });
+      expect(refused.statusCode, apiKeyRef.slice(0, 4)).toBe(400);
+      expect(refused.json()).toEqual({ code: "IDV_CONFIG_INVALID", message });
+      expect(refused.body.includes(apiKeyRef)).toBe(false);
+      expect(logged.join("").includes(apiKeyRef)).toBe(false);
+      expect(await stored(DEMO.legalEntityId)).toEqual(before);
+    }
+  });
+
+  it("leaves omitted fields unchanged and clears only an allowed null", async () => {
+    const saved = await write("owner", {
+      apiKeyRef: "PERSONA_API_KEY_YORKFX", templateId: "itmpl_shop_a", retentionDays: 30, checksEnabled: true,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const partial = await write("owner", { templateId: "itmpl_shop_a2" });
+    expect(partial.statusCode, partial.body).toBe(200);
+    expect(partial.json()).toMatchObject({
+      apiKeyRef: "PERSONA_API_KEY_YORKFX", templateId: "itmpl_shop_a2", retentionDays: 30, checksEnabled: true,
+    });
+    const cleared = await write("owner", { apiKeyRef: null, templateId: null, retentionDays: null });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json()).toMatchObject({ apiKeyRef: null, templateId: null, retentionDays: null, checksEnabled: true });
+    const flag = await write("owner", { checksEnabled: null });
+    expect(flag.statusCode).toBe(400);
+    expect(flag.json().message).toBe("Checks enabled takes true or false.");
+    expect((await read("owner")).json().checksEnabled).toBe(true);
+  });
+
+  it("answers 400 for a malformed body and 422 for a semantic rule", async () => {
+    const before = await stored(DEMO.legalEntityId);
+    const malformed = await write("owner", { retentionDays: "30" });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().message).toBe("Retention is a whole number of days from 1 to 3650.");
+    const rule = await write("owner", { retentionDays: 0 });
+    expect(rule.statusCode).toBe(422);
+    expect(rule.json().message).toBe("Retention is a whole number of days from 1 to 3650.");
+    const template = await write("owner", { templateId: "shop-template" });
+    expect(template.statusCode).toBe(422);
+    expect(await stored(DEMO.legalEntityId)).toEqual(before);
   });
 });

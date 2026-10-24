@@ -10,6 +10,7 @@ import type { Db } from "../db/index.js";
 import { reserveIdvCredit } from "./credit.js";
 import type { IdvProvider } from "./provider.js";
 import { startProviders, webhookProviders, type IdvRouteOptions } from "./registry.js";
+import { shopEnvCodeFor } from "./shop-config.js";
 import { failStarting, markInquiry, recordIdvEvent, reserveIdvSlot, setProviderRef } from "./store.js";
 
 export const IDV_SHOP_CAP = 5;
@@ -58,14 +59,23 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const found = await db.execute(sql`
-      SELECT provider, checks_enabled FROM idv_shop_config WHERE shop_id = ${who.legalEntityId} LIMIT 1
+      SELECT provider, checks_enabled, api_key_ref, template_id
+        FROM idv_shop_config WHERE shop_id = ${who.legalEntityId} LIMIT 1
     `);
-    const row = found.rows[0] as { provider?: string; checks_enabled?: boolean } | undefined;
+    const row = found.rows[0] as {
+      provider?: string; checks_enabled?: boolean; api_key_ref?: string | null; template_id?: string | null;
+    } | undefined;
     if (!row || row.checks_enabled !== true) return reply.code(409).send({ code: "IDV_OFF", message: OFF });
     const id = typeof row.provider === "string" ? row.provider : "";
     if (!(id in starts)) return reply.code(409).send({ code: "IDV_PROVIDER", message: UNKNOWN });
     const provider = starts[id];
     if (!provider) return { connected: false, message: NOT_CONNECTED };
+    const spec = {
+      referenceId: "", shopId: who.legalEntityId, branchId: who.branchId, tellerId: who.id,
+      apiKeyRef: row.api_key_ref ?? null, templateId: row.template_id ?? null,
+      shopCode: await shopEnvCodeFor(db, who.tenantId),
+    };
+    if (provider.ready && !provider.ready(spec)) return { connected: false, message: NOT_CONNECTED };
     const referenceId = randomBytes(18).toString("base64url");
     const reserved = await reserveIdvSlot(db, {
       referenceId, shopId: who.legalEntityId, branchId: who.branchId, tellerId: who.id,
@@ -75,9 +85,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     /* No credit ledger in this repo. Do not invent one, and do not settle. */
     reserveIdvCredit(referenceId);
     try {
-      const started = await provider.startCheck({
-        referenceId, shopId: who.legalEntityId, branchId: who.branchId, tellerId: who.id,
-      });
+      const started = await provider.startCheck({ ...spec, referenceId });
       await setProviderRef(db, referenceId, started.providerRef);
       return { connected: true, referenceId, providerRef: started.providerRef };
     } catch (err) {
