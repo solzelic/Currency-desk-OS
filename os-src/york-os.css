@@ -2456,24 +2456,33 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     box-sizing: border-box;
     justify-content: center;
   }
-  /* Three folder tabs do not fit on one line. They wrap, so
-     History is a whole label. A fade over a scrolling bar was
-     cutting that word. */
+  /* History stays one whole label. The bar uses the window width,
+     and the fade that was cutting the last word is gone. A second
+     row hid a denomination. */
   [data-tour="till"] .till-tabwrap {
     display: block;
     position: relative;
   }
   [data-tour="till"] .till-tabwrap::after { content: none; display: none; }
   [data-tour="till"] .fld-bar {
-    flex-wrap: wrap !important;
-    overflow: visible !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
     max-height: none !important;
-    row-gap: 0;
-    padding-right: 12px !important;
+    margin-left: -16px !important;
+    margin-right: -16px !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
     -webkit-mask-image: none !important;
     mask-image: none !important;
   }
-  [data-tour="till"] .fld-tab { white-space: nowrap; }
+  [data-tour="till"] .fld-tab {
+    white-space: nowrap;
+    font-size: 10.5px;
+    letter-spacing: 0;
+    gap: 3px;
+    padding: 8px 12px 8px 7px;
+    margin-right: -6px;
+  }
 
   /* Dialogs are centred on the whole screen, so on a phone the
      bottom of a tall one sat under the bar. Keep the scrim, and
@@ -2923,19 +2932,28 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     white-space: nowrap;
     color: var(--ink, #17140F);
   }
-  /* The session line wraps like the header status line. A nowrap
-     line with an ellipsis was cutting the opened-by sentence. */
+  /* The session line wraps like the header status line. The
+     currency count stays in the same sentence, so the wrap is as
+     short as the words. A nowrap line was cutting it. */
   .till-sessionline {
     flex-wrap: wrap !important;
     align-items: baseline;
     max-width: 100%;
     min-width: 0;
     overflow: visible;
-    row-gap: 2px;
+    row-gap: 0;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+    line-height: 1.25;
   }
-  .till-sessionline > span,
+  .till-sessionline > span:first-child {
+    flex: none;
+    white-space: normal !important;
+  }
+  .till-sessionline > span:nth-child(2),
+  .till-sessionline > span:last-child,
   .till-sessionline > .flex-1 {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     max-width: 100%;
     overflow: visible;
@@ -2943,7 +2961,6 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     white-space: normal !important;
     overflow-wrap: anywhere;
   }
-  .till-sessionline > span:first-child { flex: none; }
   /* The multi-till banner names the drawer. The whole sentence
      stays on the screen. An ellipsis was hiding the rest. */
   .till-scope-note {

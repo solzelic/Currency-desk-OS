@@ -1015,8 +1015,7 @@
         {serverSession && sessionOpen && (
           <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: reconInk }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: reconGreen, flex: 'none' }}></span>
-            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {window.CDOS.deskTime(new Date(serverSession.openedAt).getTime(), '12h', zone)}</span>
-            <span className="ml-auto flex-none" style={{ color: reconInk }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
+            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {window.CDOS.deskTime(new Date(serverSession.openedAt).getTime(), '12h', zone)} <span style={{ color: reconInk }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span></span>
           </div>
         )}
         {sessionClosed && (

@@ -300,7 +300,7 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
     expect(bannerFits).toBe(true);
     const sessionFits = await page.locator(".till-sessionline").first().evaluate((el) => {
       const style = getComputedStyle(el);
-      const kids = [...el.querySelectorAll(":scope > span")].every((span) => {
+      const kids = [...el.querySelectorAll(":scope > span")].filter((span) => (span.textContent || "").trim().length > 0).every((span) => {
         const kid = getComputedStyle(span);
         return span.scrollWidth <= span.clientWidth + 1 && kid.textOverflow !== "ellipsis" && kid.whiteSpace !== "nowrap";
       });

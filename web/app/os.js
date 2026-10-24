@@ -16578,12 +16578,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", window.CDOS.deskTime(new Date(serverSession.openedAt).getTime(), '12h', zone)), /*#__PURE__*/React.createElement("span", {
-      className: "ml-auto flex-none",
+    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", window.CDOS.deskTime(new Date(serverSession.openedAt).getTime(), '12h', zone), " ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: reconInk
       }
-    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted"))), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,
