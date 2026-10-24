@@ -298,6 +298,42 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
     await page.locator("[data-tour='till']").scrollIntoViewIfNeeded();
     const bannerFits = await page.locator(".till-statusline").first().evaluate((el) => el.scrollWidth <= el.clientWidth);
     expect(bannerFits).toBe(true);
+    const sessionFits = await page.locator(".till-sessionline").first().evaluate((el) => {
+      const style = getComputedStyle(el);
+      const kids = [...el.querySelectorAll(":scope > span")].every((span) => {
+        const kid = getComputedStyle(span);
+        return span.scrollWidth <= span.clientWidth + 1 && kid.textOverflow !== "ellipsis" && kid.whiteSpace !== "nowrap";
+      });
+      return style.flexWrap === "wrap" && el.scrollWidth <= el.clientWidth + 1 && kids;
+    });
+    expect(sessionFits).toBe(true);
+    const noteFits = await page.locator(".till-scope-note").first().evaluate((el) => {
+      const body = el.querySelector(".flex-1") as HTMLElement | null;
+      if (!body) return false;
+      const style = getComputedStyle(body);
+      const text = body.textContent || "";
+      return text.includes("tills on the ledger")
+        && body.scrollWidth <= body.clientWidth + 1
+        && body.scrollHeight <= el.clientHeight + 2
+        && style.textOverflow !== "ellipsis"
+        && style.whiteSpace !== "nowrap";
+    });
+    expect(noteFits).toBe(true);
+    const historyWhole = await page.locator(".till-tabwrap .fld-tab", { hasText: "History" }).evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const text = [...el.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && (node.textContent || "").includes("History"));
+      if (!text) return false;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const rects = [...range.getClientRects()];
+      return box.width > 8
+        && box.left >= -1
+        && box.right <= window.innerWidth + 1
+        && el.scrollWidth <= el.clientWidth + 1
+        && rects.length > 0
+        && rects.every((rect) => rect.width > 2 && rect.left >= -1 && rect.right <= window.innerWidth + 1 && rect.right <= box.right - 8);
+    });
+    expect(historyWhole).toBe(true);
     const panelWide = await page.evaluate(() => {
       const desk = document.getElementById("desktop");
       const win = document.querySelector(".win:has(.till-screen)");
@@ -319,6 +355,13 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
     const table = page.locator("table").filter({ hasText: "In the drawer" });
     await table.scrollIntoViewIfNeeded();
     await assertNoClip(page);
+    const reportWide = await page.evaluate(() => {
+      const desk = document.getElementById("desktop");
+      const win = document.querySelector('.win:has(.win-body[data-screen-label="Reports"])');
+      if (!desk || !win) return false;
+      return Math.abs(win.getBoundingClientRect().width - desk.getBoundingClientRect().width) <= 1;
+    });
+    expect(reportWide).toBe(true);
     const varianceHead = table.locator("th", { hasText: "Variance" });
     await varianceHead.evaluate((el) => el.scrollIntoView({ inline: "end", block: "nearest" }));
     const varianceOnScreen = await varianceHead.evaluate((el) => {
