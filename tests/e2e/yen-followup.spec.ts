@@ -253,7 +253,8 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
   const variance = await sheetCell(page, "PHP", "Variance");
   await expect(variance).toHaveText("No variance.");
   noDash((await variance.textContent()) || "");
-  const safe = await sheetCell(page, "CAD", "In the safe");
+  /* CAD sits in the branch safe. PHP is on this till and not in that safe. */
+  const safe = await sheetCell(page, "PHP", "In the safe");
   await expect(safe).toHaveText("Not in the safe.");
   noDash((await safe.textContent()) || "");
 
