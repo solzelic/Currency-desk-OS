@@ -62,12 +62,14 @@ cash received.
 
 Large cash, s.30 and s.126, filed within 15 calendar days, s.132(3).
 Cash the desk received. The 24-hour total includes every amount in
-the window, including one already at CAD 10,000. A single receipt at
-the line stays its own report. Two or more that reach the line are
-one report, and a receipt inside that report is not also filed alone.
-The axes are conducted by, on behalf of, and for the benefit of.
-They are not added together. The same set of transactions on two
-axes is one report. A partial overlap is two reports.
+the 24 consecutive hours before the deal, including one already at
+CAD 10,000. A single receipt at the line stays its own report. Two
+or more that reach the line are one report, and a receipt inside
+that report is not also filed alone. The window is measured back
+from that deal. It does not reset at midnight. The axes are
+conducted by, on behalf of, and for the benefit of. They are not
+added together. The same set of transactions on two axes is one
+report. A partial overlap is two reports.
 
 Identity when a large cash report is required, s.84, including one
 that exists only because the window adds up. The gate can refuse the
@@ -118,13 +120,14 @@ These are not implemented. The pack does not pretend they are.
 - Statutory holidays. Working days here are Monday to Friday.
   FINTRAC also drops statutory holidays. There is no holiday
   calendar in the pack.
-- The browser lets an owner move the 24-hour anchor off midnight
-  (`settings.aggWindowStart`). The desk filing clusters still use
-  that anchor. The identity gate does not. The gate looks back 24
-  consecutive hours from the deal instant, through
-  `shared/rolling-24h.js`, in elapsed time. A receipt exactly 24
-  hours earlier counts. One millisecond earlier does not.
-  `zonedMidnight` still starts a calendar date.
+- A stored start time (`settings.aggWindowStart`) is not applied
+  and is not rewritten. The desk and the identity gate share
+  `shared/rolling-24h.js`. Both look back 24 consecutive hours
+  from the deal, in elapsed time. The desk reads a civil date and
+  a time on the branch clock (`branches.timezone`, America/Toronto
+  when the branch has none). The gate reads the deal instant.
+  A receipt exactly 24 hours earlier counts. One millisecond
+  earlier does not.
 - Other fields s.36 asks for on a ticket (telephone, the rate, an
   account number) are not stored. The four fields the survey named
   are the ones this pack requires.

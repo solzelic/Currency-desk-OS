@@ -86,11 +86,33 @@
       // clock. Do not invent 24 for those.
       const end = dt(row);
       const hours = (monthCash || bankingDay || !aggregate) ? null : (regime.aggHours || 24);
-      const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => { const h = (end - dt(o)) / 3600000; return h >= 0 && h <= hours; })());
+      const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+      const wall = window.CDOS.wallInstant;
+      const inside = window.CDOS.inRollingWindow;
+      const atOf = (o) => {
+        if (wall && o.date) {
+          const at = wall(o.date, o.time || '00:00', zone);
+          if (at) return at;
+        }
+        return dt(o);
+      };
+      const endAt = atOf(row);
+      const cluster = hours == null ? [] : live.filter(o => {
+        if (!o.customer || o.customer !== row.customer) return false;
+        if (inside) return inside(atOf(o), endAt, hours);
+        const h = (end - dt(o)) / 3600000;
+        return h >= 0 && h <= hours;
+      });
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
-      // the aggregate is reported once — at the deal that crosses the line (the latest
+      // the aggregate is reported once, at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
+      const isClusterEnd = hours != null && !live.some(o => {
+        if (o.customer !== row.customer || !(cashForReport(o) >= 0)) return false;
+        const later = atOf(o);
+        if (!(later > endAt)) return false;
+        if (inside) return inside(endAt, later, hours);
+        return (dt(o) - end) / 3600000 <= hours;
+      });
       const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
       const rec = clients[row.customer]; let kyc = 'ok';
       if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
