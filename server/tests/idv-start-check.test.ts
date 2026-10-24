@@ -7,6 +7,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { reserveIdvCredit } from "../src/idv/credit.js";
+import type { IdvProvider } from "../src/idv/provider.js";
 import { PERSONA_API_BASE_DEFAULT, createPersonaProvider } from "../src/idv/providers/persona/index.js";
 import { insertIdvInquiry } from "../src/idv/store.js";
 
@@ -175,6 +176,39 @@ describe("sandbox start-check", () => {
     expect([reserveIdvCredit("inq-once"), reserveIdvCredit("inq-once")]).toEqual(["no_ledger", "no_ledger"]);
     const after = await handle.db.execute(sql`SELECT count(*)::int AS n FROM idv_inquiries`);
     expect(after.rows).toEqual(before.rows);
+  });
+
+  it("stops after 3 tries and answers 502", async () => {
+    attempt = 0;
+    plan = [429, 500, 429, 500, 429, 201];
+    const before = sleeps.length;
+    const res = await start("a");
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: "provider_unavailable" });
+    expect(attempt).toBe(3);
+    expect(sleeps.slice(before)).toEqual([25, 50]);
+  });
+
+  it("starts through a fake provider and does not need provider env vars", async () => {
+    let seen = 0;
+    const fake: IdvProvider = {
+      name: "fixture",
+      startCheck: async () => { seen += 1; return { providerRef: "fix_1" }; },
+      verifyWebhook: () => false,
+      parseResult: () => null,
+    };
+    const local = await buildApp(handle.db, {}, undefined, { providers: { fixture: fake }, env: {} });
+    try {
+      await enable(DEMO.legalEntityId, true);
+      await handle.db.execute(sql`UPDATE idv_shop_config SET provider = 'fixture' WHERE shop_id = ${DEMO.legalEntityId}`);
+      const res = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: {} });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({ connected: true, providerRef: "fix_1" });
+      expect(seen).toBe(1);
+    } finally {
+      await handle.db.execute(sql`UPDATE idv_shop_config SET provider = 'persona' WHERE shop_id = ${DEMO.legalEntityId}`);
+      await local.close();
+    }
   });
 });
 

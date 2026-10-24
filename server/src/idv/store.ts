@@ -53,6 +53,19 @@ export async function markInquiry(db: Db, result: IdvResult): Promise<void> {
   await db.execute(sql`UPDATE idv_inquiries SET status = ${status} WHERE reference_id = ${result.referenceId}`);
 }
 
+/* Count and insert share one transaction, so parallel starts cannot all pass the cap. */
+export async function reserveIdvSlot(db: Db, row: IdvInquiry, cap: number): Promise<boolean> {
+  const book = db as unknown as { transaction(fn: (tx: Db) => Promise<void>): Promise<void> };
+  let reserved = false;
+  await book.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${row.shopId}))`);
+    if (await countOpenInquiries(tx, row.shopId) >= cap) return;
+    await insertIdvInquiry(tx, row);
+    reserved = true;
+  });
+  return reserved;
+}
+
 export async function countOpenInquiries(db: Db, shopId: string): Promise<number> {
   const found = await db.execute(sql`
     SELECT count(*)::int AS n FROM idv_inquiries
