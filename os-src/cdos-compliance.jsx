@@ -18,7 +18,6 @@
 (function () {
   const { useState, useMemo, useEffect } = React;
   const { CD, Ic, fmt, num, TODAY, crossRate, counterCashIn } = window.CDOS;
-  const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   const home = (amount, ccy) => ccy === 'CAD' ? (Number(amount) || 0) : (Number(amount) || 0) / (crossRate('CAD', ccy) || 1);
   /** What the deal was FOR, in home money. A size, not a cash movement. */
   const cadIn = (r) => home(r.inAmt, r.inCcy);
@@ -429,11 +428,16 @@
        • Singles (≥ threshold on their own) are filed individually elsewhere,
          so the aggregate rule sums only the sub-threshold cash-in. */
   function parseHHMM(s) { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : 0; }
+  function clockMins(d) {
+    const hm = window.CDOS.deskTime(d, '24h');
+    const p = /^(\d{2}):(\d{2})$/.exec(hm || '');
+    return p ? (+p[1]) * 60 + (+p[2]) : 0;
+  }
   // the static 24h window a timestamp falls into, anchored at startMins past midnight
   function windowOf(d, startMins, H) {
     const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
     let ws = new Date(dayStart.getTime() + startMins * 60000);
-    const mins = d.getHours() * 60 + d.getMinutes();
+    const mins = clockMins(d);
     if (mins < startMins) ws = new Date(ws.getTime() - 24 * 3600000);
     const we = new Date(ws.getTime() + (H || 24) * 3600000);
     return { start: ws, end: we, key: ws.toISOString() };
@@ -507,12 +511,20 @@
     const startMins = parseHHMM((settings && settings.aggWindowStart) || '00:00');
     const buckets = {};
     (events || []).forEach(e => { if (!(e.amt > 0)) return; const w = windowOf(e.t, startMins, H); (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e); });
-    const fmtT = (d) => d.toLocaleString('en-CA', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    const fmtT = (d) => {
+      const format = (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h';
+      const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+      const day = window.CDOS.deskDay(d, zone);
+      const time = window.CDOS.deskTime(d, format, zone);
+      const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+      return (m ? mon[+m[2] - 1] + ' ' + (+m[3]) : day) + ' ' + time;
+    };
     const out = [];
     Object.keys(buckets).forEach(key => {
       const { w, evs } = buckets[key];
       const windowLabel = fmtT(w.start) + ' → ' + fmtT(w.end);
-      const dayKey = w.start.toISOString().slice(0, 10);
+      const dayKey = window.CDOS.deskDay(w.start, (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto');
       const mk = (basis, keyFn) => {
         const groups = {};
         evs.forEach(e => {

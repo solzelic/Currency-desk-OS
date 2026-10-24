@@ -33,7 +33,7 @@ semantic accents (amber, red, green). Blue is the product/marketing accent layer
 | `--cd-line` | `rgba(10,10,10,.14)` | `rgba(255,255,255,.16)` | borders |
 | `--cd-line-soft` | `rgba(10,10,10,.07)` | `rgba(255,255,255,.08)` | hairlines |
 | `--cd-mute` | `#666666` | `rgba(236,234,227,.58)` | secondary text |
-| `--cd-faint` | `#666666` | `rgba(236,234,227,.4)` | tertiary / eyebrow text |
+| `--cd-faint` | `#666666` | `#aea89f` | tertiary / eyebrow text |
 
 ### Semantic accents
 

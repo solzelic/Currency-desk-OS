@@ -33,6 +33,8 @@
 }
 
 * { box-sizing: border-box; }
+/* The ledger row is the tap for the time and the deal. */
+tr.cd-row { height: 44px; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
   font-family: var(--f-display, "Archivo", system-ui, sans-serif);

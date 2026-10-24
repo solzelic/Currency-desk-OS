@@ -263,7 +263,7 @@
 
       const bmode = (winDays == null || winDays > 180) ? 'month' : winDays > 31 ? 'week' : 'day';
       const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const keyOf = (date) => { if (bmode === 'day') return date; if (bmode === 'month') return date.slice(0, 7); const dt = new Date(date); const off = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - off); return dt.toISOString().slice(0, 10); };
+      const keyOf = (date) => { if (bmode === 'day') return date; if (bmode === 'month') return date.slice(0, 7); const dt = new Date(date + 'T12:00:00Z'); const off = (dt.getUTCDay() + 6) % 7; return window.CDOS.deskDay(dt.getTime() - off * 86400000, 'UTC'); };
       const labelOf = (k) => { if (bmode === 'day') return k.slice(5); if (bmode === 'month') return MON[(+k.slice(5, 7)) - 1] + ' ' + k.slice(2, 4); return k.slice(5); };
       const bk = {}; live.forEach(r => { const k = keyOf(r.date); bk[k] = (bk[k] || 0) + earnOf(r); });
       const series = Object.keys(bk).sort().slice(-12).map(k => ({ key: k, label: labelOf(k), earn: bk[k] }));
@@ -301,7 +301,7 @@
       return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, agg, eftr, regime, limit };
     }, [rows, clients, settings, range, book.position, deskFacts]);
 
-    const hour = new Date().getHours();
+    const hour = parseInt(window.CDOS.deskTime(Date.now(), '24h', (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto'), 10);
     const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     const firstName = (me && me.name ? me.name.split(/[ .]/).filter(Boolean).pop() : '') || 'there';
     const maxTeller = Math.max(1, ...D.tellers.map(t => t[1]));

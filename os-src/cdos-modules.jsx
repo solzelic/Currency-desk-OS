@@ -20,6 +20,7 @@
   /* The clock lives in os-src/cdos-desk-time.js, loaded before this
      file. The Audit Trail and the menubar both call it. */
   const deskTime = window.CDOS.deskTime;
+  const deskDay = window.CDOS.deskDay;
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -206,7 +207,7 @@
       // range cutoff measured from the most recent entry's day (so the demo data reads naturally)
       const days = (RANGES.find(r => r[0] === range) || [])[2];
       let cutoff = null;
-      if (days != null) { const ds = items.map(a => a.date).filter(Boolean).sort(); const refDate = ds.length ? ds[ds.length - 1] : new Date().toISOString().slice(0, 10); const d = new Date(refDate + 'T00:00:00'); d.setDate(d.getDate() - days); cutoff = d.toISOString().slice(0, 10); }
+      if (days != null) { const ds = items.map(a => a.date).filter(Boolean).sort(); const refDate = ds.length ? ds[ds.length - 1] : deskDay(Date.now()); cutoff = deskDay(Date.parse(refDate + 'T12:00:00Z') - days * 86400000, 'UTC'); }
       return items.filter(a => {
         if (cutoff && a.date < cutoff) return false;
         if (actionF !== 'all' && a.action !== actionF) return false;

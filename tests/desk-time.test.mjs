@@ -56,6 +56,30 @@ test("Toronto spring forward skips the 2 o'clock hour", () => {
   assert.notEqual(deskTime(AFTER_SPRING, "12h", "America/Toronto"), "2:30 am");
 });
 
+const NOON = Date.parse("2026-10-24T09:00:00.000Z");
+const LAST_MINUTE = Date.parse("2026-06-19T03:59:00.000Z");
+const JERUSALEM_BEFORE = Date.parse("2026-03-26T23:30:00.000Z");
+const JERUSALEM_AFTER = Date.parse("2026-03-27T00:30:00.000Z");
+
+test("noon is 12:00 pm and the last minute of the day is 11:59 pm", () => {
+  const { deskTime, deskDay } = clock();
+  assert.equal(deskDay(NOON, "Asia/Jerusalem"), "2026-10-24");
+  assert.equal(deskTime(NOON, "12h", "Asia/Jerusalem"), "12:00 pm");
+  assert.equal(deskTime(NOON, "24h", "Asia/Jerusalem"), "12:00");
+  assert.equal(deskDay(LAST_MINUTE, "America/Toronto"), "2026-06-18");
+  assert.equal(deskTime(LAST_MINUTE, "12h", "America/Toronto"), "11:59 pm");
+  assert.equal(deskTime(LAST_MINUTE, "24h", "America/Toronto"), "23:59");
+});
+
+test("Jerusalem spring forward skips the 2 o'clock hour", () => {
+  const { deskTime, deskDay } = clock();
+  assert.equal(deskDay(JERUSALEM_BEFORE, "Asia/Jerusalem"), "2026-03-27");
+  assert.equal(deskTime(JERUSALEM_BEFORE, "12h", "Asia/Jerusalem"), "1:30 am");
+  assert.equal(deskDay(JERUSALEM_AFTER, "Asia/Jerusalem"), "2026-03-27");
+  assert.equal(deskTime(JERUSALEM_AFTER, "12h", "Asia/Jerusalem"), "3:30 am");
+  assert.notEqual(deskTime(JERUSALEM_AFTER, "12h", "Asia/Jerusalem"), "2:30 am");
+});
+
 test("a stored 24-hour reading shows as 12-hour", () => {
   const { deskClockText, deskRow } = clock();
   assert.equal(deskClockText("04:25", "12h"), "4:25 am");
@@ -90,23 +114,18 @@ test("the shell loads the helper before the screens that call it", () => {
   assert.ok(at < shell.indexOf('src="os-src/cdos-modules.jsx"'));
 });
 
-/* Counts of the two display calls. The helper is not in this list.
+/* Counts of the display calls. The helper is not in this list.
    A new call outside it fails. A call removed here lowers the count
    in the same change. Computation that was already here stays until
-   that file moves onto the helper. */
+   that file moves onto the helper.
+   getHours has no baseline. A call outside the helper fails. */
 const BASELINE = {
   "YorkFX/yorkfx-staff.js": { time: 1, day: 0 },
   "design/kyc-handoff/kyc-verification-states.html": { time: 0, day: 2 },
   "os-src/cdos-backend.js": { time: 0, day: 1 },
-  "os-src/cdos-base.jsx": { time: 0, day: 1 },
   "os-src/cdos-cheques.jsx": { time: 0, day: 1 },
-  "os-src/cdos-clients.jsx": { time: 0, day: 3 },
-  "os-src/cdos-compliance.jsx": { time: 0, day: 1 },
-  "os-src/cdos-dashboard.jsx": { time: 0, day: 1 },
   "os-src/cdos-import.jsx": { time: 0, day: 2 },
   "os-src/cdos-kyc.jsx": { time: 0, day: 1 },
-  "os-src/cdos-ledger.jsx": { time: 0, day: 1 },
-  "os-src/cdos-modules.jsx": { time: 0, day: 2 },
   "os-src/cdos-search.jsx": { time: 0, day: 1 },
   "os-src/cdos-settings.jsx": { time: 0, day: 2 },
   "os-src/cdos-till.jsx": { time: 2, day: 0 },
@@ -115,12 +134,14 @@ const BASELINE = {
 
 const TIME = /toLocaleTimeString/g;
 const DAY = /toISOString\(\)\.slice\(\s*0\s*,\s*10\s*\)/g;
+const HOURS = /\.getHours\s*\(/g;
 const HELPER = "os-src/cdos-desk-time.js";
 
 function countText(text) {
   return {
     time: (text.match(TIME) || []).length,
     day: (text.match(DAY) || []).length,
+    hours: (text.match(HOURS) || []).length,
   };
 }
 
@@ -135,7 +156,10 @@ function walk(dir, out) {
     const rel = path.relative(root, abs).split(path.sep).join("/");
     if (rel === HELPER) continue;
     const found = countText(readFileSync(abs, "utf8"));
-    if (found.time || found.day) out[rel] = found;
+    /* getHours is counted on the desk screens. A stored patch needle in
+       design HTML is not a screen, and it gets no baseline count. */
+    if (!rel.startsWith("os-src/")) found.hours = 0;
+    if (found.time || found.day || found.hours) out[rel] = found;
   }
 }
 
@@ -149,10 +173,11 @@ function sameCalls(actual, expected) {
   const keys = new Set([...Object.keys(actual), ...Object.keys(expected)]);
   const misses = [];
   for (const key of [...keys].sort()) {
-    const got = actual[key] || { time: 0, day: 0 };
-    const want = expected[key] || { time: 0, day: 0 };
-    if (got.time !== want.time || got.day !== want.day) {
-      misses.push(`${key} time ${got.time} day ${got.day}, want time ${want.time} day ${want.day}`);
+    const got = actual[key] || { time: 0, day: 0, hours: 0 };
+    const want = expected[key] || { time: 0, day: 0, hours: 0 };
+    const wantHours = want.hours || 0;
+    if (got.time !== want.time || got.day !== want.day || (got.hours || 0) !== wantHours) {
+      misses.push(`${key} time ${got.time} day ${got.day} hours ${got.hours || 0}, want time ${want.time} day ${want.day} hours ${wantHours}`);
     }
   }
   return misses;
@@ -160,9 +185,9 @@ function sameCalls(actual, expected) {
 
 test("a new display call outside the helper fails the check", () => {
   const actual = displayCalls();
-  actual["os-src/new-screen.jsx"] = { time: 1, day: 0 };
+  actual["os-src/new-screen.jsx"] = { time: 1, day: 0, hours: 1 };
   const misses = sameCalls(actual, BASELINE);
-  assert.ok(misses.some((line) => line.startsWith("os-src/new-screen.jsx")));
+  assert.ok(misses.some((line) => line.startsWith("os-src/new-screen.jsx") && line.includes("hours 1")));
 });
 
 test("browser display calls match the helper baseline", () => {

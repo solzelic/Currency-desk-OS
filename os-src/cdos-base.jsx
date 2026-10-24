@@ -40,8 +40,8 @@
       desk: '#131210', paper: '#161513', paperSoft: '#1a1917', panel: '#1e1d1a',
       chip: '#262521', chipDeep: '#2f2d28',
       line: 'rgba(255,255,255,0.16)', lineSoft: 'rgba(255,255,255,0.08)',
-      text: '#eceae3', mute: 'rgba(236,234,227,0.58)', faint: 'rgba(236,234,227,0.4)',
-      /* #aea89f is 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
+      text: '#eceae3', mute: 'rgba(236,234,227,0.58)', faint: '#aea89f',
+      /* #aea89f is 7.1:1 on the night panel and 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
       pinNote: '#aea89f',
       noteOnInk: '#5c574e',
       hoverSoft: 'rgba(255,255,255,0.05)', hover: 'rgba(255,255,255,0.07)', hoverStrong: 'rgba(255,255,255,0.12)',
@@ -403,7 +403,7 @@
     const year = bits[0];
     const month = bits[1];
     const date = bits[2];
-    return new Date(Date.UTC(year, month - 1, date + n, 12)).toISOString().slice(0, 10);
+    return window.CDOS.deskDay(Date.UTC(year, month - 1, date + n, 12), 'UTC');
   }
   function businessDayWindow(days) {
     const endDay = shiftCivilDay(businessDate(), 1);

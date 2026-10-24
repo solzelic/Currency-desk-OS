@@ -393,8 +393,8 @@
       lineSoft: 'rgba(255,255,255,0.08)',
       text: '#eceae3',
       mute: 'rgba(236,234,227,0.58)',
-      faint: 'rgba(236,234,227,0.4)',
-      /* #aea89f is 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
+      faint: '#aea89f',
+      /* #aea89f is 7.1:1 on the night panel and 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
       pinNote: '#aea89f',
       noteOnInk: '#5c574e',
       hoverSoft: 'rgba(255,255,255,0.05)',
@@ -828,7 +828,7 @@
     const year = bits[0];
     const month = bits[1];
     const date = bits[2];
-    return new Date(Date.UTC(year, month - 1, date + n, 12)).toISOString().slice(0, 10);
+    return window.CDOS.deskDay(Date.UTC(year, month - 1, date + n, 12), 'UTC');
   }
   function businessDayWindow(days) {
     const endDay = shiftCivilDay(businessDate(), 1);
@@ -4098,6 +4098,7 @@ if (typeof window !== "undefined") {
   /* The clock lives in os-src/cdos-desk-time.js, loaded before this
      file. The Audit Trail and the menubar both call it. */
   const deskTime = window.CDOS.deskTime;
+  const deskDay = window.CDOS.deskDay;
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -4576,10 +4577,8 @@ if (typeof window !== "undefined") {
       let cutoff = null;
       if (days != null) {
         const ds = items.map(a => a.date).filter(Boolean).sort();
-        const refDate = ds.length ? ds[ds.length - 1] : new Date().toISOString().slice(0, 10);
-        const d = new Date(refDate + 'T00:00:00');
-        d.setDate(d.getDate() - days);
-        cutoff = d.toISOString().slice(0, 10);
+        const refDate = ds.length ? ds[ds.length - 1] : deskDay(Date.now());
+        cutoff = deskDay(Date.parse(refDate + 'T12:00:00Z') - days * 86400000, 'UTC');
       }
       return items.filter(a => {
         if (cutoff && a.date < cutoff) return false;
@@ -13567,10 +13566,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const keyOf = date => {
         if (bmode === 'day') return date;
         if (bmode === 'month') return date.slice(0, 7);
-        const dt = new Date(date);
-        const off = (dt.getDay() + 6) % 7;
-        dt.setDate(dt.getDate() - off);
-        return dt.toISOString().slice(0, 10);
+        const dt = new Date(date + 'T12:00:00Z');
+        const off = (dt.getUTCDay() + 6) % 7;
+        return window.CDOS.deskDay(dt.getTime() - off * 86400000, 'UTC');
       };
       const labelOf = k => {
         if (bmode === 'day') return k.slice(5);
@@ -13657,7 +13655,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         limit
       };
     }, [rows, clients, settings, range, book.position, deskFacts]);
-    const hour = new Date().getHours();
+    const hour = parseInt(window.CDOS.deskTime(Date.now(), '24h', window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto'), 10);
     const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     const firstName = (me && me.name ? me.name.split(/[ .]/).filter(Boolean).pop() : '') || 'there';
     const maxTeller = Math.max(1, ...D.tellers.map(t => t[1]));
@@ -24115,7 +24113,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
      source of funds, corporate filings) go to the server. A gallery
      picture is not a paper filed for the customer, and it is not this
      change. */
-  const stampToday = () => new Date().toISOString().slice(0, 10);
+  const stampToday = () => window.CDOS.deskDay(Date.now(), window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
   function clientWriter({
     name,
     rec,
@@ -27673,7 +27671,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           [name]: {
             ...(c[name] || {}),
             kind,
-            createdAt: new Date().toISOString().slice(0, 10)
+            createdAt: stampToday()
           }
         }));
       }
@@ -28136,7 +28134,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           }
           setClients(prev => shared.project(prev));
         } else {
-          const today = new Date().toISOString().slice(0, 10);
+          const today = stampToday();
           setClients(c => ({
             ...c,
             [name]: {
@@ -28873,9 +28871,23 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      flags nothing and SAYS so, rather than flagging everything against a
      number the desk never chose. */
   const limitOf = settings => reportingLimit(settings);
-  const stamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  const stamp = () => window.CDOS.deskStampNow();
+  function heldLabel(ms) {
+    const format = window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    return window.CDOS.deskStamp(ms, format, zone);
+  }
+  function showStamp(text, at) {
+    const format = window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    if (typeof at === 'number' && isFinite(at)) return window.CDOS.deskStamp(at, format, zone);
+    const raw = String(text == null ? '' : text).trim();
+    const ms = Date.parse(raw);
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw) && isFinite(ms)) return window.CDOS.deskStamp(ms, format, zone);
+    const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?)/i.exec(raw);
+    if (!m || !window.CDOS.deskClockText) return raw;
+    return m[1] + ' ' + window.CDOS.deskClockText(m[2], format);
+  }
   function whenOf(row, settings) {
     const format = settings && settings.timeFormat || window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
     const zone = window.CDOS.branchZone && window.CDOS.branchZone() || settings && settings.timezone || 'America/Toronto';
@@ -29179,7 +29191,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const winDays = settings && settings.structuringDays || 30;
-      const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
+      const cutoff = window.CDOS.deskDay(Date.now() - winDays * 86400000, window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
       const ccyCount = {};
       const home = homeCcy();
       h.forEach(r => {
@@ -29755,13 +29767,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           by: me.name,
           at: stamp()
         } : null,
-        lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', {
-          hour12: false
-        }).replace(',', '') : null,
+        lockedUntil: lockLive ? heldLabel(lockLive.until) : null,
         createdBy: me.name,
         createdAt: stamp(),
         thread: memo ? [{
           ts: stamp(),
+          at: Date.now(),
           user: me.name,
           text: memo
         }] : []
@@ -29815,9 +29826,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const lk = lockLive;
       const mins = settings && settings.rateLockMins || 15;
       const ref = lk ? lk.ref : 'Q-' + String(businessDate()).slice(2).replace(/-/g, '') + '-PRE';
-      const until = lk ? new Date(lk.until).toLocaleString('en-CA', {
-        hour12: false
-      }).replace(',', '') : `${mins} min from print`;
+      const until = lk ? heldLabel(lk.until) : `${mins} min from print`;
       const sideLabel = pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy} cross`;
       const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, m => ({
         '&': '&amp;',
@@ -30661,11 +30670,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         rate: rateN,
         fee: parseFloat(fee) || 0,
         side: pricing.side,
-        held: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', {
-          hour12: false,
-          hour: '2-digit',
-          minute: '2-digit'
-        }) : null
+        held: lockLive ? heldLabel(lockLive.until) : null
       },
       onClose: () => setPresent(false)
     })), document.body);
@@ -31095,6 +31100,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       if (blocked) return;
       const newRef = row.ref + '-C' + Math.floor(10 + Math.random() * 89);
       const st = stamp();
+      const stampedAt = Date.now();
       // 1) void the original, cross-linked to the correction
       setRows(rs => rs.map(r => r.id === row.id ? {
         ...r,
@@ -31105,6 +31111,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         correctedTo: isDuplicate ? null : newRef,
         thread: [...(r.thread || []), {
           ts: st,
+          at: stampedAt,
           user: me.name,
           text: (isDuplicate ? 'REVERSED (duplicate) — ' : 'CORRECTED → ' + newRef + ' — ') + reasonText()
         }]
@@ -31149,6 +31156,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           createdAt: st,
           thread: [{
             ts: st,
+            at: stampedAt,
             user: me.name,
             text: 'CORRECTION of ' + row.ref + ' — ' + reasonText()
           }]
@@ -31549,6 +31557,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       if (!note.trim()) return;
       const entry = {
         ts: stamp(),
+        at: Date.now(),
         user: me.name,
         text: note.trim()
       };
@@ -31628,6 +31637,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           voidAt: stamp(),
           thread: [...(r.thread || []), {
             ts: stamp(),
+            at: Date.now(),
             user: me.name,
             text: 'VOID — ' + voidReason.trim()
           }]
@@ -31921,7 +31931,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         borderRadius: 10,
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("b", null, row.correctedTo ? 'Corrected & voided' : 'Voided'), " by ", row.voidBy, " \xB7 ", row.voidAt, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("b", null, row.correctedTo ? 'Corrected & voided' : 'Voided'), " by ", row.voidBy, " \xB7 ", showStamp(row.voidAt), /*#__PURE__*/React.createElement("div", {
       style: {
         color: CD.mute
       }
@@ -32180,7 +32190,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.faint
       }
-    }, "Captured by ", row.capture.by, " \xB7 ", row.capture.at))), /*#__PURE__*/React.createElement(TxFacts, {
+    }, "Captured by ", row.capture.by, " \xB7 ", showStamp(row.capture.at)))), /*#__PURE__*/React.createElement(TxFacts, {
       row: row,
       onOpenClient: onOpenClient
     }), !isVoid && (() => {
@@ -32249,7 +32259,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         style: {
           color: CD.ink
         }
-      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", row.marginOverride.at, row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), !withheld && /*#__PURE__*/React.createElement("p", {
+      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", showStamp(row.marginOverride.at), row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), !withheld && /*#__PURE__*/React.createElement("p", {
         className: "mt-1.5 text-[11px]",
         style: {
           color: CD.faint
@@ -32282,7 +32292,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, /*#__PURE__*/React.createElement("span", null, n.user), /*#__PURE__*/React.createElement("span", null, n.ts)), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, n.user), /*#__PURE__*/React.createElement("span", null, showStamp(n.ts, n.at))), /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.ink
@@ -32707,9 +32717,6 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     onOpenRecordsWindow,
     onFileLCTR
   }) {
-    const stamp = () => new Date().toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '');
     const cadIn = r => homeOf(r.inAmt, r.inCcy);
     /* The amount on a large-CASH filing is the cash the customer put on
        the counter, which is not the deal's size — see COUNTER_CASH in
@@ -34029,11 +34036,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       return /*#__PURE__*/React.createElement("tr", {
         key: x.id,
         onClick: () => setDetailId(x.id),
-        className: "cursor-pointer",
+        className: "cd-row cursor-pointer",
         style: {
           borderBottom: `1px solid ${CD.lineSoft}`,
           opacity: isVoid ? 0.5 : 1,
-          background: detailId === x.id ? '#f6f5f1' : 'transparent'
+          background: detailId === x.id ? 'var(--cd-chip)' : 'transparent'
         },
         onMouseEnter: e => {
           if (detailId !== x.id) e.currentTarget.style.background = 'var(--cd-paper-soft)';
@@ -44186,9 +44193,6 @@ var CDOS_CHEQUE_FEE = (function () {
     crossRate,
     counterCashIn
   } = window.CDOS;
-  const stamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
   const home = (amount, ccy) => ccy === 'CAD' ? Number(amount) || 0 : (Number(amount) || 0) / (crossRate('CAD', ccy) || 1);
   /** What the deal was FOR, in home money. A size, not a cash movement. */
   const cadIn = r => home(r.inAmt, r.inCcy);
@@ -44661,11 +44665,16 @@ var CDOS_CHEQUE_FEE = (function () {
     const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
     return m ? +m[1] * 60 + +m[2] : 0;
   }
+  function clockMins(d) {
+    const hm = window.CDOS.deskTime(d, '24h');
+    const p = /^(\d{2}):(\d{2})$/.exec(hm || '');
+    return p ? +p[1] * 60 + +p[2] : 0;
+  }
   // the static 24h window a timestamp falls into, anchored at startMins past midnight
   function windowOf(d, startMins, H) {
     const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
     let ws = new Date(dayStart.getTime() + startMins * 60000);
-    const mins = d.getHours() * 60 + d.getMinutes();
+    const mins = clockMins(d);
     if (mins < startMins) ws = new Date(ws.getTime() - 24 * 3600000);
     const we = new Date(ws.getTime() + (H || 24) * 3600000);
     return {
@@ -44748,13 +44757,15 @@ var CDOS_CHEQUE_FEE = (function () {
         evs: []
       }).evs.push(e);
     });
-    const fmtT = d => d.toLocaleString('en-CA', {
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
+    const fmtT = d => {
+      const format = window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
+      const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+      const day = window.CDOS.deskDay(d, zone);
+      const time = window.CDOS.deskTime(d, format, zone);
+      const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+      return (m ? mon[+m[2] - 1] + ' ' + +m[3] : day) + ' ' + time;
+    };
     const out = [];
     Object.keys(buckets).forEach(key => {
       const {
@@ -44762,7 +44773,7 @@ var CDOS_CHEQUE_FEE = (function () {
         evs
       } = buckets[key];
       const windowLabel = fmtT(w.start) + ' → ' + fmtT(w.end);
-      const dayKey = w.start.toISOString().slice(0, 10);
+      const dayKey = window.CDOS.deskDay(w.start, window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
       const mk = (basis, keyFn) => {
         const groups = {};
         evs.forEach(e => {
@@ -45041,8 +45052,21 @@ var CDOS_CHEQUE_FEE = (function () {
   function fmtWindowEdge(iso, tz) {
     const d = new Date(iso);
     if (isNaN(d)) return '—';
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${tzOffset(d, tz)}`;
+    const list = new Intl.DateTimeFormat('en-US', {
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).formatToParts(d);
+    const pick = type => {
+      const p = list.find(x => x.type === type);
+      return p ? p.value : '00';
+    };
+    const hour = pick('hour') === '24' ? '00' : pick('hour');
+    return `${pick('year')}-${pick('month')}-${pick('day')} ${hour}:${pick('minute')}:${pick('second')}${tzOffset(d, tz)}`;
   }
   // surname / given / other from a single stored name
   function nameParts(full) {
@@ -57878,11 +57902,14 @@ ${snap}`;
       window.dispatchEvent(new Event('cdos_tg_sync'));
     } catch (e) {}
   }, 60);
-  const hhmm = ts => window.CDOS.deskTime(ts, window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h', window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
-  const mdhm = ts => new Date(ts).toLocaleDateString('en-CA', {
-    month: 'short',
-    day: 'numeric'
-  }) + ' ' + hhmm(ts);
+  const branchZone = () => window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+  const hhmm = ts => window.CDOS.deskTime(ts, window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h', branchZone());
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mdhm = ts => {
+    const day = window.CDOS.deskDay(ts, branchZone());
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+    return (m ? MONTHS[+m[2] - 1] + ' ' + +m[3] : day) + ' ' + hhmm(ts);
+  };
   const render = (tpl, ctx) => (tpl || '').replace(/\{(\w+)\}/g, (m, k) => ctx[k] != null && ctx[k] !== '' ? ctx[k] : m);
   const segsOf = t => Math.max(1, Math.ceil((t || '').length / 153));
   const onBoard = ccy => {
@@ -61144,10 +61171,7 @@ ${snap}`;
       return () => clearInterval(t);
     }, [tg.nudge, tg.tpl.nudge]);
     const sendBcast = (body, n, cost, toLabel, aud) => {
-      const at = new Date().toLocaleDateString('en-CA', {
-        month: 'short',
-        day: 'numeric'
-      }) + ' · ' + hhmm(Date.now());
+      const at = mdhm(Date.now()).replace(' ', ' · ');
       const full = aud === 'all' ? body + ' Reply STOP to opt out.' : body;
       setBcasts(l => [{
         id: 'b' + Date.now(),

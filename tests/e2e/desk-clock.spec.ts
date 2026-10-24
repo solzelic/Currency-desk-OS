@@ -7,7 +7,7 @@ import path from "node:path";
 import { test, expect, signInAtDesk, landOnDesktop, type Page } from "./fixtures";
 
 const DIR = path.join(process.cwd(), "docs/pr-shots/desk-clock");
-const WIDTHS = [360, 390, 430, 1280];
+const WIDTHS = [360, 390, 430, 600, 1280];
 
 test.use({ timezoneId: "UTC" });
 
@@ -22,13 +22,25 @@ async function plant(page: Page): Promise<void> {
       at: Date.parse("2026-06-18T19:43:00.000Z"),
       customer: "Night Desk", type: "Currency Exchange",
       inCcy: "CAD", inAmt: 100, rate: 1.4, outCcy: "USD", outAmt: 70, fee: 2,
-      teller: "A. Singh", status: "posted", thread: [],
+      teller: "A. Singh", status: "posted",
+      thread: [{ ts: "2026-06-18 23:43:00", at: Date.parse("2026-06-18T19:43:00.000Z"), user: "A. Singh", text: "Night note" }],
     }]));
   });
 }
 
+async function shot(page: Page, name: string, width: number): Promise<void> {
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: path.join(DIR, `${name}-${width}.png`) });
+}
+
+async function open(page: Page, id: string) {
+  await page.evaluate((app) => (window as unknown as { CDOS: { openApp: (name: string) => void } }).CDOS.openApp(app), id);
+  return page.locator("#desktop .win.show.active").first();
+}
+
 for (const width of WIDTHS) {
-  test(`ledger and deal at ${width}`, async ({ page }) => {
+  test(`desk clock surfaces at ${width}`, async ({ page }) => {
+    test.setTimeout(120_000);
     mkdirSync(DIR, { recursive: true });
     await page.clock.install({ time: new Date("2026-06-18T19:43:00Z") });
     await page.setViewportSize({ width, height: 800 });
@@ -36,21 +48,27 @@ for (const width of WIDTHS) {
     await plant(page);
     await page.reload();
     await landOnDesktop(page);
-    await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("ledger"));
     const skip = page.locator(".cdos-tour-skip");
     if (await skip.isVisible().catch(() => false)) await skip.click();
     await expect(page.locator(".cdos-tour")).toHaveCount(0);
-    const win = page.locator("#desktop .win.show.active").first();
+    if (width > 430) await expect(page.locator(".mb-clock")).toContainText("3:43 pm");
+    await shot(page, "menubar", width);
+
+    const win = await open(page, "ledger");
     const clock = win.getByText("3:43 pm").first();
     await clock.scrollIntoViewIfNeeded();
     await expect(clock).toBeVisible();
     await expect(win.getByText("2026-06-18").first()).toBeVisible();
-    if (width > 430) await expect(page.locator(".mb-clock")).toContainText("3:43 pm");
-    await page.waitForTimeout(350);
-    const list = await readContrast(clock);
-    console.log(`ledger ${width} ${list.ratio.toFixed(2)}:1 ${list.color} on ${list.background}`);
-    expect(list.ratio, `ledger ${width} ${list.color} on ${list.background}`).toBeGreaterThanOrEqual(4.5);
-    await page.screenshot({ path: path.join(DIR, `ledger-${width}.png`) });
+    const rowH = await clock.evaluate((el) => el.closest("tr")?.getBoundingClientRect().height || 0);
+    expect(rowH).toBeGreaterThanOrEqual(44);
+    expect((await readContrast(clock)).ratio).toBeGreaterThanOrEqual(4.5);
+    await shot(page, "ledger", width);
+    await win.getByRole("button", { name: "Records", exact: true }).click();
+    await shot(page, "records", width);
+    await win.getByRole("button", { name: "Compliance", exact: true }).click();
+    await expect(win.getByText("Compliance workspace")).toBeVisible();
+    await shot(page, "compliance", width);
+    await win.getByRole("button", { name: "Records", exact: true }).click();
     await clock.click();
     const detail = page.locator(".tx-detail-head");
     await expect(detail).toContainText("3:43 pm");
@@ -66,17 +84,30 @@ for (const width of WIDTHS) {
       };
       if (!idle()) {
         await new Promise<void>((resolve) => {
-          const done = () => { if (idle()) resolve(); };
           sheet.addEventListener("transitionend", done);
+          function done() { if (idle()) resolve(); }
           setTimeout(resolve, 700);
         });
       }
     });
     await page.waitForTimeout(200);
+    const sheet = detail.locator("xpath=..");
+    await expect(sheet).toContainText("2026-06-18 3:43 pm");
+    await expect(sheet).not.toContainText("23:43");
     const deal = await readContrast(detail.getByText("3:43 pm").first());
-    console.log(`deal ${width} ${deal.ratio.toFixed(2)}:1 ${deal.color} on ${deal.background}`);
-    expect(deal.ratio, `deal ${width} ${deal.color} on ${deal.background}`).toBeGreaterThanOrEqual(4.5);
-    await page.screenshot({ path: path.join(DIR, `detail-${width}.png`) });
+    expect(deal.ratio).toBeGreaterThanOrEqual(4.5);
+    await shot(page, "detail", width);
+
+    const dash = await open(page, "dashboard");
+    await expect(dash.getByText("Good afternoon")).toBeVisible();
+    await shot(page, "dashboard", width);
+    const reports = await open(page, "reports");
+    await shot(page, "reports", width);
+    await reports.getByRole("button", { name: /Transaction Register/ }).click();
+    await expect(reports.getByText(/Generated 2026-06-18/)).toBeVisible();
+    await shot(page, "generated", width);
+    await open(page, "telegraph");
+    await shot(page, "telegraph", width);
   });
 }
 

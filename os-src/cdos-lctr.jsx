@@ -88,8 +88,10 @@
   function fmtWindowEdge(iso, tz) {
     const d = new Date(iso);
     if (isNaN(d)) return '—';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${tzOffset(d, tz)}`;
+    const list = new Intl.DateTimeFormat('en-US', { hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(d);
+    const pick = (type) => { const p = list.find(x => x.type === type); return p ? p.value : '00'; };
+    const hour = pick('hour') === '24' ? '00' : pick('hour');
+    return `${pick('year')}-${pick('month')}-${pick('day')} ${hour}:${pick('minute')}:${pick('second')}${tzOffset(d, tz)}`;
   }
   // surname / given / other from a single stored name
   function nameParts(full) {
