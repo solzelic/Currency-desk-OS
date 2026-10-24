@@ -452,11 +452,6 @@
      ==================================================================== */
   function daysAgo(ms) { return Math.floor((Date.now() - ms) / 86400000); }
   const NUDGE_CTA = { quick: { label: 'Run quick check · $3.99', ic: 'search' }, verify: { label: 'Run verify check · $6.99', ic: 'id' }, plus: { label: 'Run Verify Plus · $14.99', ic: 'shield' } };
-  /* Persona is not connected. There is no provider session to ask;
-     the line next to data-testid="persona-not-connected" is the
-     readiness signal. Paid checks stay off the deal until this can
-     return true. */
-  function personaConnected() { return false; }
   function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired, onRecordId }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);

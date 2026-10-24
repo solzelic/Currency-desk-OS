@@ -1358,15 +1358,6 @@ const fileNotFound = () =>
     "That file is not in this customer's folder.",
   );
 
-/* Catalogue name for a known type. The health-card refusal is the
-   same sentence for "Health Card", "OHIP card", and "ohip  Card".
-   An unknown type is stored trimmed, as the caller wrote it. */
-function documentTypeToStore(value: string): string {
-  const resolved = resolveIncomingType(value);
-  if (resolved.refused) throw new LedgerError("HEALTH_CARD_NOT_ID", HEALTH_CARD_REFUSAL);
-  return resolved.stored;
-}
-
 /* An empty string is a field somebody cleared, and a cleared field is
    NULL. Storing "" would make "no date of birth recorded" and "date of
    birth recorded as nothing" two different states nobody can tell

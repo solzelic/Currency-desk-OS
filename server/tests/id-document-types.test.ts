@@ -240,3 +240,5 @@ describe("one list, two loaders", () => {
       expect(source, file).not.toContain("All active clients verified.");
       expect(source, file).not.toMatch(/'ID expired' : 'verified'/);
     }
+  });
+});

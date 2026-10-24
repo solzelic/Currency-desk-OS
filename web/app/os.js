@@ -36269,7 +36269,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
     const serverNeedsId = serverError === ID_NEEDED;
-    const blockedReason = standing && standing.reason ? standing.reason : ID_NEEDED;
+    const blockedReason = standing && standing.reason ? standing.reason : phoneSheet ? 'ID not recorded yet' : ID_NEEDED;
     if (idRequired) reqs.push({
       key: 'id',
       ok: !!customer && idOk && !serverNeedsId,
@@ -36380,7 +36380,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     /* Opens the client file on the identity documents. The modal
        closes because the file sits under it; the teller records the
        ID and comes back to the deal. */
-    const recordId = () => {
+    const leaveForId = () => {
       if (typeof onRecordId === 'function') onRecordId(customer);
       onClose();
     };
@@ -37154,8 +37154,25 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       amountCad: inCadEquiv,
       idRequired: idRequired && kyc !== 'ok',
       onRun: tpl => setQuickChk(tpl),
-      onRecordId: recordId
-    }), isExchange && /*#__PURE__*/React.createElement("div", {
+      onRecordId: leaveForId
+    }), idRequired && String(customer || '').trim() && !idOk && /*#__PURE__*/React.createElement("div", {
+      "data-req-field": "id",
+      className: 'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-id-need-label"
+    }, "ID needed for this amount"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setRecordId(true),
+      className: "cd-tx-id-need-go"
+    }, "Record the ID")), idRequired && idOk && /*#__PURE__*/React.createElement("div", {
+      className: "cd-tx-id-need"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "checkcircle",
+      s: 14,
+      c: CD.green
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-id-need-label"
+    }, rec && rec.idType || 'ID', " on file", rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : '')), isExchange && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
       style: {
         background: 'var(--cd-panel)',
@@ -38170,7 +38187,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), showRecordId && /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "record-id",
-      onClick: recordId,
+      onClick: leaveForId,
       className: "w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
@@ -50067,13 +50084,6 @@ ${(filing.map || []).map(blockHTML).join('')}
       ic: 'shield'
     }
   };
-  /* Persona is not connected. There is no provider session to ask;
-     the line next to data-testid="persona-not-connected" is the
-     readiness signal. Paid checks stay off the deal until this can
-     return true. */
-  function personaConnected() {
-    return false;
-  }
   function VerificationNudge({
     name,
     rec,
@@ -51466,8 +51476,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       NewContactFlow,
       VerificationNudge,
       decisionMeta,
-      phaseMeta,
-      personaConnected
+      phaseMeta
     }
   });
 })();
