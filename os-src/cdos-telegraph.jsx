@@ -15,8 +15,10 @@
   const load = (k, d) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; } catch (e) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   const announce = () => setTimeout(() => { try { window.dispatchEvent(new Event('cdos_tg_sync')); } catch (e) {} }, 60);
-  const hhmm = (ts) => new Date(ts).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' });
-  const mdhm = (ts) => new Date(ts).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) + ' ' + hhmm(ts);
+  const branchZone = () => (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+  const hhmm = (ts) => window.CDOS.deskTime(ts, (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h', branchZone());
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mdhm = (ts) => { const day = window.CDOS.deskDay(ts, branchZone()); const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || ''); return (m ? MONTHS[+m[2] - 1] + ' ' + (+m[3]) : day) + ' ' + hhmm(ts); };
   const render = (tpl, ctx) => (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (ctx[k] != null && ctx[k] !== '' ? ctx[k] : m));
   const segsOf = (t) => Math.max(1, Math.ceil((t || '').length / 153));
   const onBoard = (ccy) => { try { const r = crossRate(ccy, 'CAD'); return r && isFinite(r) && r > 0 && Math.abs(r - 1) > 1e-9; } catch (e) { return false; } };
@@ -709,7 +711,7 @@
       const t = setInterval(tick, 15000); tick();
       return () => clearInterval(t);
     }, [tg.nudge, tg.tpl.nudge]);
-    const sendBcast = (body, n, cost, toLabel, aud) => { const at = new Date().toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) + ' · ' + hhmm(Date.now()); const full = aud === 'all' ? body + ' Reply STOP to opt out.' : body; setBcasts(l => [{ id: 'b' + Date.now(), at, body: full, n, cost, to: toLabel }, ...l]); bump(n); addLog(aud === 'all' ? 'Broadcast' : 'Text', 'out', toLabel, body.slice(0, 80) + (body.length > 80 ? '…' : '')); log && log(aud === 'all' ? 'Broadcast sent' : 'Text sent', toLabel); };
+    const sendBcast = (body, n, cost, toLabel, aud) => { const at = mdhm(Date.now()).replace(' ', ' · '); const full = aud === 'all' ? body + ' Reply STOP to opt out.' : body; setBcasts(l => [{ id: 'b' + Date.now(), at, body: full, n, cost, to: toLabel }, ...l]); bump(n); addLog(aud === 'all' ? 'Broadcast' : 'Text', 'out', toLabel, body.slice(0, 80) + (body.length > 80 ? '…' : '')); log && log(aud === 'all' ? 'Broadcast sent' : 'Text sent', toLabel); };
     const waiting = reqs.filter(r => r.status === 'new' || r.status === 'order_new').length;
     const held = reqs.filter(r => r.status === 'held' || r.status === 'verified').length;
     const TABS = [['requests', 'Requests', 'smartphone'], ['journey', 'Journey', 'send'], ['broadcasts', 'Broadcasts', 'mail'], ['contacts', 'Contacts', 'users'], ['history', 'History', 'clock']];

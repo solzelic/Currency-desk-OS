@@ -96,7 +96,7 @@
   };
   // booked spread per deal — exact when two-side priced, else the live-mid estimate
   const spreadOf = (r) => dealMargin(r);
-  const stampNow = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  const stampNow = () => window.CDOS.deskStampNow();
   /* The ledger records WHO posted a deal as a principal id, tenant-scoped
      ("tnt-yorkfx:a.singh"). Earnings by teller is the book's answer, so the
      id is the book's; turning it back into a person is presentation, and
@@ -974,9 +974,9 @@
               <th style={thS}>Ref</th><th style={thS}>Date / time</th><th style={thS}>Customer</th><th style={thS}>Type</th>
               <th style={{ ...thS, textAlign: 'right' }}>Pay-in</th><th style={{ ...thS, textAlign: 'right' }}>Pay-out</th><th style={{ ...thS, textAlign: 'right' }}>Fee</th><th style={thS}>Teller</th><th style={{ ...thS, textAlign: 'center' }}>Flags</th>
             </tr></thead>
-              <tbody>{data.inP.map(r => { const f = flags[r.id] || {}; const isVoid = r.status === 'void'; return (<tr key={r.id} style={{ opacity: isVoid ? 0.5 : 1 }}>
+              <tbody>{data.inP.map(r => { const f = flags[r.id] || {}; const isVoid = r.status === 'void'; const when = window.CDOS.deskRow(r, settings && settings.timeFormat, (window.CDOS.branchZone && window.CDOS.branchZone()) || (settings && settings.timezone)); return (<tr key={r.id} style={{ opacity: isVoid ? 0.5 : 1 }}>
                 <td style={{ ...tdS, fontFamily: 'Space Mono, monospace', fontSize: 11, color: CD.mute, textDecoration: isVoid ? 'line-through' : 'none' }}>{r.ref}</td>
-                <td style={{ ...tdS, whiteSpace: 'nowrap' }}>{r.date} <span style={{ color: CD.faint }}>{r.time}</span></td>
+                <td style={{ ...tdS, whiteSpace: 'nowrap' }}>{when.day} <span style={{ color: CD.faint }}>{when.time}</span></td>
                 <td style={{ ...tdS, fontWeight: 500 }}>{r.customer}</td>
                 <td style={{ ...tdS, color: CD.mute }}>{r.type}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{num(r.inAmt)} <span style={{ color: CD.faint }}>{r.inCcy}</span></td>

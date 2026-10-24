@@ -141,6 +141,8 @@
 
   function transactionToRow(transaction, customerName, compliance) {
     var posted = new Date(transaction.postedAt);
+    var at = posted.getTime();
+    var zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || "America/Toronto";
     var reversal = transaction.reversal || null;
     compliance = compliance || {};
     return {
@@ -148,8 +150,9 @@
       serverTransactionId: transaction.transactionId,
       serverQuoteId: transaction.quoteId || null,
       ref: transaction.transactionRef,
-      date: posted.toISOString().slice(0, 10),
-      time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      date: window.CDOS.deskDay(at, zone),
+      time: window.CDOS.deskTime(at, "24h", zone),
+      at: at,
       customer: customerName || transaction.customerId,
       beneficiary: "",
       type: DEAL_TYPE_LABEL[transaction.dealKind] || "Currency Exchange",

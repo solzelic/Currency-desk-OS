@@ -263,7 +263,7 @@
 
       const bmode = (winDays == null || winDays > 180) ? 'month' : winDays > 31 ? 'week' : 'day';
       const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const keyOf = (date) => { if (bmode === 'day') return date; if (bmode === 'month') return date.slice(0, 7); const dt = new Date(date); const off = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - off); return dt.toISOString().slice(0, 10); };
+      const keyOf = (date) => { if (bmode === 'day') return date; if (bmode === 'month') return date.slice(0, 7); const dt = new Date(date + 'T12:00:00Z'); const off = (dt.getUTCDay() + 6) % 7; return window.CDOS.deskDay(dt.getTime() - off * 86400000, 'UTC'); };
       const labelOf = (k) => { if (bmode === 'day') return k.slice(5); if (bmode === 'month') return MON[(+k.slice(5, 7)) - 1] + ' ' + k.slice(2, 4); return k.slice(5); };
       const bk = {}; live.forEach(r => { const k = keyOf(r.date); bk[k] = (bk[k] || 0) + earnOf(r); });
       const series = Object.keys(bk).sort().slice(-12).map(k => ({ key: k, label: labelOf(k), earn: bk[k] }));
@@ -301,7 +301,7 @@
       return { tInProg, tHold, tVol, chRisk, chOverdue, chLoss, vaultTotals, vaultTracked, agg, eftr, regime, limit };
     }, [rows, clients, settings, range, book.position, deskFacts]);
 
-    const hour = new Date().getHours();
+    const hour = parseInt(window.CDOS.deskTime(Date.now(), '24h', (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto'), 10);
     const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     const firstName = (me && me.name ? me.name.split(/[ .]/).filter(Boolean).pop() : '') || 'there';
     const maxTeller = Math.max(1, ...D.tellers.map(t => t[1]));
@@ -554,7 +554,7 @@
             <div>
               {D.recent.map((r, i) => (
                 <button key={r.id} onClick={() => onOpenLedger && onOpenLedger()} className="w-full flex items-center gap-3 py-1.5 text-left" style={{ borderTop: i ? `1px solid ${T.hair}` : 'none' }}>
-                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10.5, color: T.steel, width: 92, whiteSpace: 'nowrap' }}>{r.date.slice(5)} {r.time}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10.5, color: T.steel, width: 92, whiteSpace: 'nowrap' }}>{(() => { const when = window.CDOS.deskRow(r, settings && settings.timeFormat, (window.CDOS.branchZone && window.CDOS.branchZone()) || (settings && settings.timezone)); return when.day.slice(5) + ' ' + when.time; })()}</span>
                   <span className="grid place-items-center flex-none" style={{ width: 24, height: 24, borderRadius: '50%', background: T.wash, color: T.slate, fontSize: 9, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{initials(r.customer)}</span>
                   <span className="text-[12px] font-medium truncate" style={{ color: CD.ink, flex: 1, minWidth: 0 }}>{r.customer}</span>
                   <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 11.5, color: T.steel, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{num(r.inAmt)} {r.inCcy} <span style={{ color: T.bronze }}>→</span> <span style={{ color: T.green }}>{num(r.outAmt)} {r.outCcy}</span></span>

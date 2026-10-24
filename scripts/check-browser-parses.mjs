@@ -34,6 +34,7 @@
    A file that does not parse fails the build. There is no severity dial:
    a page that cannot be read is not a degraded page, it is a missing one.
    ============================================================ */
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -131,3 +132,5 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(`${checked} browser scripts parse.`);
+const clock = spawnSync(process.execPath, ["--test", path.join(ROOT, "tests/desk-time.test.mjs")], { stdio: "inherit" });
+if (clock.status) process.exit(clock.status);

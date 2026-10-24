@@ -54,7 +54,28 @@
      number the desk never chose. */
   const limitOf = (settings) => reportingLimit(settings);
 
-  const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  const stamp = () => window.CDOS.deskStampNow();
+  function heldLabel(ms) {
+    const format = (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h';
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+    return window.CDOS.deskStamp(ms, format, zone);
+  }
+  function showStamp(text, at) {
+    const format = (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h';
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+    if (typeof at === 'number' && isFinite(at)) return window.CDOS.deskStamp(at, format, zone);
+    const raw = String(text == null ? '' : text).trim();
+    const ms = Date.parse(raw);
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw) && isFinite(ms)) return window.CDOS.deskStamp(ms, format, zone);
+    const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?)/i.exec(raw);
+    if (!m || !window.CDOS.deskClockText) return raw;
+    return m[1] + ' ' + window.CDOS.deskClockText(m[2], format);
+  }
+  function whenOf(row, settings) {
+    const format = (settings && settings.timeFormat) || (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h';
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || (settings && settings.timezone) || 'America/Toronto';
+    return window.CDOS.deskRow(row, format, zone);
+  }
   // overlays portal to the document root so the window's stacking context
   // (and the rate ticker at z-360) can't occlude them
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
@@ -86,10 +107,11 @@
     return (<div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{label}</div><div className="text-2xl font-bold mt-0.5" style={{ color: tone || CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>);
   }
   function CompItem({ r, onOpenDetail, cadIn, children }) {
+    const when = whenOf(r);
     return (<div className="flex items-center gap-3 px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${CD.lineSoft}`, borderRadius: 10 }}>
       <button onClick={() => onOpenDetail(r.id)} className="text-left flex-1 min-w-0">
         <div className="text-[13px] font-medium" style={{ color: CD.ink }}>{r.customer || '—'} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>· {r.ref}</span></div>
-        <div className="text-[11px]" style={{ color: CD.mute }}>{r.type} · {fmtHome(cadIn(r))} · {r.date} {r.time}</div>
+        <div className="text-[11px]" style={{ color: CD.mute }}>{r.type} · {fmtHome(cadIn(r))} · {when.day} {when.time}</div>
       </button>
       <div className="flex items-center gap-1.5 flex-none"><button onClick={() => onOpenDetail(r.id)} title="View this record" className="flex items-center gap-1 text-[11px] font-medium px-2 py-1.5" style={{ borderRadius: 7, border: `1px solid ${CD.line}`, color: CD.ink, background: 'var(--cd-on-ink)' }}><Ic n="scroll" s={13} c={CD.mute} /> View records</button>{children}</div>
     </div>);
@@ -127,7 +149,7 @@
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const winDays = (settings && settings.structuringDays) || 30;
-      const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
+      const cutoff = window.CDOS.deskDay(Date.now() - winDays * 86400000, (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto');
       const ccyCount = {};
       const home = homeCcy();
       h.forEach(r => {
@@ -405,9 +427,9 @@
         marginPct: isCheque ? null : +marginPctLive.toFixed(2), profitCad,
         marginOverride: needOverride ? { by: me.name, at: stamp(), pct: +marginPctLive.toFixed(2), reason: marginReason.trim() } : null,
         capture: single ? { purpose: cap.purpose.trim(), source: cap.source.trim(), thirdParty: cap.thirdParty, thirdPartyName: cap.thirdPartyName.trim(), by: me.name, at: stamp() } : null,
-        lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : null,
+        lockedUntil: lockLive ? heldLabel(lockLive.until) : null,
         createdBy: me.name, createdAt: stamp(),
-        thread: memo ? [{ ts: stamp(), user: me.name, text: memo }] : []
+        thread: memo ? [{ ts: stamp(), at: Date.now(), user: me.name, text: memo }] : []
       });
       setRows(r => [tx, ...r]);
       // a cashed cheque feeds the SAME clearance system the Cheques desk uses
@@ -427,7 +449,7 @@
     const printQuote = () => {
       const lk = lockLive; const mins = (settings && settings.rateLockMins) || 15;
       const ref = lk ? lk.ref : 'Q-' + String(businessDate()).slice(2).replace(/-/g, '') + '-PRE';
-      const until = lk ? new Date(lk.until).toLocaleString('en-CA', { hour12: false }).replace(',', '') : `${mins} min from print`;
+      const until = lk ? heldLabel(lk.until) : `${mins} min from print`;
       const sideLabel = pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy} cross`;
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
       const biz = (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk';
@@ -664,7 +686,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             </div>
           </div>
         </div>
-        {present && <PresentQuote q={{ biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', inCcy, inAmt: amtN, outCcy, outAmt, rate: rateN, fee: parseFloat(fee) || 0, side: pricing.side, held: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', { hour12: false, hour: '2-digit', minute: '2-digit' }) : null }} onClose={() => setPresent(false)} />}
+        {present && <PresentQuote q={{ biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', inCcy, inAmt: amtN, outCcy, outAmt, rate: rateN, fee: parseFloat(fee) || 0, side: pricing.side, held: lockLive ? heldLabel(lockLive.until) : null }} onClose={() => setPresent(false)} />}
       </div>
     ), document.body);
   }
@@ -861,11 +883,12 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       if (blocked) return;
       const newRef = row.ref + '-C' + Math.floor(10 + Math.random() * 89);
       const st = stamp();
+      const stampedAt = Date.now();
       // 1) void the original, cross-linked to the correction
       setRows(rs => rs.map(r => r.id === row.id ? {
         ...r, status: 'void', voidReason: 'Corrected — ' + reasonText(), voidBy: me.name, voidAt: st,
         correctedTo: isDuplicate ? null : newRef,
-        thread: [...(r.thread || []), { ts: st, user: me.name, text: (isDuplicate ? 'REVERSED (duplicate) — ' : 'CORRECTED → ' + newRef + ' — ') + reasonText() }]
+        thread: [...(r.thread || []), { ts: st, at: stampedAt, user: me.name, text: (isDuplicate ? 'REVERSED (duplicate) — ' : 'CORRECTED → ' + newRef + ' — ') + reasonText() }]
       } : r));
       log('Transaction voided', `${row.ref} · ${isDuplicate ? 'duplicate reversed' : 'corrected → ' + newRef} · ${reasonMeta.label}`);
 
@@ -884,7 +907,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
           tagged: false, tagInfo: null, voidReason: '', voidBy: '', voidAt: '', correctedTo: null,
           correctionOf: row.ref, correctionReason: reasonText(),
           createdBy: me.name, createdAt: st,
-          thread: [{ ts: st, user: me.name, text: 'CORRECTION of ' + row.ref + ' — ' + reasonText() }]
+          thread: [{ ts: st, at: stampedAt, user: me.name, text: 'CORRECTION of ' + row.ref + ' — ' + reasonText() }]
         });
         setRows(rs => [corrected, ...rs]);
         log('Correction posted', `${newRef} · corrects ${row.ref} · ${reasonMeta.label}`);
@@ -1018,7 +1041,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const voidNeedsPin = settings.pinOnVoid !== false && (!_emp || _emp.requirePin !== false);
     const patch = (fn, action, detail) => { setRows(rs => rs.map(r => r.id === row.id ? fn(r) : r)); log(action, `${row.ref} · ${detail}`); };
 
-    const addNote = () => { if (!note.trim()) return; const entry = { ts: stamp(), user: me.name, text: note.trim() }; patch(r => ({ ...r, thread: [...(r.thread || []), entry] }), 'Note added', note.trim().slice(0, 60)); setNote(''); };
+    const addNote = () => { if (!note.trim()) return; const entry = { ts: stamp(), at: Date.now(), user: me.name, text: note.trim() }; patch(r => ({ ...r, thread: [...(r.thread || []), entry] }), 'Note added', note.trim().slice(0, 60)); setNote(''); };
     const toggleFiled = () => {
       if (row.filed) { patch(r => ({ ...r, filed: false, filedInfo: null }), 'LCTR filing reversed', `report withdrawn`); }
       else { const ref = 'LCTR-' + Math.floor(1000 + Math.random() * 9000); patch(r => ({ ...r, filed: true, filedInfo: { ref, by: me.name, at: stamp() } }), 'LCTR filed', `${ref} for ${fmt(row.inAmt, row.inCcy)}`); }
@@ -1040,7 +1063,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
     const doVoid = async () => {
       if (!voidReason.trim() || voidBusy) return;
       if (!(serverBacked && row.serverTransactionId)) {
-        patch(r => ({ ...r, status: 'void', voidReason: voidReason.trim(), voidBy: me.name, voidAt: stamp(), thread: [...(r.thread || []), { ts: stamp(), user: me.name, text: 'VOID — ' + voidReason.trim() }] }), 'Transaction voided', voidReason.trim().slice(0, 60));
+        patch(r => ({ ...r, status: 'void', voidReason: voidReason.trim(), voidBy: me.name, voidAt: stamp(), thread: [...(r.thread || []), { ts: stamp(), at: Date.now(), user: me.name, text: 'VOID — ' + voidReason.trim() }] }), 'Transaction voided', voidReason.trim().slice(0, 60));
         setVoiding(false);
         return;
       }
@@ -1074,6 +1097,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
 
     // earnings: posted fee + the spread actually booked at the counter (exact when
     // the deal was two-side priced; falls back to the live-mid estimate for legacy rows)
+    const when = whenOf(row, settings);
     const inCad = homeOf(row.inAmt, row.inCcy) || 0;
     const spreadCad = dealMargin(row);
     const feeCad = row.fee == null ? null : +row.fee;
@@ -1092,7 +1116,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
               <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: isVoid ? CD.lineSoft : CD.greenSoft, color: isVoid ? CD.mute : CD.green }}>{isVoid ? 'Void' : 'Posted'}</span>
               {row.tagged && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 font-semibold" style={{ borderRadius: 5, background: CD.green, color: 'var(--cd-on-ink)', fontFamily: 'Space Mono, monospace' }}><Ic n="bookmark" s={10} c="var(--cd-on-ink)" /> TAGGED</span>}
             </div>
-            <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{row.date} {row.time} · {row.teller}</div>
+            <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{when.day} {when.time} · {row.teller}</div>
           </div>
           <div className="tx-detail-actions ml-auto flex items-center gap-1.5 flex-none">
             <button onClick={() => onReceipt(row)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}><Ic n="receipt" s={14} /> Receipt</button>
@@ -1118,7 +1142,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         {pinAsk && window.CDOS.PinPrompt && <window.CDOS.PinPrompt title="Confirm void" sub="Enter your PIN to void this record" name={me.name} onOk={() => { setPinAsk(false); doVoid(); }} onCancel={() => setPinAsk(false)} />}
         <div className="flex-1 overflow-auto">
           <div className="mx-auto w-full px-5 py-6 space-y-5" style={{ maxWidth: 760 }}>
-            {isVoid && (<div className="p-3 text-[12px]" style={{ background: row.correctedTo ? CD.amberSoft : CD.lineSoft, borderRadius: 10, color: CD.ink }}><b>{row.correctedTo ? 'Corrected & voided' : 'Voided'}</b> by {row.voidBy} · {row.voidAt}<div style={{ color: CD.mute }}>Reason: {row.voidReason}</div>{row.correctedTo && <div className="mt-1 font-medium" style={{ color: 'var(--cd-brass-text)' }}>Replaced by <span style={{ fontFamily: 'Space Mono, monospace' }}>{row.correctedTo}</span> — the corrected record.</div>}</div>)}
+            {isVoid && (<div className="p-3 text-[12px]" style={{ background: row.correctedTo ? CD.amberSoft : CD.lineSoft, borderRadius: 10, color: CD.ink }}><b>{row.correctedTo ? 'Corrected & voided' : 'Voided'}</b> by {row.voidBy} · {showStamp(row.voidAt)}<div style={{ color: CD.mute }}>Reason: {row.voidReason}</div>{row.correctedTo && <div className="mt-1 font-medium" style={{ color: 'var(--cd-brass-text)' }}>Replaced by <span style={{ fontFamily: 'Space Mono, monospace' }}>{row.correctedTo}</span> — the corrected record.</div>}</div>)}
             {row.correctionOf && (<div className="p-3 text-[12px] flex items-start gap-2" style={{ background: CD.greenSoft, borderRadius: 10, color: '#14543a' }}><Ic n="edit" s={14} c={CD.green} /><div><b>Correction</b> of <span style={{ fontFamily: 'Space Mono, monospace' }}>{row.correctionOf}</span>{row.correctionReason ? ` — ${row.correctionReason}` : ''}. <span style={{ color: CD.mute }}>The original was voided and kept on file.</span></div></div>)}
 
             {/* hero flow — what this transaction actually is, at a glance */}
@@ -1181,7 +1205,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   <DRow k="Purpose of transaction" v={row.capture.purpose || '—'} />
                   <DRow k="Source of funds" v={row.capture.source || '—'} />
                   <DRow k="Acting for a third party" v={row.capture.thirdParty ? (row.capture.thirdPartyName ? `Yes — ${row.capture.thirdPartyName}` : 'Yes') : 'No'} accent={row.capture.thirdParty ? CD.ink : undefined} />
-                  <div className="text-[11px] mt-1.5" style={{ color: CD.faint }}>Captured by {row.capture.by} · {row.capture.at}</div>
+                  <div className="text-[11px] mt-1.5" style={{ color: CD.faint }}>Captured by {row.capture.by} · {showStamp(row.capture.at)}</div>
                 </div>
               </div>
             )}
@@ -1208,7 +1232,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   {row.marginOverride && (
                     <div className="mt-2 px-2.5 py-2 text-[11.5px]" style={{ background: CD.flagSoft, borderRadius: 8, color: CD.flag }}>
                       <div className="font-semibold flex items-center gap-1.5"><Ic n="alert" s={13} c={CD.flag} /> Below-floor margin override</div>
-                      <div className="mt-0.5" style={{ color: CD.ink }}>Booked at {row.marginOverride.pct}% by {row.marginOverride.by} · {row.marginOverride.at}{row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''}</div>
+                      <div className="mt-0.5" style={{ color: CD.ink }}>Booked at {row.marginOverride.pct}% by {row.marginOverride.by} · {showStamp(row.marginOverride.at)}{row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''}</div>
                     </div>
                   )}
                 </div>
@@ -1223,7 +1247,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 {(row.thread || []).length === 0 && <div className="text-[12px]" style={{ color: CD.faint }}>No notes yet.</div>}
                 {(row.thread || []).map((n, i) => (
                   <div key={i} className="px-3 py-2" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.lineSoft}`, borderRadius: 9 }}>
-                    <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><span>{n.user}</span><span>{n.ts}</span></div>
+                    <div className="flex items-center justify-between text-[10px] mb-0.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}><span>{n.user}</span><span>{showStamp(n.ts, n.at)}</span></div>
                     <div className="text-[12px]" style={{ color: CD.ink }}>{n.text}</div>
                   </div>
                 ))}
@@ -1376,7 +1400,6 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
      LEDGER COMPLIANCE — triage workspace embedded as a tab in the Ledger
   ===================================================================== */
   function LedgerCompliance({ rows, flags, settings, clients, me, setRows, log, onOpenDetail, onOpenClient, onOpenFocus, onOpenCompliance, onOpenAccount, onOpenRecordsWindow, onFileLCTR }) {
-    const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
     const cadIn = (r) => homeOf(r.inAmt, r.inCcy);
     /* The amount on a large-CASH filing is the cash the customer put on
        the counter, which is not the deal's size — see COUNTER_CASH in
@@ -1640,7 +1663,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const body = recs.map(r => {
         const f = flags[r.id] || {}; const v = r.status === 'void';
         const fl = v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok' && f.idNeeded) ? 'ID' : ''].filter(Boolean).join(' ') || '—');
-        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
+        const when = whenOf(r, settings);
+        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(when.day)} <span class="mut">${esc(when.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
       }).join('');
       const w = window.open('', '_blank', 'width=980,height=1100');
       if (!w) { log('Report blocked', 'Allow pop-ups to print the report'); return; }
@@ -1681,7 +1705,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 @page{margin:13mm;}
 </style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Ledger Report</div></div>
-<div class="meta"><b>${esc(rangeLabel)}</b><div>Generated ${esc(new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''))}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
+<div class="meta"><b>${esc(rangeLabel)}</b><div>Generated ${esc(window.CDOS.deskStampNow())}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
 <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
 <div class="kpis"><div class="kpi"><div class="l">Records</div><div class="v">${recs.length}</div></div><div class="kpi"><div class="l">Pay-in volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(vol))}</div></div><div class="kpi"><div class="l">Fees collected</div><div class="v">${esc(fmtHome(fees))}</div></div></div>
 <table><thead><tr><th>Ref</th><th>Date / time</th><th>Customer</th><th>Type</th><th class="r">Pay-in</th><th class="r">Pay-out</th><th class="r">Fee</th><th>Teller</th><th class="c">Flags</th></tr></thead><tbody>${body || '<tr><td colspan="9" style="padding:14px;color:#999;">No records match the current filters.</td></tr>'}</tbody></table>
@@ -1825,12 +1849,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             <th key={i} onClick={() => key && toggleSort(key)} className="px-3 py-2.5 font-medium select-none" style={{ borderBottom: `1px solid ${CD.line}`, cursor: key ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
               <span className="inline-flex items-center gap-1" style={{ color: key && sort.key === key ? CD.ink : 'inherit' }}>{h}{key && sort.key === key && <span style={{ fontSize: 9 }}>{sort.dir === 'asc' ? '▲' : '▼'}</span>}</span>
             </th>))}</tr></thead>
-          <tbody>{filtered.map(x => { const f = flags[x.id] || {}; const isVoid = x.status === 'void'; return (
-            <tr key={x.id} onClick={() => setDetailId(x.id)} className="cursor-pointer" style={{ borderBottom: `1px solid ${CD.lineSoft}`, opacity: isVoid ? 0.5 : 1, background: detailId === x.id ? '#f6f5f1' : 'transparent' }}
+          <tbody>{filtered.map(x => { const f = flags[x.id] || {}; const isVoid = x.status === 'void'; const when = whenOf(x, settings); return (
+            <tr key={x.id} onClick={() => setDetailId(x.id)} className="cd-row cursor-pointer" style={{ borderBottom: `1px solid ${CD.lineSoft}`, opacity: isVoid ? 0.5 : 1, background: detailId === x.id ? 'var(--cd-chip)' : 'transparent' }}
               onMouseEnter={e => { if (detailId !== x.id) e.currentTarget.style.background = 'var(--cd-paper-soft)'; }} onMouseLeave={e => { if (detailId !== x.id) e.currentTarget.style.background = 'transparent'; }}>
               <td className="pl-3 pr-0 py-2.5" onClick={e => e.stopPropagation()}><button onClick={() => toggleTag(x)} title={x.tagged ? 'Remove tag' : 'Tag for follow-up'} className="p-0.5 grid place-items-center" style={{ borderRadius: 5 }}><Ic n="bookmark" s={14} c={x.tagged ? CD.green : 'var(--cd-shade)'} /></button></td>
               <td className="px-3 py-2.5" style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: CD.mute, textDecoration: isVoid ? 'line-through' : 'none' }}>{x.ref}</td>
-              <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: CD.text, fontVariantNumeric: 'tabular-nums' }}>{x.date}<span className="text-[11px]" style={{ color: CD.faint }}> {x.time}</span></td>
+              <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: CD.text, fontVariantNumeric: 'tabular-nums' }}>{when.day}<span className="text-[11px]" style={{ color: CD.faint }}> {when.time}</span></td>
               <td className="px-3 py-2.5 font-medium" style={{ color: CD.ink }}>{x.customer ? <button onClick={e => { e.stopPropagation(); openClientProfile && openClientProfile(x.customer); }} className="text-left hover:underline" style={{ color: CD.ink, fontWeight: 500 }} title={`Open ${x.customer}'s KYC profile`}>{x.customer}</button> : <span style={{ color: CD.faint }}>—</span>}</td>
               <td className="px-3 py-2.5" style={{ color: CD.mute }}>{x.type}</td>
               <td className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(x.inAmt)} <span style={{ color: CD.faint }}>{x.inCcy}</span></td>

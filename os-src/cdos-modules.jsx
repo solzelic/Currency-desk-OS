@@ -17,59 +17,10 @@
      call, because the pack lands from the server after this file parses. */
   const homeCcy = () => { const pack = window.CDOS.deskPack(); return (pack && pack.homeCurrency) || (window.CDOS.reportingLimit(null) || {}).currency || null; };
 
-  /* The desk's one clock. Settings → Time format is 12-hour unless the
-     desk picked 24-hour. The Audit Trail already used this rule. The
-     menubar calls the same function, so a 12-hour desk reads 16:05 as
-     4:05 pm, the same shape as a held quote.
-
-     timeZone is settings.timezone, the zone the localization screen
-     stores and the receipt settings travel with. The menubar passes
-     it, so the header is the desk's hour, not the browser's. Omit it
-     for a reading that is already wall time: the Audit Trail stores
-     minutes, then builds a local date from those minutes.
-
-     A zone Intl will not read (Mars/Olympus in a saved desk) throws.
-     That throw used to unmount the menubar. The fallback is the same
-     order as tzOffset in cdos-lctr.jsx: this browser's zone, then UTC. */
-  function hourMinute(date, timeZone) {
-    const opts = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
-    if (timeZone) opts.timeZone = timeZone;
-    const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(date);
-    let h = NaN, m = NaN;
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i].type === 'hour') h = +parts[i].value;
-      else if (parts[i].type === 'minute') m = +parts[i].value;
-    }
-    if (h === 24) h = 0;
-    if (!isFinite(h) || !isFinite(m)) return null;
-    return { h: h, m: m };
-  }
-  function deskTime(date, timeFormat, timeZone) {
-    let hm = null;
-    try {
-      hm = hourMinute(date, timeZone);
-    } catch (e) {
-      hm = null;
-    }
-    if (!hm) {
-      try {
-        hm = { h: date.getHours(), m: date.getMinutes() };
-      } catch (e) {
-        hm = null;
-      }
-    }
-    if (!hm || !isFinite(hm.h) || !isFinite(hm.m)) {
-      hm = { h: date.getUTCHours(), m: date.getUTCMinutes() };
-    }
-    const h = hm.h, m = hm.m;
-    if ((timeFormat || '12h') !== '24h') {
-      const ap = h < 12 ? 'am' : 'pm';
-      let hh = h % 12;
-      if (hh === 0) hh = 12;
-      return hh + ':' + String(m).padStart(2, '0') + ' ' + ap;
-    }
-    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-  }
+  /* The clock lives in os-src/cdos-desk-time.js, loaded before this
+     file. The Audit Trail and the menubar both call it. */
+  const deskTime = window.CDOS.deskTime;
+  const deskDay = window.CDOS.deskDay;
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -256,7 +207,7 @@
       // range cutoff measured from the most recent entry's day (so the demo data reads naturally)
       const days = (RANGES.find(r => r[0] === range) || [])[2];
       let cutoff = null;
-      if (days != null) { const ds = items.map(a => a.date).filter(Boolean).sort(); const refDate = ds.length ? ds[ds.length - 1] : new Date().toISOString().slice(0, 10); const d = new Date(refDate + 'T00:00:00'); d.setDate(d.getDate() - days); cutoff = d.toISOString().slice(0, 10); }
+      if (days != null) { const ds = items.map(a => a.date).filter(Boolean).sort(); const refDate = ds.length ? ds[ds.length - 1] : deskDay(Date.now()); cutoff = deskDay(Date.parse(refDate + 'T12:00:00Z') - days * 86400000, 'UTC'); }
       return items.filter(a => {
         if (cutoff && a.date < cutoff) return false;
         if (actionF !== 'all' && a.action !== actionF) return false;
