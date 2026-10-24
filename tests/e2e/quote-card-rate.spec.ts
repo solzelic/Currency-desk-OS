@@ -4,7 +4,7 @@
 import { createRequire } from "node:module";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
@@ -18,6 +18,72 @@ const Decimal = requireRoot("./server/node_modules/decimal.js") as new (v: strin
 };
 
 const SHOTS = "/opt/cursor/artifacts/quote-card";
+
+/* The payout is dollars the till has to be holding. A teller cannot
+   float the drawer, so a supervisor tops it up and hands it back. */
+async function stockUsd(request: APIRequestContext) {
+  const login = async (staffId: string) => {
+    const res = await request.post("/api/auth/login", {
+      data: { staffId, password: "yorkville", tenantId: "tnt-yorkfx" },
+    });
+    expect(res.ok(), `login ${staffId}`).toBe(true);
+  };
+  const heldBy = async (staffId: string) => {
+    const me = await request.get("/api/auth/me");
+    const id = String(((await me.json()) as { user?: { id?: string } }).user?.id ?? "");
+    const session = await request.get("/api/ledger/till-session");
+    expect(session.ok()).toBe(true);
+    const body = (await session.json()) as { session?: { status?: string; openedBy?: string } };
+    const opener = String(body.session?.openedBy ?? "");
+    return body.session?.status === "open" && (opener === id || opener.endsWith(`:${staffId}`));
+  };
+  const balances = async () => {
+    const res = await request.get("/api/ledger/till-balances");
+    expect(res.ok()).toBe(true);
+    return ((await res.json()) as { balances?: Record<string, string> }).balances ?? {};
+  };
+  const take = async (key: string) => {
+    const counts: Record<string, string> = {};
+    for (const [currency, amount] of Object.entries(await balances())) {
+      counts[currency] = Number(amount).toFixed(2);
+    }
+    const handed = await request.post("/api/ledger/till-sessions/handover", {
+      data: { idempotencyKey: key, counts },
+    });
+    expect(handed.ok(), await handed.text()).toBe(true);
+  };
+  await login("m.costa");
+  const usd = Number((await balances()).USD ?? 0);
+  if (await heldBy("m.costa") && usd >= 2500) return;
+  await login("a.singh");
+  if (!(await heldBy("a.singh"))) {
+    const session = await request.get("/api/ledger/till-session");
+    const open = ((await session.json()) as { session?: { status?: string } }).session?.status === "open";
+    if (!open) {
+      const opened = await request.post("/api/ledger/till-sessions/open", { data: {} });
+      expect(opened.ok() || opened.status() === 409, await opened.text()).toBe(true);
+    } else {
+      await take(`quote-card-take-${Date.now()}`);
+    }
+  }
+  const have = Number((await balances()).USD ?? 0);
+  if (have < 2500) {
+    const answer = await request.post("/api/ledger/till-movements", {
+      data: {
+        idempotencyKey: `quote-card-usd-${Date.now()}`,
+        direction: "in",
+        currency: "USD",
+        amount: (5000 - have).toFixed(2),
+        counterpartyType: "bank",
+        counterpartyRef: "quote-card",
+        reason: "Float so the quote card can pay the dollars",
+      },
+    });
+    expect(answer.ok(), await answer.text()).toBe(true);
+  }
+  await login("m.costa");
+  if (!(await heldBy("m.costa"))) await take(`quote-card-back-${Date.now()}`);
+}
 
 async function dismissTour(page: Page) {
   const skip = page.locator(".cdos-tour-skip");
@@ -54,7 +120,8 @@ async function openDeal(page: Page) {
   await dismissTour(page);
 }
 
-test("the quote card renders the server rate", async ({ page }, testInfo) => {
+test("the quote card renders the server rate", async ({ page, request }, testInfo) => {
+  await stockUsd(request);
   await page.addInitScript(() => {
     const raw = localStorage.getItem("cdos_clients_v1");
     const clients = raw ? JSON.parse(raw) : {};
@@ -96,7 +163,8 @@ test("the quote card renders the server rate", async ({ page }, testInfo) => {
   await expect(ticket).toContainText(line);
   await expect(ticket).not.toContainText("0.72225");
   await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText(line);
-  if (priced.rounded) await expect(ticket).toContainText("Rate rounded. The amounts are exact.");
+  if (priced.rounded) await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
+  await expect(ticket).not.toContainText("0.722104");
 
   mkdirSync(SHOTS, { recursive: true });
   for (const width of [360, 390, 430, 1280]) {
@@ -106,4 +174,32 @@ test("the quote card renders the server rate", async ({ page }, testInfo) => {
     await page.screenshot({ path: shot });
     await testInfo.attach(`quote-card-${width}`, { path: shot, contentType: "image/png" });
   }
+
+  /* The card stays at four places. The receipt prints the stored rate at six. */
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const postedDeal = page.waitForResponse((res) => {
+    const pathname = new URL(res.url()).pathname;
+    return /\/api\/quotes\/[^/]+\/post$/.test(pathname) && res.request().method() === "POST";
+  });
+  const postButton = page.getByRole("button", { name: "Post frozen quote" });
+  await postButton.scrollIntoViewIfNeeded();
+  await postButton.click();
+  const dealRes = await postedDeal;
+  expect(dealRes.ok(), "frozen quote posted").toBe(true);
+  const deal = await dealRes.json() as { rate: string; receipt: { lines: string[] } };
+  expect(new Decimal(deal.rate).toDecimalPlaces(6).toFixed(6)).toBe("0.722104");
+  expect(deal.receipt.lines.join("\n")).toContain("Rate: 1 CAD = 0.722104 USD");
+
+  const receiptGot = page.waitForResponse((res) =>
+    res.url().includes("/api/ledger/transactions/") && res.url().endsWith("/receipt") && res.request().method() === "GET",
+  );
+  await page.getByRole("button", { name: /^Receipt$/ }).click();
+  const receiptRes = await receiptGot;
+  expect(receiptRes.ok(), "receipt fetched").toBe(true);
+  const receipt = await receiptRes.json() as { lines: string[] };
+  expect(receipt.lines.join("\n")).toContain("Rate: 1 CAD = 0.722104 USD");
+  const rcpt = page.locator("#rcpt");
+  await expect(rcpt).toBeVisible();
+  await expect(rcpt).toContainText("1 CAD = 0.722104 USD");
+  await expect(rcpt).not.toContainText("Rate shown rounded");
 });

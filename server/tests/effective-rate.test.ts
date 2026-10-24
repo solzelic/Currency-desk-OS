@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const { effectiveRate, boardRateText, MIN_RATE_PLACES, MAX_RATE_PLACES, RATE_NOTE } = require(
+const { effectiveRate, exactRateText, boardRateText, MIN_RATE_PLACES, MAX_RATE_PLACES, RATE_NOTE } = require(
   join(root, "os-src/effective-rate.js"),
 ) as {
   effectiveRate: (amount: string, payout: string, places: number | null) => { text: string; rounded: boolean };
+  exactRateText: (rate: string) => string;
   boardRateText: (rate: number) => string;
   MIN_RATE_PLACES: number;
   MAX_RATE_PLACES: number;
@@ -28,7 +29,7 @@ describe("effective rate", () => {
   it("names the bounds and the note", () => {
     expect(MIN_RATE_PLACES).toBe(4);
     expect(MAX_RATE_PLACES).toBe(6);
-    expect(RATE_NOTE).toBe("Rate rounded. The amounts are exact.");
+    expect(RATE_NOTE).toBe("Rate shown rounded. Amounts use the exact rate.");
   });
 
   it("pads an exact deal to four places and shows no note", () => {
@@ -56,7 +57,8 @@ describe("effective rate", () => {
     const rate = effectiveRate("3000.00", "2166.31", 2);
     expect(rate).toEqual({ text: "0.7221", rounded: true });
     expect(placesOf(rate.text)).toBe(4);
-    expect(RATE_NOTE).toBe("Rate rounded. The amounts are exact.");
+    expect(RATE_NOTE).toBe("Rate shown rounded. Amounts use the exact rate.");
+    expect(exactRateText("0.722103704355")).toBe("0.722104");
   });
 
   it("returns no figure before the scale is known", () => {
@@ -73,7 +75,7 @@ describe("effective rate", () => {
     const rounded = effectiveRate("1234.5", "14.57", 2);
     expect(rounded).toEqual({ text: "0.0118", rounded: true });
     expect(`1 INR = ${rounded.text} USD`).toBe("1 INR = 0.0118 USD");
-    expect(RATE_NOTE).toBe("Rate rounded. The amounts are exact.");
+    expect(RATE_NOTE).toBe("Rate shown rounded. Amounts use the exact rate.");
   });
 
   it("keeps four significant digits on a small rate", () => {

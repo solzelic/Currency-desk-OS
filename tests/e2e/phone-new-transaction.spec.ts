@@ -296,7 +296,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     expect(shownPlaces, `rate places at ${width}`).toBeGreaterThanOrEqual(4);
     expect(shownPlaces, `rate places at ${width}`).toBeLessThanOrEqual(6);
     await expect(page.locator(".cd-tx-ticket")).toContainText("1 CAD = 0.72225 USD");
-    await expect(page.locator(".cd-tx")).not.toContainText("Rate rounded. The amounts are exact.");
+    await expect(page.locator(".cd-tx")).not.toContainText("Rate shown rounded. Amounts use the exact rate.");
     const board = await page.locator(".cd-tx-rate").inputValue();
     expect(board, `board rate at ${width}`).toMatch(/^\d+\.\d+$/);
     const amount = page.locator(".cd-money input").first();

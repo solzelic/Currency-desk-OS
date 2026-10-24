@@ -119,7 +119,8 @@ decimal is refused. An exchange in that currency is still refused.
 The rate beside a payout shows at least four places, and five or six
 only when that rate times the amount is the payout
 (`os-src/effective-rate.js`). Otherwise it shows four places and
-"Rate rounded. The amounts are exact.", only when it was rounded.
+"Rate shown rounded. Amounts use the exact rate.", only when it was rounded.
+The receipt shows the stored rate at six places, so 0.722103704355 reads 0.722104.
 The Board rate field keeps its own figure. 100.00 to 10825 at zero
 places is `108.2500`. 100 INR to 1.18 USD is `1 INR = 0.0118 USD`.
 3,000.00 CAD to 2,166.31 USD is `1 CAD = 0.7221 USD` with the note.

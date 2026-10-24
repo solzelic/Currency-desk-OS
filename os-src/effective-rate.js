@@ -8,7 +8,7 @@
   var MAX_RATE_PLACES = 6;
   var SIGNIFICANT_DIGITS = 4;
   var ABSOLUTE_CAP = 12;
-  var RATE_NOTE = "Rate rounded. The amounts are exact.";
+  var RATE_NOTE = "Rate shown rounded. Amounts use the exact rate.";
 
   function decimalsOf(text) {
     var s = String(text);
@@ -121,6 +121,25 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
+  /* Six places, half up, of the rate the ledger stored. The card
+     keeps the shorter figure and the note. The receipt uses this. */
+  function exactRateText(rate) {
+    var raw = String(rate == null ? "" : rate).trim();
+    if (raw.charAt(0) === "+") raw = raw.slice(1);
+    if (!/^\d+(\.\d+)?$/.test(raw)) return "";
+    var scale = decimalsOf(raw);
+    var whole = scaled(raw, scale);
+    var places = MAX_RATE_PLACES;
+    var rounded = whole;
+    if (scale > places) {
+      rounded = halfUpDiv(whole, 10n ** BigInt(scale - places));
+      if (rounded == null) return "";
+    } else if (scale < places) {
+      rounded = whole * (10n ** BigInt(places - scale));
+    }
+    return scaledText(rounded, places);
+  }
+
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
@@ -132,6 +151,7 @@
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
+    exactRateText: exactRateText,
     boardRateText: boardRateText,
   };
 });

@@ -13,7 +13,7 @@
   var MAX_RATE_PLACES = 6;
   var SIGNIFICANT_DIGITS = 4;
   var ABSOLUTE_CAP = 12;
-  var RATE_NOTE = "Rate rounded. The amounts are exact.";
+  var RATE_NOTE = "Rate shown rounded. Amounts use the exact rate.";
 
   function decimalsOf(text) {
     var s = String(text);
@@ -126,6 +126,25 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
+  /* Six places, half up, of the rate the ledger stored. The card
+     keeps the shorter figure and the note. The receipt uses this. */
+  function exactRateText(rate) {
+    var raw = String(rate == null ? "" : rate).trim();
+    if (raw.charAt(0) === "+") raw = raw.slice(1);
+    if (!/^\d+(\.\d+)?$/.test(raw)) return "";
+    var scale = decimalsOf(raw);
+    var whole = scaled(raw, scale);
+    var places = MAX_RATE_PLACES;
+    var rounded = whole;
+    if (scale > places) {
+      rounded = halfUpDiv(whole, 10n ** BigInt(scale - places));
+      if (rounded == null) return "";
+    } else if (scale < places) {
+      rounded = whole * (10n ** BigInt(places - scale));
+    }
+    return scaledText(rounded, places);
+  }
+
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
@@ -137,6 +156,7 @@
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
+    exactRateText: exactRateText,
     boardRateText: boardRateText,
   };
 });
@@ -2854,6 +2874,7 @@
       inCcy: transaction.from,
       inAmt: Number(transaction.inputAmount),
       rate: Number(transaction.rate),
+      rateText: transaction.rate == null ? "" : String(transaction.rate),
       outCcy: transaction.to,
       outAmt: Number(transaction.outputAmount),
       fee: transaction.feeCad == null ? null : Number(transaction.feeCad),
@@ -5543,7 +5564,8 @@ if (typeof window !== "undefined") {
     const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
     const fx = !!(row.inCcy && row.outCcy && row.inCcy !== row.outCcy);
     const priced = fx && typeof effectiveRate === 'function' ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy)) : null;
-    const rateValue = !fx ? row.rate : priced && priced.text ? '1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy : 'Rate unavailable';
+    const exact = fx && row.rateText && window.CDOS.exactRateText ? window.CDOS.exactRateText(row.rateText) : '';
+    const rateValue = !fx ? row.rate : exact ? '1 ' + row.inCcy + ' = ' + exact + ' ' + row.outCcy : priced && priced.text ? '1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy : 'Rate unavailable';
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -5621,7 +5643,7 @@ if (typeof window !== "undefined") {
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Rate",
       v: rateValue
-    }), fx && priced && priced.rounded ? /*#__PURE__*/React.createElement("div", {
+    }), fx && !exact && priced && priced.rounded ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {
         fontSize: 11,
@@ -5630,7 +5652,7 @@ if (typeof window !== "undefined") {
         marginTop: 1,
         marginBottom: 4
       }
-    }, RATE_NOTE || 'Rate rounded. The amounts are exact.') : null, /*#__PURE__*/React.createElement(Line, {
+    }, RATE_NOTE || 'Rate shown rounded. Amounts use the exact rate.') : null, /*#__PURE__*/React.createElement(Line, {
       k: "Pay-out",
       v: `${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
@@ -30695,7 +30717,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         marginTop: -2,
         marginBottom: 4
       }
-    }, RATE_NOTE || 'Rate rounded. The amounts are exact.');
+    }, RATE_NOTE || 'Rate shown rounded. Amounts use the exact rate.');
   }
   function TxFlow({
     row
@@ -34419,7 +34441,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   /* The editable field keeps the computed board rate. It does not
      cut that figure to four places. The line next to the payout is
      the rate that payout came from. */
-  const RATE_NOTE = window.CDOS && window.CDOS.RATE_NOTE || 'Rate rounded. The amounts are exact.';
+  const RATE_NOTE = window.CDOS && window.CDOS.RATE_NOTE || 'Rate shown rounded. Amounts use the exact rate.';
   const publishedRate = r => window.CDOS.boardRateText ? window.CDOS.boardRateText(r) : '';
   const pricedRate = (amount, payout, ccy) => {
     if (typeof effectiveRate !== 'function') return {
