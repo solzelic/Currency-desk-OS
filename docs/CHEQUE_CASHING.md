@@ -272,10 +272,13 @@ recorded, and the rule is left to the pack.
 **Cash-in, stated plainly:** the browser's aggregation engine
 (`aggClusters` in `os-src/cdos-compliance.jsx`) measures cash-in with
 `counterCashIn`, which calls `cashLegs` in `shared/counter-cash.js`.
-A cashed cheque puts no cash in. The till summary
+A cashed cheque puts no cash in when the instrument is `cheque`. A leg
+counts as 0 only for `eft`, `wire`, `cheque`, `draft`, or `card`, after
+trim and lower case. Any other word, a blank, or a missing instrument
+counts the full amount. The till summary
 (`GET /api/ledger/summary`, the Cash drawer movement card) uses that
 same function. Cash paid to the customer is cash out. The face is not
-cash in. A 1,000.00 cheque cashed for 965.00 beside a 100.00 cash
+cash in when the instrument is `cheque`. A 1,000.00 cheque cashed for 965.00 beside a 100.00 cash
 exchange shows CAD in 100.00 and CAD out 965.00. Pay-in volume still
 includes the face, because that figure is the home-currency size of the
 deal, not cash across the counter. The drawer expected at close is the

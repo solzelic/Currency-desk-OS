@@ -344,11 +344,12 @@
    os-src/cdos-base.jsx. server/src/ledger/reporting.ts requires it
    for the till summary. Neither side keeps a second copy of the rule.
 
-   A named instrument wins for that leg. Only "cash" counts. A blank
-   instrument falls through to the deal type, then the deal kind.
-   Anything still unnamed counts as cash both ways: the failure this
-   table prevents is over-reporting, and an unknown row should stay
-   visible rather than disappear.
+   Each leg is judged on its own. After trim and lower case, the leg
+   counts as 0 only when the instrument is in NOT_CASH. Anything else
+   counts the full amount: cash in any spelling, a blank, a missing
+   value, or a word this list does not name. The type table stays so
+   the desk and the server share the deal labels. It does not decide
+   the cash.
 
    The type names are the desk's own labels, including the two
    remittance labels, so they match TYPES in cdos-base.jsx. */
@@ -378,11 +379,15 @@
     money_order: { in: true, out: false },
   };
 
+  /* Count 0 only for these instruments. Do not add names that merely
+     look non-cash. Compliance has not put them on this list. */
+  var NOT_CASH = ["eft", "wire", "cheque", "draft", "card"];
+
   function namedCash(value) {
-    if (value == null) return null;
-    var text = String(value).trim();
-    if (!text) return null;
-    return text === "cash";
+    if (value == null) return true;
+    var text = String(value).trim().toLowerCase();
+    if (!text) return true;
+    return NOT_CASH.indexOf(text) === -1;
   }
 
   function first(row, keys) {
@@ -397,13 +402,8 @@
      decimal string. */
   function cashLegs(row) {
     if (!row) return { in: null, out: null };
-    var typeRule = BY_TYPE[row.type];
-    var kindRule = BY_KIND[row.dealKind || row.deal_kind];
-    var rule = typeRule || kindRule || { in: true, out: true };
-    var inNamed = namedCash(first(row, ["receivedInstrument", "received_instrument"]));
-    var outNamed = namedCash(first(row, ["disbursedInstrument", "disbursed_instrument"]));
-    var inCash = inNamed === null ? rule.in : inNamed;
-    var outCash = outNamed === null ? rule.out : outNamed;
+    var inCash = namedCash(first(row, ["receivedInstrument", "received_instrument"]));
+    var outCash = namedCash(first(row, ["disbursedInstrument", "disbursed_instrument"]));
     return {
       in: inCash ? {
         amount: first(row, ["inAmt", "input_amount", "inputAmount"]) ?? 0,
