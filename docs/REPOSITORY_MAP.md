@@ -142,6 +142,13 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   `PUT /api/settings/idv` are the owner's. Provider-specific field
   rules live under `server/src/idv/providers/`.
 - Migration `051_idv_inquiry_status` adds `idv_inquiries.status` (default `starting`). 049 is the inquiry map, already on main. 050 is the shop config on the stack parent, so this file is 051. The column is also in the boot DDL because PGlite does not run SQL migrations. `POST /api/idv/start-check` reads `idv_shop_config`, takes the provider from the registry, and starts a sandbox check for the caller's shop, branch, and teller. A per-shop advisory lock covers the cap count and the insert.
+- Migration `052_idv_credit_ledger` adds the append-only identity-check
+  credit ledger `idv_credit_ledger`. The balance is the sum of the rows.
+  A grant has no inquiry. A reserve, a settle, and a release are one row
+  per inquiry, and settle and release cannot both exist. 049 is open
+  draft #268, 050 is #267, and 051 is #270, so this file is 052.
+  `POST /api/idv/credits` seeds the caller's shop. `GET /api/idv/credits`
+  reads that shop. Neither route is a purchase.
 
 ## Test commands
 

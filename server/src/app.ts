@@ -34,6 +34,7 @@ import { registerQuoteRoutes } from "./quotes/routes.js";
 import { registerBillingRoutes } from "./routes/billing.js";
 import { registerIdvShopConfigRoutes } from "./idv/shop-config.js";
 import { registerClientRoutes } from "./clients/routes.js";
+import { registerIdvCreditRoutes } from "./idv/credit-routes.js";
 import { registerGrowthRoutes, type GrowthDependencies } from "./growth/routes.js";
 import { registerIdvRoutes, type IdvRouteOptions } from "./idv/routes.js";
 
@@ -244,6 +245,7 @@ export async function buildApp(
        run. A desk on the embedded database keeps the browser-only client
        store it has always had — see docs/CLIENT_RECORDS.md. */
     registerClientRoutes(app, db, ledgerDatabaseUrl);
+    registerIdvCreditRoutes(app, db, ledgerDatabaseUrl);
   }
 
   // serve the frontend from STATIC_DIR (compiled web/app shells, else the buildless OS) when configured
