@@ -35966,7 +35966,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }; // MO / Bill: face value out
     /* Once the server has priced the deal, that figure is the one on
        the ticket. The local preview is only what shows before then. */
-    const shownOut = serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy ? serverQuote.outputAmount : out.amt;
+    /* The payout on the card is the server's once a quote exists. The
+       rate beside it has to be that payout's rate. The preview rate
+       (0.72225 on 3,000 CAD) is a different figure from the one the
+       server froze. */
+    const serverPriced = !!(serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy);
+    const shownOut = serverPriced ? serverQuote.outputAmount : out.amt;
+    const rateAmt = serverPriced && serverQuote.inputAmount != null ? serverQuote.inputAmount : amtN;
+    const exchangeRateLine = rateShown(inCcy, outCcy, rateAmt, shownOut);
+    const exchangeRounded = pricedRate(rateAmt, shownOut, outCcy).rounded;
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -36781,8 +36789,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
       give: `${unitText(amtN, inCcy)} ${inCcy}`,
-      rateLine: rateShown(inCcy, outCcy, amtN, out.amt),
-      rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '',
+      rateLine: exchangeRateLine,
+      rateNote: exchangeRounded ? RATE_NOTE : '',
       getLbl: 'You receive',
       get: `${unitText(shownOut, outCcy)} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
@@ -37058,7 +37066,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, rateShown(inCcy, outCcy, amtN, out.amt)), /*#__PURE__*/React.createElement("button", {
+    }, exchangeRateLine), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       "aria-label": "Swap",
@@ -37072,7 +37080,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(SheetRateNote, {
-      on: pricedRate(amtN, out.amt, outCcy).rounded
+      on: exchangeRounded
     })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       value: shownOut ? unitText(shownOut, outCcy) : '—',
       ccy: outCcy,
@@ -37928,7 +37936,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker"
-    }, isExchange || isSend ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), (isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? exchangeRateLine : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), (isExchange ? exchangeRounded : isSend && pricedRate(amtN, out.amt, out.ccy).rounded) ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {
         fontSize: 11,
