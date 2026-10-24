@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { CHEQUE_FEE_SCHEDULE_KEY, DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -43,8 +44,14 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     pool = new pg.Pool({ connectionString: url });
     handle = await createDb();
     await seed(handle.db);
-    /* The 35.00 fee is the payload. The seed's schedule would book 30.00. */
+    /* A 1,000 business cheque is 35.00 on this schedule, so fees stay 39.00. */
+    const schedule = JSON.stringify(DEFAULT_CHEQUE_SCHEDULE.map((row) =>
+      row.id === "business" ? { ...row, feePct: 3.5, feeMin: 0 } : row));
     await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
+    await pool.query(
+      "INSERT INTO tenant_state (tenant_id, state, version) VALUES ($1, $2::jsonb, 1)",
+      [DEMO.tenantId, JSON.stringify({ [CHEQUE_FEE_SCHEDULE_KEY]: schedule })],
+    );
     app = await buildApp(handle.db);
   });
   afterAll(async () => {
