@@ -4512,10 +4512,11 @@ if (typeof window !== "undefined") {
   }
   function Line({
     k,
-    v
+    v,
+    className
   }) {
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex justify-between text-sm py-0.5"
+      className: "flex justify-between text-sm py-0.5" + (className ? " " + className : "")
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.mute
@@ -5673,7 +5674,8 @@ if (typeof window !== "undefined") {
       v: `${unitText(row.inAmt, row.inCcy)} ${row.inCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Rate",
-      v: rateValue
+      v: rateValue,
+      className: "cd-receipt-rate"
     }), fx && !exact && priced && priced.rounded ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {

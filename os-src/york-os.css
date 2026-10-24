@@ -1703,6 +1703,29 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     overflow: auto;
     box-sizing: border-box;
   }
+  /* The receipt is 340px wide and the rate is on the right. On a
+     360px screen the overlay padding pushed "1 CAD = 0.722104 USD"
+     past the edge. The card stays inside the screen. */
+  .fixed.inset-0:has(#rcpt) {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  .fixed.inset-0 > div:has(#rcpt) {
+    width: 100% !important;
+    max-width: 340px !important;
+  }
+  #rcpt .cd-receipt-rate {
+    flex-wrap: wrap;
+    column-gap: 12px;
+    row-gap: 2px;
+  }
+  #rcpt .cd-receipt-rate > span:last-child {
+    margin-left: auto;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
 }
 
 /* "Not connected" in a third of a narrow card is one word per line.

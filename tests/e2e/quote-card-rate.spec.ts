@@ -2,7 +2,7 @@
    the browser. 3,000 CAD previews 0.72225. The server freezes
    0.722104, and 2,166.31 is the payout that rate produces. */
 import { createRequire } from "node:module";
-import { mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
@@ -15,6 +15,7 @@ const Decimal = requireRoot("./server/node_modules/decimal.js") as new (v: strin
 };
 
 const SHOTS = "/opt/cursor/artifacts/quote-card";
+const REPO_SHOTS = path.join(process.cwd(), "docs/pr-shots/quote-card");
 
 /* Post as the person who already holds the till. Taking it over
    leaves the next file unable to post. A short drawer is topped up
@@ -173,11 +174,14 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
   await expect(ticket).not.toContainText("0.722104");
 
   mkdirSync(SHOTS, { recursive: true });
+  mkdirSync(REPO_SHOTS, { recursive: true });
   for (const width of [360, 390, 430, 600, 1280]) {
     await page.setViewportSize({ width, height: width >= 600 ? 800 : 844 });
     await ticket.scrollIntoViewIfNeeded();
-    const shot = `${SHOTS}/quote_card_${width}.png`;
+    const name = `quote_card_${width}.png`;
+    const shot = `${SHOTS}/${name}`;
     await page.screenshot({ path: shot });
+    if (width !== 600) copyFileSync(shot, path.join(REPO_SHOTS, name));
     await testInfo.attach(`quote-card-${width}`, { path: shot, contentType: "image/png" });
   }
 
@@ -252,4 +256,21 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
   await expect(rcpt).toBeVisible();
   await expect(rcpt).toContainText("1 CAD = 0.722104 USD");
   await expect(rcpt).not.toContainText("Rate shown rounded");
+  for (const width of [360, 390, 430, 1280]) {
+    await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
+    const rate = rcpt.getByText("1 CAD = 0.722104 USD");
+    const fits = await rate.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return el.scrollWidth <= el.clientWidth + 1
+        && box.left >= -1
+        && box.right <= window.innerWidth + 1
+        && box.width > 8;
+    });
+    expect(fits).toBe(true);
+    const name = `receipt_${width}.png`;
+    const shot = `${SHOTS}/${name}`;
+    await page.screenshot({ path: shot });
+    copyFileSync(shot, path.join(REPO_SHOTS, name));
+    await testInfo.attach(`receipt-${width}`, { path: shot, contentType: "image/png" });
+  }
 });
