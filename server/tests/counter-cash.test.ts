@@ -164,7 +164,9 @@ describe("LCTR line", () => {
   });
 
   it("triggers at exactly 10000.00 CAD cash and not at 9999.99", () => {
-    expect(lctrFlags([row("10000.00")]).row.single).toBe(true);
-    expect(lctrFlags([row("9999.99")]).row.single).toBe(false);
+    const over = lctrFlags([row("10000.00")]).row;
+    const under = lctrFlags([row("9999.99")]).row;
+    expect(over && over.single).toBe(true);
+    expect(under && under.single).toBe(false);
   });
 });
