@@ -59,6 +59,8 @@ export const migrations: readonly Migration[] = [
   /* 049 is the inquiry-to-shop map. 050 is the per-shop identity-verification config. */
   ["049_idv_inquiry_map", "src/db/migrations/049_idv_inquiry_map.sql"],
   ["050_idv_shop_config", "src/db/migrations/050_idv_shop_config.sql"],
+  /* 051 is the inquiry status. 049 and 050 come first. */
+  ["051_idv_inquiry_status", "src/db/migrations/051_idv_inquiry_status.sql"],
 ] as const;
 
 export async function runMigrations(

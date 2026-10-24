@@ -140,8 +140,8 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   and checks enabled (default false). 049 is `049_idv_inquiry_map`, already on main, so this file is 050. The
   table is also in the boot DDL and the Drizzle schema. `GET` and
   `PUT /api/settings/idv` are the owner's. Provider-specific field
-  rules live under `server/src/idv/providers/`. No other route reads
-  the table.
+  rules live under `server/src/idv/providers/`.
+- Migration `051_idv_inquiry_status` adds `idv_inquiries.status` (default `starting`). 049 is the inquiry map, already on main. 050 is the shop config on the stack parent, so this file is 051. The column is also in the boot DDL because PGlite does not run SQL migrations. `POST /api/idv/start-check` reads `idv_shop_config`, takes the provider from the registry, and starts a sandbox check for the caller's shop, branch, and teller. A per-shop advisory lock covers the cap count and the insert.
 
 ## Test commands
 
