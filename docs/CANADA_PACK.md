@@ -119,10 +119,12 @@ These are not implemented. The pack does not pretend they are.
   FINTRAC also drops statutory holidays. There is no holiday
   calendar in the pack.
 - The browser lets an owner move the 24-hour anchor off midnight
-  (`settings.aggWindowStart`). That choice is not stored on the
-  server. The identity gate uses midnight in the branch's time zone,
-  `America/Toronto` when the branch has none. The end of the window
-  is that instant plus 24 hours.
+  (`settings.aggWindowStart`). The desk filing clusters still use
+  that anchor. The identity gate does not. The gate looks back 24
+  consecutive hours from the deal instant, through
+  `shared/rolling-24h.js`, in elapsed time. A receipt exactly 24
+  hours earlier counts. One millisecond earlier does not.
+  `zonedMidnight` still starts a calendar date.
 - Other fields s.36 asks for on a ticket (telephone, the rate, an
   account number) are not stored. The four fields the survey named
   are the ones this pack requires.
