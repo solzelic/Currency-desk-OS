@@ -6,11 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const { effectiveRate, exactRateText, boardRateText, MIN_RATE_PLACES, MAX_RATE_PLACES, RATE_NOTE } = require(
+const { effectiveRate, exactRateText, quoteCardRate, boardRateText, MIN_RATE_PLACES, MAX_RATE_PLACES, RATE_NOTE } = require(
   join(root, "os-src/effective-rate.js"),
 ) as {
   effectiveRate: (amount: string, payout: string, places: number | null) => { text: string; rounded: boolean };
   exactRateText: (rate: string) => string;
+  quoteCardRate: (rate: string, amount: string, payout: string) => { text: string; rounded: boolean };
   boardRateText: (rate: number) => string;
   MIN_RATE_PLACES: number;
   MAX_RATE_PLACES: number;
@@ -97,6 +98,17 @@ describe("effective rate", () => {
     const rate = effectiveRate("3000.00", "2166.46", 2);
     expect(rate).toEqual({ text: "0.7222", rounded: true });
     expect(rate.text).not.toBe("0.7221");
+  });
+
+  it("shows the frozen rate on a small amount, and the note only when it does not multiply back", () => {
+    expect(quoteCardRate("0.722103704355", "7.50", "5.42")).toEqual({ text: "0.7221", rounded: true });
+    expect(quoteCardRate("0.722103704355", "3000.00", "2166.31")).toEqual({ text: "0.7221", rounded: true });
+    expect(quoteCardRate("0.722103704355", "7.50", "5.42").text).not.toBe("0.7227");
+    expect(quoteCardRate("1.25", "8.00", "10.00")).toEqual({ text: "1.2500", rounded: false });
+    expect(quoteCardRate("0.72225", "3000.00", "2166.75")).toEqual({ text: "0.72225", rounded: false });
+    expect(quoteCardRate("0.669603404440", "7.50", "5.02")).toEqual({ text: "0.6696", rounded: true });
+    expect(quoteCardRate("0.669603404440", "7.50", "5.02").text).not.toBe("0.6693");
+    expect(quoteCardRate("0.669603404440", "100.00", "66.96")).toEqual({ text: "0.6696", rounded: false });
   });
 });
 

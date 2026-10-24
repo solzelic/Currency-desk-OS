@@ -126,15 +126,15 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
-  /* Six places, half up, of the rate the ledger stored. The card
-     keeps the shorter figure and the note. The receipt uses this. */
-  function exactRateText(rate) {
+  /* Half up, to `places`. This rounds the rate it is given. It does
+     not solve a new rate out of the amount and the payout. */
+  function roundRate(rate, places) {
     var raw = String(rate == null ? "" : rate).trim();
     if (raw.charAt(0) === "+") raw = raw.slice(1);
     if (!/^\d+(\.\d+)?$/.test(raw)) return "";
+    if (!Number.isInteger(places) || places < 0 || places > ABSOLUTE_CAP) return "";
     var scale = decimalsOf(raw);
     var whole = scaled(raw, scale);
-    var places = MAX_RATE_PLACES;
     var rounded = whole;
     if (scale > places) {
       rounded = halfUpDiv(whole, 10n ** BigInt(scale - places));
@@ -143,6 +143,36 @@
       rounded = whole * (10n ** BigInt(places - scale));
     }
     return scaledText(rounded, places);
+  }
+
+  /* Six places, half up, of the rate the ledger stored. The receipt
+     uses this. The card uses quoteCardRate. */
+  function exactRateText(rate) {
+    return roundRate(rate, MAX_RATE_PLACES);
+  }
+
+  /* The figure on the quote card. It is the frozen server rate, rounded
+     half up. Four places, then five, then six, and further only when a
+     small rate needs four significant digits. The first of those that
+     multiplies back to the payout is the one shown, and then there is
+     no note. When none of them multiply back, the card keeps the short
+     rounding and the note. It never solves a rate from the two amounts:
+     7.50 CAD at 0.722103704355 stays 0.7221, not 0.7227. */
+  function quoteCardRate(rate, amount, payout) {
+    var amountText = moneyText(amount);
+    var payoutRaw = moneyText(payout);
+    if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "", rounded: false };
+    var show = significantPlaces(amountText, payoutRaw);
+    var ceiling = show > MAX_RATE_PLACES ? show : MAX_RATE_PLACES;
+    var places = MIN_RATE_PLACES;
+    for (; places <= ceiling; places += 1) {
+      var candidate = roundRate(rate, places);
+      if (multipliesExactly(amountText, candidate, payoutRaw)) return { text: candidate, rounded: false };
+    }
+    var display = show > MIN_RATE_PLACES ? show : MIN_RATE_PLACES;
+    var text = roundRate(rate, display);
+    if (!text) return { text: "", rounded: false };
+    return { text: text, rounded: true };
   }
 
   function boardRateText(rate) {
@@ -157,6 +187,7 @@
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
     exactRateText: exactRateText,
+    quoteCardRate: quoteCardRate,
     boardRateText: boardRateText,
   };
 });
@@ -35989,14 +36020,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     /* Once the server has priced the deal, that figure is the one on
        the ticket. The local preview is only what shows before then. */
     /* The payout on the card is the server's once a quote exists. The
-       rate beside it has to be that payout's rate. The preview rate
-       (0.72225 on 3,000 CAD) is a different figure from the one the
-       server froze. */
+       rate beside it is the frozen customerRate, not a rate solved from
+       the two amounts. 7.50 CAD pays 5.42 USD and still reads 0.7221.
+       Before a quote, the preview stays the board figure (0.72225). */
     const serverPriced = !!(serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy);
     const shownOut = serverPriced ? serverQuote.outputAmount : out.amt;
     const rateAmt = serverPriced && serverQuote.inputAmount != null ? serverQuote.inputAmount : amtN;
-    const exchangeRateLine = rateShown(inCcy, outCcy, rateAmt, shownOut);
-    const exchangeRounded = pricedRate(rateAmt, shownOut, outCcy).rounded;
+    const frozenCard = serverPriced && serverQuote.customerRate != null && window.CDOS.quoteCardRate ? window.CDOS.quoteCardRate(serverQuote.customerRate, rateAmt, shownOut) : null;
+    const exchangeRateLine = frozenCard && frozenCard.text ? '1 ' + inCcy + ' = ' + frozenCard.text + ' ' + outCcy : rateShown(inCcy, outCcy, rateAmt, shownOut);
+    const exchangeRounded = frozenCard && frozenCard.text ? frozenCard.rounded : pricedRate(rateAmt, shownOut, outCcy).rounded;
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);

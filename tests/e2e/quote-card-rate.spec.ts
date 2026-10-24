@@ -10,9 +10,6 @@ import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
 const requireRoot = createRequire(path.join(process.cwd(), "package.json"));
-const { effectiveRate } = requireRoot("./os-src/effective-rate.js") as {
-  effectiveRate: (amount: string, payout: string, places: number) => { text: string; rounded: boolean };
-};
 const Decimal = requireRoot("./server/node_modules/decimal.js") as new (v: string) => {
   toDecimalPlaces: (n: number) => { toFixed: (n: number) => string };
 };
@@ -54,6 +51,26 @@ async function quoteTeller(request: APIRequestContext): Promise<string> {
     });
     expect(answer.ok(), await answer.text()).toBe(true);
   };
+  /* A pay-in updates a currency row. A drawer that has never held CAD
+     has no row, and the post is refused even though the cash is coming in. */
+  const ensureCad = async () => {
+    const res = await request.get("/api/ledger/till-balances");
+    expect(res.ok()).toBe(true);
+    const body = (await res.json()) as { balances?: Record<string, string> };
+    if (body.balances && Object.prototype.hasOwnProperty.call(body.balances, "CAD")) return;
+    const answer = await request.post("/api/ledger/till-movements", {
+      data: {
+        idempotencyKey: `quote-card-cad-${Date.now()}`,
+        direction: "in",
+        currency: "CAD",
+        amount: "1.00",
+        counterpartyType: "bank",
+        counterpartyRef: "quote-card",
+        reason: "Home cash so a CAD pay-in has a drawer row",
+      },
+    });
+    expect(answer.ok(), await answer.text()).toBe(true);
+  };
   await login("a.singh");
   const current = await session();
   const opener = String(current.session?.openedBy ?? "");
@@ -64,14 +81,14 @@ async function quoteTeller(request: APIRequestContext): Promise<string> {
       const opened = await request.post("/api/ledger/till-sessions/open", { data: {} });
       expect(opened.ok() || opened.status() === 409, await opened.text()).toBe(true);
       await topUp(have);
+      await ensureCad();
       return "a.singh";
     }
     return "m.costa";
   }
-  if (have < 2500) {
-    await login(staffId || "a.singh");
-    await topUp(have);
-  }
+  await login(staffId || "a.singh");
+  if (have < 2500) await topUp(have);
+  await ensureCad();
   return staffId || "m.costa";
 }
 
@@ -148,25 +165,68 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
   };
   expect(new Decimal(body.customerRate).toDecimalPlaces(6).toFixed(6)).toBe("0.722104");
   expect(body.outputAmount).toBe("2166.31");
-  const priced = effectiveRate(body.inputAmount, body.outputAmount, 2);
-  const line = `1 ${body.from} = ${priced.text} ${body.to}`;
-  await expect(ticket).toContainText(line);
+  await expect(ticket).toContainText("1 CAD = 0.7221 USD");
   await expect(ticket).not.toContainText("0.72225");
-  await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText(line);
-  if (priced.rounded) await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
+  await expect(ticket).not.toContainText("0.7227");
+  await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.7221 USD");
+  await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
   await expect(ticket).not.toContainText("0.722104");
 
   mkdirSync(SHOTS, { recursive: true });
-  for (const width of [360, 390, 430, 1280]) {
-    await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
+  for (const width of [360, 390, 430, 600, 1280]) {
+    await page.setViewportSize({ width, height: width >= 600 ? 800 : 844 });
     await ticket.scrollIntoViewIfNeeded();
     const shot = `${SHOTS}/quote_card_${width}.png`;
     await page.screenshot({ path: shot });
     await testInfo.attach(`quote-card-${width}`, { path: shot, contentType: "image/png" });
   }
 
-  /* The card stays at four places. The receipt prints the stored rate at six. */
+  /* 7.50 solves to 0.7227 from the payout. The card keeps the frozen 0.7221. */
   await page.setViewportSize({ width: 1280, height: 800 });
+  await amount.fill("7.50");
+  await amount.blur();
+  const smallPosted = page.waitForResponse(
+    (res) => res.url().includes("/api/quotes") && res.request().method() === "POST" && res.ok(),
+  );
+  await page.getByRole("button", { name: "Get server quote" }).click();
+  const small = await (await smallPosted).json() as { customerRate: string; outputAmount: string; to: string };
+  expect(small.outputAmount).toBe("5.42");
+  expect(small.to).toBe("USD");
+  expect(new Decimal(small.customerRate).toDecimalPlaces(6).toFixed(6)).toBe("0.722104");
+  await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.7221 USD");
+  await expect(ticket).not.toContainText("0.7227");
+  await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
+
+  /* Euro is a different frozen rate. 7.50 solves to 0.6693. The card keeps 0.6696. */
+  await page.locator(".cd-money", { has: page.locator(".cd-tx-receive") }).getByRole("button").click();
+  await page.getByRole("button", { name: /Euro/ }).click();
+  await amount.fill("7.50");
+  await amount.blur();
+  const eurPosted = page.waitForResponse(
+    (res) => res.url().includes("/api/quotes") && res.request().method() === "POST" && res.ok(),
+  );
+  await page.getByRole("button", { name: "Get server quote" }).click();
+  const eur = await (await eurPosted).json() as { customerRate: string; outputAmount: string; to: string };
+  expect(eur.outputAmount).toBe("5.02");
+  expect(eur.to).toBe("EUR");
+  expect(new Decimal(eur.customerRate).toDecimalPlaces(6).toFixed(6)).toBe("0.669603");
+  await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.6696 EUR");
+  await expect(ticket).not.toContainText("0.6693");
+  await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
+
+  await page.locator(".cd-money", { has: page.locator(".cd-tx-receive") }).getByRole("button").click();
+  await page.getByRole("button", { name: /US Dollar/ }).click();
+  await amount.fill("3000");
+  await amount.blur();
+  const again = page.waitForResponse(
+    (res) => res.url().includes("/api/quotes") && res.request().method() === "POST" && res.ok(),
+  );
+  await page.getByRole("button", { name: "Get server quote" }).click();
+  const restored = await (await again).json() as { outputAmount: string };
+  expect(restored.outputAmount).toBe("2166.31");
+  await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.7221 USD");
+
+  /* The card stays at four places. The receipt prints the stored rate at six. */
   const postedDeal = page.waitForResponse((res) => {
     const pathname = new URL(res.url()).pathname;
     return /\/api\/quotes\/[^/]+\/post$/.test(pathname) && res.request().method() === "POST";

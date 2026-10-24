@@ -612,14 +612,19 @@
     /* Once the server has priced the deal, that figure is the one on
        the ticket. The local preview is only what shows before then. */
     /* The payout on the card is the server's once a quote exists. The
-       rate beside it has to be that payout's rate. The preview rate
-       (0.72225 on 3,000 CAD) is a different figure from the one the
-       server froze. */
+       rate beside it is the frozen customerRate, not a rate solved from
+       the two amounts. 7.50 CAD pays 5.42 USD and still reads 0.7221.
+       Before a quote, the preview stays the board figure (0.72225). */
     const serverPriced = !!(serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy);
     const shownOut = serverPriced ? serverQuote.outputAmount : out.amt;
     const rateAmt = serverPriced && serverQuote.inputAmount != null ? serverQuote.inputAmount : amtN;
-    const exchangeRateLine = rateShown(inCcy, outCcy, rateAmt, shownOut);
-    const exchangeRounded = pricedRate(rateAmt, shownOut, outCcy).rounded;
+    const frozenCard = serverPriced && serverQuote.customerRate != null && window.CDOS.quoteCardRate
+      ? window.CDOS.quoteCardRate(serverQuote.customerRate, rateAmt, shownOut)
+      : null;
+    const exchangeRateLine = frozenCard && frozenCard.text
+      ? ('1 ' + inCcy + ' = ' + frozenCard.text + ' ' + outCcy)
+      : rateShown(inCcy, outCcy, rateAmt, shownOut);
+    const exchangeRounded = frozenCard && frozenCard.text ? frozenCard.rounded : pricedRate(rateAmt, shownOut, outCcy).rounded;
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
