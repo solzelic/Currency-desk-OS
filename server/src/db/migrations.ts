@@ -58,6 +58,8 @@ export const migrations: readonly Migration[] = [
   ["048_till_count_stored_expected", "src/db/migrations/048_till_count_stored_expected.sql"],
   /* 049 is the inquiry-to-shop map. 050 is used by another change. */
   ["049_idv_inquiry_map", "src/db/migrations/049_idv_inquiry_map.sql"],
+  /* 050 is open draft #267. 051 is #270. 052 is identity-check credits. */
+  ["052_idv_credit_ledger", "src/db/migrations/052_idv_credit_ledger.sql"],
 ] as const;
 
 export async function runMigrations(
