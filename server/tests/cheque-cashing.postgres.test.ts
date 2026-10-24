@@ -278,8 +278,14 @@ postgres("cheque cashing on the ledger", () => {
 
   afterAll(async () => {
     /* Hand the database back empty — the suites share one, and a cheque
-       left behind would count toward another file's totals. */
+       left behind would count toward another file's totals. The second
+       till's balance insert bumps ledger_till_balance_generations, and
+       that row is not in the truncate list, so remove it here. */
     await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques CASCADE");
+    await pool.query(
+      "DELETE FROM ledger_till_balance_generations WHERE workspace_id=$1 AND till_id=$2",
+      ["ws-yorkville-till-02", "till-02"],
+    );
     await app.close();
     await handle.close();
     await pool.end();
@@ -658,8 +664,6 @@ postgres("cheque cashing on the ledger", () => {
   it("puts a reversal back only in the till that paid the cheque, and writes nothing from another till", async () => {
     const secondWorkspace = "ws-yorkville-till-02";
     const secondTill = "till-02";
-    /* The session resolves the till from the app database. The drawer
-       itself lives on the ledger connection. Both have to name this till. */
     await handle.db.insert(schema.workspaces).values({
       id: secondWorkspace,
       tenantId: DEMO.tenantId,
@@ -667,11 +671,6 @@ postgres("cheque cashing on the ledger", () => {
       branchId: DEMO.branchId,
       tillId: secondTill,
     }).onConflictDoNothing();
-    await pool.query(
-      `INSERT INTO workspaces (id,tenant_id,legal_entity_id,branch_id,till_id)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-      [secondWorkspace, DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, secondTill],
-    );
     await pool.query(
       `INSERT INTO ledger_till_balances
         (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount)
