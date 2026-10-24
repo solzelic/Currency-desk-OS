@@ -45,7 +45,7 @@
   const { defaultCorridors, defaultBeneficiaries, defaultTransfers, BKEY, CKEY, TKEY, load,
     FLOW, STATUS, statusLabel, METHODS, methodLabel, StatusPill, cadOf, flagOf,
     BeneficiaryModal, TransferModal, TransferDetail } = T;
-  const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  const stamp = () => window.CDOS.deskStampNow();
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
   const inputSty = { border: `1px solid ${CD.line}`, background: 'var(--cd-panel)', borderRadius: 8 };
   const inputCls = 'w-full text-sm px-2.5 py-2 outline-none';

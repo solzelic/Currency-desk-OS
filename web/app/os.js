@@ -219,6 +219,103 @@
 });
 
 
+/* ---- os-src/cdos-desk-time.js ---- */
+/* The desk's one clock. Screens call this. They do not format a time
+   or a civil day themselves.
+   deskTime(value, '12h', zone) is "3:43 pm". '24h' is "15:43".
+   deskDay is the civil date in that zone, not UTC and not the browser.
+   A stored row keeps 24-hour HH:MM. deskRow turns an instant, or that
+   stored reading, into the desk's format. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) {
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.deskTime = api.deskTime;
+    cdos.deskDay = api.deskDay;
+    cdos.deskStamp = api.deskStamp;
+    cdos.deskClockText = api.deskClockText;
+    cdos.deskRow = api.deskRow;
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  function asDate(value) {
+    if (value instanceof Date) return value;
+    return new Date(value);
+  }
+  function parts(date, timeZone, kinds) {
+    var opts = { hourCycle: "h23" };
+    for (var i = 0; i < kinds.length; i++) opts[kinds[i]] = kinds[i] === "year" ? "numeric" : "2-digit";
+    if (timeZone) opts.timeZone = timeZone;
+    return new Intl.DateTimeFormat("en-US", opts).formatToParts(date);
+  }
+  function pick(list, type) {
+    for (var i = 0; i < list.length; i++) if (list[i].type === type) return list[i].value;
+    return "";
+  }
+  function hourMinute(date, timeZone) {
+    var list = parts(date, timeZone, ["hour", "minute"]);
+    var h = +pick(list, "hour");
+    var m = +pick(list, "minute");
+    if (h === 24) h = 0;
+    if (!isFinite(h) || !isFinite(m)) return null;
+    return { h: h, m: m };
+  }
+  function deskTime(value, timeFormat, timeZone) {
+    var date = asDate(value);
+    var hm = null;
+    try { hm = hourMinute(date, timeZone); } catch (e) { hm = null; }
+    if (!hm) { try { hm = { h: date.getHours(), m: date.getMinutes() }; } catch (e2) { hm = null; } }
+    if (!hm || !isFinite(hm.h) || !isFinite(hm.m)) hm = { h: date.getUTCHours(), m: date.getUTCMinutes() };
+    var h = hm.h;
+    var m = hm.m;
+    if ((timeFormat || "12h") !== "24h") {
+      var ap = h < 12 ? "am" : "pm";
+      var hh = h % 12;
+      if (hh === 0) hh = 12;
+      return hh + ":" + String(m).padStart(2, "0") + " " + ap;
+    }
+    return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+  }
+  function deskDay(value, timeZone) {
+    var date = asDate(value);
+    try {
+      var list = parts(date, timeZone, ["year", "month", "day"]);
+      var y = pick(list, "year");
+      var mo = pick(list, "month");
+      var d = pick(list, "day");
+      if (/^\d{4}$/.test(y) && /^\d{2}$/.test(mo) && /^\d{2}$/.test(d)) return y + "-" + mo + "-" + d;
+    } catch (e) { /* an unreadable zone falls through */ }
+    try {
+      return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+    } catch (e2) {
+      return date.getUTCFullYear() + "-" + String(date.getUTCMonth() + 1).padStart(2, "0") + "-" + String(date.getUTCDate()).padStart(2, "0");
+    }
+  }
+  function deskStamp(value, timeFormat, timeZone) {
+    return deskDay(value, timeZone) + " " + deskTime(value, timeFormat, timeZone);
+  }
+  function deskClockText(text, timeFormat) {
+    var raw = String(text == null ? "" : text).trim();
+    var m = /^(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?$/i.exec(raw);
+    if (!m) return raw;
+    var h = +m[1];
+    var min = +m[2];
+    var ap = m[3] ? m[3].toLowerCase() : "";
+    if (ap === "pm" && h < 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+    if (h > 23 || min > 59) return raw;
+    return deskTime(new Date(2000, 0, 1, h, min), timeFormat);
+  }
+  function deskRow(row, timeFormat, timeZone) {
+    var at = row && row.at;
+    if (typeof at === "number" && isFinite(at)) return { day: deskDay(at, timeZone), time: deskTime(at, timeFormat, timeZone) };
+    if (at instanceof Date && !isNaN(at.getTime())) return { day: deskDay(at, timeZone), time: deskTime(at, timeFormat, timeZone) };
+    return { day: row && row.date != null ? String(row.date) : "", time: deskClockText(row && row.time, timeFormat) };
+  }
+  return { deskTime: deskTime, deskDay: deskDay, deskStamp: deskStamp, deskClockText: deskClockText, deskRow: deskRow };
+});
+
+
 /* ---- os-src/cdos-base.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — base layer
@@ -252,9 +349,10 @@
       chipDeep: '#e3e0d8',
       line: 'rgba(10,10,10,0.14)',
       lineSoft: 'rgba(10,10,10,0.07)',
+      /* #666666 is 5.17:1 on #f4f3f0 and 4.74:1 on the warning card #f5e8cf. */
       text: '#0a0a0a',
-      mute: 'rgba(10,10,10,0.55)',
-      faint: 'rgba(10,10,10,0.4)',
+      mute: '#666666',
+      faint: '#666666',
       /* #6b6b6b is 5.3:1 on white. #a9a9a9 is 8.4:1 on the black ticket. */
       pinNote: '#6b6b6b',
       noteOnInk: '#a9a9a9',
@@ -295,8 +393,8 @@
       lineSoft: 'rgba(255,255,255,0.08)',
       text: '#eceae3',
       mute: 'rgba(236,234,227,0.58)',
-      faint: 'rgba(236,234,227,0.4)',
-      /* #aea89f is 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
+      faint: '#aea89f',
+      /* #aea89f is 7.1:1 on the night panel and 6.5:1 on the night chip. #5c574e is 5.9:1 on the night ticket. */
       pinNote: '#aea89f',
       noteOnInk: '#5c574e',
       hoverSoft: 'rgba(255,255,255,0.05)',
@@ -730,7 +828,7 @@
     const year = bits[0];
     const month = bits[1];
     const date = bits[2];
-    return new Date(Date.UTC(year, month - 1, date + n, 12)).toISOString().slice(0, 10);
+    return window.CDOS.deskDay(Date.UTC(year, month - 1, date + n, 12), 'UTC');
   }
   function businessDayWindow(days) {
     const endDay = shiftCivilDay(businessDate(), 1);
@@ -1393,11 +1491,16 @@
 
   /* human-readable, sortable reference: LT-YYMMDD-NNN */
   const mkRef = (date, seq) => 'LT-' + String(date).slice(2).replace(/-/g, '') + '-' + String(seq).padStart(3, '0');
-  const nowTime = () => new Date().toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+  const branchZone = () => _branchZone;
+  function deskFormat() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cdos_settings') || '{}');
+      if (saved && saved.timeFormat) return saved.timeFormat;
+    } catch (e) {}
+    return '12h';
+  }
+  const deskStampNow = () => window.CDOS.deskStamp(Date.now(), deskFormat(), branchZone());
+  const nowTime = () => window.CDOS.deskTime(Date.now(), '24h', branchZone());
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
@@ -2297,6 +2400,9 @@
     dDiff,
     mkRef,
     nowTime,
+    branchZone,
+    deskFormat,
+    deskStampNow,
     newTx,
     seedRows,
     seedClients,
@@ -2831,6 +2937,8 @@
 
   function transactionToRow(transaction, customerName, compliance) {
     var posted = new Date(transaction.postedAt);
+    var at = posted.getTime();
+    var zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || "America/Toronto";
     var reversal = transaction.reversal || null;
     compliance = compliance || {};
     return {
@@ -2838,8 +2946,9 @@
       serverTransactionId: transaction.transactionId,
       serverQuoteId: transaction.quoteId || null,
       ref: transaction.transactionRef,
-      date: posted.toISOString().slice(0, 10),
-      time: posted.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      date: window.CDOS.deskDay(at, zone),
+      time: window.CDOS.deskTime(at, "24h", zone),
+      at: at,
       customer: customerName || transaction.customerId,
       beneficiary: "",
       type: DEAL_TYPE_LABEL[transaction.dealKind] || "Currency Exchange",
@@ -3986,71 +4095,10 @@ if (typeof window !== "undefined") {
     return pack && pack.homeCurrency || (window.CDOS.reportingLimit(null) || {}).currency || null;
   };
 
-  /* The desk's one clock. Settings → Time format is 12-hour unless the
-     desk picked 24-hour. The Audit Trail already used this rule. The
-     menubar calls the same function, so a 12-hour desk reads 16:05 as
-     4:05 pm, the same shape as a held quote.
-      timeZone is settings.timezone, the zone the localization screen
-     stores and the receipt settings travel with. The menubar passes
-     it, so the header is the desk's hour, not the browser's. Omit it
-     for a reading that is already wall time: the Audit Trail stores
-     minutes, then builds a local date from those minutes.
-      A zone Intl will not read (Mars/Olympus in a saved desk) throws.
-     That throw used to unmount the menubar. The fallback is the same
-     order as tzOffset in cdos-lctr.jsx: this browser's zone, then UTC. */
-  function hourMinute(date, timeZone) {
-    const opts = {
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23'
-    };
-    if (timeZone) opts.timeZone = timeZone;
-    const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(date);
-    let h = NaN,
-      m = NaN;
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i].type === 'hour') h = +parts[i].value;else if (parts[i].type === 'minute') m = +parts[i].value;
-    }
-    if (h === 24) h = 0;
-    if (!isFinite(h) || !isFinite(m)) return null;
-    return {
-      h: h,
-      m: m
-    };
-  }
-  function deskTime(date, timeFormat, timeZone) {
-    let hm = null;
-    try {
-      hm = hourMinute(date, timeZone);
-    } catch (e) {
-      hm = null;
-    }
-    if (!hm) {
-      try {
-        hm = {
-          h: date.getHours(),
-          m: date.getMinutes()
-        };
-      } catch (e) {
-        hm = null;
-      }
-    }
-    if (!hm || !isFinite(hm.h) || !isFinite(hm.m)) {
-      hm = {
-        h: date.getUTCHours(),
-        m: date.getUTCMinutes()
-      };
-    }
-    const h = hm.h,
-      m = hm.m;
-    if ((timeFormat || '12h') !== '24h') {
-      const ap = h < 12 ? 'am' : 'pm';
-      let hh = h % 12;
-      if (hh === 0) hh = 12;
-      return hh + ':' + String(m).padStart(2, '0') + ' ' + ap;
-    }
-    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-  }
+  /* The clock lives in os-src/cdos-desk-time.js, loaded before this
+     file. The Audit Trail and the menubar both call it. */
+  const deskTime = window.CDOS.deskTime;
+  const deskDay = window.CDOS.deskDay;
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -4529,10 +4577,8 @@ if (typeof window !== "undefined") {
       let cutoff = null;
       if (days != null) {
         const ds = items.map(a => a.date).filter(Boolean).sort();
-        const refDate = ds.length ? ds[ds.length - 1] : new Date().toISOString().slice(0, 10);
-        const d = new Date(refDate + 'T00:00:00');
-        d.setDate(d.getDate() - days);
-        cutoff = d.toISOString().slice(0, 10);
+        const refDate = ds.length ? ds[ds.length - 1] : deskDay(Date.now());
+        cutoff = deskDay(Date.parse(refDate + 'T12:00:00Z') - days * 86400000, 'UTC');
       }
       return items.filter(a => {
         if (cutoff && a.date < cutoff) return false;
@@ -13520,10 +13566,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const keyOf = date => {
         if (bmode === 'day') return date;
         if (bmode === 'month') return date.slice(0, 7);
-        const dt = new Date(date);
-        const off = (dt.getDay() + 6) % 7;
-        dt.setDate(dt.getDate() - off);
-        return dt.toISOString().slice(0, 10);
+        const dt = new Date(date + 'T12:00:00Z');
+        const off = (dt.getUTCDay() + 6) % 7;
+        return window.CDOS.deskDay(dt.getTime() - off * 86400000, 'UTC');
       };
       const labelOf = k => {
         if (bmode === 'day') return k.slice(5);
@@ -13610,7 +13655,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         limit
       };
     }, [rows, clients, settings, range, book.position, deskFacts]);
-    const hour = new Date().getHours();
+    const hour = parseInt(window.CDOS.deskTime(Date.now(), '24h', window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto'), 10);
     const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     const firstName = (me && me.name ? me.name.split(/[ .]/).filter(Boolean).pop() : '') || 'there';
     const maxTeller = Math.max(1, ...D.tellers.map(t => t[1]));
@@ -14573,7 +14618,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         width: 92,
         whiteSpace: 'nowrap'
       }
-    }, r.date.slice(5), " ", r.time), /*#__PURE__*/React.createElement("span", {
+    }, (() => {
+      const when = window.CDOS.deskRow(r, settings && settings.timeFormat, window.CDOS.branchZone && window.CDOS.branchZone() || settings && settings.timezone);
+      return when.day.slice(5) + ' ' + when.time;
+    })()), /*#__PURE__*/React.createElement("span", {
       className: "grid place-items-center flex-none",
       style: {
         width: 24,
@@ -24065,7 +24113,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
      source of funds, corporate filings) go to the server. A gallery
      picture is not a paper filed for the customer, and it is not this
      change. */
-  const stampToday = () => new Date().toISOString().slice(0, 10);
+  const stampToday = () => window.CDOS.deskDay(Date.now(), window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
   function clientWriter({
     name,
     rec,
@@ -25430,9 +25478,7 @@ table.tx{border-collapse:collapse;width:100%;}table.tx th{text-align:left;font-s
 table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r{text-align:right;font-variant-numeric:tabular-nums;}.c{text-align:center;}.mono{font-family:'Space Mono',monospace;font-size:10px;color:#666;}.mut{color:#999;}.grn{color:#1f8a4c;}tr.void td{opacity:.5;text-decoration:line-through;}
 .ft{margin-top:14px;font-size:10px;color:#999;}@page{margin:13mm;}</style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">${esc(name)}</div><div class="sub">${corp ? 'Corporate client' : 'Individual client'} · KYC file</div><span class="badge">${esc(stat).toUpperCase()}</span></div>
-<div class="meta"><b>CLIENT REPORT</b><div>Generated ${esc(new Date().toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', ''))}</div><div>${esc(bizName)} · ${esc(bizLine)}</div></div></div>
+<div class="meta"><b>CLIENT REPORT</b><div>Generated ${esc(window.CDOS.deskStampNow())}</div><div>${esc(bizName)} · ${esc(bizLine)}</div></div></div>
 <div class="kpis"><div class="kpi"><div class="l">Transactions</div><div class="v">${st.n}</div></div><div class="kpi"><div class="l">Lifetime volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(st.vol))}</div></div><div class="kpi"><div class="l">Fees paid</div><div class="v">${esc(fmtHome(st.fees))}</div></div><div class="kpi"><div class="l">Reportable deals</div><div class="v">${reportable}</div></div></div>
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
@@ -27625,7 +27671,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           [name]: {
             ...(c[name] || {}),
             kind,
-            createdAt: new Date().toISOString().slice(0, 10)
+            createdAt: stampToday()
           }
         }));
       }
@@ -28088,7 +28134,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           }
           setClients(prev => shared.project(prev));
         } else {
-          const today = new Date().toISOString().slice(0, 10);
+          const today = stampToday();
           setClients(c => ({
             ...c,
             [name]: {
@@ -28825,9 +28871,28 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      flags nothing and SAYS so, rather than flagging everything against a
      number the desk never chose. */
   const limitOf = settings => reportingLimit(settings);
-  const stamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  const stamp = () => window.CDOS.deskStampNow();
+  function heldLabel(ms) {
+    const format = window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    return window.CDOS.deskStamp(ms, format, zone);
+  }
+  function showStamp(text, at) {
+    const format = window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    if (typeof at === 'number' && isFinite(at)) return window.CDOS.deskStamp(at, format, zone);
+    const raw = String(text == null ? '' : text).trim();
+    const ms = Date.parse(raw);
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw) && isFinite(ms)) return window.CDOS.deskStamp(ms, format, zone);
+    const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?)/i.exec(raw);
+    if (!m || !window.CDOS.deskClockText) return raw;
+    return m[1] + ' ' + window.CDOS.deskClockText(m[2], format);
+  }
+  function whenOf(row, settings) {
+    const format = settings && settings.timeFormat || window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || settings && settings.timezone || 'America/Toronto';
+    return window.CDOS.deskRow(row, format, zone);
+  }
   // overlays portal to the document root so the window's stacking context
   // (and the rate ticker at z-360) can't occlude them
   const Portal = ({
@@ -28918,6 +28983,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     cadIn,
     children
   }) {
+    const when = whenOf(r);
     return /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3 px-3 py-2.5",
       style: {
@@ -28944,7 +29010,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.mute
       }
-    }, r.type, " \xB7 ", fmtHome(cadIn(r)), " \xB7 ", r.date, " ", r.time)), /*#__PURE__*/React.createElement("div", {
+    }, r.type, " \xB7 ", fmtHome(cadIn(r)), " \xB7 ", when.day, " ", when.time)), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenDetail(r.id),
@@ -29125,7 +29191,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const s = useMemo(() => {
       const h = live.filter(r => r.customer === name);
       const winDays = settings && settings.structuringDays || 30;
-      const cutoff = new Date(Date.now() - winDays * 86400000).toISOString().slice(0, 10);
+      const cutoff = window.CDOS.deskDay(Date.now() - winDays * 86400000, window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
       const ccyCount = {};
       const home = homeCcy();
       h.forEach(r => {
@@ -29701,13 +29767,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           by: me.name,
           at: stamp()
         } : null,
-        lockedUntil: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', {
-          hour12: false
-        }).replace(',', '') : null,
+        lockedUntil: lockLive ? heldLabel(lockLive.until) : null,
         createdBy: me.name,
         createdAt: stamp(),
         thread: memo ? [{
           ts: stamp(),
+          at: Date.now(),
           user: me.name,
           text: memo
         }] : []
@@ -29761,9 +29826,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const lk = lockLive;
       const mins = settings && settings.rateLockMins || 15;
       const ref = lk ? lk.ref : 'Q-' + String(businessDate()).slice(2).replace(/-/g, '') + '-PRE';
-      const until = lk ? new Date(lk.until).toLocaleString('en-CA', {
-        hour12: false
-      }).replace(',', '') : `${mins} min from print`;
+      const until = lk ? heldLabel(lk.until) : `${mins} min from print`;
       const sideLabel = pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy} cross`;
       const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, m => ({
         '&': '&amp;',
@@ -30607,11 +30670,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         rate: rateN,
         fee: parseFloat(fee) || 0,
         side: pricing.side,
-        held: lockLive ? new Date(lockLive.until).toLocaleString('en-CA', {
-          hour12: false,
-          hour: '2-digit',
-          minute: '2-digit'
-        }) : null
+        held: lockLive ? heldLabel(lockLive.until) : null
       },
       onClose: () => setPresent(false)
     })), document.body);
@@ -31041,6 +31100,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       if (blocked) return;
       const newRef = row.ref + '-C' + Math.floor(10 + Math.random() * 89);
       const st = stamp();
+      const stampedAt = Date.now();
       // 1) void the original, cross-linked to the correction
       setRows(rs => rs.map(r => r.id === row.id ? {
         ...r,
@@ -31051,6 +31111,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         correctedTo: isDuplicate ? null : newRef,
         thread: [...(r.thread || []), {
           ts: st,
+          at: stampedAt,
           user: me.name,
           text: (isDuplicate ? 'REVERSED (duplicate) — ' : 'CORRECTED → ' + newRef + ' — ') + reasonText()
         }]
@@ -31095,6 +31156,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           createdAt: st,
           thread: [{
             ts: st,
+            at: stampedAt,
             user: me.name,
             text: 'CORRECTION of ' + row.ref + ' — ' + reasonText()
           }]
@@ -31495,6 +31557,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       if (!note.trim()) return;
       const entry = {
         ts: stamp(),
+        at: Date.now(),
         user: me.name,
         text: note.trim()
       };
@@ -31574,6 +31637,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
           voidAt: stamp(),
           thread: [...(r.thread || []), {
             ts: stamp(),
+            at: Date.now(),
             user: me.name,
             text: 'VOID — ' + voidReason.trim()
           }]
@@ -31647,6 +31711,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
 
     // earnings: posted fee + the spread actually booked at the counter (exact when
     // the deal was two-side priced; falls back to the live-mid estimate for legacy rows)
+    const when = whenOf(row, settings);
     const inCad = homeOf(row.inAmt, row.inCcy) || 0;
     const spreadCad = dealMargin(row);
     const feeCad = row.fee == null ? null : +row.fee;
@@ -31713,7 +31778,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, row.date, " ", row.time, " \xB7 ", row.teller)), /*#__PURE__*/React.createElement("div", {
+    }, when.day, " ", when.time, " \xB7 ", row.teller)), /*#__PURE__*/React.createElement("div", {
       className: "tx-detail-actions ml-auto flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => onReceipt(row),
@@ -31866,7 +31931,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         borderRadius: 10,
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("b", null, row.correctedTo ? 'Corrected & voided' : 'Voided'), " by ", row.voidBy, " \xB7 ", row.voidAt, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("b", null, row.correctedTo ? 'Corrected & voided' : 'Voided'), " by ", row.voidBy, " \xB7 ", showStamp(row.voidAt), /*#__PURE__*/React.createElement("div", {
       style: {
         color: CD.mute
       }
@@ -32125,7 +32190,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.faint
       }
-    }, "Captured by ", row.capture.by, " \xB7 ", row.capture.at))), /*#__PURE__*/React.createElement(TxFacts, {
+    }, "Captured by ", row.capture.by, " \xB7 ", showStamp(row.capture.at)))), /*#__PURE__*/React.createElement(TxFacts, {
       row: row,
       onOpenClient: onOpenClient
     }), !isVoid && (() => {
@@ -32194,7 +32259,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         style: {
           color: CD.ink
         }
-      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", row.marginOverride.at, row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), !withheld && /*#__PURE__*/React.createElement("p", {
+      }, "Booked at ", row.marginOverride.pct, "% by ", row.marginOverride.by, " \xB7 ", showStamp(row.marginOverride.at), row.marginOverride.reason ? ` — "${row.marginOverride.reason}"` : ''))), !withheld && /*#__PURE__*/React.createElement("p", {
         className: "mt-1.5 text-[11px]",
         style: {
           color: CD.faint
@@ -32227,7 +32292,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, /*#__PURE__*/React.createElement("span", null, n.user), /*#__PURE__*/React.createElement("span", null, n.ts)), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, n.user), /*#__PURE__*/React.createElement("span", null, showStamp(n.ts, n.at))), /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.ink
@@ -32652,9 +32717,6 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     onOpenRecordsWindow,
     onFileLCTR
   }) {
-    const stamp = () => new Date().toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '');
     const cadIn = r => homeOf(r.inAmt, r.inCcy);
     /* The amount on a large-CASH filing is the cash the customer put on
        the counter, which is not the deal's size — see COUNTER_CASH in
@@ -33353,7 +33415,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         const f = flags[r.id] || {};
         const v = r.status === 'void';
         const fl = v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' && f.idNeeded ? 'ID' : ''].filter(Boolean).join(' ') || '—';
-        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
+        const when = whenOf(r, settings);
+        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(when.day)} <span class="mut">${esc(when.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
       }).join('');
       const w = window.open('', '_blank', 'width=980,height=1100');
       if (!w) {
@@ -33397,9 +33460,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 @page{margin:13mm;}
 </style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Ledger Report</div></div>
-<div class="meta"><b>${esc(rangeLabel)}</b><div>Generated ${esc(new Date().toLocaleString('en-CA', {
-        hour12: false
-      }).replace(',', ''))}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
+<div class="meta"><b>${esc(rangeLabel)}</b><div>Generated ${esc(window.CDOS.deskStampNow())}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
 <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
 <div class="kpis"><div class="kpi"><div class="l">Records</div><div class="v">${recs.length}</div></div><div class="kpi"><div class="l">Pay-in volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(vol))}</div></div><div class="kpi"><div class="l">Fees collected</div><div class="v">${esc(fmtHome(fees))}</div></div></div>
 <table><thead><tr><th>Ref</th><th>Date / time</th><th>Customer</th><th>Type</th><th class="r">Pay-in</th><th class="r">Pay-out</th><th class="r">Fee</th><th>Teller</th><th class="c">Flags</th></tr></thead><tbody>${body || '<tr><td colspan="9" style="padding:14px;color:#999;">No records match the current filters.</td></tr>'}</tbody></table>
@@ -33971,14 +34032,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, sort.dir === 'asc' ? '▲' : '▼')))))), /*#__PURE__*/React.createElement("tbody", null, filtered.map(x => {
       const f = flags[x.id] || {};
       const isVoid = x.status === 'void';
+      const when = whenOf(x, settings);
       return /*#__PURE__*/React.createElement("tr", {
         key: x.id,
         onClick: () => setDetailId(x.id),
-        className: "cursor-pointer",
+        className: "cd-row cursor-pointer",
         style: {
           borderBottom: `1px solid ${CD.lineSoft}`,
           opacity: isVoid ? 0.5 : 1,
-          background: detailId === x.id ? '#f6f5f1' : 'transparent'
+          background: detailId === x.id ? 'var(--cd-chip)' : 'transparent'
         },
         onMouseEnter: e => {
           if (detailId !== x.id) e.currentTarget.style.background = 'var(--cd-paper-soft)';
@@ -34014,12 +34076,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           color: CD.text,
           fontVariantNumeric: 'tabular-nums'
         }
-      }, x.date, /*#__PURE__*/React.createElement("span", {
+      }, when.day, /*#__PURE__*/React.createElement("span", {
         className: "text-[11px]",
         style: {
           color: CD.faint
         }
-      }, " ", x.time)), /*#__PURE__*/React.createElement("td", {
+      }, " ", when.time)), /*#__PURE__*/React.createElement("td", {
         className: "px-3 py-2.5 font-medium",
         style: {
           color: CD.ink
@@ -40374,9 +40436,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     TransferModal,
     TransferDetail
   } = T;
-  const stamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  const stamp = () => window.CDOS.deskStampNow();
   const Portal = ({
     children
   }) => ReactDOM.createPortal(children, document.body);
@@ -44133,9 +44193,6 @@ var CDOS_CHEQUE_FEE = (function () {
     crossRate,
     counterCashIn
   } = window.CDOS;
-  const stamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
   const home = (amount, ccy) => ccy === 'CAD' ? Number(amount) || 0 : (Number(amount) || 0) / (crossRate('CAD', ccy) || 1);
   /** What the deal was FOR, in home money. A size, not a cash movement. */
   const cadIn = r => home(r.inAmt, r.inCcy);
@@ -44608,11 +44665,16 @@ var CDOS_CHEQUE_FEE = (function () {
     const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
     return m ? +m[1] * 60 + +m[2] : 0;
   }
+  function clockMins(d) {
+    const hm = window.CDOS.deskTime(d, '24h');
+    const p = /^(\d{2}):(\d{2})$/.exec(hm || '');
+    return p ? +p[1] * 60 + +p[2] : 0;
+  }
   // the static 24h window a timestamp falls into, anchored at startMins past midnight
   function windowOf(d, startMins, H) {
     const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
     let ws = new Date(dayStart.getTime() + startMins * 60000);
-    const mins = d.getHours() * 60 + d.getMinutes();
+    const mins = clockMins(d);
     if (mins < startMins) ws = new Date(ws.getTime() - 24 * 3600000);
     const we = new Date(ws.getTime() + (H || 24) * 3600000);
     return {
@@ -44695,13 +44757,15 @@ var CDOS_CHEQUE_FEE = (function () {
         evs: []
       }).evs.push(e);
     });
-    const fmtT = d => d.toLocaleString('en-CA', {
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
+    const fmtT = d => {
+      const format = window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
+      const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+      const day = window.CDOS.deskDay(d, zone);
+      const time = window.CDOS.deskTime(d, format, zone);
+      const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+      return (m ? mon[+m[2] - 1] + ' ' + +m[3] : day) + ' ' + time;
+    };
     const out = [];
     Object.keys(buckets).forEach(key => {
       const {
@@ -44709,7 +44773,7 @@ var CDOS_CHEQUE_FEE = (function () {
         evs
       } = buckets[key];
       const windowLabel = fmtT(w.start) + ' → ' + fmtT(w.end);
-      const dayKey = w.start.toISOString().slice(0, 10);
+      const dayKey = window.CDOS.deskDay(w.start, window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
       const mk = (basis, keyFn) => {
         const groups = {};
         evs.forEach(e => {
@@ -44988,8 +45052,21 @@ var CDOS_CHEQUE_FEE = (function () {
   function fmtWindowEdge(iso, tz) {
     const d = new Date(iso);
     if (isNaN(d)) return '—';
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${tzOffset(d, tz)}`;
+    const list = new Intl.DateTimeFormat('en-US', {
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).formatToParts(d);
+    const pick = type => {
+      const p = list.find(x => x.type === type);
+      return p ? p.value : '00';
+    };
+    const hour = pick('hour') === '24' ? '00' : pick('hour');
+    return `${pick('year')}-${pick('month')}-${pick('day')} ${hour}:${pick('minute')}:${pick('second')}${tzOffset(d, tz)}`;
   }
   // surname / given / other from a single stored name
   function nameParts(full) {
@@ -52028,9 +52105,7 @@ ${snap}`;
   };
   // booked spread per deal — exact when two-side priced, else the live-mid estimate
   const spreadOf = r => dealMargin(r);
-  const stampNow = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
+  const stampNow = () => window.CDOS.deskStampNow();
   /* The ledger records WHO posted a deal as a principal id, tenant-scoped
      ("tnt-yorkfx:a.singh"). Earnings by teller is the book's answer, so the
      id is the book's; turning it back into a person is presentation, and
@@ -54129,6 +54204,7 @@ ${snap}`;
         }, "Flags"))), /*#__PURE__*/React.createElement("tbody", null, data.inP.map(r => {
           const f = flags[r.id] || {};
           const isVoid = r.status === 'void';
+          const when = window.CDOS.deskRow(r, settings && settings.timeFormat, window.CDOS.branchZone && window.CDOS.branchZone() || settings && settings.timezone);
           return /*#__PURE__*/React.createElement("tr", {
             key: r.id,
             style: {
@@ -54147,11 +54223,11 @@ ${snap}`;
               ...tdS,
               whiteSpace: 'nowrap'
             }
-          }, r.date, " ", /*#__PURE__*/React.createElement("span", {
+          }, when.day, " ", /*#__PURE__*/React.createElement("span", {
             style: {
               color: CD.faint
             }
-          }, r.time)), /*#__PURE__*/React.createElement("td", {
+          }, when.time)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               fontWeight: 500
@@ -57826,14 +57902,14 @@ ${snap}`;
       window.dispatchEvent(new Event('cdos_tg_sync'));
     } catch (e) {}
   }, 60);
-  const hhmm = ts => new Date(ts).toLocaleTimeString('en-CA', {
-    hour: 'numeric',
-    minute: '2-digit'
-  });
-  const mdhm = ts => new Date(ts).toLocaleDateString('en-CA', {
-    month: 'short',
-    day: 'numeric'
-  }) + ' ' + hhmm(ts);
+  const branchZone = () => window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+  const hhmm = ts => window.CDOS.deskTime(ts, window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h', branchZone());
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mdhm = ts => {
+    const day = window.CDOS.deskDay(ts, branchZone());
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+    return (m ? MONTHS[+m[2] - 1] + ' ' + +m[3] : day) + ' ' + hhmm(ts);
+  };
   const render = (tpl, ctx) => (tpl || '').replace(/\{(\w+)\}/g, (m, k) => ctx[k] != null && ctx[k] !== '' ? ctx[k] : m);
   const segsOf = t => Math.max(1, Math.ceil((t || '').length / 153));
   const onBoard = ccy => {
@@ -61095,10 +61171,7 @@ ${snap}`;
       return () => clearInterval(t);
     }, [tg.nudge, tg.tpl.nudge]);
     const sendBcast = (body, n, cost, toLabel, aud) => {
-      const at = new Date().toLocaleDateString('en-CA', {
-        month: 'short',
-        day: 'numeric'
-      }) + ' · ' + hhmm(Date.now());
+      const at = mdhm(Date.now()).replace(' ', ' · ');
       const full = aud === 'all' ? body + ' Reply STOP to opt out.' : body;
       setBcasts(l => [{
         id: 'b' + Date.now(),

@@ -246,7 +246,7 @@
      source of funds, corporate filings) go to the server. A gallery
      picture is not a paper filed for the customer, and it is not this
      change. */
-  const stampToday = () => new Date().toISOString().slice(0, 10);
+  const stampToday = () => window.CDOS.deskDay(Date.now(), (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto');
   function clientWriter({ name, rec, setClients, reload, onError }) {
     const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
     rec = rec || {};
@@ -764,7 +764,7 @@ table.tx{border-collapse:collapse;width:100%;}table.tx th{text-align:left;font-s
 table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r{text-align:right;font-variant-numeric:tabular-nums;}.c{text-align:center;}.mono{font-family:'Space Mono',monospace;font-size:10px;color:#666;}.mut{color:#999;}.grn{color:#1f8a4c;}tr.void td{opacity:.5;text-decoration:line-through;}
 .ft{margin-top:14px;font-size:10px;color:#999;}@page{margin:13mm;}</style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">${esc(name)}</div><div class="sub">${corp ? 'Corporate client' : 'Individual client'} · KYC file</div><span class="badge">${esc(stat).toUpperCase()}</span></div>
-<div class="meta"><b>CLIENT REPORT</b><div>Generated ${esc(new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''))}</div><div>${esc(bizName)} · ${esc(bizLine)}</div></div></div>
+<div class="meta"><b>CLIENT REPORT</b><div>Generated ${esc(window.CDOS.deskStampNow())}</div><div>${esc(bizName)} · ${esc(bizLine)}</div></div></div>
 <div class="kpis"><div class="kpi"><div class="l">Transactions</div><div class="v">${st.n}</div></div><div class="kpi"><div class="l">Lifetime volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(st.vol))}</div></div><div class="kpi"><div class="l">Fees paid</div><div class="v">${esc(fmtHome(st.fees))}</div></div><div class="kpi"><div class="l">Reportable deals</div><div class="v">${reportable}</div></div></div>
 <div class="grid">
 <div class="card"><div class="ct">${corp ? 'Corporate details' : 'Identity'}</div><table class="kv">${row(corp ? 'Legal name' : 'Full name', name)}${corp ? row('Incorporated', rec.incorpDate) + row('Jurisdiction', rec.jurisdiction) + row('Nature of business', rec.business) + row('Primary contact', [rec.contactName, rec.contactTitle].filter(Boolean).join(' · ')) : row('Date of birth', rec.dob ? rec.dob + (ageFrom(rec.dob) != null ? ' (age ' + ageFrom(rec.dob) + ')' : '') : '') + row('Occupation', rec.occupation)}</table></div>
@@ -1508,7 +1508,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           return;
         }
       } else {
-        setClients(c => ({ ...c, [name]: { ...(c[name] || {}), kind, createdAt: new Date().toISOString().slice(0, 10) } }));
+        setClients(c => ({ ...c, [name]: { ...(c[name] || {}), kind, createdAt: stampToday() } }));
       }
       log && log('Contact created', `${name} · ${kind}`);
       setAdding(false);
@@ -1732,7 +1732,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           }
           setClients(prev => shared.project(prev));
         } else {
-          const today = new Date().toISOString().slice(0, 10);
+          const today = stampToday();
           setClients(c => ({ ...c, [name]: { ...(c[name] || {}), idType: payload.idType, idNum: payload.idNum, idIssued: payload.idIssued || '', idExpiry: payload.idExpiry, photo: payload.photo, updatedAt: today } }));
         }
         log && log('ID document recorded', name + ' · ' + payload.idType);
