@@ -72,7 +72,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **The deal currency picker offers the server's currencies.** The exchange menu used nine codes compiled into the page. It now offers the list the ledger sends for a dropdown. On this desk that list is the 29 the board quotes, home included, and JPY and KRW are in it. A code the server does not suggest, including KWD, is not in the menu. A dinar desk whose board does not quote INR does not offer INR. The nine-code list remains only until that answer arrives.
+- **The deal currency picker offers the server's currencies.** The exchange menu used nine codes compiled into the page. It now offers the list the ledger sends for a dropdown. On this desk that list is the 29 the board quotes, home included, and JPY and KRW are in it. A code the server does not suggest, including KWD, is not in the menu. A long name wraps inside the 224px menu. It is not cut off, and the full name is not hidden in a title. A dinar desk whose board does not quote INR does not offer INR. The nine-code list remains only until that answer arrives.
 
 - **Posting a quote returns the quote connection before the deal checks one out.** The quote check commits first. The deal is still its own serializable transaction: frozen terms, the idempotency row, and the journal commit together, and a replay of that post returns the same deal. The quote connection is back in the pool before that transaction starts, so a full pool of posts no longer waits forever for a second connection. A single post after that burst gets a connection.
 

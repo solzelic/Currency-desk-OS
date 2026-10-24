@@ -34739,7 +34739,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-ccy-menu",
       style: {
         position: 'fixed',
-        left: rect.left,
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - 224 - 8)),
         top: rect.bottom + 4,
         width: 224,
         maxHeight: 288,
@@ -34760,7 +34760,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           onChange(c);
           setOpen(false);
         },
-        className: "w-full flex items-center justify-between px-3 py-2 text-left",
+        className: "cd-ccy-row w-full flex items-start justify-between gap-2 px-3 py-2 text-left",
         style: {
           background: on ? CD.lineSoft : 'transparent'
         },
@@ -34771,24 +34771,25 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           if (!on) e.currentTarget.style.background = 'transparent';
         }
       }, /*#__PURE__*/React.createElement("span", {
-        className: "flex items-baseline gap-2.5"
+        className: "flex items-baseline gap-2.5 min-w-0 flex-1"
       }, /*#__PURE__*/React.createElement("span", {
-        className: "font-semibold text-sm",
+        className: "font-semibold text-sm flex-none",
         style: {
           color: CD.ink,
-          width: 36,
-          display: 'inline-block'
+          width: 36
         }
       }, c), /*#__PURE__*/React.createElement("span", {
-        className: "text-[11.5px]",
+        className: "cd-ccy-name text-[11.5px]",
         style: {
           color: CD.mute
         }
-      }, currencyName(c))), on && /*#__PURE__*/React.createElement(Ic, {
+      }, currencyName(c))), on && /*#__PURE__*/React.createElement("span", {
+        className: "flex-none"
+      }, /*#__PURE__*/React.createElement(Ic, {
         n: "check",
         s: 14,
         c: CD.green
-      }));
+      })));
     })), document.body));
   }
 

@@ -42,6 +42,17 @@ body {
   user-select: none;
 }
 button { font-family: inherit; }
+/* The deal menu is 224px. A long name wraps inside that width.
+   An ellipsis, or the full name parked in a title, is not the fit. */
+.cd-ccy-menu { box-sizing: border-box; }
+.cd-ccy-row { white-space: normal; height: auto; }
+.cd-ccy-name {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
 
 /* ============================================================
    LOCK / LOGIN
