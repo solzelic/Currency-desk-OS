@@ -258,6 +258,9 @@
       tillOccupant: tillOccupant,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
+      previewQuote: function (payload) {
+        return request("/api/quotes/preview", { method: "POST", body: JSON.stringify(payload) });
+      },
       createQuote: function (payload) {
         return request("/api/quotes", { method: "POST", body: JSON.stringify(payload) });
       },

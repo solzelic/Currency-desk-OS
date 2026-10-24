@@ -215,7 +215,7 @@
         timeline: [{ status: 'created', ts: '2026-06-17 15:02', by: 'R. Haddad' }, { status: 'hold', ts: '2026-06-17 15:06', by: 'J. Masri', note: 'Reportable EFT — source of funds review before release' }] }),
       mk({ id: 't4', ref: 'TR-260616-031', pin: '63 102 558', senderName: 'Rachel Carter', beneficiaryId: 'b1', corridor: 'PH', ccy: 'PHP', method: 'cash', partner: 'Cebuana Lhuillier', payAmt: 450, recvAmt: +(450 * mid('PHP') * 0.97).toFixed(2), date: '2026-06-16', status: 'paid', createdBy: 'M. Costa',
         timeline: [{ status: 'created', ts: '2026-06-16 11:20', by: 'M. Costa' }, { status: 'sent', ts: '2026-06-16 11:22', by: 'M. Costa' }, { status: 'transit', ts: '2026-06-16 11:40', by: 'System' }, { status: 'paid', ts: '2026-06-16 13:18', by: 'System', note: 'Collected in Cebu City — ID verified at counter' }] }),
-    ].map(t => Object.assign(t, { rate: t.rate || +(t.recvAmt / t.payAmt).toFixed(4), midRate: t.midRate || +crossRate('CAD', t.ccy).toFixed(4), spreadCad: t.spreadCad != null ? t.spreadCad : +(t.payAmt * 0.03).toFixed(2) }));
+    ].map(t => Object.assign(t, { rate: t.rate || +(t.recvAmt / t.payAmt).toFixed(4), midRate: t.midRate || crossRate('CAD', t.ccy), spreadCad: t.spreadCad != null ? t.spreadCad : +(t.payAmt * 0.03).toFixed(2) }));
   }
 
   const BKEY = 'cdos_beneficiaries_v1', CKEY = 'cdos_corridors_v1', TKEY = 'cdos_transfers_v1';

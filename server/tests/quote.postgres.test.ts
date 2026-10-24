@@ -178,6 +178,22 @@ postgres("quote service against real PostgreSQL", () => {
     expect(refused.json().code).toBe("UNSUPPORTED_CURRENCY");
     expect(refused.json().message).toMatch(/three decimal places/i);
   });
+  it("a preview writes no row", async () => {
+    const names = await pool.query("SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1");
+    const count = async () => {
+      const out: Record<string, string> = {};
+      for (const row of names.rows) {
+        const id = '"' + String(row.name).replace(/"/g, '""') + '"';
+        out[String(row.name)] = (await pool.query(`SELECT count(*)::text AS n FROM ${id}`)).rows[0].n;
+      }
+      return out;
+    };
+    const before = await count();
+    const preview = await app.inject({ method: "POST", url: "/api/quotes/preview", cookies: await cookie(), payload: { from: "CAD", to: "USD", inputAmount: "1000.00", feeCad: "0.00", direction: "customer_buy_foreign" } });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.json().quoteId).toBeUndefined();
+    expect(await count()).toEqual(before);
+  });
   it("creates a customer-buy quote using We Sell with board and snapshot lineage", async () => {
     const res = await app.inject({
       method: "POST",

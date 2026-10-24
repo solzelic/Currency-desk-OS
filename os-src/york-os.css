@@ -3492,3 +3492,29 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 @media (max-width: 430px) {
   .pin-issue-actions { margin-left: 0; width: 100%; }
 }
+
+/* Frozen server quote. The twelve-place rate wraps inside the viewport. */
+.cd-quote-face { z-index: 99999; display: flex; flex-direction: column; box-sizing: border-box; background: var(--cd-ink, #1c1917); color: var(--cd-on-ink, #fff); }
+.cd-quote-head, .cd-quote-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 24px 40px; }
+.cd-quote-head { border-bottom: 1px solid var(--cd-on-ink-faint); }
+.cd-quote-foot { border-top: 1px solid var(--cd-on-ink-faint); background: var(--cd-ink-strong); }
+.cd-quote-biz { font-family: "Space Mono", monospace; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--cd-on-ink-soft); }
+.cd-quote-title { font-weight: 800; font-size: 30px; letter-spacing: -0.02em; margin-top: 4px; }
+.cd-quote-tag { font-family: "Space Mono", monospace; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: var(--cd-on-ink-faint); white-space: nowrap; }
+.cd-quote-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 24px; min-width: 0; padding: 24px 10vw; }
+.cd-quote-label { font-size: 17px; color: var(--cd-on-ink-soft); }
+.cd-quote-amount { font-weight: 800; font-size: clamp(32px, 8vw, 92px); letter-spacing: -0.02em; line-height: 1.05; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cd-quote-get { color: #7fd1a3; }
+.cd-quote-rate { max-width: 100%; font-family: "Space Mono", monospace; font-size: 15px; line-height: 1.35; text-align: center; color: var(--cd-on-ink-soft); overflow-wrap: anywhere; }
+.cd-quote-note { text-align: center; font-size: 14px; line-height: 18px; color: var(--cd-note-on-ink); }
+.cd-quote-foot-copy { color: var(--cd-on-ink-soft); font-size: 14px; }
+.cd-quote-back { display: flex; align-items: center; gap: 8px; padding: 10px 20px; font-weight: 600; border: 0; border-radius: 10px; background: var(--cd-panel); color: var(--cd-ink); }
+@media (max-width: 430px) {
+  .cd-quote-head, .cd-quote-foot, .cd-quote-body { padding: 16px; }
+  .cd-quote-head { flex-wrap: wrap; }
+  .cd-quote-title { font-size: 22px; }
+  .cd-quote-amount { font-size: clamp(28px, 9vw, 48px); }
+  .cd-quote-rate { font-size: 14px; }
+}
+.cd-tx-rate-shown { font-size: 14px !important; line-height: 18px !important; }
+.cd-tx-rate-line > .cd-tx-rate-shown { color: var(--color-text, #111111) !important; font-family: var(--f-body, "Archivo", system-ui, sans-serif) !important; font-weight: 500 !important; }

@@ -6,11 +6,13 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const { effectiveRate, boardRateText, MIN_RATE_PLACES, MAX_RATE_PLACES, RATE_NOTE } = require(
+const { effectiveRate, boardRateText, exactRateText, frozenRateFace, MIN_RATE_PLACES, MAX_RATE_PLACES, RATE_NOTE } = require(
   join(root, "os-src/effective-rate.js"),
 ) as {
   effectiveRate: (amount: string, payout: string, places: number | null) => { text: string; rounded: boolean };
   boardRateText: (rate: number) => string;
+  exactRateText: (rate: string) => string;
+  frozenRateFace: (rate: string, amount: string, payout: string) => { text: string; rounded: boolean };
   MIN_RATE_PLACES: number;
   MAX_RATE_PLACES: number;
   RATE_NOTE: string;
@@ -95,6 +97,11 @@ describe("effective rate", () => {
     const rate = effectiveRate("3000.00", "2166.46", 2);
     expect(rate).toEqual({ text: "0.7222", rounded: true });
     expect(rate.text).not.toBe("0.7221");
+  });
+
+  it("shows the frozen server rate at six places", () => {
+    expect(exactRateText("0.722103704355")).toBe("0.722104");
+    expect(frozenRateFace("0.722103704355", "1000.00", "722.10")).toEqual({ text: "0.722104", rounded: true });
   });
 });
 
