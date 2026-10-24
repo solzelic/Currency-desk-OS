@@ -313,8 +313,17 @@ const chequeQuery = z.object({
 });
 type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unauthenticated" } | { kind: "scope_denied" } | { kind: "plan_denied" };
 
+const ledgerPools = new WeakMap<FastifyInstance, pg.Pool>();
+
+/* The seam harness registers its reset on this same pool. A second pool
+   would be a second checkout while a till transaction still holds one. */
+export function ledgerPoolFor(app: FastifyInstance): pg.Pool | undefined {
+  return ledgerPools.get(app);
+}
+
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  ledgerPools.set(app, pool);
   const service = new LedgerService(pool);
   const provisioning = new LedgerProvisioningService(pool);
   const tillControl = new TillControlService(pool);

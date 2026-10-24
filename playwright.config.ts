@@ -32,7 +32,7 @@ export default defineConfig({
        the send is written to the server's output instead of delivered. No
        test-only endpoint, no backdoor in the product. */
     command:
-      "mkdir -p test-results && cd server && npx tsx src/index.ts 2>&1 | tee ../test-results/server.log",
+      "mkdir -p test-results && cd server && npx tsx src/seam-server.ts 2>&1 | tee ../test-results/server.log",
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
@@ -67,6 +67,11 @@ export default defineConfig({
          log — which is also where these tests read a confirmation code
          from, exactly as a person would read it off the server output. */
       RATES_SYNC: "off",
+      /* The reset route allows only NODE_ENV test or development, and
+         only on the seam entry. Production boots src/index.ts and does
+         not set this. */
+      NODE_ENV: "development",
+      CD_TEST_RESET: "1",
     },
   },
 
