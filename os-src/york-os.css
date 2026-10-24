@@ -42,6 +42,15 @@ body {
   user-select: none;
 }
 button { font-family: inherit; min-height: 44px; }
+/* Window chrome and the till already size themselves. A 44px floor
+   on the traffic lights covers the title, and on the till it puts
+   the count panel over the currency buttons. */
+.win-bar button,
+button.wt-cell,
+button.mb-acct,
+.till-screen button {
+  min-height: unset;
+}
 
 /* ============================================================
    LOCK / LOGIN
@@ -1603,7 +1612,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
     mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
-  .fld-tab { min-height: 44px; font-size: 13px; padding: 10px 18px 10px 12px; }
+  .till-screen .fld-tab { min-height: 44px; font-size: 13px; padding: 10px 18px 10px 12px; }
   /* A title beside a row of buttons shrinks to nothing: the buttons
      are flex-none, so the words stack one per line for hundreds of
      pixels and the buttons run off the right. The title takes the
