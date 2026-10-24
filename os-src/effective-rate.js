@@ -121,6 +121,25 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
+  function roundRate(rate, places) {
+    var raw = String(rate == null ? "" : rate).trim().replace(/^\+/, "");
+    if (!/^\d+(\.\d+)?$/.test(raw) || !Number.isInteger(places) || places < 0 || places > ABSOLUTE_CAP) return "";
+    var scale = decimalsOf(raw);
+    var whole = scaled(raw, scale);
+    var rounded = scale > places ? halfUpDiv(whole, 10n ** BigInt(scale - places)) : (scale < places ? whole * (10n ** BigInt(places - scale)) : whole);
+    return rounded == null ? "" : scaledText(rounded, places);
+  }
+
+  function exactRateText(rate) { return roundRate(rate, MAX_RATE_PLACES); }
+
+  function frozenRateFace(rate, amount, payout) {
+    var text = exactRateText(rate);
+    var amountText = moneyText(amount);
+    var payoutRaw = moneyText(payout);
+    var payable = amountText && payoutRaw && payoutRaw !== "-" && payoutRaw !== ".";
+    return { text: text, rounded: !!(text && payable && !multipliesExactly(amountText, text, payoutRaw)) };
+  }
+
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
@@ -132,6 +151,8 @@
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
+    exactRateText: exactRateText,
+    frozenRateFace: frozenRateFace,
     boardRateText: boardRateText,
   };
 });

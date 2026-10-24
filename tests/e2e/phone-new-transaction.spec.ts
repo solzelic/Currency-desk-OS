@@ -288,20 +288,21 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
     await expect(page.locator(".cd-tx")).not.toContainText("$6.99");
     await expect(page.getByRole("button", { name: /^Text quote$/ })).toHaveCount(0);
     /* 3,000 CAD pays 2,166.31 USD. The ticket and the board field are that server rate. */
-    const rateKicker = page.locator(".cd-tx-rate-line .cd-tx-kicker");
+    const rateKicker = page.locator(".cd-tx-rate-line .cd-tx-rate-shown");
     await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.31", { timeout: 20_000 });
-    await expect(rateKicker).toHaveText("1 CAD = 0.722103704355 USD");
+    await expect(rateKicker).toHaveText("1 CAD = 0.722104 USD");
     const shown = ((await rateKicker.innerText()).match(/(\d+\.\d+)/) || [])[1] || "";
     const shownPlaces = (shown.split(".")[1] || "").length;
-    expect(shownPlaces, `rate places at ${width}`).toBe(12);
-    await expect(page.locator(".cd-tx-ticket")).toContainText("1 CAD = 0.722103704355 USD");
-    await expect(page.locator(".cd-tx")).not.toContainText("Rate rounded. The amounts are exact.");
+    expect(shownPlaces, `rate places at ${width}`).toBe(6);
+    await expect(page.locator(".cd-tx-ticket")).toContainText("1 CAD = 0.722104 USD");
+    await expect(page.locator(".cd-tx")).toContainText("Rate rounded. The amounts are exact.");
     const board = await page.locator(".cd-tx-rate").inputValue();
     expect(board, `board rate at ${width}`).toBe("0.722103704355");
     const amount = page.locator(".cd-money input").first();
     await amount.fill("100");
     await amount.blur();
-    await expect(page.locator(".cd-tx-ticket"), "ticket rate is the server rate").toContainText(`1 CAD = ${board} USD`);
+    await expect(page.locator(".cd-tx-ticket"), "ticket shows six places, and the board keeps the full rate").toContainText("1 CAD = 0.722104 USD");
+    await expect(page.locator(".cd-tx-ticket")).not.toContainText(board);
     await amount.fill("3000");
     await amount.blur();
     await expect(page.locator(".cd-tx-receive")).toHaveText("2,166.31");
@@ -583,7 +584,7 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   await page.locator(".cd-money input").first().fill("1000000");
   await page.getByRole("button", { name: /^Override$/ }).click();
   await page.locator(".cd-tx-rate").fill("0.0007254");
-  await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 KRW = 0.0007254 USD");
+  await expect(page.locator(".cd-tx-rate-line .cd-tx-rate-shown")).toHaveText("1 KRW = 0.0007254 USD");
   await expect(page.locator(".cd-tx-ticket")).toContainText("1 KRW = 0.0007254 USD");
   if (hasLedger) {
     await expect(page.locator(".cd-tx-purpose")).toBeAttached();

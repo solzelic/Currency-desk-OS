@@ -3514,5 +3514,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-quote-head { flex-wrap: wrap; }
   .cd-quote-title { font-size: 22px; }
   .cd-quote-amount { font-size: clamp(28px, 9vw, 48px); }
-  .cd-quote-rate { font-size: 13px; }
+  .cd-quote-rate { font-size: 14px; }
 }
+.cd-tx-rate-shown { font-size: 14px !important; line-height: 18px !important; }
+.cd-tx-rate-line > .cd-tx-rate-shown { color: var(--color-text, #111111) !important; font-family: var(--f-body, "Archivo", system-ui, sans-serif) !important; font-weight: 500 !important; }

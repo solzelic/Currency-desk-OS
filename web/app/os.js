@@ -126,6 +126,25 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
+  function roundRate(rate, places) {
+    var raw = String(rate == null ? "" : rate).trim().replace(/^\+/, "");
+    if (!/^\d+(\.\d+)?$/.test(raw) || !Number.isInteger(places) || places < 0 || places > ABSOLUTE_CAP) return "";
+    var scale = decimalsOf(raw);
+    var whole = scaled(raw, scale);
+    var rounded = scale > places ? halfUpDiv(whole, 10n ** BigInt(scale - places)) : (scale < places ? whole * (10n ** BigInt(places - scale)) : whole);
+    return rounded == null ? "" : scaledText(rounded, places);
+  }
+
+  function exactRateText(rate) { return roundRate(rate, MAX_RATE_PLACES); }
+
+  function frozenRateFace(rate, amount, payout) {
+    var text = exactRateText(rate);
+    var amountText = moneyText(amount);
+    var payoutRaw = moneyText(payout);
+    var payable = amountText && payoutRaw && payoutRaw !== "-" && payoutRaw !== ".";
+    return { text: text, rounded: !!(text && payable && !multipliesExactly(amountText, text, payoutRaw)) };
+  }
+
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
@@ -137,6 +156,8 @@
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
+    exactRateText: exactRateText,
+    frozenRateFace: frozenRateFace,
     boardRateText: boardRateText,
   };
 });
@@ -35977,7 +35998,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const dealSide = isExchange ? liveQuote && liveQuote.buyOrSellSide === 'we_buy' ? 'buy' : liveQuote && liveQuote.buyOrSellSide === 'we_sell' ? 'sell' : inCcy === home ? 'sell' : outCcy === home ? 'buy' : 'cross' : pricing.side;
     const serverRateText = liveQuote && liveQuote.customerRate != null ? String(liveQuote.customerRate) : '';
     const typedRate = override && String(manualRate).trim() ? String(manualRate).trim() : '';
-    const exchangeRateLine = typedRate ? '1 ' + inCcy + ' = ' + typedRate + ' ' + outCcy : serverRateText ? '1 ' + inCcy + ' = ' + serverRateText + ' ' + outCcy : '';
+    const liveFace = typedRate ? {
+      text: typedRate,
+      rounded: false
+    } : liveQuote && window.CDOS.frozenRateFace ? window.CDOS.frozenRateFace(liveQuote.customerRate, liveQuote.inputAmount, liveQuote.outputAmount) : {
+      text: '',
+      rounded: false
+    };
+    const exchangeRateLine = liveFace.text ? '1 ' + inCcy + ' = ' + liveFace.text + ' ' + outCcy : '';
+    const quotePending = !!(isExchange && amtN > 0 && !liveQuote);
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -36792,8 +36821,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: serverQuote.buyOrSellSide === 'we_buy' ? `We buy ${serverQuote.from}` : serverQuote.buyOrSellSide === 'we_sell' ? `We sell ${serverQuote.to}` : `${serverQuote.from} → ${serverQuote.to}`,
       giveLbl: 'You give',
       give: `${unitText(serverQuote.inputAmount, serverQuote.from)} ${serverQuote.from}`,
-      rateLine: `1 ${serverQuote.from} = ${serverQuote.customerRate} ${serverQuote.to}`,
-      rateNote: '',
+      rateLine: `1 ${serverQuote.from} = ${(window.CDOS.frozenRateFace ? window.CDOS.frozenRateFace(serverQuote.customerRate, serverQuote.inputAmount, serverQuote.outputAmount) : {
+        text: serverQuote.customerRate,
+        rounded: false
+      }).text} ${serverQuote.to}`,
+      rateNote: (window.CDOS.frozenRateFace ? window.CDOS.frozenRateFace(serverQuote.customerRate, serverQuote.inputAmount, serverQuote.outputAmount) : {
+        rounded: false
+      }).rounded ? RATE_NOTE : '',
       getLbl: 'You receive',
       get: `${unitText(serverQuote.outputAmount, serverQuote.to)} ${serverQuote.to}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : 'Rate as quoted now'
@@ -37064,12 +37098,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontFamily: 'Space Mono, monospace'
       }
     }, dealSide === 'buy' ? `We buy ${inCcy}` : dealSide === 'sell' ? `We sell ${outCcy}` : dealSide === 'cross' ? 'Cross' : 'Rate'), /*#__PURE__*/React.createElement("span", {
-      className: "cd-tx-kicker cd-tx-quiet text-[11px]",
-      style: {
-        color: CD.mute,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, exchangeRateLine), /*#__PURE__*/React.createElement("button", {
+      className: "cd-tx-rate-shown"
+    }, exchangeRateLine || (quotePending ? 'Pending' : '')), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       "aria-label": "Swap",
@@ -37083,7 +37113,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(SheetRateNote, {
-      on: false
+      on: liveFace.rounded
     })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       value: shownOut ? unitText(shownOut, outCcy) : '—',
       ccy: outCcy,
@@ -37921,7 +37951,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: '#7fd1a3',
         lineHeight: 1.1
       }
-    }, phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, shownOut ? unitText(shownOut, out.ccy) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange && shownOut == null ? 'Pending' : phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, shownOut ? unitText(shownOut, out.ccy) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -37939,7 +37969,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker"
-    }, isExchange ? exchangeRateLine : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), isSend && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? /*#__PURE__*/React.createElement("span", {
+      className: "cd-tx-rate-shown"
+    }, exchangeRateLine || (quotePending ? 'Pending' : '')) : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), isSend && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {
         fontSize: 11,
@@ -37947,7 +37979,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: 'var(--cd-note-on-ink)',
         marginTop: 4
       }
-    }, RATE_NOTE) : null)), (isExchange || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
+    }, RATE_NOTE) : null)), (isExchange && liveQuote || isSend) && amtN > 0 && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-3 py-2",
       style: {
         background: 'var(--cd-panel)',
@@ -38065,11 +38097,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, serverError), phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: showMissing,
+      disabled: quotePending,
       className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
-        background: CD.ink,
-        color: 'var(--cd-on-ink)'
+        background: quotePending ? CD.line : CD.ink,
+        color: quotePending ? CD.faint : 'var(--cd-on-ink)'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
@@ -38077,12 +38110,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: "currentColor"
     }), " ", stepsLabel) : /*#__PURE__*/React.createElement("button", {
       onClick: serverQuote ? postServerQuote : getServerQuote,
-      disabled: !canSave || serverBusy,
+      disabled: !canSave || serverBusy || quotePending,
       className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
-        background: !canSave || serverBusy ? CD.line : CD.ink,
-        color: !canSave || serverBusy ? CD.faint : 'var(--cd-on-ink)'
+        background: !canSave || serverBusy || quotePending ? CD.line : CD.ink,
+        color: !canSave || serverBusy || quotePending ? CD.faint : 'var(--cd-on-ink)'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: serverQuote ? 'check' : 'lock',

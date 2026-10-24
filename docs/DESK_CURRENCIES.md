@@ -116,12 +116,7 @@ and the till movement at those places. A remittance face amount in
 one of them is still accepted at two decimal places, and a third
 decimal on that face is still refused.
 
-An exchange shows the server `customerRate`, twelve places, on the
-ticket and on the customer card. The card is that frozen quote.
-Before the freeze, `POST /api/quotes/preview` uses `calculateQuoteTerms`
-and writes nothing. 1,000.00 CAD pays 722.10 USD at
-`1 CAD = 0.722103704355 USD`. 3,000.00 CAD pays 2,166.31 USD at the
-same rate. A remittance still uses `os-src/effective-rate.js`.
+An exchange shows the frozen server rate at six places (`1 CAD = 0.722104 USD`). The ledger keeps `0.722103704355` for the maths. `POST /api/quotes/preview` uses the same terms and writes nothing. A remittance still uses `os-src/effective-rate.js`.
 
 
 A closed day's report shows the units that were stored. An open day

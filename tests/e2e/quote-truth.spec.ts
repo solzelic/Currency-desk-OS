@@ -94,13 +94,19 @@ async function postFrozen(page: Page) {
   expect(res.ok(), await res.text()).toBeTruthy();
   return res.json();
 }
-async function tillOut(pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, string>[] }> }, transactionId: string, currency: string) {
-  const till = await pool.query(
-    `SELECT m.amount::text AS amount FROM ledger_till_movements m
-      WHERE m.transaction_id = $1 AND m.direction = 'out' AND m.currency = $2`,
-    [transactionId, currency],
-  );
+type Book = { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, string>[] }> };
+async function tillOut(pool: Book, transactionId: string, currency: string) {
+  const till = await pool.query("SELECT amount::text AS amount FROM ledger_till_movements WHERE transaction_id = $1 AND direction = 'out' AND currency = $2", [transactionId, currency]);
   return till.rows[0].amount;
+}
+async function withBook(page: Page, user: string, run: (pool: Book) => Promise<void>) {
+  test.setTimeout(120_000);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await signInAtDesk(page, user);
+    await run(pool);
+  } finally { await pool.end(); }
 }
 async function topUp(page: Page, currency: string, amount: string, key: string) {
   await takeTill(page);
@@ -119,15 +125,13 @@ async function topUp(page: Page, currency: string, amount: string, key: string) 
   }, currency);
 }
 test("CAD to USD: the card, the deal, and the till pay one amount", async ({ page }) => {
-  test.setTimeout(120_000);
-  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
-  try {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await signInAtDesk(page, "a.singh");
+  await withBook(page, "a.singh", async (pool) => {
     await openExchange(page);
     await fillDeal(page, "1000");
     await expect(page.locator(".cd-tx-receive")).toHaveText("722.10", { timeout: 20_000 });
-    await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.722103704355 USD");
+    await expect(page.locator(".cd-tx-rate-line .cd-tx-rate-shown")).toHaveText("1 CAD = 0.722104 USD");
+    const ratePaint = await page.locator(".cd-tx-rate-line .cd-tx-rate-shown").evaluate((el) => ({ size: getComputedStyle(el).fontSize, color: getComputedStyle(el).color }));
+    expect(ratePaint).toEqual({ size: "14px", color: "rgb(17, 17, 17)" });
     await showFrozenCard(page);
     mkdirSync(SHOTS, { recursive: true });
     for (const width of WIDTHS) {
@@ -143,22 +147,17 @@ test("CAD to USD: the card, the deal, and the till pay one amount", async ({ pag
     const rate = (await page.locator("[data-quote-rate]").innerText()).replace(/\s+/g, " ");
     expect(card).toContain("722.10");
     expect(card).not.toContain("722.25");
-    expect(rate).toContain("0.722103704355");
+    expect(rate).toContain("0.722104");
+    expect(rate).not.toContain("0.722103704355");
     const body = await postFrozen(page);
     expectSame(body.outputAmount, "722.10", "posted");
     expect(String(body.rate)).toContain("0.722103704355");
     expectSame(await tillOut(pool, body.transactionId, "USD"), "722.10", "till");
     expectSame(card, "722.10", "card");
-  } finally {
-    await pool.end();
-  }
+  });
 });
 test("USD to JPY pays whole yen on the card, the deal, and the till", async ({ page }) => {
-  test.setTimeout(120_000);
-  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
-  try {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await signInAtDesk(page, "r.haddad");
+  await withBook(page, "r.haddad", async (pool) => {
     await topUp(page, "JPY", "500000.00", "quote-truth-jpy-in");
     await openExchange(page);
     await pickCurrency(page, 0, "USD");
@@ -172,16 +171,10 @@ test("USD to JPY pays whole yen on the card, the deal, and the till", async ({ p
     expect(String(body.outputAmount)).not.toMatch(/\.\d*[1-9]/);
     expectSame(card, String(body.outputAmount), "jpy card");
     expectSame(String(body.outputAmount), await tillOut(pool, body.transactionId, "JPY"), "jpy till");
-  } finally {
-    await pool.end();
-  }
+  });
 });
 test("CAD to KWD keeps three decimal places on the card, the deal, and the till", async ({ page }) => {
-  test.setTimeout(120_000);
-  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
-  try {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await signInAtDesk(page, "r.haddad");
+  await withBook(page, "r.haddad", async (pool) => {
     const published = await page.evaluate(async () => {
       const board = (await fetch("/api/rates").then((r) => r.json())).board;
       const rows = { ...(board.rows || {}), KWD: { mid: 4.48123, show: true } };
@@ -204,16 +197,10 @@ test("CAD to KWD keeps three decimal places on the card, the deal, and the till"
     expect(String(body.outputAmount)).toMatch(/^\d+\.\d{3}$/);
     expectSame(card, String(body.outputAmount), "kwd card");
     expectSame(String(body.outputAmount), await tillOut(pool, body.transactionId, "KWD"), "kwd till");
-  } finally {
-    await pool.end();
-  }
+  });
 });
 test("a pay-in with a fee pays the quoted amount, and the fee is its own till movement", async ({ page }) => {
-  test.setTimeout(120_000);
-  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
-  try {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await signInAtDesk(page, "a.singh");
+  await withBook(page, "a.singh", async (pool) => {
     await openExchange(page);
     await page.locator(".cd-tx-swap").click();
     await fillDeal(page, "100", "5.00");
@@ -222,17 +209,35 @@ test("a pay-in with a fee pays the quoted amount, and the fee is its own till mo
     expect(card).toContain("CAD");
     const body = await postFrozen(page);
     expectSame(card, String(body.outputAmount), "fee card");
-    const moves = await pool.query(
-      `SELECT direction, currency, amount::text AS amount FROM ledger_till_movements WHERE transaction_id = $1`,
-      [body.transactionId],
-    );
+    const moves = await pool.query("SELECT direction, currency, amount::text AS amount FROM ledger_till_movements WHERE transaction_id = $1", [body.transactionId]);
     const out = moves.rows.find((row) => row.direction === "out" && row.currency === "CAD");
     const fee = moves.rows.find((row) => row.direction === "in" && row.currency === "CAD" && sameMoney(row.amount, "5.00"));
     expect(out, JSON.stringify(moves.rows)).toBeTruthy();
     expect(fee, JSON.stringify(moves.rows)).toBeTruthy();
     expectSame(String(body.outputAmount), out!.amount, "fee till");
     expectSame(String(body.feeCad), "5.00", "fee");
-  } finally {
-    await pool.end();
-  }
+  });
+});
+test("Post stays disabled until the preview arrives", async ({ page }) => {
+  test.setTimeout(90_000);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/quotes/preview", async (route) => { await gate; await route.continue(); });
+  await page.setViewportSize({ width: 390, height: 780 });
+  await signInAtDesk(page, "a.singh");
+  await openExchange(page);
+  await fillDeal(page, "1000");
+  const post = page.locator(".cd-tx-go");
+  await expect(post).toBeDisabled();
+  await expect(page.locator(".cd-tx-receive")).not.toHaveText(/\d/);
+  await expect(page.locator(".cd-tx-rate-line .cd-tx-rate-shown")).not.toHaveText(/\d/);
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: path.join(SHOTS, "loading-390.png") });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(post).toBeDisabled();
+  await expect(page.locator(".cd-tx-receive")).not.toHaveText(/\d/);
+  await page.screenshot({ path: path.join(SHOTS, "loading-1280.png") });
+  release();
+  await expect(page.locator(".cd-tx-receive")).toHaveText("722.10", { timeout: 20_000 });
+  await expect(post).toBeEnabled();
 });
