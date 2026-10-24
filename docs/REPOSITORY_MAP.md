@@ -134,6 +134,13 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   cannot be updated. The variance on a new row is counted minus
   `roundTo` of that expected. The till balance is not rewritten. 047
   is the previous file, so this one is 048.
+- Migration `052_idv_credit_ledger` adds the append-only identity-check
+  credit ledger `idv_credit_ledger`. The balance is the sum of the rows.
+  A grant has no inquiry. A reserve, a settle, and a release are one row
+  per inquiry, and settle and release cannot both exist. 049 is open
+  draft #268, 050 is #267, and 051 is #270, so this file is 052.
+  `POST /api/idv/credits` seeds the caller's shop. `GET /api/idv/credits`
+  reads that shop. Neither route is a purchase.
 
 ## Test commands
 
