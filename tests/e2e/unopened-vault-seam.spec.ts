@@ -13,7 +13,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { Page } from "@playwright/test";
-import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
+import { seamTest as test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
@@ -46,6 +46,20 @@ async function holdTheVaultAside(page: Page): Promise<Record<string, string> | n
   return vault.balances as Record<string, string>;
 }
 
+async function openTheTill(page: Page) {
+  const opened = await page.evaluate(async () => {
+    const session = await fetch("/api/ledger/till-session").then((r) => r.json());
+    if (session.session && session.session.status === "open") return "open";
+    const response = await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    return response.ok || response.status === 409 ? "open" : `${response.status}`;
+  });
+  expect(opened).toBe("open");
+}
+
 async function putTheVaultBack(page: Page, balances: Record<string, string> | null) {
   if (!balances || Object.keys(balances).length === 0) return;
   const status = await page.evaluate(async (saved) => {
@@ -67,17 +81,7 @@ test("taking cash from an unopened vault is refused, on screen and in the book",
     const vault = await book.vault();
     expect(vault.tracked).toBe(false);
 
-    const opened = await page.evaluate(async () => {
-      const session = await fetch("/api/ledger/till-session").then((r) => r.json());
-      if (session.session?.status === "open") return "open";
-      const response = await fetch("/api/ledger/till-sessions/open", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      return response.ok || response.status === 409 ? "open" : `${response.status}`;
-    });
-    expect(opened).toBe("open");
+    await openTheTill(page);
 
     const before = await book.till();
 
@@ -105,13 +109,12 @@ test("the unopened-vault refusal is readable on a phone", async ({ page }, testI
     expect((await book.vault()).tracked).toBe(false);
 
     /* The menu label "Cash Drawer" is hidden with the menu. The
-       bottom bar's Till tab is the way into the drawer. */
+       bottom bar's Till tab is the way into the drawer. The till is
+       opened through the ledger first: clicking Open the till waited
+       out the test when a previous run had left the button on screen
+       and the header still moving. */
+    await openTheTill(page);
     await page.locator('#phonebar [data-phone-app="till"]').click();
-    const openTill = page.getByRole("button", { name: /Open the till/i }).first();
-    /* isVisible answers this instant. A till that is already open
-       has no button, which is false, not an error. A throw is a
-       broken page and the check should fail on it. */
-    if (await openTill.isVisible()) await openTill.click();
     await page.getByRole("button", { name: /^Move cash$/i }).first().click();
     await page.locator('input[placeholder="0"]').last().fill("50");
     await page.getByRole("button", { name: /Issue float/i }).last().click();
