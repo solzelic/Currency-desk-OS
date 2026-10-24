@@ -140,4 +140,6 @@ test("the deal picker lists the server currencies", async ({ page }, testInfo) =
     copyFileSync(shot, path.join(REPO_SHOTS, `picker_${width}.png`));
     await testInfo.attach(`picker-${width}`, { path: shot, contentType: "image/png" });
   }
+  const shortRows = await page.locator(".cd-ccy-menu").evaluate((el) => Array.from(el.querySelectorAll(".cd-ccy-row")).filter((row) => row.getBoundingClientRect().height < 44).map((row) => row.getAttribute("data-ccy")));
+  expect(shortRows).toEqual([]);
 });
