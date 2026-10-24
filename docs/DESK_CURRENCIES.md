@@ -136,7 +136,7 @@ line under Expected reads: Rounded from 489,175.85 JPY stored from
 older deals. It clears when the ledger is trued up. A figure already
 on the grid, including 1,000.50 CAD, has no line. The book still stores
 489,175.85. Before the scales table loads, and if that load fails, the
-screen uses the ISO minor units, and it never shows a third decimal.
+screen uses the ISO minor units. KWD, BHD, OMR, JOD, IQD, LYD, and TND show three places.
 
 **Three-decimal currencies are refused on an exchange, out loud, with the reason.** The
 money columns hold two places. A desk that could add KWD to its set and then

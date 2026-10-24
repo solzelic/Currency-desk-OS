@@ -14632,6 +14632,38 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   });
 })();
 
+/* ---- os-src/cdos-copy.js ---- */
+/* Till and end-of-day copy. The rules run once, here.
+   A sentence starts with a capital and ends with a period.
+   A fragment has no period. Screens read the result. */
+(function () {
+  function ruled(text, kinds) {
+    var parts = String(text).split(". ");
+    if (parts.length !== kinds.length) throw new Error("copy parts: " + text);
+    for (var i = 0; i < parts.length; i++) {
+      var piece = i < parts.length - 1 ? parts[i] + "." : parts[i];
+      var sentence = kinds[i] === "sentence";
+      if (sentence && (!/^[A-Z0-9]/.test(piece) || !/\.$/.test(piece))) throw new Error("sentence: " + piece);
+      if (!sentence && /\.$/.test(piece)) throw new Error("fragment: " + piece);
+    }
+    return text;
+  }
+  var copy = {
+    nobodyOnTill: ruled("Nobody is on this till. No session is open.", ["sentence", "sentence"]),
+    showExpected: ruled("Show the expected amount.", ["sentence"]),
+    hideExpected: ruled("Hide expected. Keep the count blind.", ["sentence", "sentence"]),
+    countedOne: ruled("1 till counted", ["fragment"]),
+    countedNone: ruled("0 tills counted", ["fragment"]),
+    notInTill: ruled("Not in this till.", ["sentence"]),
+    notCounted: ruled("Not counted.", ["sentence"]),
+    noVariance: ruled("No variance.", ["sentence"]),
+    notInSafe: ruled("Not in the safe.", ["sentence"]),
+    unassigned: ruled("unassigned", ["fragment"]),
+  };
+  window.CDOS = Object.assign(window.CDOS || {}, { copy: copy });
+})();
+
+
 /* ---- os-src/cdos-till.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Till & Cash Drawer
@@ -14754,17 +14786,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   };
   const SHIFT_KEY = 'cdos_till_operator_v1',
     HANDOFF_KEY = 'cdos_till_handoffs_v1';
-  const shiftStamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = id => String(id || '').split(':').pop() || '—';
-  const clockOf = ms => ms ? new Date(ms).toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
       `seedHistory()` stood here. On first open of the Cash Drawer it wrote
@@ -14899,6 +14923,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     me,
     expected,
     requireCount,
+    zone,
     onClose,
     onDone
   }) {
@@ -14934,7 +14959,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         from: current ? current.operator : '—',
         to: toName,
         toRole: to ? to.role : '',
-        at: shiftStamp(),
+        at: window.CDOS.deskTime(Date.now(), '12h', zone),
         atMs: Date.now(),
         by: me.name,
         counted,
@@ -15792,11 +15817,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const d = Math.floor(h / 24);
       return `${d} day${d > 1 ? 's' : ''} ago`;
     };
-    const atLabel = ts => ts ? new Date(ts).toLocaleTimeString('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }) : null;
+    const zone = serverSession && serverSession.timezone || settings && settings.timezone || 'America/Toronto';
+    const copy = window.CDOS.copy;
+    const atLabel = ts => {
+      if (!ts) return null;
+      const ms = typeof ts === 'number' ? ts : new Date(ts).getTime();
+      return window.CDOS.deskTime(ms, '12h', zone);
+    };
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
@@ -16188,7 +16215,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     return /*#__PURE__*/React.createElement("div", {
       ref: tillRootRef,
-      className: 'till-screen flex flex-col' + (tab === 'reconcile' ? ' till-on-reconcile' : ''),
+      className: 'till-frame flex flex-col' + (tab === 'reconcile' ? ' till-on-reconcile' : ''),
       style: {
         height: '100%',
         background: CD.paper,
@@ -16351,7 +16378,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
       className: "till-statusline"
-    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length === 1 ? '1 drawer counted' : countedCcys.length + ' drawers counted'), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? serverSession ? `Session ${serverSession.sessionNumber}` : 'Session not opened' : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : '', " \xB7 ", countedCcys.length ? copy.countedOne : copy.countedNone), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk
       }
@@ -16551,12 +16578,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
-      className: "ml-auto flex-none",
+    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", window.CDOS.deskTime(new Date(serverSession.openedAt).getTime(), '12h', zone), " ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: reconInk
       }
-    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted"))), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -16571,7 +16597,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), " at ", clockOf(new Date(serverSession.closedAt).getTime()), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
+    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), " at ", window.CDOS.deskTime(new Date(serverSession.closedAt).getTime(), '12h', zone), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
       className: "till-alert flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]",
       style: {
         background: CD.flagSoft,
@@ -16649,7 +16675,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: reconInk
       }
-    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
+    }, current && current.since ? `since ${window.CDOS.deskTime(current.since, '12h', zone)} · ${sinceOperator}` : serverBacked ? copy.nobodyOnTill : copy.unassigned, requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
@@ -16708,7 +16734,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontSize: 8
       }
     }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto"
+      className: "till-screen flex-1"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
       className: "till-count-sheet p-4 pb-0"
     }, /*#__PURE__*/React.createElement("div", {
@@ -16845,177 +16873,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setCount: setCount
     }))))), /*#__PURE__*/React.createElement("div", {
       className: "till-scroll-pad"
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "till-count-foot",
-      style: {
-        position: 'sticky',
-        bottom: 0,
-        background: CD.paper,
-        paddingTop: 10,
-        marginTop: 8
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "till-count-row flex items-end justify-between gap-4 pt-3",
-      style: {
-        borderTop: `1px solid ${CD.line}`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "till-count-main min-w-0"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, ccy, " counted"), /*#__PURE__*/React.createElement("div", {
-      className: "till-counted flex items-center",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        maxWidth: 220,
-        marginTop: 3,
-        background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent'
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "text",
-      inputMode: "decimal",
-      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
-      readOnly: ccyMode(ccy) !== 'total',
-      onFocus: () => {
-        if (ccyMode(ccy) !== 'total') {
-          setMode(o => ({
-            ...o,
-            [ccy]: 'total'
-          }));
-          setQuick(o => ({
-            ...o,
-            [ccy]: String(denTotal(ccy) || '')
-          }));
-        }
-      },
-      onChange: e => {
-        setQuick(o => ({
-          ...o,
-          [ccy]: e.target.value.replace(/[^0-9.]/g, '')
-        }));
-        stampCount(ccy);
-      },
-      className: "min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
-      style: {
-        width: 150,
-        fontVariantNumeric: 'tabular-nums',
-        fontFamily: 'Space Mono, monospace',
-        color: CD.ink,
-        cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text'
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "px-2.5 text-[11px]",
-      style: {
-        color: CD.mute,
-        fontFamily: 'Space Mono, monospace',
-        borderLeft: `1px solid ${CD.line}`
-      }
-    }, ccy)), /*#__PURE__*/React.createElement("div", {
-      className: "till-expected-wrap text-[11px] mt-1.5",
-      style: {
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
-      className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
-      style: {
-        border: 0,
-        background: 'transparent',
-        padding: 0,
-        cursor: 'pointer',
-        color: 'inherit'
-      }
-    }, /*#__PURE__*/React.createElement("span", null, "Expected"), /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.mute,
-        fontFamily: 'Space Mono, monospace',
-        filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
-        transition: 'filter .15s',
-        userSelect: 'none'
-      }
-    }, unitText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
-      const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy);
-      const off = v !== 0;
-      return /*#__PURE__*/React.createElement("b", {
-        style: {
-          color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
-          fontFamily: 'Space Mono, monospace',
-          filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
-          transition: 'filter .15s',
-          userSelect: 'none'
-        }
-      }, off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
-    })(), /*#__PURE__*/React.createElement(Ic, {
-      n: revealExp[ccy] ? 'power' : 'lock',
-      s: 11,
-      c: CD.faint
-    }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
-      className: "till-stored-note",
-      style: {
-        color: CD.pinNote,
-        marginTop: 2,
-        lineHeight: 1.35
-      }
-    }, storedRoundNote(expectedOf(ccy), ccy)) : null), /*#__PURE__*/React.createElement("div", {
-      className: "till-counted-when text-[11px] mt-1",
-      style: {
-        color: CD.faint
-      }
-    }, (() => {
-      const ts = countedAt[ccy];
-      return ts ? /*#__PURE__*/React.createElement("span", null, "Last counted ", /*#__PURE__*/React.createElement("b", {
-        style: {
-          color: CD.mute,
-          fontFamily: 'Space Mono, monospace'
-        }
-      }, sinceLabel(ts)), " \xB7 ", atLabel(ts)) : /*#__PURE__*/React.createElement("span", null, "Not counted yet today");
-    })())), /*#__PURE__*/React.createElement("div", {
-      className: "text-right flex-none till-grand"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "till-grand-label text-[10px] uppercase tracking-widest",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Total drawer", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("div", {
-      className: "till-grand-num",
-      "data-absent": grandHome == null ? '1' : undefined,
-      style: {
-        fontSize: 24,
-        fontWeight: 800,
-        color: grandHome == null ? CD.faint : CD.ink,
-        fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1.1
-      },
-      title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
-    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
-      onClick: saveSnapshot,
-      disabled: saved || !sessionOpen || tillBusy === 'count',
-      title: !sessionOpen ? 'Open the till before saving a count' : '',
-      className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
-      style: {
-        background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)',
-        borderRadius: 9,
-        marginLeft: 'auto',
-        cursor: sessionOpen ? 'pointer' : 'not-allowed',
-        transition: 'background .25s ease, transform .12s ease'
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: saved ? 'checkcircle' : 'checkcircle',
-      s: 15,
-      c: "var(--cd-on-ink)"
-    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
-      className: "till-count-hint text-[10.5px] py-2",
-      style: {
-        color: CD.faint
-      }
-    }, "Counting denominations updates the total live \xB7 or tap the counted figure to type it in directly \xB7 expected comes from the ledger float."))), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
+    })), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
       "data-tour": "till-reconcile",
       className: "p-5 flex flex-col",
       style: {
@@ -17052,9 +16910,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: '#3a7a56'
       }
-    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? new Date(serverSession.closedAt).toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '') : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
+    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? window.CDOS.deskTime(new Date(serverSession.closedAt).getTime(), '12h', zone) : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -17858,7 +17714,173 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.faint
       }
-    }, "A snapshot is saved each time you count the drawer. Click any day to see its full denomination breakdown.")))), confirmClose && /*#__PURE__*/React.createElement("div", {
+    }, "A snapshot is saved each time you count the drawer. Click any day to see its full denomination breakdown."))))), tab === 'count' && /*#__PURE__*/React.createElement("div", {
+      className: "till-count-foot flex-none",
+      style: {
+        background: CD.paper
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-count-row flex items-end justify-between gap-4 pt-3",
+      style: {
+        borderTop: `1px solid ${CD.line}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-count-main min-w-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, ccy, " counted"), /*#__PURE__*/React.createElement("div", {
+      className: "till-counted flex items-center",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        maxWidth: 220,
+        marginTop: 3,
+        background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent'
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      inputMode: "decimal",
+      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
+      readOnly: ccyMode(ccy) !== 'total',
+      onFocus: () => {
+        if (ccyMode(ccy) !== 'total') {
+          setMode(o => ({
+            ...o,
+            [ccy]: 'total'
+          }));
+          setQuick(o => ({
+            ...o,
+            [ccy]: String(denTotal(ccy) || '')
+          }));
+        }
+      },
+      onChange: e => {
+        setQuick(o => ({
+          ...o,
+          [ccy]: e.target.value.replace(/[^0-9.]/g, '')
+        }));
+        stampCount(ccy);
+      },
+      className: "min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
+      style: {
+        width: 150,
+        fontVariantNumeric: 'tabular-nums',
+        fontFamily: 'Space Mono, monospace',
+        color: CD.ink,
+        cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "px-2.5 text-[11px]",
+      style: {
+        color: CD.mute,
+        fontFamily: 'Space Mono, monospace',
+        borderLeft: `1px solid ${CD.line}`
+      }
+    }, ccy)), /*#__PURE__*/React.createElement("div", {
+      className: "till-expected-wrap text-[11px] mt-1.5",
+      style: {
+        color: CD.faint
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => toggleReveal(ccy),
+      title: revealExp[ccy] ? copy.hideExpected : copy.showExpected,
+      className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
+      style: {
+        border: 0,
+        background: 'transparent',
+        padding: 0,
+        cursor: 'pointer',
+        color: 'inherit'
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Expected"), /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.mute,
+        fontFamily: 'Space Mono, monospace',
+        filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
+        transition: 'filter .15s',
+        userSelect: 'none'
+      }
+    }, unitText(expectedOf(ccy), ccy), " ", ccy), isCounted(ccy) && (() => {
+      const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy);
+      const off = v !== 0;
+      return /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: revealExp[ccy] ? off ? CD.flag : CD.green : CD.faint,
+          fontFamily: 'Space Mono, monospace',
+          filter: blind && !revealExp[ccy] ? 'blur(6px)' : 'none',
+          transition: 'filter .15s',
+          userSelect: 'none'
+        }
+      }, off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced');
+    })(), /*#__PURE__*/React.createElement(Ic, {
+      n: revealExp[ccy] ? 'power' : 'lock',
+      s: 11,
+      c: CD.faint
+    }), ccy !== homeCcy && isCounted(ccy) && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("span", null, "\xB7 \u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))), storedRoundNote(expectedOf(ccy), ccy) ? /*#__PURE__*/React.createElement("div", {
+      className: "till-stored-note",
+      style: {
+        color: CD.pinNote,
+        marginTop: 2,
+        lineHeight: 1.35
+      }
+    }, storedRoundNote(expectedOf(ccy), ccy)) : null), /*#__PURE__*/React.createElement("div", {
+      className: "till-counted-when text-[11px] mt-1",
+      style: {
+        color: CD.faint
+      }
+    }, (() => {
+      const ts = countedAt[ccy];
+      return ts ? /*#__PURE__*/React.createElement("span", null, "Last counted ", /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: CD.mute,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, sinceLabel(ts)), " \xB7 ", atLabel(ts)) : /*#__PURE__*/React.createElement("span", null, "Not counted yet today");
+    })())), /*#__PURE__*/React.createElement("div", {
+      className: "text-right flex-none till-grand"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "till-grand-label text-[10px] uppercase tracking-widest",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Total drawer", homeCcy ? ' · ' + homeCcy : ''), /*#__PURE__*/React.createElement("div", {
+      className: "till-grand-num",
+      "data-absent": grandHome == null ? '1' : undefined,
+      style: {
+        fontSize: 24,
+        fontWeight: 800,
+        color: grandHome == null ? CD.faint : CD.ink,
+        fontVariantNumeric: 'tabular-nums',
+        lineHeight: 1.1
+      },
+      title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
+    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
+      onClick: saveSnapshot,
+      disabled: saved || !sessionOpen || tillBusy === 'count',
+      title: !sessionOpen ? 'Open the till before saving a count' : '',
+      className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
+      style: {
+        background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)',
+        borderRadius: 9,
+        marginLeft: 'auto',
+        cursor: sessionOpen ? 'pointer' : 'not-allowed',
+        transition: 'background .25s ease, transform .12s ease'
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: saved ? 'checkcircle' : 'checkcircle',
+      s: 15,
+      c: "var(--cd-on-ink)"
+    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
+      className: "till-count-hint text-[10.5px] py-2",
+      style: {
+        color: CD.faint
+      }
+    }, "Counting denominations updates the total live \xB7 or tap the counted figure to type it in directly \xB7 expected comes from the ledger float.")), confirmClose && /*#__PURE__*/React.createElement("div", {
       style: {
         position: 'absolute',
         inset: 0,
@@ -17956,14 +17978,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? num(r.expected) : unitText(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.counted == null ? CD.faint : CD.ink,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.counted == null ? '— not counted' : num(r.counted)), /*#__PURE__*/React.createElement("td", {
+      }, r.counted == null ? copy.notCounted : unitText(r.counted, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right text-[11px]",
         style: {
           color: ts ? CD.mute : CD.faint
@@ -17975,7 +17997,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`
@@ -17992,21 +18014,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : unitText(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? '—' : unitText(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + unitText(totalVarHome, homeCcy))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[11.5px] px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
@@ -18050,6 +18072,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       roster: roster,
       me: me,
       requireCount: requireCount,
+      zone: zone,
       expected: CCYS.map(c => ({
         ccy: c,
         units: expectedOf(c)
@@ -53073,7 +53096,7 @@ ${snap}`;
           } = varianceShown(x);
           const off = shown != null && shown !== 0;
           const savedExpected = legacy && x.countedExpected != null ? storedText(x.countedExpected, x.ccy) : '';
-          const varianceLabel = shown == null ? '—' : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy);
+          const varianceLabel = shown == null ? window.CDOS.copy.noVariance : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy);
           /* A count from before the stored-expected column keeps the
              expected it was saved with in the drawer column, in the
              same ink as any other drawer figure. The variance column
@@ -53096,21 +53119,21 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null && !savedExpected ? CD.faint : CD.ink
             }
-          }, savedExpected ? savedExpected : x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, savedExpected ? savedExpected : x.units == null ? window.CDOS.copy.notInTill : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
               color: x.home == null ? CD.faint : CD.ink
             }
-          }, x.home == null ? '— no board rate' : fmt(x.home, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, x.home == null ? 'No board rate.' : fmt(x.home, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
               color: x.counted == null ? CD.faint : CD.ink
             }
-          }, x.counted == null ? '— not counted' : unitText(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, x.counted == null ? 'Not counted.' : unitText(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
@@ -53125,7 +53148,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: CD.mute
             }
-          }, x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy))), note ? /*#__PURE__*/React.createElement("tr", {
+          }, x.vaultUnits == null ? window.CDOS.copy.notInSafe : storedText(x.vaultUnits, x.ccy))), note ? /*#__PURE__*/React.createElement("tr", {
             key: x.ccy + '-stored',
             className: "till-stored-row"
           }, /*#__PURE__*/React.createElement("td", {

@@ -627,7 +627,7 @@
                 const { shown, legacy } = varianceShown(x);
                 const off = shown != null && shown !== 0;
                 const savedExpected = legacy && x.countedExpected != null ? storedText(x.countedExpected, x.ccy) : '';
-                const varianceLabel = shown == null ? '—' : (shown === 0 ? '✓ balanced' : legacy ? ((shown > 0 ? '+' : '') + Number(shown).toFixed(2)) : ((shown > 0 ? '+' : '') + unitText(shown, x.ccy)));
+                const varianceLabel = shown == null ? window.CDOS.copy.noVariance : (shown === 0 ? '✓ balanced' : legacy ? ((shown > 0 ? '+' : '') + Number(shown).toFixed(2)) : ((shown > 0 ? '+' : '') + unitText(shown, x.ccy)));
                 /* A count from before the stored-expected column keeps the
                    expected it was saved with in the drawer column, in the
                    same ink as any other drawer figure. The variance column
@@ -641,11 +641,11 @@
                    Inside the drawer cell it wraps, and the number breaks. */
                 return [<tr key={x.ccy}>
                 <td style={tdS}><b>{x.ccy}</b></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null && !savedExpected ? CD.faint : CD.ink }}>{savedExpected ? savedExpected : (x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy))}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? '— no board rate' : fmt(x.home, homeCcy)}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? '— not counted' : unitText(x.counted, x.ccy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null && !savedExpected ? CD.faint : CD.ink }}>{savedExpected ? savedExpected : (x.units == null ? window.CDOS.copy.notInTill : unitText(x.units, x.ccy))}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? 'No board rate.' : fmt(x.home, homeCcy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? 'Not counted.' : unitText(x.counted, x.ccy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: shown != null ? 600 : 400, color: shown == null ? CD.faint : off ? CD.flag : CD.green }}>{varianceLabel}</td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy)}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{x.vaultUnits == null ? window.CDOS.copy.notInSafe : storedText(x.vaultUnits, x.ccy)}</td>
               </tr>,
               note ? <tr key={x.ccy + '-stored'} className="till-stored-row"><td colSpan={6} style={{ ...tdS, color: CD.pinNote, fontWeight: 400, fontSize: 11, lineHeight: 1.35 }}><div className="till-stored-line">{figure ? <>{cut[0]}<span className="till-stored-figure">{figure}</span>{cut.slice(1).join(figure)}</> : note}</div></td></tr> : null]; })}
               {(() => {
