@@ -136,12 +136,12 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   is the previous file, so this one is 048.
 - Migration `050_idv_shop_config` adds `idv_shop_config`, one row per
   shop (the session legal entity): shop id, provider (default
-  `persona`), API key reference (an environment variable name), template id, retention in days,
+  `persona`), API key reference (`PERSONA_API_KEY` or `PERSONA_API_KEY_<SHOP>`), template id, retention in days,
   and checks enabled (default false). 049 is `049_idv_inquiry_map`, already on main, so this file is 050. The
   table is also in the boot DDL and the Drizzle schema. `GET` and
   `PUT /api/settings/idv` are the owner's. Provider-specific field
   rules live under `server/src/idv/providers/`.
-- Migration `051_idv_inquiry_status` adds `idv_inquiries.status` (default `starting`). 049 is the inquiry map, already on main. 050 is the shop config on the stack parent, so this file is 051. The column is also in the boot DDL because PGlite does not run SQL migrations. `POST /api/idv/start-check` reads `idv_shop_config`, takes the provider from the registry, and starts a sandbox check for the caller's shop, branch, and teller. A per-shop advisory lock covers the cap count and the insert.
+- Migration `051_idv_inquiry_status` adds `idv_inquiries.status` (default `starting`). 049 is the inquiry map, already on main. 050 is the shop config on the stack parent, so this file is 051. The column is also in the boot DDL because PGlite does not run SQL migrations. `POST /api/idv/start-check` reads `idv_shop_config`, takes the provider from the registry, and starts a sandbox check for the caller's shop, branch, and teller. The Persona adapter resolves the key from the row's name and uses the row's template id. A per-shop advisory lock covers the cap count and the insert.
 - Migration `052_idv_credit_ledger` adds the append-only identity-check
   credit ledger `idv_credit_ledger`. The balance is the sum of the rows.
   A grant has no inquiry. The service accepts a whole number from 1 to 1000.

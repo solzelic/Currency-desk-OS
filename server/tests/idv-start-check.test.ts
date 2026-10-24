@@ -12,7 +12,7 @@ import { PERSONA_API_BASE_DEFAULT, createPersonaProvider } from "../src/idv/prov
 import { insertIdvInquiry } from "../src/idv/store.js";
 
 const SECRET = "fixture-webhook-secret";
-const ENV = { PERSONA_API_KEY: "fixture-api-key", PERSONA_TEMPLATE_ID: "itmpl_fixture" };
+const ENV = { PERSONA_API_KEY: "fixture-api-key" };
 const persona = createPersonaProvider({ PERSONA_WEBHOOK_SECRET: SECRET });
 if (!persona) throw new Error("fixture provider");
 const ROUTE = "/api/idv/start-check";
@@ -80,8 +80,10 @@ async function signIn(target: FastifyInstance, staffId: string, tenantId: string
 const start = (who: string, payloadBody: Record<string, unknown> = {}) =>
   app.inject({ method: "POST", url: ROUTE, cookies: cookies[who], payload: payloadBody });
 const enable = (shopId: string, checksEnabled: boolean) => handle.db.execute(sql`
-  INSERT INTO idv_shop_config (shop_id, provider, checks_enabled) VALUES (${shopId}, 'persona', ${checksEnabled})
-  ON CONFLICT (shop_id) DO UPDATE SET checks_enabled = ${checksEnabled}
+  INSERT INTO idv_shop_config (shop_id, provider, api_key_ref, template_id, checks_enabled)
+  VALUES (${shopId}, 'persona', 'PERSONA_API_KEY', 'itmpl_fixture', ${checksEnabled})
+  ON CONFLICT (shop_id) DO UPDATE
+    SET provider = 'persona', api_key_ref = 'PERSONA_API_KEY', template_id = 'itmpl_fixture', checks_enabled = ${checksEnabled}
 `);
 
 beforeAll(async () => {

@@ -8,7 +8,7 @@ import { buildApp } from "../src/app.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
-const ENV = { PERSONA_API_KEY: "fixture-api-key", PERSONA_TEMPLATE_ID: "itmpl_fixture" };
+const ENV = { PERSONA_API_KEY: "fixture-api-key" };
 const ROUTE = "/api/idv/start-check";
 const SHOP = "le-idv-cap";
 
@@ -40,9 +40,10 @@ postgres("start-check cap on postgres", () => {
       staffId: "c.owner", name: "Cap Owner", role: "administrator", authorizedBranchIds: ["br-idv-cap"], passwordHash: owner[0]!.passwordHash,
     }).onConflictDoNothing();
     await handle.db.execute(sql`
-      INSERT INTO idv_shop_config (shop_id, provider, checks_enabled)
-      VALUES (${SHOP}, 'persona', true)
-      ON CONFLICT (shop_id) DO UPDATE SET checks_enabled = true, provider = 'persona'
+      INSERT INTO idv_shop_config (shop_id, provider, api_key_ref, template_id, checks_enabled)
+      VALUES (${SHOP}, 'persona', 'PERSONA_API_KEY', 'itmpl_fixture', true)
+      ON CONFLICT (shop_id) DO UPDATE
+        SET checks_enabled = true, provider = 'persona', api_key_ref = 'PERSONA_API_KEY', template_id = 'itmpl_fixture'
     `);
     app = await buildApp(handle.db, {}, undefined, { env: ENV, fetch: fetchStub, sleep: async () => {} });
   });
