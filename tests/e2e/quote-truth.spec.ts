@@ -240,4 +240,6 @@ test("a held text rate is the rate that posts", async ({ page }) => {
   expect(String(body.outputAmount)).toBe("700.00");
   expect(String(body.rate)).toContain("0.7");
   expect(String(body.rate)).not.toContain("0.722103704355");
+  await signInAtDesk(page, "a.singh");
+  await takeTill(page);
 });

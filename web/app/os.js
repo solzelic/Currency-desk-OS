@@ -15891,6 +15891,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     // must name exactly this set — a superset is rejected, and a subset means
     // an untouched currency would be written back at whatever we sent.
     const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
+    const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const sessionClosed = serverBacked && !!(serverSession && serverSession.status === 'closed');
     // "the book is shut" and "no session has been opened yet" are different
@@ -16793,7 +16794,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-denom"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5 mb-3"
-    }, CCYS.map(c => {
+    }, countCcys.map(c => {
       const on = c === ccy;
       const has = countedCcys.includes(c);
       return /*#__PURE__*/React.createElement("button", {
