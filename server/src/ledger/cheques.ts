@@ -969,9 +969,11 @@ export class ChequeService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "transaction:reverse");
-      /* Cash goes back INTO this drawer, so this drawer has to be open.
-         The clearance path deliberately does not ask for this; see the
-         note there. */
+      /* Cash goes back into the drawer that paid the cheque, so that
+         drawer has to be the one this call is signed in at, and it has
+         to be open. A different till is refused after the cheque is
+         locked, and that refusal commits nothing. The clearance path
+         deliberately does not ask for an open till; see the note there. */
       await requireOpenTill(client, actor, { held: false });
 
       const existing = await client.query(
@@ -995,6 +997,15 @@ export class ChequeService {
       }
 
       const cheque = await this.lockHeldCheque(client, actor, chequeId);
+      /* The cash left this cheque's drawer. Crediting the till that
+         happens to be reversing it would leave both drawers wrong.
+         Refuse, and roll this transaction back, until the reversal is
+         posted from the till that paid the cheque out. */
+      if (cheque.workspace_id !== actor.workspaceId || cheque.till_id !== actor.tillId)
+        throw new LedgerError(
+          "CHEQUE_REVERSAL_WRONG_TILL",
+          "Reverse this cheque at the till that paid it out. Nothing was reversed.",
+        );
       const transactionId = String(cheque.cashing_transaction_id);
       const already = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",

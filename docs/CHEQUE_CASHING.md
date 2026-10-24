@@ -99,6 +99,10 @@ time. That is what makes the fee come back *without anybody having to
 remember that it should*.
 
 That write happens on `POST /api/ledger/cheques/:chequeId/reversal`.
+The cash returns only to the till that paid the cheque out. A reversal
+from any other till is 422 `CHEQUE_REVERSAL_WRONG_TILL`. The transaction
+rolls back: the cheque stays held, no reversal row is committed, and the
+other drawer does not move. The teller reverses it from the original till.
 The deal reversal route, `POST /api/ledger/transactions/:transactionId/reversal`,
 refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return`
 (`REVERSAL_NOT_ALLOWED`). The message names the cheque reversal route.
