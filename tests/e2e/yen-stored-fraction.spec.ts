@@ -409,7 +409,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await expectInk(page.getByText("On the drawer:", { exact: true }), "on the drawer");
   await expectInk(page.locator(".till-operator .text-\\[10\\.5px\\]"), "operator since");
   await expectInk(page.locator(".till-sessionline"), "session line");
-  await expectInk(page.locator(".till-sessionline .ml-auto"), "session count");
+  await expectInk(page.locator(".till-sessionline > span:nth-child(2) > span"), "session count");
   await expectInk(page.locator(".till-pill"), "in drawer");
   await expectInk(page.locator(".till-vault"), "vault label");
   const wideClose = page.locator(".till-recon-desk").getByRole("button", { name: "Close day and lock book" });

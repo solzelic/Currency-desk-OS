@@ -1784,9 +1784,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     max-width: none !important;
   }
 }
-/* The header, the session line, and the multi-till banner stay put
-   and wrap. The denomination list is the piece that scrolls, and the
-   count panel sits under that list instead of covering it. */
+/* The header, the session line, and the multi-till banner stay put.
+   The denomination list is the piece that scrolls, and the count
+   panel sits under that list instead of covering it. */
 .till-frame {
   width: 100%;
   max-width: 100%;
@@ -1821,17 +1821,9 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 }
 .till-sessionline {
   min-width: 0;
-  max-width: 100%;
   flex-wrap: wrap;
-  align-items: baseline;
-  row-gap: 2px;
 }
-.till-sessionline > span {
-  min-width: 0;
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
+.till-sessionline > span { min-width: 0; }
 .till-recon-widehead {
   width: 100%;
   max-width: 100%;
@@ -2972,61 +2964,53 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     white-space: nowrap;
     color: var(--ink, #17140F);
   }
-  /* The session line wraps like the header status line. The
-     currency count stays in the same sentence, so the wrap is as
-     short as the words. A nowrap line was cutting it. */
-  .till-sessionline {
-    flex-wrap: wrap !important;
-    align-items: baseline;
-    max-width: 100%;
-    min-width: 0;
-    overflow: visible;
-    row-gap: 0;
-    padding-top: 3px !important;
-    padding-bottom: 3px !important;
-    line-height: 1.25;
-  }
-  .till-sessionline > span:first-child {
-    flex: none;
-    white-space: normal !important;
-  }
-  .till-sessionline > span:nth-child(2),
-  .till-sessionline > span:last-child,
+  /* The session sentence is one line. Wrapping it hid a denomination. */
+  .till-sessionline { flex-wrap: nowrap !important; }
   .till-sessionline > .flex-1 {
-    flex: 1 1 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     min-width: 0;
-    max-width: 100%;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal !important;
-    overflow-wrap: anywhere;
   }
-  /* The multi-till banner names the drawer. The whole sentence
-     stays on the screen. An ellipsis was hiding the rest. */
+  /* The note names the drawer. It stays one line, inside the column.
+     Two lines hid a denomination at 360. The inner bold and span do
+     not make their own boxes, or a nowrap line reports them past the
+     screen even when the note is clipped. */
   .till-scope-note {
     width: 100%;
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    overflow: visible;
+    overflow: hidden;
     padding-top: 6px !important;
     padding-bottom: 6px !important;
   }
   .till-scope-note > .flex-1 {
-    flex: 1 1 auto;
+    flex: 1 1 0%;
     width: auto;
     min-width: 0;
     max-width: 100%;
-    overflow: visible;
+    overflow: hidden;
     display: block;
-    white-space: normal !important;
-    text-overflow: clip;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     line-height: 1.35;
   }
   .till-scope-note > .flex-1 > b,
   .till-scope-note > .flex-1 > span {
-    display: inline;
+    display: contents;
+  }
+  .till-sessionline {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .till-sessionline > span:nth-child(2) {
+    flex: 1 1 0%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .till-grand:has(.till-grand-num[data-absent="1"]) .till-grand-label {
     font-size: 0 !important;

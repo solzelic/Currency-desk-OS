@@ -72,7 +72,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **The till banner counts the till, and the clocks are the desk's.** Three currencies counted on one till read "1 till counted". A till with no session says "Session not opened" and "Nobody is on this till. No session is open." Showing the float says "Show the expected amount." Hiding it says "Hide expected. Keep the count blind." The end-of-day empty cell says "Not in this till." A missing variance says "No variance." A missing safe balance says "Not in the safe." The close review says "Not counted." and keeps CAD cents. Session, shift, and closed-by stamps use the desk 12-hour clock in the branch zone, so 20:30 UTC at a Toronto till reads 4:30 pm. On a desktop the till window fills the desk, and the status line wraps instead of being cut off. The session line wraps the same way. At 360 the multi-till banner and the History tab stay whole, and both the session line and the banner wrap instead of ending in an ellipsis. The denomination list scrolls in its own area above the count panel. The Reports window fills the desk. A narrow report scrolls sideways so the Variance column stays whole. The Counted column keeps the currency's places: 20,000.00 CAD, 5,000.00 USD, and 489,177 JPY. KWD, BHD, OMR, JOD, IQD, LYD, and TND show three places on the screen. The ledger still stores two.
+- **The till banner counts the till, and the clocks are the desk's.** Three currencies counted on one till read "1 till counted". A till with no session says "Session not opened" and "Nobody is on this till. No session is open." Showing the float says "Show the expected amount." Hiding it says "Hide expected. Keep the count blind." The end-of-day empty cell says "Not in this till." A missing variance says "No variance." A missing safe balance says "Not in the safe." The close review says "Not counted." and keeps CAD cents. Session, shift, and closed-by stamps use the desk 12-hour clock in the branch zone, so 20:30 UTC at a Toronto till reads 4:30 pm. On a desktop the till window fills the desk, and the status line wraps instead of being cut off. On a phone the session line and the multi-till banner stay one line. At 360 the History tab stays whole. The denomination list scrolls in its own area above the count panel. The Reports window fills the desk. A narrow report scrolls sideways so the Variance column stays whole. The Counted column keeps the currency's places: 20,000.00 CAD, 5,000.00 USD, and 489,177 JPY. KWD, BHD, OMR, JOD, IQD, LYD, and TND show three places on the screen. The ledger still stores two.
 
 - **Posting a quote returns the quote connection before the deal checks one out.** The quote check commits first. The deal is still its own serializable transaction: frozen terms, the idempotency row, and the journal commit together, and a replay of that post returns the same deal. The quote connection is back in the pool before that transaction starts, so a full pool of posts no longer waits forever for a second connection. A single post after that burst gets a connection.
 
@@ -280,21 +280,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   A dialog keeps its own header and close, and on a phone it stops
   above the bottom bar. The New transaction sheet is the exception:
   it fills the phone and covers the bar, and the post button stays
-  on the sheet. The Cash Drawer header stacks: the title
-  and the till on one line, the status under that, the amount, then
-  Move cash and Vault. Its tabs scroll, with a fade where the last
-  one continues. A ledger reference and a client name stay on one
+  on the sheet.   The Cash Drawer header stacks: the title
+  and the till on one line, the status under that, then Move cash,
+  Vault, and the amount on one row. History stays a whole tab. A
+  ledger reference and a client name stay on one
   line, and their buttons move to the next row. A wide table keeps
   each cell on one line and scrolls inside its card. The desktop
   resize grip is hidden. The rate board leads with its currency rows,
   already drawn. The cash-drawer count keeps its currency chips and
-  Save count on screen. The whole Cash drawer scrolls as one column,
-  so the header, the session line, and the hand-off scroll away and
-  the denomination rows use that room. The count panel stays a solid
-  sticky panel pinned directly above the bottom bar, with nothing
-  drawn behind it. The list ends with room for that panel, the
-  bar, and 16px, so the last denomination can scroll clear of the
-  panel. An uncounted drawer says "Not counted"
+  Save count on screen. The denomination list scrolls in its own
+  area. The header, the session line, and the hand-off stay put.
+  The count panel sits under that list, directly above the bottom
+  bar, with nothing drawn behind it. The list ends with room for
+  that panel and 16px, so the last denomination can scroll clear of
+  the panel. An uncounted drawer says "Not counted"
   rather than a lone dash — the ledger amount stays on the "In drawer"
   pill, because a zero would claim the drawer was counted empty.
   The ledger search is one line, with its help mark in that line.

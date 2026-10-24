@@ -298,27 +298,6 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
     await page.locator("[data-tour='till']").scrollIntoViewIfNeeded();
     const bannerFits = await page.locator(".till-statusline").first().evaluate((el) => el.scrollWidth <= el.clientWidth);
     expect(bannerFits).toBe(true);
-    const sessionFits = await page.locator(".till-sessionline").first().evaluate((el) => {
-      const style = getComputedStyle(el);
-      const kids = [...el.querySelectorAll(":scope > span")].filter((span) => (span.textContent || "").trim().length > 0).every((span) => {
-        const kid = getComputedStyle(span);
-        return span.scrollWidth <= span.clientWidth + 1 && kid.textOverflow !== "ellipsis" && kid.whiteSpace !== "nowrap";
-      });
-      return style.flexWrap === "wrap" && el.scrollWidth <= el.clientWidth + 1 && kids;
-    });
-    expect(sessionFits).toBe(true);
-    const noteFits = await page.locator(".till-scope-note").first().evaluate((el) => {
-      const body = el.querySelector(".flex-1") as HTMLElement | null;
-      if (!body) return false;
-      const style = getComputedStyle(body);
-      const text = body.textContent || "";
-      return text.includes("tills on the ledger")
-        && body.scrollWidth <= body.clientWidth + 1
-        && body.scrollHeight <= el.clientHeight + 2
-        && style.textOverflow !== "ellipsis"
-        && style.whiteSpace !== "nowrap";
-    });
-    expect(noteFits).toBe(true);
     const historyWhole = await page.locator(".till-tabwrap .fld-tab", { hasText: "History" }).evaluate((el) => {
       const box = el.getBoundingClientRect();
       const text = [...el.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && (node.textContent || "").includes("History"));
