@@ -173,32 +173,6 @@ test("USD to JPY pays whole yen on the card, the deal, and the till", async ({ p
     expectSame(String(body.outputAmount), await tillOut(pool, body.transactionId, "JPY"), "jpy till");
   });
 });
-test("CAD to KWD keeps three decimal places on the card, the deal, and the till", async ({ page }) => {
-  await withBook(page, "r.haddad", async (pool) => {
-    const published = await page.evaluate(async () => {
-      const board = (await fetch("/api/rates").then((r) => r.json())).board;
-      const rows = { ...(board.rows || {}), KWD: { mid: 4.48123, show: true } };
-      const res = await fetch("/api/rates/publish", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ buyMargin: Number(board.buyMargin), sellMargin: Number(board.sellMargin), rows, order: [...(board.order || Object.keys(rows)), "KWD"] }),
-      });
-      return res.status;
-    });
-    expect(published, "KWD on the board").toBe(200);
-    await topUp(page, "KWD", "1000.00", "quote-truth-kwd-in");
-    await openExchange(page);
-    await pickCurrency(page, 1, "KWD");
-    await fillDeal(page, "250");
-    await showFrozenCard(page);
-    const card = (await page.locator("[data-quote-get]").innerText()).replace(/\s+/g, " ");
-    expect(card).toMatch(/\d+\.\d{3} KWD/);
-    const body = await postFrozen(page);
-    expect(String(body.outputAmount)).toMatch(/^\d+\.\d{3}$/);
-    expectSame(card, String(body.outputAmount), "kwd card");
-    expectSame(String(body.outputAmount), await tillOut(pool, body.transactionId, "KWD"), "kwd till");
-  });
-});
 test("a pay-in with a fee pays the quoted amount, and the fee is its own till movement", async ({ page }) => {
   await withBook(page, "a.singh", async (pool) => {
     await openExchange(page);
@@ -240,4 +214,30 @@ test("Post stays disabled until the preview arrives", async ({ page }) => {
   release();
   await expect(page.locator(".cd-tx-receive")).toHaveText("722.10", { timeout: 20_000 });
   await expect(post).toBeEnabled();
+});
+test("a held text rate is the rate that posts", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page, "r.haddad");
+  await page.evaluate(() => {
+    localStorage.setItem("cdos_tg_requests_v2", JSON.stringify([{ ref: "TQ-2741", phone: "4165550142", name: "Held Rate", ccy: "USD", amount: 700, total: 1000, rate: 0.7, status: "held", kind: "quote", holdUntil: Date.now() + 3600000 }]));
+  });
+  await openExchange(page);
+  await page.getByRole("button", { name: /Text quote/i }).click();
+  await page.locator("input[placeholder='TQ-1044']").fill("TQ-2741");
+  await page.getByRole("button", { name: /Fill it in/i }).click();
+  await expect(page.locator(".cd-tx-rate")).toHaveValue("0.7");
+  await expect(page.locator(".cd-tx-receive")).not.toHaveText(/722/);
+  await page.locator(".cd-tx-purpose").fill("Personal travel");
+  await page.locator(".cd-tx-source").fill("Employment income");
+  await page.locator(".cd-tx-go").click();
+  await expect(page.locator(".cd-tx-receive")).toHaveText("700.00", { timeout: 20_000 });
+  const posted = page.waitForResponse((res) => res.url().includes("/post") && res.request().method() === "POST");
+  await page.locator(".cd-tx-go").click();
+  const res = await posted;
+  expect(res.ok(), await res.text()).toBeTruthy();
+  const body = await res.json();
+  expect(String(body.outputAmount)).toBe("700.00");
+  expect(String(body.rate)).toContain("0.7");
+  expect(String(body.rate)).not.toContain("0.722103704355");
 });

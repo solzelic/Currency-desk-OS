@@ -1,6 +1,6 @@
 /* Screen places for a currency. ISO minor units when the server table
    has not loaded. Three-place currencies stay at three on the screen.
-   An exchange stores those places. The list matches server/src/ledger/currencies.ts. */
+   The ledger still stores two. The list matches server/src/ledger/currencies.ts. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;

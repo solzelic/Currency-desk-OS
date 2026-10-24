@@ -167,26 +167,32 @@ postgres("quote service against real PostgreSQL", () => {
       expect(refused.json().code).toBe("INVALID_REQUEST");
     }
   });
-  it("quotes and posts a dinar at three places, and the till pays that amount", async () => {
-    await pool.query(`UPDATE rate_boards SET board_rows = board_rows || '{"KWD":{"mid":4.48123,"show":true}}'::jsonb WHERE id='board-1'`);
-    await pool.query("INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'KWD',1000)", [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"]);
-    const kwd = { ...body, to: "KWD", inputAmount: "250.00", feeCad: "0.00" };
-    const quoted = await app.inject({ method: "POST", url: "/api/quotes", cookies: await cookie(), payload: kwd });
-    expect(quoted.statusCode, quoted.body).toBe(201);
-    const q = quoted.json();
-    const want = new Decimal(250).mul(new Decimal(1).div("4.48123").mul("0.97")).toDecimalPlaces(3, Decimal.ROUND_HALF_UP);
-    expect(q.outputAmount).toBe(want.toFixed(3));
-    expect(want.toFixed(3)).not.toBe(want.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2));
-    const preview = await app.inject({ method: "POST", url: "/api/quotes/preview", cookies: await cookie(), payload: { from: "CAD", to: "KWD", inputAmount: "250.00", feeCad: "0.00", direction: "customer_buy_foreign" } });
+  it("still refuses a currency the ledger's columns cannot hold", async () => {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: { ...body, to: "KWD" },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("UNSUPPORTED_CURRENCY");
+    expect(refused.json().message).toMatch(/three decimal places/i);
+  });
+  it("a preview writes no row", async () => {
+    const names = await pool.query("SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1");
+    const count = async () => {
+      const out: Record<string, string> = {};
+      for (const row of names.rows) {
+        const id = '"' + String(row.name).replace(/"/g, '""') + '"';
+        out[String(row.name)] = (await pool.query(`SELECT count(*)::text AS n FROM ${id}`)).rows[0].n;
+      }
+      return out;
+    };
+    const before = await count();
+    const preview = await app.inject({ method: "POST", url: "/api/quotes/preview", cookies: await cookie(), payload: { from: "CAD", to: "USD", inputAmount: "1000.00", feeCad: "0.00", direction: "customer_buy_foreign" } });
     expect(preview.statusCode, preview.body).toBe(200);
-    expect(preview.json().outputAmount).toBe(q.outputAmount);
-    expect(preview.json().customerRate).toBe(q.customerRate);
     expect(preview.json().quoteId).toBeUndefined();
-    const posted = await app.inject({ method: "POST", url: `/api/quotes/${q.quoteId}/post`, cookies: await cookie(), payload: postBody("kwd-three") });
-    expect(posted.statusCode, posted.body).toBe(201);
-    expect(posted.json().outputAmount).toBe(q.outputAmount);
-    const till = await pool.query("SELECT amount::text AS amount FROM ledger_till_movements WHERE transaction_id=$1 AND direction='out' AND currency='KWD'", [posted.json().transactionId]);
-    expect(till.rows[0].amount).toBe(q.outputAmount);
+    expect(await count()).toEqual(before);
   });
   it("creates a customer-buy quote using We Sell with board and snapshot lineage", async () => {
     const res = await app.inject({

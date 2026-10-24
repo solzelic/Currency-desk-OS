@@ -627,8 +627,10 @@
       : { amt: amtN, ccy: home };   // MO / Bill: face value out
     /* Once the server has priced the deal, that figure is the one on
        the ticket. The local preview is only what shows before then. */
+    const typedRate = override && String(manualRate).trim() ? String(manualRate).trim() : '';
+    const heldRateText = !typedRate && lockLive && lockLive.rate != null ? String(lockLive.rate) : '';
     const frozenQuote = serverQuote && isExchange && serverQuote.from === inCcy && serverQuote.to === outCcy ? serverQuote : null;
-    const liveQuote = frozenQuote || (preview && preview.from === inCcy && preview.to === outCcy ? preview : null);
+    const liveQuote = frozenQuote || (heldRateText ? null : (preview && preview.from === inCcy && preview.to === outCcy ? preview : null));
     const shownOut = isExchange
       ? (liveQuote && liveQuote.outputAmount != null ? liveQuote.outputAmount : null)
       : out.amt;
@@ -636,10 +638,9 @@
       ? (liveQuote && liveQuote.buyOrSellSide === 'we_buy' ? 'buy' : liveQuote && liveQuote.buyOrSellSide === 'we_sell' ? 'sell' : (inCcy === home ? 'sell' : outCcy === home ? 'buy' : 'cross'))
       : pricing.side;
     const serverRateText = liveQuote && liveQuote.customerRate != null ? String(liveQuote.customerRate) : '';
-    const typedRate = override && String(manualRate).trim() ? String(manualRate).trim() : '';
     const liveFace = typedRate ? { text: typedRate, rounded: false } : (liveQuote && window.CDOS.frozenRateFace ? window.CDOS.frozenRateFace(liveQuote.customerRate, liveQuote.inputAmount, liveQuote.outputAmount) : { text: '', rounded: false });
-    const exchangeRateLine = liveFace.text ? ('1 ' + inCcy + ' = ' + liveFace.text + ' ' + outCcy) : '';
-    const quotePending = !!(isExchange && amtN > 0 && !liveQuote);
+    const exchangeRateLine = liveFace.text ? ('1 ' + inCcy + ' = ' + liveFace.text + ' ' + outCcy) : (heldRateText ? ('1 ' + inCcy + ' = ' + heldRateText + ' ' + outCcy) : '');
+    const quotePending = !!(isExchange && amtN > 0 && !liveQuote && !heldRateText);
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -850,10 +851,11 @@
              Neither side home, such as INR for USD on a CAD desk, is a cross. */
           direction: inCcy === home ? 'customer_buy_foreign' : outCcy === home ? 'customer_sell_foreign' : 'customer_cross',
         });
-        if (typedRate) {
+        const sentRate = typedRate || heldRateText;
+        if (sentRate) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
-            customerRate: typedRate,
-            reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : 'Manual counter rate'),
+            customerRate: sentRate,
+            reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : 'Held rate'),
           });
         }
         setServerQuote(quote);
@@ -1204,7 +1206,7 @@
                   <Lbl>Customer receives</Lbl>
                   <Money value={shownOut ? unitText(shownOut, outCcy) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (serverRateText || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(serverRateText); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (heldRateText || serverRateText || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(serverRateText); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>

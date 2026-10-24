@@ -21,7 +21,6 @@
    money columns hold two places and truncating a dinar silently is a
    worse answer than saying no.
    ============================================================ */
-import Decimal from "decimal.js";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -218,10 +217,18 @@ postgres("the currencies a desk may actually hold", () => {
     expect(refused.json().message).toContain("CAD, PHP, USD");
   });
 
-  it("floats a three-decimal currency into the drawer", async () => {
-    const moved = await float("KWD", "100.00", "kwd-float");
-    expect(moved.statusCode, moved.body).toBe(201);
-    expect(new Decimal(moved.json().balances.KWD).eq("100")).toBe(true);
+  it("still refuses a currency the ledger's columns cannot hold", async () => {
+    /* Two decimals on purpose: a three-decimal AMOUNT is refused by the
+       amount validator with a 400 and says nothing about the currency.
+       What is being proved here is the currency gate, so the amount is
+       one the route accepts. */
+    const refused = await float("KWD", "100.00", "kwd-float");
+    /* Two decimal places is what `numeric(24,2)` holds. A dinar has
+       three, and quietly dropping the third on every deal is the kind of
+       loss nobody finds for a year. */
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("UNSUPPORTED_CURRENCY");
+    expect(refused.json().message).toMatch(/three decimal places/i);
   });
 
   it("refuses something that is not a currency at all, at the route", async () => {
@@ -320,11 +327,13 @@ describe("an owner states the desk's currencies", () => {
     expect(cleared.json().stated).toBeNull();
   });
 
-  it("stores a three-decimal currency when the owner names it", async () => {
-    const saved = await put(["USD", "KWD"]);
-    expect(saved.statusCode, saved.body).toBe(200);
-    expect(saved.json().stated).toEqual(["CAD", "KWD", "USD"]);
-    expect(saved.json().minorUnits.KWD).toBe(3);
+  it("refuses a currency the ledger cannot carry, at the moment it is named", async () => {
+    const refused = await put(["USD", "KWD"]);
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("UNSUPPORTED_CURRENCY");
+    /* Told here rather than discovered later by a teller who cannot take
+       a dinar with a customer waiting. */
+    expect(refused.json().message).toMatch(/three decimal places/i);
   });
 
   it("refuses a set with nothing in it but the home currency", async () => {

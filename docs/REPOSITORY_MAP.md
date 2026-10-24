@@ -134,11 +134,6 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   cannot be updated. The variance on a new row is counted minus
   `roundTo` of that expected. The till balance is not rewritten. 047
   is the previous file, so this one is 048.
-- Migration `053_three_decimal_amounts` changes each public money column
-  that is `numeric` with scale 2 to unconstrained numeric. A stored
-  two-decimal amount keeps its text. An exchange payout can then keep
-  three places. Rate columns at scale 12 are left alone. 049 is the
-  inquiry map. 050, 051, and 052 are open drafts, so this file is 053.
 
 ## Test commands
 

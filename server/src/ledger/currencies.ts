@@ -31,27 +31,29 @@
                             ¥1,234.56. A payout quoted to two decimals is
                             not a rounding nicety, it is a figure a teller
                             cannot count out.
-     KWD, BHD, OMR, JOD …   THREE minor units. Migration 053 stores
-                            them. Truncating the third place is how a
-                            desk loses a thousandth of a dinar per deal.
+     KWD, BHD, OMR, JOD …   THREE minor units. A `numeric(24,2)` column
+                            cannot hold one, and truncating silently is
+                            how a desk loses a thousandth of a dinar per
+                            deal and never finds out.
 
    So minor units are stated here, per ISO 4217, and enforced at the edge.
    Zero-decimal currencies are carried properly — `parseMoney` refuses
    `1234.56` for JPY the way it refuses `1.234` for USD.
 
-   Three-decimal currencies are stored. Migration 053 widens the money
-   columns to unconstrained numeric, and an exchange payout uses the
-   currency's own places. A remittance face in one of these currencies
-   is still the two-place amount obligations.ts already posted.
+   Three-decimal currencies are REFUSED, out loud, with the reason. The
+   money columns hold two places; a desk that could add KWD to its set
+   and then watch every amount quietly lose its third decimal is worse
+   off than one told plainly that the ledger does not carry it yet.
+   Widening 47 numeric(24,2) columns is its own change with its own
+   migration, and pretending otherwise here is exactly the kind of
+   silent-wrongness docs/ABSENT_FIGURES.md exists to forbid.
    ============================================================ */
 import Decimal from "decimal.js";
 import { z } from "zod";
 import { LedgerError } from "./service.js";
 
-/** Ordinary currencies, and the report total's fallback scale. */
+/** The scale the ledger's money columns actually hold. */
 export const LEDGER_SCALE = 2;
-/** Money columns hold three places after migration 053. */
-const COLUMN_SCALE = 3;
 
 /* ISO 4217 exponents for everything this product can reach — the
    indicative board in ../rates/starting-board.ts, the pack home
@@ -64,7 +66,7 @@ const EXCEPTIONS: Readonly<Record<string, number>> = {
   BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0,
   PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0,
   XPF: 0,
-  /* three minor units, stored since migration 053 */
+  /* three, and therefore not storable at the ledger's scale */
   BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
 };
 
@@ -100,18 +102,19 @@ export function asCurrencyCode(code: unknown): string | null {
 /**
  * Can the ledger hold amounts in this currency at all?
  *
- * False when the currency needs more places than the columns hold.
- * The reason travels with the answer so a caller never invents one.
+ * False only for three-decimal currencies, and the reason travels with
+ * the answer so a caller never has to invent one.
  */
 export function carriable(
   code: string,
 ): { ok: true } | { ok: false; reason: string } {
-  if (minorUnits(code) > COLUMN_SCALE) {
+  if (minorUnits(code) > LEDGER_SCALE) {
     return {
       ok: false,
       reason:
-        `${code} needs ${minorUnits(code)} decimal places, and this ledger ` +
-        `stores ${COLUMN_SCALE}. It is not carried yet.`,
+        `${code} is written to three decimal places, and this ledger's ` +
+        `amounts hold two. It is not carried yet — recording it here ` +
+        `would drop the third place on every deal.`,
     };
   }
   return { ok: true };
@@ -190,8 +193,10 @@ export function fixedIn(amount: Decimal, currency: string): string {
    read in that case too, but only to SUGGEST what a picker should offer;
    it constrains nothing.
 
-   A currency the columns cannot store is filtered out of the set.
-   KWD is stored at three places, so a desk that names it keeps it.
+   Three-decimal currencies are filtered OUT of whatever the answer
+   would otherwise be. A desk that names KWD does not get a set that
+   half-works; it gets a set without KWD, and `carriable()` is what says
+   why to anybody who asks for it directly.
    ============================================================ */
 
 export type DeskCurrencies = {
@@ -300,7 +305,7 @@ export async function assertTradeable(
     const allowed = tradeable(desk, code);
     if (!allowed.ok) {
       throw new LedgerError(
-        !carriable(code).ok ? "UNSUPPORTED_CURRENCY" : "CURRENCY_NOT_TRADED",
+        minorUnits(code) > LEDGER_SCALE ? "UNSUPPORTED_CURRENCY" : "CURRENCY_NOT_TRADED",
         allowed.reason,
       );
     }
@@ -311,9 +316,10 @@ export async function assertTradeable(
 /**
  * May this desk deal in this currency? The reason travels with a refusal.
  *
- * Two ways to be refused, and only two. The currency needs more places
- * than the columns hold, or the owner stated a set and this is not in
- * it. Where no set was stated there is nothing to be outside of.
+ * Two ways to be refused, and only two. The ledger cannot carry the
+ * currency at all (three decimal places), or the owner stated a set and
+ * this is not in it. Where no set was stated there is nothing to be
+ * outside of.
  */
 export function tradeable(
   desk: DeskCurrencies,

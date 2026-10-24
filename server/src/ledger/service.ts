@@ -70,7 +70,7 @@ import {
   aeDueDiligenceBlocks,
   aePurposeDecision,
 } from "./uae-exchange.js";
-import { assertTradeable, fixedIn, minorUnits, parseMoney, roundTo } from "./currencies.js";
+import { assertTradeable, fixedIn, parseMoney, roundTo } from "./currencies.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -154,10 +154,6 @@ const scope = (actor: LedgerActor) => [
 ];
 const fixed = (value: Decimal, places = 2) =>
   value.toDecimalPlaces(places).toFixed(places);
-/* Two stored places for yen and for dollars, which is what the columns
-   have always returned. A dinar payout keeps the third place. */
-const moneyOf = (value: Decimal, currency: string) =>
-  minorUnits(currency) > 2 ? fixedIn(value, currency) : fixed(value);
 
 /* ---- the two gates every counter deal passes, wherever it is posted ----
 
@@ -747,7 +743,7 @@ export class LedgerService {
         row.customer_id !== quote.customerId ||
         row.from_currency !== quote.from || row.to_currency !== quote.to ||
         !sameDecimal(row.input_amount, quote.inputAmount, 2) ||
-        !sameDecimal(expectedOutput, quote.outputAmount, minorUnits(row.to_currency)) ||
+        !sameDecimal(expectedOutput, quote.outputAmount, 2) ||
         !sameDecimal(row.market_mid, quote.marketMid, 12) ||
         !sameDecimal(expectedRate, quote.customerRate, 12) ||
         !sameDecimal(row.fee_cad, quote.feeCad, 2) ||
@@ -1082,7 +1078,7 @@ export class LedgerService {
         from: quote.from,
         to: quote.to,
         inputAmount: fixed(input),
-        outputAmount: moneyOf(output, quote.to),
+        outputAmount: fixed(output),
         rate: fixed(rate, 12),
         marketMid: fixed(mid, 12),
         feeCad: fixed(fee),
@@ -1120,7 +1116,7 @@ export class LedgerService {
           quote.from,
           quote.to,
           fixed(input),
-          moneyOf(output, quote.to),
+          fixed(output),
           fixed(rate, 12),
           fixed(fee),
           fixed(spread),
@@ -1177,7 +1173,7 @@ export class LedgerService {
         const delta = direction === "in" ? value : value.neg();
         const updated = await client.query(
           "UPDATE ledger_till_balances SET available_amount=available_amount+$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND currency=$7 AND available_amount+$1>=0",
-          [moneyOf(delta, currency), ...scope(actor), currency],
+          [fixed(delta), ...scope(actor), currency],
         );
         if (!updated.rowCount)
           throw new LedgerError(
@@ -1186,7 +1182,7 @@ export class LedgerService {
           );
         await client.query(
           "INSERT INTO ledger_till_movements (transaction_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,'original',$2,$3,$4,$5)",
-          [transactionId, currency, direction, moneyOf(value, currency), now],
+          [transactionId, currency, direction, fixed(value), now],
         );
       }
 
@@ -1502,7 +1498,7 @@ export class LedgerService {
         from: request.from,
         to: request.to,
         inputAmount: fixed(input),
-        outputAmount: moneyOf(output, request.to),
+        outputAmount: fixed(output),
         rate: fixed(rate, 12),
         feeCad: fixed(fee),
         feeCurrency: "CAD",
@@ -1535,7 +1531,7 @@ export class LedgerService {
           request.from,
           request.to,
           fixed(input),
-          moneyOf(output, request.to),
+          fixed(output),
           fixed(rate, 12),
           fixed(fee),
           fixed(spread),
@@ -1579,7 +1575,7 @@ export class LedgerService {
         const delta = direction === "in" ? value : value.neg();
         const updated = await client.query(
           "UPDATE ledger_till_balances SET available_amount=available_amount+$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND currency=$7 AND available_amount+$1>=0",
-          [moneyOf(delta, currency), ...scope(actor), currency],
+          [fixed(delta), ...scope(actor), currency],
         );
         if (!updated.rowCount)
           throw new LedgerError(
@@ -1588,7 +1584,7 @@ export class LedgerService {
           );
         await client.query(
           "INSERT INTO ledger_till_movements (transaction_id,movement_kind,currency,direction,amount,created_at) VALUES ($1,'original',$2,$3,$4,$5)",
-          [transactionId, currency, direction, moneyOf(value, currency), now],
+          [transactionId, currency, direction, fixed(value), now],
         );
       }
       await client.query(
@@ -1728,7 +1724,7 @@ export class LedgerService {
         const delta = direction === "in" ? value : value.neg();
         const updated = await client.query(
           "UPDATE ledger_till_balances SET available_amount=available_amount+$1 WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5 AND till_id=$6 AND currency=$7 AND available_amount+$1>=0",
-          [moneyOf(delta, movement.currency), ...scope(actor), movement.currency],
+          [fixed(delta), ...scope(actor), movement.currency],
         );
         if (!updated.rowCount)
           throw new LedgerError(
@@ -1742,7 +1738,7 @@ export class LedgerService {
             reversalId,
             movement.currency,
             direction,
-            moneyOf(value, movement.currency),
+            fixed(value),
             now,
           ],
         );

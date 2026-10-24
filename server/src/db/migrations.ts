@@ -58,8 +58,6 @@ export const migrations: readonly Migration[] = [
   ["048_till_count_stored_expected", "src/db/migrations/048_till_count_stored_expected.sql"],
   /* 049 is the inquiry-to-shop map. 050 is used by another change. */
   ["049_idv_inquiry_map", "src/db/migrations/049_idv_inquiry_map.sql"],
-  /* 053 lets a three-decimal payout keep its third place. */
-  ["053_three_decimal_amounts", "src/db/migrations/053_three_decimal_amounts.sql"],
 ] as const;
 
 export async function runMigrations(

@@ -111,12 +111,12 @@ on that scale is refused in a sentence that names the currency.
 `10000.55` yen is not a yen amount. A stored `10781.00` is, because
 the column reads back two places. The rate stored on the deal stays
 the quote rate at 12 places. Three-decimal rounding still keeps
-three places in `roundTo`. Migration 053 stores an exchange payout
-and the till movement at those places. A remittance face amount in
-one of them is still accepted at two decimal places, and a third
-decimal on that face is still refused.
+three places in `roundTo`. The ledger still does not store those
+currencies. A remittance face amount in one of them is still accepted
+at two decimal places, which is what the column holds, and a third
+decimal is refused. An exchange in that currency is still refused.
 
-An exchange shows the frozen server rate at six places (`1 CAD = 0.722104 USD`). The ledger keeps `0.722103704355` for the maths. `POST /api/quotes/preview` uses the same terms and writes nothing. A remittance still uses `os-src/effective-rate.js`.
+An exchange shows the frozen server rate at six places (`1 CAD = 0.722104 USD`). The ledger keeps `0.722103704355`. Preview runs the same terms and writes nothing. A held text rate is sent as the customer rate. A remittance still uses `os-src/effective-rate.js`.
 
 
 A closed day's report shows the units that were stored. An open day
@@ -130,12 +130,14 @@ line under Expected reads: Rounded from 489,175.85 JPY stored from
 older deals. It clears when the ledger is trued up. A figure already
 on the grid, including 1,000.50 CAD, has no line. The book still stores
 489,175.85. Before the scales table loads, and if that load fails, the
-screen uses the ISO minor units, and a three-decimal currency still shows three.
+screen uses the ISO minor units, and it never shows a third decimal.
 
-**Three-decimal currencies are stored on an exchange.** Migration 053
-changes each `numeric(24,2)` money column to unconstrained numeric, so a
-stored `722.10` stays `722.10` and a dinar payout can keep its third place.
-A fourth place is still refused. A remittance face stays at two places.
+**Three-decimal currencies are refused on an exchange, out loud, with the reason.** The
+money columns hold two places. A desk that could add KWD to its set and then
+watch every amount quietly lose its third decimal is worse off than one told
+plainly that the ledger does not carry it yet. Widening 47 `numeric(24,2)`
+columns is its own change with its own migration; pretending otherwise here
+would be exactly the silent wrongness `ABSENT_FIGURES.md` exists to forbid.
 
 ## What the owner sees
 

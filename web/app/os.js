@@ -166,7 +166,7 @@
 /* ---- os-src/minor-units-format.js ---- */
 /* Screen places for a currency. ISO minor units when the server table
    has not loaded. Three-place currencies stay at three on the screen.
-   An exchange stores those places. The list matches server/src/ledger/currencies.ts. */
+   The ledger still stores two. The list matches server/src/ledger/currencies.ts. */
 (function (root, factory) {
   var api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -15891,7 +15891,6 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     // must name exactly this set — a superset is rejected, and a subset means
     // an untouched currency would be written back at whatever we sent.
     const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
-    const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const sessionClosed = serverBacked && !!(serverSession && serverSession.status === 'closed');
     // "the book is shut" and "no session has been opened yet" are different
@@ -16794,7 +16793,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-denom"
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-1.5 mb-3"
-    }, countCcys.map(c => {
+    }, CCYS.map(c => {
       const on = c === ccy;
       const has = countedCcys.includes(c);
       return /*#__PURE__*/React.createElement("button", {
@@ -35992,12 +35991,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }; // MO / Bill: face value out
     /* Once the server has priced the deal, that figure is the one on
        the ticket. The local preview is only what shows before then. */
+    const typedRate = override && String(manualRate).trim() ? String(manualRate).trim() : '';
+    const heldRateText = !typedRate && lockLive && lockLive.rate != null ? String(lockLive.rate) : '';
     const frozenQuote = serverQuote && isExchange && serverQuote.from === inCcy && serverQuote.to === outCcy ? serverQuote : null;
-    const liveQuote = frozenQuote || (preview && preview.from === inCcy && preview.to === outCcy ? preview : null);
+    const liveQuote = frozenQuote || (heldRateText ? null : preview && preview.from === inCcy && preview.to === outCcy ? preview : null);
     const shownOut = isExchange ? liveQuote && liveQuote.outputAmount != null ? liveQuote.outputAmount : null : out.amt;
     const dealSide = isExchange ? liveQuote && liveQuote.buyOrSellSide === 'we_buy' ? 'buy' : liveQuote && liveQuote.buyOrSellSide === 'we_sell' ? 'sell' : inCcy === home ? 'sell' : outCcy === home ? 'buy' : 'cross' : pricing.side;
     const serverRateText = liveQuote && liveQuote.customerRate != null ? String(liveQuote.customerRate) : '';
-    const typedRate = override && String(manualRate).trim() ? String(manualRate).trim() : '';
     const liveFace = typedRate ? {
       text: typedRate,
       rounded: false
@@ -36005,8 +36005,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       text: '',
       rounded: false
     };
-    const exchangeRateLine = liveFace.text ? '1 ' + inCcy + ' = ' + liveFace.text + ' ' + outCcy : '';
-    const quotePending = !!(isExchange && amtN > 0 && !liveQuote);
+    const exchangeRateLine = liveFace.text ? '1 ' + inCcy + ' = ' + liveFace.text + ' ' + outCcy : heldRateText ? '1 ' + inCcy + ' = ' + heldRateText + ' ' + outCcy : '';
+    const quotePending = !!(isExchange && amtN > 0 && !liveQuote && !heldRateText);
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -36391,10 +36391,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
              Neither side home, such as INR for USD on a CAD desk, is a cross. */
           direction: inCcy === home ? 'customer_buy_foreign' : outCcy === home ? 'customer_sell_foreign' : 'customer_cross'
         });
-        if (typedRate) {
+        const sentRate = typedRate || heldRateText;
+        if (sentRate) {
           quote = await window.CDOS.Backend.overrideQuote(quote.quoteId, {
-            customerRate: typedRate,
-            reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : 'Manual counter rate')
+            customerRate: sentRate,
+            reason: marginReason.trim() || (tq ? `Text quote ${tq.ref}` : 'Held rate')
           });
         }
         setServerQuote(quote);
@@ -37138,7 +37139,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : serverRateText || 'Rate unavailable',
+      value: override ? manualRate : heldRateText || serverRateText || 'Rate unavailable',
       onFocus: () => {
         if (!override && !lockLive) {
           setManualRate(serverRateText);

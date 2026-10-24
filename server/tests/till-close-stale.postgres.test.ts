@@ -435,7 +435,7 @@ postgres("a till close after the drawer has moved", () => {
     }
   });
 
-  it("keeps a two-decimal variance and counts a dinar the drawer holds", async () => {
+  it("keeps a two-decimal variance and still refuses a three-decimal count", async () => {
     const teller = await cookie();
     await pool.query(
       `UPDATE ledger_till_balances SET available_amount = 99.85
@@ -468,12 +468,8 @@ postgres("a till close after the drawer has moved", () => {
       cookies: teller,
       payload: { idempotencyKey: "kwd-count", counts: { KWD: "1.24" } },
     });
-    expect(kwd.statusCode, kwd.body).toBe(201);
-    const kwdRow = await pool.query(
-      `SELECT variance_amount::text AS variance_amount
-         FROM ledger_till_counts WHERE currency = 'KWD'`,
-    );
-    expect(kwdRow.rows[0].variance_amount).toBe("0.01");
+    expect(kwd.statusCode, kwd.body).toBe(422);
+    expect(kwd.json().code).toBe("UNSUPPORTED_CURRENCY");
   });
 
   it("refuses a fractional yen count", async () => {
