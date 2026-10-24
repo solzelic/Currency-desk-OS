@@ -5,7 +5,7 @@
    snapshot is only there so the board can publish. */
 import { createRequire } from "node:module";
 import path from "node:path";
-import { test, expect, hasLedger, landOnDesktop, codeFor, logSize } from "./fixtures";
+import { seamTest as test, expect, hasLedger, landOnDesktop, codeFor, logSize } from "./fixtures";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");

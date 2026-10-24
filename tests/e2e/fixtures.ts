@@ -1,4 +1,4 @@
-import { test as base, type Page } from "@playwright/test";
+import { test as base, type APIRequestContext, type Page } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -95,6 +95,25 @@ export const expect = test.expect;
    the embedded database has no ledger routes at all.
    ============================================================ */
 export const hasLedger = !!process.env.SEAM_DATABASE_URL;
+
+/* Puts the seeded York till back, through the test-only route: no
+   session on that drawer, and the opening figures. Specs that share
+   one book opt in with seamTest. A file that trades on a till it
+   opened itself does not. */
+export async function restoreSeededDesk(request: APIRequestContext): Promise<void> {
+  if (!hasLedger) return;
+  const response = await request.post("/api/test/reset-desk");
+  if (!response.ok()) {
+    throw new Error(`desk reset failed: ${response.status()} ${await response.text()}`);
+  }
+}
+
+export const seamTest = test.extend({
+  resetDesk: [async ({ request }, use) => {
+    await restoreSeededDesk(request);
+    await use(undefined);
+  }, { auto: true }],
+});
 
 
 /**

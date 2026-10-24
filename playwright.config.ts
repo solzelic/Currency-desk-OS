@@ -67,6 +67,10 @@ export default defineConfig({
          log — which is also where these tests read a confirmation code
          from, exactly as a person would read it off the server output. */
       RATES_SYNC: "off",
+      /* Asks the server for POST /api/test/reset-desk. The route stays
+         unregistered in production and on any host that is not local.
+         Render does not set this. */
+      CD_TEST_RESET: "1",
     },
   },
 

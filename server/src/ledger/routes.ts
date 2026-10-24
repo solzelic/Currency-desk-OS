@@ -33,6 +33,7 @@ import {
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
+import { registerTestDeskReset } from "./test-desk-reset.js";
 
 /* ============================================================
    A CURRENCY ON A MONEY ROUTE
@@ -315,6 +316,10 @@ type Resolution = { kind: "authenticated"; actor: LedgerActor } | { kind: "unaut
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  /* Same pool as the till routes. The handler checks out one client
+     and does not take another until that transaction has released it.
+     Absent unless the seam harness set CD_TEST_RESET on a local database. */
+  registerTestDeskReset(app, pool, databaseUrl);
   const service = new LedgerService(pool);
   const provisioning = new LedgerProvisioningService(pool);
   const tillControl = new TillControlService(pool);
