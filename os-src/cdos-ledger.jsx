@@ -55,6 +55,11 @@
   const limitOf = (settings) => reportingLimit(settings);
 
   const stamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
+  function whenOf(row, settings) {
+    const format = (settings && settings.timeFormat) || (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h';
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || (settings && settings.timezone) || 'America/Toronto';
+    return window.CDOS.deskRow(row, format, zone);
+  }
   // overlays portal to the document root so the window's stacking context
   // (and the rate ticker at z-360) can't occlude them
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
@@ -86,10 +91,11 @@
     return (<div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 11 }}><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{label}</div><div className="text-2xl font-bold mt-0.5" style={{ color: tone || CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>);
   }
   function CompItem({ r, onOpenDetail, cadIn, children }) {
+    const when = whenOf(r);
     return (<div className="flex items-center gap-3 px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${CD.lineSoft}`, borderRadius: 10 }}>
       <button onClick={() => onOpenDetail(r.id)} className="text-left flex-1 min-w-0">
         <div className="text-[13px] font-medium" style={{ color: CD.ink }}>{r.customer || '—'} <span className="text-[11px]" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>· {r.ref}</span></div>
-        <div className="text-[11px]" style={{ color: CD.mute }}>{r.type} · {fmtHome(cadIn(r))} · {r.date} {r.time}</div>
+        <div className="text-[11px]" style={{ color: CD.mute }}>{r.type} · {fmtHome(cadIn(r))} · {when.day} {when.time}</div>
       </button>
       <div className="flex items-center gap-1.5 flex-none"><button onClick={() => onOpenDetail(r.id)} title="View this record" className="flex items-center gap-1 text-[11px] font-medium px-2 py-1.5" style={{ borderRadius: 7, border: `1px solid ${CD.line}`, color: CD.ink, background: 'var(--cd-on-ink)' }}><Ic n="scroll" s={13} c={CD.mute} /> View records</button>{children}</div>
     </div>);
@@ -1074,6 +1080,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
 
     // earnings: posted fee + the spread actually booked at the counter (exact when
     // the deal was two-side priced; falls back to the live-mid estimate for legacy rows)
+    const when = whenOf(row, settings);
     const inCad = homeOf(row.inAmt, row.inCcy) || 0;
     const spreadCad = dealMargin(row);
     const feeCad = row.fee == null ? null : +row.fee;
@@ -1092,7 +1099,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
               <span className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: isVoid ? CD.lineSoft : CD.greenSoft, color: isVoid ? CD.mute : CD.green }}>{isVoid ? 'Void' : 'Posted'}</span>
               {row.tagged && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 font-semibold" style={{ borderRadius: 5, background: CD.green, color: 'var(--cd-on-ink)', fontFamily: 'Space Mono, monospace' }}><Ic n="bookmark" s={10} c="var(--cd-on-ink)" /> TAGGED</span>}
             </div>
-            <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{row.date} {row.time} · {row.teller}</div>
+            <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{when.day} {when.time} · {row.teller}</div>
           </div>
           <div className="tx-detail-actions ml-auto flex items-center gap-1.5 flex-none">
             <button onClick={() => onReceipt(row)} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}><Ic n="receipt" s={14} /> Receipt</button>
@@ -1640,7 +1647,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const body = recs.map(r => {
         const f = flags[r.id] || {}; const v = r.status === 'void';
         const fl = v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok' && f.idNeeded) ? 'ID' : ''].filter(Boolean).join(' ') || '—');
-        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(r.date)} <span class="mut">${esc(r.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
+        const when = whenOf(r, settings);
+        return `<tr${v ? ' class="void"' : ''}><td class="mono">${esc(r.ref)}</td><td>${esc(when.day)} <span class="mut">${esc(when.time)}</span></td><td class="b">${esc(r.customer)}</td><td class="mut">${esc(r.type)}</td><td class="r">${num(r.inAmt)} <span class="mut">${esc(r.inCcy)}</span></td><td class="r grn">${r.outAmt === '' ? '—' : num(r.outAmt)} <span class="mut">${esc(r.outCcy)}</span></td><td class="r">${esc(fmtHome(r.fee))}</td><td class="mut">${esc(r.teller)}</td><td class="mono c">${fl}</td></tr>`;
       }).join('');
       const w = window.open('', '_blank', 'width=980,height=1100');
       if (!w) { log('Report blocked', 'Allow pop-ups to print the report'); return; }
@@ -1681,7 +1689,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
 @page{margin:13mm;}
 </style></head><body>
 <div class="hd"><div><div class="bd"><span class="logo">CD</span><span class="wm">CURRENCYDESK OS</span></div><div class="h1">Ledger Report</div></div>
-<div class="meta"><b>${esc(rangeLabel)}</b><div>Generated ${esc(new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''))}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
+<div class="meta"><b>${esc(rangeLabel)}</b><div>Generated ${esc(window.CDOS.deskStampNow())}</div><div>By ${esc(me.name)} · ${esc(me.role)}</div></div></div>
 <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
 <div class="kpis"><div class="kpi"><div class="l">Records</div><div class="v">${recs.length}</div></div><div class="kpi"><div class="l">Pay-in volume${homeCcy() ? ' (' + esc(homeCcy()) + ')' : ''}</div><div class="v">${esc(fmtHome(vol))}</div></div><div class="kpi"><div class="l">Fees collected</div><div class="v">${esc(fmtHome(fees))}</div></div></div>
 <table><thead><tr><th>Ref</th><th>Date / time</th><th>Customer</th><th>Type</th><th class="r">Pay-in</th><th class="r">Pay-out</th><th class="r">Fee</th><th>Teller</th><th class="c">Flags</th></tr></thead><tbody>${body || '<tr><td colspan="9" style="padding:14px;color:#999;">No records match the current filters.</td></tr>'}</tbody></table>
@@ -1825,12 +1833,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             <th key={i} onClick={() => key && toggleSort(key)} className="px-3 py-2.5 font-medium select-none" style={{ borderBottom: `1px solid ${CD.line}`, cursor: key ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
               <span className="inline-flex items-center gap-1" style={{ color: key && sort.key === key ? CD.ink : 'inherit' }}>{h}{key && sort.key === key && <span style={{ fontSize: 9 }}>{sort.dir === 'asc' ? '▲' : '▼'}</span>}</span>
             </th>))}</tr></thead>
-          <tbody>{filtered.map(x => { const f = flags[x.id] || {}; const isVoid = x.status === 'void'; return (
+          <tbody>{filtered.map(x => { const f = flags[x.id] || {}; const isVoid = x.status === 'void'; const when = whenOf(x, settings); return (
             <tr key={x.id} onClick={() => setDetailId(x.id)} className="cursor-pointer" style={{ borderBottom: `1px solid ${CD.lineSoft}`, opacity: isVoid ? 0.5 : 1, background: detailId === x.id ? '#f6f5f1' : 'transparent' }}
               onMouseEnter={e => { if (detailId !== x.id) e.currentTarget.style.background = 'var(--cd-paper-soft)'; }} onMouseLeave={e => { if (detailId !== x.id) e.currentTarget.style.background = 'transparent'; }}>
               <td className="pl-3 pr-0 py-2.5" onClick={e => e.stopPropagation()}><button onClick={() => toggleTag(x)} title={x.tagged ? 'Remove tag' : 'Tag for follow-up'} className="p-0.5 grid place-items-center" style={{ borderRadius: 5 }}><Ic n="bookmark" s={14} c={x.tagged ? CD.green : 'var(--cd-shade)'} /></button></td>
               <td className="px-3 py-2.5" style={{ fontFamily: 'Space Mono, monospace', fontSize: 12, color: CD.mute, textDecoration: isVoid ? 'line-through' : 'none' }}>{x.ref}</td>
-              <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: CD.text, fontVariantNumeric: 'tabular-nums' }}>{x.date}<span className="text-[11px]" style={{ color: CD.faint }}> {x.time}</span></td>
+              <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: CD.text, fontVariantNumeric: 'tabular-nums' }}>{when.day}<span className="text-[11px]" style={{ color: CD.faint }}> {when.time}</span></td>
               <td className="px-3 py-2.5 font-medium" style={{ color: CD.ink }}>{x.customer ? <button onClick={e => { e.stopPropagation(); openClientProfile && openClientProfile(x.customer); }} className="text-left hover:underline" style={{ color: CD.ink, fontWeight: 500 }} title={`Open ${x.customer}'s KYC profile`}>{x.customer}</button> : <span style={{ color: CD.faint }}>—</span>}</td>
               <td className="px-3 py-2.5" style={{ color: CD.mute }}>{x.type}</td>
               <td className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(x.inAmt)} <span style={{ color: CD.faint }}>{x.inCcy}</span></td>

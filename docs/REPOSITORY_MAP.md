@@ -158,6 +158,9 @@ is not load-bearing.
 the cheque dates, and the client record dates under `Asia/Jerusalem` and
 `America/Toronto`. Formatting those days with `toISOString()` fails the
 Jerusalem run. The desktop clock spec pins its browser zone itself.
+The desk clock and the branch civil day live in `os-src/cdos-desk-time.js`.
+`npm run check:parse` fails if a browser file grows a new `toLocaleTimeString`
+or `toISOString().slice(0, 10)` outside that file.
 
 ## Where new work normally lives
 

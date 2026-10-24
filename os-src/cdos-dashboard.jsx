@@ -554,7 +554,7 @@
             <div>
               {D.recent.map((r, i) => (
                 <button key={r.id} onClick={() => onOpenLedger && onOpenLedger()} className="w-full flex items-center gap-3 py-1.5 text-left" style={{ borderTop: i ? `1px solid ${T.hair}` : 'none' }}>
-                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10.5, color: T.steel, width: 92, whiteSpace: 'nowrap' }}>{r.date.slice(5)} {r.time}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10.5, color: T.steel, width: 92, whiteSpace: 'nowrap' }}>{(() => { const when = window.CDOS.deskRow(r, settings && settings.timeFormat, (window.CDOS.branchZone && window.CDOS.branchZone()) || (settings && settings.timezone)); return when.day.slice(5) + ' ' + when.time; })()}</span>
                   <span className="grid place-items-center flex-none" style={{ width: 24, height: 24, borderRadius: '50%', background: T.wash, color: T.slate, fontSize: 9, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{initials(r.customer)}</span>
                   <span className="text-[12px] font-medium truncate" style={{ color: CD.ink, flex: 1, minWidth: 0 }}>{r.customer}</span>
                   <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 11.5, color: T.steel, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{num(r.inAmt)} {r.inCcy} <span style={{ color: T.bronze }}>→</span> <span style={{ color: T.green }}>{num(r.outAmt)} {r.outCcy}</span></span>

@@ -15,7 +15,7 @@
   const load = (k, d) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; } catch (e) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   const announce = () => setTimeout(() => { try { window.dispatchEvent(new Event('cdos_tg_sync')); } catch (e) {} }, 60);
-  const hhmm = (ts) => new Date(ts).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' });
+  const hhmm = (ts) => window.CDOS.deskTime(ts, (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h', (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto');
   const mdhm = (ts) => new Date(ts).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) + ' ' + hhmm(ts);
   const render = (tpl, ctx) => (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (ctx[k] != null && ctx[k] !== '' ? ctx[k] : m));
   const segsOf = (t) => Math.max(1, Math.ceil((t || '').length / 153));

@@ -958,7 +958,16 @@
 
   /* human-readable, sortable reference: LT-YYMMDD-NNN */
   const mkRef = (date, seq) => 'LT-' + String(date).slice(2).replace(/-/g, '') + '-' + String(seq).padStart(3, '0');
-  const nowTime = () => new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const branchZone = () => _branchZone;
+  function deskFormat() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cdos_settings') || '{}');
+      if (saved && saved.timeFormat) return saved.timeFormat;
+    } catch (e) {}
+    return '12h';
+  }
+  const deskStampNow = () => window.CDOS.deskStamp(Date.now(), deskFormat(), branchZone());
+  const nowTime = () => window.CDOS.deskTime(Date.now(), '24h', branchZone());
 
   /* factory for a fresh, fully-formed transaction record */
   function newTx(over = {}) {
@@ -1422,7 +1431,7 @@
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, cashVariance, storedRoundNote, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, cashVariance, storedRoundNote, formatPhoneMoney, dDiff, mkRef, nowTime, branchZone, deskFormat, deskStampNow, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */
