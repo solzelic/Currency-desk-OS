@@ -7,7 +7,9 @@ export type IdvCreditResult = {
 export type IdvCreditEntry = {
   entryType: IdvCreditType; amount: number; inquiryId: string | null; createdAt: string; actor: string;
 };
-type Refusal = "NO_CREDIT" | "NO_RESERVE" | "CLOSED" | "BAD_AMOUNT";
+/* Sandbox seed cap. The route maps AMOUNT_CAP to HTTP 400. */
+export const IDV_CREDIT_GRANT_CAP = 1000;
+type Refusal = "NO_CREDIT" | "NO_RESERVE" | "CLOSED" | "BAD_AMOUNT" | "AMOUNT_CAP";
 type Hit = { shop_id: string };
 type Client = pg.PoolClient;
 export class IdvCreditRefused extends Error {
@@ -62,6 +64,7 @@ function inquiryOf(inquiryId: string): string {
 }
 export async function grant(pool: pg.Pool, shopId: string, amount: number, actor: string): Promise<IdvCreditResult> {
   if (!Number.isInteger(amount) || amount < 1) throw new IdvCreditRefused("BAD_AMOUNT");
+  if (amount > IDV_CREDIT_GRANT_CAP) throw new IdvCreditRefused("AMOUNT_CAP");
   return withShop(pool, shopId, async (client) => {
     await insert(client, shopId, "grant", amount, null, actor);
     return outcome(client, shopId, "grant", amount, null);
