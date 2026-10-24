@@ -137,7 +137,7 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Migration `050_idv_shop_config` adds `idv_shop_config`, one row per
   shop (the session legal entity): shop id, provider (default
   `persona`), API key reference (an environment variable name), template id, retention in days,
-  and checks enabled (default false). 049 is reserved and unused. The
+  and checks enabled (default false). 049 is `049_idv_inquiry_map`, already on main, so this file is 050. The
   table is also in the boot DDL and the Drizzle schema. `GET` and
   `PUT /api/settings/idv` are the owner's. Provider-specific field
   rules live under `server/src/idv/providers/`. No other route reads
