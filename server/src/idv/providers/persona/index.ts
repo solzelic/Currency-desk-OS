@@ -2,13 +2,21 @@
    body bytes, constant-time compare, five-minute window. Rotation sends
    two sets separated by a space. Either configured secret may pass. */
 import * as crypto from "node:crypto";
-import type { IdvOutcome, IdvProvider, IdvResult, IdvWebhookInput } from "../../provider.js";
+import type { IdvOutcome, IdvProvider, IdvResult, IdvStart, IdvWebhookInput } from "../../provider.js";
 
 const WINDOW_MS = 5 * 60 * 1000;
+const ATTEMPTS = 3;
+/* Persona uses one host. A sandbox key selects the sandbox environment. */
+export const PERSONA_API_BASE_DEFAULT = "https://api.withpersona.com/api/v1";
 const OUTCOME: Record<string, IdvOutcome> = {
   created: "pending", pending: "pending", started: "pending", completed: "pending",
   approved: "approved", declined: "declined", "needs-review": "review", needs_review: "review",
   failed: "failed", expired: "expired",
+};
+const EVENTS: Record<string, Pick<IdvResult, "outcome" | "inquiryStatus">> = {
+  "inquiry.created": { outcome: "pending", inquiryStatus: "in progress" }, "inquiry.started": { outcome: "pending", inquiryStatus: "in progress" },
+  "inquiry.completed": { outcome: "pending" }, "inquiry.approved": { outcome: "approved" }, "inquiry.declined": { outcome: "declined" },
+  "inquiry.marked-for-review": { outcome: "review", inquiryStatus: "needs review" }, "inquiry.failed": { outcome: "failed" }, "inquiry.expired": { outcome: "expired" },
 };
 
 function header(value: string | string[] | undefined): string {
@@ -52,8 +60,50 @@ function parse(body: unknown): IdvResult | null {
   const providerRef = typeof inquiry.id === "string" ? inquiry.id : "";
   const referenceId = typeof fields["reference-id"] === "string" ? fields["reference-id"] : "";
   if (!eventId || !providerRef || !referenceId) return null;
+  const attributes = obj(data.attributes);
   const status = typeof fields.status === "string" ? fields.status : "";
-  return { eventId, provider: "persona", providerRef, referenceId, outcome: OUTCOME[status] ?? "unknown" };
+  const named = typeof attributes.name === "string" ? EVENTS[attributes.name] : undefined;
+  const outcome = named?.outcome ?? OUTCOME[status] ?? "unknown";
+  return { eventId, provider: "persona", providerRef, referenceId, outcome, ...(named?.inquiryStatus ? { inquiryStatus: named.inquiryStatus } : {}) };
+}
+
+export async function startPersonaCheck(
+  input: IdvStart,
+  deps: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<{ providerRef: string }> {
+  const env = deps.env ?? process.env;
+  const key = env.PERSONA_API_KEY?.trim() ?? "";
+  const template = env.PERSONA_TEMPLATE_ID?.trim() ?? "";
+  if (!key || !template) throw new Error("not_connected");
+  const base = (env.PERSONA_API_BASE?.trim() || PERSONA_API_BASE_DEFAULT).replace(/\/$/, "");
+  const fetchImpl = deps.fetch ?? fetch;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const body = JSON.stringify({ data: { attributes: { "inquiry-template-id": template, "reference-id": input.referenceId } } });
+  let status = 0;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    const res = await fetchImpl(`${base}/inquiries`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${key}`,
+        accept: "application/json",
+        "content-type": "application/json",
+        "idempotency-key": input.referenceId,
+        "persona-version": "2023-01-05",
+      },
+      body,
+    });
+    status = res.status;
+    if (status === 200 || status === 201) {
+      const payload = await res.json() as { data?: { id?: unknown } };
+      const providerRef = typeof payload.data?.id === "string" ? payload.data.id : "";
+      if (!providerRef) throw new Error("provider_ref_missing");
+      return { providerRef };
+    }
+    await res.body?.cancel();
+    if ((status !== 429 && status < 500) || attempt === ATTEMPTS) break;
+    await sleep(25 * 2 ** (attempt - 1));
+  }
+  throw new Error(status === 429 || status >= 500 ? "provider_unavailable" : "provider_rejected");
 }
 
 /* The only place these variables are read. Callers pass a fixture or nothing. */
@@ -65,7 +115,7 @@ export function createPersonaProvider(env?: NodeJS.ProcessEnv): IdvProvider | nu
   if (secrets.length === 0) return null;
   return {
     name: "persona",
-    startCheck() { return Promise.reject(new Error("not_in_this_step")); },
+    startCheck(input) { return startPersonaCheck(input); },
     verifyWebhook(input) { return verify(input, secrets); },
     parseResult: parse,
   };
