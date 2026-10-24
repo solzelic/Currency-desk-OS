@@ -267,7 +267,8 @@ const summaryQuery = z.object({
    used to compute it, along with the cheque's own reference number, from
    its own local list — which is how two tills cashing at the same moment
    both minted CHQ-260618-003. Anything a screen can get wrong about money
-   is worked out on the server. */
+   is worked out on the server. feeAmount is still on the wire so an
+   older screen has a place to put its figure. It is not the booked fee. */
 const chequeCashBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   customerId: z.string().min(1).max(120),
