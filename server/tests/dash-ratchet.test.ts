@@ -50,12 +50,12 @@ const BASELINE: Record<string, number> = {
   "os-src/cdos-os.jsx": 51,
   "os-src/cdos-persist.js": 4,
   "os-src/cdos-pricing.jsx": 5,
-  "os-src/cdos-reports.jsx": 55,
+  "os-src/cdos-reports.jsx": 53,
   "os-src/cdos-search.jsx": 4,
   "os-src/cdos-settings.jsx": 96,
   "os-src/cdos-signin.jsx": 8,
   "os-src/cdos-telegraph.jsx": 111,
-  "os-src/cdos-till.jsx": 45,
+  "os-src/cdos-till.jsx": 44,
   "os-src/cdos-tour.js": 1,
   "os-src/cdos-transfers-app.jsx": 9,
   "os-src/cdos-transfers.jsx": 16,
@@ -95,7 +95,7 @@ const BASELINE: Record<string, number> = {
   "server/src/routes/tenantState.ts": 2,
   "server/src/state/contract.ts": 1,
   "server/src/state/shape.ts": 10,
-  "web/app/os.js": 760,
+  "web/app/os.js": 757,
 };
 const FIXED: Array<[string, string]> = [
   ["os-src/cdos-branches.jsx", "Drag someone onto a branch to assign them, or onto a till to post them to that drawer"],
@@ -114,6 +114,8 @@ const FIXED: Array<[string, string]> = [
   ["os-src/cdos-copy.js", "Hide expected. Keep the count blind"],
   ["os-src/cdos-copy.js", "1 till counted"],
   ["os-src/cdos-copy.js", "Not in this till."],
+  ["os-src/cdos-copy.js", "No variance."],
+  ["os-src/cdos-copy.js", "Not in the safe."],
   ["os-src/cdos-reports.jsx", "No board rate."],
   ["os-src/cdos-reports.jsx", "Not counted."],
 ];

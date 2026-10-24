@@ -16,10 +16,13 @@
   var copy = {
     nobodyOnTill: ruled("Nobody is on this till. No session is open.", ["sentence", "sentence"]),
     showExpected: ruled("Show the expected amount.", ["sentence"]),
-    hideExpected: ruled("Hide expected. Keep the count blind", ["sentence", "fragment"]),
+    hideExpected: ruled("Hide expected. Keep the count blind.", ["sentence", "sentence"]),
     countedOne: ruled("1 till counted", ["fragment"]),
     countedNone: ruled("0 tills counted", ["fragment"]),
     notInTill: ruled("Not in this till.", ["sentence"]),
+    notCounted: ruled("Not counted.", ["sentence"]),
+    noVariance: ruled("No variance.", ["sentence"]),
+    notInSafe: ruled("Not in the safe.", ["sentence"]),
     unassigned: ruled("unassigned", ["fragment"]),
   };
   window.CDOS = Object.assign(window.CDOS || {}, { copy: copy });

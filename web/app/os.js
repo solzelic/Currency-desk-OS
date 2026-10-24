@@ -14651,10 +14651,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   var copy = {
     nobodyOnTill: ruled("Nobody is on this till. No session is open.", ["sentence", "sentence"]),
     showExpected: ruled("Show the expected amount.", ["sentence"]),
-    hideExpected: ruled("Hide expected. Keep the count blind", ["sentence", "fragment"]),
+    hideExpected: ruled("Hide expected. Keep the count blind.", ["sentence", "sentence"]),
     countedOne: ruled("1 till counted", ["fragment"]),
     countedNone: ruled("0 tills counted", ["fragment"]),
     notInTill: ruled("Not in this till.", ["sentence"]),
+    notCounted: ruled("Not counted.", ["sentence"]),
+    noVariance: ruled("No variance.", ["sentence"]),
+    notInSafe: ruled("Not in the safe.", ["sentence"]),
     unassigned: ruled("unassigned", ["fragment"]),
   };
   window.CDOS = Object.assign(window.CDOS || {}, { copy: copy });
@@ -17978,14 +17981,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? num(r.expected) : unitText(r.expected, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
           color: r.counted == null ? CD.faint : CD.ink,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.counted == null ? '— not counted' : num(r.counted)), /*#__PURE__*/React.createElement("td", {
+      }, r.counted == null ? copy.notCounted : unitText(r.counted, r.c)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right text-[11px]",
         style: {
           color: ts ? CD.mute : CD.faint
@@ -17997,7 +18000,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: r.variance == null ? CD.faint : Math.abs(r.variance) < 0.005 ? CD.green : CD.flag,
           fontFamily: 'Space Mono, monospace'
         }
-      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + num(r.variance)));
+      }, r.variance == null ? '—' : (r.variance > 0 ? '+' : '') + unitText(r.variance, r.c)));
     })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       style: {
         borderTop: `2px solid ${CD.line}`
@@ -18014,21 +18017,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalExpHome == null ? '—' : num(totalExpHome)), /*#__PURE__*/React.createElement("td", {
+    }, totalExpHome == null ? '—' : unitText(totalExpHome, homeCcy)), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalCountHome == null ? '—' : num(totalCountHome)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+    }, totalCountHome == null ? '—' : unitText(totalCountHome, homeCcy)), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
       className: "py-2 text-right font-bold",
       style: {
         fontVariantNumeric: 'tabular-nums',
         color: totalVarHome == null ? CD.faint : Math.abs(totalVarHome) < 0.005 ? CD.green : CD.flag,
         fontFamily: 'Space Mono, monospace'
       }
-    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + num(totalVarHome))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
+    }, totalVarHome == null ? '—' : (totalVarHome > 0 ? '+' : '') + unitText(totalVarHome, homeCcy))))), countedN < recon.length && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[11.5px] px-3 py-2",
       style: {
         background: 'var(--cd-chip)',
@@ -53096,7 +53099,7 @@ ${snap}`;
           } = varianceShown(x);
           const off = shown != null && shown !== 0;
           const savedExpected = legacy && x.countedExpected != null ? storedText(x.countedExpected, x.ccy) : '';
-          const varianceLabel = shown == null ? '—' : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy);
+          const varianceLabel = shown == null ? window.CDOS.copy.noVariance : shown === 0 ? '✓ balanced' : legacy ? (shown > 0 ? '+' : '') + Number(shown).toFixed(2) : (shown > 0 ? '+' : '') + unitText(shown, x.ccy);
           /* A count from before the stored-expected column keeps the
              expected it was saved with in the drawer column, in the
              same ink as any other drawer figure. The variance column
@@ -53148,7 +53151,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: CD.mute
             }
-          }, x.vaultUnits == null ? '—' : storedText(x.vaultUnits, x.ccy))), note ? /*#__PURE__*/React.createElement("tr", {
+          }, x.vaultUnits == null ? window.CDOS.copy.notInSafe : storedText(x.vaultUnits, x.ccy))), note ? /*#__PURE__*/React.createElement("tr", {
             key: x.ccy + '-stored',
             className: "till-stored-row"
           }, /*#__PURE__*/React.createElement("td", {

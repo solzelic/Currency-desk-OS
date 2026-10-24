@@ -158,11 +158,12 @@ function noDash(text: string) {
   expect(text).not.toContain("\u2013");
 }
 
-async function countedCell(page: Page, ccy: string) {
+async function sheetCell(page: Page, ccy: string, header: string) {
   const table = page.locator("table").filter({ hasText: "In the drawer" });
-  const index = await table.locator("thead th").evaluateAll(
-    (ths) => ths.findIndex((th) => (th.textContent || "").trim() === "Counted"),
+  const headers = await table.locator("thead th").evaluateAll((ths) =>
+    ths.map((th) => (th.textContent || "").trim()),
   );
+  const index = headers.indexOf(header);
   expect(index).toBeGreaterThan(0);
   return table.locator("tbody tr", { hasText: ccy }).first().locator("td").nth(index);
 }
@@ -188,7 +189,7 @@ test("one till counts as one drawer and the count clock is branch 12-hour", asyn
   const expected = page.locator(".till-expected").first();
   await expect(expected).toHaveAttribute("title", "Show the expected amount.");
   await expected.click();
-  await expect(expected).toHaveAttribute("title", "Hide expected. Keep the count blind");
+  await expect(expected).toHaveAttribute("title", "Hide expected. Keep the count blind.");
   noDash((await expected.getAttribute("title")) || "");
 });
 
@@ -217,6 +218,25 @@ test("two yen rows of 100.40 read 200 out on an open day", async ({ page }) => {
   await expect(row.locator("td").nth(2)).toHaveText("200");
 });
 
+test("the close review keeps CAD cents", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openDrawer(page, TILL);
+  await page.getByRole("button", { name: "Cash drawer" }).click();
+  await page.locator(".till-chip", { hasText: "PHP" }).click();
+  await page.getByRole("button", { name: "Enter total" }).click();
+  await page.locator(".till-counted input").fill("100");
+  await page.locator("[data-tour='till-reconcile-tab']").evaluate((node) => (node as HTMLButtonElement).click());
+  const close = page.getByRole("button", { name: "Close day and lock book" });
+  await expect(close).toBeEnabled({ timeout: 20_000 });
+  await close.click();
+  const table = page.locator("table").filter({ hasText: "Last counted" });
+  const cad = table.locator("tr", { hasText: "CAD" });
+  await expect(cad.locator("td").nth(1)).toHaveText("20,000.00");
+  await expect(cad.locator("td").nth(2)).toHaveText("20,000.00");
+  await expect(table).not.toContainText("\u2014 not counted");
+  await expect(table.getByText("Not counted.")).toHaveCount(0);
+});
+
 test("the 1280 Counted column keeps each currency's places", async ({ page }, testInfo) => {
   await openDrawer(page, TILL);
   await page.locator('#appbar [data-app="reports"]').click();
@@ -224,12 +244,18 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
   const doc = page.locator("#cdos-report-doc");
   await doc.waitFor({ state: "visible", timeout: 30_000 });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(await countedCell(page, "CAD")).toHaveText("20,000.00");
-  await expect(await countedCell(page, "USD")).toHaveText("5,000.00");
-  await expect(await countedCell(page, "JPY")).toHaveText("489,177");
-  const php = await countedCell(page, "PHP");
+  await expect(await sheetCell(page, "CAD", "Counted")).toHaveText("20,000.00");
+  await expect(await sheetCell(page, "USD", "Counted")).toHaveText("5,000.00");
+  await expect(await sheetCell(page, "JPY", "Counted")).toHaveText("489,177");
+  const php = await sheetCell(page, "PHP", "Counted");
   await expect(php).toHaveText("Not counted.");
   noDash((await php.textContent()) || "");
+  const variance = await sheetCell(page, "PHP", "Variance");
+  await expect(variance).toHaveText("No variance.");
+  noDash((await variance.textContent()) || "");
+  const safe = await sheetCell(page, "CAD", "In the safe");
+  await expect(safe).toHaveText("Not in the safe.");
+  noDash((await safe.textContent()) || "");
 
   expect(await page.evaluate(() => (window as any).CDOS.copy.notInTill)).toBe("Not in this till.");
   await expect(doc).not.toContainText("Not in this drawer.");
