@@ -15792,11 +15792,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const d = Math.floor(h / 24);
       return `${d} day${d > 1 ? 's' : ''} ago`;
     };
-    const atLabel = ts => ts ? new Date(ts).toLocaleTimeString('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }) : null;
+    const atLabel = ts => {
+      if (!ts) return null;
+      const zone = serverSession && serverSession.timezone || settings && settings.timezone || 'America/Toronto';
+      return window.CDOS.deskTime(new Date(ts), '12h', zone);
+    };
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
     const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
@@ -16351,7 +16351,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
       className: "till-statusline"
-    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : '', " \xB7 ", countedCcys.length === 1 ? '1 drawer counted' : countedCcys.length + ' drawers counted'), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? serverSession ? `Session ${serverSession.sessionNumber}` : 'Session not opened' : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : '', " \xB7 ", countedCcys.length ? '1 drawer counted' : '0 drawers counted'), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk
       }
@@ -16649,7 +16649,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: reconInk
       }
-    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
+    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till. No open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
@@ -16922,7 +16922,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
+      title: revealExp[ccy] ? 'Hide expected. Keep the count blind' : 'Reveal & read out the expected float',
       className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
       style: {
         border: 0,
@@ -53096,21 +53096,21 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null && !savedExpected ? CD.faint : CD.ink
             }
-          }, savedExpected ? savedExpected : x.units == null ? '— not in this drawer' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, savedExpected ? savedExpected : x.units == null ? 'Not in this drawer.' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
               color: x.home == null ? CD.faint : CD.ink
             }
-          }, x.home == null ? '— no board rate' : fmt(x.home, homeCcy)), /*#__PURE__*/React.createElement("td", {
+          }, x.home == null ? 'No board rate.' : fmt(x.home, homeCcy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
               fontVariantNumeric: 'tabular-nums',
               color: x.counted == null ? CD.faint : CD.ink
             }
-          }, x.counted == null ? '— not counted' : unitText(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, x.counted == null ? 'Not counted.' : unitText(x.counted, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',
