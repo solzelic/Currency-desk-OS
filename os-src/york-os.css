@@ -573,20 +573,31 @@ button { font-family: inherit; }
    ============================================================ */
 #appbar {
   height: 60px; flex: none;
+  position: relative;
+  width: calc(100% - 96px);
   display: flex; align-items: center; gap: 0;
   background: rgba(255,255,255,0.375);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--hair);
-  padding: 0 8px; padding-right: 88px;
+  padding: 0 8px;
   z-index: 350;
   overflow-x: auto; overflow-y: hidden;
   scroll-behavior: auto; overscroll-behavior-x: contain;
 }
-/* ticker-like edge fade — only when browsing (not while editing, so the red
-   remove notches stay fully visible) */
-#appbar:not(.editing) {
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
+/* The strip ends 96px before the row, so a tab cannot sit under
+   the store and ID buttons. A short painted fade marks that edge.
+   It stays off while editing so the remove notches stay visible. */
+#appbar:not(.editing)::after {
+  content: "";
+  position: sticky;
+  right: 0;
+  flex: 0 0 22px;
+  width: 22px;
+  align-self: stretch;
+  margin-left: -22px;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(90deg, transparent, var(--desk));
 }
 .app-btn {
   display: flex; align-items: center; gap: 10px;
@@ -637,8 +648,7 @@ button { font-family: inherit; }
    In dark mode the selected icon is the green accent and the
    others are the light ink at 72% opacity. A selected tab is
    bold and has a bar, and the hit area is at least 44px.
-   The right padding and the end gap keep the last tab clear
-   of the floating store and ID buttons. */
+   The strip width stops before the floating store and ID buttons. */
 #appbar .app-btn {
   flex-shrink: 0;
   min-width: 44px;
@@ -668,7 +678,7 @@ html[data-cdtheme="dark"] #appbar .app-btn.is-active::after { background: var(--
 html[data-cdtheme="dark"] #appbar .app-btn.open::after { background: rgba(236, 234, 227, 0.55); }
 .app-btn.open.min { background: none; }
 .app-btn.open.min::after { background: var(--accent); }
-.appbar-spacer { flex: 1; min-width: 88px; }
+.appbar-spacer { flex: 1; min-width: 8px; }
 /* ============================================================
    FOLDER TABS — in-app tab bars styled as manila file-folder tabs.
    Active tab is a filled folder tab connected to the sheet by the coloured

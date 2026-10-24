@@ -187,6 +187,14 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
         const themeApi = (window as unknown as { CDOS: { theme: { set: (value: string) => void } } }).CDOS.theme;
         themeApi.set(mode);
       }, theme);
+      if (theme === "dark") {
+        await page.waitForFunction(() => {
+          const bar = document.getElementById("appbar");
+          if (!bar) return false;
+          return getComputedStyle(bar).backgroundColor.startsWith("rgba(29, 28, 25");
+        });
+        await page.waitForTimeout(400);
+      }
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 800 });
         await settle(page);
@@ -218,6 +226,14 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
     await page.evaluate((mode) => {
       (window as unknown as { CDOS: { theme: { set: (value: string) => void } } }).CDOS.theme.set(mode);
     }, theme);
+    if (theme === "dark") {
+      await page.waitForFunction(() => {
+        const bar = document.getElementById("appbar");
+        if (!bar) return false;
+        return getComputedStyle(bar).backgroundColor.startsWith("rgba(29, 28, 25");
+      });
+      await page.waitForTimeout(400);
+    }
     for (const width of [1280, 600] as const) {
       await page.setViewportSize({ width, height: 800 });
       await settle(page);
