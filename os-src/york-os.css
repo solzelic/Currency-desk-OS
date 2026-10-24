@@ -637,6 +637,7 @@ button { font-family: inherit; }
    Dark mode uses the green accent. A selected tab is bold and
    has a bar, and the hit area is at least 44px. */
 #appbar .app-btn {
+  flex-shrink: 0;
   min-width: 44px;
   height: 44px;
   margin-top: 0;
@@ -648,6 +649,7 @@ button { font-family: inherit; }
   stroke-width: 1.75px;
   vector-effect: non-scaling-stroke;
   transition: none;
+  pointer-events: none;
 }
 #appbar .app-btn.is-active::after { height: 3px; background: #17140F; }
 html[data-cdtheme="dark"] #appbar .app-btn .ai svg,

@@ -97,6 +97,8 @@ type Reading = {
   effects: string[];
   label: Rgb;
   labelPoint: { x: number; y: number };
+  labelCenter: { x: number; y: number };
+  hit: string;
   iconPoint: { x: number; y: number };
   height: number;
   width: number;
@@ -138,6 +140,12 @@ async function readNav(page: Page): Promise<Reading[]> {
         effects: [...new Set(shapes.map((el) => getComputedStyle(el).vectorEffect))],
         label: rgb(label ? getComputedStyle(label).color : "") || [0, 0, 0],
         labelPoint: { x: labelBox.left + Math.min(8, labelBox.width / 2), y: labelBox.top + labelBox.height / 2 },
+        labelCenter: { x: labelBox.left + labelBox.width / 2, y: labelBox.top + labelBox.height / 2 },
+        hit: (() => {
+          const el = document.elementFromPoint(labelBox.left + labelBox.width / 2, labelBox.top + labelBox.height / 2);
+          const owner = el && el.closest("[data-app]");
+          return owner ? owner.getAttribute("data-app") || "" : "";
+        })(),
         /* The top of the tab sits above the glyph and the label,
            so this pixel is the bar behind the icon. */
         iconPoint: { x: box.left + box.width / 2, y: box.top + 3 },
@@ -231,6 +239,8 @@ test("every nav tab uses one icon stroke and clears contrast", async ({ page }) 
         expect(row.height, row.id).toBeGreaterThanOrEqual(44);
         expect(row.width, row.id).toBeGreaterThanOrEqual(44);
         const onScreen = row.iconPoint.x >= 24 && row.iconPoint.x <= width - 120 && row.iconPoint.y >= 8;
+        const labelOnScreen = row.labelCenter.x >= 24 && row.labelCenter.x <= width - 120 && row.labelCenter.y >= 8;
+        if (labelOnScreen) expect(row.hit, `${theme} ${width} ${row.id} hit`).toBe(row.id);
         if (onScreen) {
           const ground = sample(row.iconPoint.x, row.iconPoint.y);
           const stroke = row.strokes[0]!.match(/\d+/g)!.slice(0, 3).map(Number);
