@@ -4,12 +4,10 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/index.js";
 import type { IdvProvider } from "./provider.js";
-import { personaProvider } from "./providers/persona/index.js";
+import { createPersonaProvider } from "./providers/persona/index.js";
 import { recordIdvEvent } from "./store.js";
 
-const providers: Record<string, IdvProvider> = { persona: personaProvider };
-
-export type IdvRouteOptions = { secrets?: (provider: IdvProvider) => readonly string[] };
+export type IdvRouteOptions = { persona?: IdvProvider | null };
 
 function rawBuffer(value: unknown): Buffer | null {
   if (Buffer.isBuffer(value)) return value;
@@ -18,15 +16,15 @@ function rawBuffer(value: unknown): Buffer | null {
 }
 
 export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRouteOptions): void {
-  const secretsOf = options?.secrets ?? ((provider: IdvProvider) => provider.secrets());
+  const persona = options && "persona" in options ? options.persona ?? null : createPersonaProvider();
+  const registry: Record<string, IdvProvider | null> = { persona };
   app.post<{ Params: { provider: string } }>("/api/webhooks/idv/:provider", { config: { rawBody: true } }, async (req, reply) => {
-    const provider = providers[req.params.provider];
-    if (!provider) return reply.code(404).send({ error: "unknown_provider" });
-    const secrets = secretsOf(provider).map((secret) => secret.trim()).filter(Boolean);
-    if (secrets.length === 0) return reply.code(503).send({ error: "not_configured" });
+    if (!(req.params.provider in registry)) return reply.code(404).send({ error: "unknown_provider" });
+    const provider = registry[req.params.provider];
+    if (!provider) return reply.code(503).send({ error: "not_configured" });
     const raw = rawBuffer(req.rawBody);
     const headers = req.headers as Record<string, string | string[] | undefined>;
-    if (!raw || !provider.verifyWebhook({ rawBody: raw, headers, secrets })) {
+    if (!raw || !provider.verifyWebhook({ rawBody: raw, headers })) {
       return reply.code(400).send({ error: "invalid_signature" });
     }
     let body: unknown;

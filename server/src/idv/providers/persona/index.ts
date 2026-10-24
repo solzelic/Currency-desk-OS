@@ -1,7 +1,7 @@
 /* Persona adapter. Header t=<unix>,v1=<hex>. HMAC-SHA256 over the raw
    body bytes, constant-time compare, five-minute window. Rotation sends
    two sets separated by a space. Either configured secret may pass. */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import * as crypto from "node:crypto";
 import type { IdvOutcome, IdvProvider, IdvResult, IdvWebhookInput } from "../../provider.js";
 
 const WINDOW_MS = 5 * 60 * 1000;
@@ -24,18 +24,17 @@ function setOk(set: string, raw: Buffer, secrets: readonly string[], now: number
   if (stamps.length !== 1 || !timestamp || macs.length === 0 || !/^\d{1,12}$/.test(timestamp)) return false;
   if (Math.abs(now - Number(timestamp) * 1000) > WINDOW_MS) return false;
   return secrets.some((secret) => {
-    const expected = createHmac("sha256", secret).update(Buffer.concat([Buffer.from(`${timestamp}.`), raw])).digest();
+    const expected = crypto.createHmac("sha256", secret).update(Buffer.concat([Buffer.from(`${timestamp}.`), raw])).digest();
     return macs.some((supplied) => {
       if (!/^[a-f0-9]{64}$/i.test(supplied)) return false;
       const actual = Buffer.from(supplied, "hex");
-      return actual.length === expected.length && timingSafeEqual(actual, expected);
+      return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
     });
   });
 }
 
-function verify(input: IdvWebhookInput): boolean {
+function verify(input: IdvWebhookInput, secrets: readonly string[]): boolean {
   const sets = header(input.headers["persona-signature"]).trim().split(/\s+/).filter(Boolean);
-  const secrets = input.secrets.map((secret) => secret.trim()).filter(Boolean);
   if (secrets.length === 0 || sets.length === 0 || sets.length > 4) return false;
   const now = input.now ?? Date.now();
   return sets.some((set) => setOk(set, input.rawBody, secrets, now));
@@ -57,16 +56,17 @@ function parse(body: unknown): IdvResult | null {
   return { eventId, provider: "persona", providerRef, referenceId, outcome: OUTCOME[status] ?? "unknown" };
 }
 
-function secrets(env: NodeJS.ProcessEnv = process.env): string[] {
-  return ["PERSONA_WEBHOOK_SECRET", "PERSONA_WEBHOOK_SECRET_PREVIOUS"]
-    .map((name) => env[name]?.trim() ?? "")
+/* The only place these variables are read. Callers pass a fixture or nothing. */
+export function createPersonaProvider(env?: NodeJS.ProcessEnv): IdvProvider | null {
+  const source = env ?? process.env;
+  const secrets = ["PERSONA_WEBHOOK_SECRET", "PERSONA_WEBHOOK_SECRET_PREVIOUS"]
+    .map((name) => source[name]?.trim() ?? "")
     .filter(Boolean);
+  if (secrets.length === 0) return null;
+  return {
+    name: "persona",
+    startCheck() { return Promise.reject(new Error("not_in_this_step")); },
+    verifyWebhook(input) { return verify(input, secrets); },
+    parseResult: parse,
+  };
 }
-
-export const personaProvider: IdvProvider = {
-  name: "persona",
-  secrets,
-  startCheck() { return Promise.reject(new Error("not_in_this_step")); },
-  verifyWebhook: verify,
-  parseResult: parse,
-};

@@ -16,13 +16,11 @@ export type IdvStart = { referenceId: string; shopId: string; branchId: string; 
 export type IdvWebhookInput = {
   rawBody: Buffer;
   headers: Record<string, string | string[] | undefined>;
-  secrets: readonly string[];
   now?: number;
 };
 
 export interface IdvProvider {
   readonly name: string;
-  secrets(env?: NodeJS.ProcessEnv): readonly string[];
   startCheck(input: IdvStart): Promise<{ providerRef: string }>;
   verifyWebhook(input: IdvWebhookInput): boolean;
   parseResult(body: unknown): IdvResult | null;

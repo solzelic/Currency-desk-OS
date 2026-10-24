@@ -1,9 +1,17 @@
+import * as crypto from "node:crypto";
 import { createHmac } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const equalSpy = vi.hoisted(() => vi.fn());
+vi.mock("node:crypto", async () => {
+  const actual = await vi.importActual<typeof import("node:crypto")>("node:crypto");
+  equalSpy.mockImplementation((left: NodeJS.ArrayBufferView, right: NodeJS.ArrayBufferView) => actual.timingSafeEqual(left, right));
+  return { ...actual, timingSafeEqual: equalSpy };
+});
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { buildApp } from "../src/app.js";
-import { personaProvider } from "../src/idv/providers/persona/index.js";
+import { createPersonaProvider } from "../src/idv/providers/persona/index.js";
 import { countIdvEvents, insertIdvInquiry, listIdvEvents } from "../src/idv/store.js";
 
 const SECRET = "fixture-webhook-secret";
@@ -22,27 +30,49 @@ function rawFor(eventId: string, referenceId: string, providerRef: string, decoy
   });
 }
 
+function withSecrets(env: Record<string, string>) {
+  const provider = createPersonaProvider(env);
+  if (!provider) throw new Error("fixture provider");
+  return provider;
+}
+
 describe("persona webhook signature", () => {
   const raw = Buffer.from("{\"a\":1}");
   const t = Math.floor(NOW / 1000);
-  const check = (signature: string, secrets: readonly string[]) =>
-    personaProvider.verifyWebhook({ rawBody: raw, headers: headers(signature), secrets, now: NOW });
+  const provider = () => withSecrets({ PERSONA_WEBHOOK_SECRET: SECRET, PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS });
+  const check = (signature: string) => provider().verifyWebhook({ rawBody: raw, headers: headers(signature), now: NOW });
 
-  it("accepts a valid signature", () => { expect(check(signed(SECRET, raw, t), [SECRET])).toBe(true); });
+  it("accepts a valid signature", () => { expect(check(signed(SECRET, raw, t))).toBe(true); });
   it("rejects a bad signature", () => {
-    expect(check(signed(SECRET, raw, t).replace(/.$/, (c) => (c === "a" ? "b" : "a")), [SECRET])).toBe(false);
+    expect(check(signed(SECRET, raw, t).replace(/.$/, (c) => (c === "a" ? "b" : "a")))).toBe(false);
   });
-  it("rejects an expired signature", () => { expect(check(signed(SECRET, raw, t - 301), [SECRET])).toBe(false); });
+  it("rejects an expired signature", () => { expect(check(signed(SECRET, raw, t - 301))).toBe(false); });
   it("accepts either secret during rotation", () => {
     const header = `t=${t - 301},v1=${"ab".repeat(32)} t=${t},v1=${mac(PREVIOUS, raw, t)}`;
-    expect(check(header, [SECRET, PREVIOUS])).toBe(true);
+    expect(check(header)).toBe(true);
   });
-  it("reads no secret when the keys are blank", () => {
-    expect(personaProvider.secrets({})).toEqual([]);
-    expect(personaProvider.secrets({ PERSONA_WEBHOOK_SECRET: "  " })).toEqual([]);
-    const secrets = personaProvider.secrets({ PERSONA_WEBHOOK_SECRET: SECRET, PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS });
-    expect(secrets).toHaveLength(2);
-    expect(check(signed(PREVIOUS, raw, t), secrets)).toBe(true);
+  it("is absent when the keys are blank", () => {
+    expect(createPersonaProvider({})).toBeNull();
+    expect(createPersonaProvider({ PERSONA_WEBHOOK_SECRET: "  " })).toBeNull();
+  });
+  it("verifies the exact raw bytes, not the re-serialized payload", () => {
+    const pretty = Buffer.from('{\n  "a": 1\n}');
+    const compact = Buffer.from(JSON.stringify(JSON.parse(pretty.toString("utf8"))));
+    expect(compact.equals(pretty)).toBe(false);
+    const signature = signed(SECRET, pretty, t);
+    const persona = withSecrets({ PERSONA_WEBHOOK_SECRET: SECRET });
+    expect(persona.verifyWebhook({ rawBody: pretty, headers: headers(signature), now: NOW })).toBe(true);
+    expect(persona.verifyWebhook({ rawBody: compact, headers: headers(signature), now: NOW })).toBe(false);
+  });
+  it("compares v1 with timingSafeEqual", () => {
+    equalSpy.mockClear();
+    expect(check(signed(SECRET, raw, t))).toBe(true);
+    const v1 = Buffer.from(mac(SECRET, raw, t), "hex");
+    const view = (value: NodeJS.ArrayBufferView) => Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+    const calls = (crypto.timingSafeEqual as unknown as typeof equalSpy).mock.calls;
+    const matched = calls.some(([left, right]) => view(left as NodeJS.ArrayBufferView).equals(v1) || view(right as NodeJS.ArrayBufferView).equals(v1));
+    expect(crypto.timingSafeEqual).toBe(equalSpy);
+    expect(matched).toBe(true);
   });
 });
 
@@ -54,8 +84,9 @@ describe("idv webhook", () => {
   beforeAll(async () => {
     process.env.PGLITE_MEMORY = "1";
     handle = await createDb();
-    app = await buildApp(handle.db, {}, undefined, { secrets: () => [SECRET, PREVIOUS] });
-    off = await buildApp(handle.db, {}, undefined, { secrets: () => [] });
+    const persona = withSecrets({ PERSONA_WEBHOOK_SECRET: SECRET, PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS });
+    app = await buildApp(handle.db, {}, undefined, { persona });
+    off = await buildApp(handle.db, {}, undefined, { persona: createPersonaProvider({}) });
     await insertIdvInquiry(handle.db, { referenceId: "ref-a", shopId: "shop-a", branchId: "br-a", tellerId: "teller-a", provider: "persona", providerRef: "inq_a" });
     await insertIdvInquiry(handle.db, { referenceId: "ref-b", shopId: "shop-b", branchId: "br-b", tellerId: "teller-b", provider: "persona", providerRef: "inq_b" });
   });
