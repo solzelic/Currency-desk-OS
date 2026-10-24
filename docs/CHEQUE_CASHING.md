@@ -273,9 +273,12 @@ recorded, and the rule is left to the pack.
 (`aggClusters` in `os-src/cdos-compliance.jsx`) measures cash-in with
 `counterCashIn`, which calls `cashLegs` in `shared/counter-cash.js`.
 A cashed cheque puts no cash in when the instrument is `cheque`. A leg
-counts as 0 only for `eft`, `wire`, `cheque`, `draft`, or `card`, after
-trim and lower case. Any other word, a blank, or a missing instrument
-counts the full amount. The till summary
+counts as 0 only for `cheque`, `electronic_funds_transfer`,
+`bank_credit`, `money_order`, `bill_credit`, `eft`, `wire`, `draft`,
+`card`, or `virtual_currency`, after trim and lower case. The same map
+is cash out, so a payout by `money_order` or `bill_credit` is not cash
+out. `cash`, `none`, a blank, a missing instrument, an unknown name, and
+a misspelling count the full amount. The till summary
 (`GET /api/ledger/summary`, the Cash drawer movement card) uses that
 same function. Cash paid to the customer is cash out. The face is not
 cash in when the instrument is `cheque`. A 1,000.00 cheque cashed for 965.00 beside a 100.00 cash

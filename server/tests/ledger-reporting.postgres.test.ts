@@ -330,6 +330,31 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(usd).toMatchObject({ received: "0.00", paidOut: "70.00", net: "-70.00" });
   });
 
+  /* Funds that arrived by electronic transfer are not notes in the drawer.
+     The cash paid to the customer still leaves. */
+  it("does not count a remittance received by electronic funds transfer as cash in", async () => {
+    const at = new Date().toISOString();
+    await pool.query(
+      `INSERT INTO ledger_transactions
+         (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
+          workspace_id, till_id, customer_id, actor_id, from_currency, to_currency,
+          input_amount, output_amount, rate, fee_cad, spread_cad, purpose,
+          source_of_funds, posted_at, deal_kind, received_instrument, disbursed_instrument,
+          jurisdiction_pack_id, jurisdiction_pack_version, home_currency)
+       VALUES
+         ($1, $2, $3, $4, $5, $6, $7, 'customer-demo', $3||':r.haddad',
+          $8, $9, $10, $11, 1, 0, 0, 'family', 'salary', $12,
+          $13, $14, $15, 'pack-ca-v1', 1, 'CAD')`,
+      ["rmt-eft", "ref-rmt-eft", ...scope, "CAD", "CAD", "12000.00", "11850.00", at,
+        "remittance_receive", "electronic_funds_transfer", "cash"],
+    );
+    const bookSummary = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+    );
+    const cad = bookSummary.movement.find((row: { currency: string }) => row.currency === "CAD");
+    expect(cad).toMatchObject({ received: "0.00", paidOut: "11850.00", net: "-11850.00" });
+  });
+
   it("shows a stored yen balance as stored", async () => {
     await tillHolds("JPY", 200.8);
     const held = await position();

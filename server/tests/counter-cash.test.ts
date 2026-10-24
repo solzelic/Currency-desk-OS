@@ -11,11 +11,9 @@ const babel = createRequire(import.meta.url)("@babel/standalone") as {
 const React = createRequire(import.meta.url)("react");
 
 const require = createRequire(import.meta.url);
+type CashLeg = { amount: unknown; ccy: unknown } | null;
 const { cashLegs } = require("../../shared/counter-cash.js") as {
-  cashLegs: (row: Record<string, unknown>) => {
-    in: { amount: unknown; ccy: unknown } | null;
-    out: { amount: unknown; ccy: unknown } | null;
-  };
+  cashLegs: (row: Record<string, unknown>) => { in: CashLeg; out: CashLeg };
 };
 
 describe("cash legs", () => {
@@ -78,6 +76,35 @@ describe("cash legs", () => {
 
   it("counts an unknown method as cash", () => {
     expect(paidIn("unknown")).toEqual({ amount: "10000.00", ccy: "CAD" });
+    expect(paidIn("eletronic transfer")).toEqual({ amount: "10000.00", ccy: "CAD" });
+  });
+
+  it("counts none in full", () => {
+    expect(paidIn("none")).toEqual({ amount: "10000.00", ccy: "CAD" });
+    expect(paidIn(" NONE ")).toEqual({ amount: "10000.00", ccy: "CAD" });
+  });
+
+  it("counts 12000 received by electronic funds transfer as zero", () => {
+    expect(cashLegs({
+      inAmt: "12000.00", outAmt: "1.00", inCcy: "CAD", outCcy: "USD",
+      receivedInstrument: "electronic_funds_transfer", disbursedInstrument: "cash",
+    }).in).toBeNull();
+    expect(paidIn(" Electronic_Funds_Transfer ")).toBeNull();
+  });
+
+  it("counts bank credit, a money order, a bill credit, and virtual currency as zero", () => {
+    for (const name of ["bank_credit", "money_order", "bill_credit", "virtual_currency"]) {
+      expect(paidIn(name), name).toBeNull();
+    }
+  });
+
+  it("does not count a money order or a bill credit paid out as cash out", () => {
+    const paidOut = (instrument: string) => cashLegs({
+      inAmt: "10.00", outAmt: "12000.00", inCcy: "CAD", outCcy: "CAD",
+      receivedInstrument: "cash", disbursedInstrument: instrument,
+    }).out;
+    expect(paidOut("money_order")).toBeNull();
+    expect(paidOut("bill_credit")).toBeNull();
   });
 
   it("counts a missing method as cash", () => {
@@ -110,17 +137,15 @@ describe("cash legs", () => {
 function lctrFlags(rows: Array<Record<string, unknown>>) {
   const root = resolve(process.cwd(), "..");
   const cash = require("../../shared/counter-cash.js") as {
-    cashLegs: (row: Record<string, unknown>) => {
-      in: { amount: unknown; ccy: unknown } | null;
-    };
+    cashLegs: (row: Record<string, unknown>) => { in: CashLeg; out: CashLeg };
   };
-  const leg = (row: Record<string, unknown>) => {
-    const found = row && cash.cashLegs(row).in;
+  const leg = (row: Record<string, unknown>, side: "in" | "out") => {
+    const found = row && cash.cashLegs(row)[side];
     return found ? { amount: Number(found.amount) || 0, ccy: found.ccy } : null;
   };
   const CDOS: Record<string, unknown> = {
-    counterCashIn: leg,
-    counterCashOut: () => null,
+    counterCashIn: (row: Record<string, unknown>) => leg(row, "in"),
+    counterCashOut: (row: Record<string, unknown>) => leg(row, "out"),
     deskPack: () => ({ homeCurrency: "CAD", packId: "pack-ca-v1" }),
     reportingLimit: () => ({ amount: 10000, currency: "CAD", code: "LCTR" }),
     getRegime: () => ({ comparator: "gte", largeDirection: "in", aggregate: false, threshold: 10000 }),
@@ -168,5 +193,36 @@ describe("LCTR line", () => {
     const under = lctrFlags([row("9999.99")]).row;
     expect(over && over.single).toBe(true);
     expect(under && under.single).toBe(false);
+  });
+
+  const received = (id: string, instrument: string) => ({
+    id, status: "posted", type: "Currency Exchange", customer: "Ada",
+    date: "2026-10-24", time: "10:00 AM",
+    inAmt: "12000.00", inCcy: "CAD", outAmt: "1.00", outCcy: "USD",
+    receivedInstrument: instrument, disbursedInstrument: "cash",
+  });
+
+  it("does not flag 12000 received by electronic funds transfer", () => {
+    const flag = lctrFlags([received("wire-in", "electronic_funds_transfer")])["wire-in"];
+    expect(flag && flag.single).toBe(false);
+  });
+
+  it("does not flag 12000 received as bank credit, a money order, a bill credit, or virtual currency", () => {
+    for (const name of ["bank_credit", "money_order", "bill_credit", "virtual_currency"]) {
+      const flag = lctrFlags([received(name, name)])[name];
+      expect(flag && flag.single, name).toBe(false);
+    }
+  });
+
+  it("does not count a cash payout toward the LCTR", () => {
+    const payout = {
+      id: "payout", status: "posted", type: "Currency Exchange", customer: "Ada",
+      date: "2026-10-24", time: "10:00 AM",
+      inAmt: "100.00", inCcy: "CAD", outAmt: "12000.00", outCcy: "CAD",
+      receivedInstrument: "cash", disbursedInstrument: "cash",
+    };
+    expect(cashLegs(payout).out).toEqual({ amount: "12000.00", ccy: "CAD" });
+    const flag = lctrFlags([payout]).payout;
+    expect(flag && flag.single).toBe(false);
   });
 });

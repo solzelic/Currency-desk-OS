@@ -39,15 +39,30 @@
     money_order: { in: true, out: false },
   };
 
-  /* Count 0 only for these instruments. Do not add names that merely
-     look non-cash. Compliance has not put them on this list. */
-  var NOT_CASH = ["eft", "wire", "cheque", "draft", "card"];
+  /* One map for cash in and cash out. After trim and lower case, a
+     leg counts as 0 only when the name is a key. The value is the
+     stored name from migration 018, or the name itself when the book
+     has no shorter form. eft and wire are electronic_funds_transfer.
+     draft is cheque. cash, none, a blank, a missing value, and any
+     other word count the full amount. */
+  var NOT_CASH = {
+    cheque: "cheque",
+    electronic_funds_transfer: "electronic_funds_transfer",
+    bank_credit: "bank_credit",
+    money_order: "money_order",
+    bill_credit: "bill_credit",
+    eft: "electronic_funds_transfer",
+    wire: "electronic_funds_transfer",
+    draft: "cheque",
+    card: "card",
+    virtual_currency: "virtual_currency",
+  };
 
   function namedCash(value) {
     if (value == null) return true;
     var text = String(value).trim().toLowerCase();
     if (!text) return true;
-    return NOT_CASH.indexOf(text) === -1;
+    return NOT_CASH[text] == null;
   }
 
   function first(row, keys) {
