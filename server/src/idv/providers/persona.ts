@@ -31,7 +31,8 @@ export function personaConnection(
   input: { apiKeyRef?: string | null; templateId?: string | null; shopCode?: string },
   env: NodeJS.ProcessEnv,
 ): { apiKey: string; templateId: string } | null {
-  const name = input.apiKeyRef ?? "";
+  const requested = (input.apiKeyRef ?? "").trim();
+  const name = requested === "" ? SHARED : requested;
   const templateId = (input.templateId ?? "").trim();
   if (!personaKeyAllowed(name, input.shopCode ?? "") || templateId === "") return null;
   const apiKey = (env[name] ?? "").trim();

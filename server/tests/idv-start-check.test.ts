@@ -212,6 +212,58 @@ describe("sandbox start-check", () => {
       await local.close();
     }
   });
+
+  it("uses shop A's key name for shop A and shop B's for shop B", async () => {
+    const seen: string[] = [];
+    const env = {
+      PERSONA_API_KEY: "fixture-shared",
+      PERSONA_API_KEY_YORKFX: "fixture-shop-a",
+      PERSONA_API_KEY_SHOP_B: "fixture-shop-b",
+    };
+    const localFetch: typeof fetch = async (_input, init) => {
+      const headers = init?.headers as Record<string, string>;
+      seen.push(headers.authorization ?? "");
+      return new Response(JSON.stringify({ data: { id: `inq_ref_${seen.length}` } }), {
+        status: 201, headers: { "content-type": "application/json" },
+      });
+    };
+    const local = await buildApp(handle.db, {}, undefined, { env, fetch: localFetch, sleep: async () => {} });
+    try {
+      await handle.db.execute(sql`DELETE FROM idv_events WHERE shop_id IN (${DEMO.legalEntityId}, ${B.legalEntityId})`);
+      await handle.db.execute(sql`DELETE FROM idv_inquiries WHERE shop_id IN (${DEMO.legalEntityId}, ${B.legalEntityId})`);
+      await handle.db.execute(sql`
+        INSERT INTO idv_shop_config (shop_id, provider, api_key_ref, template_id, checks_enabled)
+        VALUES (${DEMO.legalEntityId}, 'persona', 'PERSONA_API_KEY_YORKFX', 'itmpl_fixture', true)
+        ON CONFLICT (shop_id) DO UPDATE
+          SET provider = 'persona', api_key_ref = 'PERSONA_API_KEY_YORKFX', template_id = 'itmpl_fixture', checks_enabled = true
+      `);
+      await handle.db.execute(sql`
+        INSERT INTO idv_shop_config (shop_id, provider, api_key_ref, template_id, checks_enabled)
+        VALUES (${B.legalEntityId}, 'persona', 'PERSONA_API_KEY_SHOP_B', 'itmpl_fixture', true)
+        ON CONFLICT (shop_id) DO UPDATE
+          SET provider = 'persona', api_key_ref = 'PERSONA_API_KEY_SHOP_B', template_id = 'itmpl_fixture', checks_enabled = true
+      `);
+      const shopA = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: { shopId: B.legalEntityId } });
+      const shopB = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.b, payload: { shopId: DEMO.legalEntityId } });
+      expect(shopA.statusCode, shopA.body).toBe(200);
+      expect(shopB.statusCode, shopB.body).toBe(200);
+      expect(shopA.json().connected).toBe(true);
+      expect(shopB.json().connected).toBe(true);
+      expect(seen).toEqual(["Bearer fixture-shop-a", "Bearer fixture-shop-b"]);
+      expect(seen.join("")).not.toContain("fixture-shared");
+      await handle.db.execute(sql`UPDATE idv_shop_config SET api_key_ref = NULL WHERE shop_id = ${DEMO.legalEntityId}`);
+      const shared = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: {} });
+      expect(shared.statusCode, shared.body).toBe(200);
+      expect(shared.json().connected).toBe(true);
+      expect(seen[2]).toBe("Bearer fixture-shared");
+    } finally {
+      await handle.db.execute(sql`
+        UPDATE idv_shop_config SET api_key_ref = 'PERSONA_API_KEY', provider = 'persona'
+         WHERE shop_id IN (${DEMO.legalEntityId}, ${B.legalEntityId})
+      `);
+      await local.close();
+    }
+  });
 });
 
 describe("inquiry progress events", () => {
