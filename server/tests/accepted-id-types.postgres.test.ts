@@ -22,15 +22,17 @@ import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { resolveAcceptedIdTypes } from "../src/clients/accepted-id-types.js";
-import { CANADA_HEALTH_CARD_NOTE, NEVER_ID_NOTE } from "../src/ledger/id-type-rules.js";
-import { ID_DOCUMENT_TYPES, NOT_IN_CATALOGUE } from "../src/clients/id-document-types.js";
+import { CANADA_HEALTH_CARD_NOTE, NEVER_ID_NOTE, idTypeRulesFor } from "../src/ledger/id-type-rules.js";
+import { ID_DOCUMENT_TYPES, notInCatalogueSentence } from "../src/clients/id-document-types.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
 
 const ROUTE = "/api/clients/accepted-id-types";
 const headers = { "x-workspace-id": DEMO.workspaceId };
-const ALL = ID_DOCUMENT_TYPES.filter((row) => row.acceptedAsId).map((row) => row.code);
+const PACK_DEFAULTS = idTypeRulesFor("CA").filter((rule) => rule.packDefault);
+const ALL = PACK_DEFAULTS.map((rule) => rule.code);
+const PACK_LIST = notInCatalogueSentence(PACK_DEFAULTS.map((rule) => rule.label));
 const WITHOUT_NATIONAL_ID = ALL.filter((code) => code !== "national_id_card");
 const NOT_HERE = "This shop doesn't accept National Identity Card. The owner can change this in Settings → Accepted IDs.";
 const NO_LONGER = "This shop no longer accepts National Identity Card. Record another ID at the next visit.";
@@ -293,7 +295,7 @@ postgres("Settings → Accepted IDs", () => {
   it("names this shop's own types when a name is not on the list", async () => {
     const clientId = await openFile(`Accepted Unknown ${randomUUID().slice(0, 8)}`);
     const atDefaults = await addDocument(clientId, { docType: "Library card" });
-    expect(atDefaults.json().detail).toBe(NOT_IN_CATALOGUE);
+    expect(atDefaults.json().detail).toBe(PACK_LIST);
 
     expect((await write("j.masri", WITHOUT_NATIONAL_ID)).statusCode).toBe(200);
     const narrowed = await addDocument(clientId, { docType: "Library card" });
@@ -303,8 +305,8 @@ postgres("Settings → Accepted IDs", () => {
     expect(narrowed.json().detail).not.toContain("National Identity Card");
     expect(narrowed.json().detail).toBe(
       "That ID type isn't on this desk's list. Use one of: Driver's Licence, Passport, Provincial/Territorial Photo ID, " +
-        "Permanent Resident Card, Citizenship Card, BC Services Card, Business Number, Incorporation Certificate, " +
-        "Master Business Licence, or Articles of Incorporation.",
+        "Permanent Resident Card, Secure Certificate of Indian Status, BC Services Card, Business Number, " +
+        "Incorporation Certificate, Master Business Licence, or Articles of Incorporation.",
     );
   });
 

@@ -63,6 +63,8 @@ export const migrations: readonly Migration[] = [
   ["051_idv_inquiry_status", "src/db/migrations/051_idv_inquiry_status.sql"],
   /* 052 is identity-check credits. 050 and 051 are on main. */
   ["052_idv_credit_ledger", "src/db/migrations/052_idv_credit_ledger.sql"],
+  /* 053 records the secure-card confirmation and the in-person check. */
+  ["053_id_document_confirmation", "src/db/migrations/053_id_document_confirmation.sql"],
 ] as const;
 
 export async function runMigrations(

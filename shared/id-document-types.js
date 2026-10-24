@@ -68,11 +68,24 @@
       aliases: ["PR Card"],
     },
     {
-      /* The card IRCC issued until 2012 carried a photograph and no
-         expiry. The paper certificate issued since is not this type. */
+      /* Plastic card with an MRZ or the secure layout. A row without
+         the teller's secure-card confirmation is the laminated card,
+         which is not this type and is not accepted. Category A, on. */
+      code: "secure_certificate_of_indian_status", label: "Secure Certificate of Indian Status", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      category: "A", defaultOn: true,
+      aliases: ["Secure Status Card", "SCIS"],
+    },
+    {
+      /* The photo card IRCC issued before 1 February 2012. It has no
+         expiry. The paper certificate issued since is not this type
+         and is not ID. Category B, off, until the owner turns it on.
+         The server still requires the in-person check and the issue date. */
       code: "citizenship_card", label: "Citizenship Card", kind: "person",
       photo: true, mayLackExpiry: true, acceptedAsId: true,
-      aliases: ["Canadian Citizenship Card"],
+      category: "B", defaultOn: false,
+      warning: "No expiry date. Old photo. Counter check only.",
+      aliases: ["Canadian Citizenship Card", "Citizenship card (issued before 1 February 2012)"],
     },
     {
       code: "bc_services_card", label: "BC Services Card", kind: "person",
@@ -132,6 +145,9 @@
         "Nunavut Health Care Card",
         "Yukon Health Care Card",
         "Yukon Health Care Insurance Plan",
+        "BC Services Card without photo",
+        "Non-photo BC Services Card",
+        "BC Services Card health only",
       ],
     },
     {

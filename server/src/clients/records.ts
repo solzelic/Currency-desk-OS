@@ -89,6 +89,11 @@ import {
   type AcceptedIdTypes,
 } from "./accepted-id-types.js";
 import {
+  assertIdDocumentShape,
+  looksLikePersonalHealthNumber,
+  standingDocumentSql,
+} from "./id-document-rules.js";
+import {
   HEALTH_CARD_KEYS,
   HEALTH_CARD_REFUSAL,
   isHealthCardType,
@@ -140,6 +145,10 @@ export type DocumentInput = {
   issuedOn?: string | null;
   expiresOn?: string | null;
   isPrimary?: boolean;
+  /** Teller confirmed the plastic secure status card, not the laminated one. */
+  secureCard?: boolean;
+  /** Teller checked the original card with the person present. Omitted means yes on this route. */
+  inPerson?: boolean;
   /* A data URL, already through `intakeIdImage` in the browser. Optional
      — a desk that has typed a passport number but not photographed the
      page has still recorded something worth keeping. */
@@ -613,6 +622,18 @@ export class ClientRecordService {
     const written = await this.writableType(actor, input.docType);
     if (written.code) refuseSwitchedOff(written.shop!, written.code, written.label);
     const docType = written.label;
+    /* Omitted inPerson is the teller at the counter. An explicit false
+       is a provider result with nobody at the desk, and that does not
+       file the pre-2012 card. */
+    const shaped = {
+      docType,
+      docNumber: input.docNumber,
+      issuedOn: input.issuedOn,
+      expiresOn: input.expiresOn,
+      secureCard: input.secureCard === true,
+      inPerson: input.inPerson !== false,
+    };
+    assertIdDocumentShape(shaped);
     return this.inTransaction(actor, "customer:write", async (client) => {
       const owned = await client.query(
         "SELECT 1 FROM desk_clients WHERE client_id=$1 AND tenant_id=$2 AND legal_entity_id=$3 FOR UPDATE",
@@ -632,8 +653,9 @@ export class ClientRecordService {
       await client.query(
         `INSERT INTO desk_client_identity_documents
           (document_id,client_id,tenant_id,legal_entity_id,doc_type,doc_number,
-           issuing_jurisdiction,issued_on,expires_on,is_primary,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
+           issuing_jurisdiction,issued_on,expires_on,is_primary,secure_card,in_person,
+           created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
         [
           documentId,
           clientId,
@@ -644,6 +666,8 @@ export class ClientRecordService {
           blank(input.issuedOn),
           blank(input.expiresOn),
           primary,
+          shaped.secureCard,
+          shaped.inPerson,
           actor.userId,
         ],
       );
@@ -676,7 +700,9 @@ export class ClientRecordService {
     const docType = written?.label;
     return this.inTransaction(actor, "customer:write", async (client) => {
       const found = await client.query(
-        `SELECT d.document_id, d.doc_type FROM desk_client_identity_documents d
+        `SELECT d.document_id, d.doc_type, d.doc_number, d.issued_on, d.expires_on,
+                d.secure_card, d.in_person
+           FROM desk_client_identity_documents d
            JOIN desk_clients c ON c.client_id=d.client_id
           WHERE d.document_id=$1 AND d.client_id=$2
             AND c.tenant_id=$3 AND c.legal_entity_id=$4 FOR UPDATE`,
@@ -694,6 +720,24 @@ export class ClientRecordService {
          somebody correcting a number on an ID the shop no longer takes. */
       if (written?.code && resolveIdType(found.rows[0]!.doc_type)?.code !== written.code)
         refuseSwitchedOff(written.shop!, written.code, written.label);
+      const prior = found.rows[0]!;
+      const touches =
+        input.docType !== undefined ||
+        input.docNumber !== undefined ||
+        input.issuedOn !== undefined ||
+        input.expiresOn !== undefined ||
+        input.secureCard !== undefined ||
+        input.inPerson !== undefined;
+      if (touches) {
+        assertIdDocumentShape({
+          docType: docType ?? String(prior.doc_type),
+          docNumber: input.docNumber !== undefined ? input.docNumber : (prior.doc_number as string | null),
+          issuedOn: input.issuedOn !== undefined ? input.issuedOn : isoDate(prior.issued_on),
+          expiresOn: input.expiresOn !== undefined ? input.expiresOn : isoDate(prior.expires_on),
+          secureCard: input.secureCard !== undefined ? input.secureCard === true : prior.secure_card === true,
+          inPerson: input.inPerson !== undefined ? input.inPerson !== false : prior.in_person !== false,
+        });
+      }
       const columns: Record<string, unknown> = {};
       if (docType !== undefined) columns.doc_type = docType;
       if (input.docNumber !== undefined) columns.doc_number = blank(input.docNumber);
@@ -701,6 +745,8 @@ export class ClientRecordService {
         columns.issuing_jurisdiction = blank(input.issuingJurisdiction);
       if (input.issuedOn !== undefined) columns.issued_on = blank(input.issuedOn);
       if (input.expiresOn !== undefined) columns.expires_on = blank(input.expiresOn);
+      if (input.secureCard !== undefined) columns.secure_card = input.secureCard === true;
+      if (input.inPerson !== undefined) columns.in_person = input.inPerson !== false;
       if (input.isPrimary === true) {
         await client.query(
           "UPDATE desk_client_identity_documents SET is_primary=false WHERE client_id=$1 AND is_primary",
@@ -1244,7 +1290,8 @@ export class ClientRecordService {
           SET verification_status = CASE
             WHEN NOT EXISTS (
               SELECT 1 FROM desk_client_identity_documents d
-               WHERE d.client_id=c.client_id AND coalesce(btrim(d.doc_number),'') <> ''
+               WHERE d.client_id=c.client_id
+                 AND ${standingDocumentSql("d")}
                  AND ${NOT_HEALTH_CARD_SQL("$2")}
             ) THEN 'unverified'
             WHEN EXISTS (
@@ -1424,7 +1471,15 @@ function documentJson(
   out.issuedOn = isoDate(document.issued_on);
   out.expiresOn = isoDate(document.expires_on);
   out.isPrimary = document.is_primary;
+  out.secureCard = document.secure_card === true;
+  out.inPerson = document.in_person === true;
   out.hasScan = (scanCount.get(document.document_id) ?? 0) > 0;
+  if (
+    resolveIdType(String(document.doc_type ?? ""))?.code === "bc_services_card" &&
+    looksLikePersonalHealthNumber(document.doc_number as string | null)
+  ) {
+    delete out.docNumber;
+  }
   const type = resolveIdType(document.doc_type);
   const switchedOff = !!type && type.acceptedAsId && !accepted.has(type.code);
   out.notice = switchedOff ? noLongerAcceptedSentence(type!.label) : null;

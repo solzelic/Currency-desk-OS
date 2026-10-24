@@ -609,6 +609,8 @@ CREATE TABLE IF NOT EXISTS desk_client_identity_documents (
   issued_on date,
   expires_on date,
   is_primary boolean NOT NULL DEFAULT false,
+  secure_card boolean NOT NULL DEFAULT false,
+  in_person boolean NOT NULL DEFAULT false,
   created_by text,
   updated_by text,
   created_at timestamptz NOT NULL DEFAULT now(),

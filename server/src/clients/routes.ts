@@ -90,6 +90,8 @@ const documentBody = z.object({
   issuedOn: nullableDay,
   expiresOn: nullableDay,
   isPrimary: z.boolean().optional(),
+  secureCard: z.boolean().optional(),
+  inPerson: z.boolean().optional(),
   scanDataUrl: scanDataUrl.nullable().optional(),
 }).strict();
 

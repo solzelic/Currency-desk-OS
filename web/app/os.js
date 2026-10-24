@@ -2549,11 +2549,24 @@
       aliases: ["PR Card"],
     },
     {
-      /* The card IRCC issued until 2012 carried a photograph and no
-         expiry. The paper certificate issued since is not this type. */
+      /* Plastic card with an MRZ or the secure layout. A row without
+         the teller's secure-card confirmation is the laminated card,
+         which is not this type and is not accepted. Category A, on. */
+      code: "secure_certificate_of_indian_status", label: "Secure Certificate of Indian Status", kind: "person",
+      photo: true, mayLackExpiry: false, acceptedAsId: true,
+      category: "A", defaultOn: true,
+      aliases: ["Secure Status Card", "SCIS"],
+    },
+    {
+      /* The photo card IRCC issued before 1 February 2012. It has no
+         expiry. The paper certificate issued since is not this type
+         and is not ID. Category B, off, until the owner turns it on.
+         The server still requires the in-person check and the issue date. */
       code: "citizenship_card", label: "Citizenship Card", kind: "person",
       photo: true, mayLackExpiry: true, acceptedAsId: true,
-      aliases: ["Canadian Citizenship Card"],
+      category: "B", defaultOn: false,
+      warning: "No expiry date. Old photo. Counter check only.",
+      aliases: ["Canadian Citizenship Card", "Citizenship card (issued before 1 February 2012)"],
     },
     {
       code: "bc_services_card", label: "BC Services Card", kind: "person",
@@ -2613,6 +2626,9 @@
         "Nunavut Health Care Card",
         "Yukon Health Care Card",
         "Yukon Health Care Insurance Plan",
+        "BC Services Card without photo",
+        "Non-photo BC Services Card",
+        "BC Services Card health only",
       ],
     },
     {
@@ -3675,6 +3691,7 @@
       idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
+      secureCard: !!(primary && primary.secureCard),
       primaryDocumentId: primary ? primary.documentId : null,
       primaryHasScan: serverHasPrimaryScan,
       /* NOT the bytes. A covered placeholder is drawn from `hasScan`, and
@@ -3772,7 +3789,7 @@
      rather than to the person. Keeping the two apart is the point of the
      whole change; this is where a screen that still edits them as one
      object gets routed to the right place. */
-  var DOCUMENT_FIELDS = { idType: "docType", idNum: "docNumber", idIssued: "issuedOn", idExpiry: "expiresOn" };
+  var DOCUMENT_FIELDS = { idType: "docType", idNum: "docNumber", idIssued: "issuedOn", idExpiry: "expiresOn", secureCard: "secureCard" };
 
   window.CDOS.Backend.Clients = {
     RISK_IN: RISK_IN,
@@ -24039,6 +24056,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         docNumber: rec.idNum || null,
         issuedOn: rec.idIssued || null,
         expiresOn: rec.idExpiry || null,
+        secureCard: rec.secureCard === true,
         isPrimary: true,
         scanDataUrl: rec.photo || null
       });
@@ -24182,7 +24200,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
         const patch = {};
-        patch[DOC[k]] = v || null;
+        patch[DOC[k]] = typeof v === "boolean" ? v : v || null;
         if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
         /* Typing a document's details when the file has none is how a
            document gets created — the same gesture the old flat editor
@@ -25118,6 +25136,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        type records a new ID. */
     const health = isHealthType(rec.idType);
     const editDoc = canEdit && !health;
+    const typeRow = rec.idType && IDT.resolveIdType(rec.idType);
+    const secureType = !!(typeRow && typeRow.code === "secure_certificate_of_indian_status");
     return /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-3"
     }, /*#__PURE__*/React.createElement(EditField, {
@@ -25160,7 +25180,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onChange: e => set('idExpiry', e.target.value),
       className: inCls,
       style: inSty
-    })), /*#__PURE__*/React.createElement(EditField, {
+    })), secureType && /*#__PURE__*/React.createElement(EditField, {
+      label: "Secure card",
+      full: true
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "flex items-center gap-2 text-[12.5px]",
+      style: {
+        color: CD.ink,
+        minHeight: 44
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      disabled: !editDoc,
+      checked: rec.secureCard === true,
+      onChange: e => set('secureCard', e.target.checked)
+    }), "This is the secure card, not the laminated one.")), /*#__PURE__*/React.createElement(EditField, {
       label: "ID document scan",
       full: true
     }, rec.photo || rec.primaryHasScan ? /*#__PURE__*/React.createElement("div", {
@@ -28035,6 +28069,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       idNum: !startsFresh && rec && rec.idNum || '',
       idIssued: !startsFresh && rec && rec.idIssued || '',
       idExpiry: !startsFresh && rec && rec.idExpiry || '',
+      secureCard: !!(rec && rec.secureCard),
       photo: !startsFresh && rec && rec.photo || null
     });
     const [err, setErr] = useState('');
@@ -28102,6 +28137,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               idNum: fresh ? '' : desk.idNum || '',
               idIssued: fresh ? '' : desk.idIssued || '',
               idExpiry: fresh ? '' : desk.idExpiry || '',
+              secureCard: fresh ? false : desk.secureCard === true,
               photo: fresh ? null : desk.photo || null
             });
           } else {
@@ -28118,11 +28154,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         live = false;
       };
     }, [name]);
-    const ready = !!(draft.idType && String(draft.idNum || '').trim() && draft.idExpiry);
+    const typeRow = draft.idType && IDT.resolveIdType(draft.idType);
+    const noExpiry = !!(typeRow && typeRow.mayLackExpiry);
+    const needsSecure = !!(typeRow && typeRow.code === "secure_certificate_of_indian_status");
+    const ready = !!(draft.idType && String(draft.idNum || '').trim() && (noExpiry ? draft.idIssued : draft.idExpiry) && (!needsSecure || draft.secureCard === true));
     const save = async () => {
       if (leaving || phase !== 'edit') return;
       if (!ready) {
-        setErr('Type, number, and expiry are required.');
+        setErr(noExpiry ? 'Type, number, and issue date are required.' : needsSecure && !draft.secureCard ? 'Confirm this is the secure card.' : 'Type, number, and expiry are required.');
         return;
       }
       if (isHealthType(draft.idType)) {
@@ -28136,6 +28175,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         idNum: String(draft.idNum).trim(),
         idIssued: draft.idIssued || null,
         idExpiry: draft.idExpiry,
+        secureCard: draft.secureCard === true,
         photo: draft.photo || null,
         kind: file && file.kind || rec && rec.kind || 'individual'
       };
@@ -28155,6 +28195,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               docNumber: payload.idNum,
               issuedOn: payload.idIssued,
               expiresOn: payload.idExpiry,
+              secureCard: payload.secureCard === true,
               ...(payload.photo ? {
                 scanDataUrl: payload.photo
               } : {})
