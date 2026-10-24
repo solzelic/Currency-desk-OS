@@ -746,7 +746,7 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-12**, ledger customer ID status. `POST` and `PUT
+**2026-10-24**, ledger customer ID status. `POST` and `PUT
 /api/ledger/customers` do not take an ID standing from the body. A
 request that carries `idStatus`, `id_status`, `kycStatus`, a verified
 flag, or the same claim nested under identity or KYC is refused with
@@ -804,7 +804,12 @@ ID and does not have it is refused with "ID needed for this
 amount. Record the customer's ID." A row already stored as
 verified with no such document is left as it is and is not ID on
 file. `scripts/audit-ledger-id-without-document.mjs` lists those
-rows and does not change them.
+rows and does not change them. Cheque cashing uses that same
+derived standing. A browser `verified` flag is refused and does
+not create the customer. A row stored as `verified` whose only
+paper is a typed non-photo document, such as a birth certificate
+with a number, is not Identified, and a cheque at or above the
+identification line is refused.
 
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only an environment variable name. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 

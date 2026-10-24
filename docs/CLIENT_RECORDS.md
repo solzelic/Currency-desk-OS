@@ -214,31 +214,26 @@ the document the desk shows. It does not decide whether the customer
 is identified.
 
 `verification_status` is derived from the same document rule the
-posting gate uses, not typed and not from the primary row alone:
-
-- no document with a real type (not empty and not "Not stated"), a
-  number that is still non-empty after whitespace and invisible
-  characters are stripped, and an expiry date → `unverified`. A
-  blank or missing expiry is this case when it is the only paper
-- at least one such document is dated before the branch's business
-  date, and none is dated on or after it → `expired`
-- at least one such document is dated on or after that business
-  date → `identified`
-
-The primary flag is not in that predicate. A current secondary
-document is `identified` when the primary is expired, blank-dated,
-or absent.
+posting gate uses, not typed and not from the primary row alone.
+Identified is one current government-issued photo ID: a real type,
+a number that is still non-empty after whitespace and invisible
+characters are stripped, and an expiry on or after the branch
+business date. A blank expiry counts only for
+`Canadian citizenship card (pre-2012)`. That verdict is stored as
+`identified`. An expired photo ID, with no current non-photo paper
+beside it, is `expired`. Every other file is `unverified`, including
+a typed birth certificate or any other non-photo document. The
+primary flag only chooses which document is shown.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of
 adding or removing rows in this table can grant that, and nothing here
 may quietly take it away.
 
-The till's counter record (`ledger_customers.id_status`) leaves health
-cards out the same way: a file whose only numbered document is a health
-card is `missing`. A file stored as `identified` before this rule reads
-as `unverified` until its next document write stores that. The posting
-gate itself is unchanged; PR #108 owns it.
+The till's counter record (`ledger_customers.id_status`) is written
+from the same rule. The posting gate, including cheque cashing, does
+not read that column. A stored `verified` value does not waive the
+identification line.
 
 ## ID-document types
 

@@ -1,0 +1,211 @@
+/* A typed ID type and number is not a current government photo ID.
+   Ruling C4 item 4 (cheque-rulings-2026-10-24.md): that paper must
+   not make the client Identified, and cheque cashing must not treat
+   a browser-sent verified flag, or a stored verified column, as a
+   waiver of the identification line.
+
+   On main, POST /api/ledger/customers accepts idStatus verified and
+   stores it, and the cheque route reads that column. Both cases
+   below are refused on this branch. */
+import pg from "pg";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { createDb, schema, type DbHandle } from "../src/db/index.js";
+import { runMigrations } from "../src/db/migrations.js";
+import { DEMO, seed } from "../src/seed.js";
+import { buildApp } from "../src/app.js";
+
+const url = process.env.TEST_DATABASE_URL;
+const postgres = url ? describe : describe.skip;
+let pool: pg.Pool, app: FastifyInstance, handle: DbHandle;
+
+const TILL = "till-01";
+const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, TILL];
+const CLIENT_ID = "cli-typed-birth";
+const CUSTOMER_ID = "customer-typed-birth";
+
+async function cookie(staffId = "a.singh") {
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: { staffId, password: DEMO.password },
+  });
+  return {
+    cdos_session: login.cookies.find((item) => item.name === "cdos_session")!.value,
+  };
+}
+
+async function reset() {
+  await pool.query(
+    "TRUNCATE ledger_cheque_events,ledger_cheques,ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
+  );
+  await pool.query(
+    "DELETE FROM desk_client_identity_documents WHERE client_id=$1",
+    [CLIENT_ID],
+  );
+  await pool.query("DELETE FROM desk_clients WHERE client_id=$1", [CLIENT_ID]);
+  await pool.query(
+    "INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING",
+    [DEMO.tenantId],
+  );
+  await pool.query(
+    `INSERT INTO legal_entities (id,tenant_id,name,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
+     VALUES ($1,$2,'York FX Canada','CAD','pack-ca-v1',1)
+     ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id='pack-ca-v1', home_currency='CAD'`,
+    [DEMO.legalEntityId, DEMO.tenantId],
+  );
+  await pool.query(
+    "INSERT INTO branches (id,tenant_id,legal_entity_id,name) VALUES ($1,$2,$3,'Yorkville') ON CONFLICT DO NOTHING",
+    [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId],
+  );
+  await pool.query(
+    `INSERT INTO ledger_principals
+      (user_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,role,authorized_branch_ids)
+     VALUES ($1||':a.singh',$1,$2,$3,$4,$5,'branch_manager',$6)`,
+    [...scope, JSON.stringify([DEMO.branchId])],
+  );
+  await handle.db
+    .update(schema.staffUsers)
+    .set({ role: "branch_manager", authorizedBranchIds: [DEMO.branchId] })
+    .where(eq(schema.staffUsers.id, `${DEMO.tenantId}:a.singh`));
+  await pool.query(
+    "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'CAD',5000)",
+    scope,
+  );
+  await pool.query(
+    `INSERT INTO ledger_till_sessions
+      (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+       session_number,business_date,status,opened_by,opened_at)
+     VALUES ('chq-typed-session',$1,$2,$3,$4,$5,1,DATE '2026-06-18','open',$1||':a.singh',now())`,
+    scope,
+  );
+}
+
+/* Column says verified. The only paper is a birth certificate with a
+   type and a number. That is not a current government photo ID. */
+async function fileTypedBirthCertificate() {
+  await pool.query(
+    `INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+     VALUES ($1,$2,$3,'Ada Birth')`,
+    [CLIENT_ID, DEMO.tenantId, DEMO.legalEntityId],
+  );
+  await pool.query(
+    `INSERT INTO desk_client_identity_documents
+       (document_id, client_id, tenant_id, legal_entity_id,
+        doc_type, doc_number, expires_on, is_primary)
+     VALUES ('doc-typed-birth',$1,$2,$3,'Birth certificate','BC-44219',DATE '2032-04-01',true)`,
+    [CLIENT_ID, DEMO.tenantId, DEMO.legalEntityId],
+  );
+  await pool.query(
+    `INSERT INTO ledger_customers
+       (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status,client_id)
+     VALUES ($1,$2,$3,$4,$5,'Ada Birth','Normal','verified',$6)`,
+    [CUSTOMER_ID, ...scope.slice(0, 4), CLIENT_ID],
+  );
+}
+
+postgres("typed ID is not Identified on a cheque", () => {
+  beforeAll(async () => {
+    process.env.DATABASE_URL = url;
+    const real = await createDb();
+    await real.close();
+    delete process.env.DATABASE_URL;
+    process.env.PGLITE_MEMORY = "1";
+    process.env.LEDGER_DATABASE_URL = url;
+    pool = new pg.Pool({ connectionString: url });
+    await runMigrations(pool);
+    handle = await createDb();
+    await seed(handle.db);
+    await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
+    app = await buildApp(handle.db);
+  });
+
+  afterAll(async () => {
+    await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques CASCADE");
+    await pool.query(
+      "DELETE FROM desk_client_identity_documents WHERE client_id=$1",
+      [CLIENT_ID],
+    );
+    await pool.query("DELETE FROM desk_clients WHERE client_id=$1", [CLIENT_ID]);
+    await app.close();
+    await handle.close();
+    await pool.end();
+    delete process.env.LEDGER_DATABASE_URL;
+  });
+
+  beforeEach(async () => {
+    await reset();
+  });
+
+  it("refuses a browser-sent verified flag and does not store it", async () => {
+    const cookies = await cookie();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/ledger/customers",
+      cookies,
+      payload: { name: "Browser Verified", risk: "normal", idStatus: "verified" },
+    });
+    expect(created.statusCode, created.body).toBe(422);
+    expect(created.json().code).toBe("ID_STATUS_NOT_CLIENT_SET");
+    const stored = await pool.query(
+      "SELECT id_status FROM ledger_customers WHERE name='Browser Verified'",
+    );
+    expect(stored.rowCount).toBe(0);
+  });
+
+  it("does not call a typed birth certificate Identified", async () => {
+    await fileTypedBirthCertificate();
+    const cookies = await cookie();
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/ledger/customers",
+      cookies,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const row = listed.json().customers.find(
+      (item: { customerId: string }) => item.customerId === CUSTOMER_ID,
+    );
+    expect(row.idStatus).toBe("missing");
+    expect(row.idStanding.label).toBe("Missing ID");
+    expect(row.idStanding.status).not.toBe("identified");
+    expect(row.displayedDocument.docType).toBe("Birth certificate");
+    expect(row.displayedDocument.docNumber).toBe("BC-44219");
+  });
+
+  it("does not let a stored verified column waive the cheque ID check", async () => {
+    await fileTypedBirthCertificate();
+    const cookies = await cookie();
+    const refused = await app.inject({
+      method: "POST",
+      url: "/api/ledger/cheques",
+      cookies,
+      payload: {
+        idempotencyKey: "typed-birth-4000",
+        customerId: CUSTOMER_ID,
+        chequeNumber: "004821",
+        maker: "Northbridge Imports Ltd.",
+        draweeBank: "RBC Royal Bank",
+        chequeType: "business",
+        typeLabel: "Business",
+        currency: "CAD",
+        faceAmount: "4000.00",
+        feeAmount: "100.00",
+        holdDays: 3,
+        endorsed: true,
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().code).toBe("COMPLIANCE_BLOCKED");
+    expect(refused.json().message).toBe(
+      "ID needed for this amount. Record the customer's ID.",
+    );
+    const drawer = await pool.query(
+      "SELECT available_amount FROM ledger_till_balances WHERE till_id=$1 AND currency='CAD'",
+      [TILL],
+    );
+    expect(String(drawer.rows[0].available_amount)).toBe("5000.00");
+    const cheques = await pool.query("SELECT count(*)::int AS n FROM ledger_cheques");
+    expect(cheques.rows[0].n).toBe(0);
+  });
+});
