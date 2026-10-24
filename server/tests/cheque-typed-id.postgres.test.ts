@@ -6,7 +6,8 @@
    Fail closed until the catalogue PR: only a current photo ID that
    the shared list requires an expiry for counts as Identified. A
    Citizenship Card is a no-expiry type, so it does not count. A
-   birth certificate is not used here. It is not an ID document. */
+   birth certificate is not used here. It is not an ID document.
+   The same file is red on main 384788ae and green on this branch. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
