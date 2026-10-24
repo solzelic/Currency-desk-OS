@@ -154,7 +154,9 @@ coverage:
   still local while intake is dealt with separately. The generic deal
   reversal refuses a cheque cashing, a clearance, and a return, and
   names the cheque reversal route. Only a cheque the desk is still
-  carrying is reversed there. The other four are
+  carrying is reversed there, and the cash returns only to the till that
+  paid it out. A reversal from any other till is `CHEQUE_REVERSAL_WRONG_TILL`
+  and commits nothing. The other four are
   cash on one side and a promise on the other, and their promises live in
   `ledger_obligations` — OBLIGATION_LINES.md.
 - The Ledger's own New Transaction ticket had a cheque path of its own,
