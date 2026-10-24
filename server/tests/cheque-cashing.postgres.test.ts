@@ -158,6 +158,7 @@ const settle = (
   chequeId: string,
   leg: "clearance" | "return" | "reversal",
   body: Record<string, unknown> = {},
+  headers?: Record<string, string>,
 ) =>
   app.inject({
     method: "POST",
@@ -167,6 +168,7 @@ const settle = (
       ...body,
     },
     cookies,
+    ...(headers ? { headers } : {}),
   });
 
 /* The deal reversal route. It must refuse a cheque row. On main it
@@ -223,13 +225,16 @@ const dealKindOf = async (transactionId: string) =>
     ])
   ).rows[0].deal_kind as string;
 
-const tillCad = async () =>
+const tillCad = async (tillId = TILL) =>
   (
     await pool.query(
       "SELECT available_amount FROM ledger_till_balances WHERE till_id=$1 AND currency='CAD'",
-      [TILL],
+      [tillId],
     )
   ).rows[0]?.available_amount ?? null;
+
+const rowCount = async (table: string) =>
+  (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n as number;
 
 /** Every journal line on one transaction, as {account: signed amount}. */
 async function journalOf(transactionId: string) {
@@ -281,8 +286,14 @@ postgres("cheque cashing on the ledger", () => {
 
   afterAll(async () => {
     /* Hand the database back empty — the suites share one, and a cheque
-       left behind would count toward another file's totals. */
+       left behind would count toward another file's totals. The second
+       till's balance insert bumps ledger_till_balance_generations, and
+       that row is not in the truncate list, so remove it here. */
     await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques CASCADE");
+    await pool.query(
+      "DELETE FROM ledger_till_balance_generations WHERE workspace_id=$1 AND till_id=$2",
+      ["ws-yorkville-till-02", "till-02"],
+    );
     await app.close();
     await handle.close();
     await pool.end();
@@ -654,6 +665,126 @@ postgres("cheque cashing on the ledger", () => {
       "SELECT count(*)::int AS n FROM ledger_journal_entries WHERE account_code='expense:cheque_losses'",
     );
     expect(losses.rows[0].n).toBe(0);
+  });
+
+  /* The cash left till-01. A reversal signed in at till-02 must not
+     drop that cash into till-02. On main it does, and this test fails. */
+  it("puts a reversal back only in the till that paid the cheque, and writes nothing from another till", async () => {
+    const secondWorkspace = "ws-yorkville-till-02";
+    const secondTill = "till-02";
+    await handle.db.insert(schema.workspaces).values({
+      id: secondWorkspace,
+      tenantId: DEMO.tenantId,
+      legalEntityId: DEMO.legalEntityId,
+      branchId: DEMO.branchId,
+      tillId: secondTill,
+    }).onConflictDoNothing();
+    await pool.query(
+      `INSERT INTO ledger_till_balances
+        (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount)
+       VALUES ($1,$2,$3,$4,$5,'CAD','8000.00')`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, secondWorkspace, secondTill],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_sessions
+        (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+         session_number,business_date,status,opened_by,opened_at)
+       VALUES ('chq-session-2',$1,$2,$3,$4,$5,1,DATE '2026-06-18','open',$6,now())`,
+      [
+        DEMO.tenantId,
+        DEMO.legalEntityId,
+        DEMO.branchId,
+        secondWorkspace,
+        secondTill,
+        `${DEMO.tenantId}:a.singh`,
+      ],
+    );
+    await pool.query(
+      `INSERT INTO ledger_principals
+        (user_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,role,authorized_branch_ids)
+       VALUES ($1,$2,$3,$4,$5,$6,'branch_manager',$7)`,
+      [
+        `${DEMO.tenantId}:a.singh`,
+        DEMO.tenantId,
+        DEMO.legalEntityId,
+        DEMO.branchId,
+        secondWorkspace,
+        secondTill,
+        JSON.stringify([DEMO.branchId]),
+      ],
+    );
+
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    expect(await tillCad()).toBe("4035.00");
+    expect(await tillCad(secondTill)).toBe("8000.00");
+    expect(imbalance(await journalOf(cashed.transactionId))).toBe(0);
+
+    const before = {
+      reversals: await rowCount("ledger_reversals"),
+      entries: await rowCount("ledger_reversal_entries"),
+      movements: await rowCount("ledger_till_movements"),
+      journals: await rowCount("ledger_journal_entries"),
+      events: await rowCount("ledger_cheque_events"),
+      audits: await rowCount("ledger_audit_events"),
+      keys: await rowCount("ledger_idempotency"),
+    };
+
+    const refused = await settle(
+      cookies,
+      cashed.cheque.chequeId,
+      "reversal",
+      { reason: "Wrong till" },
+      { "x-workspace-id": secondWorkspace },
+    );
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json()).toEqual({
+      code: "CHEQUE_REVERSAL_WRONG_TILL",
+      message: "Reverse this cheque at the till that paid it out. Nothing was reversed.",
+    });
+    expect(await chequeStatus(cashed.cheque.chequeId)).toBe("held");
+    expect(
+      (
+        await pool.query("SELECT reversal_id FROM ledger_cheques WHERE cheque_id=$1", [
+          cashed.cheque.chequeId,
+        ])
+      ).rows[0].reversal_id,
+    ).toBeNull();
+    expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held"]);
+    expect(await tillCad()).toBe("4035.00");
+    expect(await tillCad(secondTill)).toBe("8000.00");
+    expect(await rowCount("ledger_reversals")).toBe(before.reversals);
+    expect(await rowCount("ledger_reversal_entries")).toBe(before.entries);
+    expect(await rowCount("ledger_till_movements")).toBe(before.movements);
+    expect(await rowCount("ledger_journal_entries")).toBe(before.journals);
+    expect(await rowCount("ledger_cheque_events")).toBe(before.events);
+    expect(await rowCount("ledger_audit_events")).toBe(before.audits);
+    expect(await rowCount("ledger_idempotency")).toBe(before.keys);
+    expect(imbalance(await journalOf(cashed.transactionId))).toBe(0);
+
+    const undone = await settle(
+      cookies,
+      cashed.cheque.chequeId,
+      "reversal",
+      { reason: "Keyed on the till that paid it" },
+      { "x-workspace-id": DEMO.workspaceId },
+    );
+    expect(undone.statusCode, undone.body).toBe(201);
+    expect(undone.json().status).toBe("reversed");
+    expect(await tillCad()).toBe("5000.00");
+    expect(undone.json().balances.CAD).toBe("5000.00");
+    expect(await tillCad(secondTill)).toBe("8000.00");
+    const mirrored = await reversalEntriesOf(undone.json().reversalId);
+    expect(imbalance(mirrored)).toBe(0);
+    expect(mirrored).toEqual(
+      expect.arrayContaining([
+        { account: "asset:cheques_held", side: "credit", amount: "1000.00" },
+        { account: "till:CAD", side: "debit", amount: "965.00" },
+        { account: "revenue:cheque_fee", side: "debit", amount: "35.00" },
+      ]),
+    );
+    expect(mirrored).toHaveLength(3);
+    expect(imbalance(await journalOf(cashed.transactionId))).toBe(0);
   });
 
   it("keeps a reversal and an NSF on separate paths", async () => {
