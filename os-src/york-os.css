@@ -573,22 +573,44 @@ button { font-family: inherit; }
 /* ============================================================
    APP SUB-BAR  (the "sub bar within the main bar")
    ============================================================ */
+/* The clip is the box that ends before the store and ID buttons.
+   112px is the rail inset, the two buttons, the gap, and air, so a
+   tab cannot sit against them. The tabs scroll in #appbar, which
+   fills this box. The fade is painted on the clip, so it stays on
+   the visible cut instead of riding the end of the scroll content.
+   It stays off while editing so the remove notches stay visible. */
+.appbar-clip {
+  position: relative;
+  z-index: 350;
+  flex: none;
+  align-self: flex-start;
+  min-width: 0;
+  width: calc(100% - 112px);
+  max-width: calc(100% - 112px);
+  height: 60px;
+  overflow: hidden;
+}
+.appbar-clip::after {
+  content: "";
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(90deg, transparent, var(--desk));
+}
+.appbar-clip:has(#appbar.editing)::after { content: none; }
 #appbar {
-  height: 58px; flex: none;
-  display: flex; align-items: stretch; gap: 0;
+  height: 100%; width: 100%;
+  position: relative;
+  z-index: 1;
+  display: flex; align-items: center; gap: 0;
   background: rgba(255,255,255,0.375);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--hair);
-  padding: 0 8px; padding-right: 98px;
-  z-index: 350;
+  padding: 0 8px;
   overflow-x: auto; overflow-y: hidden;
   scroll-behavior: auto; overscroll-behavior-x: contain;
-}
-/* ticker-like edge fade — only when browsing (not while editing, so the red
-   remove notches stay fully visible) */
-#appbar:not(.editing) {
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 104px), transparent calc(100% - 64px));
-  mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 104px), transparent calc(100% - 64px));
 }
 .app-btn {
   display: flex; align-items: center; gap: 10px;
@@ -633,6 +655,45 @@ button { font-family: inherit; }
 .app-btn.is-active { background: #F6F1E8; }
 .app-btn.is-active::after { height: 3px; background: var(--c); }
 .app-btn.is-active .al { color: #17140F; font-weight: 700; }
+/* One stroke for every module tab. The artwork keeps its own ink
+   on window icons. On this strip the whole glyph is one weight,
+   so Reports stays a document and Pricing stays a percent sign.
+   In dark mode the selected icon is the green accent and the
+   others are the light ink at 72% opacity. A selected tab is
+   bold and has a bar, and the hit area is at least 44px.
+   The clip width stops before the floating store and ID buttons. */
+#appbar .app-btn {
+  flex-shrink: 0;
+  min-width: 44px;
+  height: 44px;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+#appbar .app-btn .ai svg,
+#appbar .app-btn .ai svg * {
+  stroke: #17140F;
+  stroke-width: 1.75px;
+  vector-effect: non-scaling-stroke;
+  transition: none;
+  pointer-events: none;
+}
+#appbar .app-btn.is-active::after { height: 3px; background: #17140F; }
+html[data-cdtheme="dark"] #appbar .app-btn .ai svg,
+html[data-cdtheme="dark"] #appbar .app-btn .ai svg * { stroke: #eceae3; }
+html[data-cdtheme="dark"] #appbar .app-btn .ai svg { opacity: 0.72; }
+html[data-cdtheme="dark"] #appbar .app-btn.is-active .ai svg,
+html[data-cdtheme="dark"] #appbar .app-btn.is-active .ai svg * { stroke: var(--cd-green); }
+html[data-cdtheme="dark"] #appbar .app-btn.is-active .ai svg { opacity: 1; }
+#appbar .app-btn .al { transition: none; }
+html[data-cdtheme="dark"] #appbar .app-btn .al,
+html[data-cdtheme="dark"] #appbar .app-btn.is-active .al { color: #eceae3; }
+html[data-cdtheme="dark"] #appbar .app-btn.open:not(.is-active)::after { background: rgba(236, 234, 227, 0.55); }
+html[data-cdtheme="dark"] #appbar .app-btn.is-active::after { background: var(--cd-green); }
+#appbar .app-btn:focus-visible {
+  outline: 2px solid #17140F;
+  outline-offset: -3px;
+}
+html[data-cdtheme="dark"] #appbar .app-btn:focus-visible { outline-color: #eceae3; }
 .app-btn.open.min { background: none; }
 .app-btn.open.min::after { background: var(--accent); }
 .appbar-spacer { flex: 1; min-width: 8px; }
@@ -653,7 +714,7 @@ button { font-family: inherit; }
 .fld-tab.on { background: var(--ft, #1D6B45); color: #fff; }
 .fld-tab.on:hover { color: #fff; }
 /* click the CurrencyDesk logo to collapse the tenant + app rows for more desktop room */
-#tenantbar.collapsed, #appbar.collapsed { display: none; }
+#tenantbar.collapsed, #appbar.collapsed, .appbar-clip:has(#appbar.collapsed) { display: none; }
 .edge-rail.collapsed { display: none; }
 
 /* ============================================================
@@ -2047,7 +2108,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      window title (traffic lights, the title dot, the tile
      grid), the resize grip, and the desk watermark stay off
      every phone screen. */
-  #menubar, #tenantbar, #appbar, .edge-rail,
+  #menubar, #tenantbar, #appbar, .appbar-clip, .edge-rail,
   #desktop .win > .win-bar,
   #desktop .win-lights,
   #desktop .win-dot,
