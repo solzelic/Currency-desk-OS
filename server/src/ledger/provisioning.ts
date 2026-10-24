@@ -5,6 +5,13 @@ import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
+import {
+  branchBusinessDay,
+  derivedIdVerdict,
+  derivedIdVerdictSql,
+  standingForVerdict,
+  verdictToGate,
+} from "./id-on-file.js";
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -18,7 +25,6 @@ export type CustomerInput = {
   externalRef?: string;
   name: string;
   risk: "normal" | "enhanced" | "high";
-  idStatus: "verified" | "pending" | "missing" | "expired";
 };
 
 export class LedgerProvisioningService {
@@ -29,12 +35,15 @@ export class LedgerProvisioningService {
     try {
       await client.query("BEGIN");
       await authorizeLedgerActor(client, actor, "customer:view");
+      const businessDate = await branchBusinessDay(client, actor.branchId);
       const result = await client.query(
-        `SELECT customer_id,external_ref,name,risk,id_status,created_at,updated_at
+        `SELECT customer_id,external_ref,name,risk,
+                ${derivedIdVerdictSql("ledger_customers", "$5")} AS id_verdict,
+                created_at,updated_at
            FROM ledger_customers
           WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4
           ORDER BY name,customer_id`,
-        scope(actor).slice(0, 4),
+        [...scope(actor).slice(0, 4), businessDate],
       );
       await client.query("COMMIT");
       return result.rows.map(customerJson);
@@ -65,15 +74,14 @@ export class LedgerProvisioningService {
       if (customerId) {
         result = await client.query(
           `UPDATE ledger_customers
-              SET external_ref=$1,name=$2,risk=$3,id_status=$4,updated_by=$5,updated_at=$6
-            WHERE customer_id=$7 AND tenant_id=$8 AND legal_entity_id=$9
-              AND branch_id=$10 AND workspace_id=$11
+              SET external_ref=$1,name=$2,risk=$3,updated_by=$4,updated_at=$5
+            WHERE customer_id=$6 AND tenant_id=$7 AND legal_entity_id=$8
+              AND branch_id=$9 AND workspace_id=$10
           RETURNING customer_id,external_ref,name,risk,id_status,created_at,updated_at`,
           [
             input.externalRef ?? null,
             input.name,
             input.risk,
-            input.idStatus,
             actor.userId,
             now,
             customerId,
@@ -91,12 +99,11 @@ export class LedgerProvisioningService {
           `INSERT INTO ledger_customers
             (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,
              external_ref,name,risk,id_status,created_by,updated_by,created_at,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11,$11)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'missing',$9,$9,$10,$10)
            ON CONFLICT (tenant_id,legal_entity_id,branch_id,workspace_id,external_ref)
              WHERE external_ref IS NOT NULL
            DO UPDATE SET name=EXCLUDED.name,risk=EXCLUDED.risk,
-                         id_status=EXCLUDED.id_status,updated_by=EXCLUDED.updated_by,
-                         updated_at=EXCLUDED.updated_at
+                         updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at
            RETURNING customer_id,external_ref,name,risk,id_status,created_at,updated_at`,
           [
             `cust_${randomUUID()}`,
@@ -104,7 +111,6 @@ export class LedgerProvisioningService {
             input.externalRef,
             input.name,
             input.risk,
-            input.idStatus,
             actor.userId,
             now,
           ],
@@ -114,20 +120,26 @@ export class LedgerProvisioningService {
           `INSERT INTO ledger_customers
             (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,
              name,risk,id_status,created_by,updated_by,created_at,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$10)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'missing',$8,$8,$9,$9)
            RETURNING customer_id,external_ref,name,risk,id_status,created_at,updated_at`,
           [
             `cust_${randomUUID()}`,
             ...scope(actor).slice(0, 4),
             input.name,
             input.risk,
-            input.idStatus,
             actor.userId,
             now,
           ],
         );
       }
       const row = result.rows[0]!;
+      const verdict = await derivedIdVerdict(
+        client,
+        row.customer_id as string,
+        actor.tenantId,
+        actor.legalEntityId,
+        actor.branchId,
+      );
       await client.query(
         `INSERT INTO ledger_audit_events
           (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
@@ -139,13 +151,13 @@ export class LedgerProvisioningService {
           actor.userId,
           customerId ? "customer.update" : "customer.create",
           row.customer_id,
-          `risk=${input.risk}; id_status=${input.idStatus}`,
+          `risk=${input.risk}; id standing derived from documents`,
           randomUUID(),
           now,
         ],
       );
       await client.query("COMMIT");
-      return customerJson(row);
+      return customerJson({ ...row, id_verdict: verdict });
     } catch (error) {
       await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "23505") {
@@ -437,12 +449,14 @@ export class LedgerProvisioningService {
 }
 
 function customerJson(row: Record<string, unknown>) {
+  const verdict = String(row.id_verdict ?? "no_id");
   return {
     customerId: row.customer_id,
     externalRef: row.external_ref ?? null,
     name: row.name,
     risk: row.risk,
-    idStatus: row.id_status,
+    idStatus: verdictToGate(verdict),
+    idStanding: standingForVerdict(verdict),
     createdAt: new Date(row.created_at as string | Date).toISOString(),
     updatedAt: new Date(row.updated_at as string | Date).toISOString(),
   };

@@ -279,7 +279,7 @@ postgres("a switched session is the person on the deal", () => {
   async function postDeal(cookies: Record<string, string>, key: string, claimedActor: string) {
     const customer = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies,
-      payload: { name: `Walk-in ${key}`, risk: "normal", idStatus: "verified" },
+      payload: { name: `Walk-in ${key}`, risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
     const quote = await app.inject({
@@ -348,7 +348,7 @@ postgres("a switched session is the person on the deal", () => {
     const manager = cookieOf(toManager);
     const look = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies: manager,
-      payload: { name: "Manager look", risk: "normal", idStatus: "verified" },
+      payload: { name: "Manager look", risk: "normal" },
     });
     expect(look.statusCode, look.body).toBe(201);
     const lookQuote = await app.inject({
@@ -514,7 +514,7 @@ postgres("a switched session is the person on the deal", () => {
     }
     const customer = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies: iqbal, headers,
-      payload: { name: "Exchange switch", risk: "normal", idStatus: "verified" },
+      payload: { name: "Exchange switch", risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
     const posted = await app.inject({

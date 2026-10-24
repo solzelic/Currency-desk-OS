@@ -96,6 +96,8 @@ async function reset() {
   await pool.query(
     "INSERT INTO ledger_customers VALUES ('customer-1','tenant-1','le-1','branch-1','workspace-1','Rachel Carter','normal','verified'),('customer-2','tenant-1','le-1','branch-1','workspace-1','Walk-in','normal','missing')",
   );
+  const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+  await fileCurrentPhotoId(pool, "customer-1");
   await pool.query(
     "INSERT INTO ledger_rates VALUES ('tenant-1','le-1','branch-1','workspace-1','CAD',1),('tenant-1','le-1','branch-1','workspace-1','USD',0.731)",
   );

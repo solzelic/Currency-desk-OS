@@ -214,7 +214,7 @@ postgres("a till session takes the branch's civil day", () => {
       url: "/api/ledger/customers",
       cookies: opener,
       headers,
-      payload: { name: "Walk-in", risk: "normal", idStatus: "verified" },
+      payload: { name: "Walk-in", risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
     const deal = await app.inject({

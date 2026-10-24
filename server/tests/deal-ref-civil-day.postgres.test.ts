@@ -76,7 +76,7 @@ postgres("a deal reference uses the branch's civil day", () => {
       url: "/api/ledger/customers",
       cookies: owner,
       headers,
-      payload: { name: "Walk-in", risk: "normal", idStatus: "verified" },
+      payload: { name: "Walk-in", risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
     customerId = customer.json().customerId as string;

@@ -151,10 +151,10 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:jakob-miller",
         name: "Jakob Miller",
         risk: "normal",
-        idStatus: "verified",
       },
     });
     expect(created.statusCode).toBe(201);
+    expect(created.json().idStatus).toBe("missing");
     const synced = await app.inject({
       method: "POST",
       url: "/api/ledger/customers",
@@ -163,13 +163,12 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:jakob-miller",
         name: "Jakob Miller",
         risk: "enhanced",
-        idStatus: "pending",
       },
     });
     expect(synced.json().customerId).toBe(created.json().customerId);
     expect(synced.json()).toMatchObject({
       risk: "enhanced",
-      idStatus: "pending",
+      idStatus: "missing",
     });
     const updated = await app.inject({
       method: "PUT",
@@ -179,7 +178,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:jakob-miller",
         name: "Jakob Miller",
         risk: "normal",
-        idStatus: "verified",
       },
     });
     expect(updated.statusCode).toBe(200);
@@ -213,7 +211,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         externalRef: "local:second",
         name: "Second Customer",
         risk: "normal",
-        idStatus: "missing",
       },
     });
     expect(
@@ -226,7 +223,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
             externalRef: "local:jakob-miller",
             name: "Second Customer",
             risk: "normal",
-            idStatus: "missing",
           },
         })
       ).statusCode,
@@ -263,7 +259,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
           payload: {
             name: "Changed",
             risk: "normal",
-            idStatus: "verified",
           },
         })
       ).statusCode,
@@ -775,7 +770,6 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
           payload: {
             name: "",
             risk: "made-up",
-            idStatus: "verified",
           },
         })
       ).statusCode,

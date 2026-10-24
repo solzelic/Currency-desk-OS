@@ -423,6 +423,24 @@ postgres("cheque cashing on the ledger", () => {
       "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'RSD',5000)",
       scope,
     );
+    /* The dinar pack's line is below this face. A stored verified
+       column does not waive it. The paper is a current passport. */
+    await pool.query(
+      `INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+       VALUES ('cli-demo',$1,$2,'Jakob Miller')
+       ON CONFLICT (client_id) DO NOTHING`,
+      [DEMO.tenantId, DEMO.legalEntityId],
+    );
+    await pool.query(
+      `INSERT INTO desk_client_identity_documents
+         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+       VALUES ('doc-demo','cli-demo',$1,$2,'Passport','P100',DATE '2032-04-01',true)
+       ON CONFLICT (document_id) DO NOTHING`,
+      [DEMO.tenantId, DEMO.legalEntityId],
+    );
+    await pool.query(
+      "UPDATE ledger_customers SET client_id='cli-demo' WHERE customer_id='customer-demo'",
+    );
     const cookies = await cookie();
     const cashed = await heldCheque(cookies, { currency: "RSD" });
     expect(cashed.cheque.currency).toBe("RSD");

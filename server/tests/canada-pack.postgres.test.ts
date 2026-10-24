@@ -87,6 +87,8 @@ async function book(entityId: string) {
      ON CONFLICT DO NOTHING`,
     [`ca2-known-${entityId}`, scope.tenantId, scope.legalEntityId, scope.branchId, scope.workspaceId, `ca2-unknown-${entityId}`],
   );
+  const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+  await fileCurrentPhotoId(pool, `ca2-known-${entityId}`);
   await pool.query(
     `INSERT INTO ledger_rates
        (tenant_id, legal_entity_id, branch_id, workspace_id, currency, units_per_cad)
@@ -616,6 +618,12 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
   it("stores the beneficiary on a version 2 remittance at the line, and not before", async () => {
     const teller = actor(V2, "teller", `ca2-teller-${V2}`);
     const known = `ca2-known-${V2}`;
+    /* The ticket test points this customer at a client that holds the
+       address. Standing follows that client, so the passport has to
+       be on it before a remittance at the line can reach the
+       beneficiary rule. */
+    const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+    await fileCurrentPhotoId(pool, known);
     const base = {
       customerId: known,
       payoutCurrency: "PHP",

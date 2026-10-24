@@ -78,8 +78,10 @@ See [server/README.md](../server/README.md) for isolated PostgreSQL startup, mig
 
 ## Limitations
 
-No live KYC provider is connected, so `idStatus` is still a staff-attested
-record. Opening balances are initialization, not an adjustment mechanism;
+No live KYC provider is connected. `POST` and `PUT /api/ledger/customers`
+do not take `idStatus`. A body that carries one is 422
+`ID_STATUS_NOT_CLIENT_SET`. Standing is derived from a current photo ID
+with an expiry date on the client file. Opening balances are initialization, not an adjustment mechanism;
 after activity begins, differences must use a future counted-reconciliation
 workflow. (This table documents the core posting surface; the full ledger
 API has grown well beyond it — routes register in
