@@ -2247,6 +2247,34 @@
       c: CD.mute
     }), back, 'ghost')))), document.body);
   }
+  function groupedMoney(n) {
+    const v = Number(n);
+    if (!isFinite(v)) return '0.00';
+    const neg = v < 0;
+    const parts = Math.abs(v).toFixed(2).split('.');
+    const grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (neg ? '-' : '') + grouped + '.' + parts[1];
+  }
+  /* The service fee is added on top. One currency on the card uses a
+     dollar sign. More than one names the code. */
+  function feeOnTopCopy(quote) {
+    const codes = [];
+    const list = quote && quote.currencies || [];
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] && codes.indexOf(list[i]) < 0) codes.push(list[i]);
+    }
+    const multi = codes.length > 1;
+    const ccy = quote && quote.currency || 'CAD';
+    const payCcy = quote && quote.payCurrency || ccy;
+    const fee = Number(quote && quote.fee);
+    const principal = Number(quote && quote.principal);
+    const pay = payCcy === ccy ? +(principal + fee).toFixed(2) : principal;
+    const shown = (amount, code) => (multi ? code + ' ' : '$') + groupedMoney(amount);
+    return {
+      feeLine: 'Service fee: ' + shown(fee, ccy) + ', added to the total',
+      payLine: 'You pay: ' + shown(pay, payCcy)
+    };
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     CD,
     ICONS,
@@ -2294,6 +2322,7 @@
     cashVariance,
     storedRoundNote,
     formatPhoneMoney,
+    feeOnTopCopy,
     dDiff,
     mkRef,
     nowTime,
@@ -5544,6 +5573,14 @@ if (typeof window !== "undefined") {
     const fx = !!(row.inCcy && row.outCcy && row.inCcy !== row.outCcy);
     const priced = fx && typeof effectiveRate === 'function' ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy)) : null;
     const rateValue = !fx ? row.rate : priced && priced.text ? '1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy : 'Rate unavailable';
+    const feeNum = +row.fee || 0;
+    const onTop = row.type !== 'Cheque Cashing' && feeNum > 0 ? window.CDOS.feeOnTopCopy({
+      fee: feeNum,
+      principal: row.inAmt,
+      currency: homeCcy() || 'CAD',
+      payCurrency: row.inCcy,
+      currencies: [row.inCcy, row.outCcy]
+    }) : null;
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -5636,7 +5673,15 @@ if (typeof window !== "undefined") {
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Fee",
       v: homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)
-    }), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
+    }), onTop && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "receipt-fee",
+      style: {
+        marginTop: 8,
+        fontSize: 14,
+        lineHeight: '20px',
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("div", null, onTop.feeLine), /*#__PURE__*/React.createElement("div", null, onTop.payLine)), row.type !== 'Cheque Cashing' && row.side && /*#__PURE__*/React.createElement(Line, {
       k: "Pricing",
       v: window.CDOS.exchangeWords(row, homeCcy()).pricing
     }), row.quoteRef && /*#__PURE__*/React.createElement(Line, {
@@ -29317,13 +29362,22 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       return () => document.removeEventListener('keydown', h);
     }, [onClose]);
     const sideLabel = q.side === 'buy' ? `We buy ${q.inCcy}` : q.side === 'sell' ? `We sell ${q.outCcy}` : `${q.inCcy} → ${q.outCcy}`;
+    const lines = q.fee > 0 ? window.CDOS.feeOnTopCopy({
+      fee: q.fee,
+      principal: q.inAmt,
+      currency: homeCcy() || q.inCcy || 'CAD',
+      payCurrency: q.inCcy,
+      currencies: [q.inCcy, q.outCcy]
+    }) : null;
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      onMouseDown: e => e.stopPropagation(),
       className: "fixed inset-0",
       style: {
         zIndex: 99999,
         background: CD.ink,
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between px-10 pt-8 pb-4",
@@ -29427,15 +29481,26 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         borderTop: '1px solid var(--cd-on-ink-faint)',
         background: 'var(--cd-ink-strong)'
       }
-    }, /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: '1 1 200px',
+        minWidth: 0,
+        color: 'var(--cd-on-ink)',
+        fontSize: 16,
+        lineHeight: '22px'
+      }
+    }, lines ? /*#__PURE__*/React.createElement("div", null, lines.feeLine) : null, lines ? /*#__PURE__*/React.createElement("div", null, lines.payLine) : null, /*#__PURE__*/React.createElement("div", {
       style: {
         color: 'var(--cd-on-ink-soft)',
         fontSize: 14
       }
-    }, q.fee > 0 ? `Includes ${fmtHome(q.fee)} service fee · ` : '', q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'), /*#__PURE__*/React.createElement("button", {
+    }, q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market')), /*#__PURE__*/React.createElement("button", {
+      type: "button",
       onClick: onClose,
-      className: "flex items-center gap-2 px-5 py-2.5 font-semibold",
+      className: "flex items-center gap-2 px-5 font-semibold",
       style: {
+        minHeight: 44,
+        minWidth: 44,
         background: 'var(--cd-panel)',
         color: CD.ink,
         borderRadius: 10
@@ -30783,6 +30848,13 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       ben = benParts(row.beneficiary),
       fee = +row.fee || 0,
       cust = row.customer || '';
+    const onTop = t === 'Currency Exchange' && fee > 0 ? window.CDOS.feeOnTopCopy({
+      fee,
+      principal: row.inAmt,
+      currency: homeCcy() || row.inCcy || 'CAD',
+      payCurrency: row.inCcy,
+      currencies: [row.inCcy, row.outCcy]
+    }) : null;
     const custLabel = t.startsWith('Remittance — Send') ? 'Sender' : t === 'Remittance — Receive' ? 'Recipient' : t === 'Cheque Cashing' ? 'Depositor' : t === 'Money Order' ? 'Purchaser' : t === 'Bill Payment' ? 'Payer' : 'Customer';
     const custRow = /*#__PURE__*/React.createElement(DRow, {
       k: custLabel,
@@ -30810,7 +30882,15 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         k: "Quote",
         v: `${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`,
         mono: true
-      })];
+      }), onTop && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "saved-deal-fee",
+        style: {
+          color: CD.ink,
+          fontSize: 14,
+          lineHeight: '20px',
+          paddingTop: 6
+        }
+      }, /*#__PURE__*/React.createElement("div", null, onTop.feeLine), /*#__PURE__*/React.createElement("div", null, onTop.payLine))];
     } else if (t === 'Remittance — Send') {
       title = 'Remittance — outbound';
       rows = [custRow, /*#__PURE__*/React.createElement(DRow, {
@@ -35494,16 +35574,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       return () => document.removeEventListener('keydown', h);
     }, [onClose]);
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      "data-testid": "customer-quote",
+      onMouseDown: e => e.stopPropagation(),
       className: "fixed inset-0",
       style: {
         zIndex: 99999,
         background: CD.ink,
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        overflow: 'hidden'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between px-10 pt-8 pb-4",
+      className: "flex items-center justify-between px-6 pt-6 pb-4",
       style: {
+        flex: 'none',
         borderBottom: '1px solid var(--cd-on-ink-faint)'
       }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -35534,8 +35618,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, q.tag)), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 flex flex-col justify-center",
       style: {
-        gap: 30,
-        padding: '24px 10vw'
+        gap: 16,
+        padding: '16px 24px',
+        minHeight: 0,
+        overflow: 'auto'
       }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -35594,20 +35680,33 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         lineHeight: 1.02
       }
     }, q.get))), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-between px-10 py-6",
+      className: "flex flex-wrap items-center justify-between gap-3 px-6 py-4",
       style: {
+        flex: 'none',
         borderTop: '1px solid var(--cd-on-ink-faint)',
         background: 'var(--cd-ink-strong)'
       }
-    }, /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: '1 1 200px',
+        minWidth: 0,
+        color: 'var(--cd-on-ink)',
+        fontSize: 16,
+        lineHeight: '22px'
+      }
+    }, q.feeLine ? /*#__PURE__*/React.createElement("div", null, q.feeLine) : null, q.payLine ? /*#__PURE__*/React.createElement("div", null, q.payLine) : null, q.foot ? /*#__PURE__*/React.createElement("div", {
       style: {
         color: 'var(--cd-on-ink-soft)',
-        fontSize: 14
+        fontSize: 14,
+        marginTop: q.feeLine ? 4 : 0
       }
-    }, q.foot), /*#__PURE__*/React.createElement("button", {
+    }, q.foot) : null), /*#__PURE__*/React.createElement("button", {
+      type: "button",
       onClick: onClose,
-      className: "flex items-center gap-2 px-5 py-2.5 font-semibold",
+      className: "flex items-center gap-2 px-5 font-semibold",
       style: {
+        minHeight: 44,
+        minWidth: 44,
         background: 'var(--cd-panel)',
         color: CD.ink,
         borderRadius: 10
@@ -36763,7 +36862,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onDone && onDone(tx.id);
     };
 
-    // present-quote payload (exchange + send)
+    // present-quote payload (exchange + send). The fee is added on top.
+    const feeCopy = !isCheque && feeN > 0 ? window.CDOS.feeOnTopCopy({
+      fee: feeN,
+      principal: amtN,
+      currency: home,
+      payCurrency: isExchange ? inCcy : home,
+      currencies: isExchange ? [inCcy, out.ccy] : isSend ? [home, payoutCcy] : [home]
+    }) : null;
+    const rateFoot = lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now';
     const presentQ = isSend ? {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Send money',
@@ -36774,7 +36881,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '',
       getLbl: `${benName || 'Beneficiary'} receives`,
       get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee'
+      feeLine: feeCopy ? feeCopy.feeLine : '',
+      payLine: feeCopy ? feeCopy.payLine : '',
+      foot: feeCopy ? '' : 'No service fee'
     } : {
       biz: settings && (settings.operatingName || settings.bizName) || 'CurrencyDesk',
       title: 'Your quote',
@@ -36785,7 +36894,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '',
       getLbl: 'You receive',
       get: `${unitText(shownOut, outCcy)} ${outCcy}`,
-      foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
+      feeLine: feeCopy ? feeCopy.feeLine : '',
+      payLine: feeCopy ? feeCopy.payLine : '',
+      foot: rateFoot
     };
 
     /* ---------------- render ---------------- */
@@ -37928,7 +38039,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker"
-    }, isExchange || isSend ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), (isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
+    }, isExchange || isSend ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeCopy ? '' : 'no fee')), feeCopy && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "deal-quote-fee",
+      style: {
+        marginTop: 8,
+        color: 'var(--cd-on-ink)',
+        fontSize: 14,
+        lineHeight: '20px'
+      }
+    }, /*#__PURE__*/React.createElement("div", null, feeCopy.feeLine), /*#__PURE__*/React.createElement("div", null, feeCopy.payLine)), (isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {
         fontSize: 11,

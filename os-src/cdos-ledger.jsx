@@ -217,8 +217,9 @@
   function PresentQuote({ q, onClose }) {
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
     const sideLabel = q.side === 'buy' ? `We buy ${q.inCcy}` : q.side === 'sell' ? `We sell ${q.outCcy}` : `${q.inCcy} → ${q.outCcy}`;
+    const lines = q.fee > 0 ? window.CDOS.feeOnTopCopy({ fee: q.fee, principal: q.inAmt, currency: homeCcy() || q.inCcy || 'CAD', payCurrency: q.inCcy, currencies: [q.inCcy, q.outCcy] }) : null;
     return ReactDOM.createPortal(
-      <div className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column' }}>
+      <div onMouseDown={e => e.stopPropagation()} className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="flex items-center justify-between px-10 pt-8 pb-4" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
           <div>
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{q.biz}</div>
@@ -244,8 +245,12 @@
         </div>
 
         <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
-          <span style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14 }}>{q.fee > 0 ? `Includes ${fmtHome(q.fee)} service fee · ` : ''}{q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'}</span>
-          <button onClick={onClose} className="flex items-center gap-2 px-5 py-2.5 font-semibold" style={{ background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
+          <div style={{ flex: '1 1 200px', minWidth: 0, color: 'var(--cd-on-ink)', fontSize: 16, lineHeight: '22px' }}>
+            {lines ? <div>{lines.feeLine}</div> : null}
+            {lines ? <div>{lines.payLine}</div> : null}
+            <div style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14 }}>{q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'}</div>
+          </div>
+          <button type="button" onClick={onClose} className="flex items-center gap-2 px-5 font-semibold" style={{ minHeight: 44, minWidth: 44, background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
         </div>
       </div>, document.body);
   }
@@ -737,6 +742,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   }
   function TxFacts({ row, onOpenClient }) {
     const t = row.type, ben = benParts(row.beneficiary), fee = +row.fee || 0, cust = row.customer || '';
+    const onTop = t === 'Currency Exchange' && fee > 0 ? window.CDOS.feeOnTopCopy({ fee, principal: row.inAmt, currency: homeCcy() || row.inCcy || 'CAD', payCurrency: row.inCcy, currencies: [row.inCcy, row.outCcy] }) : null;
     const custLabel = t.startsWith('Remittance — Send') ? 'Sender' : t === 'Remittance — Receive' ? 'Recipient' : t === 'Cheque Cashing' ? 'Depositor' : t === 'Money Order' ? 'Purchaser' : t === 'Bill Payment' ? 'Payer' : 'Customer';
     const custRow = <DRow k={custLabel} v={cust || '—'} onClick={cust ? () => onOpenClient && onOpenClient(cust, row.ref) : undefined} />;
     let title = 'Transaction', rows = [];
@@ -747,7 +753,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         <RateNote row={row} />,
         row.side && <DRow k="Priced" v={window.CDOS.ledgerLine(row, homeCcy())} />,
         row.midRate && <DRow k="Spot at deal" v={`${row.midRate} ${row.outCcy}/${row.inCcy}`} mono />,
-        row.quoteRef && <DRow k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} mono />];
+        row.quoteRef && <DRow k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} mono />,
+        onTop && <div data-testid="saved-deal-fee" style={{ color: CD.ink, fontSize: 14, lineHeight: '20px', paddingTop: 6 }}><div>{onTop.feeLine}</div><div>{onTop.payLine}</div></div>];
     } else if (t === 'Remittance — Send') {
       title = 'Remittance — outbound';
       rows = [custRow,

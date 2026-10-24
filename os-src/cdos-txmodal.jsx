@@ -336,20 +336,24 @@
   function PresentQuote({ q, onClose }) {
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
     return ReactDOM.createPortal(
-      <div className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column' }}>
-        <div className="flex items-center justify-between px-10 pt-8 pb-4" style={{ borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
+        <div data-testid="customer-quote" onMouseDown={e => e.stopPropagation()} className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="flex items-center justify-between px-6 pt-6 pb-4" style={{ flex: 'none', borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
           <div><div style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--cd-on-ink-soft)' }}>{q.biz}</div><div style={{ fontWeight: 800, fontSize: 30, color: 'var(--cd-on-ink)', letterSpacing: '-0.02em', marginTop: 4 }}>{q.title}</div></div>
           <span className="px-3 py-1.5" style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: 'var(--cd-on-ink)', background: 'var(--cd-on-ink-faint)', borderRadius: 999 }}>{q.tag}</span>
         </div>
-        <div className="flex-1 flex flex-col justify-center" style={{ gap: 30, padding: '24px 10vw' }}>
+        <div className="flex-1 flex flex-col justify-center" style={{ gap: 16, padding: '16px 24px', minHeight: 0, overflow: 'auto' }}>
           <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.giveLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.give}</div></div>
           {q.rateLine && <div className="flex items-center gap-4" style={{ color: 'var(--cd-on-ink-soft)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: 16 }}>{q.rateLine}</span><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
           {q.rateNote ? <div className="cd-rate-note" style={{ textAlign: 'center', fontSize: 14, lineHeight: '18px', color: 'var(--cd-note-on-ink)' }}>{q.rateNote}</div> : null}
           <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.getLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: '#7fd1a3', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.get}</div></div>
         </div>
-        <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
-          <span style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14 }}>{q.foot}</span>
-          <button onClick={onClose} className="flex items-center gap-2 px-5 py-2.5 font-semibold" style={{ background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4" style={{ flex: 'none', borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
+          <div style={{ flex: '1 1 200px', minWidth: 0, color: 'var(--cd-on-ink)', fontSize: 16, lineHeight: '22px' }}>
+            {q.feeLine ? <div>{q.feeLine}</div> : null}
+            {q.payLine ? <div>{q.payLine}</div> : null}
+            {q.foot ? <div style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14, marginTop: q.feeLine ? 4 : 0 }}>{q.foot}</div> : null}
+          </div>
+          <button type="button" onClick={onClose} className="flex items-center gap-2 px-5 font-semibold" style={{ minHeight: 44, minWidth: 44, background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
         </div>
       </div>, document.body);
   }
@@ -1064,10 +1068,18 @@
       onDone && onDone(tx.id);
     };
 
-    // present-quote payload (exchange + send)
+    // present-quote payload (exchange + send). The fee is added on top.
+    const feeCopy = (!isCheque && feeN > 0) ? window.CDOS.feeOnTopCopy({
+      fee: feeN,
+      principal: amtN,
+      currency: home,
+      payCurrency: isExchange ? inCcy : home,
+      currencies: isExchange ? [inCcy, out.ccy] : isSend ? [home, payoutCcy] : [home],
+    }) : null;
+    const rateFoot = lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now';
     const presentQ = isSend
-      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${unitText(amtN, home)} ${home}`, rateLine: rateShown(home, payoutCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '', getLbl: `${benName || 'Beneficiary'} receives`, get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
-      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${unitText(amtN, inCcy)} ${inCcy}`, rateLine: rateShown(inCcy, outCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '', getLbl: 'You receive', get: `${unitText(shownOut, outCcy)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
+      ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${unitText(amtN, home)} ${home}`, rateLine: rateShown(home, payoutCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '', getLbl: `${benName || 'Beneficiary'} receives`, get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`, feeLine: feeCopy ? feeCopy.feeLine : '', payLine: feeCopy ? feeCopy.payLine : '', foot: feeCopy ? '' : 'No service fee' }
+      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${unitText(amtN, inCcy)} ${inCcy}`, rateLine: rateShown(inCcy, outCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '', getLbl: 'You receive', get: `${unitText(shownOut, outCcy)} ${outCcy}`, feeLine: feeCopy ? feeCopy.feeLine : '', payLine: feeCopy ? feeCopy.payLine : '', foot: rateFoot };
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
@@ -1362,8 +1374,9 @@
                   <div style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
                     <div className="flex items-center justify-between">
                       <span className="cd-tx-kicker">{(isExchange || isSend) ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
-                      <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
+                      <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeCopy ? '' : 'no fee'}</span>
                     </div>
+                    {feeCopy && <div data-testid="deal-quote-fee" style={{ marginTop: 8, color: 'var(--cd-on-ink)', fontSize: 14, lineHeight: '20px' }}><div>{feeCopy.feeLine}</div><div>{feeCopy.payLine}</div></div>}
                     {(isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-note-on-ink)', marginTop: 4 }}>{RATE_NOTE}</div> : null}
                   </div>
                 </div>
