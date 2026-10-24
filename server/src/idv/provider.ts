@@ -11,6 +11,8 @@ export type IdvResult = {
   providerRef: string;
   referenceId: string;
   outcome: IdvOutcome;
+  /* Set by the adapter for created, started, and needs review. */
+  inquiryStatus?: "in progress" | "needs review";
 };
 
 export type IdvStart = { referenceId: string; shopId: string; branchId: string; tellerId: string };
