@@ -13,7 +13,7 @@
    server dutifully wrote zero over real money. That bug passed every test
    in the repository.
    ============================================================ */
-import { test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
+import { seamTest as test, expect, hasLedger, signInAtDesk, ledger } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
@@ -79,6 +79,22 @@ async function openCashDrawer(page: Page) {
   await settleCashDrawerChrome(page);
 }
 
+/* The reset closes the till before this test. Opening here is the
+   session the drawer is about to show, not a leftover from the test above. */
+async function ensureTillOpen(page: Page) {
+  const opened = await page.evaluate(async () => {
+    const session = await fetch("/api/ledger/till-session").then((r) => r.json());
+    if (session.session && session.session.status === "open") return "open";
+    const response = await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    return response.ok || response.status === 409 ? "open" : `${response.status}`;
+  });
+  expect(opened).toBe("open");
+}
+
 test("the desk opens a till session, and the ledger is the one that says so", async ({ page }) => {
   await signInAtDesk(page);
   const book = ledger(page);
@@ -110,6 +126,7 @@ test("the desk opens a till session, and the ledger is the one that says so", as
 test("a float moves the vault and the till together, or not at all", async ({ page }) => {
   await signInAtDesk(page);
   const book = ledger(page);
+  await ensureTillOpen(page);
   await openCashDrawer(page);
 
   const vaultBefore = await book.vault();
@@ -132,6 +149,7 @@ test("a float moves the vault and the till together, or not at all", async ({ pa
 test("closing writes the counted figure back, and refuses to guess one", async ({ page }) => {
   await signInAtDesk(page);
   const book = ledger(page);
+  await ensureTillOpen(page);
   await openCashDrawer(page);
 
   const before = await book.till();
