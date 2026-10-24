@@ -29415,7 +29415,23 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         gap: 30,
         padding: '24px 10vw'
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, lines ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 'clamp(48px, 9vw, 96px)',
+        letterSpacing: '-0.02em',
+        color: 'var(--cd-on-ink)',
+        fontVariantNumeric: 'tabular-nums',
+        lineHeight: 1.05
+      }
+    }, lines.payLine), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        lineHeight: '18px',
+        color: 'var(--cd-on-ink)',
+        marginTop: 8
+      }
+    }, lines.feeLine)) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 17,
         color: 'var(--cd-on-ink-soft)'
@@ -29485,21 +29501,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         flex: '1 1 200px',
         minWidth: 0,
-        color: 'var(--cd-on-ink)',
-        fontSize: 16,
-        lineHeight: '22px'
-      }
-    }, lines ? /*#__PURE__*/React.createElement("div", null, lines.feeLine) : null, lines ? /*#__PURE__*/React.createElement("div", null, lines.payLine) : null, /*#__PURE__*/React.createElement("div", {
-      style: {
         color: 'var(--cd-on-ink-soft)',
-        fontSize: 14
+        fontSize: 14,
+        lineHeight: '18px'
       }
-    }, q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market')), /*#__PURE__*/React.createElement("button", {
+    }, /*#__PURE__*/React.createElement("div", null, q.held ? `Rate held until ${q.held}` : 'Rate as quoted now. It moves with the market.')), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
       className: "flex items-center gap-2 px-5 font-semibold",
       style: {
-        minHeight: 44,
         minWidth: 44,
         background: 'var(--cd-panel)',
         color: CD.ink,
@@ -35573,6 +35583,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
     }, [onClose]);
+    const hero = {
+      fontWeight: 800,
+      fontSize: 'clamp(46px, 8.5vw, 92px)',
+      letterSpacing: '-0.02em',
+      fontVariantNumeric: 'tabular-nums',
+      lineHeight: 1.05
+    };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       "data-testid": "customer-quote",
       onMouseDown: e => e.stopPropagation(),
@@ -35623,19 +35640,29 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         minHeight: 0,
         overflow: 'auto'
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, q.payLine ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      "data-testid": "quote-pay-hero",
+      style: {
+        ...hero,
+        color: 'var(--cd-on-ink)'
+      }
+    }, q.payLine), q.feeLine ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": "quote-fee-line",
+      style: {
+        fontSize: 14,
+        lineHeight: '18px',
+        color: 'var(--cd-on-ink)',
+        marginTop: 8
+      }
+    }, q.feeLine) : null) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 17,
         color: 'var(--cd-on-ink-soft)'
       }
     }, q.giveLbl), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontWeight: 800,
-        fontSize: 'clamp(46px, 8.5vw, 92px)',
-        letterSpacing: '-0.02em',
-        color: 'var(--cd-on-ink)',
-        fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1.02
+        ...hero,
+        color: 'var(--cd-on-ink)'
       }
     }, q.give)), q.rateLine && /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-4",
@@ -35672,12 +35699,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, q.getLbl), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontWeight: 800,
-        fontSize: 'clamp(46px, 8.5vw, 92px)',
-        letterSpacing: '-0.02em',
-        color: '#7fd1a3',
-        fontVariantNumeric: 'tabular-nums',
-        lineHeight: 1.02
+        ...hero,
+        color: '#7fd1a3'
       }
     }, q.get))), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap items-center justify-between gap-3 px-6 py-4",
@@ -35690,22 +35713,15 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         flex: '1 1 200px',
         minWidth: 0,
-        color: 'var(--cd-on-ink)',
-        fontSize: 16,
-        lineHeight: '22px'
-      }
-    }, q.feeLine ? /*#__PURE__*/React.createElement("div", null, q.feeLine) : null, q.payLine ? /*#__PURE__*/React.createElement("div", null, q.payLine) : null, q.foot ? /*#__PURE__*/React.createElement("div", {
-      style: {
         color: 'var(--cd-on-ink-soft)',
         fontSize: 14,
-        marginTop: q.feeLine ? 4 : 0
+        lineHeight: '18px'
       }
-    }, q.foot) : null), /*#__PURE__*/React.createElement("button", {
+    }, q.foot ? /*#__PURE__*/React.createElement("div", null, q.foot) : null), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
       className: "flex items-center gap-2 px-5 font-semibold",
       style: {
-        minHeight: 44,
         minWidth: 44,
         background: 'var(--cd-panel)',
         color: CD.ink,

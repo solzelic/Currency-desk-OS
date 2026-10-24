@@ -335,6 +335,7 @@
   /* ---------- present-to-customer fullscreen quote ---------- */
   function PresentQuote({ q, onClose }) {
     useEffect(() => { const h = (e) => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [onClose]);
+    const hero = { fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.05 };
     return ReactDOM.createPortal(
         <div data-testid="customer-quote" onMouseDown={e => e.stopPropagation()} className="fixed inset-0" style={{ zIndex: 99999, background: CD.ink, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="flex items-center justify-between px-6 pt-6 pb-4" style={{ flex: 'none', borderBottom: '1px solid var(--cd-on-ink-faint)' }}>
@@ -342,18 +343,18 @@
           <span className="px-3 py-1.5" style={{ fontFamily: 'Space Mono, monospace', fontSize: 13, color: 'var(--cd-on-ink)', background: 'var(--cd-on-ink-faint)', borderRadius: 999 }}>{q.tag}</span>
         </div>
         <div className="flex-1 flex flex-col justify-center" style={{ gap: 16, padding: '16px 24px', minHeight: 0, overflow: 'auto' }}>
-          <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.giveLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.give}</div></div>
+          {q.payLine
+            ? <div><div data-testid="quote-pay-hero" style={{ ...hero, color: 'var(--cd-on-ink)' }}>{q.payLine}</div>{q.feeLine ? <div data-testid="quote-fee-line" style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cd-on-ink)', marginTop: 8 }}>{q.feeLine}</div> : null}</div>
+            : <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.giveLbl}</div><div style={{ ...hero, color: 'var(--cd-on-ink)' }}>{q.give}</div></div>}
           {q.rateLine && <div className="flex items-center gap-4" style={{ color: 'var(--cd-on-ink-soft)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: 16 }}>{q.rateLine}</span><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
           {q.rateNote ? <div className="cd-rate-note" style={{ textAlign: 'center', fontSize: 14, lineHeight: '18px', color: 'var(--cd-note-on-ink)' }}>{q.rateNote}</div> : null}
-          <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.getLbl}</div><div style={{ fontWeight: 800, fontSize: 'clamp(46px, 8.5vw, 92px)', letterSpacing: '-0.02em', color: '#7fd1a3', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{q.get}</div></div>
+          <div><div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>{q.getLbl}</div><div style={{ ...hero, color: '#7fd1a3' }}>{q.get}</div></div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4" style={{ flex: 'none', borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
-          <div style={{ flex: '1 1 200px', minWidth: 0, color: 'var(--cd-on-ink)', fontSize: 16, lineHeight: '22px' }}>
-            {q.feeLine ? <div>{q.feeLine}</div> : null}
-            {q.payLine ? <div>{q.payLine}</div> : null}
-            {q.foot ? <div style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14, marginTop: q.feeLine ? 4 : 0 }}>{q.foot}</div> : null}
+          <div style={{ flex: '1 1 200px', minWidth: 0, color: 'var(--cd-on-ink-soft)', fontSize: 14, lineHeight: '18px' }}>
+            {q.foot ? <div>{q.foot}</div> : null}
           </div>
-          <button type="button" onClick={onClose} className="flex items-center gap-2 px-5 font-semibold" style={{ minHeight: 44, minWidth: 44, background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
+          <button type="button" onClick={onClose} className="flex items-center gap-2 px-5 font-semibold" style={{ minWidth: 44, background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
         </div>
       </div>, document.body);
   }

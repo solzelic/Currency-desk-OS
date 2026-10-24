@@ -229,10 +229,17 @@
         </div>
 
         <div className="flex-1 flex flex-col justify-center" style={{ gap: 30, padding: '24px 10vw' }}>
-          <div>
-            <div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>You give</div>
-            <div style={{ fontWeight: 800, fontSize: 'clamp(48px, 9vw, 96px)', letterSpacing: '-0.02em', color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{num(q.inAmt)} <span style={{ fontWeight: 500, fontSize: '0.45em', color: 'var(--cd-on-ink-soft)' }}>{q.inCcy}</span></div>
-          </div>
+          {lines ? (
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 'clamp(48px, 9vw, 96px)', letterSpacing: '-0.02em', color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.05 }}>{lines.payLine}</div>
+              <div style={{ fontSize: 14, lineHeight: '18px', color: 'var(--cd-on-ink)', marginTop: 8 }}>{lines.feeLine}</div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 17, color: 'var(--cd-on-ink-soft)' }}>You give</div>
+              <div style={{ fontWeight: 800, fontSize: 'clamp(48px, 9vw, 96px)', letterSpacing: '-0.02em', color: 'var(--cd-on-ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.02 }}>{num(q.inAmt)} <span style={{ fontWeight: 500, fontSize: '0.45em', color: 'var(--cd-on-ink-soft)' }}>{q.inCcy}</span></div>
+            </div>
+          )}
           <div className="flex items-center gap-4" style={{ color: 'var(--cd-on-ink-soft)' }}>
             <span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span>
             <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 16 }}>1 {q.inCcy} = {num(q.rate)} {q.outCcy}</span>
@@ -245,12 +252,10 @@
         </div>
 
         <div className="flex items-center justify-between px-10 py-6" style={{ borderTop: '1px solid var(--cd-on-ink-faint)', background: 'var(--cd-ink-strong)' }}>
-          <div style={{ flex: '1 1 200px', minWidth: 0, color: 'var(--cd-on-ink)', fontSize: 16, lineHeight: '22px' }}>
-            {lines ? <div>{lines.feeLine}</div> : null}
-            {lines ? <div>{lines.payLine}</div> : null}
-            <div style={{ color: 'var(--cd-on-ink-soft)', fontSize: 14 }}>{q.held ? `Rate held until ${q.held}` : 'Rate as quoted now — moves with the market'}</div>
+          <div style={{ flex: '1 1 200px', minWidth: 0, color: 'var(--cd-on-ink-soft)', fontSize: 14, lineHeight: '18px' }}>
+            <div>{q.held ? `Rate held until ${q.held}` : 'Rate as quoted now. It moves with the market.'}</div>
           </div>
-          <button type="button" onClick={onClose} className="flex items-center gap-2 px-5 font-semibold" style={{ minHeight: 44, minWidth: 44, background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
+          <button type="button" onClick={onClose} className="flex items-center gap-2 px-5 font-semibold" style={{ minWidth: 44, background: 'var(--cd-panel)', color: CD.ink, borderRadius: 10 }}><Ic n="arrowleft" s={16} c={CD.ink} /> Back to desk</button>
         </div>
       </div>, document.body);
   }

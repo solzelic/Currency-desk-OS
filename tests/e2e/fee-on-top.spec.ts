@@ -129,11 +129,38 @@ test("a 1,000 CAD deal shows the fee on top on the card, the receipt, and the ti
   await expect(show).toBeEnabled();
   await show.click();
   const quote = page.getByTestId("customer-quote");
-  await expect(quote).toContainText(FEE_LINE);
-  await expect(quote).toContainText(PAY_LINE);
+  const payHero = quote.getByTestId("quote-pay-hero");
+  const feeUnderHero = quote.getByTestId("quote-fee-line");
+  await expect(payHero).toHaveText(PAY_LINE);
+  await expect(feeUnderHero).toHaveText(FEE_LINE);
+  await expect(quote.getByText(PAY_LINE)).toHaveCount(1);
+  await expect(quote.getByText(FEE_LINE)).toHaveCount(1);
+  await expect(quote.getByText("You receive")).toBeVisible();
   await expect(quote).not.toContainText(/Includes/i);
   await expect(quote).not.toContainText("\u2014");
   await expect(quote).not.toContainText("\u2013");
+  const heroType = await feeUnderHero.evaluate((el) => {
+    const hero = el.previousElementSibling;
+    const heroStyle = hero ? getComputedStyle(hero) : null;
+    return {
+      feeSize: getComputedStyle(el).fontSize,
+      heroSize: heroStyle ? parseFloat(heroStyle.fontSize) : 0,
+      heroWeight: heroStyle ? Number(heroStyle.fontWeight) : 0,
+    };
+  });
+  expect(heroType.feeSize).toBe("14px");
+  expect(heroType.heroSize).toBeGreaterThan(14);
+  expect(heroType.heroWeight).toBeGreaterThanOrEqual(700);
+  const copies = await page.evaluate(() => ({
+    single: window.CDOS.feeOnTopCopy({
+      fee: 2.5, principal: 1000, currency: "CAD", payCurrency: "CAD", currencies: ["CAD"],
+    }),
+    multi: window.CDOS.feeOnTopCopy({
+      fee: 2.5, principal: 1000, currency: "CAD", payCurrency: "CAD", currencies: ["CAD", "USD"],
+    }),
+  }));
+  expect(copies.single).toEqual({ feeLine: DOLLAR_FEE, payLine: DOLLAR_PAY });
+  expect(copies.multi).toEqual({ feeLine: FEE_LINE, payLine: PAY_LINE });
   const colors = await quote.getByText(FEE_LINE).evaluate((el) => {
     const fg = getComputedStyle(el).color;
     let node: Element | null = el;
@@ -188,10 +215,6 @@ test("a 1,000 CAD deal shows the fee on top on the card, the receipt, and the ti
   }, ref);
   expect(deal.feeCad).toBe("2.50");
   expect(deal.inputAmount).toBe("1000.00");
-  const single = await page.evaluate(() => window.CDOS.feeOnTopCopy({
-    fee: 2.5, principal: 1000, currency: "CAD", payCurrency: "CAD", currencies: ["CAD"],
-  }));
-  expect(single).toEqual({ feeLine: DOLLAR_FEE, payLine: DOLLAR_PAY });
   await expect.poll(async () => Number((await book.till()).CAD ?? 0), { timeout: 15_000 }).toBeCloseTo(before + 1002.5, 2);
 
   if (tillHold.kind === "opened") {
