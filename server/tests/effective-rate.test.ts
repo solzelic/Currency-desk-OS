@@ -30,7 +30,7 @@ describe("effective rate", () => {
   it("names the bounds and the note", () => {
     expect(MIN_RATE_PLACES).toBe(4);
     expect(MAX_RATE_PLACES).toBe(6);
-    expect(RATE_NOTE).toBe("Rate shown rounded. Amounts use the exact rate.");
+    expect(RATE_NOTE).toBe("Rate rounded. The amounts are exact.");
   });
 
   it("pads an exact deal to four places and shows no note", () => {
@@ -58,7 +58,7 @@ describe("effective rate", () => {
     const rate = effectiveRate("3000.00", "2166.31", 2);
     expect(rate).toEqual({ text: "0.7221", rounded: true });
     expect(placesOf(rate.text)).toBe(4);
-    expect(RATE_NOTE).toBe("Rate shown rounded. Amounts use the exact rate.");
+    expect(RATE_NOTE).toBe("Rate rounded. The amounts are exact.");
     expect(exactRateText("0.722103704355")).toBe("0.722104");
   });
 
@@ -76,7 +76,7 @@ describe("effective rate", () => {
     const rounded = effectiveRate("1234.5", "14.57", 2);
     expect(rounded).toEqual({ text: "0.0118", rounded: true });
     expect(`1 INR = ${rounded.text} USD`).toBe("1 INR = 0.0118 USD");
-    expect(RATE_NOTE).toBe("Rate shown rounded. Amounts use the exact rate.");
+    expect(RATE_NOTE).toBe("Rate rounded. The amounts are exact.");
   });
 
   it("keeps four significant digits on a small rate", () => {

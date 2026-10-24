@@ -13,7 +13,7 @@
   var MAX_RATE_PLACES = 6;
   var SIGNIFICANT_DIGITS = 4;
   var ABSOLUTE_CAP = 12;
-  var RATE_NOTE = "Rate shown rounded. Amounts use the exact rate.";
+  var RATE_NOTE = "Rate rounded. The amounts are exact.";
 
   function decimalsOf(text) {
     var s = String(text);
@@ -5685,7 +5685,7 @@ if (typeof window !== "undefined") {
         marginTop: 1,
         marginBottom: 4
       }
-    }, RATE_NOTE || 'Rate shown rounded. Amounts use the exact rate.') : null, /*#__PURE__*/React.createElement(Line, {
+    }, RATE_NOTE || 'Rate rounded. The amounts are exact.') : null, /*#__PURE__*/React.createElement(Line, {
       k: "Pay-out",
       v: `${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
@@ -30750,7 +30750,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         marginTop: -2,
         marginBottom: 4
       }
-    }, RATE_NOTE || 'Rate shown rounded. Amounts use the exact rate.');
+    }, RATE_NOTE || 'Rate rounded. The amounts are exact.');
   }
   function TxFlow({
     row
@@ -34474,7 +34474,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   /* The editable field keeps the computed board rate. It does not
      cut that figure to four places. The line next to the payout is
      the rate that payout came from. */
-  const RATE_NOTE = window.CDOS && window.CDOS.RATE_NOTE || 'Rate shown rounded. Amounts use the exact rate.';
+  const RATE_NOTE = window.CDOS && window.CDOS.RATE_NOTE || 'Rate rounded. The amounts are exact.';
   const publishedRate = r => window.CDOS.boardRateText ? window.CDOS.boardRateText(r) : '';
   const pricedRate = (amount, payout, ccy) => {
     if (typeof effectiveRate !== 'function') return {

@@ -8,7 +8,7 @@
   var MAX_RATE_PLACES = 6;
   var SIGNIFICANT_DIGITS = 4;
   var ABSOLUTE_CAP = 12;
-  var RATE_NOTE = "Rate shown rounded. Amounts use the exact rate.";
+  var RATE_NOTE = "Rate rounded. The amounts are exact.";
 
   function decimalsOf(text) {
     var s = String(text);

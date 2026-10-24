@@ -47,7 +47,7 @@
   /* The editable field keeps the computed board rate. It does not
      cut that figure to four places. The line next to the payout is
      the rate that payout came from. */
-  const RATE_NOTE = (window.CDOS && window.CDOS.RATE_NOTE) || 'Rate shown rounded. Amounts use the exact rate.';
+  const RATE_NOTE = (window.CDOS && window.CDOS.RATE_NOTE) || 'Rate rounded. The amounts are exact.';
   const publishedRate = (r) => (window.CDOS.boardRateText ? window.CDOS.boardRateText(r) : '');
   const pricedRate = (amount, payout, ccy) => {
     if (typeof effectiveRate !== 'function') return { text: '', rounded: false };

@@ -170,7 +170,7 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
   await expect(ticket).not.toContainText("0.72225");
   await expect(ticket).not.toContainText("0.7227");
   await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.7221 USD");
-  await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
+  await expect(ticket).toContainText("Rate rounded. The amounts are exact.");
   await expect(ticket).not.toContainText("0.722104");
 
   mkdirSync(SHOTS, { recursive: true });
@@ -181,7 +181,7 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
     const name = `quote_card_${width}.png`;
     const shot = `${SHOTS}/${name}`;
     await page.screenshot({ path: shot });
-    if (width !== 600) copyFileSync(shot, path.join(REPO_SHOTS, name));
+    copyFileSync(shot, path.join(REPO_SHOTS, name));
     await testInfo.attach(`quote-card-${width}`, { path: shot, contentType: "image/png" });
   }
 
@@ -199,7 +199,7 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
   expect(new Decimal(small.customerRate).toDecimalPlaces(6).toFixed(6)).toBe("0.722104");
   await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.7221 USD");
   await expect(ticket).not.toContainText("0.7227");
-  await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
+  await expect(ticket).toContainText("Rate rounded. The amounts are exact.");
 
   /* Euro is a different frozen rate. 7.50 solves to 0.6693. The card keeps 0.6696. */
   await page.locator(".cd-money", { has: page.locator(".cd-tx-receive") }).getByRole("button").click();
@@ -216,7 +216,7 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
   expect(new Decimal(eur.customerRate).toDecimalPlaces(6).toFixed(6)).toBe("0.669603");
   await expect(page.locator(".cd-tx-rate-line .cd-tx-kicker")).toHaveText("1 CAD = 0.6696 EUR");
   await expect(ticket).not.toContainText("0.6693");
-  await expect(ticket).toContainText("Rate shown rounded. Amounts use the exact rate.");
+  await expect(ticket).toContainText("Rate rounded. The amounts are exact.");
 
   await page.locator(".cd-money", { has: page.locator(".cd-tx-receive") }).getByRole("button").click();
   await page.getByRole("button", { name: /US Dollar/ }).click();
@@ -255,7 +255,7 @@ test("the quote card renders the server rate", async ({ page, request }, testInf
   const rcpt = page.locator("#rcpt");
   await expect(rcpt).toBeVisible();
   await expect(rcpt).toContainText("1 CAD = 0.722104 USD");
-  await expect(rcpt).not.toContainText("Rate shown rounded");
+  await expect(rcpt).not.toContainText("Rate rounded");
   for (const width of [360, 390, 430, 1280]) {
     await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     const rate = rcpt.getByText("1 CAD = 0.722104 USD");
