@@ -271,6 +271,16 @@ export const legalEntities = pgTable(
   (t) => [index("legal_entities_tenant_idx").on(t.tenantId)],
 );
 
+/* Identity-verification settings per shop (migration 050). */
+export const idvShopConfig = pgTable("idv_shop_config", {
+  shopId: text("shop_id").primaryKey().references(() => legalEntities.id),
+  provider: text("provider").notNull().default("persona"),
+  apiKeyRef: text("api_key_ref"),
+  templateId: text("template_id"),
+  retentionDays: integer("retention_days"),
+  checksEnabled: boolean("checks_enabled").notNull().default(false),
+});
+
 export const branches = pgTable(
   "branches",
   {
