@@ -117,6 +117,24 @@ test("the deal picker lists the server currencies", async ({ page }, testInfo) =
         || (!!title && title !== (el.textContent || "").trim());
     }).map((el) => (el.textContent || "").trim()));
     expect(clipped).toEqual([]);
+    const hkdReachable = await menu.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      const row = el.querySelector('[data-ccy="HKD"]');
+      if (!(row instanceof HTMLElement)) return false;
+      const onScreen = box.top >= -1 && box.bottom <= window.innerHeight + 1 && box.height > 40;
+      const scrolls = style.overflowY === "auto" || style.overflowY === "scroll";
+      el.scrollTop = Math.max(0, row.offsetTop - 8);
+      const rowBox = row.getBoundingClientRect();
+      const menuBox = el.getBoundingClientRect();
+      return onScreen && scrolls
+        && rowBox.height > 8
+        && rowBox.top >= menuBox.top - 1
+        && rowBox.bottom <= menuBox.bottom + 1
+        && rowBox.top >= -1
+        && rowBox.bottom <= window.innerHeight + 1;
+    });
+    expect(hkdReachable).toBe(true);
     const shot = `${SHOTS}/picker_${width}.png`;
     await page.screenshot({ path: shot });
     copyFileSync(shot, path.join(REPO_SHOTS, `picker_${width}.png`));

@@ -34720,6 +34720,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (!open && btnRef.current) setRect(btnRef.current.getBoundingClientRect());
       setOpen(o => !o);
     };
+    /* The list is longer than the screen under the field. Cap the
+       menu to the room that is there, and open upward when that room
+       is above the field, so a later code such as HKD can be scrolled
+       into view instead of sitting past the bottom edge. */
+    const menuEdge = 8;
+    const menuGap = 4;
+    const menuWidth = 224;
+    const roomBelow = rect ? Math.max(0, window.innerHeight - rect.bottom - menuGap - menuEdge) : 0;
+    const roomAbove = rect ? Math.max(0, rect.top - menuGap - menuEdge) : 0;
+    const openUp = roomAbove > roomBelow;
+    const menuMax = Math.min(288, openUp ? roomAbove : roomBelow);
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
       ref: btnRef,
       type: "button",
@@ -34739,10 +34750,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-ccy-menu",
       style: {
         position: 'fixed',
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - 224 - 8)),
-        top: rect.bottom + 4,
-        width: 224,
-        maxHeight: 288,
+        left: Math.max(menuEdge, Math.min(rect.left, window.innerWidth - menuWidth - menuEdge)),
+        top: openUp ? 'auto' : rect.bottom + menuGap,
+        bottom: openUp ? window.innerHeight - rect.top + menuGap : 'auto',
+        width: menuWidth,
+        maxHeight: menuMax,
         overflowY: 'auto',
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
