@@ -255,10 +255,13 @@ test("an RSD desk opens Branch Network, and selling EUR 5,000 asks for ID the wa
     expect(under.code, JSON.stringify(under)).not.toBe("COMPLIANCE_BLOCKED");
     expect(under.status).toBe(201);
 
-    await pick("EUR", "INR");
-    await form.locator('input[placeholder="0.00"]').first().fill("100");
-    await expect(form.getByText(/ID required/i).first()).toBeVisible();
-    await expect(form.getByText(/ID not needed/i)).toHaveCount(0);
+    /* INR is not on this board, so the menu does not offer it.
+       The quote door still refuses the pair. */
+    await form.getByRole("button", { name: "EUR", exact: true }).click();
+    const menu = page.locator("div[style*='z-index: 99998']");
+    await expect(menu.getByRole("button", { name: /^EUR\b/ })).toBeAttached();
+    await expect(menu.getByRole("button", { name: /^INR\b/ })).toHaveCount(0);
+    await form.getByRole("button", { name: "EUR", exact: true }).click();
 
     const missing = await page.evaluate(async () => {
       const customers = await fetch("/api/ledger/customers").then((r) => r.json());

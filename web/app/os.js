@@ -34558,11 +34558,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     MXN: 'Mexican Peso',
     AED: 'UAE Dirham'
   };
-  // mirror the staff-published rate-board order so this picker matches the board
-  // (reorder currencies on the Rate Board and they reorder here too).
+  /* The menu offers what the ledger suggested for a dropdown.
+     The nine-code list is only the stand-in before that answer
+     arrives. A saved board order still sorts the same codes. */
+  function currencyName(code) {
+    const catalog = typeof CUR !== 'undefined' && Array.isArray(CUR) ? CUR : [];
+    const row = catalog.find(x => x && x.code === code);
+    if (row && row.name) return row.name;
+    return CCY_NAME[code] || '';
+  }
   function boardOrderedCCY() {
     const home = deskHome();
-    const base = home && CCY.indexOf(home) < 0 ? [home].concat(CCY) : CCY;
+    const offered = window.CDOS.deskCurrencyList ? window.CDOS.deskCurrencyList() : CCY.slice();
+    const base = home && offered.indexOf(home) < 0 ? [home].concat(offered) : offered.slice();
     try {
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
@@ -34686,7 +34694,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const h = e => {
         if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false);
       };
-      const sc = () => setOpen(false);
+      const sc = e => {
+        const t = e && e.target;
+        if (t && t.closest && t.closest('.cd-ccy-menu')) return;
+        setOpen(false);
+      };
       document.addEventListener('mousedown', h);
       window.addEventListener('scroll', sc, true);
       return () => {
@@ -34708,11 +34720,22 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       if (!open && btnRef.current) setRect(btnRef.current.getBoundingClientRect());
       setOpen(o => !o);
     };
+    /* The list is longer than the screen under the field. Cap the
+       menu to the room that is there, and open upward when that room
+       is above the field, so a later code such as HKD can be scrolled
+       into view instead of sitting past the bottom edge. */
+    const menuEdge = 8;
+    const menuGap = 4;
+    const menuWidth = 224;
+    const roomBelow = rect ? Math.max(0, window.innerHeight - rect.bottom - menuGap - menuEdge) : 0;
+    const roomAbove = rect ? Math.max(0, rect.top - menuGap - menuEdge) : 0;
+    const openUp = roomAbove > roomBelow;
+    const menuMax = Math.min(288, openUp ? roomAbove : roomBelow);
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
       ref: btnRef,
       type: "button",
       onClick: toggle,
-      className: "px-3 flex items-center gap-1.5 font-semibold text-sm flex-none",
+      className: "cd-ccy-picker px-3 flex items-center gap-1.5 font-semibold text-sm flex-none",
       style: {
         borderRight: `1px solid ${CD.line}`,
         background: 'var(--cd-chip)',
@@ -34724,12 +34747,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 12,
       c: CD.mute
     })), open && rect && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "cd-ccy-menu",
       style: {
         position: 'fixed',
-        left: rect.left,
-        top: rect.bottom + 4,
-        width: 224,
-        maxHeight: 288,
+        left: Math.max(menuEdge, Math.min(rect.left, window.innerWidth - menuWidth - menuEdge)),
+        top: openUp ? 'auto' : rect.bottom + menuGap,
+        bottom: openUp ? window.innerHeight - rect.top + menuGap : 'auto',
+        width: menuWidth,
+        maxHeight: menuMax,
         overflowY: 'auto',
         background: 'var(--cd-panel)',
         border: `1px solid ${CD.line}`,
@@ -34742,11 +34767,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       return /*#__PURE__*/React.createElement("button", {
         key: c,
         type: "button",
+        "data-ccy": c,
         onClick: () => {
           onChange(c);
           setOpen(false);
         },
-        className: "w-full flex items-center justify-between px-3 py-2 text-left",
+        className: "cd-ccy-row w-full flex items-start justify-between gap-2 px-3 py-2 text-left",
         style: {
           background: on ? CD.lineSoft : 'transparent'
         },
@@ -34757,24 +34783,25 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           if (!on) e.currentTarget.style.background = 'transparent';
         }
       }, /*#__PURE__*/React.createElement("span", {
-        className: "flex items-baseline gap-2.5"
+        className: "flex items-baseline gap-2.5 min-w-0 flex-1"
       }, /*#__PURE__*/React.createElement("span", {
-        className: "font-semibold text-sm",
+        className: "font-semibold text-sm flex-none",
         style: {
           color: CD.ink,
-          width: 36,
-          display: 'inline-block'
+          width: 36
         }
       }, c), /*#__PURE__*/React.createElement("span", {
-        className: "text-[11.5px]",
+        className: "cd-ccy-name text-[11.5px]",
         style: {
           color: CD.mute
         }
-      }, CCY_NAME[c] || '')), on && /*#__PURE__*/React.createElement(Ic, {
+      }, currencyName(c))), on && /*#__PURE__*/React.createElement("span", {
+        className: "flex-none"
+      }, /*#__PURE__*/React.createElement(Ic, {
         n: "check",
         s: 14,
         c: CD.green
-      }));
+      })));
     })), document.body));
   }
 

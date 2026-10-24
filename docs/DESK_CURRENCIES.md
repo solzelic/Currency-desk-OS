@@ -160,6 +160,10 @@ inventing a second permission with the same holder, which would be a second
 thing to get out of step. A teller has no Settings screen, and the route
 refuses them anyway; a hidden control is a courtesy, not a permission.
 
+## The counter
+
+The exchange currency menu reads that same dropdown list: the stated set when the owner named one, otherwise `suggested` (home, then the board). On the seeded desk that is 29 currencies, including JPY and KRW. KWD stays off it, because the ledger does not carry a three-decimal currency. The nine codes still compiled into the page are what that menu shows only before the jurisdiction answer arrives.
+
 ## Testing standard
 
 - `server/tests/desk-currencies.postgres.test.ts` — minor units, the
