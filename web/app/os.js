@@ -34558,11 +34558,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     MXN: 'Mexican Peso',
     AED: 'UAE Dirham'
   };
-  // mirror the staff-published rate-board order so this picker matches the board
-  // (reorder currencies on the Rate Board and they reorder here too).
+  /* The menu offers what the ledger suggested for a dropdown.
+     The nine-code list is only the stand-in before that answer
+     arrives. A saved board order still sorts the same codes. */
+  function currencyName(code) {
+    const catalog = typeof CUR !== 'undefined' && Array.isArray(CUR) ? CUR : [];
+    const row = catalog.find(x => x && x.code === code);
+    if (row && row.name) return row.name;
+    return CCY_NAME[code] || '';
+  }
   function boardOrderedCCY() {
     const home = deskHome();
-    const base = home && CCY.indexOf(home) < 0 ? [home].concat(CCY) : CCY;
+    const offered = window.CDOS.deskCurrencyList ? window.CDOS.deskCurrencyList() : CCY.slice();
+    const base = home && offered.indexOf(home) < 0 ? [home].concat(offered) : offered.slice();
     try {
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
@@ -34686,7 +34694,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const h = e => {
         if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false);
       };
-      const sc = () => setOpen(false);
+      const sc = e => {
+        const t = e && e.target;
+        if (t && t.closest && t.closest('.cd-ccy-menu')) return;
+        setOpen(false);
+      };
       document.addEventListener('mousedown', h);
       window.addEventListener('scroll', sc, true);
       return () => {
@@ -34712,7 +34724,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ref: btnRef,
       type: "button",
       onClick: toggle,
-      className: "px-3 flex items-center gap-1.5 font-semibold text-sm flex-none",
+      className: "cd-ccy-picker px-3 flex items-center gap-1.5 font-semibold text-sm flex-none",
       style: {
         borderRight: `1px solid ${CD.line}`,
         background: 'var(--cd-chip)',
@@ -34724,6 +34736,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 12,
       c: CD.mute
     })), open && rect && ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "cd-ccy-menu",
       style: {
         position: 'fixed',
         left: rect.left,
@@ -34742,6 +34755,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       return /*#__PURE__*/React.createElement("button", {
         key: c,
         type: "button",
+        "data-ccy": c,
         onClick: () => {
           onChange(c);
           setOpen(false);
@@ -34770,7 +34784,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         style: {
           color: CD.mute
         }
-      }, CCY_NAME[c] || '')), on && /*#__PURE__*/React.createElement(Ic, {
+      }, currencyName(c))), on && /*#__PURE__*/React.createElement(Ic, {
         n: "check",
         s: 14,
         c: CD.green

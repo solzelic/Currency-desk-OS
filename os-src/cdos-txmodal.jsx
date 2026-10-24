@@ -105,11 +105,19 @@
   const FLAG = { CAD: '🇨🇦', USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', INR: '🇮🇳', PHP: '🇵🇭', CNY: '🇨🇳', MXN: '🇲🇽', AED: '🇦🇪' };
   const ccyLabel = (c) => (FLAG[c] ? FLAG[c] + ' ' : '') + c;
   const CCY_NAME = { CAD: 'Canadian Dollar', USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', INR: 'Indian Rupee', PHP: 'Philippine Peso', CNY: 'Chinese Yuan', MXN: 'Mexican Peso', AED: 'UAE Dirham' };
-  // mirror the staff-published rate-board order so this picker matches the board
-  // (reorder currencies on the Rate Board and they reorder here too).
+  /* The menu offers what the ledger suggested for a dropdown.
+     The nine-code list is only the stand-in before that answer
+     arrives. A saved board order still sorts the same codes. */
+  function currencyName(code) {
+    const catalog = (typeof CUR !== 'undefined' && Array.isArray(CUR)) ? CUR : [];
+    const row = catalog.find(x => x && x.code === code);
+    if (row && row.name) return row.name;
+    return CCY_NAME[code] || '';
+  }
   function boardOrderedCCY() {
     const home = deskHome();
-    const base = (home && CCY.indexOf(home) < 0) ? [home].concat(CCY) : CCY;
+    const offered = (window.CDOS.deskCurrencyList ? window.CDOS.deskCurrencyList() : CCY.slice());
+    const base = (home && offered.indexOf(home) < 0) ? [home].concat(offered) : offered.slice();
     try {
       const order = JSON.parse(localStorage.getItem('yorkfx_board_order') || 'null');
       if (Array.isArray(order) && order.length) {
@@ -158,7 +166,7 @@
     useEffect(() => {
       if (!open) return;
       const h = (e) => { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); };
-      const sc = () => setOpen(false);
+      const sc = (e) => { const t = e && e.target; if (t && t.closest && t.closest('.cd-ccy-menu')) return; setOpen(false); };
       document.addEventListener('mousedown', h); window.addEventListener('scroll', sc, true);
       return () => { document.removeEventListener('mousedown', h); window.removeEventListener('scroll', sc, true); };
     }, [open]);
@@ -166,12 +174,12 @@
     const list = boardOrderedCCY();
     const toggle = () => { if (!open && btnRef.current) setRect(btnRef.current.getBoundingClientRect()); setOpen(o => !o); };
     return (<>
-      <button ref={btnRef} type="button" onClick={toggle} className="px-3 flex items-center gap-1.5 font-semibold text-sm flex-none" style={{ borderRight: `1px solid ${CD.line}`, background: 'var(--cd-chip)', color: CD.ink, minWidth: 64 }}>{value}<Ic n="chev" s={12} c={CD.mute} /></button>
+      <button ref={btnRef} type="button" onClick={toggle} className="cd-ccy-picker px-3 flex items-center gap-1.5 font-semibold text-sm flex-none" style={{ borderRight: `1px solid ${CD.line}`, background: 'var(--cd-chip)', color: CD.ink, minWidth: 64 }}>{value}<Ic n="chev" s={12} c={CD.mute} /></button>
       {open && rect && ReactDOM.createPortal(
-        <div style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: 224, maxHeight: 288, overflowY: 'auto', background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 11, boxShadow: '0 16px 38px var(--cd-shade)', zIndex: 99998 }}>
+        <div className="cd-ccy-menu" style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: 224, maxHeight: 288, overflowY: 'auto', background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 11, boxShadow: '0 16px 38px var(--cd-shade)', zIndex: 99998 }}>
           {list.map(c => { const on = c === value; return (
-            <button key={c} type="button" onClick={() => { onChange(c); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left" style={{ background: on ? CD.lineSoft : 'transparent' }} onMouseEnter={e => { if (!on) e.currentTarget.style.background = CD.paper; }} onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}>
-              <span className="flex items-baseline gap-2.5"><span className="font-semibold text-sm" style={{ color: CD.ink, width: 36, display: 'inline-block' }}>{c}</span><span className="text-[11.5px]" style={{ color: CD.mute }}>{CCY_NAME[c] || ''}</span></span>
+            <button key={c} type="button" data-ccy={c} onClick={() => { onChange(c); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left" style={{ background: on ? CD.lineSoft : 'transparent' }} onMouseEnter={e => { if (!on) e.currentTarget.style.background = CD.paper; }} onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}>
+              <span className="flex items-baseline gap-2.5"><span className="font-semibold text-sm" style={{ color: CD.ink, width: 36, display: 'inline-block' }}>{c}</span><span className="text-[11.5px]" style={{ color: CD.mute }}>{currencyName(c)}</span></span>
               {on && <Ic n="check" s={14} c={CD.green} />}
             </button>); })}
         </div>, document.body)}
