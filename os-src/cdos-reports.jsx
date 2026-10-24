@@ -641,7 +641,7 @@
                    Inside the drawer cell it wraps, and the number breaks. */
                 return [<tr key={x.ccy}>
                 <td style={tdS}><b>{x.ccy}</b></td>
-                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null && !savedExpected ? CD.faint : CD.ink }}>{savedExpected ? savedExpected : (x.units == null ? 'Not in this drawer.' : unitText(x.units, x.ccy))}</td>
+                <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.units == null && !savedExpected ? CD.faint : CD.ink }}>{savedExpected ? savedExpected : (x.units == null ? window.CDOS.copy.notInTill : unitText(x.units, x.ccy))}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.home == null ? CD.faint : CD.ink }}>{x.home == null ? 'No board rate.' : fmt(x.home, homeCcy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: x.counted == null ? CD.faint : CD.ink }}>{x.counted == null ? 'Not counted.' : unitText(x.counted, x.ccy)}</td>
                 <td style={{ ...tdS, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: shown != null ? 600 : 400, color: shown == null ? CD.faint : off ? CD.flag : CD.green }}>{varianceLabel}</td>

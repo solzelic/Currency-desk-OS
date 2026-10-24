@@ -14632,6 +14632,35 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   });
 })();
 
+/* ---- os-src/cdos-copy.js ---- */
+/* Till and end-of-day copy. The rules run once, here.
+   A sentence starts with a capital and ends with a period.
+   A fragment has no period. Screens read the result. */
+(function () {
+  function ruled(text, kinds) {
+    var parts = String(text).split(". ");
+    if (parts.length !== kinds.length) throw new Error("copy parts: " + text);
+    for (var i = 0; i < parts.length; i++) {
+      var piece = i < parts.length - 1 ? parts[i] + "." : parts[i];
+      var sentence = kinds[i] === "sentence";
+      if (sentence && (!/^[A-Z0-9]/.test(piece) || !/\.$/.test(piece))) throw new Error("sentence: " + piece);
+      if (!sentence && /\.$/.test(piece)) throw new Error("fragment: " + piece);
+    }
+    return text;
+  }
+  var copy = {
+    nobodyOnTill: ruled("Nobody is on this till. No session is open.", ["sentence", "sentence"]),
+    showExpected: ruled("Show the expected amount.", ["sentence"]),
+    hideExpected: ruled("Hide expected. Keep the count blind", ["sentence", "fragment"]),
+    countedOne: ruled("1 till counted", ["fragment"]),
+    countedNone: ruled("0 tills counted", ["fragment"]),
+    notInTill: ruled("Not in this till.", ["sentence"]),
+    unassigned: ruled("unassigned", ["fragment"]),
+  };
+  window.CDOS = Object.assign(window.CDOS || {}, { copy: copy });
+})();
+
+
 /* ---- os-src/cdos-till.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Till & Cash Drawer
@@ -14754,17 +14783,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   };
   const SHIFT_KEY = 'cdos_till_operator_v1',
     HANDOFF_KEY = 'cdos_till_handoffs_v1';
-  const shiftStamp = () => new Date().toLocaleString('en-CA', {
-    hour12: false
-  }).replace(',', '');
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = id => String(id || '').split(':').pop() || '—';
-  const clockOf = ms => ms ? new Date(ms).toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
       `seedHistory()` stood here. On first open of the Cash Drawer it wrote
@@ -14899,6 +14920,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     me,
     expected,
     requireCount,
+    zone,
     onClose,
     onDone
   }) {
@@ -14934,7 +14956,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         from: current ? current.operator : '—',
         to: toName,
         toRole: to ? to.role : '',
-        at: shiftStamp(),
+        at: window.CDOS.deskTime(Date.now(), '12h', zone),
         atMs: Date.now(),
         by: me.name,
         counted,
@@ -15792,10 +15814,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const d = Math.floor(h / 24);
       return `${d} day${d > 1 ? 's' : ''} ago`;
     };
+    const zone = serverSession && serverSession.timezone || settings && settings.timezone || 'America/Toronto';
+    const copy = window.CDOS.copy;
     const atLabel = ts => {
       if (!ts) return null;
-      const zone = serverSession && serverSession.timezone || settings && settings.timezone || 'America/Toronto';
-      return window.CDOS.deskTime(new Date(ts), '12h', zone);
+      const ms = typeof ts === 'number' ? ts : new Date(ts).getTime();
+      return window.CDOS.deskTime(ms, '12h', zone);
     };
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
@@ -16351,7 +16375,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, stationTill) : null, /*#__PURE__*/React.createElement("span", {
       className: "till-statusline"
-    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? serverSession ? `Session ${serverSession.sessionNumber}` : 'Session not opened' : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : '', " \xB7 ", countedCcys.length ? '1 drawer counted' : '0 drawers counted'), serverBacked && /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, serverBacked ? serverSession ? `Session ${serverSession.sessionNumber}` : 'Session not opened' : `Day ${day && day.num || 1}`, bookClosed ? ' · closed' : '', " \xB7 ", countedCcys.length ? copy.countedOne : copy.countedNone), serverBacked && /*#__PURE__*/React.createElement("span", {
       style: {
         color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk
       }
@@ -16551,7 +16575,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
+    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", window.CDOS.deskTime(new Date(serverSession.openedAt).getTime(), '12h', zone)), /*#__PURE__*/React.createElement("span", {
       className: "ml-auto flex-none",
       style: {
         color: reconInk
@@ -16571,7 +16595,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), " at ", clockOf(new Date(serverSession.closedAt).getTime()), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
+    }, "#", serverSession.sessionNumber), " closed by ", personOf(serverSession.closedBy), " at ", window.CDOS.deskTime(new Date(serverSession.closedAt).getTime(), '12h', zone), serverSession.closeNote ? ` · ${serverSession.closeNote}` : '')), (sessionErr || serverBalanceError) && /*#__PURE__*/React.createElement("div", {
       className: "till-alert flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]",
       style: {
         background: CD.flagSoft,
@@ -16649,7 +16673,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: reconInk
       }
-    }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till. No open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
+    }, current && current.since ? `since ${window.CDOS.deskTime(current.since, '12h', zone)} · ${sinceOperator}` : serverBacked ? copy.nobodyOnTill : copy.unassigned, requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
@@ -16922,7 +16946,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? 'Hide expected. Keep the count blind' : 'Reveal & read out the expected float',
+      title: revealExp[ccy] ? copy.hideExpected : copy.showExpected,
       className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
       style: {
         border: 0,
@@ -17052,9 +17076,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: '#3a7a56'
       }
-    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? new Date(serverSession.closedAt).toLocaleString('en-CA', {
-      hour12: false
-    }).replace(',', '') : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
+    }, "Closed by ", serverBacked && serverSession && serverSession.closedBy ? personOf(serverSession.closedBy) : day.closedBy || '—', " \xB7 ", serverBacked && serverSession && serverSession.closedAt ? window.CDOS.deskTime(new Date(serverSession.closedAt).getTime(), '12h', zone) : day.closedAt || '', serverBacked && serverSession ? ` · trading day ${serverSession.businessDate}` : '', ". ", serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.')), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest",
@@ -18050,6 +18072,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       roster: roster,
       me: me,
       requireCount: requireCount,
+      zone: zone,
       expected: CCYS.map(c => ({
         ccy: c,
         units: expectedOf(c)
@@ -53096,7 +53119,7 @@ ${snap}`;
               fontVariantNumeric: 'tabular-nums',
               color: x.units == null && !savedExpected ? CD.faint : CD.ink
             }
-          }, savedExpected ? savedExpected : x.units == null ? 'Not in this drawer.' : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
+          }, savedExpected ? savedExpected : x.units == null ? window.CDOS.copy.notInTill : unitText(x.units, x.ccy)), /*#__PURE__*/React.createElement("td", {
             style: {
               ...tdS,
               textAlign: 'right',

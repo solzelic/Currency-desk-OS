@@ -73,11 +73,9 @@
     try { localStorage.removeItem(COUNT_MARK); } catch (e) {}
   };
   const SHIFT_KEY = 'cdos_till_operator_v1', HANDOFF_KEY = 'cdos_till_handoffs_v1';
-  const shiftStamp = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = (id) => String(id || '').split(':').pop() || '—';
-  const clockOf = (ms) => ms ? new Date(ms).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
 
@@ -131,7 +129,7 @@
      asks whether to count first (optional unless the owner requires it),
      then records the handoff with any variance. Nothing bank-heavy.
   ===================================================================== */
-  function HandoffModal({ tillId, tillName, current, roster, me, expected, requireCount, onClose, onDone }) {
+  function HandoffModal({ tillId, tillName, current, roster, me, expected, requireCount, zone, onClose, onDone }) {
     const [step, setStep] = useState('who');      // who → count? → done
     const [toName, setToName] = useState('');
     const [counts, setCounts] = useState(() => { const o = {}; expected.forEach(x => { o[x.ccy] = ''; }); return o; });
@@ -152,7 +150,7 @@
       const rec = {
         id: 'ho' + Date.now(), tillId, tillName,
         from: current ? current.operator : '—', to: toName, toRole: to ? to.role : '',
-        at: shiftStamp(), atMs: Date.now(), by: me.name,
+        at: window.CDOS.deskTime(Date.now(), '12h', zone), atMs: Date.now(), by: me.name,
         counted, expectedHome: expHome == null ? null : +expHome.toFixed(2),
         countedHome: counted && countedHome != null ? +countedHome.toFixed(2) : null,
         currency: homeCcy,
@@ -594,10 +592,12 @@
     const setCount = (c, idx, val) => { setCounts(o => ({ ...o, [c]: { ...(o[c] || {}), [idx]: val } })); stampCount(c); };
     // relative + absolute labels for "last counted"
     const sinceLabel = (ts) => { if (!ts) return null; const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); if (s < 45) return 'just now'; const m = Math.round(s / 60); if (m < 60) return `${m} min ago`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m ago`; const d = Math.floor(h / 24); return `${d} day${d > 1 ? 's' : ''} ago`; };
+    const zone = (serverSession && serverSession.timezone) || (settings && settings.timezone) || 'America/Toronto';
+    const copy = window.CDOS.copy;
     const atLabel = (ts) => {
       if (!ts) return null;
-      const zone = (serverSession && serverSession.timezone) || (settings && settings.timezone) || 'America/Toronto';
-      return window.CDOS.deskTime(new Date(ts), '12h', zone);
+      const ms = typeof ts === 'number' ? ts : new Date(ts).getTime();
+      return window.CDOS.deskTime(ms, '12h', zone);
     };
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = (c) => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
@@ -941,7 +941,7 @@
               </div>)}
             </span>) : (stationTill ? <b className="till-pick" style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span className="till-statusline">
-            <span>{serverBacked ? (serverSession ? `Session ${serverSession.sessionNumber}` : 'Session not opened') : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : ''} · {countedCcys.length ? '1 drawer counted' : '0 drawers counted'}</span>
+            <span>{serverBacked ? (serverSession ? `Session ${serverSession.sessionNumber}` : 'Session not opened') : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : ''} · {countedCcys.length ? copy.countedOne : copy.countedNone}</span>
             {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk }}>· {serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
             {/* the ledger's own name for the drawer these figures belong to —
                 the picker to the left names a local till, which is a different
@@ -1015,14 +1015,14 @@
         {serverSession && sessionOpen && (
           <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: reconInk }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: reconGreen, flex: 'none' }}></span>
-            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
+            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {window.CDOS.deskTime(new Date(serverSession.openedAt).getTime(), '12h', zone)}</span>
             <span className="ml-auto flex-none" style={{ color: reconInk }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
           </div>
         )}
         {sessionClosed && (
           <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
             <Ic n="lock" s={12} c="#3a7a56" />
-            <span>Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {clockOf(new Date(serverSession.closedAt).getTime())}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
+            <span>Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {window.CDOS.deskTime(new Date(serverSession.closedAt).getTime(), '12h', zone)}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
           </div>
         )}
         {(sessionErr || serverBalanceError) && (
@@ -1054,7 +1054,7 @@
           <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
           <div className="min-w-0 leading-tight">
             <div className="text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: reconInk }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[11px]" style={{ color: reconInk }}> · {current.role}</span> : null}</div>
-            <div className="text-[10.5px]" style={{ color: reconInk }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : (serverBacked ? 'nobody on this till. No open session on the ledger' : 'unassigned')}{requireCount ? ' · count required at handoff' : ''}</div>
+            <div className="text-[10.5px]" style={{ color: reconInk }}>{current && current.since ? `since ${window.CDOS.deskTime(current.since, '12h', zone)} · ${sinceOperator}` : (serverBacked ? copy.nobodyOnTill : copy.unassigned)}{requireCount ? ' · count required at handoff' : ''}</div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
@@ -1126,7 +1126,7 @@
                   <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
                 </div>
                 <div className="till-expected-wrap text-[11px] mt-1.5" style={{ color: CD.faint }}>
-                  <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected. Keep the count blind' : 'Reveal & read out the expected float'} className="till-expected inline-flex items-center gap-1.5 flex-wrap" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
+                  <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? copy.hideExpected : copy.showExpected} className="till-expected inline-flex items-center gap-1.5 flex-wrap" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     <span>Expected</span>
                     <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{unitText(expectedOf(ccy), ccy)} {ccy}</b>
                     {isCounted(ccy) && (() => { const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy); const off = v !== 0; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
@@ -1160,7 +1160,7 @@
             <span className="grid place-items-center flex-none" style={{ width: 40, height: 40, background: CD.green, borderRadius: 11 }}><Ic n="checkcircle" s={21} c="var(--cd-on-ink)" /></span>
             <div className="flex-1">
               <div className="text-[15px] font-semibold" style={{ color: '#1c5c3a' }}>{serverBacked && serverSession ? `Session #${serverSession.sessionNumber}` : `Day ${day.num || 1}`} closed — nicely done</div>
-              <div className="text-[12px] mt-0.5" style={{ color: '#3a7a56' }}>Closed by {(serverBacked && serverSession && serverSession.closedBy) ? personOf(serverSession.closedBy) : (day.closedBy || '—')} · {(serverBacked && serverSession && serverSession.closedAt) ? new Date(serverSession.closedAt).toLocaleString('en-CA', { hour12: false }).replace(',', '') : (day.closedAt || '')}{(serverBacked && serverSession) ? ` · trading day ${serverSession.businessDate}` : ''}. {serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.'}</div>
+              <div className="text-[12px] mt-0.5" style={{ color: '#3a7a56' }}>Closed by {(serverBacked && serverSession && serverSession.closedBy) ? personOf(serverSession.closedBy) : (day.closedBy || '—')} · {(serverBacked && serverSession && serverSession.closedAt) ? window.CDOS.deskTime(new Date(serverSession.closedAt).getTime(), '12h', zone) : (day.closedAt || '')}{(serverBacked && serverSession) ? ` · trading day ${serverSession.businessDate}` : ''}. {serverBacked ? 'Your counts are now the till’s balances on the ledger. The book is locked until the next session is opened.' : 'The book is locked until you open the next day.'}</div>
             </div>
             {/* EARNED TODAY, FROM THE BOOK — and absent when the book has no
                 answer. This tile read "$223.00" for a till whose only deal
@@ -1401,7 +1401,7 @@
           </div>
         </div>
       </div>)}
-      {handoffOpen && <HandoffModal tillId={tillId} tillName={tillNm} current={current} roster={roster} me={me} requireCount={requireCount} expected={CCYS.map(c => ({ ccy: c, units: expectedOf(c) })).filter(x => Math.abs(x.units || 0) > 0.005 || x.ccy === homeCcy)} onClose={() => setHandoffOpen(false)} onDone={doHandoff} />}
+      {handoffOpen && <HandoffModal tillId={tillId} tillName={tillNm} current={current} roster={roster} me={me} requireCount={requireCount} zone={zone} expected={CCYS.map(c => ({ ccy: c, units: expectedOf(c) })).filter(x => Math.abs(x.units || 0) > 0.005 || x.ccy === homeCcy)} onClose={() => setHandoffOpen(false)} onDone={doHandoff} />}
     </div>);
   }
 

@@ -3,7 +3,7 @@
    sentences still used an em dash. The Counted column keeps the
    currency's places: CAD and USD keep two, yen stays whole. */
 import { createRequire } from "node:module";
-import { mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
 import type { Page } from "@playwright/test";
@@ -28,6 +28,7 @@ const ROUND_WS = "ws-yen-round";
    8:30 pm if the clock is left on UTC. */
 const COUNTED_AT = "2026-10-21T20:30:00.000Z";
 const SHOTS = "/opt/cursor/artifacts/yen-followup";
+const REPO_SHOTS = path.join(process.cwd(), "docs/pr-shots/yen-followup");
 
 let pool: { query: Function; end: () => Promise<void> };
 
@@ -170,14 +171,22 @@ test("one till counts as one drawer and the count clock is branch 12-hour", asyn
   await page.setViewportSize({ width: 1280, height: 800 });
   await openDrawer(page, TILL);
   const banner = page.locator(".till-statusline").first();
-  await expect(banner).toContainText("1 drawer counted");
-  await expect(banner).not.toContainText("3 drawer");
+  await expect(banner).toContainText("1 till counted");
+  await expect(banner).not.toContainText("drawer counted");
   noDash((await banner.textContent()) || "");
   const when = page.locator(".till-counted-when");
   await expect(when).toContainText("4:30 pm");
   await expect(when).not.toContainText("20:30");
   await expect(when).not.toContainText("16:30");
+  const session = page.locator(".till-sessionline").first();
+  const sessionText = (await session.textContent()) || "";
+  expect(sessionText).toMatch(/opened by .+ at \d{1,2}:\d{2} (am|pm)/);
+  expect(sessionText).not.toMatch(/[ap]\.m\./);
+  const since = page.locator(".till-operator").first();
+  await expect(since).toContainText(/since \d{1,2}:\d{2} (am|pm)/);
+  noDash((await since.textContent()) || "");
   const expected = page.locator(".till-expected").first();
+  await expect(expected).toHaveAttribute("title", "Show the expected amount.");
   await expected.click();
   await expect(expected).toHaveAttribute("title", "Hide expected. Keep the count blind");
   noDash((await expected.getAttribute("title")) || "");
@@ -189,8 +198,8 @@ test("a till with no session names that without an em dash", async ({ page }) =>
   const banner = page.locator(".till-statusline").first();
   await expect(banner).toContainText("Session not opened");
   noDash((await banner.textContent()) || "");
-  const nobody = page.getByText("nobody on this till");
-  await expect(nobody).toHaveText("nobody on this till. No open session on the ledger");
+  const nobody = page.getByText("Nobody is on this till. No session is open.");
+  await expect(nobody).toHaveText("Nobody is on this till. No session is open.");
   noDash((await nobody.textContent()) || "");
 });
 
@@ -222,14 +231,19 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
   await expect(php).toHaveText("Not counted.");
   noDash((await php.textContent()) || "");
 
+  expect(await page.evaluate(() => (window as any).CDOS.copy.notInTill)).toBe("Not in this till.");
+  await expect(doc).not.toContainText("Not in this drawer.");
   mkdirSync(SHOTS, { recursive: true });
+  mkdirSync(REPO_SHOTS, { recursive: true });
   await page.locator('#appbar [data-app="till"]').click();
   await expect(page.locator(".till-counted-when")).toContainText("4:30 pm");
   for (const width of [360, 390, 430, 1280]) {
     await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     await page.locator("[data-tour='till']").scrollIntoViewIfNeeded();
-    const tillShot = `${SHOTS}/till_${width}.png`;
+    const tillName = `till_${width}.png`;
+    const tillShot = `${SHOTS}/${tillName}`;
     await page.screenshot({ path: tillShot });
+    copyFileSync(tillShot, path.join(REPO_SHOTS, tillName));
     await testInfo.attach(`till-${width}`, { path: tillShot, contentType: "image/png" });
   }
   await page.locator('#appbar [data-app="reports"]').click();
@@ -239,8 +253,10 @@ test("the 1280 Counted column keeps each currency's places", async ({ page }, te
     await page.setViewportSize({ width, height: width >= 1280 ? 800 : 844 });
     const table = page.locator("table").filter({ hasText: "In the drawer" });
     await table.scrollIntoViewIfNeeded();
-    const eodShot = `${SHOTS}/eod_counted_${width}.png`;
+    const eodName = `eod_counted_${width}.png`;
+    const eodShot = `${SHOTS}/${eodName}`;
     await page.screenshot({ path: eodShot });
+    copyFileSync(eodShot, path.join(REPO_SHOTS, eodName));
     await testInfo.attach(`eod-${width}`, { path: eodShot, contentType: "image/png" });
   }
 });
