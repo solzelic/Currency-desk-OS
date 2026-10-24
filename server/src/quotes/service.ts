@@ -6,7 +6,7 @@ import {
   type BackendPermission,
 } from "../auth/permissions.js";
 import { pairAllowed, resolvePack } from "../ledger/jurisdiction.js";
-import { assertTradeable, roundTo } from "../ledger/currencies.js";
+import { assertTradeable, fixedIn, roundTo } from "../ledger/currencies.js";
 import { withSerializationRetry } from "../ledger/retry.js";
 import {
   LedgerError,
@@ -190,6 +190,70 @@ export class QuoteService {
      desk is doing, and an abort here reached the teller as an unexplained
      failure on the one action they take before every deal. See
      ../ledger/retry.ts. */
+  /* Same terms as a frozen quote. Nothing is written. */
+  async preview(
+    actor: LedgerActor,
+    request: Omit<QuoteRequest, "customerId" | "supersedesQuoteId">,
+  ) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const role = await this.principal(client, actor, "quote:view");
+      const pack = await resolvePack(client, actor.legalEntityId);
+      requireInstalledPack(pack);
+      const home = pack.homeCurrency;
+      const permitted = pairAllowed(pack, request.from, request.to);
+      if (!permitted.ok) throw new LedgerError("UNSUPPORTED_CURRENCY_PAIR", permitted.reason);
+      await assertTradeable(client, { legalEntityId: actor.legalEntityId, branchId: actor.branchId, homeCurrency: home }, request.from, request.to);
+      const shape: QuoteDirection = request.from === home ? "customer_buy_foreign" : request.to === home ? "customer_sell_foreign" : "customer_cross";
+      if (shape !== request.direction) throw new LedgerError("INVALID_REQUEST", "Transaction direction does not match the currency pair.");
+      const boards = await client.query(
+        "SELECT * FROM rate_boards WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 ORDER BY published_at DESC LIMIT 1",
+        scope(actor).slice(0, 3),
+      );
+      if (!boards.rowCount) throw new LedgerError("RATE_NOT_AVAILABLE", "No published branch board.");
+      const board = boards.rows[0];
+      const maxAge = boardMaxAgeSeconds();
+      if (!Number.isFinite(maxAge) || maxAge < 1 || Date.now() - new Date(board.published_at).getTime() > maxAge * 1000) {
+        throw new LedgerError("RATE_PUBLICATION_STALE", "Rate publication is stale.");
+      }
+      const leg = (currency: string, sell: boolean) => {
+        const row = board.board_rows[currency];
+        if (!row || row.show === false) throw new LedgerError("RATE_NOT_AVAILABLE", "Currency is not published.");
+        return { mid: String(row.mid), margin: String(row.spread ?? (sell ? board.sell_margin : board.buy_margin)) };
+      };
+      let terms;
+      try {
+        const cross = shape === "customer_cross";
+        const paid = leg(cross || shape === "customer_sell_foreign" ? request.from : request.to, shape === "customer_buy_foreign");
+        const bought = cross ? leg(request.to, true) : paid;
+        terms = calculateQuoteTerms({
+          direction: shape, from: request.from, to: request.to,
+          inputAmount: request.inputAmount, feeCad: request.feeCad, homeCurrency: home,
+          marketMid: paid.mid, margin: paid.margin,
+          ...(cross ? { fromMid: paid.mid, toMid: bought.mid, outMargin: bought.margin } : {}),
+        });
+      } catch (error) {
+        if (error instanceof LedgerError) throw error;
+        throw new LedgerError("INVALID_REQUEST", cashierQuoteMessage(error));
+      }
+      await client.query("COMMIT");
+      return this.forReader(role, {
+        from: request.from, to: request.to,
+        inputAmount: fixedIn(terms.input, request.from),
+        outputAmount: fixedIn(terms.outputAmount, request.to),
+        customerRate: fixed(terms.customerRate, 12),
+        feeCad: fixed(terms.fee), spreadCad: fixed(terms.spreadCad),
+        marketMid: fixed(terms.mid, 12), buyOrSellSide: terms.buyOrSellSide,
+      }, true);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   create(actor: LedgerActor, request: QuoteRequest) {
     return withSerializationRetry(() => this.createOnce(actor, request));
   }
@@ -368,7 +432,7 @@ export class QuoteService {
           request.from,
           request.to,
           fixed(input),
-          fixed(output),
+          fixedIn(output, request.to),
           /* `market_mid` stays what it always was — the single rate this
              deal is valued at — so every reader downstream keeps working.
              On a cross that is the incoming side's mid. */
@@ -567,7 +631,7 @@ export class QuoteService {
           q.market_mid,
           q.customer_rate,
           fixed(rate, 12),
-          fixed(output),
+          fixedIn(output, q.to_currency),
           fixed(spread),
           reason,
           now,

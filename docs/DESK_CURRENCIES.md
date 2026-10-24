@@ -111,18 +111,17 @@ on that scale is refused in a sentence that names the currency.
 `10000.55` yen is not a yen amount. A stored `10781.00` is, because
 the column reads back two places. The rate stored on the deal stays
 the quote rate at 12 places. Three-decimal rounding still keeps
-three places in `roundTo`. The ledger still does not store those
-currencies. A remittance face amount in one of them is still accepted
-at two decimal places, which is what the column holds, and a third
-decimal is refused. An exchange in that currency is still refused.
+three places in `roundTo`. Migration 053 stores an exchange payout
+and the till movement at those places. A remittance face amount in
+one of them is still accepted at two decimal places, and a third
+decimal on that face is still refused.
 
-The rate beside a payout shows at least four places, and five or six
-only when that rate times the amount is the payout
-(`os-src/effective-rate.js`). Otherwise it shows four places and
-"Rate rounded. The amounts are exact.", only when it was rounded.
-The Board rate field keeps its own figure. 100.00 to 10825 at zero
-places is `108.2500`. 100 INR to 1.18 USD is `1 INR = 0.0118 USD`.
-3,000.00 CAD to 2,166.31 USD is `1 CAD = 0.7221 USD` with the note.
+An exchange shows the server `customerRate`, twelve places, on the
+ticket and on the customer card. The card is that frozen quote.
+Before the freeze, `POST /api/quotes/preview` uses `calculateQuoteTerms`
+and writes nothing. 1,000.00 CAD pays 722.10 USD at
+`1 CAD = 0.722103704355 USD`. 3,000.00 CAD pays 2,166.31 USD at the
+same rate. A remittance still uses `os-src/effective-rate.js`.
 
 
 A closed day's report shows the units that were stored. An open day
@@ -136,14 +135,12 @@ line under Expected reads: Rounded from 489,175.85 JPY stored from
 older deals. It clears when the ledger is trued up. A figure already
 on the grid, including 1,000.50 CAD, has no line. The book still stores
 489,175.85. Before the scales table loads, and if that load fails, the
-screen uses the ISO minor units, and it never shows a third decimal.
+screen uses the ISO minor units, and a three-decimal currency still shows three.
 
-**Three-decimal currencies are refused on an exchange, out loud, with the reason.** The
-money columns hold two places. A desk that could add KWD to its set and then
-watch every amount quietly lose its third decimal is worse off than one told
-plainly that the ledger does not carry it yet. Widening 47 `numeric(24,2)`
-columns is its own change with its own migration; pretending otherwise here
-would be exactly the silent wrongness `ABSENT_FIGURES.md` exists to forbid.
+**Three-decimal currencies are stored on an exchange.** Migration 053
+changes each `numeric(24,2)` money column to unconstrained numeric, so a
+stored `722.10` stays `722.10` and a dinar payout can keep its third place.
+A fourth place is still refused. A remittance face stays at two places.
 
 ## What the owner sees
 

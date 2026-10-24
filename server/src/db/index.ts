@@ -13,6 +13,14 @@ import pg from "pg";
 import { runMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
+/* numeric(24,2) used to read "5000.00". Unconstrained numeric reads "5000".
+   Pad a short scale back to two. A third place, and a 12-place rate, stay. */
+pg.types.setTypeParser(pg.types.builtins.NUMERIC, (value: string) => {
+  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!m || (m[3] ?? "").length >= 2) return value;
+  return `${m[1]}${m[2]}.${(m[3] ?? "").padEnd(2, "0")}`;
+});
+
 export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
 
 export interface DbHandle {

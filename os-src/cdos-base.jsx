@@ -507,7 +507,7 @@
   /** How many decimal places this currency is shown with.
       The server scales table wins once it has loaded. Before that,
       and when the load fails, ISO minor units apply. Three places
-      stay three. The ledger still stores two. */
+      stay three, and an exchange stores those places. */
   const displayPlaces = window.CDOS.displayPlaces;
   const currencyPlaces = (code) => displayPlaces(code, _currencies && _currencies.scales);
   const fractionDigitsHeld = (n) => {
@@ -730,11 +730,17 @@
 
   /* ---- rate bridge: prefer the live engine, fall back to a local table ---- */
   const PER_CAD = { CAD: 1, USD: 0.731, EUR: 0.676, GBP: 0.581, INR: 62.4, PHP: 41.2, CNY: 5.28, MXN: 13.1, AED: 2.68 };
+  /* The four-decimal rounding that lived here is gone. A customer
+     amount is calculateQuoteTerms on the server, not this cross. */
   function crossRate(inC, outC) {
+    if (inC === outC) return 1;
     if (typeof convRate === 'function' && typeof BY !== 'undefined' && BY[inC] && BY[outC]) {
-      return +convRate(inC, outC).toFixed(4);
+      const rate = +convRate(inC, outC);
+      return rate > 0 && isFinite(rate) ? rate : 0;
     }
-    return +(PER_CAD[outC] / PER_CAD[inC]).toFixed(4);
+    const base = PER_CAD[inC];
+    const raw = base ? PER_CAD[outC] / base : 0;
+    return raw > 0 && isFinite(raw) ? raw : 0;
   }
   /* The currency this desk keeps its book in. Before the pack arrives,
      and on every Canada desk, that is CAD — the identity the rate

@@ -124,7 +124,7 @@ async function openTill(page: Page) {
 async function countTheBook(page: Page, balances: Record<string, string>) {
   await clickDrawerTab(page, /Cash drawer/i);
   for (const [ccy, amount] of Object.entries(balances)) {
-    await press(page.locator(`button:has-text("${ccy}")`).first());
+    await press(page.locator(`button.till-chip:has-text("${ccy}")`).first());
     await press(page.getByRole("button", { name: /Enter total/i }).first());
     await page.locator('input[placeholder="0.00"]').first().fill(String(Number(amount)));
   }

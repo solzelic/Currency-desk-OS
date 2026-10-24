@@ -612,6 +612,7 @@
     // must name exactly this set — a superset is rejected, and a subset means
     // an untouched currency would be written back at whatever we sent.
     const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
+    const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const sessionClosed = serverBacked && !!(serverSession && serverSession.status === 'closed');
     // "the book is shut" and "no session has been opened yet" are different
@@ -1071,7 +1072,7 @@
           <div className="till-denom">
           {/* currency chips */}
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {CCYS.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
+            {countCcys.map(c => { const on = c === ccy; const has = countedCcys.includes(c); return (
               <button key={c} onClick={() => setCcy(c)} className="till-chip flex items-center gap-1.5 px-2.5 py-1.5 text-xs" style={{ borderRadius: 8, border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : CD.panel, color: on ? 'var(--cd-on-ink)' : CD.mute, fontFamily: 'Space Mono, monospace' }}>
                 <span style={{ fontFamily: 'system-ui' }}>{flagOf(c)}</span>{c}{has && <span style={{ width: 5, height: 5, borderRadius: '50%', background: on ? 'var(--cd-panel)' : CD.green }}></span>}
               </button>); })}

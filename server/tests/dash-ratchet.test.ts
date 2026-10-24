@@ -71,7 +71,7 @@ const BASELINE: Record<string, number> = {
   "server/src/emails/design.ts": 18,
   "server/src/index.ts": 11,
   "server/src/ledger/cheques.ts": 2,
-  "server/src/ledger/currencies.ts": 2,
+  "server/src/ledger/currencies.ts": 1,
   "server/src/ledger/obligations.ts": 1,
   "server/src/ledger/report-filings.ts": 1,
   "server/src/ledger/routes.ts": 4,
