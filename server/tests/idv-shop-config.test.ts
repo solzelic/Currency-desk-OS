@@ -2,6 +2,7 @@
    read or write shop B. A non-owner is refused. A key value is not
    stored. The provider defaults to the registered default. With checks
    off, a teller still signs in. */
+import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -24,6 +25,7 @@ const B = {
 let handle: DbHandle;
 let app: FastifyInstance;
 const cookies: Record<string, Record<string, string>> = {};
+const logged: string[] = [];
 
 function cookieOf(res: { cookies: { name: string; value: string }[] }) {
   return { cdos_session: res.cookies.find((item) => item.name === "cdos_session")!.value };
@@ -40,8 +42,8 @@ async function signIn(staffId: string, tenantId: string) {
 
 const read = (who: string, query = "") =>
   app.inject({ method: "GET", url: ROUTE + query, cookies: cookies[who] });
-const write = (who: string, payload: Record<string, unknown>) =>
-  app.inject({ method: "PUT", url: ROUTE, cookies: cookies[who], payload });
+const write = (who: string, payload: unknown) =>
+  app.inject({ method: "PUT", url: ROUTE, cookies: cookies[who], payload: payload as Record<string, unknown> });
 const stored = (shopId: string) =>
   handle.db.select().from(schema.idvShopConfig).where(eq(schema.idvShopConfig.shopId, shopId)).then((rows) => rows[0] ?? null);
 
@@ -62,7 +64,9 @@ beforeAll(async () => {
     staffId: B.staffId, name: "B Owner", role: "administrator",
     authorizedBranchIds: [B.branchId], passwordHash: owner[0]!.passwordHash,
   });
-  app = await buildApp(handle.db);
+  const sink = new PassThrough();
+  sink.on("data", (chunk) => logged.push(String(chunk)));
+  app = await buildApp(handle.db, {}, sink);
   cookies.owner = await signIn("j.masri", DEMO.tenantId);
   cookies.manager = await signIn("r.haddad", DEMO.tenantId);
   cookies.teller = await signIn("m.costa", DEMO.tenantId);
@@ -98,38 +102,46 @@ describe("per-shop identity verification settings", () => {
 
   it("lets shop A neither read nor write shop B", async () => {
     const savedB = await write("b", {
-      apiKeyRef: "shop-b-ref", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false, shopId: DEMO.legalEntityId,
+      apiKeyRef: "SHOP_B_REF", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false, shopId: DEMO.legalEntityId,
     });
     expect(savedB.statusCode, savedB.body).toBe(200);
     expect(savedB.json().shopId).toBe(B.legalEntityId);
     expect(savedB.json().provider).toBe(PROVIDER);
     const savedA = await write("owner", {
-      apiKeyRef: "sandbox-shared", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false, shopId: B.legalEntityId,
+      apiKeyRef: "SANDBOX_SHARED", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false, shopId: B.legalEntityId,
     });
     expect(savedA.json()).toEqual({
-      shopId: DEMO.legalEntityId, provider: PROVIDER, apiKeyRef: "sandbox-shared", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false,
+      shopId: DEMO.legalEntityId, provider: PROVIDER, apiKeyRef: "SANDBOX_SHARED", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false,
     });
     expect((await read("owner", `?shopId=${B.legalEntityId}`)).json()).toMatchObject({
-      shopId: DEMO.legalEntityId, apiKeyRef: "sandbox-shared",
+      shopId: DEMO.legalEntityId, apiKeyRef: "SANDBOX_SHARED",
     });
     expect((await read("b", `?shopId=${DEMO.legalEntityId}`)).json()).toMatchObject({
-      shopId: B.legalEntityId, apiKeyRef: "shop-b-ref", checksEnabled: false,
+      shopId: B.legalEntityId, apiKeyRef: "SHOP_B_REF", checksEnabled: false,
     });
-    expect(await stored(B.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "shop-b-ref", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false });
-    expect(await stored(DEMO.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "sandbox-shared", checksEnabled: false });
+    expect(await stored(B.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "SHOP_B_REF", templateId: "itmpl_shop_b", retentionDays: 30, checksEnabled: false });
+    expect(await stored(DEMO.legalEntityId)).toMatchObject({ provider: PROVIDER, apiKeyRef: "SANDBOX_SHARED", checksEnabled: false });
   });
 
   it("refuses a key value and leaves both shops unchanged", async () => {
     const beforeA = await stored(DEMO.legalEntityId);
     const beforeB = await stored(B.legalEntityId);
-    const refused = await write("owner", { apiKeyRef: "persona_sandbox_example", checksEnabled: true, shopId: B.legalEntityId });
-    expect(refused.statusCode).toBe(422);
-    expect(refused.json()).toEqual({ code: "IDV_CONFIG_INVALID", message: "The API key field takes a reference name. Do not send a key." });
-    expect(JSON.stringify(refused.json())).not.toContain("persona_sandbox_example");
-    const field = await write("owner", { apiKey: "not-stored", apiKeyRef: "sandbox-shared" });
-    expect(field.statusCode).toBe(422);
-    expect(field.json().message).toBe("This route does not accept a key field.");
-    expect(JSON.stringify(field.json())).not.toContain("not-stored");
+    const secrets = [
+      "sk_live_FAKECHECKVALUE000000000000", "sk_test_FAKECHECKVALUE000000000000",
+      "ghp_FAKECHECKVALUE0000000000000000", "persona_FAKECHECKVALUE000000000",
+      "k7Qm9xL2pV4nR8wT1cY6bH3dF5sJ0aZeU8iO3",
+    ];
+    for (const apiKeyRef of secrets) {
+      const refused = await write("owner", { apiKeyRef, checksEnabled: true, shopId: B.legalEntityId });
+      expect(refused.statusCode).toBe(400);
+      expect(JSON.stringify(refused.json()) + logged.join("")).not.toContain(apiKeyRef);
+      expect(await stored(DEMO.legalEntityId)).toEqual(beforeA);
+      expect(await stored(B.legalEntityId)).toEqual(beforeB);
+    }
+    const field = await write("owner", { apiKey: "not-stored", apiKeyRef: "SANDBOX_SHARED" });
+    expect(field.statusCode).toBe(400);
+    expect(field.json().message).toBe("This route does not accept that field.");
+    expect(JSON.stringify(field.json()) + logged.join("")).not.toContain("not-stored");
     const days = await write("owner", { retentionDays: 0 });
     expect(days.statusCode).toBe(422);
     const unknown = await write("owner", { provider: "other" });
@@ -138,12 +150,21 @@ describe("per-shop identity verification settings", () => {
     const template = await write("owner", { templateId: "shop-template" });
     expect(template.statusCode).toBe(422);
     expect(template.json().message).toBe("The template id is not valid for this provider.");
-    expect(await stored(DEMO.legalEntityId)).toEqual(beforeA);
-    expect(await stored(B.legalEntityId)).toEqual(beforeB);
+    const bodies: unknown[] = [
+      { checksEnabled: "yes" }, { retentionDays: "30" }, { retentionDays: 1.5 },
+      { templateId: 5 }, ["itmpl_shop_a"], { foo: 1 },
+    ];
+    for (const payload of bodies) {
+      const bad = await write("owner", payload);
+      expect(bad.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(JSON.stringify(bad.json())).not.toMatch(/yes|itmpl_shop_a|"foo"/);
+      expect(await stored(DEMO.legalEntityId)).toEqual(beforeA);
+      expect(await stored(B.legalEntityId)).toEqual(beforeB);
+    }
   });
 
   it("stays off when the flag is omitted, and a teller still signs in", async () => {
-    const res = await write("owner", { apiKeyRef: "sandbox-shared", templateId: "itmpl_shop_a", retentionDays: 1825 });
+    const res = await write("owner", { apiKeyRef: "SANDBOX_SHARED", templateId: "itmpl_shop_a", retentionDays: 1825 });
     expect(res.json().checksEnabled).toBe(false);
     expect(res.json().provider).toBe(PROVIDER);
     const teller = await app.inject({

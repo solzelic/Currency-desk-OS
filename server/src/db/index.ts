@@ -677,14 +677,7 @@ CREATE TABLE IF NOT EXISTS idv_shop_config (
     retention_days IS NULL OR (retention_days BETWEEN 1 AND 3650)
   ),
   CONSTRAINT idv_shop_config_api_key_ref_shape CHECK (
-    api_key_ref IS NULL OR (
-      char_length(api_key_ref) BETWEEN 1 AND 64
-      AND api_key_ref ~ '^[A-Za-z][A-Za-z0-9._-]{0,63}$'
-      AND api_key_ref !~* 'secret'
-      AND api_key_ref !~* 'apikey'
-      AND api_key_ref !~* 'api_key'
-      AND api_key_ref !~* 'api-key'
-    )
+    api_key_ref IS NULL OR api_key_ref ~ '^[A-Z][A-Z0-9_]{2,63}$'
   ),
   CONSTRAINT idv_shop_config_template_id_shape CHECK (
     template_id IS NULL OR (

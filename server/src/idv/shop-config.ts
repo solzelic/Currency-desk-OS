@@ -1,6 +1,6 @@
 /* Per-shop identity-verification settings. The shop is the session legal
-   entity. A shop id from the client is ignored. The API key column stores
-   a reference name. Checks default off. No other route reads this table. */
+   entity. A shop id from the client is ignored. apiKeyRef stores an
+   environment variable name, and a refusal is not stored or logged. */
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { hasBackendPermission } from "../auth/permissions.js";
@@ -9,17 +9,17 @@ import { schema, type Db } from "../db/index.js";
 import { defaultIdvProvider, idvProvider } from "./providers/index.js";
 
 export const OWNER_ONLY = "Only the owner can view or change identity check settings for this shop.";
-const REF_NAME = "The API key field takes a reference name. Do not send a key.";
+const REF_NAME = "The API key field takes an environment variable name. Do not send a key.";
 const TEMPLATE = "The template id is not valid for this provider.";
 const RETENTION = "Retention is a whole number of days from 1 to 3650.";
 const ENABLED = "Checks enabled takes true or false.";
-const KEY_FIELD = "This route does not accept a key field.";
+const UNKNOWN = "This route does not accept that field.";
 const BAD_BODY = "The identity check settings could not be read.";
 const PROVIDER = "That identity provider is not available.";
-const REF = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+const REF = /^[A-Z][A-Z0-9_]{2,63}$/;
 const TEMPLATE_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const PROVIDER_SHAPE = /^[a-z][a-z0-9_-]{0,31}$/;
-const FORBIDDEN = new Set(["apikey", "api_key", "key", "secret", "token", "webhooksecret", "webhook_secret", "password", "authorization", "bearer"]);
+const KNOWN = new Set(["shopid", "provider", "apikeyref", "templateid", "retentiondays", "checksenabled"]);
 
 export type IdvShopConfig = {
   shopId: string;
@@ -31,49 +31,48 @@ export type IdvShopConfig = {
 };
 
 type Stored = Omit<IdvShopConfig, "shopId">;
+type Parsed = { ok: true; value: Stored } | { ok: false; status: 400 | 422; message: string };
 
-function referenceName(value: string): boolean {
-  if (!REF.test(value)) return false;
-  const lower = value.toLowerCase();
-  return !lower.includes("secret") && !lower.includes("apikey") && !lower.includes("api_key") && !lower.includes("api-key");
-}
+const reject = (status: 400 | 422, message: string): Parsed => ({ ok: false, status, message });
 
-function optionalText(value: unknown, ok: (item: string) => boolean, message: string) {
-  if (value === undefined || value === null || value === "") return { ok: true as const, value: null };
-  if (typeof value !== "string" || !ok(value)) return { ok: false as const, message };
-  return { ok: true as const, value };
-}
-
-/* An omitted checks flag stays off. An omitted provider is the default. */
-export function parseIdvShopConfig(body: unknown): { ok: true; value: Stored } | { ok: false; message: string } {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, message: BAD_BODY };
+/* shopId is allowed and ignored. An omitted checks flag stays off. */
+export function parseIdvShopConfig(body: unknown): Parsed {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return reject(400, BAD_BODY);
   const raw = body as Record<string, unknown>;
   const folded = (key: string) => key.toLowerCase().replace(/-/g, "");
-  if (Object.keys(raw).some((key) => FORBIDDEN.has(folded(key)))) return { ok: false, message: KEY_FIELD };
+  if (Object.keys(raw).some((key) => !KNOWN.has(folded(key)))) return reject(400, UNKNOWN);
 
   const providerId = raw.provider === undefined ? defaultIdvProvider().id : raw.provider;
-  if (typeof providerId !== "string" || !PROVIDER_SHAPE.test(providerId)) return { ok: false, message: PROVIDER };
-  const provider = idvProvider(providerId);
-  if (!provider) return { ok: false, message: PROVIDER };
+  if (typeof providerId !== "string") return reject(400, PROVIDER);
+  if (!PROVIDER_SHAPE.test(providerId) || !idvProvider(providerId)) return reject(422, PROVIDER);
+  const provider = idvProvider(providerId)!;
 
-  const apiKeyRef = optionalText(raw.apiKeyRef, referenceName, REF_NAME);
-  if (!apiKeyRef.ok) return apiKeyRef;
-  const templateId = optionalText(raw.templateId, (item) => TEMPLATE_SHAPE.test(item), TEMPLATE);
-  if (!templateId.ok) return templateId;
-  const issue = provider.fieldIssue({ apiKeyRef: apiKeyRef.value, templateId: templateId.value });
-  if (issue === "reference") return { ok: false, message: REF_NAME };
-  if (issue === "template") return { ok: false, message: TEMPLATE };
+  let apiKeyRef: string | null = null;
+  if (raw.apiKeyRef !== undefined && raw.apiKeyRef !== null) {
+    if (typeof raw.apiKeyRef !== "string" || !REF.test(raw.apiKeyRef)) return reject(400, REF_NAME);
+    apiKeyRef = raw.apiKeyRef;
+  }
+  let templateId: string | null = null;
+  if (raw.templateId !== undefined && raw.templateId !== null && raw.templateId !== "") {
+    if (typeof raw.templateId !== "string") return reject(400, TEMPLATE);
+    if (!TEMPLATE_SHAPE.test(raw.templateId)) return reject(422, TEMPLATE);
+    templateId = raw.templateId;
+  }
+  const issue = provider.fieldIssue({ apiKeyRef, templateId });
+  if (issue === "reference") return reject(400, REF_NAME);
+  if (issue === "template") return reject(422, TEMPLATE);
 
   let retentionDays: number | null = null;
   if (raw.retentionDays !== undefined && raw.retentionDays !== null) {
     const days = raw.retentionDays;
-    if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > 3650) return { ok: false, message: RETENTION };
+    if (typeof days !== "number" || !Number.isInteger(days)) return reject(400, RETENTION);
+    if (days < 1 || days > 3650) return reject(422, RETENTION);
     retentionDays = days;
   }
-  if (raw.checksEnabled !== undefined && typeof raw.checksEnabled !== "boolean") return { ok: false, message: ENABLED };
+  if (raw.checksEnabled !== undefined && typeof raw.checksEnabled !== "boolean") return reject(400, ENABLED);
   return {
     ok: true,
-    value: { provider: provider.id, apiKeyRef: apiKeyRef.value, templateId: templateId.value, retentionDays, checksEnabled: raw.checksEnabled === true },
+    value: { provider: provider.id, apiKeyRef, templateId, retentionDays, checksEnabled: raw.checksEnabled === true },
   };
 }
 
@@ -105,7 +104,7 @@ export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db): void 
     const who = await owner(req, reply);
     if (!who) return undefined;
     const parsed = parseIdvShopConfig(req.body);
-    if (!parsed.ok) return reply.code(422).send({ code: "IDV_CONFIG_INVALID", message: parsed.message });
+    if (!parsed.ok) return reply.code(parsed.status).send({ code: "IDV_CONFIG_INVALID", message: parsed.message });
     await db.insert(schema.idvShopConfig).values({ shopId: who.legalEntityId, ...parsed.value }).onConflictDoUpdate({
       target: schema.idvShopConfig.shopId,
       set: parsed.value,
