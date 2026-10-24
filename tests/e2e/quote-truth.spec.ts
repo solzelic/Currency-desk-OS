@@ -52,7 +52,10 @@ async function openExchange(page: Page) {
   await expect(button()).toBeVisible({ timeout: 30_000 });
   await takeTill(page);
   if (await page.locator(".cdos-tour-skip").isVisible().catch(() => false)) await page.locator(".cdos-tour-skip").click();
-  if (!(await page.evaluate(async () => (await fetch("/api/ledger/till-session").then((r) => r.json())).session?.status === "open"))) {
+  const sessionOpen = await page.evaluate(async () => (await fetch("/api/ledger/till-session").then((r) => r.json())).session?.status === "open");
+  /* The desk latches "day closed" from the session it saw at paint. Opening
+     the till afterwards does not repaint that latch, so reload once. */
+  if (!sessionOpen || !(await button().isEnabled())) {
     await page.reload();
     await landOnDesktop(page);
   }
@@ -207,13 +210,22 @@ test("Post stays disabled until the preview arrives", async ({ page }) => {
   await expect(page.locator(".cd-tx-rate-line .cd-tx-rate-shown")).not.toHaveText(/\d/);
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: path.join(SHOTS, "loading-390.png") });
+  const topAt = () => post.evaluate((el) => el.getBoundingClientRect().top);
+  const top390 = await topAt();
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(post).toBeDisabled();
   await expect(page.locator(".cd-tx-receive")).not.toHaveText(/\d/);
   await page.screenshot({ path: path.join(SHOTS, "loading-1280.png") });
+  const top1280 = await topAt();
   release();
   await expect(page.locator(".cd-tx-receive")).toHaveText("722.10", { timeout: 20_000 });
   await expect(post).toBeEnabled();
+  expect(Math.abs((await topAt()) - top1280)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: path.join(SHOTS, "head-1280.png") });
+  await page.setViewportSize({ width: 390, height: 780 });
+  await expect(page.locator(".cd-tx-receive")).toHaveText("722.10");
+  expect(Math.abs((await topAt()) - top390)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: path.join(SHOTS, "head-390.png") });
 });
 test("a held text rate is the rate that posts", async ({ page }) => {
   test.setTimeout(120_000);

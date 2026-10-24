@@ -34528,16 +34528,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     return '1 ' + from + ' = ' + rate.text + ' ' + to;
   };
   function SheetRateNote({
-    on
+    on,
+    hold
   }) {
-    if (!on) return null;
+    if (!on && !hold) return null;
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note text-center",
+      "aria-hidden": on ? undefined : true,
       style: {
         fontSize: 11,
         lineHeight: '14px',
         color: 'var(--cd-pin-note)',
-        marginTop: 2
+        marginTop: 2,
+        visibility: on ? 'visible' : 'hidden'
       }
     }, RATE_NOTE);
   }
@@ -37115,7 +37118,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(SheetRateNote, {
-      on: liveFace.rounded
+      on: liveFace.rounded,
+      hold: quotePending
     })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       value: shownOut ? unitText(shownOut, outCcy) : '—',
       ccy: outCcy,

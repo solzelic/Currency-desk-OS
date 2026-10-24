@@ -56,9 +56,9 @@
     if (!rate.text) return 'Rate unavailable';
     return '1 ' + from + ' = ' + rate.text + ' ' + to;
   };
-  function SheetRateNote({ on }) {
-    if (!on) return null;
-    return <div className="cd-rate-note text-center" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-pin-note)', marginTop: 2 }}>{RATE_NOTE}</div>;
+  function SheetRateNote({ on, hold }) {
+    if (!on && !hold) return null;
+    return <div className="cd-rate-note text-center" aria-hidden={on ? undefined : true} style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-pin-note)', marginTop: 2, visibility: on ? 'visible' : 'hidden' }}>{RATE_NOTE}</div>;
   }
   const phoneMoney = (n, ccy) => {
     const fn = window.CDOS.formatPhoneMoney;
@@ -1201,7 +1201,7 @@
                       <span className="cd-tx-rate-shown">{exchangeRateLine || (quotePending ? 'Pending' : '')}</span>
                       <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                     </div>
-                    <SheetRateNote on={liveFace.rounded} />
+                    <SheetRateNote on={liveFace.rounded} hold={quotePending} />
                   </div>
                   <Lbl>Customer receives</Lbl>
                   <Money value={shownOut ? unitText(shownOut, outCcy) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
