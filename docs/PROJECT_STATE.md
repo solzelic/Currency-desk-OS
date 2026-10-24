@@ -750,6 +750,8 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-24**, branch clock outside a transaction. `branchZone` still reads `branches.timezone` on the caller's connection. Inside a transaction a missing table rolls back to the `branch_zone` savepoint, so the post is not left aborted. Outside a transaction that savepoint is 25P01, and the same select runs without one. A missing table still falls back to America/Toronto. Any other database error still throws.
+
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only `PERSONA_API_KEY` or `PERSONA_API_KEY_<SHOP>`. A field left out of PUT stays as stored. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 
 **2026-10-24**, sandbox identity start. `POST /api/idv/start-check` is the caller's shop only. Checks stay off until `idv_shop_config` says otherwise. The route calls the registry provider. An empty key name uses `PERSONA_API_KEY`. A missing template or env value answers not connected. A per-shop advisory lock keeps the in-progress cap under parallel starts. Migration 051 adds inquiry status. This route does not reserve a credit. The credit ledger is migration 052 and is not connected to this route. This stacks on #267. 049 is on main. 050 is the shop config.
