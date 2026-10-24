@@ -23,6 +23,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { isoMinorUnits } from "../src/ledger/currencies.js";
 import { DEMO, seed } from "../src/seed.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 import { buildApp } from "../src/app.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -75,6 +76,8 @@ async function reset() {
     "INSERT INTO ledger_customers VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','Normal','verified')",
     scope.slice(0, 4),
   );
+  /* The column is not standing. A current passport is what the gate reads. */
+  await fileCurrentPhotoId(pool, "customer-demo");
   await pool.query(
     `INSERT INTO ledger_till_sessions
       (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,

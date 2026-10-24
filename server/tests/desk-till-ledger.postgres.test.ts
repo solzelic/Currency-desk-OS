@@ -173,6 +173,7 @@ postgres("a new till can take a customer", () => {
       payload: { name: "First customer", risk: "normal" },
     });
     expect(customer.statusCode).toBe(201);
+    await fileCurrentPhotoId(pool, customer.json().customerId);
 
     const deal = await app.inject({
       method: "POST", url: "/api/ledger/exchanges", cookies: teller, headers: scoped,

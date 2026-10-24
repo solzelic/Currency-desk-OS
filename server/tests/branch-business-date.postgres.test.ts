@@ -17,6 +17,7 @@ import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { civilTodayInZone } from "../src/civil-date.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
@@ -217,6 +218,7 @@ postgres("a till session takes the branch's civil day", () => {
       payload: { name: "Walk-in", risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
+    await fileCurrentPhotoId(pool, customer.json().customerId);
     const deal = await app.inject({
       method: "POST",
       url: "/api/ledger/exchanges",

@@ -13,6 +13,7 @@ import {
   type LedgerActor,
 } from "../src/ledger/service.js";
 import { DEMO, seed } from "../src/seed.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -80,6 +81,7 @@ async function reset() {
     "INSERT INTO ledger_customers VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','Normal','verified')",
     s.slice(0, 4),
   );
+  await fileCurrentPhotoId(pool, "customer-demo");
   for (const [c, v] of [
     ["CAD", 25000],
     ["USD", 12000],

@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -80,6 +81,7 @@ postgres("a deal reference uses the branch's civil day", () => {
     });
     expect(customer.statusCode, customer.body).toBe(201);
     customerId = customer.json().customerId as string;
+    await fileCurrentPhotoId(pool, customerId);
   }, 120_000);
 
   afterAll(async () => {

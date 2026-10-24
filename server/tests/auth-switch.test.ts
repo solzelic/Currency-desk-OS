@@ -12,6 +12,7 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { hashPin, clearPinAttempts } from "../src/routes/pin.js";
 import { setSessionWorkspace } from "../src/auth/sessions.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -282,6 +283,7 @@ postgres("a switched session is the person on the deal", () => {
       payload: { name: `Walk-in ${key}`, risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
+    await fileCurrentPhotoId(pool!, customer.json().customerId);
     const quote = await app.inject({
       method: "POST", url: "/api/quotes", cookies,
       payload: {
@@ -351,6 +353,7 @@ postgres("a switched session is the person on the deal", () => {
       payload: { name: "Manager look", risk: "normal" },
     });
     expect(look.statusCode, look.body).toBe(201);
+    await fileCurrentPhotoId(pool!, look.json().customerId);
     const lookQuote = await app.inject({
       method: "POST", url: "/api/quotes", cookies: manager,
       payload: {
@@ -517,6 +520,7 @@ postgres("a switched session is the person on the deal", () => {
       payload: { name: "Exchange switch", risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
+    await fileCurrentPhotoId(pool!, customer.json().customerId);
     const posted = await app.inject({
       method: "POST", url: "/api/ledger/exchanges", cookies: iqbal, headers,
       payload: {
