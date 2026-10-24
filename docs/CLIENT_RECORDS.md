@@ -67,6 +67,28 @@ workspace-scoped because the posting path is. It gained one column,
 second customer concept. One client has as many counter records as the
 entity has tills; every one of them points at the same person.
 
+The posting gate does not read `ledger_customers.id_status`. ID on file
+is one rule, computed on the server from
+`desk_client_identity_documents`: one current government-issued photo
+ID, with a number that survives stripping whitespace and invisible
+characters, and an expiry on or after the branch's business date. A
+blank expiry counts only for `Canadian citizenship card (pre-2012)`.
+A health card is never accepted, including a provincial name such
+as OHIP or RAMQ. A new document is stored under the catalogue name
+when the type is known, and as given when it is not. A type that
+is not in the catalogue is not ID on file. A non-photo document is not ID on
+file. The primary document is what the desk shows
+(`displayedDocument`); it is not what decides the standing. The client
+response carries `idStanding` as `{ status, label, detail, reason,
+tone }`. `status` is `identified`, `expired`, or `missing`. `detail`
+and `reason` are the same sentence, copied from `displayIdStanding`
+("ID has no expiry date", "No ID number", "ID type not stated",
+"No ID on file", "A current photo ID is needed", or the Identified
+and Expired sentences). The two copies have to stay the same.
+`POST` and `PUT /api/ledger/customers` refuse
+a standing sent on the body, and accept `clientId` so the till's
+customer points at this file. See `docs/LEDGER_POSTING_API.md`.
+
 ## Identifying and signal
 
 Every field is on one of two sides of a line, and the split is
@@ -187,26 +209,31 @@ different days. The old shape had a "primary" ID as loose fields
 (`idType`, `idNum`, `idIssued`, `idExpiry`) beside an `ids[]` array, so
 the first document was structurally different from every other one and
 every screen had to special-case it. Now exactly one row per client
-carries `is_primary`, enforced by a partial unique index, and it is the
-one that drives the desk's KYC standing.
+carries `is_primary`, enforced by a partial unique index. That row is
+the document the desk shows. It does not decide whether the customer
+is identified.
 
-`verification_status` is derived from the documents, not typed:
-
-- no document with a number, leaving out health cards → `unverified`
-- the primary document, when it is not a health card, is past its
-  expiry → `expired`
-- otherwise → `identified`
+`verification_status` is derived from the same document rule the
+posting gate uses, not typed and not from the primary row alone.
+Identified is one current government-issued photo ID: a real type,
+a number that is still non-empty after whitespace and invisible
+characters are stripped, and an expiry on or after the branch
+business date. A blank expiry counts only for
+`Canadian citizenship card (pre-2012)`. That verdict is stored as
+`identified`. An expired photo ID, with no current non-photo paper
+beside it, is `expired`. Every other file is `unverified`, including
+a typed birth certificate or any other non-photo document. The
+primary flag only chooses which document is shown.
 
 `verified` is never set or cleared by that derivation. It means a
 provider authenticated the document and was paid to do it. No amount of
 adding or removing rows in this table can grant that, and nothing here
 may quietly take it away.
 
-The till's counter record (`ledger_customers.id_status`) leaves health
-cards out the same way: a file whose only numbered document is a health
-card is `missing`. A file stored as `identified` before this rule reads
-as `unverified` until its next document write stores that. The posting
-gate itself is unchanged; PR #108 owns it.
+The till's counter record (`ledger_customers.id_status`) is written
+from the same rule. The posting gate, including cheque cashing, does
+not read that column. A stored `verified` value does not waive the
+identification line.
 
 ## ID-document types
 

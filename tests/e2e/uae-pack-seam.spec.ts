@@ -176,7 +176,6 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
         externalRef: "ae-seam-walker",
         name: "Unidentified Walker",
         risk: "normal",
-        idStatus: "missing",
       }),
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
@@ -251,7 +250,31 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }, customerId);
-  expect(verifiedCustomer.status, JSON.stringify(verifiedCustomer.body)).toBe(200);
+  expect(verifiedCustomer.status, JSON.stringify(verifiedCustomer.body)).toBe(422);
+  expect(verifiedCustomer.body.code).toBe("ID_STATUS_NOT_CLIENT_SET");
+  /* Purpose is the question below. ID on file comes from a typed
+     document, not from the status the request just tried to send. */
+  await pool.query(
+    `INSERT INTO desk_clients
+       (client_id, tenant_id, legal_entity_id, display_name, verification_status)
+     SELECT 'cli-' || customer_id, tenant_id, legal_entity_id, name, 'identified'
+       FROM ledger_customers WHERE customer_id = $1
+     ON CONFLICT (client_id) DO NOTHING`,
+    [customerId],
+  );
+  await pool.query(
+    `INSERT INTO desk_client_identity_documents
+       (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+     SELECT 'doc-' || customer_id, 'cli-' || customer_id, tenant_id, legal_entity_id,
+            'Passport', 'P-UAE-SEAM', '2032-04-01', true
+       FROM ledger_customers WHERE customer_id = $1
+     ON CONFLICT (document_id) DO NOTHING`,
+    [customerId],
+  );
+  await pool.query(
+    `UPDATE ledger_customers SET client_id = 'cli-' || customer_id WHERE customer_id = $1 AND client_id IS NULL`,
+    [customerId],
+  );
 
   const noPurpose = await page.evaluate(async (body) => {
     const res = await fetch("/api/ledger/remittances/send", {

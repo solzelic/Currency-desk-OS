@@ -12,6 +12,7 @@ import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 import { DEMO, seed } from "../src/seed.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -207,6 +208,7 @@ postgres("a desk with no country pack uses the baseline", () => {
     await pool.query(
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id='customer-demo'",
     );
+    await fileTypedId(pool, "customer-demo");
     const sent = await app.inject({
       method: "POST",
       url: "/api/ledger/remittances/send",

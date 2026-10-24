@@ -31,6 +31,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { fileTypedId } from "./typed-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -90,6 +91,7 @@ async function reset(options: { openTill?: boolean; cad?: number } = {}) {
        ('customer-walkin',$1,$2,$3,$4,'Walk-in','Normal','missing')`,
     scope.slice(0, 4),
   );
+  await fileTypedId(pool, "customer-demo");
   await pool.query(
     "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'CAD',$6)",
     [...scope, cad],

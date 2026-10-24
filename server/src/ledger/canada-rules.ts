@@ -58,9 +58,12 @@ export type CountryGate =
   | { split: false }
   | { split: true; refusal: GateRefusal | null };
 
+/* Same sentence as ID_NEEDED_MESSAGE in id-on-file.ts. This file
+   cannot import that module: id-on-file imports the business-day
+   helper below, and a cycle would leave both half-initialised. */
 const ID_BLOCKED: GateRefusal = {
   code: "COMPLIANCE_BLOCKED",
-  message: "Authoritative compliance policy blocked posting.",
+  message: "ID needed for this amount. Record the customer's ID.",
 };
 
 const NO_LINE: GateRefusal = {
@@ -240,6 +243,35 @@ export function staticWindow(
 ): { start: Date; end: Date } {
   const start = zonedMidnight(at, timeZone);
   return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+}
+
+/* The calendar date the desk is trading on, in the branch's zone.
+   An expiry is a date, not an instant, so the comparison is this
+   date and not UTC's current_date — which is already the next day
+   in Toronto for four hours after midnight. An unusable zone name
+   falls back the same way a missing branch does. */
+export function businessDateInZone(at: Date, timeZone: string): string {
+  let zone = timeZone.trim() || "America/Toronto";
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: zone });
+  } catch {
+    zone = "America/Toronto";
+  }
+  const start = staticWindow(at, zone).start;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(start);
+}
+
+export async function branchBusinessDate(
+  client: pg.PoolClient,
+  branchId: string,
+  at: Date = new Date(),
+): Promise<string> {
+  return businessDateInZone(at, await branchZone(client, branchId));
 }
 
 function zoneOffsetMs(at: Date, timeZone: string): number {

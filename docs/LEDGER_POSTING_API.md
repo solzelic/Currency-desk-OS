@@ -13,8 +13,8 @@ created by the Quote Service and posted through frozen quote terms.
 | `GET` | `/api/health` | none | Readiness: 200 if a trivial database read succeeds, 503 `{ ok: false, error: "database" }` if it does not. |
 | `GET` | `/api/ledger/readiness` | session cookie + `ledger:view` | Reports whether the active workspace has customers and till balances. |
 | `GET` | `/api/ledger/customers` | session cookie + `customer:view` | Lists relational customers in the active workspace. |
-| `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. |
-| `PUT` | `/api/ledger/customers/:customerId` | session cookie + `customer:write` | Updates a customer in the active workspace. |
+| `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. ID status is not a field of the body. |
+| `PUT` | `/api/ledger/customers/:customerId` | session cookie + `customer:write` | Updates name and risk in the active workspace. ID status is not a field of the body. |
 | `GET` | `/api/ledger/till-balances` | session cookie + `ledger:view` | Returns authoritative balances for the active till. |
 | `POST` | `/api/ledger/opening-balances` | manager/supervisor + `till:initialize` | Sets opening balances exactly once, before ledger activity. |
 | `GET` | `/api/ledger/transactions?limit=100` | session cookie + `ledger:view` | Returns newest authoritative transactions and reversal state. |
@@ -64,7 +64,7 @@ intentional rather than inferred.
 `SCOPE_DENIED` is returned when a valid session is outside tenant, legal
 entity, branch, workspace, or till scope. `AUTHORIZATION_DENIED` is returned
 when the authenticated staff role lacks the named permission.
-`INVALID_REQUEST`, `CUSTOMER_NOT_FOUND`, `COMPLIANCE_BLOCKED`,
+`INVALID_REQUEST`, `ID_STATUS_NOT_CLIENT_SET`, `CUSTOMER_NOT_FOUND`, `COMPLIANCE_BLOCKED`,
 `INSUFFICIENT_TILL_LIQUIDITY`, `RATE_NOT_AVAILABLE`,
 `IDEMPOTENCY_IN_PROGRESS`, `TRANSACTION_NOT_FOUND`, `REVERSAL_NOT_ALLOWED`,
 `REVERSAL_ALREADY_EXISTS`, `CUSTOMER_EXTERNAL_REF_CONFLICT`,
@@ -78,8 +78,95 @@ See [server/README.md](../server/README.md) for isolated PostgreSQL startup, mig
 
 ## Limitations
 
-No live KYC provider is connected, so `idStatus` is still a staff-attested
-record. Opening balances are initialization, not an adjustment mechanism;
+No live KYC provider is connected. `POST` and `PUT /api/ledger/customers`
+do not accept an ID standing. A body that carries `idStatus`, `id_status`,
+`kycStatus`, `kyc_status`, a `verified` flag, or the same claim nested
+under `identity`, `kyc`, or `id` is **422** `ID_STATUS_NOT_CLIENT_SET`.
+Teller and owner are the same caller. A new customer is stored as
+`missing`. An update does not rewrite `ledger_customers.id_status`.
+
+The value the API returns, and the value a deal is judged against, is
+derived from the identity documents on the linked client. One rule,
+computed only on the server: ID on file means one current
+government-issued photo ID. The type is in
+`server/src/ledger/id-document-types.mjs` with `photo` and
+`accepted` set, the number is still non-empty after every
+whitespace and invisible character is stripped (NBSP, zero-width
+space, and the rest of that set), and the expiry is on or after
+the desk's business date in the branch's time zone. A blank or
+missing `expires_on` counts only when that type's own
+`noExpiryAllowed` flag is set. The only such type is `Canadian
+citizenship card (pre-2012)`. A date before the business date does
+not count, on that type or any other. `Citizenship Card` and
+`Citizenship certificate (2012 or later, no photo)` are not photo
+ID. A Secure Certificate of Indian Status is a photo ID and needs
+an expiry. The laminated Certificate of Indian Status is not in
+the catalogue. `Driver's License` and `Driver licence` are
+spellings of `Driver's Licence` and need an expiry. `PR Card` is
+`Permanent Resident Card`. A new save stores the catalogue name.
+A health card is never
+accepted. Creating one, or changing a document's type to one, is
+422 "Health cards can't be used as ID. Record a current photo ID."
+The same refusal covers OHIP, OHIP card, RAMQ, RAMQ card, MSP,
+MSP card, Alberta Health, Alberta Health Card, and Care Card, in
+any case, spacing, or punctuation. A health card already stored is left as it is and is still
+returned. A type that is not in the catalogue is stored as given
+and is not accepted, so the client is not Identified. A stored
+`Citizenship Card` is returned as `Citizenship
+certificate (2012 or later, no photo)`, and a new filing of that
+old name is stored as the certificate label. A row already stored
+is not rewritten. A non-photo document, including a birth certificate, is
+not ID on file. An expired photo ID beside a current non-photo
+document is Missing ID, reason "A current photo ID is needed".
+The primary flag only chooses which document is shown. A current
+photo ID that is not primary is still ID on file. Dual process and
+a credit-file method are not supported: the document has no
+category and no source, so those methods cannot be recorded.
+
+`POST /api/ledger/customers` accepts `clientId`. The client must
+belong to this tenant and legal entity. If this workspace already
+has a ledger customer for that client, that row is the one returned
+(name and risk updated, standing still derived). Otherwise the
+upsert stores `client_id` when the row does not already point at a
+different client. The till sends this. An `os:<slug>` row with no
+client id cannot see the documents, and a large deal is refused.
+
+The client record and the ledger customer both return `idStanding`
+and `displayedDocument` (the primary document, or the earliest
+document when none is primary). `idStanding` is `{ status, label,
+detail, reason, tone }`, the same shape `displayIdStanding` returns
+for a document. `status` is `identified`, `expired`, or `missing`.
+`label` is `Identified`, `Expired`, or `Missing ID`. `detail` and
+`reason` are the same sentence, and that sentence is copied from
+`displayIdStanding`. The two copies have to stay the same. In this
+order once every document has been read: a current photo ID is
+"An identity document with a number is on file, and it has not
+expired."; otherwise an expired photo ID, when no current non-photo
+document is filed, is "An identity document on this file is past
+its expiry. The till will not treat this customer as identified.";
+otherwise a blank or missing expiry on a photo ID that is not the
+allow-listed type is "ID has no expiry date"; otherwise a number
+that does not survive the strip is "No ID number"; otherwise a type
+that is empty or "Not stated" is "ID type not stated"; otherwise a
+health card or any other non-photo paper is "A current photo ID is
+needed"; otherwise "No ID on file". `tone` is `ok` only for
+Identified, and `warning`
+otherwise. The helper's provider path, label `Verified`, is not
+returned here.
+`idStatus` on the ledger customer remains the gate's word
+(`verified`, `expired`, `missing`); Identified is `verified`.
+
+A deal that needs identification and does not have it is
+`COMPLIANCE_BLOCKED` with the message "ID needed for this amount.
+Record the customer's ID." Other compliance refusals keep their own
+sentences. An approved provider document would be a row in the same
+table; none is connected. A customer already stored as `verified`
+with no qualifying document is left in the table and is not ID on
+file. A read-only list of those rows is
+`scripts/audit-ledger-id-without-document.mjs`. The business date
+there is the branch zone's calendar date, not UTC `current_date`.
+
+Opening balances are initialization, not an adjustment mechanism;
 after activity begins, differences must use a future counted-reconciliation
 workflow. (This table documents the core posting surface; the full ledger
 API has grown well beyond it — routes register in

@@ -746,6 +746,71 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
+**2026-10-24**, ledger customer ID status. `POST` and `PUT
+/api/ledger/customers` do not take an ID standing from the body. A
+request that carries `idStatus`, `id_status`, `kycStatus`, a verified
+flag, or the same claim nested under identity or KYC is refused with
+422 for a teller and for an owner. A new customer is stored as
+missing. An update does not rewrite the column. The till sync sends
+the client id. A ledger row that already points at that client is
+the one returned, so the deal posts against the file the documents
+are on. ID on file is one server rule: one current government-issued
+photo ID. The type, a number that is still non-empty after
+whitespace and invisible characters are stripped, and an expiry on
+or after the branch's business date. A blank expiry counts only
+for `Canadian citizenship card (pre-2012)`, the one row in
+`server/src/ledger/id-document-types.mjs` whose flag says so. A
+past date on that type is still expired. The generic citizenship
+card, and `Citizenship certificate (2012 or later, no photo)`, are
+not photo ID: IRCC has issued a paper certificate with no
+photograph since February 2012. A stored `Citizenship Card` is
+returned under that certificate label. The row is not rewritten.
+A Secure Certificate of Indian
+Status is a photo ID and needs an expiry. The laminated Certificate
+of Indian Status is not listed, so it is not a photo ID. Health
+cards are never accepted, and a new document cannot be filed
+or changed to that type. The same refusal covers a provincial
+name (OHIP, OHIP card, RAMQ, RAMQ card, MSP, MSP card, Alberta
+Health, Alberta Health Card, Care Card) in any case, spacing, or
+punctuation. A health card already stored stays
+readable and is not rewritten. An incoming type is matched to
+this catalogue. A known alias is stored as the catalogue name
+(`Driver licence` and `Driver's License` as `Driver's Licence`,
+`PR Card` as `Permanent Resident Card`, `Citizenship Card` as the
+certificate label). A type that is not listed is stored as given
+and is not accepted, so it does not make the client Identified.
+A row already stored under an old spelling is not rewritten; the
+catalogue still classifies that spelling. A non-photo document does not identify
+the client. An
+expired photo ID beside a current non-photo document is Missing
+ID, reason "A current photo ID is needed". The primary document is
+only what is shown. Dual process and a credit file are not
+methods this book can record: a document has no category and no
+source. Client and ledger customer responses carry `idStanding`
+(`{ status, label, detail, reason, tone }`) and `displayedDocument`.
+`status` is `identified`, `expired`, or `missing`. The label is
+Identified, Expired, or Missing ID. `detail` and `reason` are the
+same sentence, and those sentences stay in sync with
+`displayIdStanding`: "An identity document with a number is on
+file, and it has not expired.", "An identity document on this file
+is past its expiry. The till will not treat this customer as
+identified.", "ID has no expiry date", "No ID number", "ID type
+not stated", "No ID on file", or "A current photo ID is needed".
+A current photo ID wins, then an expired photo ID when no current
+non-photo document is filed, then a blank expiry on a photo ID
+that is not the allow-listed type, then a missing number, then a
+type that was not stated, then any other paper. A deal that needs
+ID and does not have it is refused with "ID needed for this
+amount. Record the customer's ID." A row already stored as
+verified with no such document is left as it is and is not ID on
+file. `scripts/audit-ledger-id-without-document.mjs` lists those
+rows and does not change them. Cheque cashing uses that same
+derived standing. A browser `verified` flag is refused and does
+not create the customer. A row stored as `verified` whose only
+paper is a typed non-photo document, such as a birth certificate
+with a number, is not Identified, and a cheque at or above the
+identification line is refused.
+
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only an environment variable name. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 
 **2026-10-24**, sandbox identity start. `POST /api/idv/start-check` is the caller's shop only. Checks stay off until `idv_shop_config` says otherwise. The route calls the registry provider. Missing Persona key or template answers not connected. A per-shop advisory lock keeps the in-progress cap under parallel starts. Migration 051 adds inquiry status. No credit ledger was added. This stacks on #267. 049 is on main. 050 is the shop config.

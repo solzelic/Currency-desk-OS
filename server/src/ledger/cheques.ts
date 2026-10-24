@@ -66,6 +66,7 @@ import { redactDeskEarnings } from "./earnings-redaction.js";
 import { branchRefDay } from "./branch-day.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
+import { derivedIdStatus } from "./id-on-file.js";
 import {
   LedgerError,
   requireIdentification,
@@ -449,7 +450,13 @@ export class ChequeService {
         actor,
         pack,
         face,
-        customer.rows[0].id_status,
+        await derivedIdStatus(
+          client,
+          input.customerId,
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+        ),
         {
           kind: "cheque_cashing",
           cash: true,
