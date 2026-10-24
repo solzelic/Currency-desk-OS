@@ -52,6 +52,7 @@ import { randomUUID } from "node:crypto";
 import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
 import { chequeScheduleFee } from "./chequeFee.js";
+import { DEFAULT_CHEQUE_SCHEDULE } from "../routes/tenantState.js";
 import type pg from "pg";
 import { carriedPackStamp, resolvePack } from "./jurisdiction.js";
 import {
@@ -160,46 +161,51 @@ const money = (value: string, minimum: Decimal.Value) => {
 const fixed = (value: Decimal.Value, places = 2) =>
   new Decimal(value).toDecimalPlaces(places).toFixed(places);
 
-/* The fee the desk published for this type. Null when this desk has
-   not stored a schedule: the capture screen's figure stands, which is
-   how every cheque posted before a schedule was saved still posts.
-   Once a schedule is stored, the book uses that row. A refused edit
-   therefore cannot arrive as a fee of 0 on the next cheque. A stored
-   schedule that cannot be read is thrown, not treated as "no fee". */
-/* The price already stored for this cheque type.
-   A missing schedule, or a type the stored schedule does not name,
-   returns null so the fee the capture screen sent still stands. That
-   is how a desk that has never saved a schedule keeps booking.
-   A schedule that is present and names the type is the price: the
-   greater of the percentage of the face and the minimum. A stored
-   schedule that cannot be read throws. It is not read as a zero fee. */
+const FEE_UNREADABLE =
+  "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule.";
+const FEE_UNPRICED =
+  "Nothing was cashed. This cheque type has no fee on the schedule. The owner or a manager can add it in Cheques, Fee schedule.";
+
+/* No row, null, a blank, or an empty list is the default schedule.
+   Migration 045 writes that same list. A stored value that is not a
+   list cannot be priced, and it is not the default and not the
+   browser's fee. A list that names the type is the price, including
+   a saved 0%. A list that does not name the type has no price. */
+function scheduleRows(raw: unknown): { id?: unknown; feePct?: unknown; feeMin?: unknown }[] {
+  if (raw == null) return DEFAULT_CHEQUE_SCHEDULE;
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    if (raw === "" || raw === "[]") return DEFAULT_CHEQUE_SCHEDULE;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new LedgerError("INVALID_REQUEST", FEE_UNREADABLE);
+      throw error;
+    }
+  }
+  if (!Array.isArray(parsed)) throw new LedgerError("INVALID_REQUEST", FEE_UNREADABLE);
+  if (parsed.length === 0) return DEFAULT_CHEQUE_SCHEDULE;
+  return parsed;
+}
+
 async function scheduledFee(
   client: pg.PoolClient,
   tenantId: string,
   chequeType: string,
   face: Decimal,
-): Promise<Decimal | null> {
+): Promise<Decimal> {
   const found = await client.query(
     "SELECT state->'cdos_cheque_schedule_v1' AS schedule FROM tenant_state WHERE tenant_id=$1",
     [tenantId],
   );
-  if (!found.rowCount || found.rows[0].schedule == null) return null;
-  const raw = found.rows[0].schedule;
-  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-  if (!Array.isArray(parsed)) {
-    throw new LedgerError("INVALID_REQUEST", "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule.");
-  }
-  const row = parsed.find((item) => item && String(item.id) === chequeType) as
-    | { feePct?: unknown; feeMin?: unknown }
-    | undefined;
-  if (!row) return null;
+  const rows = scheduleRows(found.rowCount ? found.rows[0].schedule : null);
+  const row = rows.find((item) => item && String(item.id) === chequeType);
+  if (!row) throw new LedgerError("CHEQUE_TYPE_UNPRICED", FEE_UNPRICED);
   /* The helper reads the stored figures. A percent with more than 2
      digits after the point rounds half up to 2 here, and still books.
-     A figure it cannot read is refused. It is not a fee of 0.00. */
+     A figure it cannot read is refused. A saved 0% is a fee of 0.00. */
   const dueText = chequeScheduleFee(fixed(face), row.feePct, row.feeMin);
-  if (dueText == null) {
-    throw new LedgerError("INVALID_REQUEST", "Nothing was cashed. The fee for this cheque type can't be read. The owner or a manager can fix it in Cheques, Fee schedule.");
-  }
+  if (dueText == null) throw new LedgerError("INVALID_REQUEST", FEE_UNREADABLE);
   return new Decimal(dueText);
 }
 
@@ -393,11 +399,9 @@ export class ChequeService {
         );
 
       const face = money(input.faceAmount, "0.01");
-      const quoted = money(input.feeAmount, "0");
-      /* The browser can send 0 after a teller was refused a schedule
-         write. The stored schedule is the fee when it names this type. */
-      const listed = await scheduledFee(client, actor.tenantId, String(input.chequeType ?? "").trim(), face);
-      const fee = listed ?? quoted;
+      /* feeAmount on the request is not the price. The schedule is,
+         or the default schedule when this desk has not saved one. */
+      const fee = await scheduledFee(client, actor.tenantId, String(input.chequeType ?? "").trim(), face);
       const net = face.minus(fee);
       if (net.lt(0))
         throw new LedgerError(
@@ -969,9 +973,11 @@ export class ChequeService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "transaction:reverse");
-      /* Cash goes back INTO this drawer, so this drawer has to be open.
-         The clearance path deliberately does not ask for this; see the
-         note there. */
+      /* Cash goes back into the drawer that paid the cheque, so that
+         drawer has to be the one this call is signed in at, and it has
+         to be open. A different till is refused after the cheque is
+         locked, and that refusal commits nothing. The clearance path
+         deliberately does not ask for an open till; see the note there. */
       await requireOpenTill(client, actor, { held: false });
 
       const existing = await client.query(
@@ -995,6 +1001,15 @@ export class ChequeService {
       }
 
       const cheque = await this.lockHeldCheque(client, actor, chequeId);
+      /* The cash left this cheque's drawer. Crediting the till that
+         happens to be reversing it would leave both drawers wrong.
+         Refuse, and roll this transaction back, until the reversal is
+         posted from the till that paid the cheque out. */
+      if (cheque.workspace_id !== actor.workspaceId || cheque.till_id !== actor.tillId)
+        throw new LedgerError(
+          "CHEQUE_REVERSAL_WRONG_TILL",
+          "Reverse this cheque at the till that paid it out. Nothing was reversed.",
+        );
       const transactionId = String(cheque.cashing_transaction_id);
       const already = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",

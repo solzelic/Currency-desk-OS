@@ -171,7 +171,7 @@ postgres("the international baseline", () => {
         customerId: desk.customerId,
         chequeNumber: key,
         maker: "Walk In",
-        chequeType: "walk-in",
+        chequeType: "government",
         typeLabel: "Personal",
         currency: desk === usd ? "USD" : "GBP",
         faceAmount: amount,
@@ -374,7 +374,7 @@ postgres("the international baseline", () => {
     await pool.query(
       "UPDATE market_rates SET fetched_at = now() - interval '25 hours'",
     );
-    const stale = await cheque(gbp, "1.00", "gbp-stale");
+    const stale = await cheque(gbp, "10.00", "gbp-stale");
     expect(stale.statusCode, stale.body).toBe(422);
     expect(stale.json().code).toBe("COMPLIANCE_BLOCKED");
     const staleSend = await send(gbp, "1.00", "gbp-stale-rm");
@@ -385,7 +385,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
       [gbp.customerId],
     );
-    const verified = await cheque(gbp, "1.00", "gbp-stale-verified");
+    const verified = await cheque(gbp, "10.00", "gbp-stale-verified");
     expect(verified.statusCode, verified.body).toBe(201);
     const staleStamp = (
       await pool.query(
@@ -400,7 +400,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
       [gbp.customerId],
     );
-    const missing = await cheque(gbp, "1.00", "gbp-missing");
+    const missing = await cheque(gbp, "10.00", "gbp-missing");
     expect(missing.statusCode, missing.body).toBe(422);
     expect(missing.json().code).toBe("COMPLIANCE_BLOCKED");
   });
@@ -502,7 +502,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
       [gbp.customerId],
     );
-    const staleId = await cheque(gbp, "1.00", "gbp-stale-id-2");
+    const staleId = await cheque(gbp, "10.00", "gbp-stale-id-2");
     expect(staleId.statusCode, staleId.body).toBe(422);
     expect(staleId.json().code).toBe("COMPLIANCE_BLOCKED");
   });
