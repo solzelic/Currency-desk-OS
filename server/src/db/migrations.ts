@@ -56,6 +56,8 @@ export const migrations: readonly Migration[] = [
   ["047_accepted_id_types", "src/db/migrations/047_accepted_id_types.sql"],
   /* 048 is the unrounded expected saved beside a count's variance. */
   ["048_till_count_stored_expected", "src/db/migrations/048_till_count_stored_expected.sql"],
+  /* 049 is the inquiry-to-shop map. 050 is used by another change. */
+  ["049_idv_inquiry_map", "src/db/migrations/049_idv_inquiry_map.sql"],
 ] as const;
 
 export async function runMigrations(
