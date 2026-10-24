@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import Decimal from "decimal.js";
 import type pg from "pg";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { redactDeskEarnings } from "./earnings-redaction.js";
@@ -389,6 +390,7 @@ export class LedgerProvisioningService {
           `Customer: ${row.customer_name}`,
           ...(row.quote_id ? [`Quote: ${row.quote_id}`] : []),
           `Paid exchange: ${row.input_amount} ${row.from_currency.trim()}`,
+          `Rate: 1 ${row.from_currency.trim()} = ${new Decimal(String(row.rate)).toDecimalPlaces(6).toFixed(6)} ${row.to_currency.trim()}`,
           `Fee paid separately: CAD ${row.fee_cad}`,
           `Received: ${row.output_amount} ${row.to_currency.trim()}`,
         ],

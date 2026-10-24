@@ -215,7 +215,7 @@
   function Num({ v, on, ph, w }) { return (<input value={v} onChange={e => on(e.target.value)} placeholder={ph} type="number" className="px-1.5 py-1 outline-none text-sm bg-transparent text-right" style={{ border: '1px solid transparent', width: w ? `${w}px` : '90px', fontVariantNumeric: 'tabular-nums' }} onFocus={e => e.target.style.border = `1px solid ${CD.ink}`} onBlur={e => e.target.style.border = '1px solid transparent'} />); }
   function Sel({ v, on, opts, narrow }) { return (<select value={v} onChange={e => on(e.target.value)} className="px-1 py-1 outline-none text-sm bg-transparent" style={{ border: '1px solid transparent', width: narrow ? '62px' : 'auto' }}>{opts.map(o => <option key={o}>{o}</option>)}</select>); }
   function SelCell({ v, on, opts, w }) { return (<td className="px-1 py-1" style={{ width: w ? `${w}px` : 'auto' }}><Sel v={v} on={on} opts={opts} /></td>); }
-  function Line({ k, v }) { return (<div className="flex justify-between text-sm py-0.5"><span style={{ color: CD.mute }}>{k}</span><span style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v}</span></div>); }
+  function Line({ k, v, className }) { return (<div className={"flex justify-between text-sm py-0.5" + (className ? " " + className : "")}><span style={{ color: CD.mute }}>{k}</span><span style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v}</span></div>); }
 
   /* ---- LEDGER lives in cdos-ledger.jsx (immutable records + modal + drawer) ---- */
 
@@ -483,9 +483,12 @@
     const priced = fx && typeof effectiveRate === 'function'
       ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy))
       : null;
-    const rateValue = !fx ? row.rate : (priced && priced.text
+    const exact = fx && row.rateText && window.CDOS.exactRateText ? window.CDOS.exactRateText(row.rateText) : '';
+    const rateValue = !fx ? row.rate : (exact
+      ? ('1 ' + row.inCcy + ' = ' + exact + ' ' + row.outCcy)
+      : (priced && priced.text
       ? ('1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy)
-      : 'Rate unavailable');
+      : 'Rate unavailable'));
     return (<div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="overflow-hidden cd-paper-island" style={{ width: 340, background: CD.panel, border: `1px solid ${CD.ink}` }}>
         <div id="rcpt" className="p-5" style={{ fontFamily: 'Space Mono, ui-monospace, monospace' }}>
@@ -498,7 +501,7 @@
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
           <Line k="Reference" v={row.ref || '—'} /><Line k="Date" v={row.date} /><Line k="Customer" v={row.customer || '—'} /><Line k="Type" v={row.type} /><Line k="Teller" v={row.teller} />
           <div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} />
-          <Line k="Pay-in" v={`${unitText(row.inAmt, row.inCcy)} ${row.inCcy}`} /><Line k="Rate" v={rateValue} />{fx && priced && priced.rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-pin-note)', marginTop: 1, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div> : null}<Line k="Pay-out" v={`${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
+          <Line k="Pay-in" v={`${unitText(row.inAmt, row.inCcy)} ${row.inCcy}`} /><Line k="Rate" v={rateValue} className="cd-receipt-rate" />{fx && !exact && priced && priced.rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-pin-note)', marginTop: 1, marginBottom: 4 }}>{RATE_NOTE || 'Rate rounded. The amounts are exact.'}</div> : null}<Line k="Pay-out" v={`${unitText(row.outAmt, row.outCcy)} ${row.outCcy}`} /><Line k="Fee" v={homeCcy() ? fmt(row.fee, homeCcy()) : num(row.fee)} />
           {row.type !== 'Cheque Cashing' && row.side && <Line k="Pricing" v={window.CDOS.exchangeWords(row, homeCcy()).pricing} />}
           {row.quoteRef && <Line k="Quote" v={`${row.quoteRef}${row.lockedUntil ? ` · held to ${row.lockedUntil}` : ''}`} />}
           {row.serverReceipt && <><div className="my-3" style={{ borderTop: `1px dashed ${CD.line}` }} /><Line k="Server receipt" v={row.serverReceipt.receiptId} /><div className="text-[9px] mt-1" style={{ color: CD.faint }}>Verified against the authoritative ledger before display.</div></>}

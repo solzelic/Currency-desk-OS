@@ -126,6 +126,55 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
+  /* Half up, to `places`. This rounds the rate it is given. It does
+     not solve a new rate out of the amount and the payout. */
+  function roundRate(rate, places) {
+    var raw = String(rate == null ? "" : rate).trim();
+    if (raw.charAt(0) === "+") raw = raw.slice(1);
+    if (!/^\d+(\.\d+)?$/.test(raw)) return "";
+    if (!Number.isInteger(places) || places < 0 || places > ABSOLUTE_CAP) return "";
+    var scale = decimalsOf(raw);
+    var whole = scaled(raw, scale);
+    var rounded = whole;
+    if (scale > places) {
+      rounded = halfUpDiv(whole, 10n ** BigInt(scale - places));
+      if (rounded == null) return "";
+    } else if (scale < places) {
+      rounded = whole * (10n ** BigInt(places - scale));
+    }
+    return scaledText(rounded, places);
+  }
+
+  /* Six places, half up, of the rate the ledger stored. The receipt
+     uses this. The card uses quoteCardRate. */
+  function exactRateText(rate) {
+    return roundRate(rate, MAX_RATE_PLACES);
+  }
+
+  /* The figure on the quote card. It is the frozen server rate, rounded
+     half up. Four places, then five, then six, and further only when a
+     small rate needs four significant digits. The first of those that
+     multiplies back to the payout is the one shown, and then there is
+     no note. When none of them multiply back, the card keeps the short
+     rounding and the note. It never solves a rate from the two amounts:
+     7.50 CAD at 0.722103704355 stays 0.7221, not 0.7227. */
+  function quoteCardRate(rate, amount, payout) {
+    var amountText = moneyText(amount);
+    var payoutRaw = moneyText(payout);
+    if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "", rounded: false };
+    var show = significantPlaces(amountText, payoutRaw);
+    var ceiling = show > MAX_RATE_PLACES ? show : MAX_RATE_PLACES;
+    var places = MIN_RATE_PLACES;
+    for (; places <= ceiling; places += 1) {
+      var candidate = roundRate(rate, places);
+      if (multipliesExactly(amountText, candidate, payoutRaw)) return { text: candidate, rounded: false };
+    }
+    var display = show > MIN_RATE_PLACES ? show : MIN_RATE_PLACES;
+    var text = roundRate(rate, display);
+    if (!text) return { text: "", rounded: false };
+    return { text: text, rounded: true };
+  }
+
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
@@ -137,6 +186,8 @@
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
+    exactRateText: exactRateText,
+    quoteCardRate: quoteCardRate,
     boardRateText: boardRateText,
   };
 });
@@ -2854,6 +2905,7 @@
       inCcy: transaction.from,
       inAmt: Number(transaction.inputAmount),
       rate: Number(transaction.rate),
+      rateText: transaction.rate == null ? "" : String(transaction.rate),
       outCcy: transaction.to,
       outAmt: Number(transaction.outputAmount),
       fee: transaction.feeCad == null ? null : Number(transaction.feeCad),
@@ -4460,10 +4512,11 @@ if (typeof window !== "undefined") {
   }
   function Line({
     k,
-    v
+    v,
+    className
   }) {
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex justify-between text-sm py-0.5"
+      className: "flex justify-between text-sm py-0.5" + (className ? " " + className : "")
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.mute
@@ -5543,7 +5596,8 @@ if (typeof window !== "undefined") {
     const head = s.receiptHeader || 'CurrencyDesk — Exchange Receipt';
     const fx = !!(row.inCcy && row.outCcy && row.inCcy !== row.outCcy);
     const priced = fx && typeof effectiveRate === 'function' ? effectiveRate(row.inAmt, row.outAmt, currencyPlaces(row.outCcy)) : null;
-    const rateValue = !fx ? row.rate : priced && priced.text ? '1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy : 'Rate unavailable';
+    const exact = fx && row.rateText && window.CDOS.exactRateText ? window.CDOS.exactRateText(row.rateText) : '';
+    const rateValue = !fx ? row.rate : exact ? '1 ' + row.inCcy + ' = ' + exact + ' ' + row.outCcy : priced && priced.text ? '1 ' + row.inCcy + ' = ' + priced.text + ' ' + row.outCcy : 'Rate unavailable';
     return /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -5620,8 +5674,9 @@ if (typeof window !== "undefined") {
       v: `${unitText(row.inAmt, row.inCcy)} ${row.inCcy}`
     }), /*#__PURE__*/React.createElement(Line, {
       k: "Rate",
-      v: rateValue
-    }), fx && priced && priced.rounded ? /*#__PURE__*/React.createElement("div", {
+      v: rateValue,
+      className: "cd-receipt-rate"
+    }), fx && !exact && priced && priced.rounded ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {
         fontSize: 11,
@@ -35966,7 +36021,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }; // MO / Bill: face value out
     /* Once the server has priced the deal, that figure is the one on
        the ticket. The local preview is only what shows before then. */
-    const shownOut = serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy ? serverQuote.outputAmount : out.amt;
+    /* The payout on the card is the server's once a quote exists. The
+       rate beside it is the frozen customerRate, not a rate solved from
+       the two amounts. 7.50 CAD pays 5.42 USD and still reads 0.7221.
+       Before a quote, the preview stays the board figure (0.72225). */
+    const serverPriced = !!(serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy);
+    const shownOut = serverPriced ? serverQuote.outputAmount : out.amt;
+    const rateAmt = serverPriced && serverQuote.inputAmount != null ? serverQuote.inputAmount : amtN;
+    const frozenCard = serverPriced && serverQuote.customerRate != null && window.CDOS.quoteCardRate ? window.CDOS.quoteCardRate(serverQuote.customerRate, rateAmt, shownOut) : null;
+    const exchangeRateLine = frozenCard && frozenCard.text ? '1 ' + inCcy + ' = ' + frozenCard.text + ' ' + outCcy : rateShown(inCcy, outCcy, rateAmt, shownOut);
+    const exchangeRounded = frozenCard && frozenCard.text ? frozenCard.rounded : pricedRate(rateAmt, shownOut, outCcy).rounded;
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -36781,8 +36845,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`,
       giveLbl: 'You give',
       give: `${unitText(amtN, inCcy)} ${inCcy}`,
-      rateLine: rateShown(inCcy, outCcy, amtN, out.amt),
-      rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '',
+      rateLine: exchangeRateLine,
+      rateNote: exchangeRounded ? RATE_NOTE : '',
       getLbl: 'You receive',
       get: `${unitText(shownOut, outCcy)} ${outCcy}`,
       foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now'
@@ -37058,7 +37122,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute,
         fontFamily: 'Space Mono, monospace'
       }
-    }, rateShown(inCcy, outCcy, amtN, out.amt)), /*#__PURE__*/React.createElement("button", {
+    }, exchangeRateLine), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       "aria-label": "Swap",
@@ -37072,7 +37136,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       s: 13,
       c: CD.mute
     }))), /*#__PURE__*/React.createElement(SheetRateNote, {
-      on: pricedRate(amtN, out.amt, outCcy).rounded
+      on: exchangeRounded
     })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       value: shownOut ? unitText(shownOut, outCcy) : '—',
       ccy: outCcy,
@@ -37928,7 +37992,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "flex items-center justify-between"
     }, /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-kicker"
-    }, isExchange || isSend ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), (isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
+    }, isExchange ? exchangeRateLine : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), (isExchange ? exchangeRounded : isSend && pricedRate(amtN, out.amt, out.ccy).rounded) ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {
         fontSize: 11,

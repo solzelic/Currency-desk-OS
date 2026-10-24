@@ -121,6 +121,55 @@
     return { text: rateAt(amountText, payoutRaw, show), rounded: true };
   }
 
+  /* Half up, to `places`. This rounds the rate it is given. It does
+     not solve a new rate out of the amount and the payout. */
+  function roundRate(rate, places) {
+    var raw = String(rate == null ? "" : rate).trim();
+    if (raw.charAt(0) === "+") raw = raw.slice(1);
+    if (!/^\d+(\.\d+)?$/.test(raw)) return "";
+    if (!Number.isInteger(places) || places < 0 || places > ABSOLUTE_CAP) return "";
+    var scale = decimalsOf(raw);
+    var whole = scaled(raw, scale);
+    var rounded = whole;
+    if (scale > places) {
+      rounded = halfUpDiv(whole, 10n ** BigInt(scale - places));
+      if (rounded == null) return "";
+    } else if (scale < places) {
+      rounded = whole * (10n ** BigInt(places - scale));
+    }
+    return scaledText(rounded, places);
+  }
+
+  /* Six places, half up, of the rate the ledger stored. The receipt
+     uses this. The card uses quoteCardRate. */
+  function exactRateText(rate) {
+    return roundRate(rate, MAX_RATE_PLACES);
+  }
+
+  /* The figure on the quote card. It is the frozen server rate, rounded
+     half up. Four places, then five, then six, and further only when a
+     small rate needs four significant digits. The first of those that
+     multiplies back to the payout is the one shown, and then there is
+     no note. When none of them multiply back, the card keeps the short
+     rounding and the note. It never solves a rate from the two amounts:
+     7.50 CAD at 0.722103704355 stays 0.7221, not 0.7227. */
+  function quoteCardRate(rate, amount, payout) {
+    var amountText = moneyText(amount);
+    var payoutRaw = moneyText(payout);
+    if (!amountText || !payoutRaw || payoutRaw === "-" || payoutRaw === ".") return { text: "", rounded: false };
+    var show = significantPlaces(amountText, payoutRaw);
+    var ceiling = show > MAX_RATE_PLACES ? show : MAX_RATE_PLACES;
+    var places = MIN_RATE_PLACES;
+    for (; places <= ceiling; places += 1) {
+      var candidate = roundRate(rate, places);
+      if (multipliesExactly(amountText, candidate, payoutRaw)) return { text: candidate, rounded: false };
+    }
+    var display = show > MIN_RATE_PLACES ? show : MIN_RATE_PLACES;
+    var text = roundRate(rate, display);
+    if (!text) return { text: "", rounded: false };
+    return { text: text, rounded: true };
+  }
+
   function boardRateText(rate) {
     var n = +rate;
     if (!(n > 0) || !isFinite(n)) return "";
@@ -132,6 +181,8 @@
     MAX_RATE_PLACES: MAX_RATE_PLACES,
     RATE_NOTE: RATE_NOTE,
     effectiveRate: effectiveRate,
+    exactRateText: exactRateText,
+    quoteCardRate: quoteCardRate,
     boardRateText: boardRateText,
   };
 });

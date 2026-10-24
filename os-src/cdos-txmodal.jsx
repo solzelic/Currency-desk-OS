@@ -611,8 +611,20 @@
       : { amt: amtN, ccy: home };   // MO / Bill: face value out
     /* Once the server has priced the deal, that figure is the one on
        the ticket. The local preview is only what shows before then. */
-    const shownOut = (serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy)
-      ? serverQuote.outputAmount : out.amt;
+    /* The payout on the card is the server's once a quote exists. The
+       rate beside it is the frozen customerRate, not a rate solved from
+       the two amounts. 7.50 CAD pays 5.42 USD and still reads 0.7221.
+       Before a quote, the preview stays the board figure (0.72225). */
+    const serverPriced = !!(serverQuote && isExchange && serverQuote.outputAmount != null && serverQuote.to === out.ccy);
+    const shownOut = serverPriced ? serverQuote.outputAmount : out.amt;
+    const rateAmt = serverPriced && serverQuote.inputAmount != null ? serverQuote.inputAmount : amtN;
+    const frozenCard = serverPriced && serverQuote.customerRate != null && window.CDOS.quoteCardRate
+      ? window.CDOS.quoteCardRate(serverQuote.customerRate, rateAmt, shownOut)
+      : null;
+    const exchangeRateLine = frozenCard && frozenCard.text
+      ? ('1 ' + inCcy + ' = ' + frozenCard.text + ' ' + outCcy)
+      : rateShown(inCcy, outCcy, rateAmt, shownOut);
+    const exchangeRounded = frozenCard && frozenCard.text ? frozenCard.rounded : pricedRate(rateAmt, shownOut, outCcy).rounded;
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -1067,7 +1079,7 @@
     // present-quote payload (exchange + send)
     const presentQ = isSend
       ? { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Send money', tag: `${dest.flag} ${dest.country}`, giveLbl: 'You pay', give: `${unitText(amtN, home)} ${home}`, rateLine: rateShown(home, payoutCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, payoutCcy).rounded ? RATE_NOTE : '', getLbl: `${benName || 'Beneficiary'} receives`, get: `${unitText(out.amt, payoutCcy)} ${payoutCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} fee` : 'No service fee' }
-      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${unitText(amtN, inCcy)} ${inCcy}`, rateLine: rateShown(inCcy, outCcy, amtN, out.amt), rateNote: pricedRate(amtN, out.amt, outCcy).rounded ? RATE_NOTE : '', getLbl: 'You receive', get: `${unitText(shownOut, outCcy)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
+      : { biz: (settings && (settings.operatingName || settings.bizName)) || 'CurrencyDesk', title: 'Your quote', tag: pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : `${inCcy} → ${outCcy}`, giveLbl: 'You give', give: `${unitText(amtN, inCcy)} ${inCcy}`, rateLine: exchangeRateLine, rateNote: exchangeRounded ? RATE_NOTE : '', getLbl: 'You receive', get: `${unitText(shownOut, outCcy)} ${outCcy}`, foot: feeN > 0 ? `Includes ${fmt(feeN, home)} service fee` : (lockLive ? `Rate held ${lockClock}` : 'Rate as quoted now') };
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
@@ -1167,10 +1179,10 @@
                   <div className="py-2">
                     <div className="cd-tx-rate-line flex items-center justify-center gap-2">
                       <span data-side={pricing.side || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: pricing.side === 'buy' ? CD.flagSoft : pricing.side === 'sell' ? CD.greenSoft : CD.lineSoft, color: pricing.side === 'buy' ? CD.flag : pricing.side === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{pricing.side === 'buy' ? `We buy ${inCcy}` : pricing.side === 'sell' ? `We sell ${outCcy}` : 'Cross'}</span>
-                      <span className="cd-tx-kicker cd-tx-quiet text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{rateShown(inCcy, outCcy, amtN, out.amt)}</span>
+                      <span className="cd-tx-kicker cd-tx-quiet text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{exchangeRateLine}</span>
                       <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                     </div>
-                    <SheetRateNote on={pricedRate(amtN, out.amt, outCcy).rounded} />
+                    <SheetRateNote on={exchangeRounded} />
                   </div>
                   <Lbl>Customer receives</Lbl>
                   <Money value={shownOut ? unitText(shownOut, outCcy) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
@@ -1361,10 +1373,10 @@
                   </div>
                   <div style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
                     <div className="flex items-center justify-between">
-                      <span className="cd-tx-kicker">{(isExchange || isSend) ? rateShown(isExchange ? inCcy : home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                      <span className="cd-tx-kicker">{isExchange ? exchangeRateLine : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
                       <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
                     </div>
-                    {(isExchange || isSend) && pricedRate(amtN, out.amt, out.ccy).rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-note-on-ink)', marginTop: 4 }}>{RATE_NOTE}</div> : null}
+                    {(isExchange ? exchangeRounded : isSend && pricedRate(amtN, out.amt, out.ccy).rounded) ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-note-on-ink)', marginTop: 4 }}>{RATE_NOTE}</div> : null}
                   </div>
                 </div>
 

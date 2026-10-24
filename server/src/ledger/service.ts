@@ -1095,6 +1095,7 @@ export class LedgerService {
             `Customer: ${customer.rows[0].name}`,
             `Quote: ${quote.quoteId}`,
             `Paid exchange: ${fixedIn(input, quote.from)} ${quote.from}`,
+            `Rate: 1 ${quote.from} = ${fixed(rate, 6)} ${quote.to}`,
             `Fee paid separately: ${home} ${fixedIn(fee, home)}`,
             `Received: ${fixedIn(output, quote.to)} ${quote.to}`,
             ...(serbia.receiptFacts?.side
@@ -1510,6 +1511,7 @@ export class LedgerService {
             `Receipt ${transactionRef}`,
             `Customer: ${customer.rows[0].name}`,
             `Paid exchange: ${fixedIn(input, request.from)} ${request.from}`,
+            `Rate: 1 ${request.from} = ${fixed(rate, 6)} ${request.to}`,
             `Fee paid separately: CAD ${fixed(fee)}`,
             `Received: ${fixedIn(output, request.to)} ${request.to}`,
             ...(serbia.receiptFacts?.side

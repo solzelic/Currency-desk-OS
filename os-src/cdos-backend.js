@@ -164,6 +164,7 @@
       inCcy: transaction.from,
       inAmt: Number(transaction.inputAmount),
       rate: Number(transaction.rate),
+      rateText: transaction.rate == null ? "" : String(transaction.rate),
       outCcy: transaction.to,
       outAmt: Number(transaction.outputAmount),
       fee: transaction.feeCad == null ? null : Number(transaction.feeCad),
