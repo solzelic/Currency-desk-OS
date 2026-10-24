@@ -38,6 +38,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import babel from "@babel/standalone";
+import { scanIncludesFee } from "./check-includes-fee.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rel = (p) => path.relative(ROOT, p);
@@ -128,6 +129,12 @@ if (failures.length) {
   console.error(`\n${failures.length} of ${checked} browser script(s) do not parse:\n`);
   for (const f of failures) console.error("  ✗ " + f);
   console.error("\nA file that cannot be parsed is not a degraded page — it is a missing one.\n");
+  process.exit(1);
+}
+const included = scanIncludesFee();
+if (included.length) {
+  console.error("\nThe fee is added on top. This copy still says it is included:\n");
+  for (const hit of included) console.error("  " + hit);
   process.exit(1);
 }
 console.log(`${checked} browser scripts parse.`);

@@ -1416,13 +1416,42 @@
   }
 
 
+  function groupedMoney(n) {
+    const v = Number(n);
+    if (!isFinite(v)) return '0.00';
+    const neg = v < 0;
+    const parts = Math.abs(v).toFixed(2).split('.');
+    const grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (neg ? '-' : '') + grouped + '.' + parts[1];
+  }
+  /* The service fee is added on top. One currency on the card uses a
+     dollar sign. More than one names the code. */
+  function feeOnTopCopy(quote) {
+    const codes = [];
+    const list = (quote && quote.currencies) || [];
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] && codes.indexOf(list[i]) < 0) codes.push(list[i]);
+    }
+    const multi = codes.length > 1;
+    const ccy = (quote && quote.currency) || 'CAD';
+    const payCcy = (quote && quote.payCurrency) || ccy;
+    const fee = Number(quote && quote.fee);
+    const principal = Number(quote && quote.principal);
+    const pay = payCcy === ccy ? +((principal + fee).toFixed(2)) : principal;
+    const shown = (amount, code) => (multi ? code + ' ' : '$') + groupedMoney(amount);
+    return {
+      feeLine: 'Service fee: ' + shown(fee, ccy) + ', added to the total',
+      payLine: 'You pay: ' + shown(pay, payCcy),
+    };
+  }
+
   window.CDOS = Object.assign(window.CDOS || {}, {
     CD, ICONS, Ic, TYPES, CCY, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
     COUNTER_CASH, counterCashIn, counterCashOut, dealHome, sumDealHome,
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
     CommitBtn, APP_ACCENT, PinPrompt, Absent, money,
     intakeIdImage, intakeAttachment, shrinkDataUrl, dataUrlBytes, readableSize,
-    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, cashVariance, storedRoundNote, formatPhoneMoney, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
+    crossRate, deskHomeCcy, homePerUnit, perCadLive, fmt, num, unitText, storedText, cashVariance, storedRoundNote, formatPhoneMoney, feeOnTopCopy, dDiff, mkRef, nowTime, newTx, seedRows, seedClients,
     publishedBook, applyBook, bookSig,
     defaultBaseline, defaultReceipts, holdings,
     /* the two "todays", kept apart on purpose — see the note above */
