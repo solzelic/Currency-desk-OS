@@ -639,6 +639,29 @@ CREATE TABLE IF NOT EXISTS desk_client_images (
 );
 CREATE INDEX IF NOT EXISTS desk_client_images_client_idx ON desk_client_images (client_id, purpose, captured_at DESC);
 CREATE INDEX IF NOT EXISTS desk_client_images_document_idx ON desk_client_images (document_id) WHERE document_id IS NOT NULL;
+-- Inquiry to shop map. Migration 049. PGlite does not run SQL migrations.
+CREATE TABLE IF NOT EXISTS idv_inquiries (
+  reference_id text PRIMARY KEY,
+  shop_id text NOT NULL,
+  branch_id text NOT NULL,
+  teller_id text NOT NULL,
+  provider text NOT NULL,
+  provider_ref text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (provider, provider_ref)
+);
+CREATE TABLE IF NOT EXISTS idv_events (
+  event_id text PRIMARY KEY,
+  provider text NOT NULL,
+  provider_ref text NOT NULL,
+  reference_id text NOT NULL REFERENCES idv_inquiries(reference_id),
+  shop_id text NOT NULL,
+  branch_id text NOT NULL,
+  teller_id text NOT NULL,
+  outcome text NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idv_events_shop_idx ON idv_events (shop_id);
 `;
 
 export async function createDb(): Promise<DbHandle> {
