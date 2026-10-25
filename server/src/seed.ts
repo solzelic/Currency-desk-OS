@@ -7,6 +7,7 @@
    only the FIRST-BOOT bootstrap for a brand-new database and never
    touches existing accounts.
    ============================================================ */
+import { randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { seedWalkthrough } from "./onboarding/walkthrough.js";
 import { createDb, schema } from "./db/index.js";
@@ -58,6 +59,13 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     { staffId: "m.costa", name: "M. Costa", role: "teller" as const },
     { staffId: "s.iqbal", name: "S. Iqbal", role: "teller" as const },
   ];
+  /* seed() runs on production. These two are not in that list.
+     There is no host at boot, so the flag alone decides. Same
+     first-create insert: an existing password is left alone. */
+  const stagingStaff = process.env.STAGING === "1" ? [
+    { staffId: "c.adebayo", name: "C. Adebayo", role: "compliance_officer" as const },
+    { staffId: "l.berg", name: "L. Berg", role: "auditor" as const },
+  ] : [];
   // initial rate board publication — factory rates from the prototype's
   // converter (yorkfx-converter.js CUR list). perCad = units per 1 CAD;
   // the board stores mid = CAD per 1 unit, so mid = 1 / perCad.
@@ -87,7 +95,19 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     });
   }
 
-  for (const s of staff) {
+  /* Staging accounts must not inherit the yorkville fallback.
+     No SEED_PASSWORD means a random secret nobody is told, and
+     password sign-in for those two is off. Production staff
+     keep the existing first-boot password. */
+  let stagingPasswordHash = passwordHash;
+  if (stagingStaff.length > 0 && !process.env.SEED_PASSWORD) {
+    stagingPasswordHash = await hashPassword(randomBytes(32).toString("base64url"));
+    console.log("Password sign-in is off for staging staff.");
+  }
+  const insertStaff = async (
+    s: { staffId: string; name: string; role: (typeof staff)[number]["role"] | (typeof stagingStaff)[number]["role"] },
+    hash: string,
+  ) => {
     await db
       .insert(schema.staffUsers)
       .values({
@@ -99,12 +119,14 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
         name: s.name,
         role: s.role,
         authorizedBranchIds: [DEMO.branchId],
-        passwordHash,
+        passwordHash: hash,
       })
       // per-employee credentials: never touch an existing account — passwords
       // are set and reset in-app by managers, not by the environment
       .onConflictDoNothing();
-  }
+  };
+  for (const s of staff) await insertStaff(s, passwordHash);
+  for (const s of stagingStaff) await insertStaff(s, stagingPasswordHash);
 }
 
 // CLI: npm run seed
