@@ -19,10 +19,12 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export async function createSession(
   db: Db,
   userId: string,
-  opts?: { platformMfa?: boolean; workspaceId?: string | null },
+  opts?: { platformMfa?: boolean; workspaceId?: string | null; ttlMs?: number },
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  /* A desk sign-in stays one shift. Staging quick sign-in passes
+     three days. Callers that omit ttlMs keep SESSION_TTL_MS. */
+  const expiresAt = new Date(Date.now() + (opts?.ttlMs ?? SESSION_TTL_MS));
   /* A switch names the workspace, including "none" when the next person
      has to pick a till. Login omits it and keeps the home till. */
   const workspaceId = opts && "workspaceId" in opts

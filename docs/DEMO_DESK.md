@@ -60,6 +60,22 @@ check to run on every deploy. Leaving it set is safe: deals are not
 posted twice, and a vault that already has a position is not counted
 again. A vault that was never counted gets this opening.
 
+## Staging quick sign-in
+
+`STAGING=1` on the staging host. It is not in `render.yaml`. A person sets it on that host. This repository does not.
+
+The login page calls `GET /api/staging/signin`. When that answers `{enabled:true}`, six buttons sign in as Owner, Manager, Supervisor, Compliance officer, Teller, or Auditor. No password, code, or PIN. The session lasts three days (`cdos_session` plus `cdos_staging=1`). A normal sign-in stays twelve hours and clears the marker.
+
+The routes pass the request Host into `isStagingRuntime`. It has to agree with `RENDER_EXTERNAL_HOSTNAME`: `staging.currencydeskos.com`, `currencydesk-staging.onrender.com`, or `currencydesk-staging-pr-<digits>.onrender.com` while `IS_PULL_REQUEST=true`. `currencydeskos.com` and `www.currencydeskos.com` are refused. The shop has to be `tnt-yorkfx`. The body is only the role. Any other key is refused.
+
+The people are `j.masri`, `r.haddad`, `a.singh`, `c.adebayo`, `m.costa`, and `l.berg`. A boot with `STAGING` exactly `1` adds the compliance officer and the auditor when they are missing, including on a database that already has the other demo staff. An existing row is not overwritten.
+
+The banner reads "Staging. Demo data only. Never enter a real customer." It is on the sign-in page while the staging door is open, and on every screen for that session. A later password sign-in clears it. The audit row for `auth.staging_enter` records the role, the host, the time, the client address from `clientIp`, and the user agent capped at 500 characters.
+
+`isStagingRuntime` in `server/src/auth/staging-runtime.ts` is the flag-plus-host check. A follow-up can reuse it to force sandbox mode for email, SMS, and identity checks. Those calls are not changed here. They live in `server/src/routes/onboarding-public.ts` (verify send), `server/src/onboarding/pipeline.ts` (invite and review mail), `server/src/routes/signup.ts` (signup mail), `server/src/email.ts`, `server/src/sms.ts`, and `server/src/idv/` (identity checks).
+
+If Resend, Twilio, ElevenLabs, Persona or Stripe is ever added to staging with a live key, the one-click staging sign-in must be turned off first (unset STAGING) until Compliance re-checks.
+
 ## What this is not
 
 - Not platform admin (`admin@…` / `/admin`).

@@ -24,7 +24,9 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
+import { isStagingRuntime } from "../auth/staging-runtime.js";
 import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
+import { clearStagingCookie, STAGING_COOKIE } from "./staging-signin.js";
 import { pinDeskName } from "../auth/desk-name.js";
 import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
 import { audit } from "../audit.js";
@@ -215,6 +217,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
 
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+    clearStagingCookie(reply, cookieOpts.secure);
     return {
       user: {
         id: user.staffId,
@@ -303,6 +306,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       const { token, expiresAt } = await createSession(db, user.id);
       await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
       reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+      clearStagingCookie(reply, cookieOpts.secure);
       return { ok: true, needsCode: false, user: await userPayload(user) };
     }
     /* Pressing "Send my code" twice used to send two, and only the second
@@ -358,6 +362,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const { token, expiresAt } = await createSession(db, user.id);
     await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+    clearStagingCookie(reply, cookieOpts.secure);
     return { user: await userPayload(user) };
   });
 
@@ -614,6 +619,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       detail: { from: who.id, to: target.id },
     });
     reply.setCookie(SESSION_COOKIE, next.token, { ...cookieOpts, expires: next.expiresAt });
+    clearStagingCookie(reply, cookieOpts.secure);
     return {
       ok: true,
       pickTill: kept == null,
@@ -630,6 +636,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       await audit(db, { tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id, action: "auth.logout" });
     }
     reply.clearCookie(SESSION_COOKIE, cookieOpts);
+    clearStagingCookie(reply, cookieOpts.secure);
     return { ok: true };
   });
 
@@ -646,6 +653,9 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const who = resolved.state === "active" ? resolved.user : null;
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     return {
+      /* A label for the banner. It is not a permission. The cookie is
+         set only by quick sign-in, and only a staging host may read it. */
+      staging: req.cookies[STAGING_COOKIE] === "1" && isStagingRuntime(req.headers.host ?? ""),
       user: {
         id: who.staffId,
         name: who.name,
