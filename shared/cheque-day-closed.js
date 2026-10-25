@@ -16,7 +16,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   return {
     reversal:
-      "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.",
+      "Open a new session on the till that paid this cheque out. A supervisor or manager then reverses it there.",
     returned:
       "Open a new session on the till that paid this cheque out. Then post the return there.",
   };

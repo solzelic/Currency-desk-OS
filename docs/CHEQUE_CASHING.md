@@ -103,7 +103,7 @@ The cash returns only to the till that paid the cheque out. A reversal
 from any other till is 422 `CHEQUE_REVERSAL_WRONG_TILL`. The transaction
 rolls back: the cheque stays held, no reversal row is committed, and the
 other drawer does not move. The teller reverses it from the original till.
-A reversal or a return on a closed or signed-off day is 422 `CHEQUE_DAY_CLOSED` ("This day is closed. Reversals and returns can't be posted to it.") and writes nothing. The cheque detail shows that sentence in the held-cheque state alert and disables Return NSF, Flag fraud and Reverse cashing. The next step is on the 422, from `shared/cheque-day-closed.js`. A return says "Open a new session on the till that paid this cheque out. Then post the return there." A reversal says "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there."
+A reversal or a return on a closed or signed-off day is 422 `CHEQUE_DAY_CLOSED` ("This day is closed. Reversals and returns can't be posted to it.") and writes nothing. The cheque detail shows that sentence in the held-cheque state alert and disables Return NSF, Flag fraud and Reverse cashing. The next step is on the 422, from `shared/cheque-day-closed.js`. A return says "Open a new session on the till that paid this cheque out. Then post the return there." A reversal says "Open a new session on the till that paid this cheque out. A supervisor or manager then reverses it there."
 The deal reversal route, `POST /api/ledger/transactions/:transactionId/reversal`,
 refuses `cheque_cashing`, `cheque_clearing`, and `cheque_return`
 (`REVERSAL_NOT_ALLOWED`). The message names the cheque reversal route.

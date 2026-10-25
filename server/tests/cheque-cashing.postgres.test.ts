@@ -792,7 +792,7 @@ postgres("cheque cashing on the ledger", () => {
   const dayClosedRefusal =
     "This day is closed. Reversals and returns can't be posted to it.";
   const dayClosedReversalNext =
-    "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.";
+    "Open a new session on the till that paid this cheque out. A supervisor or manager then reverses it there.";
   const dayClosedReturnNext =
     "Open a new session on the till that paid this cheque out. Then post the return there.";
 
