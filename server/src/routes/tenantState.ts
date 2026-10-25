@@ -26,6 +26,7 @@ import {
   ownsSettings,
 } from "../state/owner-settings.js";
 import { scrubHealthNumbers } from "../clients/id-document-types.js";
+import { keepStrSnapshot, presentStrSnapshot } from "../state/str-snapshot.js";
 import { isSessionOwner, PIN_ROW_REMOVAL, PIN_RULE_REFUSAL, pinOwnerRefusal, ranksBelow, staffRuleChanges } from "../state/pin-rule.js";
 
 /* The cheque fee is the price of the desk's own credit. Who may write
@@ -273,13 +274,14 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!row) return { state: null, updatedAt: null, version: 0, settingsRows };
     /* A copy. The stored blob can still hold a PIN from before this strip
        existed. The read hides it. Cleaning those rows is a separate change. */
-    const readable = structuredClone(row.state);
+    const readable = structuredClone(row.state) as Record<string, unknown>;
     stripSnapshotPins(readable);
-    row.state = readable;
     /* A snapshot saved before health cards were refused can still hold a
        health number. It is not sent, so the next save cannot carry it
-       back. The stored row is cleaned by the next save, not here. */
-    return { state: scrubHealthNumbers(row.state), updatedAt: row.updatedAt, version: row.version, settingsRows };
+       back. The stored row is cleaned by the next save, not here.
+       STR and the structuring watch are removed for a role outside
+       those sets. The watch is not computed for that role. */
+    return { state: scrubHealthNumbers(presentStrSnapshot(who.role, readable)), updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
@@ -451,6 +453,9 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        audit row is written only when this save lands. */
     const ignoredPins = stripSnapshotPins(state);
     const pinsIgnored = Math.min(ignoredPins.count, PIN_CAP);
+    /* A role outside the set cannot clear or replace an STR or an
+       acknowledgement. The stored value stays. The rest of the save lands. */
+    state = keepStrSnapshot(who.role, asRecord(current?.state), state);
 
     /* Describe what is being saved. This NEVER refuses — the browser holds
        the only copy, so rejecting a document we merely find surprising
