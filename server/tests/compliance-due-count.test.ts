@@ -315,7 +315,7 @@ describe("the shell alerts equal the header", () => {
     expect([(chip && chip[1]) || "0", headerCount(html), html.includes(">1 open<")]).toEqual(["2", "2", true]);
   });
   it("renders the dashboard tile equal to the header when a prepared filing outnumbers loaded deals", () => {
-    const html = shell(PREPARED, [cashDeal()], ["compliance", "dashboard"]).html; const tile = />(\d+)<\/div><div[^>]*>Reportable deals</.exec(html);
+    const html = shell(PREPARED, [cashDeal()], ["compliance", "dashboard"]).html; const tile = /font-size:22px[^"]*">(\d+)<\/div><div[^>]*>Reportable deals</.exec(html);
     expect([(tile && tile[1]) || "0", headerCount(html)]).toEqual(["2", "2"]);
   });
 });

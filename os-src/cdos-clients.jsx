@@ -1298,7 +1298,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>
           {/* KPI strip */}
           <div className="grid grid-cols-4 gap-px mb-5" style={{ background: CD.line, border: `1px solid ${CD.line}`, borderRadius: 10, overflow: 'hidden' }}>
-            {[['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable deals', String(reportable)]].map(([l, v], i) => (
+            {[['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable', String(reportable)]].map(([l, v], i) => (
               <div key={i} className="px-4 py-3" style={{ background: CD.panel }}><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div><div className="text-[18px] font-semibold mt-0.5" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{v}</div></div>
             ))}
           </div>

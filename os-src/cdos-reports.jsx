@@ -522,7 +522,7 @@
           [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''],
           [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''],
           [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''],
-          ['Reportable deals', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
+          ['Reportable', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
       }
       if (id === 'pnl') { const hstRate = (settings && settings.hstRate != null) ? +settings.hstRate : 13; return [['Line', homeCcy], ['Commission & fees', s ? csvMoney(s.feesHome) : ''], ['Realized FX margin', s ? csvMoney(s.realizedPnlHome) : ''], ['Gross revenue', s ? csvMoney(s.earningsHome) : ''], [`Sales tax on commission (${hstRate}%)`, s && s.feesHome != null ? (Number(s.feesHome) * hstRate / 100).toFixed(2) : ''], ['Net revenue to business', s ? csvMoney(s.earningsHome) : '']]; }
       if (id === 'summary') return [['Currency', 'Sold to customers', `Realized margin ${homeCcy}`], ...((s && s.byCurrency) || []).map(c => [c.currency, csvMoney(c.sold), csvMoney(c.realizedPnlHome)])];
@@ -711,7 +711,7 @@
           <Card>
             <SecTitle>Compliance at close</SecTitle>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
-              <Mini label={limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`} tone={limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green} />
+              <Mini label={limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`} tone={limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green} />
               <Mini label="Structuring watch" value={`${data.stru.length}`} sub="open patterns" tone={data.stru.length ? CD.amber : CD.green} />
               <Mini label="KYC / ID gaps" value={`${data.kycGaps.length}`} sub="clients to verify" tone={data.kycGaps.length ? CD.flag : CD.green} />
             </div>
@@ -834,7 +834,7 @@
           <Card>
             <SecTitle>Compliance snapshot</SecTitle>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
-              <Mini label={limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`} tone={limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green} />
+              <Mini label={limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`} value={limit.amount == null ? '—' : `${data.reportable.length}`} sub={limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`} tone={limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green} />
               <Mini label="Structuring watch" value={`${data.stru.length}`} sub="clients aggregating" tone={data.stru.length ? CD.amber : CD.green} />
               <Mini label="KYC / ID gaps" value={`${data.kycGaps.length}`} sub="clients to verify" tone={data.kycGaps.length ? CD.flag : CD.green} />
             </div>
