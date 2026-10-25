@@ -1,7 +1,8 @@
 /* The structuring watch is a list the server computes.
    Supervisor and the three STR roles may read it and acknowledge
-   one customer. Each acknowledgement is a new row. Update and
-   delete are refused. A teller is refused before any row is written.
+   one customer. Each acknowledgement is a new row. It covers only
+   the deals it saw. Update, delete, and truncate are refused.
+   A teller is refused before any row is written.
    The role set is shared/str-role.js. Cash under the reporting
    line, same customer, not reversed, inside seven days, two or
    more, summing to the line or more. No line: an empty list.
@@ -28,6 +29,7 @@ export type WatchItem = {
   acknowledged: boolean;
   actorId: string | null;
   acknowledgedAt: string | null;
+  dealIds: string[];
 };
 
 export type DealMark = {
@@ -40,6 +42,12 @@ export type DealMark = {
   ackAt: string | null;
 };
 
+function sameIds(left: readonly string[], right: readonly string[]) {
+  if (left.length !== right.length) return false;
+  const have = new Set(right);
+  return left.every((id) => have.has(id));
+}
+
 function refsOf(value: unknown): string[] {
   const parsed = typeof value === "string" ? JSON.parse(value) as unknown : value;
   return Array.isArray(parsed) ? parsed.map(String) : [];
@@ -49,15 +57,14 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
   const line = await resolveReportThreshold(client, actor.legalEntityId);
   if (!line) return [];
   const found = await client.query(
-    `SELECT t.customer_id, c.name AS customer_name,
-            t.cash_in_home::text AS cash,
-            (a.ack_id IS NOT NULL) AS acknowledged,
-            a.actor_id, a.acknowledged_at
+    `SELECT t.customer_id, t.transaction_id, t.posted_at,
+            c.name AS customer_name, t.cash_in_home::text AS cash,
+            a.actor_id, a.acknowledged_at, a.deal_ids
        FROM ledger_transactions t
        JOIN ledger_customers c ON c.customer_id = t.customer_id
        LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
        LEFT JOIN LATERAL (
-         SELECT ack_id, actor_id, acknowledged_at
+         SELECT actor_id, acknowledged_at, deal_ids
            FROM ledger_structuring_acks
           WHERE tenant_id = t.tenant_id
             AND legal_entity_id = t.legal_entity_id
@@ -75,39 +82,51 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
   );
   const grouped = new Map<string, {
     name: string;
-    cash: Decimal[];
-    acknowledged: boolean;
+    deals: { id: string; at: Date; cash: Decimal }[];
     actorId: string | null;
-    acknowledgedAt: string | null;
+    ackAt: Date | null;
+    coveredIds: string[] | null;
   }>();
   for (const row of found.rows) {
     const cash = new Decimal(String(row.cash));
     if (!cash.gt(0) || !cash.lt(line)) continue;
     const current = grouped.get(String(row.customer_id)) ?? {
       name: String(row.customer_name),
-      cash: [],
-      acknowledged: Boolean(row.acknowledged),
+      deals: [],
       actorId: row.actor_id == null ? null : String(row.actor_id),
-      acknowledgedAt: row.acknowledged_at
-        ? new Date(row.acknowledged_at).toISOString()
-        : null,
+      ackAt: row.acknowledged_at ? new Date(row.acknowledged_at) : null,
+      coveredIds: Array.isArray(row.deal_ids) ? row.deal_ids.map(String) : null,
     };
-    current.cash.push(cash);
+    current.deals.push({
+      id: String(row.transaction_id),
+      at: new Date(row.posted_at),
+      cash,
+    });
     grouped.set(String(row.customer_id), current);
   }
   const items: WatchItem[] = [];
   for (const [customerId, group] of grouped) {
-    if (group.cash.length < 2) continue;
-    const total = group.cash.reduce((sum, amount) => sum.add(amount), new Decimal(0));
+    if (group.deals.length < 2) continue;
+    const total = group.deals.reduce((sum, deal) => sum.add(deal.cash), new Decimal(0));
     if (total.lt(line)) continue;
+    const dealIds = group.deals.map((deal) => deal.id);
+    const newest = group.deals.reduce(
+      (max, deal) => (deal.at > max ? deal.at : max),
+      group.deals[0].at,
+    );
+    const acknowledged = group.ackAt != null
+      && group.coveredIds != null
+      && newest.getTime() <= group.ackAt.getTime()
+      && sameIds(dealIds, group.coveredIds);
     items.push({
       customerId,
       name: group.name,
-      count: group.cash.length,
+      count: group.deals.length,
       total: total.toFixed(2),
-      acknowledged: group.acknowledged,
-      actorId: group.actorId,
-      acknowledgedAt: group.acknowledgedAt,
+      acknowledged,
+      actorId: acknowledged ? group.actorId : null,
+      acknowledgedAt: acknowledged && group.ackAt ? group.ackAt.toISOString() : null,
+      dealIds,
     });
   }
   return items;
@@ -181,12 +200,30 @@ export class StructuringWatchService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      requireWatch(await authorizeLedgerActor(client, actor, "ledger:view"));
+      const role = await authorizeLedgerActor(client, actor, "ledger:view");
+      requireWatch(role);
+      const { items } = await dealMarks(client, actor, [], role);
+      const item = items.find((row) => row.customerId === customerId);
+      if (!item) {
+        throw new LedgerError(
+          "CUSTOMER_NOT_FOUND",
+          "This customer is not on the watch.",
+        );
+      }
       await client.query(
         `INSERT INTO ledger_structuring_acks
-           (tenant_id, legal_entity_id, branch_id, customer_id, actor_id)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [actor.tenantId, actor.legalEntityId, actor.branchId, customerId, actor.userId],
+           (tenant_id, legal_entity_id, branch_id, customer_id,
+            actor_id, actor_role, deal_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          actor.tenantId,
+          actor.legalEntityId,
+          actor.branchId,
+          customerId,
+          actor.userId,
+          role,
+          item.dealIds,
+        ],
       );
       await client.query("COMMIT");
       return { customerId, acknowledged: true };

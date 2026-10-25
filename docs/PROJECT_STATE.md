@@ -90,10 +90,13 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `POST /api/ledger/structuring-watch/acknowledge` are the administrator,
   the branch manager, the compliance officer, and the supervisor. A teller
   is refused before a row is written. Each acknowledgement inserts a new
-  row. Update and delete are refused by `ledger_append_only`. The deal
-  read and the watch list use one helper, `dealMarks`, and that helper
-  reads the latest acknowledgement for the customer. The helper does not
-  run the watch query for a role that cannot see the watch.
+  row and stores the session role. Update, delete, and truncate are
+  refused by `ledger_append_only`. The deal read and the watch list use
+  one helper, `dealMarks`. That helper reads the latest acknowledgement
+  and keeps it only when its time is at or after the newest qualifying
+  deal and the deals are the ones that acknowledgement stored. A customer
+  who is not on the watch is refused and nothing is written. The helper
+  does not run the watch query for a role that cannot see the watch.
   `canSeeStructuringWatch`, `STR_KEYS`, and `WATCH_KEYS` live in
   `shared/str-role.js`. A supervisor sees the watch fields and not the
   STR fields. The desk screens are not gated here. Issue #342.
