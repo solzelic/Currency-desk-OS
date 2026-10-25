@@ -75,6 +75,8 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     );
     await pool.query("INSERT INTO branches (id,tenant_id,legal_entity_id,name) VALUES ($1,$2,$3,'Yorkville') ON CONFLICT DO NOTHING", [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId]);
     await pool.query("INSERT INTO ledger_customers VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','Normal','verified')", scope.slice(0, 4));
+    const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+    await fileCurrentPhotoId(pool, "customer-demo");
     await pool.query(
       `INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount,avg_cost)
        VALUES ($1,$2,$3,$4,$5,'CAD',50000,NULL),($1,$2,$3,$4,$5,'USD',4000,'1.340000000000')`,

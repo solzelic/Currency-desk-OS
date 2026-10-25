@@ -84,6 +84,8 @@ async function reset(homeCurrency = "CAD", packId = "pack-ca-v1") {
     "INSERT INTO ledger_customers VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','Normal','verified')",
     scope.slice(0, 4),
   );
+  const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+  await fileCurrentPhotoId(pool, "customer-demo");
   await pool.query(
     `INSERT INTO ledger_till_sessions
       (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,

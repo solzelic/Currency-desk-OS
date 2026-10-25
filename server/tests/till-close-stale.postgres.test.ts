@@ -13,6 +13,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 import { buildApp } from "../src/app.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -58,6 +59,7 @@ async function reset() {
      VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','normal','verified')`,
     scope.slice(0, 4),
   );
+  await fileCurrentPhotoId(pool, "customer-demo");
   await pool.query(
     `INSERT INTO ledger_rates VALUES
       ($1,$2,$3,$4,'CAD',1),

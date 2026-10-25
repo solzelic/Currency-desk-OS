@@ -176,7 +176,6 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
         externalRef: "ae-seam-walker",
         name: "Unidentified Walker",
         risk: "normal",
-        idStatus: "missing",
       }),
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
@@ -247,11 +246,31 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
     const res = await fetch(`/api/ledger/customers/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Known Walker", risk: "normal", idStatus: "verified" }),
+      body: JSON.stringify({ name: "Known Walker", risk: "normal" }),
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }, customerId);
   expect(verifiedCustomer.status, JSON.stringify(verifiedCustomer.body)).toBe(200);
+  /* Standing is not a field on the customer write. This transfer is
+     every deal, so the file needs a current photo ID with an expiry. */
+  await pool.query(
+    `INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+     SELECT 'cli-' || customer_id, tenant_id, legal_entity_id, name
+       FROM ledger_customers WHERE customer_id = $1`,
+    [customerId],
+  );
+  await pool.query(
+    `INSERT INTO desk_client_identity_documents
+       (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, expires_on, is_primary)
+     SELECT 'doc-' || customer_id, 'cli-' || customer_id, tenant_id, legal_entity_id,
+            'Driver''s Licence', 'D-UA-1', DATE '2032-04-01', true
+       FROM ledger_customers WHERE customer_id = $1`,
+    [customerId],
+  );
+  await pool.query(
+    `UPDATE ledger_customers SET client_id = 'cli-' || customer_id WHERE customer_id = $1`,
+    [customerId],
+  );
 
   const noPurpose = await page.evaluate(async (body) => {
     const res = await fetch("/api/ledger/remittances/send", {

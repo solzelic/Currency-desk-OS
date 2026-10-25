@@ -86,6 +86,8 @@ async function reset() {
     "INSERT INTO ledger_customers VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','Normal','verified')",
     scope.slice(0, 4),
   );
+  const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+  await fileCurrentPhotoId(pool, "customer-demo");
   for (const [currency, amount] of [
     ["CAD", 50000],
     ["USD", 4000],

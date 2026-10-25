@@ -207,6 +207,8 @@ postgres("a desk with no country pack uses the baseline", () => {
     await pool.query(
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id='customer-demo'",
     );
+    const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+    await fileCurrentPhotoId(pool, "customer-demo");
     const sent = await app.inject({
       method: "POST",
       url: "/api/ledger/remittances/send",

@@ -122,7 +122,7 @@ test("the shell loads the helper before the screens that call it", () => {
 const BASELINE = {
   "YorkFX/yorkfx-staff.js": { time: 1, day: 0 },
   "design/kyc-handoff/kyc-verification-states.html": { time: 0, day: 2 },
-  "os-src/cdos-backend.js": { time: 0, day: 1 },
+  "os-src/cdos-backend.js": { time: 0, day: 0 },
   "os-src/cdos-cheques.jsx": { time: 0, day: 1 },
   "os-src/cdos-import.jsx": { time: 0, day: 2 },
   "os-src/cdos-kyc.jsx": { time: 0, day: 1 },
