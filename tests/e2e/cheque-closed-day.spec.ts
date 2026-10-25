@@ -10,7 +10,7 @@ const REFUSAL = "This day is closed. Reversals and returns can't be posted to it
 const RETURN_NEXT =
   "Open a new session on the till that paid this cheque out. Then post the return there.";
 const REVERSAL_NEXT =
-  "Open a new session on the till that paid this cheque out. A supervisor or manager then reverses it there.";
+  "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.";
 
 /* Same reading as the other desk specs. The closed-day title sits on
    the pink box and has to clear 4.5:1. */
