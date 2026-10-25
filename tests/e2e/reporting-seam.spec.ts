@@ -416,7 +416,7 @@ test("the reporting threshold and the date on the ticket are the desk's own", as
      two different lines. The stat card now prints the pack's figure. */
   const line = Number(pack.reportThreshold);
   expect(screen).toMatch(
-    new RegExp(`Reportable deals[\\s\\S]{0,160}${line.toLocaleString("en-CA").replace(/,/g, ",")}`),
+    new RegExp(`Reportable ≥[^\\n]*${line.toLocaleString("en-CA").replace(/,/g, ",")}`),
   );
 
   /* And the desk's idea of "today" is the ledger's. `TODAY` was a string

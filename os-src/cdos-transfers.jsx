@@ -212,7 +212,7 @@
       mk({ id: 't2', ref: 'TR-260618-002', pin: '77 410 663', senderName: 'Jakob Miller', beneficiaryId: 'b2', corridor: 'IN', ccy: 'INR', method: 'bank', partner: 'ICICI Bank', payAmt: 1800, recvAmt: +(1800 * mid('INR') * 0.97).toFixed(2), date: '2026-06-18', status: 'sent', fee: 12.5, purpose: 'Education', createdBy: 'A. Singh',
         timeline: [{ status: 'created', ts: '2026-06-18 09:40', by: 'A. Singh' }, { status: 'sent', ts: '2026-06-18 09:43', by: 'A. Singh', note: 'Submitted to ICICI batch' }] }),
       mk({ id: 't3', ref: 'TR-260617-019', pin: '20 884 137', senderName: 'Brooke Lawson', beneficiaryId: 'b3', corridor: 'CN', ccy: 'CNY', method: 'wallet', partner: 'Alipay', payAmt: 14200, recvAmt: +(14200 * mid('CNY') * 0.97).toFixed(2), date: '2026-06-17', status: 'hold', fee: 95, purpose: 'Property / rent', sourceOfFunds: 'Property sale', createdBy: 'R. Haddad',
-        timeline: [{ status: 'created', ts: '2026-06-17 15:02', by: 'R. Haddad' }, { status: 'hold', ts: '2026-06-17 15:06', by: 'J. Masri', note: 'Reportable transfers, source of funds review before release' }] }),
+        timeline: [{ status: 'created', ts: '2026-06-17 15:02', by: 'R. Haddad' }, { status: 'hold', ts: '2026-06-17 15:06', by: 'J. Masri', note: 'Reportable EFT — source of funds review before release' }] }),
       mk({ id: 't4', ref: 'TR-260616-031', pin: '63 102 558', senderName: 'Rachel Carter', beneficiaryId: 'b1', corridor: 'PH', ccy: 'PHP', method: 'cash', partner: 'Cebuana Lhuillier', payAmt: 450, recvAmt: +(450 * mid('PHP') * 0.97).toFixed(2), date: '2026-06-16', status: 'paid', createdBy: 'M. Costa',
         timeline: [{ status: 'created', ts: '2026-06-16 11:20', by: 'M. Costa' }, { status: 'sent', ts: '2026-06-16 11:22', by: 'M. Costa' }, { status: 'transit', ts: '2026-06-16 11:40', by: 'System' }, { status: 'paid', ts: '2026-06-16 13:18', by: 'System', note: 'Collected in Cebu City — ID verified at counter' }] }),
     ].map(t => Object.assign(t, { rate: t.rate || +(t.recvAmt / t.payAmt).toFixed(4), midRate: t.midRate || crossRate('CAD', t.ccy), spreadCad: t.spreadCad != null ? t.spreadCad : +(t.payAmt * 0.03).toFixed(2) }));
@@ -675,7 +675,7 @@
           {(reportable || idRequired) && (
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
-              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable transfers, {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
+              {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
               {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>

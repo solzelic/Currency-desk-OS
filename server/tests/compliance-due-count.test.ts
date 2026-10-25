@@ -216,6 +216,12 @@ describe("the due count is amber text on the tile", () => {
     expect(darkBadge).toBeGreaterThanOrEqual(4.5);
     expect(Number(lightBadge.toFixed(2))).toBe(4.67);
     expect(Number(darkBadge.toFixed(2))).toBe(7.83);
+    const ledger = readFileSync(resolve(root, "os-src/cdos-ledger.jsx"), "utf8");
+    const card = ledger.slice(ledger.indexOf("function StatCard"), ledger.indexOf("function CompKpi"));
+    expect(card).toContain("flag ? CD.panel");
+    expect(card).toContain("flag ? CD.amber : CD.ink");
+    expect(Number(lightTile.toFixed(2))).toBe(4.67);
+    expect(Number(darkTile.toFixed(2))).toBe(7.05);
     expect(Number(ratio(pick(light, "amber"), pick(light, "chip")).toFixed(2))).toBe(4.1);
     expect(Number(ratio(pick(light, "amber"), pick(light, "paper")).toFixed(2))).toBe(4.21);
     expect(Number(ratio(pick(dark, "amber"), pick(dark, "paper")).toFixed(2))).toBe(7.63);
@@ -249,11 +255,16 @@ describe("the bell, the ledger nav badge, and Reportable deals are amber", () =>
     expect(badges).not.toMatch(/#c0392b|#d8453a|var\(--flag\)/);
   });
 
-  it("paints an open Reportable deals figure with the amber token", () => {
+  it("paints an open reportable figure in amber on the panel", () => {
     const src = readFileSync(resolve(root, "os-src/cdos-ledger.jsx"), "utf8");
     const fn = src.slice(src.indexOf("function StatCard"), src.indexOf("function CompKpi"));
+    expect(fn).toContain("background: flag ? CD.panel");
     expect(fn).toContain("flag ? CD.amber : CD.ink");
     expect(fn).not.toContain("CD.flag");
+    const at = src.indexOf(">Reportable deals");
+    const chip = src.slice(at - 200, at);
+    expect(chip).toContain("CD.amber");
+    expect(chip).toContain("CD.panel");
   });
 });
 
@@ -295,13 +306,4 @@ describe("the shell alerts equal the header", () => {
   it("counts nothing due", () => expectDue({}, "0"));
   it("counts a prepared filing on every surface", () => expectDue(PREPARED, "1"));
   it("counts a sealed filing as zero", () => expectDue(SEALED, "0"));
-  it("has no bare Reportable label", () => {
-    const files = ["cdos-ledger.jsx", "cdos-reports.jsx", "cdos-search.jsx", "cdos-clients.jsx", "cdos-txmodal.jsx", "cdos-dashboard.jsx", "cdos-os.jsx", "cdos-compliance-app.jsx", "cdos-transfers.jsx", "cdos-transfers-app.jsx", "cdos-apps.jsx"];
-    const bad: string[] = [];
-    for (const file of files) {
-      const src = readFileSync(resolve(root, "os-src/" + file), "utf8");
-      if (/\bReportable\b(?! deals)(?! transfers)/.test(src)) bad.push(file);
-    }
-    expect(bad).toEqual([]);
-  });
 });

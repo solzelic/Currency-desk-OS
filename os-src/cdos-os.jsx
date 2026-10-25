@@ -2491,7 +2491,7 @@
                     {alertCount > 0 && <button className="bell-head-all" onClick={() => { setBellMenu(false); openApp('compliance'); }}>View all</button>}
                   </div>
                   {alertCount === 0 ? (
-                    <div className="bell-empty"><Ic n="check" s={22} c={CD.green} /><span>No open flags. Reportable deals are filed, IDs current, no structuring watch.</span></div>
+                    <div className="bell-empty"><Ic n="check" s={22} c={CD.green} /><span>No open flags. Reportables filed, IDs current, no structuring watch.</span></div>
                   ) : (
                     <div className="bell-body">
                       {jViol.length > 0 && (

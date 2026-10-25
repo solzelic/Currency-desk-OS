@@ -91,7 +91,7 @@
     return (
       <button onClick={onClick} disabled={!onClick}
         className="text-left px-5 py-3.5"
-        style={{ borderRight: `1px solid ${CD.lineSoft}`, background: active ? 'var(--cd-chip)' : 'transparent', cursor: onClick ? 'pointer' : 'default', transition: 'background .12s' }}>
+        style={{ borderRight: `1px solid ${CD.lineSoft}`, background: flag ? CD.panel : (active ? 'var(--cd-chip)' : 'transparent'), cursor: onClick ? 'pointer' : 'default', transition: 'background .12s' }}>
         <div className="text-[11px] flex items-center gap-1.5" style={{ color: CD.mute }}>{label}{active && <Ic n="x" s={11} c={CD.mute} />}</div>
         <div className="text-lg font-semibold leading-tight" style={{ color: flag ? CD.amber : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
         {sub && <div className="text-[10px] mt-0.5" style={{ color: CD.faint }}>{sub}</div>}
@@ -648,7 +648,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {(single || structuring || idRequired) && (
               <div className="p-3 space-y-2" style={{ background: single ? CD.flagSoft : structuring ? CD.amberSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${single ? CD.flag : structuring ? CD.amber : CD.line}` }}>
                 <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: single ? CD.flag : structuring ? CD.amber : CD.ink }}><Ic n="shield" s={13} /> Compliance check</div>
-                {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable deals, pay-in approx {fmtHome(inCadEquiv)} (at or above {limit.label}). {((window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode) || '') ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'}</div>}
+                {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable, pay-in approx {fmtHome(inCadEquiv)} (at or above {limit.label}). {((window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode) || '') ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'}</div>}
                 {structuring && <div className="text-[12px]" style={{ color: CD.ink }}>Structuring watch — this client's {settings.structuringDays}-day total reaches {fmtHome(recentTotal)} with this deal.</div>}
                 {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`}</div>}
               </div>
@@ -656,7 +656,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {/* reportable — capture the FINTRAC info at the counter, pre-fills the filing */}
             {single && (
               <div className="p-3 space-y-2.5" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 10 }}>
-                <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable deals, capture for the {(window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'report')}</span></div>
+                <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {(window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'report')}</span></div>
                 <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture these now, while the customer is here — it pre-fills the filing in Compliance so nothing is chased down later.</div>
                 <Field label="Purpose of transaction"><input value={cap.purpose} onChange={e => setCap(s => ({ ...s, purpose: e.target.value }))} placeholder="e.g. vacation funds, invoice settlement, family support" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inputSty, borderColor: cap.purpose.trim() ? CD.line : CD.flag }} /></Field>
                 <Field label="Source of funds"><input value={cap.source} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder="e.g. employment income, business revenue, savings" className="w-full text-sm px-2.5 py-2 outline-none" style={{ ...inputSty, borderColor: cap.source.trim() ? CD.line : CD.flag }} /></Field>
@@ -1164,7 +1164,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
               {flag.single && (
                 <div className="px-3 py-2.5 mb-2" style={{ background: isFiled ? CD.greenSoft : CD.flagSoft, borderRadius: 9 }}>
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-[12px] font-medium" style={{ color: isFiled ? CD.green : CD.flag }}><div className="flex items-center gap-1.5"><Ic n={isFiled ? 'checkcircle' : 'alert'} s={14} /> Reportable deals, LCTR{isFiled ? ' filed & sealed' : ' required'}</div>{isFiled && <div className="text-[10px] mt-0.5" style={{ color: CD.mute }}>FWR {filing.ackNo} · {filing.by} · {filing.submittedAt}</div>}</div>
+                    <div className="text-[12px] font-medium" style={{ color: isFiled ? CD.green : CD.flag }}><div className="flex items-center gap-1.5"><Ic n={isFiled ? 'checkcircle' : 'alert'} s={14} /> Reportable — LCTR{isFiled ? ' filed & sealed' : ' required'}</div>{isFiled && <div className="text-[10px] mt-0.5" style={{ color: CD.mute }}>FWR {filing.ackNo} · {filing.by} · {filing.submittedAt}</div>}</div>
                     {!isVoid && !isFiled && <button onClick={() => { onClose(); onFileLCTR && onFileLCTR({ id: 'L-' + row.ref, kind: window.CDOS.getRegime(settings).largeCode, subject: row.customer, beneficiary: row.beneficiary, amount: (() => { const c = window.CDOS.counterCashIn(row); return c ? homeOf(c.amount, c.ccy) : 0; })(), refs: [row.ref], basis: null }); }} className="flex-none whitespace-nowrap text-xs px-2.5 py-1.5 font-semibold" style={{ borderRadius: 7, background: CD.ink, color: 'var(--cd-on-ink)' }}>File {(deskPack() && deskPack().reportName) || window.CDOS.getRegime(settings).largeCode} →</button>}
                   </div>
                 </div>
@@ -1200,7 +1200,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                Logged on the deal at the counter; surfaced here so the record is complete. */}
             {row.capture && (
               <div>
-                <div className="text-[11px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reportable deals captured</div>
+                <div className="text-[11px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Reportable details captured</div>
                 <div className="p-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10 }}>
                   <DRow k="Purpose of transaction" v={row.capture.purpose || '—'} />
                   <DRow k="Source of funds" v={row.capture.source || '—'} />
@@ -1454,7 +1454,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             </div>
           </div>); })}</div> : <div className="text-[12px] px-3 py-2.5" style={{ color: CD.faint, background: CD.panel, border: `1px dashed ${CD.line}`, borderRadius: 10 }}>No 24-hour aggregates over threshold.</div>}
       </div>
-      <Group title="Reportable deals, needs filing" tone={CD.flag} empty="Nothing to file." info={{ title: 'Reportable deals, needs filing', body: 'Deals at or over the reporting threshold, single or 24-hour aggregate, that the law requires you to file: LCTRs for cash, EFTRs for wires. Each opens a worksheet pre-filled from the record; file it before its deadline.' }} items={toFile.map(r => <CompItem key={r.id} r={r} onOpenDetail={onOpenDetail} cadIn={cadIn}>{r.customer && <button onClick={() => onOpenClient(r.customer, r.ref)} className="text-[11px] font-medium px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Client</button>}<button onClick={() => fileLCTR(r)} className="text-[11px] font-semibold px-2.5 py-1.5 text-white" style={{ background: CD.ink, borderRadius: 7 }}>File LCTR →</button></CompItem>)} />
+      <Group title="Reportable — needs filing" tone={CD.flag} empty="Nothing to file." info={{ title: 'Reportable — needs filing', body: 'Deals at or over the reporting threshold — single or 24-hour aggregate — that the law requires you to file: LCTRs for cash, EFTRs for wires. Each opens a worksheet pre-filled from the record; file it before its deadline.' }} items={toFile.map(r => <CompItem key={r.id} r={r} onOpenDetail={onOpenDetail} cadIn={cadIn}>{r.customer && <button onClick={() => onOpenClient(r.customer, r.ref)} className="text-[11px] font-medium px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Client</button>}<button onClick={() => fileLCTR(r)} className="text-[11px] font-semibold px-2.5 py-1.5 text-white" style={{ background: CD.ink, borderRadius: 7 }}>File LCTR →</button></CompItem>)} />
       <Group title="Structuring watch" tone={CD.amber} empty="No open structuring patterns." info={{ title: 'Structuring watch', body: 'Not a filing — a heads-up. One person running several deals kept deliberately just under the threshold. Review the pattern; if it looks intentional, file a suspicious-transaction report (STR).' }} items={strWatch.map(r => <CompItem key={r.id} r={r} onOpenDetail={onOpenDetail} cadIn={cadIn}>{r.customer && <button onClick={() => onOpenClient(r.customer, r.ref)} className="text-[11px] font-medium px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Client</button>}<button onClick={() => ackRow(r)} className="text-[11px] font-semibold px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Acknowledge</button></CompItem>)} />
       <Group title="ID / KYC issues" tone={CD.flag} empty="All clients have ID on file." info={{ title: 'ID / KYC issues', body: 'Clients who transacted without complete identification on file. Collect or re-verify their ID before the next deal — an incomplete file is the gap examiners look for.' }} items={idIssues.map(r => <CompItem key={r.id} r={r} onOpenDetail={onOpenDetail} cadIn={cadIn}><button onClick={() => onOpenClient(r.customer, r.ref)} className="text-[11px] font-semibold px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink }}>Open client</button></CompItem>)} />
     </div>);
@@ -1642,7 +1642,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
 
     // ---- one-touch report off the CURRENT search + filters ----
     const filterChips = () => {
-      const viewName = { open: 'All posted', RPT: 'Reportable deals ≥ $10k', STR: 'Structuring watch', ID: 'ID / KYC issues', tagged: 'Tagged', void: 'Voided' }[view] || 'All posted';
+      const viewName = { open: 'All posted', RPT: 'Reportable ≥ $10k', STR: 'Structuring watch', ID: 'ID / KYC issues', tagged: 'Tagged', void: 'Voided' }[view] || 'All posted';
       const c = [viewName];
       if (tf !== 'All') c.push(tf);
       if (client) c.push('Client · ' + client);
@@ -1770,7 +1770,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             complete — docs/ABSENT_FIGURES.md. */}
         <StatCard label="Pay-in volume" value={stats.n ? fmtHome(stats.vol) : '—'} sub={!stats.n ? 'nothing posted in this range' : stats.unvalued ? `${stats.unvalued} deal${stats.unvalued === 1 ? '' : 's'} this book cannot value · view breakdown ›` : 'view breakdown ›'} onClick={() => stats.n && setBreakdown('volume')} />
         <StatCard label="Fees collected" value={stats.n ? fmtHome(stats.fees) : '—'} sub={earningsHidden ? (stats.n ? null : 'nothing posted in this range') : (stats.n ? 'view earnings ›' : 'nothing posted in this range')} onClick={earningsHidden ? undefined : () => stats.n && setBreakdown('fees')} />
-        <StatCard label="Reportable deals" value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${limit.label} · ${stats.rpt} total` : limit.label} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
+        <StatCard label={`Reportable ≥ ${limit.label}`} value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
       </div>
 
       {/* toolbar */}
@@ -1809,12 +1809,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       {/* filter chips */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
         <Chip on={view === 'open'} onClick={() => { setFocusRefs(null); setView('open'); }}>All posted</Chip>
-        <Chip on={view === 'RPT'} onClick={() => setViewToggle('RPT')} c={CD.flag} bg={CD.flagSoft}>Reportable deals {stats.openRpt > 0 && `· ${stats.openRpt}`}</Chip>
+        <Chip on={view === 'RPT'} onClick={() => setViewToggle('RPT')} c={stats.openRpt > 0 ? CD.amber : CD.flag} bg={stats.openRpt > 0 ? CD.panel : CD.flagSoft}>Reportable deals {stats.openRpt > 0 && `· ${stats.openRpt}`}</Chip>
         <Chip on={view === 'STR'} onClick={() => setViewToggle('STR')} c={CD.amber} bg={CD.amberSoft}>Structuring {stats.str > 0 && `· ${stats.str}`}</Chip>
         <Chip on={view === 'ID'} onClick={() => setViewToggle('ID')} c={CD.ink} bg={CD.lineSoft}>ID issues</Chip>
         <Chip on={view === 'tagged'} onClick={() => setViewToggle('tagged')} c={CD.ink} bg={CD.lineSoft}>Tagged {stats.tagged > 0 && `· ${stats.tagged}`}</Chip>
         <Chip on={view === 'void'} onClick={() => setViewToggle('void')}>Voided</Chip>
-        <span className="flex items-center" style={{ marginLeft: 2 }}><window.CDOS.InfoTip title="Compliance flags" body="The desk tags each record so nothing slips through. Click a flag on a row to act on it." lines={[{k:'RPT',c:CD.flag,v:'Reportable deals, a Large Cash Transaction Report is due'},{k:'STR',c:CD.amber,v:'Structuring watch — smaller deals adding up'},{k:'ID',c:CD.ink,v:'KYC exception — ID missing or expired'}]} /></span>
+        <span className="flex items-center" style={{ marginLeft: 2 }}><window.CDOS.InfoTip title="Compliance flags" body="The desk tags each record so nothing slips through. Click a flag on a row to act on it." lines={[{k:'RPT',c:CD.flag,v:'Reportable — a Large Cash Transaction Report is due'},{k:'STR',c:CD.amber,v:'Structuring watch — smaller deals adding up'},{k:'ID',c:CD.ink,v:'KYC exception — ID missing or expired'}]} /></span>
       </div>
       {focusRefs && focusRefs.length > 0 && (
         <div className="mx-4 mb-2 flex items-center justify-between gap-2 px-3 py-2" style={{ background: CD.brassSoft, border: `1px solid ${CD.brass}`, borderRadius: 9 }}>
@@ -1861,7 +1861,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
               <td className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? '—' : num(x.outAmt)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></td>
               <td className="px-3 py-2.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmtHome(x.fee)}</td>
               <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}><div className="flex flex-wrap gap-1">
-                {f.single && <FlagTag kind="RPT" filed={x.filed} onClick={() => setDetailId(x.id)} title={x.filed ? `LCTR ${x.filedInfo && x.filedInfo.ref} filed` : 'Reportable deals ≥ $10k, click to file'} />}
+                {f.single && <FlagTag kind="RPT" filed={x.filed} onClick={() => setDetailId(x.id)} title={x.filed ? `LCTR ${x.filedInfo && x.filedInfo.ref} filed` : 'Reportable ≥ $10k — click to file'} />}
                 {f.str && <FlagTag kind="STR" ack={x.ackStr} onClick={() => setDetailId(x.id)} title={`Structuring watch — ${fmtHome(f.agg)}`} />}
                 {f.kyc && f.kyc !== 'ok' && f.idNeeded && <FlagTag kind="ID" onClick={() => setDetailId(x.id)} title={f.kyc} />}
                 {isVoid && <span className="text-[10px] px-1.5 py-1 font-semibold" style={{ borderRadius: 5, background: CD.lineSoft, color: CD.mute, fontFamily: 'Space Mono, monospace' }}>VOID</span>}
