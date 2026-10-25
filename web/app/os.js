@@ -6249,9 +6249,10 @@ if (typeof module !== "undefined" && module.exports) {
   const Row = ({
     title,
     desc,
-    children
+    children,
+    stack
   }) => /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center justify-between gap-4 py-3",
+    className: stack ? "py-3" : "flex items-center justify-between gap-4 py-3",
     style: {
       borderTop: `1px solid ${CD.lineSoft}`
     }
@@ -6268,7 +6269,7 @@ if (typeof module !== "undefined" && module.exports) {
       color: CD.mute
     }
   }, desc)), /*#__PURE__*/React.createElement("div", {
-    className: "flex-none"
+    className: stack ? "mt-2 min-w-0 max-w-full" : "flex-none"
   }, children));
   const Field = ({
     label,
@@ -12572,6 +12573,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, {
         key: `${pack && pack.packId || 'pack'}-${packRev}`
       }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' || regime && regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(Row, {
+        stack: true,
         title: "24-hour rule",
         desc: "Cash in the 24 consecutive hours before each deal is added together, on this branch's clock. The total does not reset at midnight."
       }, /*#__PURE__*/React.createElement("span", {
@@ -12579,7 +12581,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         className: "text-[12px] px-2.5 py-1.5",
         style: {
           color: CD.ink,
-          fontFamily: 'Space Mono, monospace'
+          fontFamily: 'Space Mono, monospace',
+          whiteSpace: 'normal'
         }
       }, "Rolling 24 hours")), paused || !(regime && regime.windowKind === 'calendar_month') ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Cash report window",
