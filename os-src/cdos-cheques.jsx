@@ -349,11 +349,26 @@
     </div></Portal>);
   }
 
+  /* Compliance owns this sentence. One string, so a wording change
+     does not hunt through the buttons. A teller may open the next
+     session: the open route allows till:count, which a teller holds. */
+  const CHEQUE_DAY_CLOSED_NEXT =
+    "Open a new session on the till that paid this cheque out, then reverse it there.";
+
   /* ===================== DETAIL DRAWER ===================== */
   function ChequeDetail({ c, me, log, setCheques, onClose, onTillChanged }) {
     const overdue = c.status === 'held' && c.holdUntil < TODAY;
     const [busy, setBusy] = useState('');
     const [err, setErr] = useState('');
+    const [errCode, setErrCode] = useState('');
+    const dayClosed = errCode === 'CHEQUE_DAY_CLOSED';
+    /* The three postings the closed day refuses. Mark cleared stays,
+       because clearance still posts on a closed day. The hit target
+       stays 44px when the buttons go quiet. */
+    const stopped = !!busy || dayClosed;
+    const heldStyle = (on) => stopped
+      ? { minHeight: 44, border: `1px solid ${CD.line}`, background: 'var(--cd-disabled)', color: CD.faint, borderRadius: 8, cursor: 'not-allowed' }
+      : Object.assign({ minHeight: 44, borderRadius: 8, cursor: 'pointer' }, on);
 
     /* Every one of these is a posting. A clearance moves a receivable to
        the bank, a return books the face amount as a loss, and a reversal
@@ -364,7 +379,7 @@
       const book = ledger();
       if (!book) { setErr('This desk has no ledger to post to. Nothing was recorded.'); return; }
       if (busy) return;
-      setBusy(kind); setErr('');
+      setBusy(kind); setErr(''); setErrCode('');
       try {
         const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
         /* The status and the timeline come back from the register rather
@@ -378,6 +393,7 @@
         onClose && onClose();
       } catch (error) {
         setErr(error.message || 'The ledger refused this. Nothing was posted.');
+        setErrCode(error && error.code || '');
       } finally {
         setBusy('');
       }
@@ -454,17 +470,18 @@
           {c.status === 'held' && (
             <div className="flex flex-wrap gap-2">
               <button onClick={clear} disabled={!!busy} className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: busy ? 'var(--cd-disabled)' : CD.green, borderRadius: 8 }}><Ic n="checkcircle" s={15} c="var(--cd-on-ink)" /> {busy === 'clear' ? 'Posting…' : 'Mark cleared'}</button>
-              <button onClick={returnNsf} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag, borderRadius: 8 }}><Ic n="ban" s={15} c={CD.flag} /> {busy === 'nsf' ? 'Posting…' : 'Return NSF'}</button>
-              <button onClick={returnFraud} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, color: CD.flag, borderRadius: 8 }}><Ic n="alert" s={15} c={CD.flag} /> {busy === 'fraud' ? 'Posting…' : 'Flag fraud'}</button>
+              <button onClick={returnNsf} disabled={stopped} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={heldStyle({ border: `1px solid ${CD.flagSoft}`, background: CD.flagSoft, color: CD.flag })}><Ic n="ban" s={15} c={stopped ? CD.faint : CD.flag} /> {busy === 'nsf' ? 'Posting…' : 'Return NSF'}</button>
+              <button onClick={returnFraud} disabled={stopped} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={heldStyle({ border: `1px solid ${CD.line}`, color: CD.flag })}><Ic n="alert" s={15} c={stopped ? CD.faint : CD.flag} /> {busy === 'fraud' ? 'Posting…' : 'Flag fraud'}</button>
               {/* Set apart from the three above, and worded for what it is.
                   A return says the cheque failed; this says the CASHING did
                   — wrong amount, wrong customer, keyed twice — and it is
                   the only one of the four that puts cash back in the
                   drawer and hands the fee back with it. */}
-              <button onClick={reverse} disabled={!!busy} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={{ border: `1px dashed ${CD.line}`, color: CD.mute, borderRadius: 8 }}><Ic n="x" s={15} c={CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>
+              <button onClick={reverse} disabled={stopped} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={heldStyle({ border: `1px dashed ${CD.line}`, color: CD.mute })}><Ic n="x" s={15} c={stopped ? CD.faint : CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>
             </div>
           )}
-          {err && <div className="text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
+          {err && dayClosed && <div className="p-3 flex items-start gap-2" role="alert" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.flag }}>{err}</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{CHEQUE_DAY_CLOSED_NEXT}</div></div></div>}
+          {err && !dayClosed && <div className="text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
           {c.txRef && <div className="text-[11px]" style={{ color: CD.faint }}>Ledger {c.txRef}</div>}
         </div>
       </div>
