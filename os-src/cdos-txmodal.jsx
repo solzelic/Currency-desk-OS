@@ -1337,7 +1337,7 @@
               {/* reportable capture — shown for every type at/over the line */}
               {single && (
                 <div data-req-field="facts" className={'p-3.5 space-y-2.5' + (missField === 'facts' ? ' cd-tx-missing' : '')} style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.flag}`, borderRadius: 12 }}>
-                  <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable — capture for the {regime.largeCode}</span></div>
+                  <div className="flex items-center gap-1.5"><Ic n="filetext" s={14} c={CD.flag} /><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Reportable deals, capture for the {regime.largeCode}</span></div>
                   <div className="text-[11px]" style={{ color: CD.mute }}>This deal is ≥ {limit.label}. Capture now while the customer is here — it pre-fills the filing.</div>
                   <div><Lbl>Purpose of transaction</Lbl><input value={purpose} onBlur={() => markTouched('purpose')} onChange={e => setPurpose(e.target.value)} placeholder={purposePh} className="cd-tx-purpose w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: openBorder('purpose', !!purpose.trim()) }} /></div>
                   <div><Lbl>Source of funds</Lbl><input value={cap.source} onBlur={() => markTouched('source')} onChange={e => setCap(s => ({ ...s, source: e.target.value }))} placeholder={sourcePh} className="cd-tx-source w-full text-sm px-2.5 py-2 outline-none" style={{ ...inSty, borderColor: openBorder('source', !!cap.source.trim()) }} /></div>
@@ -1420,7 +1420,7 @@
                 {(single || structuring) && (
                   <div className="px-3 py-2.5 text-[11px] flex items-start gap-2" style={{ background: single ? CD.flagSoft : CD.amberSoft, borderRadius: 10, color: single ? CD.flag : 'var(--cd-brass-text)' }}>
                     <Ic n="shield" s={13} c={single ? CD.flag : 'var(--cd-brass-text)'} />
-                    <span>{single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`}</span>
+                    <span>{single ? `Reportable deals, a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`}</span>
                   </div>
                 )}
               </div>

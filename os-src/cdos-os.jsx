@@ -788,7 +788,7 @@
 
   /* ====================== ROOT ====================== */
   function App() {
-    const [stage, setStage] = useState(ENTRY.signup ? 'signup' : 'lock');
+    const [stage, setStage] = useState(window.CDOS._bootStage || (ENTRY.signup ? 'signup' : 'lock'));
     const [user, setUser] = useState('');
     const [authRec, setAuthRec] = useState(null);   // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
@@ -1429,7 +1429,7 @@
     useEffect(() => { try { localStorage.setItem('cdos_app_order', JSON.stringify(appOrder)); } catch (e) {} }, [appOrder]);
     useEffect(() => { try { localStorage.setItem('cdos_app_hidden', JSON.stringify(hiddenApps)); } catch (e) {} }, [hiddenApps]);
 
-    const [wins, setWins] = useState([]);
+    const [wins, setWins] = useState(window.CDOS._bootWins || []);
     // per-window navigation registry: winId -> { canBack, back } so the window
     // title bar can render a Back control next to the traffic lights.
     const [winNav, setWinNav] = useState({});
@@ -1472,7 +1472,7 @@
       document.addEventListener('mousedown', h);
       return () => document.removeEventListener('mousedown', h);
     }, [opMenu]);
-    const [bellMenu, setBellMenu] = useState(false);
+    const [bellMenu, setBellMenu] = useState(!!window.CDOS._bootBell);
     const bellRef = useRef(null);
     useEffect(() => {
       if (!bellMenu) return;
@@ -1793,6 +1793,7 @@
     // computeAlerts still supplies the (row-based) structuring + KYC tallies; the
     // reportable count comes from the obligation list above.
     const alerts = useMemo(() => ({ ...computeAlerts(rows, flags), rpt: openObligations.length }), [rows, flags, openObligations]);
+    if (window.CDOS._captureAlerts) window.CDOS._deskAlerts = alerts;
     // house settings that break the active regulator's hard rules — persistent until fixed
     const jViol = useMemo(() => (window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : []), [settings, deskFacts]);
     // per-item breakdown for the bell preview dropdown
@@ -2056,7 +2057,9 @@
     const jumpAlerts = () => {
       const v = alerts.rpt > 0 ? 'RPT' : alerts.str > 0 ? 'STR' : alerts.id > 0 ? 'ID' : 'open';
       openLedgerFiltered(v);
+      return v;
     };
+    window.CDOS.jumpAlerts = jumpAlerts;
     // Day Close finalises the book; reopening starts the next day
     const closeDay = (summary) => {
       setDay(d => ({ ...d, closed: true, closedAt: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', ''), closedBy: me.name, summary }));
@@ -2488,7 +2491,7 @@
                     {alertCount > 0 && <button className="bell-head-all" onClick={() => { setBellMenu(false); openApp('compliance'); }}>View all</button>}
                   </div>
                   {alertCount === 0 ? (
-                    <div className="bell-empty"><Ic n="check" s={22} c={CD.green} /><span>No open flags. Reportables filed, IDs current, no structuring watch.</span></div>
+                    <div className="bell-empty"><Ic n="check" s={22} c={CD.green} /><span>No open flags. Reportable deals are filed, IDs current, no structuring watch.</span></div>
                   ) : (
                     <div className="bell-body">
                       {jViol.length > 0 && (

@@ -905,7 +905,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         <div className="flex items-center gap-2 text-[12.5px] px-1 py-1" style={{ color: CD.mute }}><Ic n="checkcircle" s={15} c={CD.green} /> No open flags — reportables filed, ID on file, no structuring pattern.</div>
       ) : (
         <div className="space-y-2">
-          {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable — not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
+          {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable deals, not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
           {strRows.length > 0 && <CompRow tone={CD.amber} soft={CD.amberSoft} icon="alert" title="Structuring watch" sub={`${win}-day cash-in ${fmtHome(strAgg)} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`} actionLabel="Review in ledger" onAction={() => onOpenLedger(name)} />}
           {kycReason && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="id" title="KYC / ID gap" sub={`Identification issue: ${kycReason}.`} actionLabel={canEdit ? 'Fix ID' : null} onAction={onFixId} />}
         </div>

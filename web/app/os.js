@@ -26415,7 +26415,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       tone: CD.flag,
       soft: CD.flagSoft,
       icon: "alert",
-      title: "Reportable \u2014 not yet filed",
+      title: "Reportable deals, not yet filed",
       sub: `${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`,
       actionLabel: "Review & file",
       onAction: () => onOpenLedger(name)
@@ -28759,9 +28759,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       reversed: [r => r.status === 'void', 'Voided', true],
       posted: [r => r.status !== 'void', 'Posted'],
       active: [r => r.status !== 'void', 'Posted'],
-      reportable: [(r, f) => !!(f && f.single), 'Reportable ≥ $10k'],
-      lctr: [(r, f) => !!(f && f.single), 'Reportable ≥ $10k'],
-      large: [(r, f) => !!(f && f.single), 'Reportable ≥ $10k'],
+      reportable: [(r, f) => !!(f && f.single), 'Reportable deals ≥ $10k'],
+      lctr: [(r, f) => !!(f && f.single), 'Reportable deals ≥ $10k'],
+      large: [(r, f) => !!(f && f.single), 'Reportable deals ≥ $10k'],
       filed: [r => !!r.filed, 'Filed'],
       unfiled: [(r, f) => !!(f && f.single) && !r.filed, 'Unfiled report'],
       structuring: [(r, f) => !!(f && f.str), 'Structuring watch'],
@@ -30827,7 +30827,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.ink
       }
-    }, "Reportable, pay-in approx ", fmtHome(inCadEquiv), " (at or above ", limit.label, "). ", window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode || '' ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'), structuring && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable deals, pay-in approx ", fmtHome(inCadEquiv), " (at or above ", limit.label, "). ", window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode || '' ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'), structuring && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.ink
@@ -30858,7 +30858,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.ink
       }
-    }, "Reportable \u2014 capture for the ", window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'report')), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable deals, capture for the ", window.CDOS.getRegime ? window.CDOS.getRegime(settings).largeCode : 'report')), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
@@ -32365,7 +32365,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     }, /*#__PURE__*/React.createElement(Ic, {
       n: isFiled ? 'checkcircle' : 'alert',
       s: 14
-    }), " Reportable \u2014 LCTR", isFiled ? ' filed & sealed' : ' required'), isFiled && /*#__PURE__*/React.createElement("div", {
+    }), " Reportable deals, LCTR", isFiled ? ' filed & sealed' : ' required'), isFiled && /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] mt-0.5",
       style: {
         color: CD.mute
@@ -32505,7 +32505,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Reportable details captured"), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable deals captured"), /*#__PURE__*/React.createElement("div", {
       className: "p-3",
       style: {
         background: 'var(--cd-panel)',
@@ -33296,12 +33296,12 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         borderRadius: 10
       }
     }, "No 24-hour aggregates over threshold.")), /*#__PURE__*/React.createElement(Group, {
-      title: "Reportable \u2014 needs filing",
+      title: "Reportable deals, needs filing",
       tone: CD.flag,
       empty: "Nothing to file.",
       info: {
-        title: 'Reportable — needs filing',
-        body: 'Deals at or over the reporting threshold — single or 24-hour aggregate — that the law requires you to file: LCTRs for cash, EFTRs for wires. Each opens a worksheet pre-filled from the record; file it before its deadline.'
+        title: 'Reportable deals, needs filing',
+        body: 'Deals at or over the reporting threshold, single or 24-hour aggregate, that the law requires you to file: LCTRs for cash, EFTRs for wires. Each opens a worksheet pre-filled from the record; file it before its deadline.'
       },
       items: toFile.map(r => /*#__PURE__*/React.createElement(CompItem, {
         key: r.id,
@@ -33718,7 +33718,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     const filterChips = () => {
       const viewName = {
         open: 'All posted',
-        RPT: 'Reportable ≥ $10k',
+        RPT: 'Reportable deals ≥ $10k',
         STR: 'Structuring watch',
         ID: 'ID / KYC issues',
         tagged: 'Tagged',
@@ -34247,7 +34247,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       lines: [{
         k: 'RPT',
         c: CD.flag,
-        v: 'Reportable — a Large Cash Transaction Report is due'
+        v: 'Reportable deals, a Large Cash Transaction Report is due'
       }, {
         k: 'STR',
         c: CD.amber,
@@ -34480,7 +34480,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         kind: "RPT",
         filed: x.filed,
         onClick: () => setDetailId(x.id),
-        title: x.filed ? `LCTR ${x.filedInfo && x.filedInfo.ref} filed` : 'Reportable ≥ $10k — click to file'
+        title: x.filed ? `LCTR ${x.filedInfo && x.filedInfo.ref} filed` : 'Reportable deals ≥ $10k, click to file'
       }), f.str && /*#__PURE__*/React.createElement(FlagTag, {
         kind: "STR",
         ack: x.ackStr,
@@ -38010,7 +38010,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, "Reportable \u2014 capture for the ", regime.largeCode)), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable deals, capture for the ", regime.largeCode)), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
         color: CD.mute
@@ -38361,7 +38361,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: "shield",
       s: 13,
       c: single ? CD.flag : 'var(--cd-brass-text)'
-    }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable — a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`))), /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("span", null, single ? `Reportable deals, a ${regime.largeCode} will be required.` : `Structuring watch — ${customer}'s ${settings.structuringDays}-day total reaches ${fmt(recentTotal, home)}.`))), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-actions flex-none p-3 space-y-2",
       style: {
         borderTop: `1px solid ${CD.line}`,
@@ -39090,7 +39090,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         status: 'hold',
         ts: '2026-06-17 15:06',
         by: 'J. Masri',
-        note: 'Reportable EFT — source of funds review before release'
+        note: 'Reportable transfers, source of funds review before release'
       }]
     }), mk({
       id: 't4',
@@ -40243,7 +40243,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.ink
       }
-    }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
+    }, "Reportable transfers, ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
         color: kyc === 'ok' ? CD.green : CD.flag
@@ -47469,7 +47469,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: 'var(--cd-brass-text)',
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Reportable events"), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable deals"), /*#__PURE__*/React.createElement("div", {
       className: "text-xl font-bold",
       style: {
         color: 'var(--cd-brass-text)'
@@ -52480,7 +52480,8 @@ ${snap}`;
     LoanCalc,
     AppStore,
     COMING,
-    STORE_DESC
+    STORE_DESC,
+    deskSnapshot
   });
 })();
 
@@ -53873,7 +53874,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable deals' : `Reportable deals ≥ ${limit.label}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`,
           tone: limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green
@@ -54292,7 +54293,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable deals' : `Reportable deals ≥ ${limit.label}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`,
           tone: limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green
@@ -54344,7 +54345,7 @@ ${snap}`;
           }
         }, /*#__PURE__*/React.createElement(SecTitle, {
           n: `${data.reportable.length} record(s)`
-        }, "Reportable transactions \u2014 ", limit.code, " \u2265 ", limit.label)), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        }, "Reportable deals, ", limit.code, " \u2265 ", limit.label)), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
           style: thS
         }, "Ref"), /*#__PURE__*/React.createElement("th", {
           style: thS
@@ -67530,7 +67531,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 
   /* ====================== ROOT ====================== */
   function App() {
-    const [stage, setStage] = useState(ENTRY.signup ? 'signup' : 'lock');
+    const [stage, setStage] = useState(window.CDOS._bootStage || (ENTRY.signup ? 'signup' : 'lock'));
     const [user, setUser] = useState('');
     const [authRec, setAuthRec] = useState(null); // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null); // {current} while a temporary password must be replaced
@@ -68699,7 +68700,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         localStorage.setItem('cdos_app_hidden', JSON.stringify(hiddenApps));
       } catch (e) {}
     }, [hiddenApps]);
-    const [wins, setWins] = useState([]);
+    const [wins, setWins] = useState(window.CDOS._bootWins || []);
     // per-window navigation registry: winId -> { canBack, back } so the window
     // title bar can render a Back control next to the traffic lights.
     const [winNav, setWinNav] = useState({});
@@ -68772,7 +68773,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       document.addEventListener('mousedown', h);
       return () => document.removeEventListener('mousedown', h);
     }, [opMenu]);
-    const [bellMenu, setBellMenu] = useState(false);
+    const [bellMenu, setBellMenu] = useState(!!window.CDOS._bootBell);
     const bellRef = useRef(null);
     useEffect(() => {
       if (!bellMenu) return;
@@ -69237,6 +69238,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       ...computeAlerts(rows, flags),
       rpt: openObligations.length
     }), [rows, flags, openObligations]);
+    if (window.CDOS._captureAlerts) window.CDOS._deskAlerts = alerts;
     // house settings that break the active regulator's hard rules — persistent until fixed
     const jViol = useMemo(() => window.CDOS.jurisdictionViolations ? window.CDOS.jurisdictionViolations(settings) : [], [settings, deskFacts]);
     // per-item breakdown for the bell preview dropdown
@@ -69811,7 +69813,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const jumpAlerts = () => {
       const v = alerts.rpt > 0 ? 'RPT' : alerts.str > 0 ? 'STR' : alerts.id > 0 ? 'ID' : 'open';
       openLedgerFiltered(v);
+      return v;
     };
+    window.CDOS.jumpAlerts = jumpAlerts;
     // Day Close finalises the book; reopening starts the next day
     const closeDay = summary => {
       setDay(d => ({
@@ -70910,7 +70914,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       n: "check",
       s: 22,
       c: CD.green
-    }), /*#__PURE__*/React.createElement("span", null, "No open flags. Reportables filed, IDs current, no structuring watch.")) : /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("span", null, "No open flags. Reportable deals are filed, IDs current, no structuring watch.")) : /*#__PURE__*/React.createElement("div", {
       className: "bell-body"
     }, jViol.length > 0 && /*#__PURE__*/React.createElement("div", {
       className: "bell-sec"

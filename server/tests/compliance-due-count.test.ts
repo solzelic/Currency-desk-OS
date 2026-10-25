@@ -20,15 +20,9 @@ require("../../shared/lctr-reversal.js");
 require("../../shared/rolling-24h.js");
 require("../../os-src/cdos-desk-time.js");
 require("../../shared/id-document-types.js");
-g.window = { CDOS: g.CDOS, CDOS_ID_TYPES: g.CDOS_ID_TYPES };
+g.window = { CDOS: g.CDOS, CDOS_ID_TYPES: g.CDOS_ID_TYPES, location: { search: "", pathname: "/app", hash: "", origin: "http://127.0.0.1" }, addEventListener() {}, removeEventListener() {} };
 Object.assign(g.window.CDOS, {
-  CD: {
-    ink: "var(--cd-ink)", mute: "var(--cd-mute)", faint: "var(--cd-faint)",
-    panel: "var(--cd-panel)", paper: "var(--cd-paper)", line: "var(--cd-line)",
-    lineSoft: "var(--cd-line-soft)", flag: "var(--cd-flag)", flagSoft: "var(--cd-flag-soft)",
-    onFlagSoft: "var(--cd-on-flag-soft)", green: "var(--cd-green)", greenSoft: "var(--cd-green-soft)",
-    amber: "var(--cd-amber)", amberSoft: "var(--cd-amber-soft)", chip: "var(--cd-chip)",
-  },
+  CD: { ink: "var(--cd-ink)", mute: "var(--cd-mute)", faint: "var(--cd-faint)", panel: "var(--cd-panel)", paper: "var(--cd-paper)", line: "var(--cd-line)", lineSoft: "var(--cd-line-soft)", flag: "var(--cd-flag)", flagSoft: "var(--cd-flag-soft)", onFlagSoft: "var(--cd-on-flag-soft)", green: "var(--cd-green)", greenSoft: "var(--cd-green-soft)", amber: "var(--cd-amber)", amberSoft: "var(--cd-amber-soft)", chip: "var(--cd-chip)" },
   Ic: () => null, InfoTip: () => null, Tag: () => null,
   fmt: (n: unknown) => String(n ?? ""), num: (n: unknown) => String(n ?? ""),
   TODAY: "2026-10-25", crossRate: () => 1,
@@ -39,6 +33,15 @@ Object.assign(g.window.CDOS, {
   RATE_NOTE: "", unitText: () => "", perCadLive: () => 1,
   branchZone: () => "America/Toronto", rulesMissing: () => false, deskPack: () => null,
   Absent: () => null, useDeskFacts: () => ({}),
+  STAFF: [{ name: "J. Masri", role: "Owner", staffId: "j.masri", branches: "*", home: null, demo: true }],
+  ROLE_CAPS: {}, ROLE_SCOPE: {},
+  defaultBaseline: () => ({ units: {} }), defaultReceipts: () => [],
+  _stations: { SKEY: "b", MKEY: "m", defaultBranches: () => [{ id: "b01", name: "Front", main: true, status: "open", vault: {}, tills: [{ id: "t1", name: "Till", status: "open", operator: "" }] }], defaultStation: () => ({ branchId: "b01", tillId: "t1" }) },
+  _transfers: { BKEY: "ben", CKEY: "cor", defaultBeneficiaries: () => [], defaultCorridors: () => [] },
+  _cheques: { KKEY: "ch", SKEY: "sch", ledger: () => true, defaultCheques: () => [], defaultSchedule: () => ({}) },
+  APP_ACCENT: {}, publishedBook: null, applyBook() {}, bookSig: () => "",
+  ...Object.fromEntries(["SignIn", "LockDesk", "Handover", "Ledger", "Clients", "TillDrawer", "Audit", "SettingsView", "Calc", "ReceiptModal", "Tagged", "LoanCalc", "AppStore", "Reports", "Vault", "Transfers", "Cheques", "Branches", "Pricing", "Telegraph"].map((k) => [k, () => null])),
+  COMING: {}, STORE_DESC: {},
 });
 
 function load(file: string) {
@@ -51,6 +54,8 @@ load("os-src/cdos-compliance.jsx");
 load("os-src/cdos-modules.jsx");
 load("os-src/cdos-compliance-app.jsx");
 load("os-src/cdos-dashboard.jsx");
+load("os-src/cdos-apps.jsx");
+load("os-src/cdos-os.jsx");
 
 const SETTINGS = { regime: "FINTRAC", structuringDays: 7, threshold: 10000, employees: [] };
 const FILED_FLAG = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
@@ -252,76 +257,51 @@ describe("the bell, the ledger nav badge, and Reportable deals are amber", () =>
   });
 });
 
-const DUE_SUBS = {
-  "PREP-ORPHAN": { status: "prepared", kind: "LCTR", subject: "M. Ortega", amount: 12000, refs: ["R-ORPHAN"] },
-  "FILED-1": { status: "submitted", kind: "LCTR", subject: "B. Khan", amount: 15000, refs: ["R-FILED"] },
-};
-const STR_ROW = { id: "s1", customer: "S. Kim", status: "posted", inAmt: 100, inCcy: "CAD", receivedInstrument: "cash" };
-const STR_FLAGS = { s1: { str: true, void: false, kyc: "ok", idNeeded: false, single: false, agg24: false } };
+const PREPARED = { "PREP-ORPHAN": { status: "prepared", kind: "LCTR", subject: "M. Ortega", amount: 12000, refs: ["R-ORPHAN"] } };
+const SEALED = { "FILED-1": { status: "submitted", kind: "LCTR", subject: "B. Khan", amount: 15000, ackNo: "FWR-1", refs: ["R-FILED"] } };
 
-function sliceExpr(src: string, key: string) {
-  const i = src.indexOf(key);
-  if (i < 0) throw new Error(key);
-  const at = i + key.length;
-  if (src[at] !== "{" && src[at] !== "(") return src.slice(at, src.indexOf(";", i));
-  const open = src[at];
-  const close = open === "{" ? "}" : ")";
-  let depth = 0;
-  for (let j = at; j < src.length; j++) {
-    if (src[j] === open) depth++;
-    else if (src[j] === close && --depth === 0) return open === "{" ? src.slice(at + 1, j) : src.slice(at, j + 1);
-  }
-  throw new Error(key);
+function shell(subs: Record<string, unknown>) {
+  const prev = g.localStorage.getItem;
+  g.localStorage.getItem = (k: string) => k === "cdos_submissions_v1" ? JSON.stringify(subs) : k === "cdos_rows_v1" ? "[]" : null;
+  g.window.CDOS._bootStage = "desktop";
+  g.window.CDOS._bootBell = true;
+  g.window.CDOS._bootWins = [
+    { id: "compliance", x: 0, y: 0, w: 900, h: 600, z: 2, min: false },
+    { id: "assistant", x: 0, y: 0, w: 500, h: 600, z: 1, min: false },
+  ];
+  g.window.CDOS._captureAlerts = true;
+  try {
+    const html = ReactDOMServer.renderToStaticMarkup(React.createElement(g.window.CDOS_App));
+    const take = (re: RegExp) => { const m = re.exec(html); return (m && m[1]) || "0"; };
+    const line = g.window.CDOS.deskSnapshot([], {}, g.window.CDOS._deskAlerts);
+    const rpt = (String(line).match(/reportable \(LCTR ≥ \$10k\): (\d+)/) || [])[1];
+    return {
+      header: headerCount(html).trim(),
+      bell: take(/mb-bell-count">([^<]*)</),
+      dock: take(/dock-badge"[^>]*>([^<]*)</),
+      tab: take(/Filings\s*<span class="text-\[9px\][^"]*"[^>]*>([^<]+)</),
+      list: take(/Unfiled reportables<i>([^<]*)</),
+      jump: g.window.CDOS.jumpAlerts(),
+      rpt,
+    };
+  } finally { g.localStorage.getItem = prev; }
 }
-function run(code: string, scope: Record<string, unknown>) {
-  const keys = Object.keys(scope);
-  return new Function(...keys, code)(...keys.map((k) => scope[k]));
-}
-function wired() {
-  const os = readFileSync(resolve(root, "os-src/cdos-os.jsx"), "utf8");
-  const openObligations = run(sliceExpr(os, "const openObligations = useMemo(() => "), {
-    window: g.window, rows: [STR_ROW], clients: {}, settings: SETTINGS, beneficiaries: [], subs: DUE_SUBS,
-  });
-  const alerts = run("return " + sliceExpr(os, "const alerts = useMemo(() => "), {
-    computeAlerts: g.window.CDOS.computeAlerts, rows: [STR_ROW], flags: STR_FLAGS, openObligations,
-  });
-  return { os, alerts };
-}
-function expr(src: string, key: string, scope: Record<string, unknown>) {
-  return run("return " + sliceExpr(src, key), scope);
+function expectDue(subs: Record<string, unknown>, n: string) {
+  const got = shell(subs);
+  expect(got).toEqual({ header: n, bell: n, dock: n, tab: n, list: n, rpt: n, jump: n === "0" ? "open" : "RPT" });
 }
 
-describe("each due surface reads the selector", () => {
-  it("shows the selector on the bell", () => {
-    const { os, alerts } = wired();
-    expect(expr(os, "const alertCount = ", { alerts, jViol: [] })).toBe(2);
-  });
-  it("shows the selector on the RPT tag", () => {
-    const { os, alerts } = wired();
-    expect(expr(os, "const v = ", { alerts })).toBe("RPT");
-  });
-  it("shows the selector on the Ledger badge", () => {
-    const { os, alerts } = wired();
-    expect(expr(os, "const alertN = ", { alerts, jViol: [] })).toBe(2);
-  });
-  it("shows the selector on the Compliance badge", () => {
-    const m = /Filings\s*<span class="text-\[9px\][^"]*"[^>]*>([^<]+)<\/span>/.exec(render(DUE_SUBS));
-    expect(m && m[1]).toBe("1");
-  });
-  it("shows the selector on the assistant line", () => {
-    const { alerts } = wired();
-    const apps = readFileSync(resolve(root, "os-src/cdos-apps.jsx"), "utf8");
-    const start = apps.indexOf("`Open compliance items");
-    expect(run("return " + apps.slice(start, apps.indexOf("`", start + 1) + 1), { alerts })).toContain("reportable (LCTR ≥ $10k): 1");
-  });
-  it("shows the selector on the Dashboard tile", () => {
-    const html = ReactDOMServer.renderToStaticMarkup(React.createElement(g.window.CDOS.Dashboard, {
-      rows: [], clients: {}, settings: SETTINGS, me: { name: "J. Masri" }, subs: DUE_SUBS, beneficiaries: [],
-    }));
-    const at = html.indexOf("Reportable deals");
-    expect(at).toBeGreaterThan(-1);
-    expect(html).not.toContain("Reportable open");
-    const m = /(\d+)<\/div><div[^>]*>$/.exec(html.slice(0, at));
-    expect(m && m[1]).toBe("1");
+describe("the shell alerts equal the header", () => {
+  it("counts nothing due", () => expectDue({}, "0"));
+  it("counts a prepared filing on every surface", () => expectDue(PREPARED, "1"));
+  it("counts a sealed filing as zero", () => expectDue(SEALED, "0"));
+  it("has no bare Reportable label", () => {
+    const files = ["cdos-ledger.jsx", "cdos-reports.jsx", "cdos-search.jsx", "cdos-clients.jsx", "cdos-txmodal.jsx", "cdos-dashboard.jsx", "cdos-os.jsx", "cdos-compliance-app.jsx", "cdos-transfers.jsx", "cdos-transfers-app.jsx", "cdos-apps.jsx"];
+    const bad: string[] = [];
+    for (const file of files) {
+      const src = readFileSync(resolve(root, "os-src/" + file), "utf8");
+      if (/\bReportable\b(?! deals)(?! transfers)/.test(src)) bad.push(file);
+    }
+    expect(bad).toEqual([]);
   });
 });
