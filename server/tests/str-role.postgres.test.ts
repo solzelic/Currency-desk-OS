@@ -1,7 +1,8 @@
-/* Who may file, who may read an STR, and who may open the watch.
+/* Who may file, and who may read an STR on a deal.
    A teller and an auditor get no filing. A supervisor may file and
    read an LCTR and may not see an STR. The three compliance roles
-   may do both. The watch list and acknowledge stop at supervisor. */
+   may do both. A deal keeps its plain fields and drops the STR
+   fields a role may not see. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { createRequire } from "node:module";
@@ -94,7 +95,7 @@ function filing(code: string, mark: string) {
   };
 }
 
-postgres("str filing, transaction strip, watch, and acknowledge", () => {
+postgres("str filing and the transaction field strip", () => {
   beforeAll(async () => {
     process.env.PGLITE_MEMORY = "1";
     process.env.LEDGER_DATABASE_URL = url;
@@ -112,7 +113,7 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
   });
 
   afterAll(async () => {
-    await pool.query("TRUNCATE ledger_structuring_acks, ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
+    await pool.query("TRUNCATE ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
     await app.close();
     await handle.close();
     await pool.end();
@@ -120,7 +121,7 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
   });
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE ledger_structuring_acks, ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
+    await pool.query("TRUNCATE ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
     await handle.db.update(schema.staffUsers).set({ role: "teller" }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:m.costa`));
     await pool.query(
       "INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status) VALUES ('cust-watch',$1,$2,$3,$4,'Nora Quinn','Normal','verified')",
@@ -209,49 +210,5 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
     expect(seen.strTag).toBe("STR");
     expect(seen.strLink).toBe(sealed.json().filingId);
     expect(seen.structuring).toBe(true);
-  });
-
-  it("serves the watch list to supervisor and up, and refuses a teller", async () => {
-    for (const role of ["teller", "auditor"] as const) {
-      const refused = await app.inject({ method: "GET", url: "/api/ledger/structuring-watch", cookies: await asRole(role) });
-      expect(refused.statusCode, role).toBe(403);
-      expect(refused.body.toLowerCase()).not.toContain("str");
-      expect(refused.body.toLowerCase()).not.toContain("structur");
-      expect(refused.body.toLowerCase()).not.toContain("suspicious");
-    }
-    for (const role of WATCH) {
-      const opened = await app.inject({ method: "GET", url: "/api/ledger/structuring-watch", cookies: await asRole(role) });
-      expect(opened.statusCode, opened.body).toBe(200);
-      expect(opened.json().items).toEqual([
-        expect.objectContaining({ customerId: "cust-watch", name: "Nora Quinn", count: 2, total: "12000.00", acknowledged: false }),
-      ]);
-    }
-  });
-
-  it("refuses a teller acknowledge before any write", async () => {
-    const refused = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("teller"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(refused.statusCode).toBe(403);
-    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks")).rows[0].n).toBe(0);
-    const saved = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(saved.statusCode, saved.body).toBe(200);
-    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks")).rows[0].n).toBe(1);
-    const again = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("teller"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(again.statusCode).toBe(403);
-    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks")).rows[0].n).toBe(1);
   });
 });
