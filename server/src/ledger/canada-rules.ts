@@ -237,7 +237,7 @@ async function largeCashRule(
 
 /* Midnight in the branch's zone, then 24 elapsed hours. A calendar
    date uses this. The large-cash identity gate does not. The gate
-   looks back 24 consecutive hours from the deal, through
+   looks back the rolling 24 hours from the deal, through
    shared/rolling-24h.js. A stored browser anchor is not applied. */
 export function staticWindow(
   at: Date,

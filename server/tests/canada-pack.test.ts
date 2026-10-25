@@ -1,5 +1,5 @@
 /* The parts of the Canada pack that do not need a database.
-   Deadlines, the 24 consecutive hours, and the promise that
+   Deadlines, the rolling 24 hours, and the promise that
    migration 029 inserts a new pack and does not rewrite a
    published one. */
 import { createRequire } from "node:module";

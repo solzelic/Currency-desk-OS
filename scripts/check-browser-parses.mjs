@@ -25,7 +25,7 @@
      shared/id-document-types.js
                           the ID-type catalogue the OS and the server share
      shared/rolling-24h.js
-                          the 24 consecutive hour lookback, same two loaders
+                          the rolling 24 hour lookback, same two loaders
      web/app/*.js         the compiled OS and panel
      admin.html           the platform panel, JSX inside a script tag
      CurrencyDesk OS.html the OS shell
