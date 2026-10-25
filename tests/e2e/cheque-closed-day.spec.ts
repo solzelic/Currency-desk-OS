@@ -10,6 +10,36 @@ const REFUSAL = "This day is closed. Reversals and returns can't be posted to it
 const NEXT_STEP =
   "Open a new session on the till that paid this cheque out, then reverse it there.";
 
+/* Same reading as the other desk specs. The closed-day title sits on
+   the pink box and has to clear 4.5:1. */
+function channel(c: number) {
+  const s = c / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastOf(fg: string, bg: string) {
+  const read = (color: string) => {
+    const match = color.match(/rgba?\(([^)]+)\)/);
+    if (!match) throw new Error(color);
+    const [r, g, b, a] = match[1].split(",").map((part) => Number(part.trim()));
+    return { r, g, b, a: a == null ? 1 : a };
+  };
+  const back = read(bg);
+  const front = read(fg);
+  const over = front.a < 1
+    ? {
+        r: front.r * front.a + back.r * (1 - front.a),
+        g: front.g * front.a + back.g * (1 - front.a),
+        b: front.b * front.a + back.b * (1 - front.a),
+      }
+    : front;
+  const lum = (rgb: { r: number; g: number; b: number }) =>
+    0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+  const light = Math.max(lum(over), lum(back));
+  const dark = Math.min(lum(over), lum(back));
+  return (light + 0.05) / (dark + 0.05);
+}
+
 async function dismissTour(page: Page) {
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible().catch(() => false)) await skip.click();
@@ -126,4 +156,14 @@ test("a closed day disables return, fraud and reversal and shows the next step",
     const box = await button.boundingBox();
     expect(box && box.height).toBeGreaterThanOrEqual(44);
   }
+
+  const ink = await alert.evaluate((node) => {
+    const title = node.querySelector(".font-semibold");
+    return {
+      fg: title ? getComputedStyle(title).color : "",
+      bg: getComputedStyle(node).backgroundColor,
+    };
+  });
+  const ratio = contrastOf(ink.fg, ink.bg);
+  expect(ratio, `${ink.fg} on ${ink.bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
 });

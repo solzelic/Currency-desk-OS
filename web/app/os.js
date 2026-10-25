@@ -43062,6 +43062,9 @@ var CDOS_CHEQUE_FEE = (function () {
       }), 'Cheque cashing reversed', why.trim());
     };
     const sched = STATUS[c.status] || STATUS.held;
+    /* The returned reason line already uses this darker red on the pink
+       box. Both 13px titles use it, so the pair clears 4.5:1. */
+    const onFlagSoft = '#8a3b30';
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex justify-end",
       style: {
@@ -43156,12 +43159,12 @@ var CDOS_CHEQUE_FEE = (function () {
     }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[13px] font-semibold",
       style: {
-        color: CD.flag
+        color: onFlagSoft
       }
     }, "Returned \u2014 ", fmt(c.netCad, homeCcy()), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
-        color: '#8a3b30'
+        color: onFlagSoft
       }
     }, c.returnedReason, c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] uppercase tracking-widest mb-1",
@@ -43313,7 +43316,7 @@ var CDOS_CHEQUE_FEE = (function () {
     }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[13px] font-semibold",
       style: {
-        color: CD.flag
+        color: onFlagSoft
       }
     }, err), /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] mt-0.5",
