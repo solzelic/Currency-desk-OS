@@ -18,6 +18,7 @@ import {
   SERBIA_USD_NOTES_PROMPT,
   SERBIA_USD_NOTES_REQUIRED,
 } from "../src/ledger/serbia.js";
+import { clearPhotoId, fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -295,6 +296,7 @@ postgres("Serbia pack-rs-v1", () => {
       `UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1`,
       [desk.customerId],
     );
+    await fileCurrentPhotoId(pool, desk.customerId);
     const missing = await sellEur("5000.00", "rs-eur-verified-bare");
     expect(missing.statusCode, missing.body).toBe(422);
     expect(missing.json().message).toBe(SERBIA_RECEIPT_IDENTITY);
@@ -311,6 +313,7 @@ postgres("Serbia pack-rs-v1", () => {
       `UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1`,
       [desk.customerId],
     );
+    await clearPhotoId(pool, desk.customerId);
   });
 
   it("records serial numbers when 50 or 100 US dollar notes are sold", async () => {
@@ -382,6 +385,7 @@ postgres("Serbia pack-rs-v1", () => {
       `UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1`,
       [desk.customerId],
     );
+    await fileCurrentPhotoId(pool, desk.customerId);
     const still = await sellEur("10.00", "rs-air-verified-bare");
     expect(still.json().message).toBe(SERBIA_AIRSIDE_REQUIRED);
     const posted = await sellEur("10.00", "rs-air-ok", { identityNumber: "0101990712345" });
@@ -396,6 +400,7 @@ postgres("Serbia pack-rs-v1", () => {
       `UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1`,
       [desk.customerId],
     );
+    await clearPhotoId(pool, desk.customerId);
   });
 
   it("refuses an unidentified deal when only the market snapshot is on file", async () => {
@@ -439,6 +444,7 @@ postgres("Serbia pack-rs-v1", () => {
       `UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1`,
       [desk.customerId],
     );
+    await fileCurrentPhotoId(pool, desk.customerId);
     try {
       const posted = await sellEur("5000.00", "rs-verified-no-rate");
       expect(posted.statusCode, posted.body).toBe(201);
@@ -457,6 +463,7 @@ postgres("Serbia pack-rs-v1", () => {
         `UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1`,
         [desk.customerId],
       );
+      await clearPhotoId(pool, desk.customerId);
       await restoreNbs();
     }
   });

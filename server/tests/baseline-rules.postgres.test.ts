@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { BASELINE_NOTICE } from "../src/ledger/jurisdiction.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -461,6 +462,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await fileCurrentPhotoId(pool, gbp.customerId);
     const underReport = await send(gbp, "7999.99", "gbp-rpt-under", {
       purpose: "",
       sourceOfFunds: "",

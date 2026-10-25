@@ -2932,11 +2932,10 @@
     var risk = riskText.indexOf("high") >= 0 ? "high"
       : (riskText.indexOf("medium") >= 0 || riskText.indexOf("enhanced") >= 0) ? "enhanced"
       : "normal";
-    var idStatus = !record.idType || !record.idNum ? "missing"
-      : record.idExpiry && record.idExpiry < new Date().toISOString().slice(0, 10) ? "expired"
-      : "verified";
+    /* Standing is not sent. The server refuses a body that carries it
+       and reads a current photo ID from the file instead. */
     var externalRef = record.ledgerExternalRef || ("os:" + String(name).trim().toLowerCase().replace(/\s+/g, "-"));
-    return { externalRef: externalRef, name: String(name).trim(), risk: risk, idStatus: idStatus };
+    return { externalRef: externalRef, name: String(name).trim(), risk: risk };
   }
 
   async function syncCustomer(name, record) {

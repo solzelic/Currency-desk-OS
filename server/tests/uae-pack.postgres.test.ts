@@ -94,6 +94,8 @@ async function reset(packId: string, version: number) {
        ('cust-ae-known', $1, $2, $3, $4, 'Regular', 'Normal', 'verified')`,
     [TENANT, ENTITY, BRANCH, WORKSPACE],
   );
+  const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+  await fileCurrentPhotoId(pool, "cust-ae-known");
   await pool.query(
     `INSERT INTO ledger_rates
        (tenant_id, legal_entity_id, branch_id, workspace_id, currency, units_per_cad)
@@ -158,6 +160,7 @@ postgres("United Arab Emirates pack version 2", () => {
        a client row, and a later file that re-runs it would then fail on
        the missing tenant. */
     await pool.query("DELETE FROM ledger_customers WHERE tenant_id = $1", [TENANT]);
+    await pool.query("DELETE FROM desk_clients WHERE legal_entity_id = $1", [ENTITY]);
     await pool.query("DELETE FROM legal_entities WHERE id = $1", [ENTITY]);
     await pool.query("DELETE FROM tenants WHERE id = $1", [TENANT]);
     await handle.close();

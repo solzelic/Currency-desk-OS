@@ -18,6 +18,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
@@ -116,9 +117,10 @@ postgres("a new till can take a customer", () => {
 
     const customer = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies: owner, headers: scoped,
-      payload: { name: "Walk-in", risk: "normal", idStatus: "verified" },
+      payload: { name: "Walk-in", risk: "normal" },
     });
     expect(customer.statusCode).toBe(201);
+    await fileCurrentPhotoId(pool, customer.json().customerId);
 
     const deal = await app.inject({
       method: "POST", url: "/api/ledger/exchanges", cookies: owner, headers: scoped,
@@ -168,9 +170,10 @@ postgres("a new till can take a customer", () => {
 
     const customer = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies: teller, headers: scoped,
-      payload: { name: "First customer", risk: "normal", idStatus: "verified" },
+      payload: { name: "First customer", risk: "normal" },
     });
     expect(customer.statusCode).toBe(201);
+    await fileCurrentPhotoId(pool, customer.json().customerId);
 
     const deal = await app.inject({
       method: "POST", url: "/api/ledger/exchanges", cookies: teller, headers: scoped,

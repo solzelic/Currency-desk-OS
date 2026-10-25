@@ -12,6 +12,7 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { hashPin, clearPinAttempts } from "../src/routes/pin.js";
 import { setSessionWorkspace } from "../src/auth/sessions.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -279,9 +280,10 @@ postgres("a switched session is the person on the deal", () => {
   async function postDeal(cookies: Record<string, string>, key: string, claimedActor: string) {
     const customer = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies,
-      payload: { name: `Walk-in ${key}`, risk: "normal", idStatus: "verified" },
+      payload: { name: `Walk-in ${key}`, risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
+    await fileCurrentPhotoId(pool!, customer.json().customerId);
     const quote = await app.inject({
       method: "POST", url: "/api/quotes", cookies,
       payload: {
@@ -348,9 +350,10 @@ postgres("a switched session is the person on the deal", () => {
     const manager = cookieOf(toManager);
     const look = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies: manager,
-      payload: { name: "Manager look", risk: "normal", idStatus: "verified" },
+      payload: { name: "Manager look", risk: "normal" },
     });
     expect(look.statusCode, look.body).toBe(201);
+    await fileCurrentPhotoId(pool!, look.json().customerId);
     const lookQuote = await app.inject({
       method: "POST", url: "/api/quotes", cookies: manager,
       payload: {
@@ -514,9 +517,10 @@ postgres("a switched session is the person on the deal", () => {
     }
     const customer = await app.inject({
       method: "POST", url: "/api/ledger/customers", cookies: iqbal, headers,
-      payload: { name: "Exchange switch", risk: "normal", idStatus: "verified" },
+      payload: { name: "Exchange switch", risk: "normal" },
     });
     expect(customer.statusCode, customer.body).toBe(201);
+    await fileCurrentPhotoId(pool!, customer.json().customerId);
     const posted = await app.inject({
       method: "POST", url: "/api/ledger/exchanges", cookies: iqbal, headers,
       payload: {

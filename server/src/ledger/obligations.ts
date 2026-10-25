@@ -79,6 +79,7 @@ import {
   philippinesPurposeRequired,
 } from "./philippines-pack.js";
 import { branchRefDay } from "./branch-day.js";
+import { derivedIdStatus } from "./id-on-file.js";
 import {
   assertIndiaPurpose,
   LedgerError,
@@ -701,12 +702,19 @@ export class ObligationService {
           throw new LedgerError("COMPLIANCE_BLOCKED", PH_PURPOSE_MESSAGE);
         }
       }
+      const idStatus = await derivedIdStatus(
+        client,
+        spec.customerId,
+        actor.tenantId,
+        actor.legalEntityId,
+        actor.branchId,
+      );
       const compliance = await requireIdentification(
         client,
         actor,
         pack,
         amountHome,
-        customer.rows[0].id_status,
+        idStatus,
         {
           kind: spec.dealKind,
           cash: true,
