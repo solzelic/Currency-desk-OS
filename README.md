@@ -19,7 +19,7 @@ public storefront (live rates, converter, SMS rate quotes) on their own domain.
 | `YorkFX/` | The hosted customer storefront (homepage, rates + converter, services, regulations, visit/quote) and the staff rate-board editor the OS embeds |
 | `docs/` | The durable set: `PROJECT_STATE.md` (what is true now), `REPOSITORY_MAP.md` (what runs, where, how it builds), architecture, security, and the financial-invariant docs |
 | `design/kyc-handoff/` | KYC design handoff: architecture, brand tokens, motion spec, verification-states reference |
-| `render.yaml` | Render Blueprint — auto-deploys `main` |
+| `render.yaml` | Render Blueprint — live auto-deploys `release` |
 
 ## Running locally
 
@@ -103,7 +103,7 @@ Host-header routing — no code change per customer.
 
 ## Deployment
 
-Push to `main` → Render auto-deploys (`render.yaml`). One-time environment in
+A push to `release` auto-deploys the live service (`render.yaml`). One-time environment in
 the Render dashboard:
 
 | Variable | Purpose |

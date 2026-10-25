@@ -1,5 +1,6 @@
 # Render blueprint — one web service: the CurrencyDesk OS prototype + API,
-# same origin, auto-deployed on every push to main.
+# same origin. Live auto-deploys from the release branch; staging (not in
+# this file) deploys from main.
 #
 # One-time setup in the Render dashboard (each marked sync:false below,
 # except RESET_STAFF_PASSWORD, which is added only when needed):
@@ -33,6 +34,8 @@
 services:
   - type: web
     name: currencydesk
+    # Live deploys only from release. Promote moves release to a staging-verified commit.
+    branch: release
     runtime: node
     # free tier: $0, sleeps after ~15 idle minutes (~30s wake on next visit).
     # switch to "starter" ($7/mo) for always-on once customers rely on it.
