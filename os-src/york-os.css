@@ -191,7 +191,7 @@ button { font-family: inherit; }
 .mb-bell-count {
   position: absolute; top: -2px; right: -2px; min-width: 14px; height: 14px; padding: 0 3px;
   display: grid; place-items: center; border-radius: 999px;
-  background: #c0392b; color: #fff; font-family: var(--f-mono, 'Space Mono', monospace);
+  background: var(--cd-amber); color: var(--cd-on-ink); font-family: var(--f-mono, 'Space Mono', monospace);
   font-size: 8.5px; font-weight: 700; line-height: 1; border: 1.5px solid var(--bar, #fff);
 }
 .mb-op-badge {
@@ -605,12 +605,12 @@ button { font-family: inherit; }
   position: absolute; top: -6px; right: -7px; z-index: 5;
   min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
   display: grid; place-items: center; border-radius: 999px;
-  background: #c0392b; color: #fff;
+  background: var(--cd-amber); color: var(--cd-on-ink);
   font-family: 'Space Mono', monospace; font-size: 9.5px; font-weight: 700; line-height: 1;
   border: 2px solid #fff; box-shadow: 0 1px 3px rgba(10,10,10,0.28);
   cursor: pointer; transition: background 0.14s ease, transform 0.14s ease;
 }
-.dock-badge:hover { background: #d8453a; transform: scale(1.08); }
+.dock-badge:hover { background: var(--cd-amber); transform: scale(1.08); }
 .app-btn .ai svg { width: 22px; height: 22px; display: block; }
 /* official icons carry explicit per-element stroke attributes (ink + green).
    On hover the whole icon animates to the brand green — built-in icons have
@@ -1245,7 +1245,7 @@ html[data-cdtheme="dark"] .mb-op:hover { background: rgba(255,255,255,0.1); }
 html[data-cdtheme="dark"] .mb-op.on { color: #131210; }
 html[data-cdtheme="dark"] .mb-op.on:hover { color: #131210; }
 html[data-cdtheme="dark"] .mb-bell.has:hover { background: rgba(224,96,79,0.15); }
-html[data-cdtheme="dark"] .mb-bell-count { background: var(--flag); color: #fff; }
+html[data-cdtheme="dark"] .mb-bell-count { background: var(--cd-amber); color: var(--cd-on-ink); }
 html[data-cdtheme="dark"] .mb-op.on-bell { background: rgba(255,255,255,0.1); }
 html[data-cdtheme="dark"] .mb-op-power.on, html[data-cdtheme="dark"] .mb-op-power.on:hover { color: var(--on-ink); }
 html[data-cdtheme="dark"] .mb-menu { box-shadow: 0 1px 2px rgba(0,0,0,0.3), 0 18px 44px -12px rgba(0,0,0,0.65); }

@@ -91,9 +91,9 @@
     return (
       <button onClick={onClick} disabled={!onClick}
         className="text-left px-5 py-3.5"
-        style={{ borderRight: `1px solid ${CD.lineSoft}`, background: active ? 'var(--cd-chip)' : 'transparent', cursor: onClick ? 'pointer' : 'default', transition: 'background .12s' }}>
+        style={{ borderRight: `1px solid ${CD.lineSoft}`, background: flag ? CD.panel : (active ? 'var(--cd-chip)' : 'transparent'), cursor: onClick ? 'pointer' : 'default', transition: 'background .12s' }}>
         <div className="text-[11px] flex items-center gap-1.5" style={{ color: CD.mute }}>{label}{active && <Ic n="x" s={11} c={CD.mute} />}</div>
-        <div className="text-lg font-semibold leading-tight" style={{ color: flag ? CD.flag : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        <div className="text-lg font-semibold leading-tight" style={{ color: flag ? CD.amber : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
         {sub && <div className="text-[10px] mt-0.5" style={{ color: CD.faint }}>{sub}</div>}
       </button>
     );
@@ -1463,7 +1463,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   /* =====================================================================
      LEDGER — immutable record list
   ===================================================================== */
-  function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked, onTillChanged }) {
+  function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked, onTillChanged, subs, beneficiaries }) {
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
     /* The desk's own trading day and its own reporting line, both from the
        server. `deskFacts` changes when either arrives, which is what makes
@@ -1622,6 +1622,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const feesKnown = src.every(x => x.fee != null);
       return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: feesKnown ? src.reduce((s, x) => s + (+x.fee || 0), 0) : null, rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
     }, [rows, client, flags, range]);
+    const dueN = useMemo(() => (window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0), [rows, clients, settings, beneficiaries, subs]);
 
     // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {
@@ -1770,7 +1771,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             complete — docs/ABSENT_FIGURES.md. */}
         <StatCard label="Pay-in volume" value={stats.n ? fmtHome(stats.vol) : '—'} sub={!stats.n ? 'nothing posted in this range' : stats.unvalued ? `${stats.unvalued} deal${stats.unvalued === 1 ? '' : 's'} this book cannot value · view breakdown ›` : 'view breakdown ›'} onClick={() => stats.n && setBreakdown('volume')} />
         <StatCard label="Fees collected" value={stats.n ? fmtHome(stats.fees) : '—'} sub={earningsHidden ? (stats.n ? null : 'nothing posted in this range') : (stats.n ? 'view earnings ›' : 'nothing posted in this range')} onClick={earningsHidden ? undefined : () => stats.n && setBreakdown('fees')} />
-        <StatCard label={`Reportable ≥ ${limit.label}`} value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
+        <StatCard label="Reportable deals" value={dueN > 0 ? `${dueN} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={dueN > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
       </div>
 
       {/* toolbar */}
@@ -1809,7 +1810,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       {/* filter chips */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
         <Chip on={view === 'open'} onClick={() => { setFocusRefs(null); setView('open'); }}>All posted</Chip>
-        <Chip on={view === 'RPT'} onClick={() => setViewToggle('RPT')} c={CD.flag} bg={CD.flagSoft}>Reportable {stats.openRpt > 0 && `· ${stats.openRpt}`}</Chip>
+        <Chip on={view === 'RPT'} onClick={() => setViewToggle('RPT')} c={dueN > 0 ? CD.amber : CD.flag} bg={dueN > 0 ? CD.panel : CD.flagSoft}>Reportable deals {dueN > 0 && `· ${dueN}`}</Chip>
         <Chip on={view === 'STR'} onClick={() => setViewToggle('STR')} c={CD.amber} bg={CD.amberSoft}>Structuring {stats.str > 0 && `· ${stats.str}`}</Chip>
         <Chip on={view === 'ID'} onClick={() => setViewToggle('ID')} c={CD.ink} bg={CD.lineSoft}>ID issues</Chip>
         <Chip on={view === 'tagged'} onClick={() => setViewToggle('tagged')} c={CD.ink} bg={CD.lineSoft}>Tagged {stats.tagged > 0 && `· ${stats.tagged}`}</Chip>

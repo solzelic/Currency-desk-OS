@@ -66,9 +66,9 @@ again. A vault that was never counted gets this opening.
 
 The login page calls `GET /api/staging/signin`. When that answers `{enabled:true}`, six buttons sign in as Owner, Manager, Supervisor, Compliance officer, Teller, or Auditor. No password, code, or PIN. The session lasts three days (`cdos_session` plus `cdos_staging=1`). A normal sign-in stays twelve hours and clears the marker.
 
-The host has to be `staging.currencydeskos.com`, or a pull-request preview `currencydesk-pr-<number>.onrender.com` while `IS_PULL_REQUEST=true`. `currencydeskos.com` and `www.currencydeskos.com` are refused even when the flag is set. The shop has to be the seeded York FX desk. A shop id in the body is ignored.
+The routes pass the request Host into `isStagingRuntime`. It has to agree with `RENDER_EXTERNAL_HOSTNAME`: `staging.currencydeskos.com`, `currencydesk-staging.onrender.com`, or `currencydesk-staging-pr-<digits>.onrender.com` while `IS_PULL_REQUEST=true`. `currencydeskos.com` and `www.currencydeskos.com` are refused. The shop has to be `tnt-yorkfx`. A shop id in the body is ignored.
 
-The people are `j.masri`, `r.haddad`, `a.singh`, `c.adebayo`, `m.costa`, and `l.berg`. Compliance officer and auditor are inserted on first seed only. An existing password is not overwritten.
+The people are `j.masri`, `r.haddad`, `a.singh`, `c.adebayo`, `m.costa`, and `l.berg`. A boot with `STAGING` exactly `1` adds the compliance officer and the auditor when they are missing, including on a database that already has the other demo staff. An existing row is not overwritten.
 
 A Staging banner stays on every screen for that session. A later password sign-in clears it.
 
@@ -80,6 +80,9 @@ A Staging banner stays on every screen for that session. A later password sign-i
 - Not Stripe, Twilio, or MFA.
 - Not a reset for `j.masri` / `r.haddad` / the other seeded staff. Those
   passwords are first-create only (`SEED_PASSWORD`) and are lived-in on
-  production.
+  production. `c.adebayo` (compliance officer) and `l.berg` (auditor)
+  are inserted only when `STAGING` is exactly `1`. A live boot does not
+  create them. If `SEED_PASSWORD` is unset, their password is random and
+  password sign-in is off. A later staging boot does not rewrite a password.
 - Not a second book. The browser still only renders what the ledger
   posted.

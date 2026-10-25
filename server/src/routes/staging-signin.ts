@@ -1,14 +1,16 @@
 /* One-click staging sign-in. Registered only when STAGING=1
-   (see app.ts). Every request runs stagingQuickSignInGuard again,
-   so a live host or a real shop is still 404.
+   (see app.ts). Every request passes the Host header into
+   isStagingRuntime and checks the demo shop, so a live host
+   or any shop other than tnt-yorkfx is still 404.
 
    The session is a normal cdos_session for one seeded demo staff
    member. It lasts three days. A desk sign-in stays twelve hours. */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { audit } from "../audit.js";
-import { requestHost, stagingQuickSignInGuard } from "../auth/staging-runtime.js";
+import { isStagingRuntime, requestHost } from "../auth/staging-runtime.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { isDemoDeskTenant } from "../demo-desk.js";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { DEMO } from "../seed.js";
@@ -41,20 +43,31 @@ export function clearStagingCookie(reply: FastifyReply, secure: boolean): void {
   reply.clearCookie(STAGING_COOKIE, cookieOpts(secure));
 }
 
+async function doorOpen(db: Db, host: string | string[] | undefined): Promise<boolean> {
+  if (!isStagingRuntime(host)) return false;
+  const row = await db
+    .select({ id: schema.tenants.id, siteSlug: schema.tenants.siteSlug })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.id, DEMO.tenantId))
+    .limit(1)
+    .then((rows) => rows[0]);
+  return !!row && isDemoDeskTenant(row);
+}
+
 export function registerStagingSignInRoutes(app: FastifyInstance, db: Db): void {
   const secure = process.env.NODE_ENV === "production";
 
   app.get("/api/staging/signin", async (req, reply) => {
     /* 404, not 403, and enabled is false. The login page treats
        anything other than 200 { enabled: true } as no buttons. */
-    if (!(await stagingQuickSignInGuard(db, req.headers.host))) {
+    if (!(await doorOpen(db, req.headers.host))) {
       return reply.code(404).send({ enabled: false });
     }
     return { enabled: true };
   });
 
   app.post("/api/staging/enter", async (req, reply) => {
-    if (!(await stagingQuickSignInGuard(db, req.headers.host))) {
+    if (!(await doorOpen(db, req.headers.host))) {
       return reply.code(404).send({ error: "not_found" });
     }
     const body = (req.body ?? {}) as { role?: unknown };

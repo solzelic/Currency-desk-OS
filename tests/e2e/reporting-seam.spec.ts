@@ -412,12 +412,18 @@ test("the reporting threshold and the date on the ticket are the desk's own", as
   const screen = await bodyText(page);
 
   /* The Ledger flagged rows against a hardcoded 10,000 Canadian dollars
-     while Compliance flagged against the owner's setting — the same desk,
-     two different lines. The stat card now prints the pack's figure. */
+     while Compliance flagged against the owner's setting. The stat card
+     printed the pack's figure so the two lines could not drift. The card
+     now counts filings that are due and is labelled "Reportable deals",
+     so that sentence is not on it. The line the screen flags against is
+     still this pack's own figure. */
   const line = Number(pack.reportThreshold);
-  expect(screen).toMatch(
-    new RegExp(`Reportable ≥[^\\n]*${line.toLocaleString("en-CA").replace(/,/g, ",")}`),
-  );
+  expect(screen).toContain("Reportable deals");
+  const painted = await page.evaluate(() => {
+    const limit = window.CDOS.reportingLimit(null);
+    return limit ? String(limit.label) : "";
+  });
+  expect(painted).toContain(line.toLocaleString("en-CA"));
 
   /* And the desk's idea of "today" is the ledger's. `TODAY` was a string
      literal seven weeks in the past: the New Transaction ticket was headed

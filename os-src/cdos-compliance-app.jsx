@@ -188,11 +188,11 @@
         : `${filing.reportRef} could not be written to this browser and this desk has no ledger copy. Save the sealed PDF yourself.`);
   }
 
-  /* ===================== CANONICAL REPORTABLE OBLIGATIONS =====================
-     The single source of truth for "what must be filed": individual + 24h-aggregate
-     reportables, cash (LCTR) and wire (EFTR). Both the Compliance ▸ Filings page AND
-     the OS menu-bar compliance badge derive from this, so they can never disagree.
-     STRs are discretionary and appended separately by the Filings page. */
+  /* Due filings are openReportables. That list is the live obligations
+     that are not submitted, plus a prepared filing this browser cannot
+     rebuild from the deals it has loaded. The header, Needs filing, and
+     the menu-bar badge all read it. A filed filing is not due. A
+     structuring watch is a separate count. */
   function reportRefFor(kind, id) { return `${kind}-${(TODAY || '').slice(0, 4)}-${refHash(id)}`; }
   function computeReportables(rows, clients, settings, beneficiaries, subs) {
     const regime = getRegime(settings);
@@ -249,10 +249,34 @@
       amendsFilingId: (cov.filings.length && cov.filings[cov.filings.length - 1].filingId) || null,
     };
   }
-  // open = canonical obligations minus anything already sealed into a submitted filing
+  function storedFilingRow(id, s, regime) {
+    const seal = s.sealed || {};
+    const kind = s.kind || regime.strCode;
+    return {
+      id, groupId: s.groupId || id, kind,
+      subject: seal.subject || s.subject || id.replace(/^STR-/, '').replace(/-[0-9A-Z]{6}$/, ''),
+      amount: seal.amount != null ? seal.amount : (s.amount || 0),
+      detail: s.status === 'prepared' ? 'Prepared report' : (kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report'),
+      date: (s.submittedAt || '').slice(0, 10),
+      refs: seal.refs || s.refs || [],
+      basis: 'structuring',
+      reportRef: seal.reportRef || reportRefFor(kind, id),
+    };
+  }
+  function appendStored(out, subs, regime, status) {
+    Object.keys(subs || {}).forEach(id => {
+      const s = subs[id];
+      if (s && s.status === status && !out.some(o => o.id === id)) out.push(storedFilingRow(id, s, regime));
+    });
+    return out;
+  }
+  /* Due: not yet submitted. A prepared filing with no loaded deal is
+     still due. A submitted filing is not, flag or none. */
   function openReportables(rows, clients, settings, beneficiaries, subs) {
-    return computeReportables(rows, clients, settings, beneficiaries, subs)
+    const regime = getRegime(settings);
+    const out = computeReportables(rows, clients, settings, beneficiaries, subs)
       .filter(o => !(subs && subs[o.id] && subs[o.id].status === 'submitted'));
+    return appendStored(out, subs, regime, 'prepared');
   }
   /* "4 of these 6 were filed under FWR-AGG-RC-0001 · 2 still need filing" —
      the sentence a desk needed and did not get. Null when nothing about this
@@ -489,17 +513,16 @@
     const ctx = useMemo(() => ({ settings, clients, rows, regime }), [settings, clients, rows]);
 
     const reportables = useMemo(() => {
-      // canonical single + 24h-aggregate obligations (cash & wire) — shared with the OS badge
       const out = computeReportables(rows, clients, settings, beneficiaries, subs);
-      /* Filings the obligation list cannot rebuild: discretionary STRs, and
-         anything filed on a day whose transactions this browser has not
-         loaded — which is every filing made at the other till. They are
-         still filings, so they belong on this page. */
-      Object.keys(subs || {}).forEach(id => { const s = subs[id]; if (s && (s.status === 'submitted' || s.status === 'prepared') && !out.some(o => o.id === id)) { const seal = s.sealed || {}; out.push({ id, groupId: s.groupId || id, kind: s.kind || regime.strCode, subject: seal.subject || s.subject || id.replace(/^STR-/, '').replace(/-[0-9A-Z]{6}$/, ''), amount: seal.amount != null ? seal.amount : (s.amount || 0), detail: s.status === 'prepared' ? 'Prepared report' : (s.kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report'), date: (s.submittedAt || '').slice(0, 10), refs: seal.refs || s.refs || [], basis: 'structuring', reportRef: (seal.reportRef) || reportRefFor(s.kind || regime.strCode, id) }); } });
+      /* A filed copy whose deals are not loaded still belongs under
+         Filed records. Prepared copies are due, and they come from
+         openReportables, the same list as the header. */
+      appendStored(out, subs, regime, 'submitted');
       return out.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     }, [rows, clients, settings, beneficiaries, subs]);
 
-    const drafts = reportables.filter(r => !(subs[r.id] && subs[r.id].status === 'submitted'));
+    const drafts = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs)
+      .slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')), [rows, clients, settings, beneficiaries, subs]);
     const filedAll = reportables.filter(r => subs[r.id] && subs[r.id].status === 'submitted');
     // Filed records stay on this page for 30 days, then archive to Compliance ▸ History (where they live permanently).
     const ageDays = (s) => { try { const d = window.CDOS.dDiff(((s && s.submittedAt) || '').slice(0, 10), TODAY); return isNaN(d) ? 0 : d; } catch (e) { return 0; } };
@@ -552,7 +575,7 @@
       </div>}
 
       {/* NEEDS FILING */}
-      <div className="flex items-center gap-2 mb-2"><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Needs filing</span><span className="text-[10px] px-1.5 py-0.5" style={{ background: drafts.length ? CD.amber : CD.lineSoft, color: drafts.length ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 999, fontFamily: 'Space Mono' }}>{drafts.length}</span></div>
+      <div className="flex items-center gap-2 mb-2"><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Needs filing</span><span className="text-[12px] px-1.5 py-0.5" style={{ background: drafts.length ? CD.amber : CD.lineSoft, color: drafts.length ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 999, fontFamily: 'Space Mono' }}>{drafts.length}</span></div>
       <div className="space-y-1.5 mb-5">
         {drafts.map(r => { const note = coverageNote(r); const sub = subs[r.id]; return (
           <div key={r.id} className="flex items-center gap-3 px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${note ? CD.flag : CD.line}`, borderRadius: 11 }}>
@@ -711,8 +734,8 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp }) {
-    const [tab, setTab] = useState('screening');
+  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp, initialTab }) {
+    const [tab, setTab] = useState(initialTab || 'screening');
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
     // state + persistence when Compliance is mounted on its own.
@@ -851,7 +874,7 @@
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="cd-tile-frame"><div className="cd-honest-tiles mt-3">
-          {[['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
+          {[['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
             <button key={l} data-testid={l === 'Screening' ? 'sanctions-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>

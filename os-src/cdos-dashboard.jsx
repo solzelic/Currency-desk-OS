@@ -161,7 +161,7 @@
      in the boxes. Where the book has no answer the tile says so; see
      docs/ABSENT_FIGURES.md.
      ============================================================ */
-  function Dashboard({ rows, clients, settings, me, onOpenLedger, onOpenClient, openFiltered, onOpenApp, serverBacked, cashVersion }) {
+  function Dashboard({ rows, clients, settings, me, onOpenLedger, onOpenClient, openFiltered, onOpenApp, serverBacked, cashVersion, subs, beneficiaries }) {
     const [posMode, setPosMode] = useState('value');
     const [range, setRange] = useState('30d');
     // the trading day and the jurisdiction pack, from the server
@@ -237,6 +237,7 @@
     const sensitivity = fxTotal == null ? null : Math.abs(fxTotal) * 0.01;
     const maxPos = Math.max(1, ...((held || []).map(p => Math.abs(p.home || 0))));
 
+    const dueN = useMemo(() => (window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0), [rows, clients, settings, beneficiaries, subs]);
     const D = useMemo(() => {
       /* These read the transaction rows the ledger sent, which is what
          `rows` now is — the demo seed is gone. Grouping records the server
@@ -486,14 +487,14 @@
           {/* COMPLIANCE */}
           <Card title="Compliance">
             <div className="grid grid-cols-2 gap-2">
-              {[['Reportable open', D.rptOpen, D.rptOpen > 0 ? T.oxblood : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => (
-                <button key={l} onClick={() => openFiltered && openFiltered(view)} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '10px 12px' }}>
+              {[['Reportable deals', dueN, dueN > 0 ? CD.amber : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => (
+                <button key={l} onClick={() => openFiltered && openFiltered(view)} className="text-left" style={{ background: l === 'Reportable deals' && dueN > 0 ? CD.panel : T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '10px 12px' }}>
                   <div style={{ fontSize: 22, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
                   <div style={{ fontSize: 10.5, color: T.steel, marginTop: 1 }}>{l}</div>
                 </button>
               ))}
             </div>
-            <div className="mt-2.5" style={{ fontSize: 10.5, color: (D.rptOpen + D.kyc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(D.rptOpen + D.kyc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(D.rptOpen + D.kyc) > 0 ? `${D.rptOpen + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'}</div>
+            <div className="mt-2.5" style={{ fontSize: 10.5, color: (dueN + D.kyc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(dueN + D.kyc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(dueN + D.kyc) > 0 ? `${dueN + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'}</div>
             <div className="cd-tile-frame"><div className="cd-honest-tiles mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
               {[['Sanctions', 'Not connected', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
                 <button key={l} data-testid={l === 'Sanctions' ? 'dashboard-sanctions-tile' : undefined} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
