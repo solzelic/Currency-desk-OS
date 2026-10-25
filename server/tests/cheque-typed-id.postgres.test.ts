@@ -26,7 +26,7 @@ async function cookie() {
 }
 
 async function reset() {
-  await pool.query("TRUNCATE ledger_audit_events,ledger_customers,ledger_principals CASCADE");
+  await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques,ledger_till_sessions,ledger_till_balances,ledger_audit_events,ledger_customers,ledger_principals CASCADE");
   await pool.query("DELETE FROM desk_client_identity_documents WHERE tenant_id=$1", [DEMO.tenantId]);
   await pool.query("DELETE FROM desk_clients WHERE tenant_id=$1", [DEMO.tenantId]);
   await pool.query("INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING", [DEMO.tenantId]);
@@ -138,5 +138,38 @@ postgres("typed ID is not Identified", () => {
     const row = await standingOf("customer-current");
     expect(row.idStatus).toBe("verified");
     expect(row.idStanding).toMatchObject({ label: "Identified", status: "identified" });
+  });
+
+  it("does not let a stored verified column waive the cheque ID check", async () => {
+    const till = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
+    await pool.query(
+      "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'CAD',5000)",
+      till,
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_sessions
+        (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,session_number,business_date,status,opened_by,opened_at)
+       VALUES ('chq-typed-session',$1,$2,$3,$4,$5,1,DATE '2026-06-18','open',$1||':a.singh',now())`,
+      till,
+    );
+    await fileDocument("customer-typed", "cli-typed", "Ada Typed", "Library card", "LC-100", "2032-04-01");
+    const cookies = await cookie();
+    const refused = await app.inject({
+      method: "POST", url: "/api/ledger/cheques", cookies,
+      payload: {
+        idempotencyKey: "typed-4000", customerId: "customer-typed", chequeNumber: "004821",
+        maker: "Northbridge Imports Ltd.", draweeBank: "RBC Royal Bank", chequeType: "business",
+        typeLabel: "Business", currency: "CAD", faceAmount: "4000.00", feeAmount: "35.00",
+        holdDays: 0, endorsed: true,
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().code).toBe("COMPLIANCE_BLOCKED");
+    const tillRow = await pool.query(
+      "SELECT available_amount FROM ledger_till_balances WHERE till_id='till-01' AND currency='CAD'",
+    );
+    expect(String(tillRow.rows[0].available_amount)).toBe("5000.00");
+    const cheques = await pool.query("SELECT count(*)::int AS n FROM ledger_cheques");
+    expect(cheques.rows[0].n).toBe(0);
   });
 });

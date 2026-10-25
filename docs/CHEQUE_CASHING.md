@@ -221,6 +221,10 @@ inside a `SERIALIZABLE` money transaction. It lives in its own small
 store keyed by the ledger's cheque id, so re-reading the register cannot
 silently drop the scans.
 
+## Identification
+
+The cheque face is judged against the desk's identification line. On the Canada pack that line is CAD 3,000. Standing comes from stored documents, not from `ledger_customers.id_status` and not from the request. Identified means a current photo ID with a number and an expiry on or after the branch business date. Otherwise the cashing is 422 `COMPLIANCE_BLOCKED`, nothing is written, and the drawer does not move. A typed type and number is not that document.
+
 ## A desk is not left without a schedule
 
 Migration 045 writes the default schedule where `cdos_cheque_schedule_v1` is missing. Missing means the key is absent, the value is null, the text is empty, the text is `[]`, or the text is not a non-empty JSON array. A schedule already stored, including 0%, is left byte for byte. Each desk that changes gets one `audit_events` row, actor `system migration`, action `cheque.schedule_backfill`, with `before` and `after`. A second run changes nothing and writes no audit row. Signup, onboarding, an admin creating a desk, the platform tenant, and the York FX seed write the same default when the desk is created, and they do not replace a schedule that is already there. A boot that fills a missing schedule writes one audit row, actor `system seed`, action `cheque.schedule_backfill`, with `before` and `after`. A boot that finds a schedule already stored writes none. A browser opens the desk as new only when `cdos_settings` is missing and there are no rows and no clients. A blank `cdos_settings` is missing. The schedule and a tour flag do not count as records. It writes the shop name and the empty cash, keeps the stored keys, and leaves the rate board in place. A desk that has rows, clients, or a saved `cdos_settings` opens as the saved desk, so those records are not replaced with empty.

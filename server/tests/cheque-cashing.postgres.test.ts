@@ -31,6 +31,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 import { CHEQUE_FEE_SCHEDULE_KEY, DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -90,16 +91,16 @@ async function reset(options: { openTill?: boolean; cad?: number } = {}) {
     .update(schema.staffUsers)
     .set({ role: "branch_manager", authorizedBranchIds: [DEMO.branchId] })
     .where(eq(schema.staffUsers.id, `${DEMO.tenantId}:a.singh`));
-  /* Verified, because the identification gate is a real gate on this path
-     too — cashing a cheque for somebody the desk cannot name is exactly
-     what it exists for. `customer-walkin` is here for the one test that
-     needs the other answer. */
+  /* The identification gate is a real gate on this path. The column is not
+     standing. Jakob has a current passport. `customer-walkin` is the test
+     that needs the other answer, and that customer gets no passport. */
   await pool.query(
     `INSERT INTO ledger_customers VALUES
        ('customer-demo',$1,$2,$3,$4,'Jakob Miller','Normal','verified'),
        ('customer-walkin',$1,$2,$3,$4,'Walk-in','Normal','missing')`,
     scope.slice(0, 4),
   );
+  await fileCurrentPhotoId(pool, "customer-demo");
   await pool.query(
     "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'CAD',$6)",
     [...scope, cad],
