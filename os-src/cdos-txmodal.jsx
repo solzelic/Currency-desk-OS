@@ -449,7 +449,7 @@
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false);   // launches the KYC scan-ID walk-through
-    const [recordId, setRecordId] = useState(false); // the client file's identity editor
+    const [parkedForId, setParkedForId] = useState(false); // sheet stays mounted while the client file is open
     const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
@@ -526,14 +526,14 @@
     };
     useEffect(() => {
       const h = (e) => {
-        if (e.key !== 'Escape' || present || addFlow || quickChk || recordId) return;
+        if (e.key !== 'Escape' || present || addFlow || quickChk || parkedForId) return;
         if (discardAsk) { setDiscardAsk(false); return; }
         if (phoneSheet && dealDirty) { setDiscardAsk(true); return; }
         onClose();
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
-    }, [onClose, present, addFlow, quickChk, recordId, discardAsk, phoneSheet, dealDirty]);
+    }, [onClose, present, addFlow, quickChk, parkedForId, discardAsk, phoneSheet, dealDirty]);
     /* The soft keyboard shrinks the visual viewport and leaves the layout
        viewport tall, so a footer pinned to the layout bottom sits under
        the keys. The sheet tracks the visual viewport, and the footer sits
@@ -772,7 +772,7 @@
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
     const serverNeedsId = serverError === ID_NEEDED;
     const blockedReason = standing && standing.reason ? standing.reason : (phoneSheet ? 'ID not recorded yet' : ID_NEEDED);
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk && !serverNeedsId, warn: !!customer && (!idOk || serverNeedsId), label: standing && !idOk ? standing.label : `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : (!idOk || serverNeedsId) ? blockedReason : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk && !serverNeedsId, warn: !!customer && (!idOk || serverNeedsId), label: standing && !idOk ? standing.label : `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)}. Search or add them` : (!idOk || serverNeedsId) ? blockedReason : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -823,13 +823,21 @@
     const onPick = (n) => { setCustomer(n); setQuery(n); };
     const onAddNew = () => setAddFlow(true);
     const onClear = () => { setQuery(''); setCustomer(''); };
-    /* Opens the client file on the identity documents. The modal
-       closes because the file sits under it; the teller records the
-       ID and comes back to the deal. */
+    /* Opens the client file on the identity documents. The sheet
+       stays mounted, hidden, so Back to deal returns this draft. */
     const leaveForId = () => {
       if (typeof onRecordId === 'function') onRecordId(customer);
-      onClose();
+      setParkedForId(true);
     };
+    useEffect(() => {
+      if (!parkedForId) return undefined;
+      const back = () => {
+        setParkedForId(false);
+        if (typeof window.CDOS.openApp === 'function') window.CDOS.openApp('ledger');
+      };
+      window.CDOS.returnToDeal = back;
+      return () => { if (window.CDOS.returnToDeal === back) delete window.CDOS.returnToDeal; };
+    }, [parkedForId]);
     const showRecordId = idRequired && !!String(customer || '').trim() && (!idOk || serverError === ID_NEEDED);
 
     const applyTqWith = (val) => {
@@ -1125,7 +1133,7 @@
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
-      <div className="cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk || recordId) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk || recordId) ? undefined : requestClose}>
+      <div className="cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" hidden={parkedForId || undefined} style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk) ? 8000 : 9200, display: parkedForId ? 'none' : undefined }} onMouseDown={(addFlow || quickChk || parkedForId) ? undefined : requestClose}>
         <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
@@ -1195,13 +1203,12 @@
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && (!phoneSheet || personaOn) &&
                 React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl), onRecordId: leaveForId })}
               {/* Phone only, and display:none at a desk width so the 1280
-                  dialog does not move. This is not an ID form. It opens
-                  the client file's identity editor, which writes the
-                  document — type, number, and expiry — on the server. */}
+                  dialog does not move. Same label and destination as
+                  the footer: the client file, at Identity documents. */}
               {idRequired && String(customer || '').trim() && !idOk && (
                 <div data-req-field="id" className={'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')}>
                   <span className="cd-tx-id-need-label">ID needed for this amount</span>
-                  <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go">Record the ID</button>
+                  <button type="button" data-testid="record-id" onClick={leaveForId} className="cd-tx-id-need-go">Record ID</button>
                 </div>
               )}
               {idRequired && idOk && (
@@ -1436,7 +1443,7 @@
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
-                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
+                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" data-testid="record-id" onClick={leaveForId} className="cd-tx-id-need-go mt-1">Record ID</button> : null} />)}
                 </div>
 
                 {/* compliance note */}
@@ -1458,10 +1465,10 @@
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
-                {/* The phone sheet already offers Record the ID in the
-                    scroll. A second button in this bar makes the footer
-                    taller than the phone layout allows. */}
-                {showRecordId && !phoneSheet && <button type="button" data-testid="record-id" onClick={leaveForId} className="w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Record ID</button>}
+                {/* Phone keeps Record ID in the scroll. From 600px up
+                    this footer control is the one, and it is at least
+                    44px tall. */}
+                {showRecordId && !phoneSheet && <button type="button" data-testid="record-id" onClick={leaveForId} className="w-full flex items-center justify-center gap-1.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)', minHeight: 44, boxSizing: 'border-box' }}>Record ID</button>}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
                     Frozen quote · {unitText(serverQuote.inputAmount, serverQuote.from)} {serverQuote.from} → {unitText(serverQuote.outputAmount, serverQuote.to)} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -1495,7 +1502,6 @@
         </div>
         {present && presentQ && <PresentQuote q={presentQ} onClose={() => setPresent(false)} />}
         {addFlow && window.CDOS.KYC && React.createElement(window.CDOS.KYC.NewContactFlow, { initialName: (customer || query).trim(), by: me.name, setClients, requireId: idRequired, onClose: () => setAddFlow(false), onDone: (nm) => { setCustomer(nm); setQuery(nm); setAddFlow(false); } })}
-        {recordId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, { name: String(customer || '').trim(), rec: clients[customer] || null, setClients, log, onClose: () => setRecordId(false), onDone: () => setRecordId(false) })}
         {quickChk && window.CDOS.KYC && React.createElement(window.CDOS.KYC.SendModal, { subject: customer, kind: (clients[customer] && clients[customer].kind) || 'individual', rec: clients[customer], by: me.name, initialTpl: quickChk, onClose: () => setQuickChk(null) })}
       </div>
     ), document.body);

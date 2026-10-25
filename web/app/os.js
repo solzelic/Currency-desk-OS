@@ -25137,6 +25137,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document type' : 'ID type'
     }, /*#__PURE__*/React.createElement("select", {
+      "data-testid": "id-type",
+      "aria-label": kind === 'corporate' ? 'Document type' : 'ID type',
       disabled: !canEdit,
       value: rec.idType || '',
       onChange: e => set('idType', e.target.value),
@@ -26722,9 +26724,26 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     recordIdSignal
   }) {
     const [edit, setEdit] = useState(false); // always open read-only; Edit button enters edit mode
+    const fileRef = useRef(null);
     useEffect(() => {
       if (recordIdSignal) setEdit(true);
     }, [recordIdSignal]);
+    useEffect(() => {
+      if (!recordIdSignal || !edit) return undefined;
+      const root = fileRef.current;
+      if (!root) return undefined;
+      const section = root.querySelector('[data-testid="id-entry"]');
+      if (!section) return undefined;
+      section.scrollIntoView({
+        block: 'start',
+        inline: 'nearest'
+      });
+      const type = section.querySelector('[data-testid="id-type"]');
+      if (type && type.focus) type.focus({
+        preventScroll: true
+      });
+      return undefined;
+    }, [recordIdSignal, edit]);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -26811,6 +26830,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       },
       onClick: onClose
     }, /*#__PURE__*/React.createElement("div", {
+      ref: fileRef,
       onClick: e => e.stopPropagation(),
       className: "client-file w-full flex flex-col",
       style: {
@@ -26932,7 +26952,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       c: CD.faint
     }), " ", corp ? rec.jurisdiction : rec.occupation))), /*#__PURE__*/React.createElement("div", {
       className: "client-file-actions flex items-center gap-2 flex-none"
-    }, canEdit && /*#__PURE__*/React.createElement("button", {
+    }, recordIdSignal ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "back-to-deal",
+      onClick: onClose,
+      className: "px-2 text-[13px] font-semibold underline",
+      style: {
+        color: CD.ink,
+        minHeight: 44
+      }
+    }, "Back to deal") : null, canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => setEdit(e => !e),
       className: "flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium",
       style: {
@@ -28052,6 +28081,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         openLedgerForClient(n);
       },
       onClose: () => {
+        if (recordIdSignal && typeof window.CDOS.returnToDeal === 'function') window.CDOS.returnToDeal();
         setProfile(null);
         setHighlightTx(null);
         setRecordIdSignal(0);
@@ -35845,7 +35875,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false); // launches the KYC scan-ID walk-through
-    const [recordId, setRecordId] = useState(false); // the client file's identity editor
+    const [parkedForId, setParkedForId] = useState(false); // sheet stays mounted while the client file is open
     const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
@@ -35918,7 +35948,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     useEffect(() => {
       const h = e => {
-        if (e.key !== 'Escape' || present || addFlow || quickChk || recordId) return;
+        if (e.key !== 'Escape' || present || addFlow || quickChk || parkedForId) return;
         if (discardAsk) {
           setDiscardAsk(false);
           return;
@@ -35931,7 +35961,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
-    }, [onClose, present, addFlow, quickChk, recordId, discardAsk, phoneSheet, dealDirty]);
+    }, [onClose, present, addFlow, quickChk, parkedForId, discardAsk, phoneSheet, dealDirty]);
     /* The soft keyboard shrinks the visual viewport and leaves the layout
        viewport tall, so a footer pinned to the layout bottom sits under
        the keys. The sheet tracks the visual viewport, and the footer sits
@@ -36266,7 +36296,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ok: !!customer && idOk && !serverNeedsId,
       warn: !!customer && (!idOk || serverNeedsId),
       label: standing && !idOk ? standing.label : `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk || serverNeedsId ? blockedReason : null
+      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)}. Search or add them` : !idOk || serverNeedsId ? blockedReason : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),
@@ -36368,13 +36398,23 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       setQuery('');
       setCustomer('');
     };
-    /* Opens the client file on the identity documents. The modal
-       closes because the file sits under it; the teller records the
-       ID and comes back to the deal. */
+    /* Opens the client file on the identity documents. The sheet
+       stays mounted, hidden, so Back to deal returns this draft. */
     const leaveForId = () => {
       if (typeof onRecordId === 'function') onRecordId(customer);
-      onClose();
+      setParkedForId(true);
     };
+    useEffect(() => {
+      if (!parkedForId) return undefined;
+      const back = () => {
+        setParkedForId(false);
+        if (typeof window.CDOS.openApp === 'function') window.CDOS.openApp('ledger');
+      };
+      window.CDOS.returnToDeal = back;
+      return () => {
+        if (window.CDOS.returnToDeal === back) delete window.CDOS.returnToDeal;
+      };
+    }, [parkedForId]);
     const showRecordId = idRequired && !!String(customer || '').trim() && (!idOk || serverError === ID_NEEDED);
     const applyTqWith = val => {
       const {
@@ -36934,11 +36974,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "cd-tx-overlay fixed inset-0 flex items-center justify-center p-4",
+      hidden: parkedForId || undefined,
       style: {
         background: 'var(--cd-scrim)',
-        zIndex: addFlow || quickChk || recordId ? 8000 : 9200
+        zIndex: addFlow || quickChk ? 8000 : 9200,
+        display: parkedForId ? 'none' : undefined
       },
-      onMouseDown: addFlow || quickChk || recordId ? undefined : requestClose
+      onMouseDown: addFlow || quickChk || parkedForId ? undefined : requestClose
     }, /*#__PURE__*/React.createElement("div", {
       ref: sheetRef,
       onMouseDown: e => e.stopPropagation(),
@@ -37153,9 +37195,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-id-need-label"
     }, "ID needed for this amount"), /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: () => setRecordId(true),
+      "data-testid": "record-id",
+      onClick: leaveForId,
       className: "cd-tx-id-need-go"
-    }, "Record the ID")), idRequired && idOk && /*#__PURE__*/React.createElement("div", {
+    }, "Record ID")), idRequired && idOk && /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-id-need"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "checkcircle",
@@ -38135,9 +38178,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onActivate: phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined,
       action: phoneSheet && r.key === 'id' && !r.ok && customer ? /*#__PURE__*/React.createElement("button", {
         type: "button",
-        onClick: () => setRecordId(true),
+        "data-testid": "record-id",
+        onClick: leaveForId,
         className: "cd-tx-id-need-go mt-1"
-      }, "Record the ID") : null
+      }, "Record ID") : null
     }))), (single || structuring) && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5 text-[11px] flex items-start gap-2",
       style: {
@@ -38179,11 +38223,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       type: "button",
       "data-testid": "record-id",
       onClick: leaveForId,
-      className: "w-full flex items-center justify-center gap-1.5 py-2 text-[13px] font-semibold",
+      className: "w-full flex items-center justify-center gap-1.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
         background: CD.ink,
-        color: 'var(--cd-on-ink)'
+        color: 'var(--cd-on-ink)',
+        minHeight: 44,
+        boxSizing: 'border-box'
       }
     }, "Record ID"), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 text-[11px]",
@@ -38316,13 +38362,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setQuery(nm);
         setAddFlow(false);
       }
-    }), recordId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, {
-      name: String(customer || '').trim(),
-      rec: clients[customer] || null,
-      setClients,
-      log,
-      onClose: () => setRecordId(false),
-      onDone: () => setRecordId(false)
     }), quickChk && window.CDOS.KYC && React.createElement(window.CDOS.KYC.SendModal, {
       subject: customer,
       kind: clients[customer] && clients[customer].kind || 'individual',
@@ -50232,7 +50271,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "id",
       s: 13,
       c: "var(--cd-on-ink)"
-    }), " Record the ID") : null, !force && /*#__PURE__*/React.createElement("button", {
+    }), " Record ID") : null, !force && /*#__PURE__*/React.createElement("button", {
       onClick: () => setDismissed(true),
       className: "px-2 py-1.5 text-[12px] font-medium",
       style: {

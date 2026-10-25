@@ -667,7 +667,7 @@
     const health = isHealthType(rec.idType);
     const editDoc = canEdit && !health;
     return (<div className="grid grid-cols-2 gap-3">
-      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}<SwitchedOffNote text={rec.idNotice} /></EditField>
+      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select data-testid="id-type" aria-label={kind === 'corporate' ? 'Document type' : 'ID type'} disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}<SwitchedOffNote text={rec.idNotice} /></EditField>
       {!health && <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
       <EditField label="Issued"><input disabled={!editDoc} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Expiry"><input disabled={!editDoc} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
@@ -1210,7 +1210,19 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   /* ---------- FULL PROFILE (double click) ---------- */
   function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload, recordIdSignal }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
+    const fileRef = useRef(null);
     useEffect(() => { if (recordIdSignal) setEdit(true); }, [recordIdSignal]);
+    useEffect(() => {
+      if (!recordIdSignal || !edit) return undefined;
+      const root = fileRef.current;
+      if (!root) return undefined;
+      const section = root.querySelector('[data-testid="id-entry"]');
+      if (!section) return undefined;
+      section.scrollIntoView({ block: 'start', inline: 'nearest' });
+      const type = section.querySelector('[data-testid="id-type"]');
+      if (type && type.focus) type.focus({ preventScroll: true });
+      return undefined;
+    }, [recordIdSignal, edit]);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -1253,7 +1265,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const addr = fullAddr(rec);
 
     return (<div className="fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ background: 'var(--cd-scrim)', zIndex: 8000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="client-file w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
+      <div ref={fileRef} onClick={e => e.stopPropagation()} className="client-file w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
         {/* header */}
         <div className="client-file-head flex items-start gap-4 px-6 py-5 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <div className="relative flex-none">
@@ -1271,6 +1283,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           </div>
           <div className="client-file-actions flex items-center gap-2 flex-none">
+            {recordIdSignal ? <button type="button" data-testid="back-to-deal" onClick={onClose} className="px-2 text-[13px] font-semibold underline" style={{ color: CD.ink, minHeight: 44 }}>Back to deal</button> : null}
             {canEdit && <button onClick={() => setEdit(e => !e)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium" style={{ border: `1px solid ${edit ? CD.ink : CD.line}`, background: edit ? CD.ink : 'transparent', color: edit ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 8 }}><Ic n={edit ? 'check' : 'pencil'} s={14} c={edit ? 'var(--cd-on-ink)' : CD.ink} /> {edit ? 'Done' : 'Edit'}</button>}
             {canExport && <button onClick={() => exportClientReport(name, rec, rows, flags, settings)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="filetext" s={14} c="var(--cd-on-ink)" /> Export report</button>}
             <button onClick={onClose} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>
@@ -1625,7 +1638,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       </div>
 
       {quick && <Portal><QuickCard name={quick} rec={quickRec} rows={rows} flags={computeFlags(rows, clients, settings)} settings={settings} me={me} canEdit={canEdit} beneficiaries={beneficiaries} corridors={corridors} setField={(k, v) => setField(quick, k, v)} onUpload={(k, f) => upload(quick, k, f)} onExpand={() => { setProfile(quick); setQuick(null); }} onOpenLedger={(n) => { setQuick(null); openLedgerForClient(n); }} onClose={() => setQuick(null)} /></Portal>}
-      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); setRecordIdSignal(0); }} log={log} highlightTx={highlightTx} reload={reload} recordIdSignal={recordIdSignal} /></Portal>}
+      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { if (recordIdSignal && typeof window.CDOS.returnToDeal === 'function') window.CDOS.returnToDeal(); setProfile(null); setHighlightTx(null); setRecordIdSignal(0); }} log={log} highlightTx={highlightTx} reload={reload} recordIdSignal={recordIdSignal} /></Portal>}
       {/* The reload below is AWAITED before the profile opens. It was fired
           and forgotten, so the file that came up was whatever the browser
           happened to be holding — and the one fact a brand-new file has

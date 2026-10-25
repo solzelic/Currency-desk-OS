@@ -515,7 +515,7 @@
           {persona
             ? <button onClick={() => onRun && onRun(tier)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n={cta.ic} s={13} c="var(--cd-on-ink)" /> {cta.label}</button>
             : recordInstead
-              ? <button type="button" onClick={() => onRecordId && onRecordId(name)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="id" s={13} c="var(--cd-on-ink)" /> Record the ID</button>
+              ? <button type="button" onClick={() => onRecordId && onRecordId(name)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="id" s={13} c="var(--cd-on-ink)" /> Record ID</button>
               : null}
           {!force && <button onClick={() => setDismissed(true)} className="px-2 py-1.5 text-[12px] font-medium" style={{ color: CD.mute }}>Not now</button>}
         </div>
