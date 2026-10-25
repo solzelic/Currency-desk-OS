@@ -787,6 +787,93 @@ postgres("cheque cashing on the ledger", () => {
     expect(imbalance(await journalOf(cashed.transactionId))).toBe(0);
   });
 
+  /* A closed session is the day close. A close count on that session is
+     the signed close-out. Neither may take a reversal or a return. */
+  const dayClosedBody = {
+    code: "CHEQUE_DAY_CLOSED",
+    message: "This day is closed. Reversals and returns can't be posted to it.",
+  };
+
+  async function bookSnapshot() {
+    return {
+      reversals: await rowCount("ledger_reversals"),
+      entries: await rowCount("ledger_reversal_entries"),
+      movements: await rowCount("ledger_till_movements"),
+      journals: await rowCount("ledger_journal_entries"),
+      transactions: await rowCount("ledger_transactions"),
+      events: await rowCount("ledger_cheque_events"),
+      audits: await rowCount("ledger_audit_events"),
+      keys: await rowCount("ledger_idempotency"),
+      cheques: await rowCount("ledger_cheques"),
+    };
+  }
+
+  async function closePayingDay(signedOff: boolean) {
+    const who = `${DEMO.tenantId}:a.singh`;
+    await pool.query(
+      `UPDATE ledger_till_sessions
+          SET status='closed', closed_by=$1, closed_at=now()
+        WHERE session_id='chq-session-1'`,
+      [who],
+    );
+    if (!signedOff) return;
+    await pool.query(
+      `INSERT INTO ledger_till_count_batches
+        (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+         till_id,count_kind,actor_id,idempotency_key,counted_at)
+       VALUES ('chq-signoff-1','chq-session-1',$1,$2,$3,$4,$5,'close',$6,'chq-signoff-key',now())`,
+      [...scope, who],
+    );
+  }
+
+  async function expectDayRefused(leg: "reversal" | "return", signedOff: boolean) {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    const till = await tillCad();
+    await closePayingDay(signedOff);
+    const before = await bookSnapshot();
+    const refused = await settle(cookies, cashed.cheque.chequeId, leg, {
+      reason: leg === "return" ? "NSF" : "Wrong day",
+      ...(leg === "return" ? { nsf: true } : {}),
+    });
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json()).toEqual(dayClosedBody);
+    expect(await tillCad()).toBe(till);
+    expect(await chequeStatus(cashed.cheque.chequeId)).toBe("held");
+    expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held"]);
+    expect(await bookSnapshot()).toEqual(before);
+    expect(imbalance(await journalOf(cashed.transactionId))).toBe(0);
+  }
+
+  it("refuses a reversal on a closed day and leaves the till where it was", async () => {
+    await expectDayRefused("reversal", false);
+  });
+
+  it("refuses a return on a closed day and leaves the cheque held", async () => {
+    await expectDayRefused("return", false);
+  });
+
+  it("refuses a reversal on a signed-off day and leaves the till where it was", async () => {
+    await expectDayRefused("reversal", true);
+  });
+
+  it("refuses a return on a signed-off day and leaves the cheque held", async () => {
+    await expectDayRefused("return", true);
+  });
+
+  it("still reverses into the till that paid the cheque while the day is open", async () => {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    expect(await tillCad()).toBe("4035.00");
+    const undone = await settle(cookies, cashed.cheque.chequeId, "reversal", {
+      reason: "Open day",
+    });
+    expect(undone.statusCode, undone.body).toBe(201);
+    expect(undone.json().status).toBe("reversed");
+    expect(await tillCad()).toBe("5000.00");
+    expect(undone.json().balances.CAD).toBe("5000.00");
+  });
+
   it("keeps a reversal and an NSF on separate paths", async () => {
     const cookies = await cookie();
     const bounced = await heldCheque(cookies, { chequeNumber: "A" });

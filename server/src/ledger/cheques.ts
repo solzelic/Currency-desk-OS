@@ -77,6 +77,26 @@ import {
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
+const CHEQUE_DAY_CLOSED =
+  "This day is closed. Reversals and returns can't be posted to it.";
+
+/* A reversal and a return post onto the till session this call is
+   signed in at. Every other drawer write asks the same question
+   through requireOpenTill: the latest session for that till is open,
+   or it is not. A day close sets that session to closed, and the
+   signed close-out is that same closed session plus its close count.
+   The teller hears a day sentence. Clearance does not call this. */
+async function refuseClosedChequeDay(client: pg.PoolClient, actor: LedgerActor) {
+  try {
+    await requireOpenTill(client, actor, { held: false });
+  } catch (error) {
+    if (error instanceof LedgerError && error.code === "TILL_NOT_OPEN") {
+      throw new LedgerError("CHEQUE_DAY_CLOSED", CHEQUE_DAY_CLOSED);
+    }
+    throw error;
+  }
+}
+
 /* Transaction rows that SETTLE a deal rather than being one.
 
    A clearance and a return each write a journal, so each needs a
@@ -760,12 +780,11 @@ export class ChequeService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      /* `transaction:post` and NOT an open till. Neither of these events
-         moves drawer cash — the money either arrives at the bank or is
-         gone — so demanding an open session would stop somebody clearing
-         yesterday's cheques before the counter opens, which is when that
-         work actually gets done. The reversal below is the opposite case
-         and does demand one, because cash goes back in the drawer. */
+      /* Clearance does not demand an open till. It does not move the
+         drawer, and yesterday's cheques are cleared before the counter
+         opens. A return does demand a day that is still open: it posts
+         onto this session, and a closed or signed-off day is refused
+         after the replay check below. */
       await authorizeLedgerActor(client, actor, "transaction:post");
 
       const existing = await client.query(
@@ -776,6 +795,7 @@ export class ChequeService {
         await client.query("COMMIT");
         return existing.rows[0].response;
       }
+      if (returning) await refuseClosedChequeDay(client, actor);
       if (!existing.rowCount) {
         const claimed = await client.query(
           "INSERT INTO ledger_idempotency (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING",
@@ -974,11 +994,11 @@ export class ChequeService {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       await authorizeLedgerActor(client, actor, "transaction:reverse");
       /* Cash goes back into the drawer that paid the cheque, so that
-         drawer has to be the one this call is signed in at, and it has
-         to be open. A different till is refused after the cheque is
-         locked, and that refusal commits nothing. The clearance path
-         deliberately does not ask for an open till; see the note there. */
-      await requireOpenTill(client, actor, { held: false });
+         drawer has to be the one this call is signed in at. A closed or
+         signed-off day is refused after the replay check, and that
+         refusal commits nothing. A different till is refused after the
+         cheque is locked. The clearance path does not ask for an open
+         till; see the note there. */
 
       const existing = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='cheque-reverse' AND idempotency_key=$6 FOR UPDATE",
@@ -988,6 +1008,7 @@ export class ChequeService {
         await client.query("COMMIT");
         return existing.rows[0].response;
       }
+      await refuseClosedChequeDay(client, actor);
       if (!existing.rowCount) {
         const claimed = await client.query(
           "INSERT INTO ledger_idempotency (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key) VALUES ($1,$2,$3,$4,$5,'cheque-reverse',$6) ON CONFLICT DO NOTHING",
