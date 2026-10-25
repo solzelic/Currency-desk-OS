@@ -136,11 +136,14 @@ export type FrozenQuote = {
   reportSuspicion?: boolean | null;
 };
 export class LedgerError extends Error {
+  readonly next?: string;
   constructor(
     readonly code: string,
     message: string,
+    next?: string,
   ) {
     super(message);
+    if (next) this.next = next;
   }
 }
 

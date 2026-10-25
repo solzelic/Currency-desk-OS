@@ -28,6 +28,8 @@
       shade: 'rgba(10,10,10,0.22)', scrim: 'rgba(10,10,10,0.5)', disabled: '#bdbcb3',
       brass: '#9a7406', brassSoft: '#f3e7c8', brassText: '#6b5119',   /* amber accent (sparingly) */
       flag: '#c0392b', flagSoft: '#f7e1dd',
+      /* Text on the pink flag wash. #8a3b30 is 6.10:1 on #f7e1dd. */
+      onFlagSoft: '#8a3b30',
       green: '#1f8a4c', greenSoft: '#dcefe4',
       amber: '#9a6b1f', amberSoft: '#f5e8cf'
     },
@@ -48,6 +50,8 @@
       shade: 'rgba(255,255,255,0.24)', scrim: 'rgba(0,0,0,0.62)', disabled: '#514f47',
       brass: '#d9a92c', brassSoft: 'rgba(217,169,44,0.16)', brassText: '#e5c56a',
       flag: '#e0604f', flagSoft: 'rgba(224,96,79,0.15)',
+      /* #f08a7c is 6.28:1 on the night wash over #161513. */
+      onFlagSoft: '#f08a7c',
       green: '#36ad6d', greenSoft: 'rgba(54,173,109,0.15)',
       amber: '#d99c3f', amberSoft: 'rgba(217,156,63,0.15)'
     }

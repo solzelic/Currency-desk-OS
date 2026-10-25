@@ -487,6 +487,8 @@
       /* amber accent (sparingly) */
       flag: '#c0392b',
       flagSoft: '#f7e1dd',
+      /* Text on the pink flag wash. #8a3b30 is 6.10:1 on #f7e1dd. */
+      onFlagSoft: '#8a3b30',
       green: '#1f8a4c',
       greenSoft: '#dcefe4',
       amber: '#9a6b1f',
@@ -527,6 +529,8 @@
       brassText: '#e5c56a',
       flag: '#e0604f',
       flagSoft: 'rgba(224,96,79,0.15)',
+      /* #f08a7c is 6.28:1 on the night wash over #161513. */
+      onFlagSoft: '#f08a7c',
       green: '#36ad6d',
       greenSoft: 'rgba(54,173,109,0.15)',
       amber: '#d99c3f',
@@ -3102,6 +3106,7 @@
         "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
+      if (typeof body.next === "string" && body.next) error.next = body.next;
       throw error;
     }
     return body;
@@ -43153,6 +43158,25 @@ var CDOS_CHEQUE_FEE = (function () {
     const overdue = c.status === 'held' && c.holdUntil < TODAY;
     const [busy, setBusy] = useState('');
     const [err, setErr] = useState('');
+    const [errCode, setErrCode] = useState('');
+    const [next, setNext] = useState('');
+    const dayClosed = errCode === 'CHEQUE_DAY_CLOSED';
+    /* The three postings the closed day refuses. Mark cleared stays,
+       because clearance still posts on a closed day. The hit target
+       stays 44px when the buttons go quiet. */
+    const stopped = !!busy || dayClosed;
+    const heldStyle = on => stopped ? {
+      minHeight: 44,
+      border: `1px solid ${CD.line}`,
+      background: 'var(--cd-disabled)',
+      color: CD.faint,
+      borderRadius: 8,
+      cursor: 'not-allowed'
+    } : Object.assign({
+      minHeight: 44,
+      borderRadius: 8,
+      cursor: 'pointer'
+    }, on);
 
     /* Every one of these is a posting. A clearance moves a receivable to
        the bank, a return books the face amount as a loss, and a reversal
@@ -43168,6 +43192,8 @@ var CDOS_CHEQUE_FEE = (function () {
       if (busy) return;
       setBusy(kind);
       setErr('');
+      setErrCode('');
+      setNext('');
       try {
         const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
         /* The status and the timeline come back from the register rather
@@ -43181,6 +43207,8 @@ var CDOS_CHEQUE_FEE = (function () {
         onClose && onClose();
       } catch (error) {
         setErr(error.message || 'The ledger refused this. Nothing was posted.');
+        setErrCode(error && error.code || '');
+        setNext(error && error.next || '');
       } finally {
         setBusy('');
       }
@@ -43306,12 +43334,12 @@ var CDOS_CHEQUE_FEE = (function () {
     }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[13px] font-semibold",
       style: {
-        color: CD.flag
+        color: CD.onFlagSoft
       }
     }, "Returned \u2014 ", fmt(c.netCad, homeCcy()), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
-        color: '#8a3b30'
+        color: CD.onFlagSoft
       }
     }, c.returnedReason, c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] uppercase tracking-widest mb-1",
@@ -43414,45 +43442,63 @@ var CDOS_CHEQUE_FEE = (function () {
       c: "var(--cd-on-ink)"
     }), " ", busy === 'clear' ? 'Posting…' : 'Mark cleared'), /*#__PURE__*/React.createElement("button", {
       onClick: returnNsf,
-      disabled: !!busy,
+      disabled: stopped,
       className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
-      style: {
+      style: heldStyle({
         border: `1px solid ${CD.flagSoft}`,
         background: CD.flagSoft,
-        color: CD.flag,
-        borderRadius: 8
-      }
+        color: CD.flag
+      })
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "ban",
       s: 15,
-      c: CD.flag
+      c: stopped ? CD.faint : CD.flag
     }), " ", busy === 'nsf' ? 'Posting…' : 'Return NSF'), /*#__PURE__*/React.createElement("button", {
       onClick: returnFraud,
-      disabled: !!busy,
+      disabled: stopped,
       className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
-      style: {
+      style: heldStyle({
         border: `1px solid ${CD.line}`,
-        color: CD.flag,
-        borderRadius: 8
-      }
+        color: CD.flag
+      })
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "alert",
       s: 15,
-      c: CD.flag
+      c: stopped ? CD.faint : CD.flag
     }), " ", busy === 'fraud' ? 'Posting…' : 'Flag fraud'), /*#__PURE__*/React.createElement("button", {
       onClick: reverse,
-      disabled: !!busy,
+      disabled: stopped,
       className: "flex items-center gap-1.5 px-3 py-2 text-sm font-medium",
-      style: {
+      style: heldStyle({
         border: `1px dashed ${CD.line}`,
-        color: CD.mute,
-        borderRadius: 8
-      }
+        color: CD.mute
+      })
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 15,
-      c: CD.mute
-    }), " ", busy === 'reverse' ? 'Posting…' : 'Reverse cashing')), err && /*#__PURE__*/React.createElement("div", {
+      c: stopped ? CD.faint : CD.mute
+    }), " ", busy === 'reverse' ? 'Posting…' : 'Reverse cashing')), err && dayClosed && /*#__PURE__*/React.createElement("div", {
+      className: "p-3 flex items-start gap-2",
+      role: "alert",
+      style: {
+        background: CD.flagSoft,
+        borderRadius: 11
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 18,
+      c: CD.flag
+    }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold",
+      style: {
+        color: CD.onFlagSoft
+      }
+    }, err), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-0.5",
+      style: {
+        color: CD.ink
+      }
+    }, next))), err && !dayClosed && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.flag
