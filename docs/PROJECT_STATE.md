@@ -86,20 +86,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `shared/str-role.js`. The desk screens are not in this change. Issue #342.
 
 - **The structuring watch is the supervisor and the three STR roles.**
+  `GET /api/ledger/transactions` uses one helper, `dealMarks`. That helper
+  runs the watch query only when `canSeeStructuringWatch` is true. A teller
+  and an auditor get none of the watch fields, and the query does not run.
+  A supervisor sees the watch fields and not the STR fields.
   `GET /api/ledger/structuring-watch` and
-  `POST /api/ledger/structuring-watch/acknowledge` are the administrator,
-  the branch manager, the compliance officer, and the supervisor. A teller
-  is refused before a row is written. Each acknowledgement inserts a new
-  row and stores the session role. Update, delete, and truncate are
-  refused by `ledger_append_only`. The deal read and the watch list use
-  one helper, `dealMarks`. That helper reads the latest acknowledgement
-  and keeps it only when its time is at or after the newest qualifying
-  deal and the deals are the ones that acknowledgement stored. A customer
-  who is not on the watch is refused and nothing is written. The helper
-  does not run the watch query for a role that cannot see the watch.
+  `POST /api/ledger/structuring-watch/acknowledge` are those four roles.
+  A teller is refused before a row is written. Each acknowledgement inserts
+  a new row, stores the session role, and stores the deal ids it saw. The
+  customer stays acknowledged only while the current watch deals are that
+  set and the ack time is at or after the newest of them. Update, delete,
+  and truncate are refused by `ledger_append_only`. A customer who is not
+  on the watch is refused and nothing is written.
   `canSeeStructuringWatch`, `STR_KEYS`, and `WATCH_KEYS` live in
-  `shared/str-role.js`. A supervisor sees the watch fields and not the
-  STR fields. The desk screens are not gated here. Issue #342.
+  `shared/str-role.js`. The desk screens are not gated here. Issue #342.
 
 - **Filings due share one count.** The Compliance header, the Needs filing list, the bell, the RPT tag, and the badges read `openReportables`. A prepared filing counts, including one whose deals are not loaded in this browser. A filed filing counts as zero due, including one that carries a booking-error flag. When the count is above zero, the header number is amber text on the tile. The menu-bar bell badge and the Ledger nav badge use that same amber, with on-ink text. The Ledger Reportable deals figure is amber when any deal is open. The Dashboard tile Reportable deals reads that same list, and its due number is amber on the panel. The Ledger chip reads that same list. The Ledger chip and the Ledger figure say Reportable deals, and that figure is amber on the panel. Issue #335.
 

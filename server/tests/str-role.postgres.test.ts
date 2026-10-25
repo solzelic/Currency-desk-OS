@@ -2,7 +2,8 @@
    A teller, an auditor, and a supervisor may not file. A supervisor
    may read an LCTR. The three compliance roles may file and read.
    A deal keeps its plain fields and drops the STR fields a role
-   may not see. The watch list and acknowledge stop at supervisor. */
+   may not see. The watch query runs only for the watch roles.
+   The watch list and acknowledge stop at supervisor. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { createRequire } from "node:module";
@@ -490,13 +491,6 @@ postgres("str filing and the transaction field strip", () => {
   });
 
   it("shows a supervisor the watch and none of the STR keys", async () => {
-    const saved = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(saved.statusCode, saved.body).toBe(200);
     const seen = await captureSql(async () => {
       const res = await app.inject({
         method: "GET",
@@ -509,7 +503,7 @@ postgres("str filing and the transaction field strip", () => {
       );
       expect(row.structuring).toBe(true);
       expect(row.structuringTotal).toBe("12000.00");
-      expect(row.ackStr).toBe(true);
+      expect(row.ackStr).toBe(false);
       for (const key of roles.WATCH_KEYS) expect(row, key).toHaveProperty(key);
       for (const key of roles.STR_KEYS) {
         expect(row, key).not.toHaveProperty(key);
@@ -619,5 +613,27 @@ postgres("str filing and the transaction field strip", () => {
       "SELECT count(*)::int AS n FROM ledger_structuring_acks",
     );
     expect(kept.rows[0].n).toBe(1);
+  });
+
+  it("keeps ackStr false for every role", async () => {
+    for (const role of ["teller", "auditor", ...WATCH]) {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/ledger/transactions",
+        cookies: await asRole(role),
+      });
+      expect(res.statusCode, role).toBe(200);
+      expect(res.body, role).not.toContain('"ackStr":true');
+      const row = res.json().transactions.find(
+        (item: { transactionRef: string }) => item.transactionRef === "YFX-STR-1",
+      );
+      if (roles.canSeeStructuringWatch(role)) {
+        expect(row.ackStr, role).toBe(false);
+        expect(row.ackStrInfo, role).toBe(null);
+      } else {
+        expect(row, role).not.toHaveProperty("ackStr");
+        expect(row, role).not.toHaveProperty("ackStrInfo");
+      }
+    }
   });
 });
