@@ -63,6 +63,8 @@ export const migrations: readonly Migration[] = [
   ["051_idv_inquiry_status", "src/db/migrations/051_idv_inquiry_status.sql"],
   /* 052 is identity-check credits. 050 and 051 are on main. */
   ["052_idv_credit_ledger", "src/db/migrations/052_idv_credit_ledger.sql"],
+  /* 053 is the booking-error flag beside a prepared or filed LCTR. The filing row is not updated. */
+  ["053_lctr_filing_flag", "src/db/migrations/053_lctr_filing_flag.sql"],
 ] as const;
 
 export async function runMigrations(

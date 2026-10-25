@@ -18,7 +18,6 @@ import {
 import { AU_V2_PACK_ID, australiaIdentification } from "./australia-rules.js";
 import {
   countryIdentification,
-  IN_REPORT_MESSAGE,
   isBookingErrorReason,
   type IdentificationDeal,
 } from "./canada-rules.js";
@@ -1726,20 +1725,6 @@ export class LedgerService {
           "REVERSAL_NOT_ALLOWED",
           "Reverse this cheque through POST /api/ledger/cheques/:chequeId/reversal.",
         );
-      /* Prepared is a draft filing. Filed is status filed. Refuse before any reversal row. Issue #327 lifts this once a filing flag exists. */
-      if (isBookingErrorReason(reason)) {
-        const held = await client.query(
-          `SELECT 1 FROM ledger_transactions t
-             JOIN ledger_report_filings f
-               ON f.tenant_id = t.tenant_id AND f.legal_entity_id = t.legal_entity_id
-              AND upper(f.report_code) = 'LCTR' AND f.status IN ('draft', 'filed')
-              AND (f.subject_transaction_ids @> jsonb_build_array(t.transaction_ref)
-                OR f.subject_transaction_ids @> jsonb_build_array(t.transaction_id))
-            WHERE t.transaction_id = $1 AND t.tenant_id = $2 AND t.legal_entity_id = $3 LIMIT 1`,
-          [transactionId, actor.tenantId, actor.legalEntityId],
-        );
-        if (held.rowCount) throw new LedgerError("COMPLIANCE_BLOCKED", IN_REPORT_MESSAGE);
-      }
       const existing = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",
         [transactionId],
@@ -1755,6 +1740,22 @@ export class LedgerService {
       );
       const reversalId = `rv_${randomUUID()}`;
       const now = new Date();
+      /* One row per deal. The sentence is chosen when the flag is read, from the filing's status then. */
+      if (isBookingErrorReason(reason)) {
+        await client.query(
+          `INSERT INTO ledger_filing_flags (filing_id, transaction_id, tenant_id, legal_entity_id, actor_id, posted_at)
+           SELECT f.filing_id, t.transaction_id, f.tenant_id, f.legal_entity_id, $4, $5
+             FROM ledger_transactions t
+             JOIN ledger_report_filings f
+               ON f.tenant_id = t.tenant_id AND f.legal_entity_id = t.legal_entity_id
+              AND upper(f.report_code) = 'LCTR' AND f.status IN ('draft', 'filed')
+              AND (f.subject_transaction_ids @> jsonb_build_array(t.transaction_ref)
+                OR f.subject_transaction_ids @> jsonb_build_array(t.transaction_id))
+            WHERE t.transaction_id = $1 AND t.tenant_id = $2 AND t.legal_entity_id = $3
+           ON CONFLICT (filing_id, transaction_id) DO NOTHING`,
+          [transactionId, actor.tenantId, actor.legalEntityId, actor.userId, now],
+        );
+      }
       for (const movement of movements.rows) {
         const value = new Decimal(movement.amount);
         const direction = movement.direction === "in" ? "out" : "in";

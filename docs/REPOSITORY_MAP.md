@@ -150,7 +150,8 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   cannot both exist. Update, delete, and truncate raise. 049, 050, and 051 are on main, so this file is 052.
   `POST /api/idv/credits` is a platform administrator and only when
   `IDV_CREDIT_SANDBOX` is `1`. `GET /api/idv/credits` reads the caller's
-  shop. Neither route is a purchase.
+  shop.   Neither route is a purchase.
+- Migration `053_lctr_filing_flag` adds `ledger_filing_flags`, one row per filing and deal, with the actor and the time. The foreign key is `ON DELETE CASCADE`. A booking error on a deal already in a prepared or filed LCTR writes that row and does not update the filing row. The sentence is chosen when the flag is read. 052 is on main, so this file is 053.
 
 ## Test commands
 
