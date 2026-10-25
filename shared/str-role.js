@@ -1,7 +1,7 @@
-/* Who may see an STR, and who may see the structuring watch.
+/* Who may see an STR, who may file, and who may see the structuring watch.
    The server reads this file. The desk can import the same file.
-   STR: administrator, branch_manager, compliance_officer.
-   Watch: those three, plus supervisor.
+   STR and filing any report: administrator, branch_manager, compliance_officer.
+   Watch, and reading an LCTR: those three, plus supervisor.
    A teller, an auditor, and any other role fail closed. */
 (function (root, factory) {
   var api = factory();
@@ -10,6 +10,7 @@
     var cdos = root.CDOS || (root.CDOS = {});
     cdos.canSeeStr = api.canSeeStr;
     cdos.canSeeStructuringWatch = api.canSeeStructuringWatch;
+    cdos.canViewFiling = api.canViewFiling;
     cdos.canReleaseFiling = api.canReleaseFiling;
     cdos.presentDeal = api.presentDeal;
   }
@@ -28,10 +29,13 @@
   function canSeeStructuringWatch(role) {
     return named(WATCH, role);
   }
-  function canReleaseFiling(role, code) {
+  function canViewFiling(role, code) {
     var kind = String(code || "").trim().toUpperCase();
-    if (!canSeeStructuringWatch(role)) return false;
-    if (kind === "LCTR") return true;
+    if (kind === "LCTR") return canSeeStructuringWatch(role);
+    return canSeeStr(role);
+  }
+  function canReleaseFiling(role, code) {
+    if (!String(code || "").trim()) return false;
     return canSeeStr(role);
   }
   function presentDeal(role, deal) {
@@ -43,6 +47,7 @@
   return {
     canSeeStr: canSeeStr,
     canSeeStructuringWatch: canSeeStructuringWatch,
+    canViewFiling: canViewFiling,
     canReleaseFiling: canReleaseFiling,
     presentDeal: presentDeal,
   };

@@ -1,8 +1,8 @@
 /* Who may file, and who may read an STR on a deal.
-   A teller and an auditor get no filing. A supervisor may file and
-   read an LCTR and may not see an STR. The three compliance roles
-   may do both. A deal keeps its plain fields and drops the STR
-   fields a role may not see. */
+   A teller, an auditor, and a supervisor may not file. A supervisor
+   may read an LCTR. The three compliance roles may file and read.
+   A deal keeps its plain fields and drops the STR fields a role
+   may not see. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { createRequire } from "node:module";
@@ -36,8 +36,8 @@ describe("str and watch role sets", () => {
       expect(roles.canSeeStr(role), role).toBe(false);
       expect(roles.canSeeStructuringWatch(role), role).toBe(false);
     }
-    expect(roles.canReleaseFiling("supervisor", "LCTR")).toBe(true);
-    expect(roles.canReleaseFiling("supervisor", "lctr")).toBe(true);
+    expect(roles.canReleaseFiling("supervisor", "LCTR")).toBe(false);
+    expect(roles.canReleaseFiling("supervisor", "lctr")).toBe(false);
     expect(roles.canReleaseFiling("supervisor", "STR")).toBe(false);
     expect(roles.canReleaseFiling("supervisor", "MLR")).toBe(false);
     expect(roles.canReleaseFiling("teller", "LCTR")).toBe(false);
@@ -52,7 +52,8 @@ describe("str and watch role sets", () => {
       expect(hasBackendPermission(role, "filing:view"), role).toBe(false);
     }
     for (const role of WATCH) expect(hasBackendPermission(role, "filing:view"), role).toBe(true);
-    for (const role of WATCH) expect(hasBackendPermission(role, "compliance:file"), role).toBe(true);
+    for (const role of STR) expect(hasBackendPermission(role, "compliance:file"), role).toBe(true);
+    expect(hasBackendPermission("supervisor", "compliance:file")).toBe(false);
   });
 });
 
@@ -163,6 +164,8 @@ postgres("str filing and the transaction field strip", () => {
       const openLctr = await app.inject({ method: "GET", url: `/api/ledger/report-filings/${lctrId}`, cookies });
       const postStr = await app.inject({ method: "POST", url: "/api/ledger/report-filings", cookies, payload: filing("STR", role) });
       const postLctr = await app.inject({ method: "POST", url: "/api/ledger/report-filings", cookies, payload: filing("LCTR", role) });
+      expect(postLctr.statusCode, role).toBe(strOk ? 201 : 403);
+      expect(postStr.statusCode, role).toBe(strOk ? 201 : 403);
       if (!strOk && !lctrOk) {
         expect(listed.statusCode, role).toBe(403);
         expect(listed.body, role).not.toContain("Nora Quinn");
@@ -178,8 +181,6 @@ postgres("str filing and the transaction field strip", () => {
         expect(openLctr.statusCode, role).toBe(200);
         if (!strOk) expect(openStr.body, role).not.toContain("Nora Quinn");
       }
-      expect(postStr.statusCode, role).toBe(strOk ? 201 : 403);
-      expect(postLctr.statusCode, role).toBe(lctrOk ? 201 : 403);
       if (!strOk) {
         const strRows = await pool.query("SELECT count(*)::int AS n FROM ledger_report_filings WHERE upper(report_code)='STR'");
         expect(strRows.rows[0].n, role).toBe(1);
