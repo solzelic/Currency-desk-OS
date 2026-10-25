@@ -6246,6 +6246,9 @@ if (typeof module !== "undefined" && module.exports) {
       }
     }, label);
   }));
+  /* One sentence for the 24-hour rule at every width. The phone window
+     and the desktop window both read this. There is no second copy. */
+  const ROLLING_24H_RULE_DESC = "Cash received in the rolling 24 hours before each deal is added together for the same person, on behalf of the same person, or for the same beneficiary, on this branch's clock. The total does not reset at midnight.";
   const Row = ({
     title,
     desc,
@@ -12575,7 +12578,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' || regime && regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(Row, {
         stack: true,
         title: "24-hour rule",
-        desc: "Cash received in the rolling 24 hours before each deal is added together for the same person, on behalf of the same person, or for the same beneficiary, on this branch's clock. The total does not reset at midnight."
+        desc: ROLLING_24H_RULE_DESC
       }, /*#__PURE__*/React.createElement("span", {
         "data-testid": "rolling-24h-rule",
         className: "text-[12px] px-2.5 py-1.5",
