@@ -2,7 +2,7 @@
    Written before the module and the seed rows. A preview of the
    staging service is currencydesk-staging-pr-<number>.onrender.com.
    currencydesk-pr-<number> is a different service and is refused. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
@@ -44,30 +44,74 @@ describe("isStagingRuntime", () => {
   });
 });
 
-describe("demo seed adds the two missing roles once", () => {
-  let handle: DbHandle;
-  beforeAll(async () => {
+const STAGING_STAFF = ["c.adebayo", "l.berg"];
+
+describe("demo seed adds the two roles only when STAGING=1", () => {
+  const saved = {
+    STAGING: process.env.STAGING,
+    PGLITE_MEMORY: process.env.PGLITE_MEMORY,
+    SEED_PASSWORD: process.env.SEED_PASSWORD,
+  };
+  afterEach(() => {
+    for (const key of ["STAGING", "PGLITE_MEMORY", "SEED_PASSWORD"] as const) {
+      const value = saved[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  async function seeded(staging: string | undefined) {
+    if (staging === undefined) delete process.env.STAGING;
+    else process.env.STAGING = staging;
     process.env.PGLITE_MEMORY = "1";
     process.env.SEED_PASSWORD = "yorkville";
-    handle = await createDb();
+    const handle = await createDb();
     await seed(handle.db);
-  });
-  afterAll(async () => {
-    await handle.close();
+    return handle;
+  }
+
+  async function ids(handle: DbHandle) {
+    const rows = await handle.db.select({ staffId: schema.staffUsers.staffId }).from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, DEMO.tenantId));
+    return rows.map((row) => row.staffId);
+  }
+
+  it("creates neither account when STAGING is unset", async () => {
+    const handle = await seeded(undefined);
+    try {
+      const found = await ids(handle);
+      expect(found).not.toContain("c.adebayo");
+      expect(found).not.toContain("l.berg");
+      expect(found).toContain("j.masri");
+    } finally {
+      await handle.close();
+    }
   });
 
-  it("inserts a compliance officer and an auditor, and leaves an existing password alone", async () => {
-    const id = `${DEMO.tenantId}:c.adebayo`;
-    const officer = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, id)).then((rows) => rows[0]);
-    const auditor = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:l.berg`)).then((rows) => rows[0]);
-    expect(officer).toMatchObject({ staffId: "c.adebayo", name: "C. Adebayo", role: "compliance_officer", tenantId: DEMO.tenantId });
-    expect(auditor).toMatchObject({ staffId: "l.berg", name: "L. Berg", role: "auditor", tenantId: DEMO.tenantId });
-    expect(officer!.passwordHash).toBeTruthy();
+  it("creates neither account when STAGING=0", async () => {
+    const handle = await seeded("0");
+    try {
+      const found = await ids(handle);
+      for (const staffId of STAGING_STAFF) expect(found, staffId).not.toContain(staffId);
+    } finally {
+      await handle.close();
+    }
+  });
 
-    await handle.db.update(schema.staffUsers).set({ passwordHash: "already-chosen" }).where(eq(schema.staffUsers.id, id));
-    await seed(handle.db);
-    const again = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, id)).then((rows) => rows[0]);
-    expect(again!.passwordHash).toBe("already-chosen");
-    expect(again!.role).toBe("compliance_officer");
+  it("creates both when STAGING=1, and a second seed leaves the password alone", async () => {
+    const handle = await seeded("1");
+    try {
+      const officerId = `${DEMO.tenantId}:c.adebayo`;
+      const officer = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, officerId)).then((rows) => rows[0]);
+      const auditor = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:l.berg`)).then((rows) => rows[0]);
+      expect(officer).toMatchObject({ staffId: "c.adebayo", name: "C. Adebayo", role: "compliance_officer", tenantId: DEMO.tenantId });
+      expect(auditor).toMatchObject({ staffId: "l.berg", name: "L. Berg", role: "auditor", tenantId: DEMO.tenantId });
+      await handle.db.update(schema.staffUsers).set({ passwordHash: "already-chosen" }).where(eq(schema.staffUsers.id, officerId));
+      await seed(handle.db);
+      const again = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, officerId)).then((rows) => rows[0]);
+      expect(again!.passwordHash).toBe("already-chosen");
+      expect(again!.role).toBe("compliance_officer");
+    } finally {
+      await handle.close();
+    }
   });
 });

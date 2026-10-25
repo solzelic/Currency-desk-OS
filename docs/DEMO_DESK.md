@@ -66,7 +66,8 @@ again. A vault that was never counted gets this opening.
 - Not Stripe, Twilio, or MFA.
 - Not a reset for `j.masri` / `r.haddad` / the other seeded staff. Those
   passwords are first-create only (`SEED_PASSWORD`) and are lived-in on
-  production. First seed also inserts `c.adebayo` (compliance officer)
-  and `l.berg` (auditor). A later boot does not rewrite their passwords.
+  production. `c.adebayo` (compliance officer) and `l.berg` (auditor)
+  are inserted only when `STAGING=1`. A live boot does not create them,
+  and a later staging boot does not rewrite their passwords.
 - Not a second book. The browser still only renders what the ledger
   posted.
