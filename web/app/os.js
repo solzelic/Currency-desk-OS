@@ -61924,7 +61924,7 @@ ${snap}`;
     '--si-line': 'rgba(236,234,227,0.14)',
     '--si-soft': 'rgba(236,234,227,0.08)',
     '--si-mute': '#aea89f',
-    '--si-faint': '#8a847c',
+    '--si-faint': '#a7a39b',
     '--si-primary': '#36ad6d',
     '--si-primary-deep': '#2d9160',
     '--si-plum': '#b7a6e0',
