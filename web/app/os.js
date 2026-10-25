@@ -4408,7 +4408,7 @@ if (typeof window !== "undefined") {
       // (India), and a banking-day pack (the Philippines) do not use this
       // clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = monthCash || bankingDay || !aggregate ? null : regime.aggHours || 24;
+      const hours = monthCash || bankingDay || !aggregate ? null : regime.largeCode === 'LCTR' ? 24 : regime.aggHours || 24;
       const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
       const wall = window.CDOS.wallInstant;
       const inside = window.CDOS.inRollingWindow;
@@ -6778,6 +6778,7 @@ if (typeof module !== "undefined" && module.exports) {
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const monthCash = !!(regimeNow && regimeNow.windowKind === 'calendar_month');
     const bankingDay = !!(regimeNow && regimeNow.windowKind === 'banking_day');
+    const lctr = !!(regimeNow && regimeNow.largeCode === 'LCTR');
     const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
     const phPack = desk && desk.packId === 'pack-ph-v1' || packNow && packNow.packId === 'pack-ph-v1';
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() : [];
@@ -6900,7 +6901,7 @@ if (typeof module !== "undefined" && module.exports) {
     }), /*#__PURE__*/React.createElement(Release, {
       field: "idThreshold",
       label: "Identification threshold"
-    }), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(Row, {
+    }), monthCash || bankingDay || lctr ? null : /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
       desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : ukV2 ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.' : aeV2 ? 'The 90 day and 45 day bands in the Exchange Business Standards are not this window. This desk does not add deals together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.' : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
     }, status !== 'ready' ? unavailable : (line('aggregationHours') || {}).effective == null ? euAmlr ? /*#__PURE__*/React.createElement("span", {
@@ -6918,9 +6919,9 @@ if (typeof module !== "undefined" && module.exports) {
       value: String((line('aggregationHours') || {}).effective),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
-    })), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(PostureNote, {
+    })), monthCash || bankingDay || lctr ? null : /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('aggHours')
-    }), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(Release, {
+    }), monthCash || bankingDay || lctr ? null : /*#__PURE__*/React.createElement(Release, {
       field: "aggregationHours",
       label: "Aggregation window"
     }), /*#__PURE__*/React.createElement(Row, {
@@ -12539,7 +12540,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "info",
         s: 12,
         c: CD.faint
-      }), /*#__PURE__*/React.createElement("span", null, regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }), /*#__PURE__*/React.createElement("span", null, regime && regime.largeCode === 'LCTR' ? 'Your jurisdiction follows the operating country set in Localization. The large cash total is the rolling 24 hours before each deal. That window is not a setting.' : regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mb-5 flex items-start gap-2.5 px-3.5 py-3",
         style: {
           background: CD.flagSoft,
@@ -44572,7 +44573,9 @@ var CDOS_CHEQUE_FEE = (function () {
        rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
     const bankingDay = !!(large && large.windowKind === 'banking_day');
-    const aggregation = monthCash || bankingDay ? null : large && large.windowKind === 'none' ? {
+    /* An LCTR is 24 hours. A stored hour count is not a posture. */
+    const lctr = !!(large && large.code === 'LCTR');
+    const aggregation = monthCash || bankingDay || lctr ? null : large && large.windowKind === 'none' ? {
       field: 'aggHours',
       label: 'Aggregation window',
       standing: 'following',
@@ -44728,7 +44731,8 @@ var CDOS_CHEQUE_FEE = (function () {
       windowKind: large && large.windowKind || null,
       comparator: large && large.comparator || 'gte',
       idComparator: fxLine && fxLine.comparator || 'gte',
-      aggHours: noCashWindow || large && large.windowKind === 'calendar_month' || large && large.windowKind === 'banking_day' ? null : desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      /* LCTR is 24 hours. desk.aggregationHours is stored and is not applied. */
+      aggHours: noCashWindow || large && large.windowKind === 'calendar_month' || large && large.windowKind === 'banking_day' ? null : large && large.code === 'LCTR' ? 24 : desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
       wireEvery,
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
@@ -44795,7 +44799,8 @@ var CDOS_CHEQUE_FEE = (function () {
     }, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold;
     if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
-    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
+    /* LCTR stays 24. A stored aggHours does not move it. */
+    if (r.largeCode === 'LCTR') r.aggHours = 24;else if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
     return r;
   }
 
@@ -44915,8 +44920,11 @@ var CDOS_CHEQUE_FEE = (function () {
        and nothing calls it yet. A banking day is not this engine
        either. The Philippines flags one deal and does not add the day. */
     if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
-    const TH = regime.threshold,
-      H = regime.aggHours || 24;
+    const TH = regime.threshold;
+    /* An LCTR is 24 hours. regime.aggHours and the stored settings
+       (aggregationHours, aggHours, aggWindowStart) do not move it. */
+    const lctrWindow = kind === 'LCTR' || regime && regime.largeCode === 'LCTR' && kind === regime.largeCode;
+    const H = lctrWindow ? 24 : regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
     if (!(TH > 0)) return [];

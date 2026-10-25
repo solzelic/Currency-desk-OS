@@ -85,7 +85,8 @@
       // (India), and a banking-day pack (the Philippines) do not use this
       // clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = (monthCash || bankingDay || !aggregate) ? null : (regime.aggHours || 24);
+      const hours = (monthCash || bankingDay || !aggregate) ? null
+        : (regime.largeCode === 'LCTR' ? 24 : (regime.aggHours || 24));
       const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
       const wall = window.CDOS.wallInstant;
       const inside = window.CDOS.inRollingWindow;

@@ -208,7 +208,9 @@
        rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
     const bankingDay = !!(large && large.windowKind === 'banking_day');
-    const aggregation = (monthCash || bankingDay)
+    /* An LCTR is 24 hours. A stored hour count is not a posture. */
+    const lctr = !!(large && large.code === 'LCTR');
+    const aggregation = (monthCash || bankingDay || lctr)
       ? null
       : large && large.windowKind === 'none'
       ? {
@@ -322,9 +324,12 @@
       windowKind: (large && large.windowKind) || null,
       comparator: (large && large.comparator) || 'gte',
       idComparator: (fxLine && fxLine.comparator) || 'gte',
+      /* LCTR is 24 hours. desk.aggregationHours is stored and is not applied. */
       aggHours: (noCashWindow || (large && large.windowKind === 'calendar_month') || (large && large.windowKind === 'banking_day'))
         ? null
-        : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
+        : (large && large.code === 'LCTR')
+          ? 24
+          : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
       wireEvery,
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
@@ -370,7 +375,9 @@
     const r = Object.assign({ baseline: false, reports: [] }, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold;
     if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
-    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
+    /* LCTR stays 24. A stored aggHours does not move it. */
+    if (r.largeCode === 'LCTR') r.aggHours = 24;
+    else if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
     return r;
   }
 
@@ -482,7 +489,11 @@
        and nothing calls it yet. A banking day is not this engine
        either. The Philippines flags one deal and does not add the day. */
     if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
-    const TH = regime.threshold, H = regime.aggHours || 24;
+    const TH = regime.threshold;
+    /* An LCTR is 24 hours. regime.aggHours and the stored settings
+       (aggregationHours, aggHours, aggWindowStart) do not move it. */
+    const lctrWindow = kind === 'LCTR' || (regime && regime.largeCode === 'LCTR' && kind === regime.largeCode);
+    const H = lctrWindow ? 24 : (regime.aggHours || 24);
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
     if (!(TH > 0)) return [];

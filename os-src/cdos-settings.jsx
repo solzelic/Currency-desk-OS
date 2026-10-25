@@ -340,6 +340,7 @@
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const monthCash = !!(regimeNow && regimeNow.windowKind === 'calendar_month');
     const bankingDay = !!(regimeNow && regimeNow.windowKind === 'banking_day');
+    const lctr = !!(regimeNow && regimeNow.largeCode === 'LCTR');
     const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
     const phPack = (desk && desk.packId === 'pack-ph-v1') || (packNow && packNow.packId === 'pack-ph-v1');
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() : [];
@@ -452,7 +453,7 @@
       <PostureNote p={standingOf('idRequiredOver')} />
       <Release field="idThreshold" label="Identification threshold" />
 
-      {(monthCash || bankingDay) ? null : <Row
+      {(monthCash || bankingDay || lctr) ? null : <Row
         title="Aggregation window"
         desc={euAmlr && (line('aggregationHours') || {}).effective == null
           ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
@@ -470,8 +471,8 @@
                 onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
                 opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />}
       </Row>}
-      {(monthCash || bankingDay) ? null : <PostureNote p={standingOf('aggHours')} />}
-      {(monthCash || bankingDay) ? null : <Release field="aggregationHours" label="Aggregation window" />}
+      {(monthCash || bankingDay || lctr) ? null : <PostureNote p={standingOf('aggHours')} />}
+      {(monthCash || bankingDay || lctr) ? null : <Release field="aggregationHours" label="Aggregation window" />}
 
       <Row
         title="Record retention"
@@ -2301,7 +2302,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </button>); })}
           </div>}
           {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.'}</span></div>}
+          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.largeCode === 'LCTR' ? 'Your jurisdiction follows the operating country set in Localization. The large cash total is the rolling 24 hours before each deal. That window is not a setting.' : regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.'}</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ----

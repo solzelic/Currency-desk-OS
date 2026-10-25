@@ -200,3 +200,44 @@ test("an owner can move York onto the current Canada rules and see them", async 
   expect(after.under).toBe(0);
   expect(after.past).toBe(0);
 });
+
+test("an LCTR stays on 24 hours when a stored window says otherwise", async ({ page }) => {
+  test.setTimeout(120_000);
+  await signInAtDesk(page, "j.masri");
+  const result = await page.evaluate(() => {
+    const engine = window.CDOS._compliance;
+    const live = window.CDOS.getRegime({});
+    const desk = window.CDOS.deskThresholds ? window.CDOS.deskThresholds() : null;
+    const saved = desk && desk.aggregationHours;
+    if (desk && saved) {
+      desk.aggregationHours = Object.assign({}, saved, { effective: "72", deskChoice: "72" });
+    }
+    const fromStore = window.CDOS.getRegime({ aggHours: 12, aggregationHours: 48, aggWindowStart: "00:00" });
+    if (desk) desk.aggregationHours = saved;
+    const row = (id: string, date: string, time: string) => ({
+      id, ref: id, status: "posted", type: "Currency Exchange",
+      inAmt: 6000, inCcy: "CAD", outAmt: 1, outCcy: "USD",
+      date, time, customer: "Ada Conductor", beneficiary: "", capture: {},
+    });
+    const count = (hours: number, settingsHours: number, first: { date: string; time: string }, second: { date: string; time: string }) => {
+      const forced = Object.assign({}, live, { aggHours: hours, largeCode: "LCTR" });
+      const settings = { aggHours: settingsHours, aggregationHours: settingsHours, aggWindowStart: "00:00" };
+      return engine.aggClusters([
+        row("a", first.date, first.time),
+        row("b", second.date, second.time),
+      ], forced, settings).length;
+    };
+    return {
+      code: fromStore.largeCode,
+      hours: fromStore.aggHours,
+      inside: count(12, 12, { date: "2026-06-15", time: "12:00" }, { date: "2026-06-16", time: "11:00" }),
+      exact: count(72, 72, { date: "2026-06-15", time: "11:00" }, { date: "2026-06-16", time: "11:00" }),
+      past: count(48, 72, { date: "2026-06-15", time: "11:00" }, { date: "2026-06-16", time: "11:01" }),
+    };
+  });
+  expect(result.code).toBe("LCTR");
+  expect(result.hours).toBe(24);
+  expect(result.inside).toBe(1);
+  expect(result.exact).toBe(1);
+  expect(result.past).toBe(0);
+});
