@@ -137,13 +137,16 @@ export type FrozenQuote = {
 };
 export class LedgerError extends Error {
   readonly next?: string;
+  readonly stays?: string;
   constructor(
     readonly code: string,
     message: string,
     next?: string,
+    stays?: string,
   ) {
     super(message);
     if (next) this.next = next;
+    if (stays) this.stays = stays;
   }
 }
 
