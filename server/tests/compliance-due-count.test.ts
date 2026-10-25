@@ -203,5 +203,49 @@ describe("the due count is amber text on the tile", () => {
     expect(Number(lightTile.toFixed(2))).toBe(4.67);
     expect(Number(darkTile.toFixed(2))).toBe(7.05);
     expect(Number(lightPage.toFixed(2))).toBe(4.21);
+    const lightBadge = ratio(pick(light, "onInk"), pick(light, "amber"));
+    const darkBadge = ratio(pick(dark, "onInk"), pick(dark, "amber"));
+    expect(lightBadge).toBeGreaterThanOrEqual(4.5);
+    expect(darkBadge).toBeGreaterThanOrEqual(4.5);
+    expect(Number(lightBadge.toFixed(2))).toBe(4.67);
+    expect(Number(darkBadge.toFixed(2))).toBe(7.83);
+    expect(Number(ratio(pick(light, "amber"), pick(light, "chip")).toFixed(2))).toBe(4.1);
+    expect(Number(ratio(pick(light, "amber"), pick(light, "paper")).toFixed(2))).toBe(4.21);
+    expect(Number(ratio(pick(dark, "amber"), pick(dark, "paper")).toFixed(2))).toBe(7.63);
+    expect(Number(ratio(pick(dark, "amber"), pick(dark, "chip")).toFixed(2))).toBe(6.41);
+  });
+});
+
+describe("the bell, the ledger nav badge, and Reportable deals are amber", () => {
+  function decl(css: string, selector: string, prop: string) {
+    const at = css.indexOf(selector + " {");
+    if (at < 0) throw new Error(selector);
+    const rule = css.slice(at, css.indexOf("}", at));
+    const m = new RegExp(prop + ":\\s*([^;]+)").exec(rule);
+    const value = m && m[1];
+    if (!value) throw new Error(selector + " " + prop);
+    return value.trim();
+  }
+
+  it("reads the bell badge and the ledger nav badge from the amber and on-ink tokens", () => {
+    const css = readFileSync(resolve(root, "os-src/york-os.css"), "utf8");
+    expect(decl(css, ".mb-bell-count", "background")).toBe("var(--cd-amber)");
+    expect(decl(css, ".mb-bell-count", "color")).toBe("var(--cd-on-ink)");
+    expect(decl(css, "html[data-cdtheme=\"dark\"] .mb-bell-count", "background")).toBe("var(--cd-amber)");
+    expect(decl(css, "html[data-cdtheme=\"dark\"] .mb-bell-count", "color")).toBe("var(--cd-on-ink)");
+    expect(decl(css, ".dock-badge", "background")).toBe("var(--cd-amber)");
+    expect(decl(css, ".dock-badge", "color")).toBe("var(--cd-on-ink)");
+    expect(decl(css, ".dock-badge:hover", "background")).toBe("var(--cd-amber)");
+    const badges = [".mb-bell-count", "html[data-cdtheme=\"dark\"] .mb-bell-count", ".dock-badge", ".dock-badge:hover"]
+      .map(sel => css.slice(css.indexOf(sel + " {"), css.indexOf("}", css.indexOf(sel + " {"))))
+      .join("\n");
+    expect(badges).not.toMatch(/#c0392b|#d8453a|var\(--flag\)/);
+  });
+
+  it("paints an open Reportable deals figure with the amber token", () => {
+    const src = readFileSync(resolve(root, "os-src/cdos-ledger.jsx"), "utf8");
+    const fn = src.slice(src.indexOf("function StatCard"), src.indexOf("function CompKpi"));
+    expect(fn).toContain("flag ? CD.amber : CD.ink");
+    expect(fn).not.toContain("CD.flag");
   });
 });

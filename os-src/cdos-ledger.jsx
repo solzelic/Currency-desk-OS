@@ -93,7 +93,7 @@
         className="text-left px-5 py-3.5"
         style={{ borderRight: `1px solid ${CD.lineSoft}`, background: active ? 'var(--cd-chip)' : 'transparent', cursor: onClick ? 'pointer' : 'default', transition: 'background .12s' }}>
         <div className="text-[11px] flex items-center gap-1.5" style={{ color: CD.mute }}>{label}{active && <Ic n="x" s={11} c={CD.mute} />}</div>
-        <div className="text-lg font-semibold leading-tight" style={{ color: flag ? CD.flag : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        <div className="text-lg font-semibold leading-tight" style={{ color: flag ? CD.amber : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
         {sub && <div className="text-[10px] mt-0.5" style={{ color: CD.faint }}>{sub}</div>}
       </button>
     );

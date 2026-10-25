@@ -29270,7 +29270,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-lg font-semibold leading-tight",
       style: {
-        color: flag ? CD.flag : CD.ink,
+        color: flag ? CD.amber : CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
     }, value), sub && /*#__PURE__*/React.createElement("div", {
