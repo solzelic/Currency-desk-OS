@@ -34025,7 +34025,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       label: "Reportable deals",
       value: dueN > 0 ? `${dueN} open` : stats.rpt > 0 ? 'all filed' : '0',
       sub: stats.rpt > 0 ? `${stats.rpt} total` : null,
-      flag: stats.openRpt > 0,
+      flag: dueN > 0,
       onClick: () => setViewToggle('RPT'),
       active: view === 'RPT'
     })), /*#__PURE__*/React.createElement("div", {
