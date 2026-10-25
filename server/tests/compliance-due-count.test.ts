@@ -1,0 +1,207 @@
+/* Header and Needs filing both render the real Compliance screen.
+   The count they show is openReportables. A source-string match is not a count. */
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const require = createRequire(import.meta.url);
+const babel = require("@babel/standalone") as {
+  transform: (src: string, opts: object) => { code: string | null };
+};
+const React = require("react");
+const ReactDOMServer = require("react-dom/server") as { renderToStaticMarkup: (node: unknown) => string };
+const root = resolve(import.meta.dirname, "../..");
+const g = globalThis as any;
+
+g.localStorage = { getItem: () => null, setItem() {}, removeItem() {}, clear() {}, length: 0, key: () => null };
+g.document = { addEventListener() {}, removeEventListener() {}, documentElement: { setAttribute() {}, style: {} }, head: { appendChild() {} }, createElement: () => ({}) };
+require("../../shared/lctr-reversal.js");
+require("../../shared/rolling-24h.js");
+require("../../os-src/cdos-desk-time.js");
+require("../../shared/id-document-types.js");
+g.window = { CDOS: g.CDOS, CDOS_ID_TYPES: g.CDOS_ID_TYPES };
+Object.assign(g.window.CDOS, {
+  CD: {
+    ink: "var(--cd-ink)", mute: "var(--cd-mute)", faint: "var(--cd-faint)",
+    panel: "var(--cd-panel)", paper: "var(--cd-paper)", line: "var(--cd-line)",
+    lineSoft: "var(--cd-line-soft)", flag: "var(--cd-flag)", flagSoft: "var(--cd-flag-soft)",
+    onFlagSoft: "var(--cd-on-flag-soft)", green: "var(--cd-green)", greenSoft: "var(--cd-green-soft)",
+    amber: "var(--cd-amber)", amberSoft: "var(--cd-amber-soft)", chip: "var(--cd-chip)",
+  },
+  Ic: () => null, InfoTip: () => null, Tag: () => null,
+  fmt: (n: unknown) => String(n ?? ""), num: (n: unknown) => String(n ?? ""),
+  TODAY: "2026-10-25", crossRate: () => 1,
+  counterCashIn: (r: { inAmt?: number; inCcy?: string }) => ({ amount: Number(r.inAmt) || 0, ccy: r.inCcy || "CAD" }),
+  counterCashOut: () => null, businessDate: () => "2026-10-25",
+  reportingLimit: () => ({ amount: 10000, currency: "CAD" }), dDiff: () => 0,
+  TYPES: [], CCY: [], currencyPlaces: () => 2, effectiveRate: () => ({ text: "" }),
+  RATE_NOTE: "", unitText: () => "", perCadLive: () => 1,
+  branchZone: () => "America/Toronto", rulesMissing: () => false, deskPack: () => null,
+});
+
+function load(file: string) {
+  const src = readFileSync(resolve(root, file), "utf8");
+  const code = babel.transform(src, { presets: ["react"], filename: file }).code;
+  if (!code) throw new Error(file);
+  new Function("React", "window", "document", "localStorage", code)(React, g.window, g.document, g.localStorage);
+}
+load("os-src/cdos-compliance.jsx");
+load("os-src/cdos-modules.jsx");
+load("os-src/cdos-compliance-app.jsx");
+
+const SETTINGS = { regime: "FINTRAC", structuringDays: 7, threshold: 10000, employees: [] };
+const FILED_FLAG = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
+
+function cashDeal(over: Record<string, unknown> = {}) {
+  return {
+    id: "live", ref: "R-LIVE", date: "2026-10-25", time: "10:00", customer: "A. Chen", beneficiary: "",
+    type: "Currency Exchange", receivedInstrument: "cash", disbursedInstrument: "cash",
+    inCcy: "CAD", inAmt: 12000, outCcy: "USD", outAmt: 8000, status: "posted", ...over,
+  };
+}
+
+function render(subs: Record<string, unknown>, rows: unknown[] = []) {
+  return ReactDOMServer.renderToStaticMarkup(React.createElement(g.window.CDOS.Compliance, {
+    rows, clients: {}, beneficiaries: [], settings: SETTINGS, me: { name: "J. Masri", role: "Owner" },
+    subs, initialTab: "submissions",
+  }));
+}
+
+function headerCount(html: string) {
+  const m = /<div class="font-bold"[^>]*>([^<]*)<\/div><div class="text-\[10\.5px\]"[^>]*>Filings due<\/div>/.exec(html);
+  const n = m && m[1];
+  if (!n) throw new Error("header count missing");
+  return n.trim();
+}
+function needsCount(html: string) {
+  const m = /Needs filing<\/span><span[^>]*>([^<]*)<\/span>/.exec(html);
+  const n = m && m[1];
+  if (!n) throw new Error("Needs filing count missing");
+  return n.trim();
+}
+function dueTile(html: string) {
+  const m = /<button[^>]*>[\s\S]*?Filings due<\/div><\/button>/.exec(html);
+  const tile = m && m[0];
+  if (!tile) throw new Error("due tile missing");
+  return tile;
+}
+function counts(subs: Record<string, unknown>, rows: unknown[] = []) {
+  const html = render(subs, rows);
+  const due = g.window.CDOS.openReportables(rows, {}, SETTINGS, [], subs);
+  return { html, header: headerCount(html), needs: needsCount(html), selector: due.length, due };
+}
+
+describe("one due selector on the Compliance screen", () => {
+  it("counts an unrebuildable prepared filing once in the header and once in Needs filing", () => {
+    const subs = {
+      "PREP-ORPHAN": {
+        status: "prepared", kind: "LCTR", subject: "M. Ortega", amount: 12000,
+        submittedAt: "2026-10-20 10:00:00", refs: ["R-ORPHAN"],
+      },
+    };
+    const got = counts(subs);
+    expect({ header: got.header, needs: got.needs, selector: got.selector }).toEqual({ header: "1", needs: "1", selector: 1 });
+    expect(got.due.map((o: { id: string }) => o.id)).toEqual(["PREP-ORPHAN"]);
+    expect(got.html).toContain("M. Ortega");
+    expect(got.html).not.toContain("Nothing awaiting filing.");
+  });
+
+  it("counts a sealed filing as zero due and shows it under Filed records", () => {
+    const subs = {
+      "FILED-1": {
+        status: "submitted", kind: "LCTR", subject: "B. Khan", amount: 15000,
+        ackNo: "FWR-1", submittedAt: "2026-10-20 10:00:00", by: "J. Masri", refs: ["R-FILED"],
+      },
+    };
+    const got = counts(subs);
+    expect({ header: got.header, needs: got.needs, selector: got.selector }).toEqual({ header: "0", needs: "0", selector: 0 });
+    expect(got.html).toContain("Nothing awaiting filing.");
+    const filedAt = got.html.indexOf("Filed records");
+    expect(got.html.indexOf("B. Khan")).toBeGreaterThan(filedAt);
+  });
+
+  it("counts nothing when there are no filings", () => {
+    const got = counts({});
+    expect({ header: got.header, needs: got.needs, selector: got.selector }).toEqual({ header: "0", needs: "0", selector: 0 });
+    expect(got.html).toContain("Nothing awaiting filing.");
+    expect(got.html).toContain("No filed records yet");
+  });
+
+  it("counts a rebuildable prepared filing once, not twice", () => {
+    const rows = [cashDeal()];
+    const subs = {
+      "L-R-LIVE": { status: "prepared", kind: "LCTR", subject: "A. Chen", amount: 12000, refs: ["R-LIVE"] },
+    };
+    const got = counts(subs, rows);
+    expect(got.due.filter((o: { id: string }) => o.id === "L-R-LIVE")).toHaveLength(1);
+    expect({ header: got.header, needs: got.needs, selector: got.selector }).toEqual({ header: "1", needs: "1", selector: 1 });
+    expect(got.html.split("A. Chen").length - 1).toBe(1);
+  });
+
+  it("adds zero to due when a filed report carries a booking-error flag", () => {
+    const subs = {
+      "FILED-FLAG": {
+        status: "submitted", kind: "LCTR", subject: "C. Diaz", amount: 15000,
+        ackNo: "FWR-9", submittedAt: "2026-10-20 10:00:00", by: "J. Masri",
+        bookingErrorFlag: FILED_FLAG, refs: ["R-9"],
+      },
+    };
+    const got = counts(subs);
+    expect({ header: got.header, needs: got.needs, selector: got.selector }).toEqual({ header: "0", needs: "0", selector: 0 });
+    expect(got.html).toContain(FILED_FLAG);
+    expect(got.html).toContain("Nothing awaiting filing.");
+    expect(got.html.indexOf("C. Diaz")).toBeGreaterThan(got.html.indexOf("Filed records"));
+  });
+});
+
+describe("the due count is amber text on the tile", () => {
+  it("paints a count above zero with the amber token on the panel tile, at 12px in the badge", () => {
+    const subs = {
+      "PREP-ORPHAN": { status: "prepared", kind: "LCTR", subject: "M. Ortega", amount: 12000, refs: ["R-ORPHAN"] },
+    };
+    const html = render(subs);
+    const tile = dueTile(html);
+    expect(tile).toContain("background:var(--cd-panel)");
+    expect(tile).toMatch(/class="font-bold"[^>]*color:var\(--cd-amber\)/);
+    expect(tile).not.toMatch(/class="font-bold"[^>]*color:var\(--cd-flag\)/);
+    const badge = /Needs filing<\/span>(<span class="[^"]*")/.exec(html);
+    expect(badge && badge[1]).toContain("text-[12px]");
+  });
+
+  it("leaves a zero count on the green token", () => {
+    const tile = dueTile(render({}));
+    expect(tile).toMatch(/class="font-bold"[^>]*color:var\(--cd-green\)/);
+    expect(tile).not.toContain("var(--cd-amber)");
+  });
+
+  it("keeps amber on the tile at 4.5:1 or more in both themes, and under that on the page", () => {
+    const src = readFileSync(resolve(root, "os-src/cdos-base.jsx"), "utf8");
+    const light = src.slice(src.indexOf("light: {"), src.indexOf("dark: {"));
+    const dark = src.slice(src.indexOf("dark: {"), src.indexOf("const cdVar"));
+    const pick = (block: string, key: string) => {
+      const m = new RegExp(key + ": '([^']+)'").exec(block);
+      const hex = m && m[1];
+      if (!hex) throw new Error(key);
+      return hex;
+    };
+    const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const lum = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      return 0.2126 * lin(((n >> 16) & 255) / 255) + 0.7152 * lin(((n >> 8) & 255) / 255) + 0.0722 * lin((n & 255) / 255);
+    };
+    const ratio = (fg: string, bg: string) => {
+      const a = lum(fg); const b = lum(bg);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const lightTile = ratio(pick(light, "amber"), pick(light, "panel"));
+    const darkTile = ratio(pick(dark, "amber"), pick(dark, "panel"));
+    const lightPage = ratio(pick(light, "amber"), pick(light, "paper"));
+    expect(lightTile).toBeGreaterThanOrEqual(4.5);
+    expect(darkTile).toBeGreaterThanOrEqual(4.5);
+    expect(lightPage).toBeLessThan(4.5);
+    expect(Number(lightTile.toFixed(2))).toBe(4.67);
+    expect(Number(darkTile.toFixed(2))).toBe(7.05);
+    expect(Number(lightPage.toFixed(2))).toBe(4.21);
+  });
+});

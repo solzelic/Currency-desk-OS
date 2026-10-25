@@ -27368,7 +27368,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         borderRadius: 10,
         overflow: 'hidden'
       }
-    }, [['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable', String(reportable)]].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
+    }, [['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable deals', String(reportable)]].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       className: "px-4 py-3",
       style: {
@@ -34016,9 +34016,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       sub: earningsHidden ? stats.n ? null : 'nothing posted in this range' : stats.n ? 'view earnings ›' : 'nothing posted in this range',
       onClick: earningsHidden ? undefined : () => stats.n && setBreakdown('fees')
     }), /*#__PURE__*/React.createElement(StatCard, {
-      label: `Reportable ≥ ${limit.label}`,
+      label: "Reportable deals",
       value: stats.openRpt > 0 ? `${stats.openRpt} open` : stats.rpt > 0 ? 'all filed' : '0',
-      sub: stats.rpt > 0 ? `${stats.rpt} total` : null,
+      sub: stats.rpt > 0 ? `${limit.label} · ${stats.rpt} total` : limit.label,
       flag: stats.openRpt > 0,
       onClick: () => setViewToggle('RPT'),
       active: view === 'RPT'
@@ -41303,7 +41303,7 @@ ${threshold == null ? ' No reporting line has been set for this desk, so nothing
         color: CD.faint,
         fontFamily: 'Space Mono'
       }
-    }, "Reportable"), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable transfers"), /*#__PURE__*/React.createElement("div", {
       className: "text-xl font-bold",
       style: {
         color: CD.ink
@@ -47025,11 +47025,11 @@ ${(filing.map || []).map(blockHTML).join('')}
     log && log('Report history full', serverBacked ? `${filing.reportRef} is filed on the ledger; this browser could not keep a local copy of it.` : `${filing.reportRef} could not be written to this browser and this desk has no ledger copy. Save the sealed PDF yourself.`);
   }
 
-  /* ===================== CANONICAL REPORTABLE OBLIGATIONS =====================
-     The single source of truth for "what must be filed": individual + 24h-aggregate
-     reportables, cash (LCTR) and wire (EFTR). Both the Compliance ▸ Filings page AND
-     the OS menu-bar compliance badge derive from this, so they can never disagree.
-     STRs are discretionary and appended separately by the Filings page. */
+  /* Due filings are openReportables. That list is the live obligations
+     that are not submitted, plus a prepared filing this browser cannot
+     rebuild from the deals it has loaded. The header, Needs filing, and
+     the menu-bar badge all read it. A filed filing is not due. A
+     structuring watch is a separate count. */
   function reportRefFor(kind, id) {
     return `${kind}-${(TODAY || '').slice(0, 4)}-${refHash(id)}`;
   }
@@ -47161,9 +47161,35 @@ ${(filing.map || []).map(blockHTML).join('')}
       amendsFilingId: cov.filings.length && cov.filings[cov.filings.length - 1].filingId || null
     };
   }
-  // open = canonical obligations minus anything already sealed into a submitted filing
+  function storedFilingRow(id, s, regime) {
+    const seal = s.sealed || {};
+    const kind = s.kind || regime.strCode;
+    return {
+      id,
+      groupId: s.groupId || id,
+      kind,
+      subject: seal.subject || s.subject || id.replace(/^STR-/, '').replace(/-[0-9A-Z]{6}$/, ''),
+      amount: seal.amount != null ? seal.amount : s.amount || 0,
+      detail: s.status === 'prepared' ? 'Prepared report' : kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report',
+      date: (s.submittedAt || '').slice(0, 10),
+      refs: seal.refs || s.refs || [],
+      basis: 'structuring',
+      reportRef: seal.reportRef || reportRefFor(kind, id)
+    };
+  }
+  function appendStored(out, subs, regime, status) {
+    Object.keys(subs || {}).forEach(id => {
+      const s = subs[id];
+      if (s && s.status === status && !out.some(o => o.id === id)) out.push(storedFilingRow(id, s, regime));
+    });
+    return out;
+  }
+  /* Due: not yet submitted. A prepared filing with no loaded deal is
+     still due. A submitted filing is not, flag or none. */
   function openReportables(rows, clients, settings, beneficiaries, subs) {
-    return computeReportables(rows, clients, settings, beneficiaries, subs).filter(o => !(subs && subs[o.id] && subs[o.id].status === 'submitted'));
+    const regime = getRegime(settings);
+    const out = computeReportables(rows, clients, settings, beneficiaries, subs).filter(o => !(subs && subs[o.id] && subs[o.id].status === 'submitted'));
+    return appendStored(out, subs, regime, 'prepared');
   }
   /* "4 of these 6 were filed under FWR-AGG-RC-0001 · 2 still need filing" —
      the sentence a desk needed and did not get. Null when nothing about this
@@ -48049,33 +48075,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       regime
     }), [settings, clients, rows]);
     const reportables = useMemo(() => {
-      // canonical single + 24h-aggregate obligations (cash & wire) — shared with the OS badge
       const out = computeReportables(rows, clients, settings, beneficiaries, subs);
-      /* Filings the obligation list cannot rebuild: discretionary STRs, and
-         anything filed on a day whose transactions this browser has not
-         loaded — which is every filing made at the other till. They are
-         still filings, so they belong on this page. */
-      Object.keys(subs || {}).forEach(id => {
-        const s = subs[id];
-        if (s && (s.status === 'submitted' || s.status === 'prepared') && !out.some(o => o.id === id)) {
-          const seal = s.sealed || {};
-          out.push({
-            id,
-            groupId: s.groupId || id,
-            kind: s.kind || regime.strCode,
-            subject: seal.subject || s.subject || id.replace(/^STR-/, '').replace(/-[0-9A-Z]{6}$/, ''),
-            amount: seal.amount != null ? seal.amount : s.amount || 0,
-            detail: s.status === 'prepared' ? 'Prepared report' : s.kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report',
-            date: (s.submittedAt || '').slice(0, 10),
-            refs: seal.refs || s.refs || [],
-            basis: 'structuring',
-            reportRef: seal.reportRef || reportRefFor(s.kind || regime.strCode, id)
-          });
-        }
-      });
+      /* A filed copy whose deals are not loaded still belongs under
+         Filed records. Prepared copies are due, and they come from
+         openReportables, the same list as the header. */
+      appendStored(out, subs, regime, 'submitted');
       return out.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     }, [rows, clients, settings, beneficiaries, subs]);
-    const drafts = reportables.filter(r => !(subs[r.id] && subs[r.id].status === 'submitted'));
+    const drafts = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')), [rows, clients, settings, beneficiaries, subs]);
     const filedAll = reportables.filter(r => subs[r.id] && subs[r.id].status === 'submitted');
     // Filed records stay on this page for 30 days, then archive to Compliance ▸ History (where they live permanently).
     const ageDays = s => {
@@ -48224,7 +48231,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.ink
       }
     }, "Needs filing"), /*#__PURE__*/React.createElement("span", {
-      className: "text-[10px] px-1.5 py-0.5",
+      className: "text-[12px] px-1.5 py-0.5",
       style: {
         background: drafts.length ? CD.amber : CD.lineSoft,
         color: drafts.length ? 'var(--cd-on-ink)' : CD.mute,
@@ -48797,9 +48804,10 @@ ${(filing.map || []).map(blockHTML).join('')}
     onOpenTransfers,
     fileSignal,
     subs: subsProp,
-    setSubs: setSubsProp
+    setSubs: setSubsProp,
+    initialTab
   }) {
-    const [tab, setTab] = useState('screening');
+    const [tab, setTab] = useState(initialTab || 'screening');
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
     // state + persistence when Compliance is mounted on its own.
@@ -49069,7 +49077,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "cd-tile-frame"
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-honest-tiles mt-3"
-    }, [['Reportable', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.flag, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
+    }, [['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
       const bad = numeric && v > 0;
       const col = numeric ? bad ? warn : CD.green : CD.mute;
       return /*#__PURE__*/React.createElement("button", {
@@ -53460,7 +53468,7 @@ ${snap}`;
       const s = periodBook.summary;
       if (id === 'endofday') {
         const d = dayBook.summary;
-        return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'], ...data.cash.map(x => [x.ccy, csvUnits(x.units, x.ccy), csvMoney(x.home), csvUnits(x.counted, x.ccy), csvUnits(x.variance, x.ccy), csvUnits(x.vaultUnits, x.ccy)]), [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''], [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''], [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''], [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''], [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''], ['Reportable', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
+        return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'], ...data.cash.map(x => [x.ccy, csvUnits(x.units, x.ccy), csvMoney(x.home), csvUnits(x.counted, x.ccy), csvUnits(x.variance, x.ccy), csvUnits(x.vaultUnits, x.ccy)]), [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''], [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''], [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''], [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''], [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''], ['Reportable deals', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
       }
       if (id === 'pnl') {
         const hstRate = settings && settings.hstRate != null ? +settings.hstRate : 13;
@@ -53862,7 +53870,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`,
           tone: limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green
@@ -54281,7 +54289,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`,
           tone: limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green
