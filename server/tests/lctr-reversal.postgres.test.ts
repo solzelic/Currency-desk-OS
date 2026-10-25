@@ -79,8 +79,11 @@ async function filingBytes(id: string) {
   return JSON.stringify(found.rows[0]);
 }
 async function flagRows(id: string) {
-  const found = await pool.query("SELECT flag_text FROM ledger_filing_flags WHERE filing_id=$1 ORDER BY flag_text", [id]);
-  return found.rows.map((row) => row.flag_text);
+  const found = await pool.query(
+    "SELECT transaction_id, actor_id FROM ledger_filing_flags WHERE filing_id=$1 ORDER BY transaction_id",
+    [id],
+  );
+  return found.rows;
 }
 async function bookingError(transactionId: string, key: string) {
   try {
@@ -147,8 +150,8 @@ postgres("LCTR total keeps reversed cash unless it was a booking error", () => {
     expect(await reversals("lctr-filed")).toBe(1);
   });
   it("stores the prepared flag and the filed flag on the server", async () => {
-    expect(await flagRows("fil-prep")).toEqual([PREPARED_FLAG]);
-    expect(await flagRows("fil-filed")).toEqual([FILED_FLAG]);
+    expect(await flagRows("fil-prep")).toEqual([{ transaction_id: "lctr-prep", actor_id: SUPERVISOR }]);
+    expect(await flagRows("fil-filed")).toEqual([{ transaction_id: "lctr-filed", actor_id: SUPERVISOR }]);
     const listed = await new ReportFilingService(pool).list(actor(SUPERVISOR, "supervisor"));
     const byId = Object.fromEntries(listed.filings.map((row) => [row.filingId, row.bookingErrorFlag]));
     expect(byId["fil-prep"]).toBe(PREPARED_FLAG);
@@ -166,14 +169,17 @@ postgres("LCTR total keeps reversed cash unless it was a booking error", () => {
     );
     expect(found.rows[0].n).toBe(0);
   });
-  it("stores one flag when the same filing is marked twice", async () => {
+  it("stores one row per deal, and marking the same deal again does not add a row", async () => {
     await deal("lctr-2a", "lctr-2", "100.00", at(DAY1, "11:00:00"));
     await deal("lctr-2b", "lctr-2", "100.00", at(DAY1, "11:30:00"));
     await placeFiling("fil-2", "filed", ["ref-lctr-2a", "ref-lctr-2b"], { mark: "twice" });
     expect(await bookingError("lctr-2a", "twice-a")).toBeNull();
     expect(await bookingError("lctr-2b", "twice-b")).toBeNull();
     expect(await bookingError("lctr-2a", "twice-again")).toMatchObject({ code: "REVERSAL_ALREADY_EXISTS" });
-    expect(await flagRows("fil-2")).toEqual([FILED_FLAG]);
+    expect(await flagRows("fil-2")).toEqual([
+      { transaction_id: "lctr-2a", actor_id: SUPERVISOR },
+      { transaction_id: "lctr-2b", actor_id: SUPERVISOR },
+    ]);
   });
   it("refuses a teller who sets the booking-error reason, and the deal stays in the total", async () => {
     await deal("lctr-t-1", "lctr-teller", "6000.00", at(DAY1, "14:00:00"));
@@ -184,5 +190,94 @@ postgres("LCTR total keeps reversed cash unless it was a booking error", () => {
     expect(refused).toMatchObject({ code: "AUTHORIZATION_DENIED", message: TELLER_MSG });
     expect(await cashOf("lctr-teller")).toBe("11000.00");
     expect(await reversals("lctr-t-1")).toBe(0);
+  });
+
+  it("keeps an ordinary reversal in a prepared report and a filed report, with no flag", async () => {
+    await deal("lctr-op", "lctr-ordp", "6000.00", at(DAY1, "14:00:00"));
+    await deal("lctr-op2", "lctr-ordp", "5000.00", at(DAY2, "10:00:00"));
+    await deal("lctr-of", "lctr-ordf", "6000.00", at(DAY1, "14:00:00"));
+    await deal("lctr-of2", "lctr-ordf", "5000.00", at(DAY2, "10:00:00"));
+    await placeFiling("fil-op", "draft", "ref-lctr-op", { mark: "ordinary-prepared" });
+    await placeFiling("fil-of", "filed", "ref-lctr-of", { mark: "ordinary-filed" });
+    const beforeP = await filingBytes("fil-op");
+    const beforeF = await filingBytes("fil-of");
+    await service.reverse(actor(SUPERVISOR, "supervisor"), "lctr-op", "ord-prep", "Customer changed their mind");
+    await service.reverse(actor(SUPERVISOR, "supervisor"), "lctr-of", "ord-filed", "Customer changed their mind");
+    expect(await cashOf("lctr-ordp")).toBe("11000.00");
+    expect(await cashOf("lctr-ordf")).toBe("11000.00");
+    expect(await filingBytes("fil-op")).toBe(beforeP);
+    expect(await filingBytes("fil-of")).toBe(beforeF);
+    const flags = await pool.query("SELECT count(*)::int AS n FROM ledger_filing_flags WHERE filing_id IN ('fil-op','fil-of')");
+    expect(flags.rows[0].n).toBe(0);
+  });
+
+  it("refuses a teller booking error on a prepared report and on a filed report", async () => {
+    await deal("lctr-tp", "lctr-tp", "100.00", at(DAY1, "12:00:00"));
+    await deal("lctr-tf", "lctr-tf", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-tp", "draft", "ref-lctr-tp", { mark: "teller-p" });
+    await placeFiling("fil-tf", "filed", "ref-lctr-tf", { mark: "teller-f" });
+    for (const [id, key] of [["lctr-tp", "teller-prep"], ["lctr-tf", "teller-filed"]] as const) {
+      let refused: unknown = null;
+      try { await service.reverse(actor(TELLER, "teller"), id, key, BOOKING_ERROR_REASON); }
+      catch (error) { refused = error; }
+      expect(refused).toMatchObject({ code: "AUTHORIZATION_DENIED", message: TELLER_MSG });
+      expect(await reversals(id)).toBe(0);
+      const idem = await pool.query("SELECT count(*)::int AS n FROM ledger_idempotency WHERE idempotency_key=$1", [key]);
+      expect(idem.rows[0].n).toBe(0);
+    }
+    const flags = await pool.query("SELECT count(*)::int AS n FROM ledger_filing_flags WHERE filing_id IN ('fil-tp','fil-tf')");
+    expect(flags.rows[0].n).toBe(0);
+  });
+
+  it("rolls the flag back when the reversal fails after the insert", async () => {
+    await deal("lctr-rb", "lctr-rb", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-rb", "draft", "ref-lctr-rb", { mark: "rollback" });
+    const before = await filingBytes("fil-rb");
+    await pool.query(
+      `INSERT INTO ledger_till_balances (tenant_id, legal_entity_id, branch_id, workspace_id, till_id, currency, available_amount)
+       VALUES ($1,$2,$3,$4,$5,'CAD',0)`,
+      scope,
+    );
+    await pool.query(
+      "INSERT INTO ledger_till_movements (transaction_id, movement_kind, currency, direction, amount, created_at) VALUES ('lctr-rb','original','CAD','in',100,now())",
+    );
+    expect(await bookingError("lctr-rb", "rb-booking")).toMatchObject({ code: "REVERSAL_NOT_ALLOWED" });
+    const flags = await pool.query("SELECT count(*)::int AS n FROM ledger_filing_flags WHERE filing_id='fil-rb'");
+    expect(flags.rows[0].n).toBe(0);
+    expect(await filingBytes("fil-rb")).toBe(before);
+    expect(await reversals("lctr-rb")).toBe(0);
+  });
+
+  it("stores the actor and the transaction on each booking-error deal", async () => {
+    const found = await pool.query(
+      "SELECT transaction_id, actor_id FROM ledger_filing_flags WHERE filing_id='fil-2' ORDER BY transaction_id",
+    );
+    expect(found.rows).toEqual([
+      { transaction_id: "lctr-2a", actor_id: SUPERVISOR },
+      { transaction_id: "lctr-2b", actor_id: SUPERVISOR },
+    ]);
+  });
+
+  it("shows the filed sentence after a prepared report is filed", async () => {
+    await deal("lctr-st", "lctr-st", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-st", "draft", "ref-lctr-st", { mark: "status" });
+    expect(await bookingError("lctr-st", "st-booking")).toBeNull();
+    const read = async () => {
+      const listed = await new ReportFilingService(pool).list(actor(SUPERVISOR, "supervisor"));
+      return listed.filings.find((row) => row.filingId === "fil-st")?.bookingErrorFlag;
+    };
+    expect(await read()).toBe(PREPARED_FLAG);
+    await pool.query("UPDATE ledger_report_filings SET status='filed', acknowledgement_ref='ACK-fil-st' WHERE filing_id='fil-st'");
+    expect(await read()).toBe(FILED_FLAG);
+  });
+
+  it("removes the flags when a draft filing is deleted", async () => {
+    await deal("lctr-del", "lctr-del", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-del", "draft", "ref-lctr-del", { mark: "delete" });
+    expect(await bookingError("lctr-del", "del-booking")).toBeNull();
+    const count = async () => (await pool.query("SELECT count(*)::int AS n FROM ledger_filing_flags WHERE filing_id='fil-del'")).rows[0].n;
+    expect(await count()).toBe(1);
+    await pool.query("DELETE FROM ledger_report_filings WHERE filing_id='fil-del'");
+    expect(await count()).toBe(0);
   });
 });

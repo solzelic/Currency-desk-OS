@@ -170,12 +170,53 @@ describe("a booking-error flag on the filing view", () => {
     expect(html).toContain(FILED_FLAG);
     expect(html).toContain("text-[12px]");
     const card = readFileSync(resolve(root, "os-src/cdos-compliance-app.jsx"), "utf8");
-    expect(card).toContain("<FilingFlag text={sub && sub.bookingErrorFlag} />");
+    expect(card).toContain("<FilingFlag text={sub && sub.bookingErrorFlag} deals={sub && sub.bookingErrorDeals} people={settings.employees} />");
     expect(card).toContain("color: CD.onFlagSoft");
     const slip = readFileSync(resolve(root, "os-src/cdos-modules.jsx"), "utf8");
     const receipt = slip.slice(slip.indexOf("function ReceiptModal"), slip.indexOf("window.CDOS = Object.assign", slip.indexOf("function ReceiptModal")));
     expect(receipt).not.toContain(PREPARED_FLAG);
     expect(receipt).not.toContain(FILED_FLAG);
+  });
+
+  it("renders the alert icon and a flag-coloured border", () => {
+    const card = readFileSync(resolve(root, "os-src/cdos-compliance-app.jsx"), "utf8");
+    const flag = card.slice(card.indexOf("function FilingFlag"), card.indexOf("function filedCoverage"));
+    expect(flag).toContain('n="alert"');
+    expect(flag).toContain("border: `1px solid ${CD.flag}`");
+    expect(flag).toContain('role="alert"');
+    const html = ReactDOMServer.renderToStaticMarkup(React.createElement(g.window.CDOS.FilingFlag, { text: PREPARED_FLAG }));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("text-[12px]");
+    expect(html).not.toContain("<h");
+  });
+
+  it("names each booking-error deal on its own set-by line", () => {
+    const html = ReactDOMServer.renderToStaticMarkup(React.createElement(g.window.CDOS.FilingFlag, {
+      text: PREPARED_FLAG,
+      people: [{ id: "usr_9", name: "A. Singh" }],
+      deals: [
+        { transactionId: "t1", actorId: "usr_9", postedAt: "2026-06-16T20:00:00.000Z" },
+        { transactionId: "t2", actorId: "usr_9", postedAt: "2026-06-16T21:00:00.000Z" },
+      ],
+    }));
+    expect(html).toContain("Set by A. Singh, 16 Jun 2026, 4:00 pm.");
+    expect(html).toContain("Set by A. Singh, 16 Jun 2026, 5:00 pm.");
+  });
+
+  it("keeps the flag off the sealed PDF", () => {
+    const src = readFileSync(resolve(root, "os-src/cdos-lctr.jsx"), "utf8");
+    const sealed = src.slice(src.indexOf("function sealedHTML"), src.indexOf("function openSealed"));
+    expect(sealed).not.toContain(PREPARED_FLAG);
+    expect(sealed).not.toContain(FILED_FLAG);
+    expect(sealed).not.toContain("bookingErrorFlag");
+    expect(sealed).not.toContain("booking error");
+  });
+
+  it("maps a server draft to prepared and keeps a prepared filing on the page", () => {
+    const view = g.window.CDOS.subFromFiling({ status: "draft", reportCode: "LCTR", filingId: "fil-p" });
+    expect(view.status).toBe("prepared");
+    const card = readFileSync(resolve(root, "os-src/cdos-compliance-app.jsx"), "utf8");
+    expect(card).toContain("s.status === 'submitted' || s.status === 'prepared'");
   });
 });
 
@@ -185,5 +226,16 @@ describe("cashReceived follows the shared rule", () => {
     expect(src).toContain("countsTowardLctr(row.reason)");
     expect(src).not.toContain("lctrCluster");
     expect(src).not.toContain("btrim($6");
+    expect(src).not.toContain("IN_REPORT_MESSAGE");
+    const shared = readFileSync(resolve(root, "shared/lctr-reversal.js"), "utf8");
+    expect(shared).not.toContain("IN_REPORT_MESSAGE");
+  });
+
+  it("checks the booking-error role before it writes a filing flag", () => {
+    const src = readFileSync(resolve(root, "server/src/ledger/service.ts"), "utf8");
+    const role = src.indexOf("Only a supervisor, branch manager, or administrator can record a booking error. Nothing was reversed.");
+    const insert = src.indexOf("INSERT INTO ledger_filing_flags");
+    expect(role).toBeGreaterThan(-1);
+    expect(insert).toBeGreaterThan(role);
   });
 });

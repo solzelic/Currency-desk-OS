@@ -84,7 +84,7 @@ byte for byte unchanged. A prepared filing shows "A deal in this
 report was later marked booking error. Check the report before you
 file it." A filed filing shows "A deal in this report was later
 marked booking error. Check if the filed report needs a correction."
-The flag is stored once, beside the filing. Neither sentence is on
+Each booking-error deal is its own flag row, with who set it and when. The sentence follows the filing's current status. Neither sentence is on
 a receipt. The left-out line still shows when dropping that deal
 leaves no cluster. A sealed filing is not removed.
 

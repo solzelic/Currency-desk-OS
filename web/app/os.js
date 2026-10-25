@@ -3040,7 +3040,6 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   var BOOKING_ERROR_REASON = "booking error, cash not received";
   var LEFT_OUT_LINE = "left out: booking error, cash not received";
-  var IN_REPORT_MESSAGE = "This deal is already in a report. Ask your compliance officer.";
   var FILING_FLAG_FILED = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
   var FILING_FLAG_PREPARED = "A deal in this report was later marked booking error. Check the report before you file it.";
 
@@ -3079,7 +3078,6 @@
   return {
     BOOKING_ERROR_REASON: BOOKING_ERROR_REASON,
     LEFT_OUT_LINE: LEFT_OUT_LINE,
-    IN_REPORT_MESSAGE: IN_REPORT_MESSAGE,
     FILING_FLAG_FILED: FILING_FLAG_FILED,
     FILING_FLAG_PREPARED: FILING_FLAG_PREPARED,
     isBookingErrorReason: isBookingErrorReason,
@@ -46870,22 +46868,47 @@ ${(filing.map || []).map(blockHTML).join('')}
       amount: f.reportedAmount == null ? 0 : Number(f.reportedAmount),
       server: true,
       status: f.status === 'draft' ? 'prepared' : 'submitted',
-      bookingErrorFlag: f.bookingErrorFlag || ''
+      bookingErrorFlag: f.bookingErrorFlag || '',
+      bookingErrorDeals: f.bookingErrorDeals || []
     };
   }
   function FilingFlag({
-    text
+    text,
+    deals,
+    people
   }) {
     if (!text) return null;
+    const rule = window.CDOS.lctrReversal;
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const lines = (deals || []).map(deal => {
+      if (!rule) return '';
+      const name = rule.staffDisplayName(deal.actorId, people || [], deal.actorName);
+      const when = new Date(deal.postedAt);
+      if (!name || !window.CDOS.deskDay || !window.CDOS.deskTime || isNaN(when.getTime())) return '';
+      const day = window.CDOS.deskDay(when, zone);
+      const time = window.CDOS.deskTime(when, '12h', zone);
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+      const clock = m && time ? +m[3] + ' ' + mon[+m[2] - 1] + ' ' + m[1] + ', ' + time : '';
+      return clock ? rule.setByLine(name, clock) : '';
+    }).filter(Boolean);
     return /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-1",
+      role: "alert",
+      className: "text-[12px] mt-1 flex items-start gap-2",
       style: {
         color: CD.onFlagSoft,
         background: CD.flagSoft,
+        border: `1px solid ${CD.flag}`,
         borderRadius: 8,
         padding: '6px 8px'
       }
-    }, text);
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "alert",
+      s: 18,
+      c: CD.flag
+    }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", null, text), lines.map((line, i) => /*#__PURE__*/React.createElement("div", {
+      key: i
+    }, line))));
   }
 
   /* What has already been filed over this obligation's GROUP — the same
@@ -48244,7 +48267,9 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: CD.mute
         }
       }, r.detail, " \xB7 ", fmt(r.amount, regime.currency)), /*#__PURE__*/React.createElement(FilingFlag, {
-        text: sub && sub.bookingErrorFlag
+        text: sub && sub.bookingErrorFlag,
+        deals: sub && sub.bookingErrorDeals,
+        people: settings.employees
       }), note && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mt-0.5 flex items-center gap-1",
         style: {
@@ -48373,7 +48398,9 @@ ${(filing.map || []).map(blockHTML).join('')}
           fontFamily: 'Space Mono'
         }
       }, sub.ackNo), " \xB7 ", sub.by, " \xB7 ", sub.submittedAt), /*#__PURE__*/React.createElement(FilingFlag, {
-        text: sub && sub.bookingErrorFlag
+        text: sub && sub.bookingErrorFlag,
+        deals: sub && sub.bookingErrorDeals,
+        people: settings.employees
       })), /*#__PURE__*/React.createElement("button", {
         onClick: () => viewSealed(r),
         className: "flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none",

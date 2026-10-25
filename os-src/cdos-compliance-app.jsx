@@ -73,11 +73,26 @@
       server: true,
       status: f.status === 'draft' ? 'prepared' : 'submitted',
       bookingErrorFlag: f.bookingErrorFlag || '',
+      bookingErrorDeals: f.bookingErrorDeals || [],
     };
   }
-  function FilingFlag({ text }) {
+  function FilingFlag({ text, deals, people }) {
     if (!text) return null;
-    return <div className="text-[12px] mt-1" style={{ color: CD.onFlagSoft, background: CD.flagSoft, borderRadius: 8, padding: '6px 8px' }}>{text}</div>;
+    const rule = window.CDOS.lctrReversal;
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const lines = (deals || []).map(deal => {
+      if (!rule) return '';
+      const name = rule.staffDisplayName(deal.actorId, people || [], deal.actorName);
+      const when = new Date(deal.postedAt);
+      if (!name || !window.CDOS.deskDay || !window.CDOS.deskTime || isNaN(when.getTime())) return '';
+      const day = window.CDOS.deskDay(when, zone);
+      const time = window.CDOS.deskTime(when, '12h', zone);
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+      const clock = m && time ? (+m[3]) + ' ' + mon[+m[2] - 1] + ' ' + m[1] + ', ' + time : '';
+      return clock ? rule.setByLine(name, clock) : '';
+    }).filter(Boolean);
+    return <div role="alert" className="text-[12px] mt-1 flex items-start gap-2" style={{ color: CD.onFlagSoft, background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 8, padding: '6px 8px' }}><Ic n="alert" s={18} c={CD.flag} /><div><div>{text}</div>{lines.map((line, i) => <div key={i}>{line}</div>)}</div></div>;
   }
 
   /* What has already been filed over this obligation's GROUP — the same
@@ -542,7 +557,7 @@
         {drafts.map(r => { const note = coverageNote(r); const sub = subs[r.id]; return (
           <div key={r.id} className="flex items-center gap-3 px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${note ? CD.flag : CD.line}`, borderRadius: 11 }}>
             <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><KindTag k={r.kind} /><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.subject}</span><span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>{r.reportRef}</span></div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{r.detail} · {fmt(r.amount, regime.currency)}</div>
-              <FilingFlag text={sub && sub.bookingErrorFlag} />
+              <FilingFlag text={sub && sub.bookingErrorFlag} deals={sub && sub.bookingErrorDeals} people={settings.employees} />
               {/* the sentence a desk needed and did not get */}
               {note && <div className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: CD.flag }}><Ic n="alert" s={11} c={CD.flag} /> {note}</div>}
             </div>
@@ -557,7 +572,7 @@
         {filed.map(r => { const sub = subs[r.id]; return (
           <div key={r.id} className="flex items-center gap-3 px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${CD.greenSoft}`, borderRadius: 11 }}>
             <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: CD.greenSoft }}><Ic n="lock" s={14} c={CD.green} /></span>
-            <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><KindTag k={r.kind} /><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.subject}</span><span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>{r.reportRef}</span>{sub.amendsFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 4, fontFamily: 'Space Mono' }}>CORRECTION</span>}{sub.amendedByFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 4, fontFamily: 'Space Mono' }}>SUPERSEDED</span>}</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>Sealed · FWR <b style={{ color: CD.green, fontFamily: 'Space Mono' }}>{sub.ackNo}</b> · {sub.by} · {sub.submittedAt}</div><FilingFlag text={sub && sub.bookingErrorFlag} /></div>
+            <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><KindTag k={r.kind} /><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.subject}</span><span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>{r.reportRef}</span>{sub.amendsFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 4, fontFamily: 'Space Mono' }}>CORRECTION</span>}{sub.amendedByFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 4, fontFamily: 'Space Mono' }}>SUPERSEDED</span>}</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>Sealed · FWR <b style={{ color: CD.green, fontFamily: 'Space Mono' }}>{sub.ackNo}</b> · {sub.by} · {sub.submittedAt}</div><FilingFlag text={sub && sub.bookingErrorFlag} deals={sub && sub.bookingErrorDeals} people={settings.employees} /></div>
             <button onClick={() => viewSealed(r)} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}><Ic n="printer" s={14} /> Sealed PDF</button>
           </div>); })}
         {!filed.length && <div className="text-center py-8 text-[12px]" style={{ border: `1px dashed ${CD.line}`, borderRadius: 11, color: CD.faint }}>No filed records yet — they appear here, sealed, once you file.</div>}

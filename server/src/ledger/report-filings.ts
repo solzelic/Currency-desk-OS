@@ -47,6 +47,7 @@
    ============================================================ */
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { FILING_FLAG_FILED, FILING_FLAG_PREPARED } from "./canada-rules.js";
 import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
@@ -101,10 +102,33 @@ export type Filing = {
   /* Filled in by the reader, not stored: the filing that supersedes this
      one, if any. Derived because the sealed row cannot be told. */
   amendedByFilingId: string | null;
-  /* Read from ledger_filing_flags. Not a column of the sealed row. */
+  /* Read from ledger_filing_flags. Not a column of the sealed row.
+     The sentence follows this filing's status at read time. */
   bookingErrorFlag: string | null;
+  bookingErrorDeals: BookingErrorDeal[];
   payload?: unknown;
 };
+
+export type BookingErrorDeal = {
+  transactionId: string;
+  actorId: string;
+  postedAt: string;
+};
+
+const asDeals = (value: unknown): BookingErrorDeal[] =>
+  Array.isArray(value)
+    ? value.flatMap((item) => {
+        const row = item as Record<string, unknown>;
+        const transactionId = String(row.transactionId ?? "");
+        if (!transactionId) return [];
+        const posted = row.postedAt;
+        return [{
+          transactionId,
+          actorId: String(row.actorId ?? ""),
+          postedAt: posted instanceof Date ? posted.toISOString() : String(posted ?? ""),
+        }];
+      })
+    : [];
 
 const asRefs = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((item) => String(item)) : [];
@@ -113,6 +137,7 @@ const iso = (value: unknown): string | null =>
   value instanceof Date ? value.toISOString() : value == null ? null : String(value);
 
 function toFiling(row: Record<string, unknown>, withPayload: boolean): Filing {
+  const bookingErrorDeals = asDeals(row.booking_error_deals);
   const filing: Filing = {
     filingId: String(row.filing_id),
     reportId: String(row.report_id),
@@ -143,8 +168,10 @@ function toFiling(row: Record<string, unknown>, withPayload: boolean): Filing {
       row.amends_filing_id == null ? null : String(row.amends_filing_id),
     amendedByFilingId:
       row.amended_by_filing_id == null ? null : String(row.amended_by_filing_id),
-    bookingErrorFlag:
-      row.booking_error_flag == null ? null : String(row.booking_error_flag),
+    bookingErrorDeals,
+    bookingErrorFlag: bookingErrorDeals.length
+      ? (String(row.status) === "filed" ? FILING_FLAG_FILED : FILING_FLAG_PREPARED)
+      : null,
   };
   if (withPayload) filing.payload = row.payload;
   return filing;
@@ -161,7 +188,10 @@ const LIST_COLUMNS = `f.filing_id, f.report_id, f.report_code, f.pack_id, f.pack
         (SELECT a.filing_id FROM ledger_report_filings a
           WHERE a.amends_filing_id = f.filing_id
           ORDER BY a.created_at DESC LIMIT 1) AS amended_by_filing_id,
-        (SELECT g.flag_text FROM ledger_filing_flags g WHERE g.filing_id = f.filing_id) AS booking_error_flag`;
+        COALESCE((SELECT json_agg(json_build_object(
+          'transactionId', g.transaction_id, 'actorId', g.actor_id,
+          'postedAt', to_char(g.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        ) ORDER BY g.posted_at, g.transaction_id) FROM ledger_filing_flags g WHERE g.filing_id = f.filing_id), '[]'::json) AS booking_error_deals`;
 
 export class ReportFilingService {
   constructor(private readonly pool: pg.Pool) {}
