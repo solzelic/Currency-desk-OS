@@ -76,7 +76,22 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 - **The desk snapshot hides an STR from a teller.** `GET /api/tenant/state` returns a suspicious report to administrator, branch manager, and compliance officer. A suspicious report is a submission keyed `STR-`, a basis of structuring, or a kind from the pack's suspicious codes, including SMR. Report history for that filing is treated the same way. The same read returns `ackStr` and `ackStrInfo` to those three plus supervisor. A teller, an auditor, and any other role receive neither. `PUT /api/tenant/state` from a role outside a set leaves the stored report or acknowledgement in place, does not store a new suspicious report, and still saves the other fields. Issue #342.
 
-- **Filing any report is limited to three roles.** `filing:view` opens `GET` and `POST /api/ledger/report-filings`. Administrator, branch manager, and compliance officer may file any report and may read an STR. A supervisor may read an LCTR and may not file any report or read an STR. A teller and an auditor get no filing. `GET /api/ledger/transactions` keeps the deal and removes the STR tag, the STR link, and the structuring fields from a role that cannot see them. The two role sets are `shared/str-role.js`. The watch list, acknowledge, and the desk screens are not in this change. Issue #342.
+- **Filing any report is limited to three roles.** `filing:view` opens
+  `GET` and `POST /api/ledger/report-filings`. Administrator, branch
+  manager, and compliance officer may file any report and may read an STR.
+  A supervisor may read an LCTR and may not file any report or read an STR.
+  A teller and an auditor get no filing. `GET /api/ledger/transactions`
+  keeps the deal and removes the STR tag, the STR link, and the structuring
+  fields from a role that cannot see them. The two role sets are
+  `shared/str-role.js`. The desk screens are not in this change. Issue #342.
+
+- **The structuring watch on a deal is the supervisor and the three STR roles.**
+  `GET /api/ledger/transactions` uses one helper, `dealMarks`. That helper
+  runs the watch query only when `canSeeStructuringWatch` is true. A teller
+  and an auditor get none of the watch fields, and the query does not run.
+  A supervisor sees the watch fields and not the STR fields. `ackStr` stays
+  false. `canSeeStructuringWatch`, `STR_KEYS`, and `WATCH_KEYS` live in
+  `shared/str-role.js`. The desk screens are not gated here. Issue #342.
 
 - **Filings due share one count.** The Compliance header, the Needs filing list, the bell, the RPT tag, and the badges read `openReportables`. A prepared filing counts, including one whose deals are not loaded in this browser. A filed filing counts as zero due, including one that carries a booking-error flag. When the count is above zero, the header number is amber text on the tile. The menu-bar bell badge and the Ledger nav badge use that same amber, with on-ink text. The Ledger Reportable deals figure is amber when any deal is open. The Dashboard tile Reportable deals reads that same list, and its due number is amber on the panel. The Ledger chip reads that same list. The Ledger chip and the Ledger figure say Reportable deals, and that figure is amber on the panel. Issue #335.
 

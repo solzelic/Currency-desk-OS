@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import Decimal from "decimal.js";
 import type pg from "pg";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
-import { resolveReportThreshold } from "./thresholds.js";
+import { dealMarks } from "./structuring-watch.js";
 
 const { presentDeal } = createRequire(import.meta.url)("../../../shared/str-role.js") as {
   presentDeal: (role: string, deal: Record<string, unknown>) => Record<string, unknown>;
@@ -21,66 +20,9 @@ const scope = (actor: LedgerActor) => [
   actor.tillId,
 ];
 
-/* STR tag and link come from a filed STR. Structuring is cash under the
-   reporting line, same customer, not reversed, inside seven days, two or
-   more, summing to the line. presentDeal then drops the keys this role
-   may not see. No acknowledgement table in this change. */
-async function dealMarks(
-  client: pg.PoolClient,
-  actor: LedgerActor,
-  rows: ReadonlyArray<{ transaction_ref: string; customer_id: string }>,
-) {
-  const filings = await client.query(
-    `SELECT filing_id, subject_transaction_ids
-       FROM ledger_report_filings
-      WHERE tenant_id=$1 AND legal_entity_id=$2 AND upper(btrim(report_code))='STR'`,
-    [actor.tenantId, actor.legalEntityId],
-  );
-  const link = new Map<string, string>();
-  for (const row of filings.rows) {
-    const refs = Array.isArray(row.subject_transaction_ids) ? row.subject_transaction_ids : [];
-    for (const ref of refs) link.set(String(ref), String(row.filing_id));
-  }
-  const totals = new Map<string, Decimal>();
-  const line = await resolveReportThreshold(client, actor.legalEntityId);
-  if (line) {
-    const found = await client.query(
-      `SELECT t.customer_id, t.cash_in_home::text AS cash
-         FROM ledger_transactions t
-         LEFT JOIN ledger_reversals r ON r.transaction_id=t.transaction_id
-        WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
-          AND t.posted_at >= now() - make_interval(days => 7)
-          AND r.reversal_id IS NULL AND t.cash_in_home > 0`,
-      [actor.tenantId, actor.legalEntityId, actor.branchId],
-    );
-    const grouped = new Map<string, Decimal[]>();
-    for (const row of found.rows) {
-      const cash = new Decimal(String(row.cash));
-      if (!cash.gt(0) || !cash.lt(line)) continue;
-      const amounts = grouped.get(String(row.customer_id)) ?? [];
-      amounts.push(cash);
-      grouped.set(String(row.customer_id), amounts);
-    }
-    for (const [customerId, amounts] of grouped) {
-      if (amounts.length < 2) continue;
-      const sum = amounts.reduce((total, amount) => total.add(amount), new Decimal(0));
-      if (!sum.lt(line)) totals.set(customerId, sum);
-    }
-  }
-  const marks = new Map<string, { strTag: "STR" | null; strLink: string | null; structuring: boolean; structuringTotal: string | null; ackStr: boolean }>();
-  for (const row of rows) {
-    const filingId = link.get(String(row.transaction_ref));
-    const total = totals.get(String(row.customer_id));
-    marks.set(String(row.transaction_ref), {
-      strTag: filingId ? "STR" : null,
-      strLink: filingId ?? null,
-      structuring: Boolean(total),
-      structuringTotal: total ? total.toFixed(2) : null,
-      ackStr: false,
-    });
-  }
-  return marks;
-}
+/* STR tag, STR link, and the structuring watch come from dealMarks.
+   That helper skips the watch query unless this role may see it.
+   presentDeal then drops the keys this role may not see. */
 
 export type CustomerInput = {
   externalRef?: string;
@@ -366,7 +308,7 @@ export class LedgerProvisioningService {
           LIMIT $6`,
         [...scope(actor), limit],
       );
-      const marks = await dealMarks(client, actor, result.rows);
+      const { marks } = await dealMarks(client, actor, result.rows, role);
       await client.query("COMMIT");
       return redactDeskEarnings(role, {
         transactions: result.rows.map((row) => presentDeal(role, {

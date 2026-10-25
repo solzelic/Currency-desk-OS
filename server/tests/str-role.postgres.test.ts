@@ -2,7 +2,8 @@
    A teller, an auditor, and a supervisor may not file. A supervisor
    may read an LCTR. The three compliance roles may file and read.
    A deal keeps its plain fields and drops the STR fields a role
-   may not see. */
+   may not see. The watch query runs only for the watch roles.
+   ackStr stays false. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { createRequire } from "node:module";
@@ -25,7 +26,7 @@ const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
 const STR = ["administrator", "branch_manager", "compliance_officer"];
 const WATCH = [...STR, "supervisor"];
-const HIDDEN = ["strTag", "strLink", "structuring", "structuringTotal", "ackStr", "ackStrInfo"];
+const HIDDEN = [...roles.STR_KEYS, ...roles.WATCH_KEYS];
 
 describe("str and watch role sets", () => {
   it("keeps STR to the three roles and the watch to those three plus supervisor", () => {
@@ -97,6 +98,30 @@ async function asRole(role: string) {
   return cookie();
 }
 
+function isWatchQuery(sql: string) {
+  return /make_interval\s*\(\s*days/i.test(sql);
+}
+
+async function captureSql(run: () => Promise<void>) {
+  const seen: string[] = [];
+  const proto = pg.Client.prototype as unknown as {
+    query: (...args: unknown[]) => unknown;
+  };
+  const original = proto.query;
+  proto.query = function (this: unknown, ...args: unknown[]) {
+    const first = args[0];
+    const text = typeof first === "string" ? first : (first as { text?: string } | null)?.text;
+    if (typeof text === "string") seen.push(text);
+    return original.apply(this, args);
+  };
+  try {
+    await run();
+  } finally {
+    proto.query = original;
+  }
+  return seen;
+}
+
 function filing(code: string, mark: string) {
   return {
     reportCode: code,
@@ -134,7 +159,11 @@ postgres("str filing and the transaction field strip", () => {
   });
 
   afterAll(async () => {
-    await pool.query("TRUNCATE ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
+    await pool.query(
+      `TRUNCATE ledger_filing_flags,
+              ledger_report_filings, ledger_audit_events, ledger_transactions,
+              ledger_customers, ledger_principals CASCADE`,
+    );
     await app.close();
     await handle.close();
     await pool.end();
@@ -142,7 +171,11 @@ postgres("str filing and the transaction field strip", () => {
   });
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
+    await pool.query(
+      `TRUNCATE ledger_filing_flags,
+              ledger_report_filings, ledger_audit_events, ledger_transactions,
+              ledger_customers, ledger_principals CASCADE`,
+    );
     await handle.db.update(schema.staffUsers).set({ role: "teller" }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:m.costa`));
     await pool.query(
       "INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status) VALUES ('cust-watch',$1,$2,$3,$4,'Nora Quinn','Normal','verified')",
@@ -231,5 +264,68 @@ postgres("str filing and the transaction field strip", () => {
     expect(seen.strTag).toBe("STR");
     expect(seen.strLink).toBe(sealed.json().filingId);
     expect(seen.structuring).toBe(true);
+  });
+
+  it("runs no watch query for a teller or an auditor, and returns no watch keys", async () => {
+    for (const role of ["teller", "auditor"] as const) {
+      const seen = await captureSql(async () => {
+        const res = await app.inject({
+          method: "GET",
+          url: "/api/ledger/transactions",
+          cookies: await asRole(role),
+        });
+        expect(res.statusCode, role).toBe(200);
+        for (const key of roles.WATCH_KEYS) {
+          expect(res.body, `${role} ${key}`).not.toContain(`"${key}"`);
+        }
+        expect(res.body, role).toContain("Travel money");
+      });
+      expect(seen.filter(isWatchQuery), role).toEqual([]);
+    }
+  });
+
+  it("shows a supervisor the watch and none of the STR keys", async () => {
+    const seen = await captureSql(async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/ledger/transactions",
+        cookies: await asRole("supervisor"),
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      const row = res.json().transactions.find(
+        (item: { transactionRef: string }) => item.transactionRef === "YFX-STR-1",
+      );
+      expect(row.structuring).toBe(true);
+      expect(row.structuringTotal).toBe("12000.00");
+      expect(row.ackStr).toBe(false);
+      for (const key of roles.WATCH_KEYS) expect(row, key).toHaveProperty(key);
+      for (const key of roles.STR_KEYS) {
+        expect(row, key).not.toHaveProperty(key);
+        expect(res.body, key).not.toContain(`"${key}"`);
+      }
+    });
+    expect(seen.some(isWatchQuery)).toBe(true);
+  });
+
+  it("keeps ackStr false for every role", async () => {
+    for (const role of ["teller", "auditor", ...WATCH]) {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/ledger/transactions",
+        cookies: await asRole(role),
+      });
+      expect(res.statusCode, role).toBe(200);
+      expect(res.body, role).not.toContain('"ackStr":true');
+      const row = res.json().transactions.find(
+        (item: { transactionRef: string }) => item.transactionRef === "YFX-STR-1",
+      );
+      if (roles.canSeeStructuringWatch(role)) {
+        expect(row.ackStr, role).toBe(false);
+        expect(row.ackStrInfo, role).toBe(null);
+      } else {
+        expect(row, role).not.toHaveProperty("ackStr");
+        expect(row, role).not.toHaveProperty("ackStrInfo");
+      }
+    }
   });
 });
