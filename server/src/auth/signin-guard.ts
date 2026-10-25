@@ -97,6 +97,12 @@ export function ipBucket(ip: string): string {
   return `ip:${ip}`;
 }
 
+/** Same address cap as a password spray. The 20th call counts. The 21st is over. */
+export async function stagingAddressLimited(db: Db, ip: string): Promise<boolean> {
+  const row = await bump(db, ipBucket(ip));
+  return lockFrom(row, SIGNIN_IP_MAX, "ip", true) != null;
+}
+
 type Bucket = { failures: number; windowStartedAt: Date };
 
 function timeLeft(windowStartedAt: Date, now: number): { minutes: number; retryAfter: number } | null {

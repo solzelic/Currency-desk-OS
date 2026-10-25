@@ -26,6 +26,15 @@
     backgroundImage: 'radial-gradient(130% 100% at 50% -10%, #f4f2ed 0%, #e4e1d9 55%, #d3cfc5 100%), radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px)',
     backgroundSize: 'auto, 22px 22px',
   };
+  /* Night face. The lock's inline paper paint beats the dark stylesheet,
+     so a dark theme has to skip that paint and use these tokens instead. */
+  const NIGHT = {
+    '--si-ink': '#eceae3', '--si-paper': '#161513', '--si-panel': '#23221e',
+    '--si-pin': '#1c1b18', '--si-line': 'rgba(236,234,227,0.14)', '--si-soft': 'rgba(236,234,227,0.08)',
+    '--si-mute': '#aea89f', '--si-faint': '#a7a39b', '--si-primary': '#36ad6d',
+    '--si-primary-deep': '#2d9160', '--si-plum': '#b7a6e0', '--si-flag': '#e0604f',
+    fontFamily: "'Archivo', system-ui, sans-serif", color: 'var(--si-ink)',
+  };
 
   // CD logo mark (filled disc + D bowl + green dot). `cut` = the notch colour
   // (matches whatever surface it sits on).
@@ -117,7 +126,14 @@
     const [locked, setLocked] = useState(false);
     const [lockUntil, setLockUntil] = useState('');
     const [lockAt, setLockAt] = useState(0);
+    const [quick, setQuick] = useState(false);
+    const [night, setNight] = useState(() => document.documentElement.getAttribute('data-cdtheme') === 'dark');
     const sending = useRef(false);
+    useEffect(() => {
+      const sync = () => setNight(document.documentElement.getAttribute('data-cdtheme') === 'dark');
+      window.addEventListener('cdos-theme', sync);
+      return () => window.removeEventListener('cdos-theme', sync);
+    }, []);
     useEffect(() => {
       if (coolUntil <= Date.now()) return undefined;
       setNow(Date.now());
@@ -139,6 +155,16 @@
       const t = setInterval(tick, 1000);
       return () => clearInterval(t);
     }, [locked, lockAt]);
+    /* The config endpoint is 404, or enabled is not true, unless every
+       staging check passed. Anything else leaves the buttons off. */
+    useEffect(() => {
+      let live = true;
+      fetch('/api/staging/signin', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (live && d && d.enabled === true) { setQuick(true); document.dispatchEvent(new Event("cdos-staging-door")); } })
+        .catch(() => {});
+      return () => { live = false; };
+    }, []);
     const startCooldown = (secs) => setCoolUntil(Date.now() + Math.max(1, Math.round(secs || 120)) * 1000);
     const applyLock = (d) => {
       if (!d || d.error !== 'too_many_attempts') return false;
@@ -175,6 +201,32 @@
     const authRef = useRef({ rec: null, srvPlan: null, srvUser: null });
 
     const goPassword = () => { if (idInput.trim().length < 3) { setErr('Enter your CurrencyDesk ID.'); return; } setErr(''); setStep('password'); };
+    async function enterAs(role) {
+      if (sending.current) return;
+      sending.current = true;
+      setBusy(true); setErr('');
+      try {
+        const res = await fetch('/api/staging/enter', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ role }),
+        });
+        const data = await res.json().catch(() => null);
+        sending.current = false; setBusy(false);
+        const u = data && data.user;
+        if (!res.ok || !u) { setErr('That door is closed.'); return; }
+        u.staging = true;
+        const knownOne = dir.find(e => String(e.code || '').toLowerCase() === String(u.id).toLowerCase());
+        const rec = knownOne || {
+          id: 'e_' + u.id, code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier',
+          active: true, branches: u.role === 'administrator' ? '*' : ['b01'],
+          home: u.role === 'administrator' ? null : 'b01', _adopted: true,
+        };
+        onComplete(rec, u.plan || null, u);
+      } catch (e2) {
+        sending.current = false; setBusy(false);
+        setErr('That door is closed.');
+      }
+    }
 
     const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
     const adopt = (u, rec) => rec || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
@@ -351,18 +403,18 @@
 
     // ---- shells --------------------------------------------------------
     const card = (children, width = 404) => (
-      <div style={{ width, maxWidth: 'calc(100vw - 40px)', background: step === 'code' ? 'var(--si-pin)' : 'rgba(255,255,255,0.55)',
+      <div style={{ width, maxWidth: 'calc(100vw - 40px)', background: night ? (step === 'code' ? '#1c1b18' : '#23221e') : (step === 'code' ? 'var(--si-pin)' : 'rgba(255,255,255,0.55)'),
         backdropFilter: 'saturate(180%) blur(30px)', WebkitBackdropFilter: 'saturate(180%) blur(30px)',
-        border: '1px solid rgba(23,20,15,0.08)', borderRadius: step === 'code' ? 30 : 20, padding: step === 'code' ? '30px 34px' : '34px 34px 26px',
+        border: night ? '1px solid rgba(236,234,227,0.12)' : '1px solid rgba(23,20,15,0.08)', borderRadius: step === 'code' ? 30 : 20, padding: step === 'code' ? '30px 34px' : '34px 34px 26px',
         boxShadow: step === 'code' ? '0 40px 90px -28px rgba(23,20,15,0.6)' : '0 24px 60px -14px rgba(23,20,15,0.32), 0 0 0 1px rgba(23,20,15,0.05)',
         animation: 'cdWinIn .42s cubic-bezier(0.2,0.8,0.2,1)' }}>{children}</div>
     );
 
     const shell = (children) => (
-      <div id="lock" style={{ ...VARS, ...PAPER_BG, position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', overflow: 'auto' }}>
+      <div id="lock" style={{ ...(night ? NIGHT : VARS), ...(night ? {} : PAPER_BG), position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', overflow: 'auto', padding: quick ? '56px 0 28px' : '28px 0' }}>
         <style>{'@keyframes cdWinIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}@keyframes cdSpin{to{transform:rotate(360deg)}}'}</style>
-        <div style={{ position: 'absolute', top: 26, left: 30, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Mark w={30} h={21} cut="#e7e4dd" />
+        <div style={{ position: 'absolute', top: quick ? 40 : 26, left: 30, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Mark w={30} h={21} cut={night ? '#161512' : '#e7e4dd'} />
           <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 13, letterSpacing: '0.12em' }}>CURRENCYDESK</span>
           <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.2em', color: 'var(--si-mute)' }}>OS</span>
         </div>
@@ -372,7 +424,7 @@
 
     // ---- A1 · CurrencyDesk ID -----------------------------------------
     if (step === 'id') return shell(card(<form onSubmit={e => { e.preventDefault(); goPassword(); }}>
-      <div style={{ display: 'grid', placeItems: 'center', marginBottom: 4 }}><Mark w={44} h={31} cut="rgba(255,255,255,0.55)" /></div>
+      <div style={{ display: 'grid', placeItems: 'center', marginBottom: 4 }}><Mark w={44} h={31} cut={night ? '#23221e' : 'rgba(255,255,255,0.55)'} /></div>
       <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.34em', color: 'var(--si-primary)', margin: '8px 0 6px' }}>FAIR EXCHANGE</div>
       <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 2px' }}>Sign in</h1>
       <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.18em', color: 'var(--si-mute)', marginBottom: 18 }}>CURRENCYDESK OS</div>
@@ -404,6 +456,16 @@
           ))}
         </div>
       )}
+      {quick ? (
+        <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
+          {window.CDOS.stagingEnterButtons(true).map((b) => (
+            <button key={b.role} type="button" disabled={busy} onClick={() => enterAs(b.role)}
+              style={{ width: '100%', height: 44, minHeight: 44, boxSizing: 'border-box', borderRadius: 12, border: '1px solid var(--si-mute)', background: 'var(--si-panel)', color: 'var(--si-ink)', fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
       <button type="submit" disabled={idInput.trim().length < 3} style={{ ...primaryBtn(idInput.trim().length >= 3), marginTop: 16 }}>Continue →</button>
       <div style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--si-mute)', marginTop: 16, lineHeight: 1.6 }}>

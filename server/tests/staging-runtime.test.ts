@@ -162,6 +162,30 @@ describe("demo seed adds the two roles only when STAGING=1", () => {
     }
   });
 
+  it("adds the two roles on an already-populated database and does not overwrite a row", async () => {
+    const handle = await seeded(undefined);
+    try {
+      const ownerId = `${DEMO.tenantId}:j.masri`;
+      await handle.db.update(schema.staffUsers).set({ passwordHash: "owner-chosen", name: "Kept" }).where(eq(schema.staffUsers.id, ownerId));
+      process.env.STAGING = "1";
+      await seed(handle.db);
+      const found = await ids(handle);
+      expect(found).toContain("c.adebayo");
+      expect(found).toContain("l.berg");
+      const owner = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, ownerId)).then((rows) => rows[0]);
+      expect(owner).toMatchObject({ passwordHash: "owner-chosen", name: "Kept", role: "administrator" });
+      const officerId = `${DEMO.tenantId}:c.adebayo`;
+      await handle.db.update(schema.staffUsers).set({ passwordHash: "officer-chosen" }).where(eq(schema.staffUsers.id, officerId));
+      await seed(handle.db);
+      const officer = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, officerId)).then((rows) => rows[0]);
+      const ownerAgain = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, ownerId)).then((rows) => rows[0]);
+      expect(officer!.passwordHash).toBe("officer-chosen");
+      expect(ownerAgain).toMatchObject({ passwordHash: "owner-chosen", name: "Kept" });
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("creates both when STAGING=1, and a second seed leaves the password alone", async () => {
     const handle = await seeded("1");
     try {
