@@ -60,10 +60,13 @@
       {opts.map(([v, label], i) => { const on = value === v; return (<button key={v} type="button" onClick={() => onPick(v)} onMouseEnter={e => { if (!on) e.currentTarget.style.background = CD.lineSoft; }} onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }} className="text-xs px-3 py-1.5" style={{ background: on ? CD.ink : 'transparent', color: on ? 'var(--cd-on-ink)' : CD.mute, borderLeft: i ? `1px solid ${CD.line}` : 'none', fontFamily: 'Space Mono, monospace', letterSpacing: '0.02em', cursor: 'pointer', transition: 'background .12s' }}>{label}</button>); })}
     </div>
   );
-  const Row = ({ title, desc, children }) => (
-    <div className="flex items-center justify-between gap-4 py-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
+  /* One sentence for the 24-hour rule at every width. The phone window
+     and the desktop window both read this. There is no second copy. */
+  const ROLLING_24H_RULE_DESC = "Cash received in the rolling 24 hours before each deal is added together for the same person, on behalf of the same person, or for the same beneficiary, on this branch's clock. The total does not reset at midnight.";
+  const Row = ({ title, desc, children, stack }) => (
+    <div className={stack ? "py-3" : "flex items-center justify-between gap-4 py-3"} style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
       <div className="min-w-0"><div className="text-sm" style={{ color: CD.ink }}>{title}</div>{desc && <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{desc}</div>}</div>
-      <div className="flex-none">{children}</div>
+      <div className={stack ? "mt-2 min-w-0 max-w-full" : "flex-none"}>{children}</div>
     </div>
   );
   const Field = ({ label, desc, children }) => (<label className="block"><div className="text-[11px] mb-1 flex items-center justify-between" style={{ color: CD.mute }}><span>{label}</span></div>{children}{desc && <div className="text-[10.5px] mt-1" style={{ color: CD.faint }}>{desc}</div>}</label>);
@@ -337,6 +340,7 @@
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const monthCash = !!(regimeNow && regimeNow.windowKind === 'calendar_month');
     const bankingDay = !!(regimeNow && regimeNow.windowKind === 'banking_day');
+    const lctr = !!(regimeNow && regimeNow.largeCode === 'LCTR');
     const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
     const phPack = (desk && desk.packId === 'pack-ph-v1') || (packNow && packNow.packId === 'pack-ph-v1');
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() : [];
@@ -449,7 +453,7 @@
       <PostureNote p={standingOf('idRequiredOver')} />
       <Release field="idThreshold" label="Identification threshold" />
 
-      {(monthCash || bankingDay) ? null : <Row
+      {(monthCash || bankingDay || lctr) ? null : <Row
         title="Aggregation window"
         desc={euAmlr && (line('aggregationHours') || {}).effective == null
           ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed."
@@ -467,8 +471,8 @@
                 onPick={v => save('aggregationHours', +v, `aggregation window ${v}h`)}
                 opts={[['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]} />}
       </Row>}
-      {(monthCash || bankingDay) ? null : <PostureNote p={standingOf('aggHours')} />}
-      {(monthCash || bankingDay) ? null : <Release field="aggregationHours" label="Aggregation window" />}
+      {(monthCash || bankingDay || lctr) ? null : <PostureNote p={standingOf('aggHours')} />}
+      {(monthCash || bankingDay || lctr) ? null : <Release field="aggregationHours" label="Aggregation window" />}
 
       <Row
         title="Record retention"
@@ -2298,7 +2302,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               </button>); })}
           </div>}
           {!paused && !isOwner && <div className="text-[11px] mb-2 flex items-center gap-1.5 px-3 py-2" style={{ background: CD.brassSoft, color: 'var(--cd-brass-text)', borderRadius: 8 }}><Ic n="lock" s={12} c="var(--cd-brass-text)" /> Only the owner can change the jurisdiction pack — you can view it here.</div>}
-          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.'}</span></div>}
+          {!paused && !baseline && <div className="text-[11px] mb-5 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="info" s={12} c={CD.faint} /><span>{regime && regime.largeCode === 'LCTR' ? 'Your jurisdiction follows the operating country set in Localization. The large cash total is the rolling 24 hours before each deal. That window is not a setting.' : regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.'}</span></div>}
           {jv.length > 0 && <div className="mb-5 flex items-start gap-2.5 px-3.5 py-3" style={{ background: CD.flagSoft, border: `1px solid ${CD.flag}`, borderRadius: 11 }}><Ic n="alert" s={16} c={CD.flag} /><div className="min-w-0"><div className="text-[12.5px] font-semibold" style={{ color: CD.flag }}>{jv[0].authority} rules violated · {jv.length}</div><div className="text-[11px] mt-0.5" style={{ color: CD.flag }}>{jv.map(v => v.detail).join(' ')}</div><div className="text-[10.5px] mt-1.5" style={{ color: CD.mute }}>This stays flagged in the notification bell at the top of the app until every value is back within {jv[0].authority} limits.</div></div></div>}
 
           {/* ---- reporting & thresholds ----
@@ -2309,7 +2313,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* Which currencies this desk may hold at all — the setting the
               refusal messages point at. See DeskCurrencyRows above. */}
           <DeskCurrencyRows />
-          {paused || (pack && pack.packId === 'pack-eu-v2') || (regime && regime.windowKind === 'calendar_month') || (regime && regime.windowKind === 'banking_day') ? null : <Row title="24-hour window starts at" desc="The static daily cut the window is anchored to — aggregation runs start-to-start and this exact window is declared on every report.">{isOwner ? <input type="time" value={settings.aggWindowStart || '00:00'} onChange={e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 130 }} /> : <span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace' }}>{settings.aggWindowStart || '00:00'}</span>}</Row>}
+          {paused || (pack && pack.packId === 'pack-eu-v2') || (regime && regime.windowKind === 'calendar_month') || (regime && regime.windowKind === 'banking_day') ? null : <Row stack title="24-hour rule" desc={ROLLING_24H_RULE_DESC}><span data-testid="rolling-24h-rule" className="text-[12px] px-2.5 py-1.5" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', whiteSpace: 'normal' }}>Rolling 24 hours</span></Row>}
           {paused || !(regime && regime.windowKind === 'calendar_month') ? null : <Row title="Cash report window" desc="A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>Calendar month</span></Row>}
           {paused || !(regime && regime.windowKind === 'banking_day') ? null : <Row title="Cash report window" desc="A single deal over the line is flagged. Deals in one banking day are not summed. The desk must check them. A covered transaction is due within 5 working days. The desk does not file it to the AMLC."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>Banking day</span></Row>}
           {paused ? null : <Row title="Structuring watch window" desc="Longer window scanned for patterns of just-under-threshold deals."><select value={settings.structuringDays} onChange={e => set('structuringDays', +e.target.value, `structuring ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 120 }}>{[1, 7, 14, 30].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>}

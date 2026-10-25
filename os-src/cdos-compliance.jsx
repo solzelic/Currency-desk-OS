@@ -208,7 +208,9 @@
        rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
     const bankingDay = !!(large && large.windowKind === 'banking_day');
-    const aggregation = (monthCash || bankingDay)
+    /* An LCTR is 24 hours. A stored hour count is not a posture. */
+    const lctr = !!(large && large.code === 'LCTR');
+    const aggregation = (monthCash || bankingDay || lctr)
       ? null
       : large && large.windowKind === 'none'
       ? {
@@ -322,9 +324,12 @@
       windowKind: (large && large.windowKind) || null,
       comparator: (large && large.comparator) || 'gte',
       idComparator: (fxLine && fxLine.comparator) || 'gte',
+      /* LCTR is 24 hours. desk.aggregationHours is stored and is not applied. */
       aggHours: (noCashWindow || (large && large.windowKind === 'calendar_month') || (large && large.windowKind === 'banking_day'))
         ? null
-        : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
+        : (large && large.code === 'LCTR')
+          ? 24
+          : (desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null),
       wireEvery,
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
@@ -370,7 +375,9 @@
     const r = Object.assign({ baseline: false, reports: [] }, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold;
     if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
-    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
+    /* LCTR stays 24. A stored aggHours does not move it. */
+    if (r.largeCode === 'LCTR') r.aggHours = 24;
+    else if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
     return r;
   }
 
@@ -416,32 +423,19 @@
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
-       • STATIC declared window — a fixed 24h period the owner anchors
-         (settings.aggWindowStart, e.g. 00:00 or a 09:00 business-day cut).
-         Every report declares the exact window it was aggregated over.
-       • DUAL BASIS — sub-threshold cash-in is aggregated BOTH by conductor
-         (who handed over the cash) AND by beneficiary (who it's destined for).
-         Three different people sending $4k each to one beneficiary is a
-         reportable event on the beneficiary axis even though no single
-         conductor reaches the threshold. When the two axes capture different
-         transactions, BOTH reports are emitted — we never pick one.
-       • Singles (≥ threshold on their own) are filed individually elsewhere,
-         so the aggregate rule sums only the sub-threshold cash-in. */
-  function parseHHMM(s) { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : 0; }
-  function clockMins(d) {
-    const hm = window.CDOS.deskTime(d, '24h');
-    const p = /^(\d{2}):(\d{2})$/.exec(hm || '');
-    return p ? (+p[1]) * 60 + (+p[2]) : 0;
-  }
-  // the static 24h window a timestamp falls into, anchored at startMins past midnight
-  function windowOf(d, startMins, H) {
-    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-    let ws = new Date(dayStart.getTime() + startMins * 60000);
-    const mins = clockMins(d);
-    if (mins < startMins) ws = new Date(ws.getTime() - 24 * 3600000);
-    const we = new Date(ws.getTime() + (H || 24) * 3600000);
-    return { start: ws, end: we, key: ws.toISOString() };
-  }
+       • The rolling 24 hours, measured back from each deal on
+         the branch clock (shared/rolling-24h.js). A stored anchor
+         (settings.aggWindowStart) is not applied. The total does not
+         reset at midnight. Every report declares that lookback.
+       • DUAL BASIS. Sub-threshold cash-in is aggregated both by conductor
+         (who handed over the cash) and by beneficiary (who it is destined
+         for). Three different people sending $4k each to one beneficiary
+         is a reportable event on the beneficiary axis even though no
+         single conductor reaches the threshold. When the two axes capture
+         different transactions, both reports are emitted.
+       • Singles (at or over the threshold on their own) are filed
+         individually elsewhere, so the older aggregate rule sums only
+         the sub-threshold cash-in. LCTR and LVCTR include every amount. */
   /* A short, stable fingerprint of a transaction SET.
 
      An aggregate used to be identified by who and which day and nothing
@@ -495,7 +489,11 @@
        and nothing calls it yet. A banking day is not this engine
        either. The Philippines flags one deal and does not add the day. */
     if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
-    const TH = regime.threshold, H = regime.aggHours || 24;
+    const TH = regime.threshold;
+    /* An LCTR is 24 hours. regime.aggHours and the stored settings
+       (aggregationHours, aggHours, aggWindowStart) do not move it. */
+    const lctrWindow = kind === 'LCTR' || (regime && regime.largeCode === 'LCTR' && kind === regime.largeCode);
+    const H = lctrWindow ? 24 : (regime.aggHours || 24);
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
     if (!(TH > 0)) return [];
@@ -508,58 +506,107 @@
     const axes = includeAll
       ? (policy.axes || ['conductor', 'on_behalf_of', 'beneficiary'])
       : ['conductor', 'beneficiary'];
-    const startMins = parseHHMM((settings && settings.aggWindowStart) || '00:00');
-    const buckets = {};
-    (events || []).forEach(e => { if (!(e.amt > 0)) return; const w = windowOf(e.t, startMins, H); (buckets[w.key] = buckets[w.key] || { w, evs: [] }).evs.push(e); });
+    /* settings.aggWindowStart is stored and is not applied. */
+    void settings;
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+    const wall = window.CDOS.wallInstant;
+    const inside = window.CDOS.inRollingWindow;
+    const spanOf = window.CDOS.rollingWindow;
+    const instantOf = (e) => {
+      if (wall && e.date) {
+        const at = wall(e.date, e.time || '00:00', zone);
+        if (at) return at;
+      }
+      const fallback = e.t instanceof Date ? e.t : new Date(e.t);
+      return fallback && !isNaN(fallback.getTime()) ? fallback : null;
+    };
+    const rows = [];
+    (events || []).forEach(e => {
+      if (!(e.amt > 0)) return;
+      const at = instantOf(e);
+      if (!at) return;
+      rows.push(Object.assign({}, e, { at: at }));
+    });
     const fmtT = (d) => {
       const format = (window.CDOS.deskFormat && window.CDOS.deskFormat()) || '12h';
-      const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
       const day = window.CDOS.deskDay(d, zone);
       const time = window.CDOS.deskTime(d, format, zone);
       const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
       return (m ? mon[+m[2] - 1] + ' ' + (+m[3]) : day) + ' ' + time;
     };
+    const inWindow = (earlier, later) => {
+      if (inside) return inside(earlier, later, H);
+      const start = later.getTime() - H * 3600000;
+      const t = earlier.getTime();
+      return t >= start && t <= later.getTime();
+    };
     const out = [];
-    Object.keys(buckets).forEach(key => {
-      const { w, evs } = buckets[key];
-      const windowLabel = fmtT(w.start) + ' → ' + fmtT(w.end);
-      const dayKey = window.CDOS.deskDay(w.start, (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto');
-      const mk = (basis, keyFn) => {
-        const groups = {};
-        evs.forEach(e => {
-          /* Older rule: a receipt already at the line is its own report
-             and is not also added into the cluster. includeAll is the
-             opposite: 12,000 plus 1,000 is one report of 13,000. */
-          if (!includeAll && e.amt >= TH) return;
-          const k = keyFn(e); if (!k) return; (groups[k] = groups[k] || []).push(e);
-        });
-        return Object.keys(groups).map(subject => {
-          const txs = groups[subject].slice().sort((a, b) => a.t - b.t);
-          const total = txs.reduce((s, o) => s + o.amt, 0);
+    const mk = (basis, keyFn) => {
+      const groups = {};
+      rows.forEach(e => {
+        /* Older rule: a receipt already at the line is its own report
+           and is not also added into the cluster. includeAll is the
+           opposite: 12,000 plus 1,000 is one report of 13,000. */
+        if (!includeAll && e.amt >= TH) return;
+        const k = keyFn(e); if (!k) return; (groups[k] = groups[k] || []).push(e);
+      });
+      const found = [];
+      Object.keys(groups).forEach(subject => {
+        const txs = groups[subject].slice().sort((a, b) => a.at - b.at);
+        const hits = [];
+        txs.forEach(endRow => {
+          const set = txs.filter(e => inWindow(e.at, endRow.at));
+          const total = set.reduce((s, o) => s + o.amt, 0);
           /* One transaction, however large, stays a single report.
              Two or more, of any amount, become one report once the
              total reaches the line. */
-          if (txs.length < 2 || total < TH) return null;
-          const endRow = txs[txs.length - 1];
-          const groupId = 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + dayKey;
-          return { id: groupId + '-' + setFingerprint(txs.map(t => t.id)), groupId, kind, basis, subject, customer: subject, txs, total, end: endRow.date + ' ' + (endRow.time || ''), endRow, windowStart: w.start.toISOString(), windowEnd: w.end.toISOString(), windowLabel };
-        }).filter(Boolean);
-      };
-      /* The same set of transactions on two axes is one report.
-         A partial overlap is two reports. Conductor is emitted first
-         so it keeps the identical set. */
-      const sig = (c) => c.txs.map(t => t.id).sort().join(',');
-      const seen = new Set();
-      axes.forEach(axis => {
-        const keyFn = axisFns[axis];
-        if (!keyFn) return;
-        mk(axis, keyFn).forEach(cluster => {
-          const mark = sig(cluster);
-          if (seen.has(mark)) return;
-          seen.add(mark);
-          out.push(cluster);
+          if (set.length < 2 || total < TH) return;
+          hits.push({ endRow: endRow, set: set, total: total });
         });
+        hits.forEach((item, index) => {
+          /* A later lookback that already contains this set is the
+             report. An earlier window that is not inside that later
+             set stays its own report. */
+          const coveredLater = hits.slice(index + 1).some(later => {
+            const ids = {};
+            later.set.forEach(t => { ids[t.id] = true; });
+            return item.set.every(t => ids[t.id]);
+          });
+          if (coveredLater) return;
+          const ordered = item.set.slice().sort((a, b) => a.at - b.at);
+          const earliest = ordered[0];
+          const span = (spanOf && spanOf(item.endRow.at, H)) || {
+            start: new Date(item.endRow.at.getTime() - H * 3600000),
+            end: item.endRow.at,
+          };
+          const groupId = 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + String(earliest.at.getTime());
+          const endRow = item.endRow;
+          found.push({
+            id: groupId + '-' + setFingerprint(ordered.map(t => t.id)),
+            groupId: groupId, kind: kind, basis: basis, subject: subject, customer: subject,
+            txs: ordered, total: item.total,
+            end: endRow.date + ' ' + (endRow.time || ''), endRow: endRow,
+            windowStart: span.start.toISOString(), windowEnd: span.end.toISOString(),
+            windowLabel: fmtT(span.start) + ' → ' + fmtT(span.end),
+          });
+        });
+      });
+      return found;
+    };
+    /* The same set of transactions on two axes is one report.
+       A partial overlap is two reports. Conductor is emitted first
+       so it keeps the identical set. */
+    const sig = (c) => c.txs.map(t => t.id).sort().join(',');
+    const seen = new Set();
+    axes.forEach(axis => {
+      const keyFn = axisFns[axis];
+      if (!keyFn) return;
+      mk(axis, keyFn).forEach(cluster => {
+        const mark = sig(cluster);
+        if (seen.has(mark)) return;
+        seen.add(mark);
+        out.push(cluster);
       });
     });
     return out.sort((a, b) => b.total - a.total);

@@ -2858,6 +2858,163 @@
 });
 
 
+/* ---- shared/rolling-24h.js ---- */
+/* ============================================================
+   The 24 consecutive hours before a deal.
+
+   The server requires this file. The desk shell loads the same
+   file as a plain script. A large cash total uses this lookback
+   on both sides. It does not reset at midnight.
+
+   A stored civil date and HH:MM are the branch's wall clock.
+   wallInstant reads them in that zone. rollingWindow then steps
+   back by elapsed milliseconds, so a daylight-saving night is
+   still 24 hours and not 23 or 25.
+
+   The start is inclusive and the end is exclusive. A receipt
+   one millisecond older than the start does not.
+   ============================================================ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) {
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.wallInstant = api.wallInstant;
+    cdos.rollingWindow = api.rollingWindow;
+    cdos.inRollingWindow = api.inRollingWindow;
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var HOUR = 60 * 60 * 1000;
+
+  function zoneOffsetMs(at, timeZone) {
+    var whole = new Date(Math.floor(at.getTime() / 1000) * 1000);
+    var parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(whole);
+    function pick(type) {
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].type === type) return Number(parts[i].value);
+      }
+      return 0;
+    }
+    var hour = pick("hour");
+    if (hour === 24) hour = 0;
+    var asUtc = Date.UTC(pick("year"), pick("month") - 1, pick("day"), hour, pick("minute"), pick("second"));
+    return asUtc - whole.getTime();
+  }
+
+  function wallFields(at, timeZone) {
+    var parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(at);
+    function pick(type) {
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].type === type) return Number(parts[i].value);
+      }
+      return 0;
+    }
+    var hour = pick("hour");
+    if (hour === 24) hour = 0;
+    return {
+      y: pick("year"),
+      mo: pick("month"),
+      d: pick("day"),
+      h: hour,
+      mi: pick("minute"),
+      s: pick("second"),
+    };
+  }
+
+  function sameWall(at, y, mo, d, h, mi, s, timeZone) {
+    var got = wallFields(at, timeZone);
+    return got.y === y && got.mo === mo && got.d === d && got.h === h && got.mi === mi && got.s === s;
+  }
+
+  /* Civil date YYYY-MM-DD and HH:MM[:SS[.mmm]] in timeZone.
+     A spring-forward gap has no instant, so this returns null. */
+  function wallInstant(date, time, timeZone) {
+    var dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date == null ? "" : date).trim());
+    var tm = /^(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?$/.exec(String(time == null ? "" : time).trim());
+    if (!dm || !tm) return null;
+    var y = +dm[1];
+    var mo = +dm[2];
+    var d = +dm[3];
+    var h = +tm[1];
+    var mi = +tm[2];
+    var s = +(tm[3] || 0);
+    var frac = tm[4] || "";
+    var ms = frac ? +frac.padEnd(3, "0").slice(0, 3) : 0;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return null;
+    var zone = String(timeZone || "").trim() || "America/Toronto";
+    var guess = Date.UTC(y, mo - 1, d, h, mi, s, ms);
+    var offset;
+    try {
+      offset = zoneOffsetMs(new Date(guess), zone);
+    } catch (e) {
+      return null;
+    }
+    var instant = guess - offset;
+    var corrected;
+    try {
+      corrected = zoneOffsetMs(new Date(instant), zone);
+    } catch (e2) {
+      return null;
+    }
+    if (corrected !== offset) instant = guess - corrected;
+    var at = new Date(instant);
+    if (sameWall(at, y, mo, d, h, mi, s, zone)) return at;
+    var earlier = new Date(instant - HOUR);
+    if (sameWall(earlier, y, mo, d, h, mi, s, zone)) return earlier;
+    var later = new Date(instant + HOUR);
+    if (sameWall(later, y, mo, d, h, mi, s, zone)) return later;
+    return null;
+  }
+
+  function asDate(value) {
+    if (value instanceof Date) return new Date(value.getTime());
+    var parsed = new Date(value);
+    return parsed;
+  }
+
+  /* [at - hours, at). Start inclusive, end exclusive. hours defaults to 24. */
+  function rollingWindow(at, hours) {
+    var end = asDate(at);
+    if (isNaN(end.getTime())) return null;
+    var h = Number(hours);
+    if (!isFinite(h) || h <= 0) h = 24;
+    return { start: new Date(end.getTime() - h * HOUR), end: end };
+  }
+
+  function inRollingWindow(earlier, later, hours) {
+    var window = rollingWindow(later, hours);
+    var left = asDate(earlier);
+    if (!window || isNaN(left.getTime())) return false;
+    var t = left.getTime();
+    return t >= window.start.getTime() && t <= window.end.getTime();
+  }
+
+  return {
+    wallInstant: wallInstant,
+    rollingWindow: rollingWindow,
+    inRollingWindow: inRollingWindow,
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -4252,15 +4409,34 @@ if (typeof window !== "undefined") {
       // (India), and a banking-day pack (the Philippines) do not use this
       // clock. Do not invent 24 for those.
       const end = dt(row);
-      const hours = monthCash || bankingDay || !aggregate ? null : regime.aggHours || 24;
-      const cluster = hours == null ? [] : live.filter(o => o.customer && o.customer === row.customer && (() => {
+      const hours = monthCash || bankingDay || !aggregate ? null : regime.largeCode === 'LCTR' ? 24 : regime.aggHours || 24;
+      const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+      const wall = window.CDOS.wallInstant;
+      const inside = window.CDOS.inRollingWindow;
+      const atOf = o => {
+        if (wall && o.date) {
+          const at = wall(o.date, o.time || '00:00', zone);
+          if (at) return at;
+        }
+        return dt(o);
+      };
+      const endAt = atOf(row);
+      const cluster = hours == null ? [] : live.filter(o => {
+        if (!o.customer || o.customer !== row.customer) return false;
+        if (inside) return inside(atOf(o), endAt, hours);
         const h = (end - dt(o)) / 3600000;
         return h >= 0 && h <= hours;
-      })());
+      });
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
-      // the aggregate is reported once — at the deal that crosses the line (the latest
+      // the aggregate is reported once, at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = hours != null && !live.some(o => o.customer === row.customer && dt(o) > end && (dt(o) - end) / 3600000 <= hours && cashForReport(o) >= 0);
+      const isClusterEnd = hours != null && !live.some(o => {
+        if (o.customer !== row.customer || !(cashForReport(o) >= 0)) return false;
+        const later = atOf(o);
+        if (!(later > endAt)) return false;
+        if (inside) return inside(endAt, later, hours);
+        return (dt(o) - end) / 3600000 <= hours;
+      });
       const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
       const rec = clients[row.customer];
       let kyc = 'ok';
@@ -6071,12 +6247,16 @@ if (typeof module !== "undefined" && module.exports) {
       }
     }, label);
   }));
+  /* One sentence for the 24-hour rule at every width. The phone window
+     and the desktop window both read this. There is no second copy. */
+  const ROLLING_24H_RULE_DESC = "Cash received in the rolling 24 hours before each deal is added together for the same person, on behalf of the same person, or for the same beneficiary, on this branch's clock. The total does not reset at midnight.";
   const Row = ({
     title,
     desc,
-    children
+    children,
+    stack
   }) => /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center justify-between gap-4 py-3",
+    className: stack ? "py-3" : "flex items-center justify-between gap-4 py-3",
     style: {
       borderTop: `1px solid ${CD.lineSoft}`
     }
@@ -6093,7 +6273,7 @@ if (typeof module !== "undefined" && module.exports) {
       color: CD.mute
     }
   }, desc)), /*#__PURE__*/React.createElement("div", {
-    className: "flex-none"
+    className: stack ? "mt-2 min-w-0 max-w-full" : "flex-none"
   }, children));
   const Field = ({
     label,
@@ -6599,6 +6779,7 @@ if (typeof module !== "undefined" && module.exports) {
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const monthCash = !!(regimeNow && regimeNow.windowKind === 'calendar_month');
     const bankingDay = !!(regimeNow && regimeNow.windowKind === 'banking_day');
+    const lctr = !!(regimeNow && regimeNow.largeCode === 'LCTR');
     const moreThan = !!(regimeNow && regimeNow.comparator === 'gt');
     const phPack = desk && desk.packId === 'pack-ph-v1' || packNow && packNow.packId === 'pack-ph-v1';
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() : [];
@@ -6721,7 +6902,7 @@ if (typeof module !== "undefined" && module.exports) {
     }), /*#__PURE__*/React.createElement(Release, {
       field: "idThreshold",
       label: "Identification threshold"
-    }), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(Row, {
+    }), monthCash || bankingDay || lctr ? null : /*#__PURE__*/React.createElement(Row, {
       title: "Aggregation window",
       desc: euAmlr && (line('aggregationHours') || {}).effective == null ? "This pack does not add deals together. The draft guidance on linked transactions is not law, so a series of smaller deals is not summed." : ukV2 ? 'UK customer due diligence does not add deals together. Whether several operations appear to be linked is a judgment, not this window. A longer window is still the stricter choice if you use the box.' : aeV2 ? 'The 90 day and 45 day bands in the Exchange Business Standards are not this window. This desk does not add deals together. The 24 hour figure is stored because the column cannot be empty. It is not the rule.' : "Same person, cash-in within this window is summed against the reporting threshold — automatically. A longer window catches more, so it is the one setting here where a bigger number is the stricter one."
     }, status !== 'ready' ? unavailable : (line('aggregationHours') || {}).effective == null ? euAmlr ? /*#__PURE__*/React.createElement("span", {
@@ -6739,9 +6920,9 @@ if (typeof module !== "undefined" && module.exports) {
       value: String((line('aggregationHours') || {}).effective),
       onPick: v => save('aggregationHours', +v, `aggregation window ${v}h`),
       opts: [['12', '12h'], ['24', '24h'], ['48', '48h'], ['72', '72h']]
-    })), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(PostureNote, {
+    })), monthCash || bankingDay || lctr ? null : /*#__PURE__*/React.createElement(PostureNote, {
       p: standingOf('aggHours')
-    }), monthCash || bankingDay ? null : /*#__PURE__*/React.createElement(Release, {
+    }), monthCash || bankingDay || lctr ? null : /*#__PURE__*/React.createElement(Release, {
       field: "aggregationHours",
       label: "Aggregation window"
     }), /*#__PURE__*/React.createElement(Row, {
@@ -12360,7 +12541,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         n: "info",
         s: 12,
         c: CD.faint
-      }), /*#__PURE__*/React.createElement("span", null, regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }), /*#__PURE__*/React.createElement("span", null, regime && regime.largeCode === 'LCTR' ? 'Your jurisdiction follows the operating country set in Localization. The large cash total is the rolling 24 hours before each deal. That window is not a setting.' : regime && regime.windowKind === 'calendar_month' ? 'Your jurisdiction follows the operating country set in Localization. A single cash deal over the reporting line is flagged. Connected deals in a calendar month in India are not summed yet. The desk must check them.' : regime && regime.windowKind === 'banking_day' ? 'Your jurisdiction follows the operating country set in Localization. A single deal over the reporting line is flagged. Deals in one banking day are not summed. The desk must check them. The desk does not file to the AMLC.' : 'Your jurisdiction follows the operating country set in Localization — switching a pack rewrites the threshold, base currency, aggregation window and report codes below, which you can then tune by hand.')), jv.length > 0 && /*#__PURE__*/React.createElement("div", {
         className: "mb-5 flex items-start gap-2.5 px-3.5 py-3",
         style: {
           background: CD.flagSoft,
@@ -12397,24 +12578,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, "Reporting & thresholds"), paused ? null : /*#__PURE__*/React.createElement(DeskThresholdRows, {
         key: `${pack && pack.packId || 'pack'}-${packRev}`
       }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' || regime && regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(Row, {
-        title: "24-hour window starts at",
-        desc: "The static daily cut the window is anchored to \u2014 aggregation runs start-to-start and this exact window is declared on every report."
-      }, isOwner ? /*#__PURE__*/React.createElement("input", {
-        type: "time",
-        value: settings.aggWindowStart || '00:00',
-        onChange: e => set('aggWindowStart', e.target.value, `agg window ${e.target.value}`),
-        className: "text-sm px-2.5 py-2 outline-none",
-        style: {
-          ...inSty,
-          width: 130
-        }
-      }) : /*#__PURE__*/React.createElement("span", {
+        stack: true,
+        title: "24-hour rule",
+        desc: ROLLING_24H_RULE_DESC
+      }, /*#__PURE__*/React.createElement("span", {
+        "data-testid": "rolling-24h-rule",
         className: "text-[12px] px-2.5 py-1.5",
         style: {
-          color: CD.mute,
-          fontFamily: 'Space Mono, monospace'
+          color: CD.ink,
+          fontFamily: 'Space Mono, monospace',
+          whiteSpace: 'normal'
         }
-      }, settings.aggWindowStart || '00:00')), paused || !(regime && regime.windowKind === 'calendar_month') ? null : /*#__PURE__*/React.createElement(Row, {
+      }, "Rolling 24 hours")), paused || !(regime && regime.windowKind === 'calendar_month') ? null : /*#__PURE__*/React.createElement(Row, {
         title: "Cash report window",
         desc: "A single cash deal over the line is flagged. Connected deals in a calendar month in India (Asia/Kolkata) are not summed yet. The desk must check them. A report is due by the 15th of the next month. The desk does not file it to FIU-IND."
       }, /*#__PURE__*/React.createElement("span", {
@@ -44443,7 +44618,9 @@ var CDOS_CHEQUE_FEE = (function () {
        rule is 24 hours. */
     const monthCash = !!(large && large.windowKind === 'calendar_month');
     const bankingDay = !!(large && large.windowKind === 'banking_day');
-    const aggregation = monthCash || bankingDay ? null : large && large.windowKind === 'none' ? {
+    /* An LCTR is 24 hours. A stored hour count is not a posture. */
+    const lctr = !!(large && large.code === 'LCTR');
+    const aggregation = monthCash || bankingDay || lctr ? null : large && large.windowKind === 'none' ? {
       field: 'aggHours',
       label: 'Aggregation window',
       standing: 'following',
@@ -44599,7 +44776,8 @@ var CDOS_CHEQUE_FEE = (function () {
       windowKind: large && large.windowKind || null,
       comparator: large && large.comparator || 'gte',
       idComparator: fxLine && fxLine.comparator || 'gte',
-      aggHours: noCashWindow || large && large.windowKind === 'calendar_month' || large && large.windowKind === 'banking_day' ? null : desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
+      /* LCTR is 24 hours. desk.aggregationHours is stored and is not applied. */
+      aggHours: noCashWindow || large && large.windowKind === 'calendar_month' || large && large.windowKind === 'banking_day' ? null : large && large.code === 'LCTR' ? 24 : desk && desk.aggregationHours ? lineAmount(desk.aggregationHours) : null,
       wireEvery,
       wireTrigger: wire && wire.triggerThreshold != null && +wire.triggerThreshold > 0 ? +wire.triggerThreshold : null,
       wireAggregate: !(wire && wire.windowKind === 'none'),
@@ -44666,7 +44844,8 @@ var CDOS_CHEQUE_FEE = (function () {
     }, base);
     if (settings && +settings.threshold) r.threshold = +settings.threshold;
     if (settings && +settings.idRequiredOver) r.idAt = +settings.idRequiredOver;
-    if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
+    /* LCTR stays 24. A stored aggHours does not move it. */
+    if (r.largeCode === 'LCTR') r.aggHours = 24;else if (settings && +settings.aggHours) r.aggHours = +settings.aggHours;
     return r;
   }
 
@@ -44721,39 +44900,19 @@ var CDOS_CHEQUE_FEE = (function () {
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
-       • STATIC declared window — a fixed 24h period the owner anchors
-         (settings.aggWindowStart, e.g. 00:00 or a 09:00 business-day cut).
-         Every report declares the exact window it was aggregated over.
-       • DUAL BASIS — sub-threshold cash-in is aggregated BOTH by conductor
-         (who handed over the cash) AND by beneficiary (who it's destined for).
-         Three different people sending $4k each to one beneficiary is a
-         reportable event on the beneficiary axis even though no single
-         conductor reaches the threshold. When the two axes capture different
-         transactions, BOTH reports are emitted — we never pick one.
-       • Singles (≥ threshold on their own) are filed individually elsewhere,
-         so the aggregate rule sums only the sub-threshold cash-in. */
-  function parseHHMM(s) {
-    const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
-    return m ? +m[1] * 60 + +m[2] : 0;
-  }
-  function clockMins(d) {
-    const hm = window.CDOS.deskTime(d, '24h');
-    const p = /^(\d{2}):(\d{2})$/.exec(hm || '');
-    return p ? +p[1] * 60 + +p[2] : 0;
-  }
-  // the static 24h window a timestamp falls into, anchored at startMins past midnight
-  function windowOf(d, startMins, H) {
-    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-    let ws = new Date(dayStart.getTime() + startMins * 60000);
-    const mins = clockMins(d);
-    if (mins < startMins) ws = new Date(ws.getTime() - 24 * 3600000);
-    const we = new Date(ws.getTime() + (H || 24) * 3600000);
-    return {
-      start: ws,
-      end: we,
-      key: ws.toISOString()
-    };
-  }
+       • The rolling 24 hours, measured back from each deal on
+         the branch clock (shared/rolling-24h.js). A stored anchor
+         (settings.aggWindowStart) is not applied. The total does not
+         reset at midnight. Every report declares that lookback.
+       • DUAL BASIS. Sub-threshold cash-in is aggregated both by conductor
+         (who handed over the cash) and by beneficiary (who it is destined
+         for). Three different people sending $4k each to one beneficiary
+         is a reportable event on the beneficiary axis even though no
+         single conductor reaches the threshold. When the two axes capture
+         different transactions, both reports are emitted.
+       • Singles (at or over the threshold on their own) are filed
+         individually elsewhere, so the older aggregate rule sums only
+         the sub-threshold cash-in. LCTR and LVCTR include every amount. */
   /* A short, stable fingerprint of a transaction SET.
       An aggregate used to be identified by who and which day and nothing
      else, so a report filed over four cash-ins silently absorbed the fifth:
@@ -44806,8 +44965,11 @@ var CDOS_CHEQUE_FEE = (function () {
        and nothing calls it yet. A banking day is not this engine
        either. The Philippines flags one deal and does not add the day. */
     if (regime && (regime.windowKind === 'calendar_month' || regime.windowKind === 'banking_day')) return [];
-    const TH = regime.threshold,
-      H = regime.aggHours || 24;
+    const TH = regime.threshold;
+    /* An LCTR is 24 hours. regime.aggHours and the stored settings
+       (aggregationHours, aggHours, aggWindowStart) do not move it. */
+    const lctrWindow = kind === 'LCTR' || regime && regime.largeCode === 'LCTR' && kind === regime.largeCode;
+    const H = lctrWindow ? 24 : regime.aggHours || 24;
     /* No threshold means no aggregate. A missing number is not zero, and
        it is not Canada's 10,000. */
     if (!(TH > 0)) return [];
@@ -44818,84 +44980,124 @@ var CDOS_CHEQUE_FEE = (function () {
       beneficiary: e => e.beneficiary
     };
     const axes = includeAll ? policy.axes || ['conductor', 'on_behalf_of', 'beneficiary'] : ['conductor', 'beneficiary'];
-    const startMins = parseHHMM(settings && settings.aggWindowStart || '00:00');
-    const buckets = {};
+    /* settings.aggWindowStart is stored and is not applied. */
+    void settings;
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    const wall = window.CDOS.wallInstant;
+    const inside = window.CDOS.inRollingWindow;
+    const spanOf = window.CDOS.rollingWindow;
+    const instantOf = e => {
+      if (wall && e.date) {
+        const at = wall(e.date, e.time || '00:00', zone);
+        if (at) return at;
+      }
+      const fallback = e.t instanceof Date ? e.t : new Date(e.t);
+      return fallback && !isNaN(fallback.getTime()) ? fallback : null;
+    };
+    const rows = [];
     (events || []).forEach(e => {
       if (!(e.amt > 0)) return;
-      const w = windowOf(e.t, startMins, H);
-      (buckets[w.key] = buckets[w.key] || {
-        w,
-        evs: []
-      }).evs.push(e);
+      const at = instantOf(e);
+      if (!at) return;
+      rows.push(Object.assign({}, e, {
+        at: at
+      }));
     });
     const fmtT = d => {
       const format = window.CDOS.deskFormat && window.CDOS.deskFormat() || '12h';
-      const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
       const day = window.CDOS.deskDay(d, zone);
       const time = window.CDOS.deskTime(d, format, zone);
       const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
       return (m ? mon[+m[2] - 1] + ' ' + +m[3] : day) + ' ' + time;
     };
+    const inWindow = (earlier, later) => {
+      if (inside) return inside(earlier, later, H);
+      const start = later.getTime() - H * 3600000;
+      const t = earlier.getTime();
+      return t >= start && t <= later.getTime();
+    };
     const out = [];
-    Object.keys(buckets).forEach(key => {
-      const {
-        w,
-        evs
-      } = buckets[key];
-      const windowLabel = fmtT(w.start) + ' → ' + fmtT(w.end);
-      const dayKey = window.CDOS.deskDay(w.start, window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
-      const mk = (basis, keyFn) => {
-        const groups = {};
-        evs.forEach(e => {
-          /* Older rule: a receipt already at the line is its own report
-             and is not also added into the cluster. includeAll is the
-             opposite: 12,000 plus 1,000 is one report of 13,000. */
-          if (!includeAll && e.amt >= TH) return;
-          const k = keyFn(e);
-          if (!k) return;
-          (groups[k] = groups[k] || []).push(e);
-        });
-        return Object.keys(groups).map(subject => {
-          const txs = groups[subject].slice().sort((a, b) => a.t - b.t);
-          const total = txs.reduce((s, o) => s + o.amt, 0);
+    const mk = (basis, keyFn) => {
+      const groups = {};
+      rows.forEach(e => {
+        /* Older rule: a receipt already at the line is its own report
+           and is not also added into the cluster. includeAll is the
+           opposite: 12,000 plus 1,000 is one report of 13,000. */
+        if (!includeAll && e.amt >= TH) return;
+        const k = keyFn(e);
+        if (!k) return;
+        (groups[k] = groups[k] || []).push(e);
+      });
+      const found = [];
+      Object.keys(groups).forEach(subject => {
+        const txs = groups[subject].slice().sort((a, b) => a.at - b.at);
+        const hits = [];
+        txs.forEach(endRow => {
+          const set = txs.filter(e => inWindow(e.at, endRow.at));
+          const total = set.reduce((s, o) => s + o.amt, 0);
           /* One transaction, however large, stays a single report.
              Two or more, of any amount, become one report once the
              total reaches the line. */
-          if (txs.length < 2 || total < TH) return null;
-          const endRow = txs[txs.length - 1];
-          const groupId = 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + dayKey;
-          return {
-            id: groupId + '-' + setFingerprint(txs.map(t => t.id)),
-            groupId,
-            kind,
-            basis,
-            subject,
-            customer: subject,
-            txs,
-            total,
-            end: endRow.date + ' ' + (endRow.time || ''),
-            endRow,
-            windowStart: w.start.toISOString(),
-            windowEnd: w.end.toISOString(),
-            windowLabel
-          };
-        }).filter(Boolean);
-      };
-      /* The same set of transactions on two axes is one report.
-         A partial overlap is two reports. Conductor is emitted first
-         so it keeps the identical set. */
-      const sig = c => c.txs.map(t => t.id).sort().join(',');
-      const seen = new Set();
-      axes.forEach(axis => {
-        const keyFn = axisFns[axis];
-        if (!keyFn) return;
-        mk(axis, keyFn).forEach(cluster => {
-          const mark = sig(cluster);
-          if (seen.has(mark)) return;
-          seen.add(mark);
-          out.push(cluster);
+          if (set.length < 2 || total < TH) return;
+          hits.push({
+            endRow: endRow,
+            set: set,
+            total: total
+          });
         });
+        hits.forEach((item, index) => {
+          /* A later lookback that already contains this set is the
+             report. An earlier window that is not inside that later
+             set stays its own report. */
+          const coveredLater = hits.slice(index + 1).some(later => {
+            const ids = {};
+            later.set.forEach(t => {
+              ids[t.id] = true;
+            });
+            return item.set.every(t => ids[t.id]);
+          });
+          if (coveredLater) return;
+          const ordered = item.set.slice().sort((a, b) => a.at - b.at);
+          const earliest = ordered[0];
+          const span = spanOf && spanOf(item.endRow.at, H) || {
+            start: new Date(item.endRow.at.getTime() - H * 3600000),
+            end: item.endRow.at
+          };
+          const groupId = 'AGG-' + kind + '-' + basis.charAt(0).toUpperCase() + '-' + String(subject).replace(/\s+/g, '_') + '-' + String(earliest.at.getTime());
+          const endRow = item.endRow;
+          found.push({
+            id: groupId + '-' + setFingerprint(ordered.map(t => t.id)),
+            groupId: groupId,
+            kind: kind,
+            basis: basis,
+            subject: subject,
+            customer: subject,
+            txs: ordered,
+            total: item.total,
+            end: endRow.date + ' ' + (endRow.time || ''),
+            endRow: endRow,
+            windowStart: span.start.toISOString(),
+            windowEnd: span.end.toISOString(),
+            windowLabel: fmtT(span.start) + ' → ' + fmtT(span.end)
+          });
+        });
+      });
+      return found;
+    };
+    /* The same set of transactions on two axes is one report.
+       A partial overlap is two reports. Conductor is emitted first
+       so it keeps the identical set. */
+    const sig = c => c.txs.map(t => t.id).sort().join(',');
+    const seen = new Set();
+    axes.forEach(axis => {
+      const keyFn = axisFns[axis];
+      if (!keyFn) return;
+      mk(axis, keyFn).forEach(cluster => {
+        const mark = sig(cluster);
+        if (seen.has(mark)) return;
+        seen.add(mark);
+        out.push(cluster);
       });
     });
     return out.sort((a, b) => b.total - a.total);
@@ -46885,7 +47087,6 @@ ${(filing.map || []).map(blockHTML).join('')}
       }, r.name)))));
     }
     const total = clusters.reduce((s, c) => s + c.total, 0);
-    const winStart = settings && settings.aggWindowStart || '00:00';
     const benCount = clusters.filter(c => c.basis === 'beneficiary').length;
     const eftCount = clusters.filter(c => c.kind === regime.wireCode).length;
     const basisPill = b => b === 'beneficiary' ? /*#__PURE__*/React.createElement("span", {
@@ -46977,7 +47178,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "The 24-hour rule, handled for you ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "The 24-hour rule",
-      body: largePolicy(regime) ? 'Every cash amount in one static window is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is 24 consecutive hours from the start time below, not a rolling day.' : 'Several smaller deals from the same person in one static window are added up. A single deal already at the line is filed on its own and left out of that total. The window is 24 consecutive hours from the start time below, not a rolling day.',
+      body: largePolicy(regime) ? 'Every cash amount received in the rolling 24 hours before a deal is added, including one already at or over the line. Rolling 24 hours means the 24 hours just before each deal, so the total never resets at midnight. Two or more that reach the threshold are one report.' : 'Several smaller deals from the same person in the rolling 24 hours before a deal are added up. A single deal already at the line is filed on its own and left out of that total. The window is measured back from that deal. It does not reset at midnight.',
       lines: largePolicy(regime) ? [{
         k: 'By conductor',
         v: 'totals what one person brings in'
@@ -46999,11 +47200,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, largePolicy(regime) ? /*#__PURE__*/React.createElement(React.Fragment, null, "Cash received is added across one static window of ", regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, winStart), ". Every amount counts, including one already at ", /*#__PURE__*/React.createElement("b", {
+    }, largePolicy(regime) ? /*#__PURE__*/React.createElement(React.Fragment, null, "Cash received is added across the rolling ", regime.aggHours, " hours before each deal. Every amount counts, including one already at ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -47015,11 +47212,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across each static window (your window runs ", regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink
-      }
-    }, winStart), "). A single deal already at the line is filed on its own. The moment the smaller ones reach ", fmt(regime.threshold, regime.currency), ", they have to be reported: an ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across the rolling ", regime.aggHours, " hours before each deal. A single deal already at the line is filed on its own. The moment the smaller ones reach ", fmt(regime.threshold, regime.currency), ", they have to be reported: an ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -48183,7 +48376,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute,
         maxWidth: 520
       }
-    }, regime.authority || 'No pack', regime.country ? ' · ' + regime.country : '', ". Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. The 24 hour window is a static 24 consecutive hours.")), /*#__PURE__*/React.createElement("button", {
+    }, regime.authority || 'No pack', regime.country ? ' · ' + regime.country : '', ". Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. The rolling 24 hours are the 24 hours just before each deal.")), /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenSettings && onOpenSettings(),
       className: "flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none",
       style: {
@@ -48225,7 +48418,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, moneyOf(r), r.aggregateAllAmounts ? ' · every amount in the static window, including one already over the line' : '', r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : '')))) : /*#__PURE__*/React.createElement("div", {
+    }, moneyOf(r), r.aggregateAllAmounts ? ' · every cash amount received in the rolling 24 hours, including one already at or over the line' : '', r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : '')))) : /*#__PURE__*/React.createElement("div", {
       className: "grid sm:grid-cols-2 gap-2.5"
     }, Object.values(REGIMES).map(r => {
       const on = (settings && settings.regime || 'FINTRAC') === r.id;
@@ -48286,7 +48479,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.ink
         }
-      }, r.aggHours, "h static window"), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
+      }, "rolling ", r.aggHours, " hours"), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
         className: "text-right",
         style: {
           color: CD.ink
