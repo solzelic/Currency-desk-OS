@@ -215,8 +215,10 @@ describe("a booking-error flag on the filing view", () => {
   it("maps a server draft to prepared and keeps a prepared filing on the page", () => {
     const view = g.window.CDOS.subFromFiling({ status: "draft", reportCode: "LCTR", filingId: "fil-p" });
     expect(view.status).toBe("prepared");
-    const card = readFileSync(resolve(root, "os-src/cdos-compliance-app.jsx"), "utf8");
-    expect(card).toContain("s.status === 'submitted' || s.status === 'prepared'");
+    const due = g.window.CDOS.openReportables([], {}, SETTINGS, [], {
+      "PREP-KEEP": { status: "prepared", kind: "LCTR", subject: "Kept filing", amount: 12000 },
+    });
+    expect(due.map((o: { id: string }) => o.id)).toContain("PREP-KEEP");
   });
 });
 
