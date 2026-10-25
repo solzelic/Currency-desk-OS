@@ -72,7 +72,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **A large cash total is the 24 consecutive hours before the deal.** The desk clusters and the s.84 identity gate share `shared/rolling-24h.js`. The lookback is elapsed time. It does not reset at midnight. A stored `aggWindowStart` is not applied and is not rewritten. The desk reads the civil date and the time on the branch clock (`branches.timezone`, America/Toronto when the branch has none). The gate reads the deal instant. Two cash receipts that fall inside those 24 hours are one total, including a pair that straddles midnight. A receipt exactly 24 hours earlier counts. One millisecond earlier does not. Exactly CAD 10,000.00 counts. CAD 9,999.99 does not. The settings row reads "Rolling 24 hours" for every role. Issue #280.
+- **A large cash total is the rolling 24 hours before the deal.** The desk clusters and the s.84 identity gate share `shared/rolling-24h.js`. The lookback is elapsed time. It does not reset at midnight. A stored `aggWindowStart` is not applied and is not rewritten. The desk reads the civil date and the time on the branch clock (`branches.timezone`, America/Toronto when the branch has none). The gate reads the deal instant. Two cash receipts that fall inside those 24 hours are one total, including a pair that straddles midnight. A receipt exactly 24 hours earlier counts. One millisecond earlier does not. Exactly CAD 10,000.00 counts. CAD 9,999.99 does not. The settings row reads "Rolling 24 hours" for every role. Issue #280.
 
 - **A cheque reversal puts the cash back only in the till that paid it out.** `POST /api/ledger/cheques/:chequeId/reversal` from any other till is 422 `CHEQUE_REVERSAL_WRONG_TILL`, "Reverse this cheque at the till that paid it out. Nothing was reversed." The cheque stays held. No reversal row, no reversal journal, no till movement, and no idempotency row is committed. The same open till still reverses: the net returns to that drawer and the fee is reversed with it. A closed or signed-off day is a separate check and is not part of this one.
 
@@ -585,7 +585,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   CAD 1,000. A looser desk number can replace the 3,000 lines. It
   cannot raise the 1,000 lines. A large cash report is cash received,
   due within 15 calendar days. The 24-hour total includes every
-  amount in the 24 consecutive hours before the deal, on three axes
+  amount in the rolling 24 hours before the deal, on three axes
   that are not mixed: conducted by, on behalf
   of, and for the benefit of. Identity is also required when that
   total reaches CAD 10,000, including a receipt that is under the

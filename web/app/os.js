@@ -2871,8 +2871,8 @@
    back by elapsed milliseconds, so a daylight-saving night is
    still 24 hours and not 23 or 25.
 
-   The start and the end both count. A receipt one millisecond
-   older than the start does not.
+   The start is inclusive and the end is exclusive. A receipt
+   one millisecond older than the start does not.
    ============================================================ */
 (function (root, factory) {
   var api = factory();
@@ -2990,7 +2990,7 @@
     return parsed;
   }
 
-  /* [at - hours, at], both ends included. hours defaults to 24. */
+  /* [at - hours, at). Start inclusive, end exclusive. hours defaults to 24. */
   function rollingWindow(at, hours) {
     var end = asDate(at);
     if (isNaN(end.getTime())) return null;
@@ -12575,7 +12575,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }), /*#__PURE__*/React.createElement(DeskCurrencyRows, null), paused || pack && pack.packId === 'pack-eu-v2' || regime && regime.windowKind === 'calendar_month' || regime && regime.windowKind === 'banking_day' ? null : /*#__PURE__*/React.createElement(Row, {
         stack: true,
         title: "24-hour rule",
-        desc: "Cash in the 24 consecutive hours before each deal is added together, on this branch's clock. The total does not reset at midnight."
+        desc: "Cash received in the rolling 24 hours before each deal is added together for the same person, on behalf of the same person, or for the same beneficiary, on this branch's clock. The total does not reset at midnight."
       }, /*#__PURE__*/React.createElement("span", {
         "data-testid": "rolling-24h-rule",
         className: "text-[12px] px-2.5 py-1.5",
@@ -44847,7 +44847,7 @@ var CDOS_CHEQUE_FEE = (function () {
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
-       • ROLLING 24 consecutive hours, measured back from each deal on
+       • The rolling 24 hours, measured back from each deal on
          the branch clock (shared/rolling-24h.js). A stored anchor
          (settings.aggWindowStart) is not applied. The total does not
          reset at midnight. Every report declares that lookback.
@@ -47122,7 +47122,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "The 24-hour rule, handled for you ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "The 24-hour rule",
-      body: largePolicy(regime) ? 'Every cash amount in the 24 consecutive hours before a deal is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is measured back from that deal. It does not reset at midnight.' : 'Several smaller deals from the same person in the 24 consecutive hours before a deal are added up. A single deal already at the line is filed on its own and left out of that total. The window is measured back from that deal. It does not reset at midnight.',
+      body: largePolicy(regime) ? 'Every cash amount received in the rolling 24 hours before a deal is added, including one already at or over the line. Rolling 24 hours means the 24 hours just before each deal, so the total never resets at midnight. Two or more that reach the threshold are one report.' : 'Several smaller deals from the same person in the rolling 24 hours before a deal are added up. A single deal already at the line is filed on its own and left out of that total. The window is measured back from that deal. It does not reset at midnight.',
       lines: largePolicy(regime) ? [{
         k: 'By conductor',
         v: 'totals what one person brings in'
@@ -47144,7 +47144,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, largePolicy(regime) ? /*#__PURE__*/React.createElement(React.Fragment, null, "Cash received is added across the ", regime.aggHours, " consecutive hours before each deal. Every amount counts, including one already at ", /*#__PURE__*/React.createElement("b", {
+    }, largePolicy(regime) ? /*#__PURE__*/React.createElement(React.Fragment, null, "Cash received is added across the rolling ", regime.aggHours, " hours before each deal. Every amount counts, including one already at ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -47156,7 +47156,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across the ", regime.aggHours, " consecutive hours before each deal. A single deal already at the line is filed on its own. The moment the smaller ones reach ", fmt(regime.threshold, regime.currency), ", they have to be reported: an ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across the rolling ", regime.aggHours, " hours before each deal. A single deal already at the line is filed on its own. The moment the smaller ones reach ", fmt(regime.threshold, regime.currency), ", they have to be reported: an ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -48320,7 +48320,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute,
         maxWidth: 520
       }
-    }, regime.authority || 'No pack', regime.country ? ' · ' + regime.country : '', ". Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. The 24 hour window is the 24 consecutive hours before each deal.")), /*#__PURE__*/React.createElement("button", {
+    }, regime.authority || 'No pack', regime.country ? ' · ' + regime.country : '', ". Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. The rolling 24 hours are the 24 hours just before each deal.")), /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenSettings && onOpenSettings(),
       className: "flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none",
       style: {
@@ -48362,7 +48362,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, moneyOf(r), r.aggregateAllAmounts ? ' · every amount in the 24 consecutive hours, including one already over the line' : '', r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : '')))) : /*#__PURE__*/React.createElement("div", {
+    }, moneyOf(r), r.aggregateAllAmounts ? ' · every cash amount received in the rolling 24 hours, including one already at or over the line' : '', r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : '')))) : /*#__PURE__*/React.createElement("div", {
       className: "grid sm:grid-cols-2 gap-2.5"
     }, Object.values(REGIMES).map(r => {
       const on = (settings && settings.regime || 'FINTRAC') === r.id;
@@ -48423,7 +48423,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.ink
         }
-      }, r.aggHours, "h rolling window"), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
+      }, "rolling ", r.aggHours, " hours"), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
         className: "text-right",
         style: {
           color: CD.ink

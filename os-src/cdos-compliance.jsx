@@ -416,7 +416,7 @@
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
-       • ROLLING 24 consecutive hours, measured back from each deal on
+       • The rolling 24 hours, measured back from each deal on
          the branch clock (shared/rolling-24h.js). A stored anchor
          (settings.aggWindowStart) is not applied. The total does not
          reset at midnight. Every report declares that lookback.

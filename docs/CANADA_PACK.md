@@ -62,7 +62,7 @@ cash received.
 
 Large cash, s.30 and s.126, filed within 15 calendar days, s.132(3).
 Cash the desk received. The 24-hour total includes every amount in
-the 24 consecutive hours before the deal, including one already at
+the rolling 24 hours before the deal, including one already at
 CAD 10,000. A single receipt at the line stays its own report. Two
 or more that reach the line are one report, and a receipt inside
 that report is not also filed alone. The window is measured back
@@ -122,7 +122,7 @@ These are not implemented. The pack does not pretend they are.
   calendar in the pack.
 - A stored start time (`settings.aggWindowStart`) is not applied
   and is not rewritten. The desk and the identity gate share
-  `shared/rolling-24h.js`. Both look back 24 consecutive hours
+  `shared/rolling-24h.js`. Both look back the rolling 24 hours
   from the deal, in elapsed time. The desk reads a civil date and
   a time on the branch clock (`branches.timezone`, America/Toronto
   when the branch has none). The gate reads the deal instant.
