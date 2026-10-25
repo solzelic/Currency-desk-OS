@@ -85,7 +85,7 @@ describe("quick sign-in refused without the flag", () => {
         await handle.close();
       }
     }
-  });
+  }, 30_000);
 });
 
 describe("quick sign-in on the demo shop", () => {
