@@ -44,11 +44,16 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  /* The sealed STR filing, the 2 deals and their audit row stay in the
-     disposable test DB by design, because the append-only and sealed
-     guards block deletes, and option A (a fresh schema per run) is
+  /* These rows stay in the disposable test DB: the tenant, the legal
+     entity, the branch, the sealed STR filing, the 2 deals, and the
+     audit rows. The filing is sealed and the deals and the audit rows
+     are append-only, so those deletes are refused. The tenant, the
+     legal entity, and the branch stay because the sealed and
+     append-only rows reference them. A fresh schema per run is
      tracked in #371
-     https://github.com/solzelic/Currency-desk-OS/issues/371 */
+     https://github.com/solzelic/Currency-desk-OS/issues/371
+     Two ledger_principals rows stay as well. This cleanup does not
+     delete them. */
   try {
     if (pool && seeded) {
       await pool.query("DELETE FROM quote_events WHERE quote_id = $1", [seeded.quoteId]);
@@ -56,14 +61,35 @@ afterAll(async () => {
       await pool.query("DELETE FROM quotes WHERE quote_id = $1", [seeded.quoteId]);
       await pool.query("DELETE FROM desk_clients WHERE client_id = $1", [seeded.clientId]);
       await pool.query("DELETE FROM ledger_customers WHERE customer_id = $1", [seeded.customerId]);
+      await pool.query("DELETE FROM rate_boards WHERE tenant_id = $1 AND id = $2", [seeded.tenantId, seeded.rateBoardId]);
+      await pool.query("DELETE FROM market_rates WHERE id = $1", [seeded.marketSnapshotId]);
       const left = await pool.query(
         `SELECT
            (SELECT count(*)::int FROM desk_clients WHERE client_id = $1) AS clients,
-           (SELECT count(*)::int FROM quotes WHERE quote_id = $2) AS quotes`,
-        [seeded.clientId, seeded.quoteId],
+           (SELECT count(*)::int FROM quotes WHERE quote_id = $2) AS quotes,
+           (SELECT count(*)::int FROM rate_boards WHERE tenant_id = $3) AS boards,
+           (SELECT count(*)::int FROM market_rates WHERE id = $4) AS snaps,
+           (SELECT count(*)::int FROM tenants WHERE id = $3) AS tenants,
+           (SELECT count(*)::int FROM legal_entities WHERE tenant_id = $3) AS entities,
+           (SELECT count(*)::int FROM branches WHERE tenant_id = $3) AS branches,
+           (SELECT count(*)::int FROM ledger_report_filings WHERE tenant_id = $3) AS filings,
+           (SELECT count(*)::int FROM ledger_transactions WHERE tenant_id = $3) AS deals,
+           (SELECT count(*)::int FROM ledger_audit_events WHERE tenant_id = $3) AS audits,
+           (SELECT count(*)::int FROM ledger_principals WHERE tenant_id = $3) AS principals`,
+        [seeded.clientId, seeded.quoteId, seeded.tenantId, seeded.marketSnapshotId],
       );
-      expect(left.rows[0]?.clients, "client removed").toBe(0);
-      expect(left.rows[0]?.quotes, "quote removed").toBe(0);
+      const row = left.rows[0];
+      expect(row?.clients, "client removed").toBe(0);
+      expect(row?.quotes, "quote removed").toBe(0);
+      expect(row?.boards, "rate board removed").toBe(0);
+      expect(row?.snaps, "market snapshot removed").toBe(0);
+      expect(row?.tenants, "tenant stays").toBe(1);
+      expect(row?.entities, "legal entity stays").toBe(1);
+      expect(row?.branches, "branch stays").toBe(1);
+      expect(row?.filings, "sealed filing stays").toBe(1);
+      expect(row?.deals, "deals stay").toBe(2);
+      expect(row?.audits, "audit rows stay").toBe(2);
+      expect(row?.principals, "principals stay").toBe(2);
     }
   } finally {
     try {

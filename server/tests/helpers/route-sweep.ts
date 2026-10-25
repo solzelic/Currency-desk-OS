@@ -23,6 +23,8 @@ export type SweepIds = {
   tenantId: string;
   enquiryId: string;
   staffId: string;
+  rateBoardId: string;
+  marketSnapshotId: string;
 };
 
 type RouteApp = {
@@ -99,6 +101,8 @@ export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool, db: 
   const legalEntityId = "le-sweep-" + suffix;
   const branchId = "br-sweep-" + suffix;
   const workspaceId = "ws-sweep-" + suffix;
+  const rateBoardId = "board-" + suffix;
+  const marketSnapshotId = "snap-" + suffix;
   const passwordHash = await hashPassword(DEMO.password);
   await db.insert(schema.tenants).values({ id: tenantId, name: "Sweep" });
   await db.insert(schema.legalEntities).values({
@@ -140,12 +144,12 @@ export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool, db: 
   );
   await pool.query(
     "INSERT INTO market_rates (id, provider, mids, fetched_at) VALUES ($1, 'test', '{\"USD\":1.4}', now())",
-    ["snap-" + suffix],
+    [marketSnapshotId],
   );
   await pool.query(
     `INSERT INTO rate_boards (id, tenant_id, legal_entity_id, branch_id, buy_margin, sell_margin, board_rows, market_snapshot_id, published_by, published_at)
      VALUES ($1, $2, $3, $4, 0.02, 0.03, '{"USD":{"mid":1.4,"show":true}}', $5, 'seed', now())`,
-    ["board-" + suffix, tenantId, legalEntityId, branchId, "snap-" + suffix],
+    [rateBoardId, tenantId, legalEntityId, branchId, marketSnapshotId],
   );
   const teller = await session(app, "m.costa", tenantId);
   const owner = await session(app, "j.masri", tenantId);
@@ -235,5 +239,7 @@ export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool, db: 
     tenantId,
     enquiryId: "enq-walkthrough",
     staffId: tenantId + ":m.costa",
+    rateBoardId,
+    marketSnapshotId,
   };
 }
