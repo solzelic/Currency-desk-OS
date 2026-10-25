@@ -48,7 +48,7 @@
    each deal.
 
    The same window claims are read from the in-app help: every
-   os-src/*.jsx file and web/app/os.js. Comments are removed first,
+   file in os-src and web/app/os.js. Comments are removed first,
    so a note about the branch clock is not a help sentence. Tags
    are left in place, so a sentence inside a JSX attribute is still
    read. The other marketing bans are not applied to those files.
@@ -418,7 +418,7 @@ export function findSourceClaims(src, rel = "") {
 
 export function helpSources() {
   return readdirSync(path.join(root, "os-src"))
-    .filter((name) => name.endsWith(".jsx"))
+    .filter((name) => name.endsWith(".jsx") || name.endsWith(".js"))
     .sort()
     .map((name) => `os-src/${name}`)
     .concat(["web/app/os.js"]);

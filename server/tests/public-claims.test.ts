@@ -26,7 +26,7 @@ describe("public marketing claims", () => {
   it("does not claim a midnight reset or a calendar-day window on a public page", () => {
     const root = path.resolve(import.meta.dirname, "../..");
     const pages = readdirSync(path.join(root, "web")).filter((name) => name.endsWith(".html")).map((name) => path.join("web", name));
-    const help = readdirSync(path.join(root, "os-src")).filter((name) => name.endsWith(".jsx")).sort().map((name) => path.join("os-src", name));
+    const help = readdirSync(path.join(root, "os-src")).filter((name) => name.endsWith(".jsx") || name.endsWith(".js")).sort().map((name) => path.join("os-src", name));
     help.push("web/app/os.js");
     expect(pages.length).toBeGreaterThan(0);
     expect(help.length).toBeGreaterThan(1);
