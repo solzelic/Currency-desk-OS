@@ -280,4 +280,17 @@ postgres("LCTR total keeps reversed cash unless it was a booking error", () => {
     await pool.query("DELETE FROM ledger_report_filings WHERE filing_id='fil-del'");
     expect(await count()).toBe(0);
   });
+
+  it("succeeds when a flag row is already stored for that deal", async () => {
+    await deal("lctr-cf", "lctr-cf", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-cf", "filed", "ref-lctr-cf", { mark: "conflict" });
+    await pool.query(
+      `INSERT INTO ledger_filing_flags (filing_id, transaction_id, tenant_id, legal_entity_id, actor_id, posted_at)
+       VALUES ('fil-cf','lctr-cf',$1,$2,'seeded',now())`,
+      [TENANT, ENTITY],
+    );
+    expect(await bookingError("lctr-cf", "cf-booking")).toBeNull();
+    expect(await flagRows("fil-cf")).toEqual([{ transaction_id: "lctr-cf", actor_id: "seeded" }]);
+    expect(await reversals("lctr-cf")).toBe(1);
+  });
 });
