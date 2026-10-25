@@ -34,10 +34,13 @@
    24 hours for terrorism financing". A longer sentence that merely
    contains those words does not pass. Deadlines in days do not
    match a banned pattern, so they are not listed. US CTR and SAR
-   phrases are not listed. "static 24 hours" and "within 3 business
-   days" are not a banned pattern. "midnight in the branch time zone"
-   is banned on every served page. The cash total is the rolling 24
-   hours before each deal.
+   phrases are not listed. "within 3 business days" is not a
+   banned pattern. A cash total that starts at midnight, resets at
+   midnight, or uses a static or calendar-day window is banned on
+   every served page. "does not reset at midnight" and "never resets
+   at midnight" stay, because they deny that reset. "15 calendar
+   days" stays, because it is a filing deadline. The cash total is
+   the rolling 24 hours before each deal.
 
    A claim this pass removed is banned as a phrase, so it cannot
    return. "AI assistant" is allowed only in the honest sentence
@@ -175,6 +178,13 @@ const phrases = [
   [/shared view across several locations is not built yet/, "shared view across several locations"],
   [/not drafted or sent/, "Not drafted or sent"], [/can i text clients without giving out my number/, "Can I text clients without giving out my number?"], [/ready for pickup/, "ready for pickup"],
   [/midnight in the branch time zone/, "midnight in the branch time zone"],
+  [/starts at midnight/, "starts at midnight"],
+  [/from midnight/, "from midnight"],
+  [/static 24 hours/, "static 24 hours"],
+  [/static window/, "static window"],
+  [/not a rolling day/, "not a rolling day"],
+  [/calendar-?day window/, "calendar-day window"],
+  [/(?<!\b(?:does not|never) )reset(?:s)? at midnight/, "resets at midnight"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";

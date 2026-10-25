@@ -416,9 +416,8 @@
 
   /* ===================== 24-HOUR AGGREGATION (by rule) =====================
      The hard part, done properly:
-       • STATIC declared window — a fixed 24h period the owner anchors
-         (settings.aggWindowStart, e.g. 00:00 or a 09:00 business-day cut).
-         Every report declares the exact window it was aggregated over.
+       • The rolling 24 hours before each deal. The total does not
+         reset at midnight. Every report declares that lookback.
        • DUAL BASIS — sub-threshold cash-in is aggregated BOTH by conductor
          (who handed over the cash) AND by beneficiary (who it's destined for).
          Three different people sending $4k each to one beneficiary is a

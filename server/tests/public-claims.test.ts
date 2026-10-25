@@ -23,18 +23,39 @@ describe("public marketing claims", () => {
     expect(out).toMatch(/^ok /);
   });
 
-  it("does not say midnight in the branch time zone on a public page", () => {
+  it("does not claim a midnight reset or a calendar-day window on a public page", () => {
     const web = path.resolve(import.meta.dirname, "../../web");
     const pages = readdirSync(web).filter((name) => name.endsWith(".html"));
     expect(pages.length).toBeGreaterThan(0);
+    const banned = [
+      /midnight in the branch time zone/,
+      /starts at midnight/,
+      /from midnight/,
+      /static 24 hours/,
+      /static window/,
+      /not a rolling day/,
+      /calendar-?day window/,
+      /(?<!\b(?:does not|never) )reset(?:s)? at midnight/,
+    ];
+    const hits: string[] = [];
     for (const name of pages) {
       const html = readFileSync(path.join(web, name), "utf8").toLowerCase();
-      expect(html, name).not.toContain("midnight in the branch time zone");
+      for (const pattern of banned) {
+        const found = html.match(pattern);
+        if (found) hits.push(`${name}: ${found[0]}`);
+      }
     }
-    const claim = probe("Cash is added from midnight in the branch time zone.");
-    expect(claim.ok).toBe(false);
-    expect(claim.out).toMatch(/midnight in the branch time zone/);
-    expect(probe("Cash is added over the rolling 24 hours before each deal. The total never resets at midnight.").ok).toBe(true);
+    expect(hits).toEqual([]);
+    const midnight = probe("Cash received is added across a static 24 hours that starts at midnight in the branch time zone. Not a rolling day.");
+    expect(midnight.ok).toBe(false);
+    expect(midnight.out).toMatch(/static 24 hours/);
+    expect(probe("Cash received is added from midnight in the branch time zone.").ok).toBe(false);
+    expect(probe("Static window").ok).toBe(false);
+    expect(probe("The total resets at midnight.").ok).toBe(false);
+    expect(probe("Cash is added on a calendar-day window.").ok).toBe(false);
+    expect(probe("Cash is added over the rolling 24 hours before each deal. The total does not reset at midnight.").ok).toBe(true);
+    expect(probe("The total never resets at midnight.").ok).toBe(true);
+    expect(probe("LCTR within 15 calendar days.", "web/compliance.html").ok).toBe(true);
     expect(probe("24-hour rule").ok).toBe(true);
     expect(probe("SMR within 24 hours for terrorism financing", "web/compliance.html").ok).toBe(true);
   });
@@ -341,7 +362,7 @@ describe("public marketing claims", () => {
   });
 
   it("allows an exact regulator deadline only on the compliance and FAQ pages", () => {
-    const line = "SMR within 24 hours for terrorism financing. LCTR within 15 calendar days. SAR within 30 days. Cash is added across a static 24 hours. A worksheet within 3 business days.";
+    const line = "SMR within 24 hours for terrorism financing. LCTR within 15 calendar days. SAR within 30 days. A worksheet within 3 business days.";
     expect(probe(line).ok).toBe(false);
     expect(probe(line, "web/index.html").ok).toBe(false);
     expect(probe(line, "web/compliance.html").ok).toBe(true);
