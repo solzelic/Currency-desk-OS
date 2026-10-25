@@ -1,8 +1,13 @@
-/* A3.3. A teller reads every registered GET. A 2xx JSON body must not
-   carry a suspicious report: an STR- key or id, a structuring basis,
-   a kind, type, or code from suspiciousCodes(), a title that starts
-   with one of those codes, or ackStr / ackStrInfo.
-   403 and 404 pass. The route list comes from the app, not a hand list. */
+/* A3.3. A teller reads every registered GET. Two rules apply at every
+   depth: a string that starts with STR-, and a key named ackStr,
+   ackStrInfo, strStatus, structuring, or structuringWatch.
+   suspiciousCodes(), a "CODE ·" title, and basis structuring are
+   checked only on a submission, a history row, a filing, a deal, or
+   an acknowledgement. Currency code fields stay out of that check.
+   GET /api/ledger/jurisdiction reports[] is the pack catalogue of
+   report types, with no subject and no filing. Its keys are allowlisted.
+   200 or 403 is the teller's expected status. Any other status is
+   named below. The route list comes from the app. */
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -12,22 +17,34 @@ import { buildApp } from "../src/app.js";
 import { suspiciousCodes } from "../src/state/str-snapshot.js";
 
 const DOT = " \u00b7";
-const FILL: Record<string, string> = {
-  slug: "yorkfx",
-  code: "yorkfx",
-  ref: "t1",
-  id: "t1",
-  clientId: "t1",
-  filingId: "STR-Nora Quinn-AB12",
-  transactionId: "t1",
-  quoteId: "t1",
+const PHOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const GLOBAL_KEYS = new Set(["ackStr", "ackStrInfo", "strStatus", "structuring", "structuringWatch"]);
+/* Keys the catalogue entry actually returns. A new key fails the sweep. */
+const CATALOGUE = new Set([
+  "code", "name", "kind", "triggerThreshold", "triggerCurrency", "aggregationHours", "filingFormat",
+  "deadlineValue", "deadlineUnit", "windowKind", "windowDays", "comparator", "direction",
+  "thresholdCurrency", "cashOnly", "aggregateAllAmounts", "aggregationAxes", "fields", "formatRules",
+]);
+const EXPECTED: Record<string, { status: number; reason: string }> = {
+  "/api/site/rates": { status: 404, reason: "The host is not a customer domain, so this door has no site." },
+  "/api/site/config": { status: 404, reason: "The host is not a customer domain, so this door has no site." },
+  "/api/onboarding/:ref/places/details": { status: 400, reason: "Address details need a provider place id, and this call has none." },
 };
 type Hit = { route: string; field: string; sample: string };
+type Ids = {
+  clientId: string;
+  customerId: string;
+  quoteId: string;
+  filingId: string;
+  transactionId: string;
+  ref: string;
+};
 
 let handle: DbHandle;
 let app: FastifyInstance;
 let pool: pg.Pool | undefined;
 const ledgerUrl = process.env.TEST_DATABASE_URL;
+const ids: Ids = { clientId: "", customerId: "", quoteId: "", filingId: "", transactionId: "", ref: "" };
 
 function plain(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -41,39 +58,81 @@ function parsed(value: string): unknown | undefined {
     throw error;
   }
 }
+/* A submission, a history row, a filing, a deal the marks sit on, or an ack. */
+function reportShaped(obj: Record<string, unknown>): boolean {
+  if ("sealed" in obj || "prompts" in obj || "ticks" in obj || "groupId" in obj || "ackNo" in obj) return true;
+  if ("reportCode" in obj || "filingId" in obj || "obligationId" in obj || "acknowledgementRef" in obj) return true;
+  if (obj.filing === true || "basis" in obj) return true;
+  if (typeof obj.title === "string" && "type" in obj) return true;
+  if ("transactionId" in obj || "transactionRef" in obj || "strTag" in obj || "strLink" in obj || "structuringTotal" in obj) return true;
+  const names = Object.keys(obj);
+  return names.length > 0 && names.every((name) => name === "by" || name === "at");
+}
 function sampleOf(value: unknown): string {
-  if (typeof value !== "string") return value === undefined ? "present" : typeof value;
+  if (typeof value !== "string") return "present";
   if (value.startsWith("STR-")) return "STR-";
-  const code = [...suspiciousCodes()].find((item) => value === item || value.startsWith(item + DOT));
+  const code = [...suspiciousCodes()].find((item) => value.trim().toUpperCase() === item || value.startsWith(item + DOT));
   return code ?? "present";
 }
-function walk(value: unknown, path: string, hits: Hit[], route: string, key: string | null): void {
+function walk(value: unknown, path: string, hits: Hit[], route: string): void {
   if (typeof value === "string") {
-    if ((key === "id" || key === "key" || key === "reportId") && value.startsWith("STR-")) {
-      hits.push({ route, field: path || key, sample: "STR-" });
-    }
+    if (value.startsWith("STR-")) hits.push({ route, field: path || "value", sample: "STR-" });
     const inner = parsed(value);
-    if (inner) walk(inner, path, hits, route, null);
+    if (inner) walk(inner, path, hits, route);
     return;
   }
   if (Array.isArray(value)) {
-    value.forEach((item, index) => walk(item, path + "[" + index + "]", hits, route, null));
+    value.forEach((item, index) => walk(item, path + "[" + index + "]", hits, route));
+    return;
+  }
+  if (!plain(value)) return;
+  const shaped = reportShaped(value);
+  for (const [name, item] of Object.entries(value)) {
+    const field = path ? path + "." + name : name;
+    if (GLOBAL_KEYS.has(name)) hits.push({ route, field, sample: "present" });
+    if (shaped && name === "basis" && item === "structuring") hits.push({ route, field, sample: "structuring" });
+    if (shaped && (name === "kind" || name === "type" || name === "code") && typeof item === "string" && suspiciousCodes().has(item.trim().toUpperCase())) {
+      hits.push({ route, field, sample: sampleOf(item) });
+    }
+    if (shaped && name === "title" && typeof item === "string" && [...suspiciousCodes()].some((code) => item.startsWith(code + DOT))) {
+      hits.push({ route, field, sample: sampleOf(item) });
+    }
+    walk(item, field, hits, route);
+  }
+}
+function forbiddenKey(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower === "id" || name.endsWith("Id") || name.endsWith("_id")) return true;
+  return ["client", "customer", "subject", "submission", "date", "count"].some((word) => lower.includes(word));
+}
+function catalogueKeys(value: unknown, path: string, bad: string[]): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => catalogueKeys(item, path + "[" + index + "]", bad));
     return;
   }
   if (!plain(value)) return;
   for (const [name, item] of Object.entries(value)) {
     const field = path ? path + "." + name : name;
-    if (name.startsWith("STR-")) hits.push({ route, field, sample: "STR-" });
-    if (name === "basis" && item === "structuring") hits.push({ route, field, sample: "structuring" });
-    if ((name === "kind" || name === "type" || name === "code") && typeof item === "string" && suspiciousCodes().has(item.trim().toUpperCase())) {
-      hits.push({ route, field, sample: sampleOf(item.trim().toUpperCase()) });
-    }
-    if (name === "title" && typeof item === "string" && [...suspiciousCodes()].some((code) => item.startsWith(code + DOT))) {
-      hits.push({ route, field, sample: sampleOf(item) });
-    }
-    if (name === "ackStr" || name === "ackStrInfo") hits.push({ route, field, sample: "present" });
-    walk(item, field, hits, route, name);
+    if (!CATALOGUE.has(name) || forbiddenKey(name)) bad.push(field);
+    catalogueKeys(item, field, bad);
   }
+}
+/* Pack catalogue of report types. No subject and no filing. */
+function catalogue(body: unknown): string[] {
+  const reports = plain(body) && Array.isArray(body.reports) ? body.reports : null;
+  if (!reports || reports.length === 0) return ["reports missing"];
+  const bad: string[] = [];
+  const codes = new Set<string>();
+  reports.forEach((entry, index) => {
+    if (!plain(entry)) {
+      bad.push("reports[" + index + "]");
+      return;
+    }
+    if (typeof entry.code === "string") codes.add(entry.code);
+    catalogueKeys(entry, "reports[" + index + "]", bad);
+  });
+  if (!codes.has("STR")) bad.push("reports missing STR");
+  return bad;
 }
 function getRoutes(tree: string): string[] {
   const stack: string[] = [];
@@ -92,7 +151,25 @@ function getRoutes(tree: string): string[] {
   return out;
 }
 function fill(route: string): string {
-  return route.replace(/:([A-Za-z0-9_]+)/g, (_full, name: string) => encodeURIComponent(FILL[name] ?? "t1")).replace(/\*/g, "");
+  let url = route;
+  if (route.startsWith("/api/admin/tenants/")) url = url.replaceAll(":id", encodeURIComponent(DEMO.tenantId));
+  else if (route.startsWith("/api/admin/enquiries/")) url = url.replaceAll(":id", "enq-walkthrough");
+  else if (route.startsWith("/api/admin/staff/")) url = url.replaceAll(":id", encodeURIComponent(DEMO.tenantId + ":m.costa"));
+  else {
+    const params: Record<string, string> = {
+      slug: "yorkfx",
+      code: "yorkfx",
+      ref: "CD-WALKTHRU",
+      clientId: ids.clientId,
+      transactionId: ids.transactionId,
+      quoteId: ids.quoteId,
+      filingId: ids.filingId,
+      id: DEMO.tenantId,
+    };
+    url = url.replace(/:([A-Za-z0-9_]+)/g, (_full, name: string) => encodeURIComponent(params[name] ?? "missing-" + name));
+  }
+  if (route === "/api/clients/lookup") url += "?name=" + encodeURIComponent("Nora Quinn");
+  return url.replace(/\*/g, "");
 }
 function bundle() {
   return {
@@ -113,29 +190,45 @@ function bundle() {
 }
 
 beforeAll(async () => {
+  expect(ledgerUrl, "TEST_DATABASE_URL").toBeTruthy();
   process.env.PGLITE_MEMORY = "1";
   process.env.SEED_PASSWORD = "yorkville";
-  if (ledgerUrl) process.env.LEDGER_DATABASE_URL = ledgerUrl;
+  process.env.LEDGER_DATABASE_URL = ledgerUrl;
   handle = await createDb();
   await seed(handle.db);
-  if (ledgerUrl) {
-    pool = await provisionPostgres(ledgerUrl);
-    await pool.query("INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT DO NOTHING", [DEMO.tenantId]);
-    await pool.query(
-      `INSERT INTO legal_entities (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
-       VALUES ($1, $2, 'York FX', 'FINTRAC', 'CAD', 'pack-ca-v1', 1)
-       ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id = 'pack-ca-v1', home_currency = 'CAD', jurisdiction_pack_version = 1`,
-      [DEMO.legalEntityId, DEMO.tenantId],
-    );
-  }
+  pool = await provisionPostgres(ledgerUrl!);
+  await pool.query("INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT DO NOTHING", [DEMO.tenantId]);
+  await pool.query(
+    `INSERT INTO legal_entities (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+     VALUES ($1, $2, 'York FX', 'FINTRAC', 'CAD', 'pack-ca-v1', 1)
+     ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id = 'pack-ca-v1', home_currency = 'CAD', jurisdiction_pack_version = 1`,
+    [DEMO.legalEntityId, DEMO.tenantId],
+  );
+  await pool.query(
+    "INSERT INTO branches (id, tenant_id, legal_entity_id, name) VALUES ($1, $2, $3, 'Yorkville') ON CONFLICT DO NOTHING",
+    [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId],
+  );
+  await pool.query(
+    "INSERT INTO market_rates (id, provider, mids, fetched_at) VALUES ('a33-snap', 'test', '{\"USD\":1.4}', now()) ON CONFLICT (id) DO UPDATE SET fetched_at = now()",
+  );
+  await pool.query(
+    `INSERT INTO rate_boards (id, tenant_id, legal_entity_id, branch_id, buy_margin, sell_margin, board_rows, market_snapshot_id, published_by, published_at)
+     VALUES ('a33-board', $1, $2, $3, 0.02, 0.03, '{"USD":{"mid":1.4,"show":true}}', 'a33-snap', 'seed', now())
+     ON CONFLICT (id) DO UPDATE SET published_at = now(), board_rows = EXCLUDED.board_rows`,
+    [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId],
+  );
   app = await buildApp(handle.db);
 }, 60_000);
 
 afterAll(async () => {
-  await app.close();
-  await handle.close();
+  if (pool) {
+    await pool.query("DELETE FROM rate_boards WHERE id = 'a33-board'");
+    await pool.query("DELETE FROM market_rates WHERE id = 'a33-snap'");
+  }
+  await app?.close();
+  await handle?.close();
   await pool?.end();
-  if (ledgerUrl) delete process.env.LEDGER_DATABASE_URL;
+  delete process.env.LEDGER_DATABASE_URL;
 });
 
 async function cookies(staffId: string) {
@@ -151,6 +244,7 @@ async function cookies(staffId: string) {
 describe("teller GET route sweep", () => {
   it("keeps a suspicious report off every 2xx JSON body", async () => {
     const owner = await cookies("j.masri");
+    const teller = await cookies("m.costa");
     const opened = await app.inject({ method: "GET", url: "/api/tenant/state", cookies: owner });
     expect(opened.statusCode, opened.body).toBe(200);
     const book = bundle();
@@ -167,21 +261,109 @@ describe("teller GET route sweep", () => {
       payload: { state, version: opened.json().version as number },
     });
     expect(saved.statusCode, saved.body).toBe(200);
-    const teller = await cookies("m.costa");
-    const tree = app.printRoutes({ commonPrefix: false, method: "GET" });
-    const routes = getRoutes(tree);
-    expect(routes.length, tree).toBeGreaterThan(0);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/clients",
+      cookies: teller,
+      payload: { legalName: "Nora Quinn", kind: "individual" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    ids.clientId = created.json().clientId as string;
+    const photo = await app.inject({
+      method: "PUT",
+      url: "/api/clients/" + ids.clientId + "/photograph",
+      cookies: teller,
+      payload: { dataUrl: PHOTO },
+    });
+    expect(photo.statusCode, photo.body).toBe(200);
+    const customer = await pool!.query(
+      "SELECT customer_id FROM ledger_customers WHERE client_id = $1",
+      [ids.clientId],
+    );
+    ids.customerId = String(customer.rows[0]?.customer_id ?? "");
+    expect(ids.customerId).not.toBe("");
+    const mark = Date.now().toString(36);
+    ids.transactionId = "tx-a33-" + mark;
+    const otherId = "tx-a33-b-" + mark;
+    ids.ref = "YFX-A33-" + mark;
+    const otherRef = "YFX-A33-B-" + mark;
+    const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
+    for (const [tx, ref] of [[ids.transactionId, ids.ref], [otherId, otherRef]] as const) {
+      await pool!.query(
+        `INSERT INTO ledger_transactions
+           (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id, workspace_id, till_id, customer_id, actor_id,
+            from_currency, to_currency, input_amount, output_amount, rate, fee_cad, spread_cad, purpose, source_of_funds, posted_at,
+            deal_kind, received_instrument, disbursed_instrument, cash_in_home)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'CAD', 'USD', 6000, 4400, 0.73, 0, 0, 'Travel money', 'Employment income', now(),
+                 'exchange', 'cash', 'cash', 6000)`,
+        [tx, ref, ...scope, ids.customerId, DEMO.tenantId + ":j.masri"],
+      );
+    }
+    const quote = await app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: teller,
+      payload: { customerId: ids.customerId, from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "0.00", direction: "customer_buy_foreign" },
+    });
+    expect(quote.statusCode, quote.body).toBe(201);
+    ids.quoteId = quote.json().quoteId as string;
+    const filing = await app.inject({
+      method: "POST",
+      url: "/api/ledger/report-filings",
+      cookies: owner,
+      payload: {
+        reportCode: "STR",
+        obligationId: "STR-A33-" + mark,
+        obligationGroupId: "STR-A33",
+        reportRef: "REF-A33-" + mark,
+        subjectName: "Nora Quinn",
+        reportedAmount: "6000.00",
+        reportedCurrency: "CAD",
+        transactionRefs: [ids.ref, otherRef],
+        aggregationBasis: "conductor",
+        windowStart: "2026-10-20T00:00:00-04:00",
+        windowEnd: "2026-10-21T00:00:00-04:00",
+        acknowledgementRef: "ACK-A33-" + mark,
+        payload: { basis: "structuring", reportId: "STR-A33-" + mark, kind: "STR" },
+        amendsFilingId: null,
+      },
+    });
+    expect(filing.statusCode, filing.body).toBe(201);
+    ids.filingId = filing.json().filingId as string;
+    const seen = await app.inject({ method: "GET", url: "/api/ledger/transactions", cookies: owner });
+    expect(seen.statusCode, seen.body).toBe(200);
+    const marked = (seen.json().transactions as Array<Record<string, unknown>>).find((row) => row.transactionRef === ids.ref);
+    expect(marked?.structuring, seen.body).toBe(true);
+    expect(marked?.strTag, seen.body).toBe("STR");
+
+    const routes = getRoutes(app.printRoutes({ commonPrefix: false, method: "GET" }));
+    expect(routes.length).toBeGreaterThan(0);
     expect(routes).toContain("/api/tenant/state");
+    expect(routes).toContain("/api/clients/:clientId");
+    expect(routes).toContain("/api/ledger/transactions/:transactionId/receipt");
     const hits: Hit[] = [];
+    const statusErrors: string[] = [];
+    let catalogueBody: unknown;
     for (const route of routes) {
-      const url = fill(route);
-      const res = await app.inject({ method: "GET", url, cookies: teller });
+      const res = await app.inject({ method: "GET", url: fill(route), cookies: teller });
       console.log(res.statusCode + " " + route);
+      const named = EXPECTED[route];
+      if (named) {
+        if (res.statusCode !== named.status) statusErrors.push(route + " expected " + named.status + " (" + named.reason + ") got " + res.statusCode);
+      } else if (res.statusCode !== 200 && res.statusCode !== 403) {
+        statusErrors.push(route + " returned " + res.statusCode + ", expected 200 or 403");
+      }
       const type = String(res.headers["content-type"] ?? "");
       if (res.statusCode < 200 || res.statusCode >= 300 || !type.includes("json")) continue;
-      walk(res.json(), "", hits, route, null);
+      const body = res.json();
+      if (route === "/api/ledger/jurisdiction") catalogueBody = body;
+      walk(body, "", hits, route);
     }
+    const shape = catalogue(catalogueBody);
     for (const hit of hits) console.log("LEAK " + hit.route + " " + hit.field + " " + hit.sample);
+    expect(statusErrors, statusErrors.join("\n")).toEqual([]);
+    expect(shape, shape.join("\n")).toEqual([]);
     expect(hits).toEqual([]);
   }, 60_000);
 });
