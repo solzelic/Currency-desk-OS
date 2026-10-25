@@ -312,7 +312,15 @@ describe("the shell alerts equal the header", () => {
   it("counts a sealed filing as zero", () => expectDue(SEALED, "0"));
   it("renders the ledger chip equal to the header when a prepared filing outnumbers loaded deals", () => {
     const html = shell(PREPARED, [cashDeal()], ["compliance", "ledger"]).html; const chip = /Reportable deals · (\d+)/.exec(html);
-    expect([(chip && chip[1]) || "0", headerCount(html), html.includes(">1 open<")]).toEqual(["2", "2", true]);
+    expect([(chip && chip[1]) || "0", headerCount(html), html.includes(">2 open<")]).toEqual(["2", "2", true]);
+  });
+  it("renders the ledger figure equal to the chip and the header", () => {
+    const cardOf = (html: string) => { const open = />Reportable deals<\/div><div class="text-lg[^"]*"[^>]*>(\d+) open</.exec(html); const n = open && open[1]; if (n) return n; return />Reportable deals<\/div><div class="text-lg[^"]*"[^>]*>0</.test(html) ? "0" : "missing"; };
+    const chipOf = (html: string) => { const chip = /Reportable deals · (\d+)/.exec(html); return (chip && chip[1]) || "0"; };
+    const row = (subs: Record<string, unknown>, rows: unknown[]) => { const html = shell(subs, rows, ["compliance", "ledger"]).html; return [cardOf(html), chipOf(html), headerCount(html)]; };
+    expect(row({}, [])).toEqual(["0", "0", "0"]);
+    expect(row(PREPARED, [cashDeal()])).toEqual(["2", "2", "2"]);
+    expect(row(SEALED, [cashDeal()])).toEqual(["1", "1", "1"]);
   });
   it("renders the dashboard tile equal to the header when a prepared filing outnumbers loaded deals", () => {
     const html = shell(PREPARED, [cashDeal()], ["compliance", "dashboard"]).html; const tile = /font-size:22px[^"]*">(\d+)<\/div><div[^>]*>Reportable deals</.exec(html);

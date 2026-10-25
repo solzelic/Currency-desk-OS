@@ -34023,8 +34023,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onClick: earningsHidden ? undefined : () => stats.n && setBreakdown('fees')
     }), /*#__PURE__*/React.createElement(StatCard, {
       label: "Reportable deals",
-      value: stats.openRpt > 0 ? `${stats.openRpt} open` : stats.rpt > 0 ? 'all filed' : '0',
-      sub: stats.rpt > 0 ? `Reportable ≥ ${limit.label} · ${stats.rpt} total` : `Reportable ≥ ${limit.label}`,
+      value: dueN > 0 ? `${dueN} open` : stats.rpt > 0 ? 'all filed' : '0',
+      sub: stats.rpt > 0 ? `${stats.rpt} total` : null,
       flag: stats.openRpt > 0,
       onClick: () => setViewToggle('RPT'),
       active: view === 'RPT'
