@@ -26,6 +26,7 @@ import {
   ownsSettings,
 } from "../state/owner-settings.js";
 import { scrubHealthNumbers } from "../clients/id-document-types.js";
+import { keepStrSnapshot, presentStrSnapshot } from "../state/str-snapshot.js";
 import { isSessionOwner, PIN_ROW_REMOVAL, PIN_RULE_REFUSAL, pinOwnerRefusal, ranksBelow, staffRuleChanges } from "../state/pin-rule.js";
 
 /* The cheque fee is the price of the desk's own credit. Who may write
@@ -112,18 +113,22 @@ function sentVersion(body: Record<string, unknown> | null): number | undefined {
   return version;
 }
 
-function stateConflict(row: { state: unknown; version: number } | undefined) {
+function stateConflict(role: string, row: { state: unknown; version: number } | undefined) {
   /* A copy. The browser merges this reply into local storage. A PIN on
-     that copy is not sent back. The stored row is not written. */
-  if (row?.state && typeof row.state === "object" && !Array.isArray(row.state)) {
-    const copy = structuredClone(row.state as Record<string, unknown>);
+     that copy is not sent back. The stored row is not written. A role
+     outside the set does not receive an STR or an acknowledgement. */
+  let state = row?.state ?? null;
+  if (state && typeof state === "object" && !Array.isArray(state)) {
+    const copy = structuredClone(state as Record<string, unknown>);
     stripSnapshotPins(copy);
-    row = { ...row, state: copy };
+    state = scrubHealthNumbers(presentStrSnapshot(role, copy));
+  } else {
+    state = scrubHealthNumbers(state);
   }
   return {
     error: "state_conflict",
     detail: "Somebody else saved this desk while you were working. Merging.",
-    state: scrubHealthNumbers(row?.state ?? null),
+    state,
     version: row?.version ?? 0,
   };
 }
@@ -273,13 +278,14 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (!row) return { state: null, updatedAt: null, version: 0, settingsRows };
     /* A copy. The stored blob can still hold a PIN from before this strip
        existed. The read hides it. Cleaning those rows is a separate change. */
-    const readable = structuredClone(row.state);
+    const readable = structuredClone(row.state) as Record<string, unknown>;
     stripSnapshotPins(readable);
-    row.state = readable;
     /* A snapshot saved before health cards were refused can still hold a
        health number. It is not sent, so the next save cannot carry it
-       back. The stored row is cleaned by the next save, not here. */
-    return { state: scrubHealthNumbers(row.state), updatedAt: row.updatedAt, version: row.version, settingsRows };
+       back. The stored row is cleaned by the next save, not here.
+       A suspicious report and its acknowledgement are removed for a
+       role outside those sets. */
+    return { state: scrubHealthNumbers(presentStrSnapshot(who.role, readable)), updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
   /* The route carries its own body limit, above the guard below, so that a
@@ -300,11 +306,11 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        is not a permission refusal. A save with no version that would change the fee is that same 409, and it writes no refusal row. */
     const sent = sentVersion(raw);
     if (sent !== undefined && (current?.version ?? 0) !== sent) {
-      return reply.code(409).send(stateConflict(current));
+      return reply.code(409).send(stateConflict(who.role, current));
     }
     const mayWriteFees = canWriteSetting(who.role, CHEQUE_FEE_SCHEDULE_KEY);
     const changingFees = chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state));
-    if (changingFees && raw?.version == null) return reply.code(409).send(stateConflict(current));
+    if (changingFees && raw?.version == null) return reply.code(409).send(stateConflict(who.role, current));
     if (changingFees && !mayWriteFees) {
       await audit(db, {
         tenantId: who.tenantId,
@@ -350,7 +356,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (expected === undefined) {
       req.log.warn({ tenantId: who.tenantId }, "desk state saved without a version — an old client is still open");
     } else if ((current?.version ?? 0) !== expected) {
-      return reply.code(409).send(stateConflict(current));
+      return reply.code(409).send(stateConflict(who.role, current));
     }
     /* A teller's document carries a copy of the fee key. That copy is
        not the price. The stored key is. */
@@ -451,6 +457,9 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        audit row is written only when this save lands. */
     const ignoredPins = stripSnapshotPins(state);
     const pinsIgnored = Math.min(ignoredPins.count, PIN_CAP);
+    /* A role outside the set cannot clear or replace an STR or an
+       acknowledgement. The stored value stays. The rest of the save lands. */
+    state = keepStrSnapshot(who.role, asRecord(current?.state), state);
 
     /* Describe what is being saved. This NEVER refuses — the browser holds
        the only copy, so rejecting a document we merely find surprising
@@ -488,7 +497,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         .returning();
     if (!written.length) {
       const fresh = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
-      return reply.code(409).send(stateConflict(fresh));
+      return reply.code(409).send(stateConflict(who.role, fresh));
     }
     /* A till PIN this save dropped. The count and the staff ids, no digits. */
     if (ignoredPins.count > 0) {
