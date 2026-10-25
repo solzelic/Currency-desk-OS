@@ -839,14 +839,32 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
   });
 
   /* cash_out_home is a payout. It is not cash the desk received.
-     An electronic funds transfer pay-in is not cash either. Neither
-     may push a CAD 2,500.00 deal over CAD 10,000.00. */
+     A posted payout stores cash_in_home as 0. A row that never wrote
+     the figure stores null. An electronic funds transfer pay-in is
+     not cash either. None of these may push a CAD 2,500.00 deal over
+     CAD 10,000.00. */
   it("does not let a payout-only row push CAD 2500 over the line", async () => {
     const customer = "ca2-payout-only";
     const dealAt = toronto("2026-06-16", "12:00:00.000");
     const prior = new Date(dealAt.getTime() - 60 * 60 * 1000);
     await expect(
       cashAt("ca2-payout-8000", "8000.00", customer, prior, dealAt, "2500.00", {
+        dealKind: "remittance_send",
+        fromCurrency: "CAD",
+        cashInHome: "0.00",
+        cashOutHome: "8000.00",
+        receivedInstrument: "bank_credit",
+        disbursedInstrument: "cash",
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  it("does not let a payout row with no cash-in figure push CAD 2500 over the line", async () => {
+    const customer = "ca2-payout-null";
+    const dealAt = toronto("2026-06-16", "14:00:00.000");
+    const prior = new Date(dealAt.getTime() - 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-payout-null-8000", "8000.00", customer, prior, dealAt, "2500.00", {
         dealKind: "remittance_send",
         fromCurrency: "CAD",
         cashInHome: null,
