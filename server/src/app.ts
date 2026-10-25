@@ -87,15 +87,17 @@ const isPhone = (ua: string | undefined): boolean =>
 
    shared/id-document-types.js is the ID-type catalogue the server also
    reads. shared/counter-cash.js is the cash-leg rule the till summary
-   uses. shared/rolling-24h.js is the rolling 24 hours the server also
-   reads. The uncompiled shell loads all three as scripts, so they are
-   on the list for that fallback and hidden with os-src once the
-   compiled desk, which carries them inside os.js, is on disk. Nothing
-   else under shared/ is. */
+   uses.    shared/rolling-24h.js is the rolling 24 hours the server also
+   reads. shared/lctr-reversal.js is which reversal still counts
+   toward an LCTR. The uncompiled shell loads all four as scripts, so
+   they are on the list for that fallback and hidden with os-src once
+   the compiled desk, which carries them inside os.js, is on disk.
+   Nothing else under shared/ is. */
 const UNCOMPILED_SHARED = new Set([
   "/shared/id-document-types.js",
   "/shared/counter-cash.js",
   "/shared/rolling-24h.js",
+  "/shared/lctr-reversal.js",
 ]);
 const retiredUncompiledDesk = (
   pathname: string,

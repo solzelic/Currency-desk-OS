@@ -3019,6 +3019,74 @@
 });
 
 
+/* ---- shared/lctr-reversal.js ---- */
+/* A reversal leaves the cash in the LCTR total.
+   The one exception is a booking error: no cash was received.
+   Only a role with transaction:reverse may record that reason.
+   The server requires this file. The desk shell loads it too. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) {
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.lctrReversal = api;
+    /* A missing rule cannot prove the booking-error exception, so the reversal stays in the total. */
+    cdos.countsForLctr = function (row) {
+      var rule = cdos.lctrReversal;
+      if (!rule || typeof rule.countsTowardLctr !== "function") return true;
+      return !row || row.status !== "void" || !!rule.countsTowardLctr(row.voidReason);
+    };
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var BOOKING_ERROR_REASON = "booking error, cash not received";
+  var LEFT_OUT_LINE = "left out: booking error, cash not received";
+  var IN_REPORT_MESSAGE = "This deal is already in a report. Ask your compliance officer.";
+
+  function isBookingErrorReason(reason) {
+    return String(reason == null ? "" : reason).trim().toLowerCase() === BOOKING_ERROR_REASON;
+  }
+
+  function countsTowardLctr(reason) {
+    return !isBookingErrorReason(reason);
+  }
+
+  function reversedTag(row) {
+    if (!row || row.status !== "void" || !countsTowardLctr(row.voidReason)) return "";
+    return "reversed";
+  }
+
+  function staffDisplayName(actorId, people, actorName) {
+    var named = String(actorName == null ? "" : actorName).trim();
+    if (named) return named;
+    var id = String(actorId == null ? "" : actorId);
+    var list = people || [];
+    for (var i = 0; i < list.length; i++) {
+      var person = list[i];
+      if (!person) continue;
+      if (person.code !== id && person.id !== id) continue;
+      var name = String(person.name || "").trim();
+      if (name) return name;
+    }
+    return "";
+  }
+
+  function setByLine(name, clock) {
+    return "Set by " + String(name || "").trim() + ", " + String(clock || "").trim() + ".";
+  }
+
+  return {
+    BOOKING_ERROR_REASON: BOOKING_ERROR_REASON,
+    LEFT_OUT_LINE: LEFT_OUT_LINE,
+    IN_REPORT_MESSAGE: IN_REPORT_MESSAGE,
+    isBookingErrorReason: isBookingErrorReason,
+    countsTowardLctr: countsTowardLctr,
+    reversedTag: reversedTag,
+    staffDisplayName: staffDisplayName,
+    setByLine: setByLine,
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -3220,8 +3288,11 @@
       createdAt: transaction.postedAt,
       status: reversal ? "void" : "posted",
       voidReason: reversal ? reversal.reason : "",
-      voidBy: "",
-      voidAt: reversal ? reversal.postedAt : "",
+      voidBy: reversal && window.CDOS.lctrReversal
+        ? window.CDOS.lctrReversal.staffDisplayName(reversal.actorId, [], reversal.actorName) : "",
+      voidByName: reversal && reversal.actorName ? reversal.actorName : "",
+      voidAt: reversal && reversal.postedAt && window.CDOS.deskStamp
+        ? window.CDOS.deskStamp(new Date(reversal.postedAt), "12h", zone) : "",
       thread: [],
       filed: false,
       filedInfo: null,
@@ -4333,7 +4404,11 @@ if (typeof window !== "undefined") {
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
-    const live = rows.filter(r => r.status !== 'void'); /* voided records leave the books */
+    const countsForLctr = window.CDOS.countsForLctr || function () {
+      return true;
+    };
+    const posted = rows.filter(r => r.status !== 'void');
+    const lctrRows = rows.filter(countsForLctr);
     /* The 24h window comes from the active jurisdiction pack (regime) so the
        same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
         The LINE itself comes from reportingLimit(), which is one answer for
@@ -4390,7 +4465,7 @@ if (typeof window !== "undefined") {
     const aggregate = regime.aggregate !== false;
     const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
-      if (row.status === 'void') {
+      if (row.status === 'void' && !countsForLctr(row)) {
         map[row.id] = {
           void: true,
           single: false,
@@ -4406,7 +4481,7 @@ if (typeof window !== "undefined") {
       const above = regime && regime.comparator === 'gt' ? n => n > TH : n => n >= TH;
       const single = TH != null && above(cashForReport(row));
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashForReport(o), 0);
+      const agg = posted.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
       // ending at this deal at the line ⇒ a single REPORTABLE aggregated transaction.
@@ -4426,7 +4501,8 @@ if (typeof window !== "undefined") {
         return dt(o);
       };
       const endAt = atOf(row);
-      const cluster = hours == null ? [] : live.filter(o => {
+      const inTotal = regime.largeCode === 'LCTR' ? lctrRows : posted;
+      const cluster = hours == null ? [] : inTotal.filter(o => {
         if (!o.customer || o.customer !== row.customer) return false;
         if (inside) return inside(atOf(o), endAt, hours);
         const h = (end - dt(o)) / 3600000;
@@ -4435,7 +4511,7 @@ if (typeof window !== "undefined") {
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once, at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = hours != null && !live.some(o => {
+      const isClusterEnd = hours != null && !inTotal.some(o => {
         if (o.customer !== row.customer || !(cashForReport(o) >= 0)) return false;
         const later = atOf(o);
         if (!(later > endAt)) return false;
@@ -4586,14 +4662,19 @@ if (typeof window !== "undefined") {
     c,
     bg,
     t,
-    title
+    title,
+    border
   }) {
     return /*#__PURE__*/React.createElement("span", {
       title: title,
-      className: "text-[10px] px-1 font-medium",
+      className: "text-[10px] px-1 font-semibold inline-flex items-center",
       style: {
         background: bg,
-        color: c
+        color: c,
+        borderRadius: 5,
+        border: border ? `1px solid ${border}` : "none",
+        lineHeight: "14px",
+        minHeight: 16
       }
     }, t);
   }
@@ -5994,7 +6075,8 @@ if (typeof window !== "undefined") {
     Audit,
     Calc,
     ReceiptModal,
-    deskTime
+    deskTime,
+    Tag
   });
 })();
 
@@ -45122,14 +45204,75 @@ var CDOS_CHEQUE_FEE = (function () {
       amt: cashIn(r),
       customer: r.customer,
       beneficiary: r.beneficiary,
-      onBehalfOf: r.capture && r.capture.thirdPartyName || r.thirdPartyName || ''
+      onBehalfOf: r.capture && r.capture.thirdPartyName || r.thirdPartyName || '',
+      status: r.status,
+      voidReason: r.voidReason || ''
     };
   }
   // LCTR: cash received. The policy comes from the large-cash report.
+  function countsForLctr(row) {
+    return window.CDOS.countsForLctr ? window.CDOS.countsForLctr(row) : true;
+  }
+  function branchWhen(raw, zone) {
+    const text = raw == null ? '' : String(raw).trim();
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const shape = (day, time) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+      return m && time ? +m[3] + ' ' + mon[+m[2] - 1] + ' ' + m[1] + ', ' + time : '';
+    };
+    if (/^\d{4}-\d{2}-\d{2}T/.test(text) && window.CDOS.deskDay && window.CDOS.deskTime) {
+      const when = new Date(text);
+      if (isNaN(when.getTime())) return '';
+      return shape(window.CDOS.deskDay(when, zone), window.CDOS.deskTime(when, '12h', zone));
+    }
+    const stamped = /^(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2} [ap]m)$/i.exec(text);
+    return stamped ? shape(stamped[1], stamped[2].toLowerCase()) : text;
+  }
+  function noticeOf(r, rule, zone, settings) {
+    const name = rule.staffDisplayName(r.voidBy, settings && settings.employees || [], r.voidByName);
+    const clock = branchWhen(r.voidAt, zone);
+    return {
+      line: rule.LEFT_OUT_LINE,
+      by: name,
+      at: clock,
+      setBy: name && clock ? rule.setByLine(name, clock) : '',
+      ref: r.ref
+    };
+  }
+  /* A booking error in the 24 hours before a kept deal, even when no cluster remains. */
+  function lctrLeftOut(rows, regime, settings) {
+    const rule = window.CDOS.lctrReversal;
+    if (!rule || regime && regime.aggregate === false) return [];
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    const wall = window.CDOS.wallInstant;
+    const inside = window.CDOS.inRollingWindow;
+    const atOf = row => wall && row.date ? wall(row.date, row.time || '00:00', zone) : null;
+    const kept = (rows || []).filter(row => countsForLctr(row) && cashIn(row) > 0);
+    return (rows || []).filter(row => row.status === 'void' && rule.isBookingErrorReason(row.voidReason) && cashIn(row) > 0).filter(row => {
+      const at = atOf(row);
+      return !!at && kept.some(k => {
+        const end = atOf(k);
+        return (k.customer || '') === (row.customer || '') && end && inside && inside(at, end, 24);
+      });
+    }).map(row => noticeOf(row, rule, zone, settings));
+  }
   function aggClusters(rows, regime, settings) {
     if (regime && regime.aggregate === false) return [];
-    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
-    return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+    const events = (rows || []).filter(r => countsForLctr(r) && cashIn(r) > 0).map(eventFromRow);
+    const clusters = aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+    const notices = lctrLeftOut(rows, regime, settings);
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    clusters.forEach(c => {
+      const start = Date.parse(c.windowStart),
+        end = Date.parse(c.windowEnd);
+      c.leftOut = notices.filter(item => {
+        const row = (rows || []).find(r => r.ref === item.ref);
+        if (!row || (c.basis === 'beneficiary' ? row.beneficiary : c.basis === 'on_behalf_of' ? row.capture && row.capture.thirdPartyName || row.thirdPartyName || '' : row.customer) !== c.subject) return false;
+        const at = window.CDOS.wallInstant && row.date ? window.CDOS.wallInstant(row.date, row.time || '00:00', zone) : null;
+        return !!at && at.getTime() >= start && at.getTime() <= end;
+      });
+    });
+    return clusters;
   }
   /* Receipts already inside an include-all cluster are not also filed
      as their own large-cash report. A lone receipt at the line is not
@@ -45193,6 +45336,7 @@ var CDOS_CHEQUE_FEE = (function () {
       screen,
       STAT,
       aggClusters,
+      lctrLeftOut,
       aggClustersEFT,
       aggClustersVc,
       includeAllCoveredRefs,
@@ -46633,7 +46777,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     Ic,
     fmt,
     num,
-    TODAY
+    TODAY,
+    Tag
   } = window.CDOS;
   const C = window.CDOS._compliance;
   const {
@@ -46861,7 +47006,7 @@ ${(filing.map || []).map(blockHTML).join('')}
        Filing it again on its own would be the second copy FINTRAC says
        not to send. A lone receipt at the line is not in a cluster. */
     const covered = new Set(includeAllCoveredRefs ? includeAllCoveredRefs(rows, regime, settings) : []);
-    rows.filter(r => r.status !== 'void').forEach(r => {
+    rows.filter(r => window.CDOS.countsForLctr ? window.CDOS.countsForLctr(r) : true).forEach(r => {
       const f = flags[r.id] || {};
       if (f.single && !covered.has(r.ref)) out.push({
         id: 'L-' + r.ref,
@@ -47055,6 +47200,14 @@ ${(filing.map || []).map(blockHTML).join('')}
   }) {
     const regime = getRegime(settings);
     const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const strayLeftOut = useMemo(() => {
+      const all = C.lctrLeftOut ? C.lctrLeftOut(rows, regime, settings) : [];
+      const seen = {};
+      clusters.forEach(c => (c.leftOut || []).forEach(item => {
+        seen[item.ref] = true;
+      }));
+      return all.filter(item => !seen[item.ref]);
+    }, [clusters, rows, settings, regime]);
     /* Australia reports each threshold transaction on its own. Saying
        "the 24-hour rule" here would be the old, wrong rule. */
     if (regime.aggregate === false) {
@@ -47394,6 +47547,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         className: "flex flex-wrap gap-1.5"
       }, c.txs.map(t => {
         const done = cov.refs.has(t.ref);
+        const tag = window.CDOS.lctrReversal && window.CDOS.lctrReversal.reversedTag(t);
         return /*#__PURE__*/React.createElement("button", {
           key: t.id,
           onClick: e => {
@@ -47405,7 +47559,7 @@ ${(filing.map || []).map(blockHTML).join('')}
             }
           },
           title: done ? 'Already named on an earlier filing' : isEft ? 'Open in Transfers' : 'Open this record in the Ledger',
-          className: "text-[10.5px] px-2 py-0.5",
+          className: "text-[10.5px] px-2 py-1 inline-flex items-center gap-1",
           style: {
             background: done ? CD.greenSoft : 'var(--cd-chip)',
             borderRadius: 6,
@@ -47414,9 +47568,29 @@ ${(filing.map || []).map(blockHTML).join('')}
             cursor: 'pointer',
             border: 'none'
           }
-        }, done ? '✓ ' : '', t.ref, " \xB7 ", num(t.amt), " ", settings.baseCurrency || regime.currency, " \xB7 ", t.time, c.basis === 'beneficiary' ? ' · ' + t.customer : '');
-      })));
-    }), !clusters.length && /*#__PURE__*/React.createElement("div", {
+        }, done ? '✓ ' : '', t.ref, " \xB7 ", num(t.amt), " ", settings.baseCurrency || regime.currency, " \xB7 ", t.time, c.basis === 'beneficiary' ? ' · ' + t.customer : '', tag ? /*#__PURE__*/React.createElement(Tag, {
+          c: CD.ink,
+          bg: CD.chip,
+          border: CD.line,
+          t: tag,
+          title: "This reversal still counts in the total"
+        }) : null);
+      })), c.leftOut && c.leftOut.length ? /*#__PURE__*/React.createElement("div", {
+        className: "mt-2 text-[12px]",
+        style: {
+          color: CD.mute
+        }
+      }, c.leftOut.map(item => /*#__PURE__*/React.createElement("div", {
+        key: item.ref
+      }, /*#__PURE__*/React.createElement("div", null, item.line, "."), item.setBy ? /*#__PURE__*/React.createElement("div", null, item.setBy) : null))) : null);
+    }), strayLeftOut.length ? /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, strayLeftOut.map(item => /*#__PURE__*/React.createElement("div", {
+      key: item.ref
+    }, /*#__PURE__*/React.createElement("div", null, item.line, "."), item.setBy ? /*#__PURE__*/React.createElement("div", null, item.setBy) : null))) : null, !clusters.length && /*#__PURE__*/React.createElement("div", {
       className: "text-center py-12",
       style: {
         border: `1px dashed ${CD.line}`,

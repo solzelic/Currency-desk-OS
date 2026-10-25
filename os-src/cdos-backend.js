@@ -198,8 +198,11 @@
       createdAt: transaction.postedAt,
       status: reversal ? "void" : "posted",
       voidReason: reversal ? reversal.reason : "",
-      voidBy: "",
-      voidAt: reversal ? reversal.postedAt : "",
+      voidBy: reversal && window.CDOS.lctrReversal
+        ? window.CDOS.lctrReversal.staffDisplayName(reversal.actorId, [], reversal.actorName) : "",
+      voidByName: reversal && reversal.actorName ? reversal.actorName : "",
+      voidAt: reversal && reversal.postedAt && window.CDOS.deskStamp
+        ? window.CDOS.deskStamp(new Date(reversal.postedAt), "12h", zone) : "",
       thread: [],
       filed: false,
       filedInfo: null,

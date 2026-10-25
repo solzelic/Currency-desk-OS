@@ -36,6 +36,15 @@ const require = createRequire(import.meta.url);
 const { rollingWindow } = require("../../../shared/rolling-24h.js") as {
   rollingWindow: (at: Date, hours?: number) => { start: Date; end: Date } | null;
 };
+const lctrRule = require("../../../shared/lctr-reversal.js") as {
+  BOOKING_ERROR_REASON: string; LEFT_OUT_LINE: string; IN_REPORT_MESSAGE: string;
+  isBookingErrorReason: (reason: unknown) => boolean;
+  countsTowardLctr: (reason: unknown) => boolean;
+};
+export const {
+  BOOKING_ERROR_REASON, LEFT_OUT_LINE, IN_REPORT_MESSAGE, isBookingErrorReason,
+} = lctrRule;
+const { countsTowardLctr } = lctrRule;
 
 export type IdentificationDeal = {
   kind: string;
@@ -303,7 +312,7 @@ function zonedMidnight(at: Date, timeZone: string): Date {
    the home currency, which needs no conversion. A foreign-currency
    receipt with no home figure is left out rather than priced here.
    A cheque is not that fallback: cashing one is not cash received. */
-async function cashReceived(
+export async function cashReceived(
   client: pg.PoolClient,
   legalEntityId: string,
   window: { start: Date; end: Date },
@@ -312,39 +321,42 @@ async function cashReceived(
 ): Promise<Decimal> {
   /* DISTINCT ON the transaction so a second obligation row cannot
      add the same cash twice. The beneficiary axis still needs the
-     join, because that name lives on the obligation. */
+     join, because that name lives on the obligation. Start inclusive,
+     end exclusive. countsTowardLctr decides. SQL does not copy the reason. */
   const found = await client.query(
-    `SELECT COALESCE(SUM(amount), 0) AS total
-       FROM (
-         SELECT DISTINCT ON (t.transaction_id)
-                CASE
-                  WHEN t.cash_in_home IS NOT NULL THEN t.cash_in_home
-                  WHEN t.deal_kind = 'exchange'
-                   AND upper(btrim(t.from_currency::text))
-                       = upper(btrim(COALESCE(t.home_currency::text, '')))
-                    THEN t.input_amount
-                  ELSE NULL
-                END AS amount
-           FROM ledger_transactions t
-           LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
-           LEFT JOIN ledger_obligations o ON o.transaction_id = t.transaction_id
-          WHERE t.legal_entity_id = $1
-            /* Start inclusive, end exclusive. The deal is not posted yet. */
-            AND t.posted_at >= $2
-            AND t.posted_at < $3
-            AND r.reversal_id IS NULL
-            AND t.deal_kind NOT IN (${NOT_A_DEAL_SQL})
-            AND (
-              ($4 = 'conductor' AND t.customer_id = $5)
-              OR ($4 = 'on_behalf_of' AND lower(btrim(COALESCE(t.third_party_name, ''))) = $5)
-              OR ($4 = 'beneficiary' AND lower(btrim(COALESCE(o.beneficiary_name, ''))) = $5)
-            )
-          ORDER BY t.transaction_id
-       ) AS received
-      WHERE amount IS NOT NULL AND amount > 0`,
+    `SELECT DISTINCT ON (t.transaction_id)
+            CASE
+              WHEN t.cash_in_home IS NOT NULL THEN t.cash_in_home
+              WHEN t.deal_kind = 'exchange'
+               AND upper(btrim(t.from_currency::text))
+                   = upper(btrim(COALESCE(t.home_currency::text, '')))
+                THEN t.input_amount
+              ELSE NULL
+            END AS amount,
+            r.reason
+       FROM ledger_transactions t
+       LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+       LEFT JOIN ledger_obligations o ON o.transaction_id = t.transaction_id
+      WHERE t.legal_entity_id = $1
+        AND t.posted_at >= $2
+        AND t.posted_at < $3
+        AND t.deal_kind NOT IN (${NOT_A_DEAL_SQL})
+        AND (
+          ($4 = 'conductor' AND t.customer_id = $5)
+          OR ($4 = 'on_behalf_of' AND lower(btrim(COALESCE(t.third_party_name, ''))) = $5)
+          OR ($4 = 'beneficiary' AND lower(btrim(COALESCE(o.beneficiary_name, ''))) = $5)
+        )
+      ORDER BY t.transaction_id`,
     [legalEntityId, window.start, window.end, axis, key],
   );
-  return new Decimal(String(found.rows[0]?.total ?? "0"));
+  let total = new Decimal(0);
+  for (const row of found.rows) {
+    if (!countsTowardLctr(row.reason)) continue;
+    if (row.amount == null) continue;
+    const amount = new Decimal(String(row.amount));
+    if (amount.gt(0)) total = total.add(amount);
+  }
+  return total;
 }
 
 async function ticketComplete(
@@ -524,3 +536,4 @@ export function deadlineDate(
 export function isoDay(day: Date): string {
   return day.toISOString().slice(0, 10);
 }
+

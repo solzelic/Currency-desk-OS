@@ -179,6 +179,7 @@ async function priorCash(
     cashInHome?: string | null;
     beneficiary?: string | null;
     reversed?: boolean;
+    reversalReason?: string;
     postedAt?: Date | null;
     receivedInstrument?: string;
     disbursedInstrument?: string;
@@ -247,8 +248,8 @@ async function priorCash(
   if (opts.reversed) {
     await client.query(
       `INSERT INTO ledger_reversals (reversal_id, transaction_id, actor_id, reason, posted_at)
-       VALUES ($1,$2,'ca2-actor','mistaken',now())`,
-      [`rev-${id}`, id],
+       VALUES ($1,$2,'ca2-actor',$3,now())`,
+      [`rev-${id}`, id, opts.reversalReason ?? "mistaken"],
     );
   }
 }
@@ -483,13 +484,27 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
     await blocked("1000.00", fx(customer), (client) =>
       priorCash(client, V2, "ca2-prior-12k", { amount: "12000.00", customerId: customer }),
     );
-    /* A reversed receipt is not cash the desk still holds. */
+    /* A later reversal still counts. CAD 8,000 plus CAD 2,500 is over
+       the report line, so identity is required. */
     await expect(
       withTx(async (client) => {
         await priorCash(client, V2, "ca2-prior-reversed", {
           amount: "8000.00",
           customerId: customer,
           reversed: true,
+        });
+        const pack = await resolvePack(client, V2);
+        return requireIdentification(client, actor(V2, "teller", "ca2-window"), pack, new Decimal("2500.00"), "missing", fx(customer));
+      }),
+    ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    /* A booking error is the exception. That cash was not received. */
+    await expect(
+      withTx(async (client) => {
+        await priorCash(client, V2, "ca2-prior-booking", {
+          amount: "8000.00",
+          customerId: customer,
+          reversed: true,
+          reversalReason: "booking error, cash not received",
         });
         const pack = await resolvePack(client, V2);
         return requireIdentification(client, actor(V2, "teller", "ca2-window"), pack, new Decimal("2500.00"), "missing", fx(customer));

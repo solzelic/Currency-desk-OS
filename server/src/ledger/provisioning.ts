@@ -286,9 +286,11 @@ export class LedgerProvisioningService {
            aggregate that decides whether a report is owed. The list of
            settlement kinds lives in cheques.ts; a second copy of it here
            is where the next disagreement starts. */
-        `SELECT t.*,r.reversal_id,r.reason AS reversal_reason,r.posted_at AS reversed_at
+        `SELECT t.*,r.reversal_id,r.reason AS reversal_reason,r.actor_id AS reversal_actor,
+                su.name AS reversal_actor_name,r.posted_at AS reversed_at
            FROM ledger_transactions t
            LEFT JOIN ledger_reversals r ON r.transaction_id=t.transaction_id
+           LEFT JOIN staff_users su ON su.id=r.actor_id
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
             AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
@@ -343,6 +345,8 @@ export class LedgerProvisioningService {
             ? {
                 reversalId: row.reversal_id,
                 reason: row.reversal_reason,
+                actorId: row.reversal_actor,
+                actorName: row.reversal_actor_name ?? null,
                 postedAt: new Date(row.reversed_at).toISOString(),
               }
             : null,

@@ -24,7 +24,9 @@
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
-    const live = rows.filter(r => r.status !== 'void');   /* voided records leave the books */
+    const countsForLctr = window.CDOS.countsForLctr || function () { return true; };
+    const posted = rows.filter(r => r.status !== 'void');
+    const lctrRows = rows.filter(countsForLctr);
     /* The 24h window comes from the active jurisdiction pack (regime) so the
        same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
 
@@ -68,7 +70,10 @@
     const aggregate = regime.aggregate !== false;
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
-      if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
+      if (row.status === 'void' && !countsForLctr(row)) {
+        map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 };
+        return;
+      }
       const monthCash = regime && regime.windowKind === 'calendar_month';
       const bankingDay = regime && regime.windowKind === 'banking_day';
       const above = regime && regime.comparator === 'gt'
@@ -76,7 +81,7 @@
         : (n) => n >= TH;
       const single = TH != null && above(cashForReport(row));
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
+      const agg = posted.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
         .reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
@@ -98,7 +103,8 @@
         return dt(o);
       };
       const endAt = atOf(row);
-      const cluster = hours == null ? [] : live.filter(o => {
+      const inTotal = regime.largeCode === 'LCTR' ? lctrRows : posted;
+      const cluster = hours == null ? [] : inTotal.filter(o => {
         if (!o.customer || o.customer !== row.customer) return false;
         if (inside) return inside(atOf(o), endAt, hours);
         const h = (end - dt(o)) / 3600000;
@@ -107,7 +113,7 @@
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once, at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = hours != null && !live.some(o => {
+      const isClusterEnd = hours != null && !inTotal.some(o => {
         if (o.customer !== row.customer || !(cashForReport(o) >= 0)) return false;
         const later = atOf(o);
         if (!(later > endAt)) return false;
@@ -181,7 +187,7 @@
   function Stat({ label, value, mono, flag }) { return (<div className="px-5 py-3" style={{ borderRight: `1px solid ${CD.lineSoft}` }}><div className="text-[11px]" style={{ color: CD.mute }}>{label}</div><div className="text-lg font-semibold" style={{ color: flag ? CD.flag : CD.ink, fontVariantNumeric: mono ? 'tabular-nums' : 'normal' }}>{value}</div></div>); }
   function Kpi({ label, value, accent }) { return (<div className="px-4 py-3" style={{ background: CD.panel, border: `1px solid ${CD.line}` }}><div className="text-[11px]" style={{ color: CD.mute }}>{label}</div><div className="text-xl font-semibold" style={{ color: accent || CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>); }
   function Pill({ icon, c, bg, t }) { return (<span className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium" style={{ background: bg, color: c }}><Ic n={icon} s={13} /> {t}</span>); }
-  function Tag({ c, bg, t, title }) { return (<span title={title} className="text-[10px] px-1 font-medium" style={{ background: bg, color: c }}>{t}</span>); }
+  function Tag({ c, bg, t, title, border }) { return (<span title={title} className="text-[10px] px-1 font-semibold inline-flex items-center" style={{ background: bg, color: c, borderRadius: 5, border: border ? `1px solid ${border}` : "none", lineHeight: "14px", minHeight: 16 }}>{t}</span>); }
   function Field({ label, children }) { return (<div><div className="text-[11px] mb-1" style={{ color: CD.mute }}>{label}</div>{children}</div>); }
   function Section({ title, sub, children }) { return (<div className="mb-5 p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}` }}><div className="font-semibold" style={{ color: CD.ink }}>{title}</div>{sub && <div className="text-[11px] mt-0.5 mb-1" style={{ color: CD.mute }}>{sub}</div>}{children}</div>); }
   function BarCard({ title, data, fmtV }) { const max = Math.max(1, ...data.map(d => d[1])); return (<div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}` }}><div className="text-sm font-semibold mb-3" style={{ color: CD.ink }}>{title}</div>{data.map(([k, v]) => (<div key={k} className="mb-2"><div className="flex justify-between text-[11px] mb-0.5"><span style={{ color: CD.text }}>{k}</span><span style={{ color: CD.mute, fontVariantNumeric: 'tabular-nums' }}>{fmtV(v)}</span></div><div className="h-2" style={{ background: CD.lineSoft }}><div className="h-2" style={{ width: `${(v / max) * 100}%`, background: CD.ink }} /></div></div>))}</div>); }
@@ -488,6 +494,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    computeFlags, computeAlerts, Audit, Calc, ReceiptModal, deskTime
+    computeFlags, computeAlerts, Audit, Calc, ReceiptModal, deskTime, Tag
   });
 })();

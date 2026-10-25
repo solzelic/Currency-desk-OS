@@ -29,7 +29,7 @@ const asStyle = { "sec-fetch-dest": "style", accept: "text/css" };
 
 /* A real source file the Babel shell loads, and the two shells themselves.
    The stylesheet the compiled page still links is asserted separately. */
-const HIDDEN = ["/os-src/cdos-base.jsx", "/CurrencyDesk%20OS.html", "/admin.html", "/shared/id-document-types.js", "/shared/counter-cash.js", "/shared/rolling-24h.js"] as const;
+const HIDDEN = ["/os-src/cdos-base.jsx", "/CurrencyDesk%20OS.html", "/admin.html", "/shared/id-document-types.js", "/shared/counter-cash.js", "/shared/rolling-24h.js", "/shared/lctr-reversal.js"] as const;
 
 /* Markers that only the uncompiled desk carries. A 200 from the marketing
    page is not a leak; a body with any of these is the source. */
@@ -62,6 +62,7 @@ const UNCOMPILED_FILES: Record<string, string> = {
   "shared/id-document-types.js": "/* the uncompiled catalogue */",
   "shared/counter-cash.js": "/* the uncompiled cash rule */",
   "shared/rolling-24h.js": "/* the uncompiled lookback */",
+  "shared/lctr-reversal.js": "/* the uncompiled reversal rule */",
   "shared/not-listed.js": "/* not on the allow-list */",
 };
 
@@ -213,7 +214,8 @@ describe("compiled shells absent: the fallback shells are still served", () => {
       expect(css.body).toContain("the uncompiled stylesheet");
 
       /* The uncompiled shell loads the ID-type catalogue, the cash-leg
-         rule, and the rolling 24 hours. Nothing else under shared/ is public. */
+         rule, the rolling 24 hours, and the LCTR reversal rule.
+         Nothing else under shared/ is public. */
       const catalogue = await bare.inject({ method: "GET", url: "/shared/id-document-types.js", headers: asScript });
       expect(catalogue.statusCode).toBe(200);
       expect(catalogue.body).toContain("the uncompiled catalogue");
@@ -223,6 +225,9 @@ describe("compiled shells absent: the fallback shells are still served", () => {
       const lookback = await bare.inject({ method: "GET", url: "/shared/rolling-24h.js", headers: asScript });
       expect(lookback.statusCode).toBe(200);
       expect(lookback.body).toContain("the uncompiled lookback");
+      const reversalRule = await bare.inject({ method: "GET", url: "/shared/lctr-reversal.js", headers: asScript });
+      expect(reversalRule.statusCode).toBe(200);
+      expect(reversalRule.body).toContain("the uncompiled reversal rule");
       const other = await bare.inject({ method: "GET", url: "/shared/not-listed.js", headers: asScript });
       expect(other.statusCode).toBe(404);
       expect(other.body).not.toContain("not on the allow-list");

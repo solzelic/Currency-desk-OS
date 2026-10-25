@@ -5,7 +5,7 @@
    ============================================================ */
 (function () {
   const { useState, useMemo, useEffect, useRef } = React;
-  const { CD, Ic, fmt, num, TODAY } = window.CDOS;
+  const { CD, Ic, fmt, num, TODAY, Tag } = window.CDOS;
   const C = window.CDOS._compliance;
   const { REGIMES, getRegime, screeningNote, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn } = C;
   const computeFlags = window.CDOS.computeFlags;
@@ -189,7 +189,7 @@
        Filing it again on its own would be the second copy FINTRAC says
        not to send. A lone receipt at the line is not in a cluster. */
     const covered = new Set(includeAllCoveredRefs ? includeAllCoveredRefs(rows, regime, settings) : []);
-    rows.filter(r => r.status !== 'void').forEach(r => { const f = flags[r.id] || {}; if (f.single && !covered.has(r.ref)) out.push({ id: 'L-' + r.ref, groupId: 'L-' + r.ref, kind: regime.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cashIn(r), detail: `${r.type} · ${num(r.inAmt)} ${r.inCcy}`, date: r.date, refs: [r.ref] }); });
+    rows.filter(r => window.CDOS.countsForLctr ? window.CDOS.countsForLctr(r) : true).forEach(r => { const f = flags[r.id] || {}; if (f.single && !covered.has(r.ref)) out.push({ id: 'L-' + r.ref, groupId: 'L-' + r.ref, kind: regime.largeCode, subject: r.customer, beneficiary: r.beneficiary, amount: cashIn(r), detail: `${r.type} · ${num(r.inAmt)} ${r.inCcy}`, date: r.date, refs: [r.ref] }); });
     // LCTR 24h aggregates (cash)
     cashClusters.forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-deal ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
     if (aggClustersVc) aggClustersVc(rows, regime, settings).forEach(c => out.push({ id: c.id, groupId: c.groupId, kind: c.kind, subject: c.subject, amount: c.total, detail: `${c.txs.length}-receipt ${regime.aggHours}h aggregate · by ${c.basis}`, date: c.endRow.date, refs: c.txs.map(t => t.ref), basis: c.basis, window: c.windowLabel, windowStart: c.windowStart, windowEnd: c.windowEnd }));
@@ -275,6 +275,12 @@
   function Aggregation({ rows, settings, subs, fileReport, beneficiaries, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers }) {
     const regime = getRegime(settings);
     const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const strayLeftOut = useMemo(() => {
+      const all = C.lctrLeftOut ? C.lctrLeftOut(rows, regime, settings) : [];
+      const seen = {};
+      clusters.forEach(c => (c.leftOut || []).forEach(item => { seen[item.ref] = true; }));
+      return all.filter(item => !seen[item.ref]);
+    }, [clusters, rows, settings, regime]);
     /* Australia reports each threshold transaction on its own. Saying
        "the 24-hour rule" here would be the old, wrong rule. */
     if (regime.aggregate === false) {
@@ -338,8 +344,10 @@
             </div>}
             {/* a deal already named on an earlier filing is marked, so the
                 two new ones in a six-deal cluster are visible at a glance */}
-            <div className="flex flex-wrap gap-1.5">{c.txs.map(t => { const done = cov.refs.has(t.ref); return <button key={t.id} onClick={e => { e.stopPropagation(); if (isEft) { onOpenTransfers && onOpenTransfers(); } else { onOpenTransaction && onOpenTransaction(t.id); } }} title={done ? 'Already named on an earlier filing' : (isEft ? 'Open in Transfers' : 'Open this record in the Ledger')} className="text-[10.5px] px-2 py-0.5" style={{ background: done ? CD.greenSoft : 'var(--cd-chip)', borderRadius: 6, color: done ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace', cursor: 'pointer', border: 'none' }}>{done ? '✓ ' : ''}{t.ref} · {num(t.amt)} {settings.baseCurrency || regime.currency} · {t.time}{c.basis === 'beneficiary' ? ' · ' + t.customer : ''}</button>; })}</div>
+            <div className="flex flex-wrap gap-1.5">{c.txs.map(t => { const done = cov.refs.has(t.ref); const tag = window.CDOS.lctrReversal && window.CDOS.lctrReversal.reversedTag(t); return <button key={t.id} onClick={e => { e.stopPropagation(); if (isEft) { onOpenTransfers && onOpenTransfers(); } else { onOpenTransaction && onOpenTransaction(t.id); } }} title={done ? 'Already named on an earlier filing' : (isEft ? 'Open in Transfers' : 'Open this record in the Ledger')} className="text-[10.5px] px-2 py-1 inline-flex items-center gap-1" style={{ background: done ? CD.greenSoft : 'var(--cd-chip)', borderRadius: 6, color: done ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace', cursor: 'pointer', border: 'none' }}>{done ? '✓ ' : ''}{t.ref} · {num(t.amt)} {settings.baseCurrency || regime.currency} · {t.time}{c.basis === 'beneficiary' ? ' · ' + t.customer : ''}{tag ? <Tag c={CD.ink} bg={CD.chip} border={CD.line} t={tag} title="This reversal still counts in the total" /> : null}</button>; })}</div>
+            {c.leftOut && c.leftOut.length ? <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>{c.leftOut.map(item => <div key={item.ref}><div>{item.line}.</div>{item.setBy ? <div>{item.setBy}</div> : null}</div>)}</div> : null}
           </div>); })}
+        {strayLeftOut.length ? <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>{strayLeftOut.map(item => <div key={item.ref}><div>{item.line}.</div>{item.setBy ? <div>{item.setBy}</div> : null}</div>)}</div> : null}
         {!clusters.length && <div className="text-center py-12" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12, color: CD.mute }}><Ic n="checkcircle" s={24} c={CD.green} /><div className="mt-2 text-[13px]">{regime.threshold == null ? noLargeCashCopy(regime) : (monthCash ? <>No calendar-month total is shown on this screen. A single cash amount more than {fmt(regime.threshold, regime.currency)} is still flagged on the deal.</> : bankingDay ? <>No banking-day total is shown on this screen. A single deal more than {fmt(regime.threshold, regime.currency)} is still flagged on the deal.</> : <>No {regime.aggHours}-hour aggregates over {fmt(regime.threshold, regime.currency)}.</>)}</div></div>}
       </div>
     </div>);
