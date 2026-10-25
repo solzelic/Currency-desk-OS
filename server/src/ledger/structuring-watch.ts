@@ -42,6 +42,8 @@ export type DealMark = {
   ackAt: string | null;
 };
 
+type SeenDeal = { id: string; at: Date; cash: Decimal };
+
 function sameIds(left: readonly string[], right: readonly string[]) {
   if (left.length !== right.length) return false;
   const have = new Set(right);
@@ -82,7 +84,7 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
   );
   const grouped = new Map<string, {
     name: string;
-    deals: { id: string; at: Date; cash: Decimal }[];
+    deals: SeenDeal[];
     actorId: string | null;
     ackAt: Date | null;
     coveredIds: string[] | null;
@@ -92,7 +94,7 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
     if (!cash.gt(0) || !cash.lt(line)) continue;
     const current = grouped.get(String(row.customer_id)) ?? {
       name: String(row.customer_name),
-      deals: [],
+      deals: [] as SeenDeal[],
       actorId: row.actor_id == null ? null : String(row.actor_id),
       ackAt: row.acknowledged_at ? new Date(row.acknowledged_at) : null,
       coveredIds: Array.isArray(row.deal_ids) ? row.deal_ids.map(String) : null,
@@ -106,13 +108,14 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
   }
   const items: WatchItem[] = [];
   for (const [customerId, group] of grouped) {
-    if (group.deals.length < 2) continue;
+    const first = group.deals[0];
+    if (!first || group.deals.length < 2) continue;
     const total = group.deals.reduce((sum, deal) => sum.add(deal.cash), new Decimal(0));
     if (total.lt(line)) continue;
     const dealIds = group.deals.map((deal) => deal.id);
     const newest = group.deals.reduce(
       (max, deal) => (deal.at > max ? deal.at : max),
-      group.deals[0].at,
+      first.at,
     );
     const acknowledged = group.ackAt != null
       && group.coveredIds != null
