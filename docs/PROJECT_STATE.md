@@ -15,7 +15,7 @@ is not automated), till/vault cash, and reports. CurrencyDesk also hosts
 each customer's public storefront (live rates, converter, SMS rate quotes)
 on their own domain, and runs a growth pipeline (lead research + outbound
 calling) for its own sales funnel.
-Deployed as **one Render web service** (`render.yaml`), auto-deploying `main`.
+Deployed as **one Render web service** (`render.yaml`). Live auto-deploys from `release`.
 
 ## Current product milestone — Shop-Ready Core v1
 
@@ -72,7 +72,27 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **An STR filing is limited to three roles.** `filing:view` opens `GET` and `POST /api/ledger/report-filings`. Administrator, branch manager, and compliance officer may file and read an STR. A supervisor may file and read an LCTR and may not file or read an STR. A teller and an auditor get no filing. `GET /api/ledger/transactions` keeps the deal and removes the STR tag, the STR link, and the structuring fields from a role that cannot see them. `GET /api/ledger/structuring-watch` and `POST /api/ledger/structuring-watch/acknowledge` are the supervisor and those three. A teller is refused before a row is written. The two role sets are `shared/str-role.js`. The desk screens are not gated in this change. Issue #342.
+- **Staging runtime is the flag plus Render's hostname.** `isStagingRuntime` is true only when `STAGING` is exactly `1` and `RENDER_EXTERNAL_HOSTNAME` is `staging.currencydeskos.com`, `currencydesk-staging.onrender.com`, or `currencydesk-staging-pr-<digits>.onrender.com` with `IS_PULL_REQUEST=true`. A request Host can only agree. It cannot open the gate. Live hosts are refused. Nothing calls it yet. The flag is not in `render.yaml`. The demo seed inserts `c.adebayo` (compliance officer) and `l.berg` (auditor) only when `STAGING` is exactly `1`. If `SEED_PASSWORD` is unset, those two get a random password and password sign-in is off. A live boot does not create them. An existing password is not overwritten.
+
+- **The desk snapshot hides an STR from a teller.** `GET /api/tenant/state` returns a suspicious report to administrator, branch manager, and compliance officer. A suspicious report is a submission keyed `STR-`, a basis of structuring, or a kind from the pack's suspicious codes, including SMR. Report history for that filing is treated the same way. The same read returns `ackStr` and `ackStrInfo` to those three plus supervisor. A teller, an auditor, and any other role receive neither. `PUT /api/tenant/state` from a role outside a set leaves the stored report or acknowledgement in place, does not store a new suspicious report, and still saves the other fields. Issue #342.
+
+- **Filing any report is limited to three roles.** `filing:view` opens
+  `GET` and `POST /api/ledger/report-filings`. Administrator, branch
+  manager, and compliance officer may file any report and may read an STR.
+  A supervisor may read an LCTR and may not file any report or read an STR.
+  A teller and an auditor get no filing. `GET /api/ledger/transactions`
+  keeps the deal and removes the STR tag, the STR link, and the structuring
+  fields from a role that cannot see them. The two role sets are
+  `shared/str-role.js`. The desk screens are not in this change. Issue #342.
+
+- **The structuring watch is the supervisor and the three STR roles.**
+  `GET /api/ledger/structuring-watch` and
+  `POST /api/ledger/structuring-watch/acknowledge` are the administrator,
+  the branch manager, the compliance officer, and the supervisor. A teller
+  is refused before a row is written. The role set is `shared/str-role.js`.
+  The desk screens are not gated in this change. Issue #342.
+
+- **Filings due share one count.** The Compliance header, the Needs filing list, the bell, the RPT tag, and the badges read `openReportables`. A prepared filing counts, including one whose deals are not loaded in this browser. A filed filing counts as zero due, including one that carries a booking-error flag. When the count is above zero, the header number is amber text on the tile. The menu-bar bell badge and the Ledger nav badge use that same amber, with on-ink text. The Ledger Reportable deals figure is amber when any deal is open. The Dashboard tile Reportable deals reads that same list, and its due number is amber on the panel. The Ledger chip reads that same list. The Ledger chip and the Ledger figure say Reportable deals, and that figure is amber on the panel. Issue #335.
 
 - **A reversed deal stays in the LCTR total.** Cash that was received still counts after a later reversal, whenever that reversal posts. The reversal itself is cash paid out and does not count. The one exception is the reason `booking error, cash not received`. Only a role with `transaction:reverse` can set it: supervisor, branch manager, or administrator. A teller is refused and nothing is reversed. That deal is left out of the cluster. The cluster says "left out: booking error, cash not received. Set by {name}, {16 Jun 2026, 4:00 pm}." in 12px mute type. The name is the staff display name. The clock is the branch clock, 12-hour. A reversed deal that still counts shows a reversed tag on its row. A booking error on a deal already in a prepared or filed LCTR drops that deal from the live total. The filing row stays as it was. A prepared filing shows "A deal in this report was later marked booking error. Check the report before you file it." A filed filing shows "A deal in this report was later marked booking error. Check if the filed report needs a correction." Each booking-error deal is its own flag row, naming who set it and the branch clock. The sentence follows the filing's current status. Deleting a draft filing removes its flags. A filed report cannot be deleted: `ledger_filing_sealed` raises `filed report is sealed`. Issue #327. No reason, or any other reason, still counts. A sealed filing is not deleted. The left-out line still shows when dropping that deal leaves no cluster. The same rule is `shared/lctr-reversal.js`, used by the identity gate and by the desk cluster. Issue #319.
 

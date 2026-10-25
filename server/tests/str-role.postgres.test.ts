@@ -1,7 +1,8 @@
-/* Who may file, who may read an STR, and who may open the watch.
-   A teller and an auditor get no filing. A supervisor may file and
-   read an LCTR and may not see an STR. The three compliance roles
-   may do both. The watch list and acknowledge stop at supervisor. */
+/* Who may file, and who may read an STR on a deal.
+   A teller, an auditor, and a supervisor may not file. A supervisor
+   may read an LCTR. The three compliance roles may file and read.
+   A deal keeps its plain fields and drops the STR fields a role
+   may not see. The watch list and acknowledge stop at supervisor. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { createRequire } from "node:module";
@@ -16,6 +17,9 @@ const roles = createRequire(import.meta.url)("../../shared/str-role.js") as {
   canSeeStr: (role: string) => boolean;
   canSeeStructuringWatch: (role: string) => boolean;
   canReleaseFiling: (role: string, code: string) => boolean;
+  presentDeal: (role: string, deal: Record<string, unknown>) => Record<string, unknown>;
+  STR_KEYS: readonly string[];
+  WATCH_KEYS: readonly string[];
 };
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -35,8 +39,8 @@ describe("str and watch role sets", () => {
       expect(roles.canSeeStr(role), role).toBe(false);
       expect(roles.canSeeStructuringWatch(role), role).toBe(false);
     }
-    expect(roles.canReleaseFiling("supervisor", "LCTR")).toBe(true);
-    expect(roles.canReleaseFiling("supervisor", "lctr")).toBe(true);
+    expect(roles.canReleaseFiling("supervisor", "LCTR")).toBe(false);
+    expect(roles.canReleaseFiling("supervisor", "lctr")).toBe(false);
     expect(roles.canReleaseFiling("supervisor", "STR")).toBe(false);
     expect(roles.canReleaseFiling("supervisor", "MLR")).toBe(false);
     expect(roles.canReleaseFiling("teller", "LCTR")).toBe(false);
@@ -51,7 +55,25 @@ describe("str and watch role sets", () => {
       expect(hasBackendPermission(role, "filing:view"), role).toBe(false);
     }
     for (const role of WATCH) expect(hasBackendPermission(role, "filing:view"), role).toBe(true);
-    for (const role of WATCH) expect(hasBackendPermission(role, "compliance:file"), role).toBe(true);
+    for (const role of STR) expect(hasBackendPermission(role, "compliance:file"), role).toBe(true);
+    expect(hasBackendPermission("supervisor", "compliance:file")).toBe(false);
+  });
+
+  it("freezes the key lists and strips exactly those keys", () => {
+    expect(Object.isFrozen(roles.STR_KEYS)).toBe(true);
+    expect(Object.isFrozen(roles.WATCH_KEYS)).toBe(true);
+    const deal = () => {
+      const row: Record<string, unknown> = { purpose: "Travel money" };
+      for (const key of [...roles.STR_KEYS, ...roles.WATCH_KEYS]) row[key] = key;
+      return row;
+    };
+    const teller = roles.presentDeal("teller", deal());
+    expect(Object.keys(teller).sort()).toEqual(["purpose"]);
+    const supervisor = roles.presentDeal("supervisor", deal());
+    expect(Object.keys(supervisor).sort()).toEqual([...roles.WATCH_KEYS, "purpose"].sort());
+    for (const key of roles.WATCH_KEYS) expect(supervisor[key]).toBe(key);
+    const admin = roles.presentDeal("administrator", deal());
+    expect(Object.keys(admin).sort()).toEqual([...roles.STR_KEYS, ...roles.WATCH_KEYS, "purpose"].sort());
   });
 });
 
@@ -94,7 +116,7 @@ function filing(code: string, mark: string) {
   };
 }
 
-postgres("str filing, transaction strip, watch, and acknowledge", () => {
+postgres("str filing and the transaction field strip", () => {
   beforeAll(async () => {
     process.env.PGLITE_MEMORY = "1";
     process.env.LEDGER_DATABASE_URL = url;
@@ -112,7 +134,11 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
   });
 
   afterAll(async () => {
-    await pool.query("TRUNCATE ledger_structuring_acks, ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
+    await pool.query(
+      `TRUNCATE ledger_structuring_acks, ledger_filing_flags,
+              ledger_report_filings, ledger_audit_events, ledger_transactions,
+              ledger_customers, ledger_principals CASCADE`,
+    );
     await app.close();
     await handle.close();
     await pool.end();
@@ -120,7 +146,11 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
   });
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE ledger_structuring_acks, ledger_filing_flags, ledger_report_filings, ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE");
+    await pool.query(
+      `TRUNCATE ledger_structuring_acks, ledger_filing_flags,
+              ledger_report_filings, ledger_audit_events, ledger_transactions,
+              ledger_customers, ledger_principals CASCADE`,
+    );
     await handle.db.update(schema.staffUsers).set({ role: "teller" }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:m.costa`));
     await pool.query(
       "INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status) VALUES ('cust-watch',$1,$2,$3,$4,'Nora Quinn','Normal','verified')",
@@ -162,6 +192,8 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
       const openLctr = await app.inject({ method: "GET", url: `/api/ledger/report-filings/${lctrId}`, cookies });
       const postStr = await app.inject({ method: "POST", url: "/api/ledger/report-filings", cookies, payload: filing("STR", role) });
       const postLctr = await app.inject({ method: "POST", url: "/api/ledger/report-filings", cookies, payload: filing("LCTR", role) });
+      expect(postLctr.statusCode, role).toBe(strOk ? 201 : 403);
+      expect(postStr.statusCode, role).toBe(strOk ? 201 : 403);
       if (!strOk && !lctrOk) {
         expect(listed.statusCode, role).toBe(403);
         expect(listed.body, role).not.toContain("Nora Quinn");
@@ -177,8 +209,6 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
         expect(openLctr.statusCode, role).toBe(200);
         if (!strOk) expect(openStr.body, role).not.toContain("Nora Quinn");
       }
-      expect(postStr.statusCode, role).toBe(strOk ? 201 : 403);
-      expect(postLctr.statusCode, role).toBe(lctrOk ? 201 : 403);
       if (!strOk) {
         const strRows = await pool.query("SELECT count(*)::int AS n FROM ledger_report_filings WHERE upper(report_code)='STR'");
         expect(strRows.rows[0].n, role).toBe(1);
@@ -213,17 +243,31 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
 
   it("serves the watch list to supervisor and up, and refuses a teller", async () => {
     for (const role of ["teller", "auditor"] as const) {
-      const refused = await app.inject({ method: "GET", url: "/api/ledger/structuring-watch", cookies: await asRole(role) });
+      const refused = await app.inject({
+        method: "GET",
+        url: "/api/ledger/structuring-watch",
+        cookies: await asRole(role),
+      });
       expect(refused.statusCode, role).toBe(403);
       expect(refused.body.toLowerCase()).not.toContain("str");
       expect(refused.body.toLowerCase()).not.toContain("structur");
       expect(refused.body.toLowerCase()).not.toContain("suspicious");
     }
     for (const role of WATCH) {
-      const opened = await app.inject({ method: "GET", url: "/api/ledger/structuring-watch", cookies: await asRole(role) });
+      const opened = await app.inject({
+        method: "GET",
+        url: "/api/ledger/structuring-watch",
+        cookies: await asRole(role),
+      });
       expect(opened.statusCode, opened.body).toBe(200);
       expect(opened.json().items).toEqual([
-        expect.objectContaining({ customerId: "cust-watch", name: "Nora Quinn", count: 2, total: "12000.00", acknowledged: false }),
+        expect.objectContaining({
+          customerId: "cust-watch",
+          name: "Nora Quinn",
+          count: 2,
+          total: "12000.00",
+          acknowledged: false,
+        }),
       ]);
     }
   });
@@ -236,7 +280,8 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
       payload: { customerId: "cust-watch" },
     });
     expect(refused.statusCode).toBe(403);
-    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks")).rows[0].n).toBe(0);
+    const none = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    expect(none.rows[0].n).toBe(0);
     const saved = await app.inject({
       method: "POST",
       url: "/api/ledger/structuring-watch/acknowledge",
@@ -244,7 +289,8 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
       payload: { customerId: "cust-watch" },
     });
     expect(saved.statusCode, saved.body).toBe(200);
-    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks")).rows[0].n).toBe(1);
+    const once = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    expect(once.rows[0].n).toBe(1);
     const again = await app.inject({
       method: "POST",
       url: "/api/ledger/structuring-watch/acknowledge",
@@ -252,6 +298,7 @@ postgres("str filing, transaction strip, watch, and acknowledge", () => {
       payload: { customerId: "cust-watch" },
     });
     expect(again.statusCode).toBe(403);
-    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks")).rows[0].n).toBe(1);
+    const still = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    expect(still.rows[0].n).toBe(1);
   });
 });

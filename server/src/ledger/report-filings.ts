@@ -53,8 +53,10 @@ import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, type LedgerActor } from "./service.js";
 
-const { canReleaseFiling } = createRequire(import.meta.url)("../../../shared/str-role.js") as {
+const { canReleaseFiling, canSeeStr, canViewFiling } = createRequire(import.meta.url)("../../../shared/str-role.js") as {
   canReleaseFiling: (role: string, code: string) => boolean;
+  canSeeStr: (role: string) => boolean;
+  canViewFiling: (role: string, code: string) => boolean;
 };
 
 export type FilingInput = {
@@ -226,7 +228,7 @@ export class ReportFilingService {
       return {
         filings: found.rows
           .map((row) => toFiling(row, false))
-          .filter((row) => canReleaseFiling(role, row.reportCode)),
+          .filter((row) => canViewFiling(role, row.reportCode)),
       };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -249,7 +251,7 @@ export class ReportFilingService {
         [filingId, actor.tenantId, actor.legalEntityId],
       );
       await client.query("COMMIT");
-      if (!found.rowCount || !canReleaseFiling(role, String(found.rows[0]?.report_code))) {
+      if (!found.rowCount || !canViewFiling(role, String(found.rows[0]?.report_code))) {
         throw new LedgerError(
           "FILING_NOT_FOUND",
           "That filing is not on this desk's record.",
@@ -276,14 +278,14 @@ export class ReportFilingService {
     try {
       await client.query("BEGIN");
       /* Opening the record and signing one are two authorities.
-         filing:view is the first. compliance:file is the second.
-         Which code this role may sign is shared/str-role.js. */
+         filing:view opens an LCTR for a supervisor. Signing any report
+         is the three-role set in shared/str-role.js, plus compliance:file. */
       const role = await authorizeLedgerActor(client, actor, "filing:view");
       await authorizeLedgerActor(client, actor, "compliance:file");
 
       const pack = await resolvePack(client, actor.legalEntityId);
       const code = input.reportCode.trim().toUpperCase();
-      if (!canReleaseFiling(role, code)) {
+      if (!canSeeStr(role) || !canReleaseFiling(role, code)) {
         throw new LedgerError("AUTHORIZATION_DENIED", "You cannot file this report.");
       }
       /* The pack's own catalogue of forms. Highest version wins: a
