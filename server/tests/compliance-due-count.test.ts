@@ -226,6 +226,12 @@ describe("the due count is amber text on the tile", () => {
     expect(Number(ratio(pick(light, "amber"), pick(light, "paper")).toFixed(2))).toBe(4.21);
     expect(Number(ratio(pick(dark, "amber"), pick(dark, "paper")).toFixed(2))).toBe(7.63);
     expect(Number(ratio(pick(dark, "amber"), pick(dark, "chip")).toFixed(2))).toBe(6.41);
+    const dash = readFileSync(resolve(root, "os-src/cdos-dashboard.jsx"), "utf8");
+    const vig = (name: string) => { const m = new RegExp(name + ":[\\s\\S]*?vignette: '(#[0-9a-f]+)'").exec(dash); const value = m && m[1]; if (!value) throw new Error(name); return value; };
+    expect(Number(ratio(pick(light, "amber"), vig("light")).toFixed(2))).toBe(4.14);
+    expect(Number(ratio(pick(dark, "amber"), vig("dark")).toFixed(2))).toBe(6.53);
+    expect(dash).toContain("dueN > 0 ? CD.amber : T.green");
+    expect(dash).toContain("l === 'Reportable deals' && dueN > 0 ? CD.panel : T.vignette");
   });
 });
 

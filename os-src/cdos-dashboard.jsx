@@ -487,8 +487,8 @@
           {/* COMPLIANCE */}
           <Card title="Compliance">
             <div className="grid grid-cols-2 gap-2">
-              {[['Reportable deals', dueN, dueN > 0 ? T.oxblood : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => (
-                <button key={l} onClick={() => openFiltered && openFiltered(view)} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '10px 12px' }}>
+              {[['Reportable deals', dueN, dueN > 0 ? CD.amber : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => (
+                <button key={l} onClick={() => openFiltered && openFiltered(view)} className="text-left" style={{ background: l === 'Reportable deals' && dueN > 0 ? CD.panel : T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '10px 12px' }}>
                   <div style={{ fontSize: 22, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
                   <div style={{ fontSize: 10.5, color: T.steel, marginTop: 1 }}>{l}</div>
                 </button>

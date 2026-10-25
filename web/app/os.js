@@ -14660,12 +14660,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Compliance"
     }, /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-2"
-    }, [['Reportable deals', dueN, dueN > 0 ? T.oxblood : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => /*#__PURE__*/React.createElement("button", {
+    }, [['Reportable deals', dueN, dueN > 0 ? CD.amber : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => /*#__PURE__*/React.createElement("button", {
       key: l,
       onClick: () => openFiltered && openFiltered(view),
       className: "text-left",
       style: {
-        background: T.vignette,
+        background: l === 'Reportable deals' && dueN > 0 ? CD.panel : T.vignette,
         border: `1px solid ${T.hair}`,
         borderRadius: 8,
         padding: '10px 12px'
@@ -27371,7 +27371,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         borderRadius: 10,
         overflow: 'hidden'
       }
-    }, [['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable', String(reportable)]].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
+    }, [['Transactions', String(st.n)], ['Lifetime volume', fmtHome(st.vol)], ['Fees paid', fmtHome(st.fees)], ['Reportable deals', String(reportable)]].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
       key: i,
       className: "px-4 py-3",
       style: {
@@ -34019,9 +34019,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       sub: earningsHidden ? stats.n ? null : 'nothing posted in this range' : stats.n ? 'view earnings ›' : 'nothing posted in this range',
       onClick: earningsHidden ? undefined : () => stats.n && setBreakdown('fees')
     }), /*#__PURE__*/React.createElement(StatCard, {
-      label: `Reportable ≥ ${limit.label}`,
+      label: "Reportable deals",
       value: stats.openRpt > 0 ? `${stats.openRpt} open` : stats.rpt > 0 ? 'all filed' : '0',
-      sub: stats.rpt > 0 ? `${stats.rpt} total` : null,
+      sub: stats.rpt > 0 ? `${limit.label} · ${stats.rpt} total` : limit.label,
       flag: stats.openRpt > 0,
       onClick: () => setViewToggle('RPT'),
       active: view === 'RPT'
@@ -41306,7 +41306,7 @@ ${threshold == null ? ' No reporting line has been set for this desk, so nothing
         color: CD.faint,
         fontFamily: 'Space Mono'
       }
-    }, "Reportable"), /*#__PURE__*/React.createElement("div", {
+    }, "Reportable transfers"), /*#__PURE__*/React.createElement("div", {
       className: "text-xl font-bold",
       style: {
         color: CD.ink
@@ -53472,7 +53472,7 @@ ${snap}`;
       const s = periodBook.summary;
       if (id === 'endofday') {
         const d = dayBook.summary;
-        return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'], ...data.cash.map(x => [x.ccy, csvUnits(x.units, x.ccy), csvMoney(x.home), csvUnits(x.counted, x.ccy), csvUnits(x.variance, x.ccy), csvUnits(x.vaultUnits, x.ccy)]), [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''], [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''], [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''], [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''], [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''], ['Reportable', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
+        return [['Currency', 'In the drawer · ledger', `${homeCcy} value`, 'Counted', 'Variance', 'In the safe · ledger'], ...data.cash.map(x => [x.ccy, csvUnits(x.units, x.ccy), csvMoney(x.home), csvUnits(x.counted, x.ccy), csvUnits(x.variance, x.ccy), csvUnits(x.vaultUnits, x.ccy)]), [], ['Transactions', d ? d.posted : ''], ['Voided', d ? d.reversed : ''], [`Pay-in volume ${homeCcy}`, d ? csvMoney(d.volumeHome) : ''], [`Fees ${homeCcy}`, d ? csvMoney(d.feesHome) : ''], [`Realized margin ${homeCcy}`, d ? csvMoney(d.realizedPnlHome) : ''], [`Earned ${homeCcy}`, d ? csvMoney(d.earningsHome) : ''], ['Reportable deals', data.reportable.length], [`Open ${regime.largeCode || 'reports'}`, data.reportable.length - data.filed]];
       }
       if (id === 'pnl') {
         const hstRate = settings && settings.hstRate != null ? +settings.hstRate : 13;
@@ -53874,7 +53874,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'this desk has no reporting line set' : `${data.filed} filed · ${openRpt} open`,
           tone: limit.amount == null ? CD.mute : openRpt > 0 ? CD.flag : CD.green
@@ -54293,7 +54293,7 @@ ${snap}`;
             gap: 12
           }
         }, /*#__PURE__*/React.createElement(Mini, {
-          label: limit.amount == null ? 'Reportable' : `Reportable ≥ ${limit.label}`,
+          label: limit.amount == null ? 'Reportable deals' : `Reportable ≥ ${limit.label}`,
           value: limit.amount == null ? '—' : `${data.reportable.length}`,
           sub: limit.amount == null ? 'no reporting line set for this desk' : `${data.filed} filed · ${data.reportable.length - data.filed} open`,
           tone: limit.amount == null ? CD.mute : data.reportable.length - data.filed > 0 ? CD.flag : CD.green

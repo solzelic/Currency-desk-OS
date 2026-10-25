@@ -1770,7 +1770,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             complete — docs/ABSENT_FIGURES.md. */}
         <StatCard label="Pay-in volume" value={stats.n ? fmtHome(stats.vol) : '—'} sub={!stats.n ? 'nothing posted in this range' : stats.unvalued ? `${stats.unvalued} deal${stats.unvalued === 1 ? '' : 's'} this book cannot value · view breakdown ›` : 'view breakdown ›'} onClick={() => stats.n && setBreakdown('volume')} />
         <StatCard label="Fees collected" value={stats.n ? fmtHome(stats.fees) : '—'} sub={earningsHidden ? (stats.n ? null : 'nothing posted in this range') : (stats.n ? 'view earnings ›' : 'nothing posted in this range')} onClick={earningsHidden ? undefined : () => stats.n && setBreakdown('fees')} />
-        <StatCard label={`Reportable ≥ ${limit.label}`} value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${stats.rpt} total` : null} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
+        <StatCard label="Reportable deals" value={stats.openRpt > 0 ? `${stats.openRpt} open` : (stats.rpt > 0 ? 'all filed' : '0')} sub={stats.rpt > 0 ? `${limit.label} · ${stats.rpt} total` : limit.label} flag={stats.openRpt > 0} onClick={() => setViewToggle('RPT')} active={view === 'RPT'} />
       </div>
 
       {/* toolbar */}
