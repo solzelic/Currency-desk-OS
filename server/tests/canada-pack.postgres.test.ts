@@ -3,6 +3,7 @@
    identity rule, the foreign-exchange ticket, and the beneficiary
    record are proved here, in Decimal, on amounts that land on either
    side of the legal line. */
+import { createRequire } from "node:module";
 import pg from "pg";
 import Decimal from "decimal.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -16,6 +17,16 @@ import type { IdentificationDeal } from "../src/ledger/canada-rules.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
+const require = createRequire(import.meta.url);
+const { wallInstant } = require("../../shared/rolling-24h.js") as {
+  wallInstant: (date: string, time: string, zone: string) => Date | null;
+};
+
+function toronto(date: string, time: string): Date {
+  const at = wallInstant(date, time, "America/Toronto");
+  if (!at) throw new Error(`no Toronto instant for ${date} ${time}`);
+  return at;
+}
 
 const TENANT = "tnt-ca2";
 const V1 = "le-ca2-v1";
@@ -168,6 +179,10 @@ async function priorCash(
     cashInHome?: string | null;
     beneficiary?: string | null;
     reversed?: boolean;
+    postedAt?: Date | null;
+    receivedInstrument?: string;
+    disbursedInstrument?: string;
+    cashOutHome?: string | null;
   },
 ) {
   const scope = scopeOf(entityId);
@@ -178,9 +193,9 @@ async function priorCash(
         customer_id, actor_id, from_currency, to_currency, input_amount, output_amount, rate,
         fee_cad, spread_cad, purpose, source_of_funds, posted_at,
         deal_kind, received_instrument, disbursed_instrument,
-        cash_in_home, home_currency, third_party, third_party_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11,$12,1,0,0,'Travel','Salary',now(),
-             $13,'cash','cash',$14,$15,$16,$17)`,
+        cash_in_home, cash_out_home, home_currency, third_party, third_party_name)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11,$12,1,0,0,'Travel','Salary',COALESCE($18::timestamptz, now()),
+             $13,$19,$20,$14,$21,$15,$16,$17)`,
     [
       id,
       `ref-${id}`,
@@ -199,6 +214,10 @@ async function priorCash(
       opts.homeCurrency === undefined ? "CAD" : opts.homeCurrency,
       !!third,
       third,
+      opts.postedAt ?? null,
+      opts.receivedInstrument ?? "cash",
+      opts.disbursedInstrument ?? "cash",
+      opts.cashOutHome ?? null,
     ],
   );
   if (opts.beneficiary) {
@@ -255,6 +274,12 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
     await entity(GB, "pack-gb-v1", 1);
     await book(V1);
     await book(V2);
+    await pool.query(
+      `INSERT INTO branches (id, tenant_id, legal_entity_id, name, timezone)
+       VALUES ('br-ca2', $1, $2, 'Canada test', 'America/Toronto')
+       ON CONFLICT (id) DO UPDATE SET timezone = EXCLUDED.timezone`,
+      [TENANT, V2],
+    );
   });
 
   afterAll(async () => {
@@ -722,5 +747,147 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
       beneficiary_name: "Ada Conductor",
       beneficiary_address: "14 Elm Street, Toronto",
     });
+  });
+
+  /* The current amount stays under the CAD 3,000 foreign-exchange
+     line. Only the earlier receipt can push the total to CAD 10,000.
+     Each case is its own test so a midnight window shows up as a
+     failed block, not as a mixed total. */
+  async function cashAt(
+    id: string,
+    amount: string,
+    customerId: string,
+    prior: Date,
+    dealAt: Date,
+    current: string,
+    priorOpts: {
+      dealKind?: string;
+      fromCurrency?: string;
+      cashInHome?: string | null;
+      cashOutHome?: string | null;
+      receivedInstrument?: string;
+      disbursedInstrument?: string;
+    } = {},
+  ) {
+    return withTx(async (client) => {
+      await priorCash(client, V2, id, {
+        amount,
+        customerId,
+        postedAt: prior,
+        ...priorOpts,
+      });
+      const pack = await resolvePack(client, V2);
+      return requireIdentification(
+        client,
+        actor(V2, "teller", "ca2-rolling"),
+        pack,
+        new Decimal(current),
+        "missing",
+        { ...fx(customerId), at: dealAt },
+      );
+    });
+  }
+
+  it("requires identity for CAD 8,000 at 23:30 and CAD 2,500 at 00:30", async () => {
+    const customer = "ca2-night-pair";
+    await expect(
+      cashAt(
+        "ca2-night-8000",
+        "8000.00",
+        customer,
+        toronto("2026-06-15", "23:30"),
+        toronto("2026-06-16", "00:30"),
+        "2500.00",
+      ),
+    ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+  });
+
+  it("requires identity for a receipt exactly 24 hours earlier", async () => {
+    const customer = "ca2-exact-24h";
+    const dealAt = toronto("2026-06-16", "12:00:00.000");
+    const prior = new Date(dealAt.getTime() - 24 * 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-exact-8000", "8000.00", customer, prior, dealAt, "2500.00"),
+    ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+  });
+
+  it("requires identity when the two receipts are exactly 10000.00", async () => {
+    const customer = "ca2-exact-line";
+    const dealAt = toronto("2026-06-16", "11:00:00.000");
+    const prior = new Date(dealAt.getTime() - 24 * 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-line-7500", "7500.00", customer, prior, dealAt, "2500.00"),
+    ).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+  });
+
+  it("does not require identity when the two receipts are 9999.99", async () => {
+    const customer = "ca2-under-line";
+    const dealAt = toronto("2026-06-16", "11:00:00.000");
+    const prior = new Date(dealAt.getTime() - 24 * 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-under-7499", "7499.99", customer, prior, dealAt, "2500.00"),
+    ).resolves.toBeTruthy();
+  });
+
+  it("does not require identity for a receipt one millisecond outside 24 hours", async () => {
+    const customer = "ca2-outside-24h";
+    const dealAt = toronto("2026-06-16", "12:00:00.000");
+    const prior = new Date(dealAt.getTime() - 24 * 60 * 60 * 1000 - 1);
+    await expect(
+      cashAt("ca2-outside-8000", "8000.00", customer, prior, dealAt, "2500.00"),
+    ).resolves.toBeTruthy();
+  });
+
+  /* cash_out_home is a payout. It is not cash the desk received.
+     A posted payout stores cash_in_home as 0. A row that never wrote
+     the figure stores null. An electronic funds transfer pay-in is
+     not cash either. None of these may push a CAD 2,500.00 deal over
+     CAD 10,000.00. */
+  it("does not let a payout-only row push CAD 2500 over the line", async () => {
+    const customer = "ca2-payout-only";
+    const dealAt = toronto("2026-06-16", "12:00:00.000");
+    const prior = new Date(dealAt.getTime() - 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-payout-8000", "8000.00", customer, prior, dealAt, "2500.00", {
+        dealKind: "remittance_send",
+        fromCurrency: "CAD",
+        cashInHome: "0.00",
+        cashOutHome: "8000.00",
+        receivedInstrument: "bank_credit",
+        disbursedInstrument: "cash",
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  it("does not let a payout row with no cash-in figure push CAD 2500 over the line", async () => {
+    const customer = "ca2-payout-null";
+    const dealAt = toronto("2026-06-16", "14:00:00.000");
+    const prior = new Date(dealAt.getTime() - 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-payout-null-8000", "8000.00", customer, prior, dealAt, "2500.00", {
+        dealKind: "remittance_send",
+        fromCurrency: "CAD",
+        cashInHome: null,
+        cashOutHome: "8000.00",
+        receivedInstrument: "bank_credit",
+        disbursedInstrument: "cash",
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  it("does not let an electronic funds transfer pay-in push CAD 2500 over the line", async () => {
+    const customer = "ca2-eft-payin";
+    const dealAt = toronto("2026-06-16", "13:00:00.000");
+    const prior = new Date(dealAt.getTime() - 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-eft-8000", "8000.00", customer, prior, dealAt, "2500.00", {
+        dealKind: "remittance_receive",
+        fromCurrency: "CAD",
+        cashInHome: null,
+        cashOutHome: null,
+        receivedInstrument: "electronic_funds_transfer",
+        disbursedInstrument: "cash",
+      }),
+    ).resolves.toBeTruthy();
   });
 });
