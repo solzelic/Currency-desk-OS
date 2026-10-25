@@ -303,5 +303,5 @@ ${snap}`;
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { Assistant, LoanCalc, AppStore, COMING, STORE_DESC });
+  window.CDOS = Object.assign(window.CDOS || {}, { Assistant, LoanCalc, AppStore, COMING, STORE_DESC, deskSnapshot });
 })();
