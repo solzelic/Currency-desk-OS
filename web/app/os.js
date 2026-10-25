@@ -46784,6 +46784,14 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
 
   /* ===================== AGGREGATION (24h rule) ===================== */
+  /* Compliance replaces these help sentences. The words stay until that copy arrives. */
+  const HELP_TIP_ALL_AMOUNTS = 'Every cash amount in one static window is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is 24 consecutive hours from the start time below, not a rolling day.';
+  const HELP_TIP_SMALLER = 'Several smaller deals from the same person in one static window are added up. A single deal already at the line is filed on its own and left out of that total. The window is 24 consecutive hours from the start time below, not a rolling day.';
+  const HELP_LINE_ALL_LEAD = 'Cash received is added across one static window of ';
+  const HELP_LINE_SMALL_WINDOW = 'across each static window (your window runs ';
+  const HELP_PACK_WINDOW = 'The 24 hour window is a static 24 consecutive hours.';
+  const HELP_REPORT_ALL = ' · every amount in the static window, including one already over the line';
+  const HELP_AGG_LABEL_TAIL = 'h static window';
   function Aggregation({
     rows,
     settings,
@@ -46931,7 +46939,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "The 24-hour rule, handled for you ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "The 24-hour rule",
-      body: largePolicy(regime) ? 'Every cash amount in one static window is added, including a receipt already over the line. Two or more that reach the threshold are one report. The window is 24 consecutive hours from the start time below, not a rolling day.' : 'Several smaller deals from the same person in one static window are added up. A single deal already at the line is filed on its own and left out of that total. The window is 24 consecutive hours from the start time below, not a rolling day.',
+      body: largePolicy(regime) ? HELP_TIP_ALL_AMOUNTS : HELP_TIP_SMALLER,
       lines: largePolicy(regime) ? [{
         k: 'By conductor',
         v: 'totals what one person brings in'
@@ -46953,7 +46961,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, largePolicy(regime) ? /*#__PURE__*/React.createElement(React.Fragment, null, "Cash received is added across one static window of ", regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
+    }, largePolicy(regime) ? /*#__PURE__*/React.createElement(React.Fragment, null, HELP_LINE_ALL_LEAD, regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -46969,7 +46977,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, across each static window (your window runs ", regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
+    }, fmt(regime.threshold, regime.currency)), " reporting line by breaking one big deal into a few smaller ones. So we add up every smaller amount the same person brings in, or sends to the same recipient, ", HELP_LINE_SMALL_WINDOW, regime.aggHours, " hours starting at ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: CD.ink
       }
@@ -48137,7 +48145,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute,
         maxWidth: 520
       }
-    }, regime.authority || 'No pack', regime.country ? ' · ' + regime.country : '', ". Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. The 24 hour window is a static 24 consecutive hours.")), /*#__PURE__*/React.createElement("button", {
+    }, regime.authority || 'No pack', regime.country ? ' · ' + regime.country : '', ". Reports and deadlines are the ones on this desk's pack. A large cash report is cash received. ", HELP_PACK_WINDOW)), /*#__PURE__*/React.createElement("button", {
       onClick: () => onOpenSettings && onOpenSettings(),
       className: "flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none",
       style: {
@@ -48179,7 +48187,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, moneyOf(r), r.aggregateAllAmounts ? ' · every amount in the static window, including one already over the line' : '', r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : '')))) : /*#__PURE__*/React.createElement("div", {
+    }, moneyOf(r), r.aggregateAllAmounts ? HELP_REPORT_ALL : '', r.kind === 'large_cash' ? ' · cash received' : r.direction === 'both' ? ' · either direction' : '')))) : /*#__PURE__*/React.createElement("div", {
       className: "grid sm:grid-cols-2 gap-2.5"
     }, Object.values(REGIMES).map(r => {
       const on = (settings && settings.regime || 'FINTRAC') === r.id;
@@ -48240,7 +48248,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.ink
         }
-      }, r.aggHours, "h static window"), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
+      }, r.aggHours, HELP_AGG_LABEL_TAIL), /*#__PURE__*/React.createElement("span", null, "Large cash"), /*#__PURE__*/React.createElement("span", {
         className: "text-right",
         style: {
           color: CD.ink

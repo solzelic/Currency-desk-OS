@@ -24,9 +24,31 @@ describe("public marketing claims", () => {
   });
 
   it("does not claim a midnight reset or a calendar-day window on a public page", () => {
-    const web = path.resolve(import.meta.dirname, "../../web");
-    const pages = readdirSync(web).filter((name) => name.endsWith(".html"));
+    const root = path.resolve(import.meta.dirname, "../..");
+    const pages = readdirSync(path.join(root, "web")).filter((name) => name.endsWith(".html")).map((name) => path.join("web", name));
+    const help = readdirSync(path.join(root, "os-src")).filter((name) => name.endsWith(".jsx")).sort().map((name) => path.join("os-src", name));
+    help.push("web/app/os.js");
     expect(pages.length).toBeGreaterThan(0);
+    expect(help.length).toBeGreaterThan(1);
+    const midnight = probe("Cash received is added across a static 24 hours that starts at midnight in the branch time zone. Not a rolling day.");
+    expect(midnight.ok).toBe(false);
+    expect(midnight.out).toMatch(/static 24 hours/);
+    expect(probe("Cash received is added from midnight in the branch time zone.").ok).toBe(false);
+    expect(probe("Static window").ok).toBe(false);
+    expect(probe("The total resets at midnight.").ok).toBe(false);
+    expect(probe("Cash is added on a calendar-day window.").ok).toBe(false);
+    expect(probe("Cash is added per calendar day.").ok).toBe(false);
+    expect(probe("CASH IS ADDED PER CALENDAR DAY.").ok).toBe(false);
+    expect(probe("each calendar day and the count resets at 12:00 am.").ok).toBe(false);
+    expect(probe("Each calendar day and the count resets at 12:00 A.M.").ok).toBe(false);
+    expect(probe("The count resets each day.").ok).toBe(false);
+    expect(probe("Cash is added each day.").ok).toBe(false);
+    expect(probe("Open the desk each day.").ok).toBe(true);
+    expect(probe("Cash received is added over the rolling 24 hours before each deal. The total does not reset at midnight.").ok).toBe(true);
+    expect(probe("The total never resets at midnight.").ok).toBe(true);
+    expect(probe("LCTR within 15 calendar days.", "web/compliance.html").ok).toBe(true);
+    expect(probe("24-hour rule").ok).toBe(true);
+    expect(probe("SMR within 24 hours for terrorism financing", "web/compliance.html").ok).toBe(true);
     const banned = [
       /midnight in the branch time zone/,
       /starts at midnight/,
@@ -36,28 +58,36 @@ describe("public marketing claims", () => {
       /not a rolling day/,
       /calendar-?day window/,
       /(?<!\b(?:does not|never) )reset(?:s)? at midnight/,
+      /\bcalendar day\b/,
+      /\bmid[\s-]?night\b/,
+      /\b12(?::00)?\s*a\.?\s*m\.?\b/,
     ];
     const hits: string[] = [];
-    for (const name of pages) {
-      const html = readFileSync(path.join(web, name), "utf8").toLowerCase();
+    for (const rel of [...pages, ...help]) {
+      let text = readFileSync(path.join(root, rel), "utf8");
+      if (rel.endsWith(".jsx") || rel.endsWith(".js")) {
+        text = text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1");
+      }
+      text = text
+        .toLowerCase()
+        .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+        .replace(/\s+/g, " ")
+        .replace(/\bdoes not reset at midnight\b/g, " ")
+        .replace(/\bnever resets at midnight\b/g, " ")
+        .replace(/\bnever reset at midnight\b/g, " ");
       for (const pattern of banned) {
-        const found = html.match(pattern);
-        if (found) hits.push(`${name}: ${found[0]}`);
+        const found = text.match(pattern);
+        if (found) hits.push(`${rel}: ${found[0]}`);
+      }
+      const eachDay = /\beach day\b/g;
+      const context = /\b(?:resets?|aggregat\w*|added|totals?)\b/;
+      for (const match of text.matchAll(eachDay)) {
+        const from = Math.max(0, match.index - 80);
+        const to = Math.min(text.length, match.index + match[0].length + 80);
+        if (context.test(text.slice(from, to))) hits.push(`${rel}: each day`);
       }
     }
     expect(hits).toEqual([]);
-    const midnight = probe("Cash received is added across a static 24 hours that starts at midnight in the branch time zone. Not a rolling day.");
-    expect(midnight.ok).toBe(false);
-    expect(midnight.out).toMatch(/static 24 hours/);
-    expect(probe("Cash received is added from midnight in the branch time zone.").ok).toBe(false);
-    expect(probe("Static window").ok).toBe(false);
-    expect(probe("The total resets at midnight.").ok).toBe(false);
-    expect(probe("Cash is added on a calendar-day window.").ok).toBe(false);
-    expect(probe("Cash is added over the rolling 24 hours before each deal. The total does not reset at midnight.").ok).toBe(true);
-    expect(probe("The total never resets at midnight.").ok).toBe(true);
-    expect(probe("LCTR within 15 calendar days.", "web/compliance.html").ok).toBe(true);
-    expect(probe("24-hour rule").ok).toBe(true);
-    expect(probe("SMR within 24 hours for terrorism financing", "web/compliance.html").ok).toBe(true);
   });
 
   it("flags a non-breaking space between desks and claimed", () => {

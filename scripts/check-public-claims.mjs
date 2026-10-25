@@ -38,15 +38,27 @@
    banned pattern. A cash total that starts at midnight, resets at
    midnight, or uses a static or calendar-day window is banned on
    every served page. "does not reset at midnight" and "never resets
-   at midnight" stay, because they deny that reset. "15 calendar
-   days" stays, because it is a filing deadline. The cash total is
-   the rolling 24 hours before each deal.
+   at midnight" stay, because they deny that reset. Those two
+   denials are blanked before the match, and any other midnight,
+   including "mid-night", fails. "15 calendar days" stays, because
+   it is a filing deadline. A singular "calendar day" fails. "each
+   day" fails when reset, aggregation, added, or total sits within
+   80 characters. "12:00 am", "12:00am", "12 am", "12am", and
+   "12:00 a.m." fail. The cash total is the rolling 24 hours before
+   each deal.
+
+   The same window claims are read from the in-app help: every
+   os-src/*.jsx file and web/app/os.js. Comments are removed first,
+   so a note about the branch clock is not a help sentence. Tags
+   are left in place, so a sentence inside a JSX attribute is still
+   read. The other marketing bans are not applied to those files.
+   The desk itself says minutes, hours, and sanctions screening.
 
    A claim this pass removed is banned as a phrase, so it cannot
    return. "AI assistant" is allowed only in the honest sentence
    that it is coming soon and not included yet, or that it is not
    connected. */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -185,6 +197,9 @@ const phrases = [
   [/not a rolling day/, "not a rolling day"],
   [/calendar-?day window/, "calendar-day window"],
   [/(?<!\b(?:does not|never) )reset(?:s)? at midnight/, "resets at midnight"],
+  [/\bcalendar day\b/, "calendar day"],
+  [/\bmid[\s-]?night\b/, "midnight"],
+  [/\b12(?::00)?\s*am\b/, "12:00 am"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";
@@ -213,7 +228,8 @@ const HOUR_RULES = [
   "24-hour rule",
 ];
 
-function normalize(html, invisible, tags = " ") {
+function normalize(html, invisible, tags = " ", options = {}) {
+  const stripTags = options.stripTags !== false;
   let text = String(html);
   const decodeNumeric = (value) =>
     value
@@ -250,8 +266,10 @@ function normalize(html, invisible, tags = " ") {
   text = text.replace(/[\u2002\u2003\u2009\u200A\u202F]/g, " ");
   text = text.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D\u2E3A\u2E3B]/g, "-");
   text = text.replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, invisible);
-  text = text.replace(/<meta\b[^>]*>/gi, readMeta);
-  text = text.replace(/<[^>]*>/g, tags);
+  if (stripTags) {
+    text = text.replace(/<meta\b[^>]*>/gi, readMeta);
+    text = text.replace(/<[^>]*>/g, tags);
+  }
   text = text.replace(/\s+/g, " ").trim().toLowerCase();
   /* O.F.A.C. and U.N. become ofac and un before the phrase match. */
   text = text.replace(/(?:[a-z]\.){2,}[a-z]?/g, (match) => match.replace(/\./g, ""));
@@ -289,6 +307,12 @@ function nearby(text, needle, other, span) {
 function withoutAllowed(text, rel) {
   let scanned = text.replace(/\blive rate board\b/g, " ").replaceAll("held for 30 minutes", " ");
   for (const name of HOUR_RULES) scanned = scanned.replaceAll(name, " ");
+  /* Blank the denials first. A later midnight pattern then sees only
+     a claim that the total does reset. */
+  scanned = scanned
+    .replace(/\bdoes not reset at midnight\b/g, " ")
+    .replace(/\bnever resets at midnight\b/g, " ")
+    .replace(/\bnever reset at midnight\b/g, " ");
   if (!REGULATOR_PAGES.has(rel)) return scanned;
   for (const phrase of REGULATOR_CLAUSES) {
     const re = new RegExp(`${CLAUSE_BEFORE}\\s*${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*${CLAUSE_AFTER}`, "g");
@@ -339,6 +363,11 @@ function claimsIn(text, problems, rel) {
       problems.push("AI assistant");
     }
   }
+  for (const match of scanned.matchAll(/\beach day\b/g)) {
+    const from = Math.max(0, match.index - 80);
+    const to = Math.min(scanned.length, match.index + match[0].length + 80);
+    if (/\b(?:resets?|aggregat\w*|added|totals?)\b/.test(scanned.slice(from, to))) problems.push("each day");
+  }
   for (const hit of nearby(text, "eftr", "live", 80)) {
     problems.push(`EFTR next to Live (${hit})`);
   }
@@ -365,10 +394,40 @@ export function findClaims(html, rel = "") {
   return [...new Set(problems)];
 }
 
-export function checkFiles(rels, read = (rel) => readFileSync(path.join(root, rel), "utf8")) {
+function stripJsComments(src) {
+  return String(src)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+const WINDOW_CLAIM = /^(?:midnight in the branch time zone|starts at midnight|from midnight|static 24 hours|static window|not a rolling day|calendar-day window|resets at midnight|calendar day|midnight|12:00 am|each day)$/;
+
+/* Help text, not the marketing list. Comments are dropped. Tags stay,
+   so a JSX attribute is still visible. */
+export function findSourceClaims(src, rel = "") {
+  const stripped = stripJsComments(src);
+  const readings = [];
+  for (const invisible of ["", " "]) {
+    const text = normalize(stripped, invisible, " ", { stripTags: false });
+    if (!readings.includes(text)) readings.push(text);
+  }
+  const problems = [];
+  for (const text of readings) claimsIn(text, problems, rel);
+  return [...new Set(problems)].filter((problem) => WINDOW_CLAIM.test(problem));
+}
+
+export function helpSources() {
+  return readdirSync(path.join(root, "os-src"))
+    .filter((name) => name.endsWith(".jsx"))
+    .sort()
+    .map((name) => `os-src/${name}`)
+    .concat(["web/app/os.js"]);
+}
+
+export function checkFiles(rels, read = (rel) => readFileSync(path.join(root, rel), "utf8"), find = findClaims) {
   const problems = [];
   for (const rel of rels) {
-    for (const problem of findClaims(read(rel), rel)) problems.push(`${rel}: ${problem}`);
+    for (const problem of find(read(rel), rel)) problems.push(`${rel}: ${problem}`);
   }
   return problems;
 }
@@ -384,10 +443,11 @@ if (isDirect) {
     console.log("ok probe");
     process.exit(0);
   }
-  const problems = checkFiles(files);
+  const help = helpSources();
+  const problems = [...checkFiles(files), ...checkFiles(help, (rel) => readFileSync(path.join(root, rel), "utf8"), findSourceClaims)];
   if (problems.length) {
     console.error(problems.join("\n"));
     process.exit(1);
   }
-  console.log(`ok ${files.length} marketing pages`);
+  console.log(`ok ${files.length} marketing pages, ${help.length} help sources`);
 }
