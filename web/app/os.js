@@ -487,6 +487,8 @@
       /* amber accent (sparingly) */
       flag: '#c0392b',
       flagSoft: '#f7e1dd',
+      /* Text on the pink flag wash. #8a3b30 is 6.10:1 on #f7e1dd. */
+      onFlagSoft: '#8a3b30',
       green: '#1f8a4c',
       greenSoft: '#dcefe4',
       amber: '#9a6b1f',
@@ -527,6 +529,8 @@
       brassText: '#e5c56a',
       flag: '#e0604f',
       flagSoft: 'rgba(224,96,79,0.15)',
+      /* #f08a7c is 6.28:1 on the night wash over #161513. */
+      onFlagSoft: '#f08a7c',
       green: '#36ad6d',
       greenSoft: 'rgba(54,173,109,0.15)',
       amber: '#d99c3f',
@@ -43236,9 +43240,6 @@ var CDOS_CHEQUE_FEE = (function () {
       }), 'Cheque cashing reversed', why.trim());
     };
     const sched = STATUS[c.status] || STATUS.held;
-    /* The returned reason line already uses this darker red on the pink
-       box. Both 13px titles use it, so the pair clears 4.5:1. */
-    const onFlagSoft = '#8a3b30';
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex justify-end",
       style: {
@@ -43333,12 +43334,12 @@ var CDOS_CHEQUE_FEE = (function () {
     }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[13px] font-semibold",
       style: {
-        color: onFlagSoft
+        color: CD.onFlagSoft
       }
     }, "Returned \u2014 ", fmt(c.netCad, homeCcy()), " loss"), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       style: {
-        color: onFlagSoft
+        color: CD.onFlagSoft
       }
     }, c.returnedReason, c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] uppercase tracking-widest mb-1",
@@ -43490,7 +43491,7 @@ var CDOS_CHEQUE_FEE = (function () {
     }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[13px] font-semibold",
       style: {
-        color: onFlagSoft
+        color: CD.onFlagSoft
       }
     }, err), /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] mt-0.5",

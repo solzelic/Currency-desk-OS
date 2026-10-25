@@ -416,9 +416,6 @@
         'Cheque cashing reversed', why.trim());
     };
     const sched = STATUS[c.status] || STATUS.held;
-    /* The returned reason line already uses this darker red on the pink
-       box. Both 13px titles use it, so the pair clears 4.5:1. */
-    const onFlagSoft = '#8a3b30';
     return (<Portal><div className="fixed inset-0 flex justify-end" style={{ background: 'var(--cd-scrim)', zIndex: 9100 }} onMouseDown={onClose}>
       <div onMouseDown={e => e.stopPropagation()} className="h-full overflow-auto" style={{ width: 440, maxWidth: '92vw', background: CD.paper, borderLeft: `1px solid ${CD.ink}`, boxShadow: '-12px 0 40px var(--cd-shade)' }}>
         <div className="sticky top-0 px-5 py-4 flex items-start justify-between" style={{ background: CD.paper, borderBottom: `1px solid ${CD.line}`, zIndex: 5 }}>
@@ -436,7 +433,7 @@
               <div className="text-right"><div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{overdue ? 'Overdue' : 'Clears'}</div><div className="text-[15px] font-bold" style={{ color: overdue ? CD.flag : CD.ink }}>{c.holdUntil}{overdue ? '' : ` · ${Math.max(0, daysBetween(TODAY, c.holdUntil))}d`}</div></div>
             </div>
           </div>}
-          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: onFlagSoft }}>Returned — {fmt(c.netCad, homeCcy())} loss</div><div className="text-[11px]" style={{ color: onFlagSoft }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
+          {c.status === 'returned' && <div className="p-3 flex items-center gap-2" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.onFlagSoft }}>Returned — {fmt(c.netCad, homeCcy())} loss</div><div className="text-[11px]" style={{ color: CD.onFlagSoft }}>{c.returnedReason}{c.fraud ? ' · fraud' : c.nsf ? ' · NSF' : ''}</div></div></div>}
 
           {/* cheque capture */}
           <div>
@@ -479,7 +476,7 @@
               <button onClick={reverse} disabled={stopped} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={heldStyle({ border: `1px dashed ${CD.line}`, color: CD.mute })}><Ic n="x" s={15} c={stopped ? CD.faint : CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>
             </div>
           )}
-          {err && dayClosed && <div className="p-3 flex items-start gap-2" role="alert" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: onFlagSoft }}>{err}</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{next}</div></div></div>}
+          {err && dayClosed && <div className="p-3 flex items-start gap-2" role="alert" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.onFlagSoft }}>{err}</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{next}</div></div></div>}
           {err && !dayClosed && <div className="text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
           {c.txRef && <div className="text-[11px]" style={{ color: CD.faint }}>Ledger {c.txRef}</div>}
         </div>
