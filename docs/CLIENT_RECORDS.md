@@ -231,7 +231,7 @@ one space.
 | Provincial/Territorial Photo ID | person | yes | no | Provincial ID, Territorial ID, Ontario Photo Card |
 | Permanent Resident Card | person | yes | no | PR Card |
 | Secure Certificate of Indian Status | person | yes | no | Secure Status Card, SCIS. Category A, on. Needs the secure-card confirmation and an expiry. Without the confirmation the server treats it as the laminated card and refuses it. |
-| Citizenship Card | person | yes | yes | Canadian Citizenship Card. The pre-2012 photo card only. Category B, off until the owner turns it on. Issue date before 1 February 2012, checked in person. A provider result alone is refused. |
+| Citizenship Card | person | yes | yes | Canadian Citizenship Card. The pre-2012 photo card only. Category B, off until the owner turns it on. Issue date before 1 February 2012, and `inPerson: true` from the counter. A provider result, or an omitted in-person flag, is refused. |
 | BC Services Card | person | yes | no | BC Services Card with photo. The card or licence number, never a 10-digit Personal Health Number. A health-only card is the health card refusal. |
 | National Identity Card | person | yes | no | National ID, Identity Card, Emirates ID |
 | Health Card | person | no | no | about forty provincial names; **not accepted as ID** |

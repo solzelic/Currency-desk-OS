@@ -622,16 +622,15 @@ export class ClientRecordService {
     const written = await this.writableType(actor, input.docType);
     if (written.code) refuseSwitchedOff(written.shop!, written.code, written.label);
     const docType = written.label;
-    /* Omitted inPerson is the teller at the counter. An explicit false
-       is a provider result with nobody at the desk, and that does not
-       file the pre-2012 card. */
+    /* Only an explicit true is the counter. An omitted flag is not
+       in person, and that does not file the pre-2012 card. */
     const shaped = {
       docType,
       docNumber: input.docNumber,
       issuedOn: input.issuedOn,
       expiresOn: input.expiresOn,
       secureCard: input.secureCard === true,
-      inPerson: input.inPerson !== false,
+      inPerson: input.inPerson === true,
     };
     assertIdDocumentShape(shaped);
     return this.inTransaction(actor, "customer:write", async (client) => {
@@ -735,7 +734,7 @@ export class ClientRecordService {
           issuedOn: input.issuedOn !== undefined ? input.issuedOn : isoDate(prior.issued_on),
           expiresOn: input.expiresOn !== undefined ? input.expiresOn : isoDate(prior.expires_on),
           secureCard: input.secureCard !== undefined ? input.secureCard === true : prior.secure_card === true,
-          inPerson: input.inPerson !== undefined ? input.inPerson !== false : prior.in_person !== false,
+          inPerson: input.inPerson !== undefined ? input.inPerson === true : prior.in_person === true,
         });
       }
       const columns: Record<string, unknown> = {};
@@ -746,7 +745,7 @@ export class ClientRecordService {
       if (input.issuedOn !== undefined) columns.issued_on = blank(input.issuedOn);
       if (input.expiresOn !== undefined) columns.expires_on = blank(input.expiresOn);
       if (input.secureCard !== undefined) columns.secure_card = input.secureCard === true;
-      if (input.inPerson !== undefined) columns.in_person = input.inPerson !== false;
+      if (input.inPerson !== undefined) columns.in_person = input.inPerson === true;
       if (input.isPrimary === true) {
         await client.query(
           "UPDATE desk_client_identity_documents SET is_primary=false WHERE client_id=$1 AND is_primary",

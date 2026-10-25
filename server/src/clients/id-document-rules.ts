@@ -30,6 +30,9 @@ const EXPIRY_CODES = new Set([
   "national_id_card",
   "provincial_photo_id",
   "bc_services_card",
+  "passport",
+  "drivers_licence",
+  "permanent_resident_card",
 ]);
 
 export type IdWrite = {
@@ -96,20 +99,24 @@ function sqlList(keys: readonly string[]): string {
   return keys.map((key) => `'${key.replace(/'/g, "''")}'`).join(", ");
 }
 
-/* A row that can move the client file to identified. Citizenship
-   counts only on the manual pre-2012 path. The secure status card
-   counts only with the confirmation and an expiry. National,
-   provincial, and BC photo cards count only with an expiry. */
+/* A row that can move the client file to identified. The pre-2012
+   citizenship card is the only person photo ID that counts with no
+   expiry, and only when it was checked in person. Passport, a driver's
+   licence, a PR card, and the other photo cards count only with an
+   expiry. A business document has no expiry and counts on its number. */
 export function standingDocumentSql(alias: string): string {
   const key = typeKeySql(`${alias}.doc_type`);
   const number = `length(regexp_replace(coalesce(${alias}.doc_number, ''), '[[:space:]]', '', 'g')) > 0`;
   const citizen = sqlList(keysFor(new Set(["citizenship_card"])));
   const scis = sqlList(keysFor(new Set(["secure_certificate_of_indian_status"])));
   const expiry = sqlList(keysFor(EXPIRY_CODES));
+  const business = sqlList(
+    keysFor(new Set(ID_DOCUMENT_TYPES.filter((row) => row.kind === "business" && row.acceptedAsId).map((row) => row.code))),
+  );
   return `${number} AND (
     (${key} IN (${citizen}) AND ${alias}.in_person IS TRUE AND ${alias}.issued_on < DATE '${PRE_2012_CUTOFF}')
     OR (${key} IN (${scis}) AND ${alias}.secure_card IS TRUE AND ${alias}.expires_on IS NOT NULL)
     OR (${key} IN (${expiry}) AND ${alias}.expires_on IS NOT NULL)
-    OR (${key} NOT IN (${citizen}, ${scis}, ${expiry}))
+    OR (${key} IN (${business}))
   )`;
 }

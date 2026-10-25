@@ -225,6 +225,7 @@ postgres("one ID-type catalogue, and no health numbers", () => {
       payload: { docType: "Master Business License" },
     });
     expect(picked.statusCode, picked.body).toBe(200);
+    expect(picked.json().verificationStatus).toBe("identified");
     const types = await pool.query(
       "SELECT doc_type FROM desk_client_identity_documents WHERE client_id=$1 ORDER BY doc_type",
       [clientId],
@@ -498,6 +499,7 @@ postgres("one ID-type catalogue, and no health numbers", () => {
         docType: "Canadian Citizenship Card",
         docNumber: "CC-OK",
         issuedOn: "2011-05-01",
+        inPerson: true,
       });
       expect(filed.statusCode, filed.body).toBe(201);
       expect(filed.json().verificationStatus).toBe("identified");
@@ -507,6 +509,47 @@ postgres("one ID-type catalogue, and no health numbers", () => {
         [clientId],
       );
       expect(stored.rows.map((row) => row.doc_number)).toEqual(["CC-OK"]);
+    } finally {
+      await pool.query("UPDATE legal_entities SET accepted_id_types=NULL WHERE id=$1", [DEMO.legalEntityId]);
+    }
+  });
+
+  it("refuses a passport with no expiry, and the client is not identified", async () => {
+    const clientId = await openFile("Catalogue Passport Bare");
+    for (const docType of ["Passport", "Driver's Licence", "Permanent Resident Card"]) {
+      const refused = await addDocument(clientId, { docType, docNumber: "NO-EXP" });
+      expect(refused.statusCode, docType).toBe(422);
+      expect(refused.json().code, docType).toBe("ID_EXPIRY_REQUIRED");
+    }
+    const file = await app.inject({ method: "GET", url: `/api/clients/${clientId}`, cookies, headers });
+    expect(file.json().verificationStatus).not.toBe("identified");
+    const rows = await pool.query("SELECT 1 FROM desk_client_identity_documents WHERE client_id=$1", [clientId]);
+    expect(rows.rowCount).toBe(0);
+  });
+
+  it("does not identify a pre-2012 citizenship card when inPerson is omitted", async () => {
+    const clientId = await openFile("Catalogue Citizen Omitted");
+    const owner = await signIn("j.masri");
+    const turned = await app.inject({
+      method: "PUT",
+      url: "/api/clients/accepted-id-types",
+      cookies: owner,
+      headers,
+      payload: { accepted: [...idTypeRulesFor("CA").filter((rule) => rule.packDefault).map((rule) => rule.code), "citizenship_card"] },
+    });
+    expect(turned.statusCode, turned.body).toBe(200);
+    try {
+      const omitted = await addDocument(clientId, {
+        docType: "Citizenship Card",
+        docNumber: "CC-OMIT",
+        issuedOn: "2011-05-01",
+      });
+      expect(omitted.statusCode).toBe(422);
+      expect(omitted.json().code).toBe("CITIZENSHIP_CARD_ISSUE_DATE");
+      const file = await app.inject({ method: "GET", url: `/api/clients/${clientId}`, cookies, headers });
+      expect(file.json().verificationStatus).not.toBe("identified");
+      const rows = await pool.query("SELECT doc_number FROM desk_client_identity_documents WHERE client_id=$1", [clientId]);
+      expect(rows.rowCount).toBe(0);
     } finally {
       await pool.query("UPDATE legal_entities SET accepted_id_types=NULL WHERE id=$1", [DEMO.legalEntityId]);
     }

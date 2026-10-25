@@ -111,8 +111,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   Resident Card (PR Card), Secure Certificate of Indian Status,
   Citizenship Card, BC Services Card, and
   National Identity Card. The secure status card is on by default and
-  needs a secure-card confirmation and an expiry. The Citizenship Card
-  is the pre-2012 photo card and starts off. The BC Services Card is photo ID, not a
+  needs a secure-card confirmation and an expiry. Passport, a driver's
+  licence, and a PR card need an expiry too. The Citizenship Card
+  is the pre-2012 photo card and starts off. An omitted in-person flag
+  does not file it. The BC Services Card is photo ID, not a
   health card. The National Identity Card is another country's
   government photo ID card, such as an Emirates ID, so a desk outside
   Canada can record its own country's card. Business types:
@@ -753,7 +755,7 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-24**, ledger ID catalogue. Secure Certificate of Indian Status is photo ID, category A, on by default, and it needs an expiry and a secure-card confirmation. Without that confirmation the save is 422 `LAMINATED_STATUS_CARD` and nothing is stored. The Citizenship Card is the pre-2012 photo card only: category B, off until the owner turns it on, no expiry, issue date before 1 February 2012, and an in-person check. A provider result with `inPerson: false` is refused. A birth certificate and a citizenship certificate issued in 2012 or later are not ID types. A birth certificate can sit in the supporting-file folder, which is not an identity document and does not change standing. A BC Services Card is the photo card or the combined licence. A 10-digit number is refused as a Personal Health Number and is not stored. A health-only BC Services Card is the health-card refusal. National Identity Card and Provincial/Territorial Photo ID need an expiry. Unknown types stay 422 `ID_TYPE_NOT_IN_CATALOGUE`. Health cards stay 422 and the number stays off the read. Migration 053 adds `secure_card` and `in_person`. The cheque gate still reads the stored `id_status` column on this branch. The derived standing that refuses a no-expiry type is the other draft.
+**2026-10-24**, ledger ID catalogue. Secure Certificate of Indian Status is photo ID, category A, on by default, and it needs an expiry and a secure-card confirmation. Without that confirmation the save is 422 `LAMINATED_STATUS_CARD` and nothing is stored. The Citizenship Card is the pre-2012 photo card only: category B, off until the owner turns it on, no expiry, issue date before 1 February 2012, and an in-person check. A provider result with `inPerson: false` is refused, and so is an omitted `inPerson`. Passport, Driver's Licence, Permanent Resident Card, National Identity Card, Provincial/Territorial Photo ID, and the BC Services Card need an expiry to be saved and to count. A passport with no expiry is 422 `ID_EXPIRY_REQUIRED` and the file is not identified. A birth certificate and a citizenship certificate issued in 2012 or later are not ID types. A birth certificate can sit in the supporting-file folder, which is not an identity document and does not change standing. A BC Services Card is the photo card or the combined licence. A 10-digit number is refused as a Personal Health Number and is not stored. A health-only BC Services Card is the health-card refusal. Unknown types stay 422 `ID_TYPE_NOT_IN_CATALOGUE`. Health cards stay 422 and the number stays off the read. Migration 053 adds `secure_card` and `in_person`. The cheque gate still reads the stored `id_status` column on this branch. The derived standing that refuses a no-expiry type is the other draft.
 
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only `PERSONA_API_KEY` or `PERSONA_API_KEY_<SHOP>`. A field left out of PUT stays as stored. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 

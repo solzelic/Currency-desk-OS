@@ -410,6 +410,7 @@ postgres("the desk's customer file, on the server", () => {
     const withDoc = await records.addDocument(TILL_1, clientId, {
       docType: "Passport",
       docNumber: "CZ-9910",
+      expiresOn: "2031-08-14",
       scanDataUrl: SCAN,
     });
     const documentId = withDoc.documents[0]!.documentId as string;
@@ -455,6 +456,7 @@ postgres("the desk's customer file, on the server", () => {
     const withDoc = await records.addDocument(TILL_1, clientId, {
       docType: "Driver's Licence",
       docNumber: "D-5512",
+      expiresOn: "2031-08-14",
       scanDataUrl: SCAN,
     });
 
@@ -471,6 +473,7 @@ postgres("the desk's customer file, on the server", () => {
     const typedOnly = await records.addDocument(TILL_1, clientId, {
       docType: "Passport",
       docNumber: "C-1",
+      expiresOn: "2031-08-14",
     });
     const bare = typedOnly.documents.find((d) => d.docType === "Passport")!;
     await expect(
@@ -491,7 +494,7 @@ postgres("the desk's customer file, on the server", () => {
     const made = await records.create(TILL_1, { legalName: "Sofia Marchetti" });
     const clientId = made.clientId as string;
     await records.setPhotograph(TILL_1, clientId, SCAN);
-    await records.addDocument(TILL_1, clientId, { docType: "Passport", scanDataUrl: SCAN });
+    await records.addDocument(TILL_1, clientId, { docType: "Passport", expiresOn: "2031-08-14", scanDataUrl: SCAN });
 
     const record = await records.get(TILL_1, clientId);
     /* One photograph, one document, and the photograph is NOT in the
