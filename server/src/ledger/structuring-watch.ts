@@ -86,22 +86,29 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
   return items;
 }
 
+/* One helper for the deal read and the watch list. The watch query
+   runs only when this role may see the watch. STR_KEYS and WATCH_KEYS
+   stay in shared/str-role.js. presentDeal drops what this role cannot see. */
 export async function dealMarks(
   client: pg.PoolClient,
   actor: LedgerActor,
   rows: ReadonlyArray<{ transaction_ref: string; customer_id: string }>,
-): Promise<Map<string, DealMark>> {
-  const filings = await client.query(
-    `SELECT filing_id, subject_transaction_ids
-       FROM ledger_report_filings
-      WHERE tenant_id = $1 AND legal_entity_id = $2 AND upper(btrim(report_code)) = 'STR'`,
-    [actor.tenantId, actor.legalEntityId],
-  );
+  role: string,
+): Promise<{ marks: Map<string, DealMark>; items: WatchItem[] }> {
   const link = new Map<string, string>();
-  for (const row of filings.rows) {
-    for (const ref of refsOf(row.subject_transaction_ids)) link.set(ref, String(row.filing_id));
+  if (rows.length) {
+    const filings = await client.query(
+      `SELECT filing_id, subject_transaction_ids
+         FROM ledger_report_filings
+        WHERE tenant_id = $1 AND legal_entity_id = $2 AND upper(btrim(report_code)) = 'STR'`,
+      [actor.tenantId, actor.legalEntityId],
+    );
+    for (const row of filings.rows) {
+      for (const ref of refsOf(row.subject_transaction_ids)) link.set(ref, String(row.filing_id));
+    }
   }
-  const watch = new Map((await loadWatch(client, actor)).map((item) => [item.customerId, item]));
+  const items = canSeeStructuringWatch(role) ? await loadWatch(client, actor) : [];
+  const watch = new Map(items.map((item) => [item.customerId, item]));
   const marks = new Map<string, DealMark>();
   for (const row of rows) {
     const filingId = link.get(String(row.transaction_ref));
@@ -114,7 +121,7 @@ export async function dealMarks(
       ackStr: seen ? seen.acknowledged : false,
     });
   }
-  return marks;
+  return { marks, items };
 }
 
 function requireWatch(role: string) {
@@ -128,8 +135,9 @@ export class StructuringWatchService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      requireWatch(await authorizeLedgerActor(client, actor, "ledger:view"));
-      const items = await loadWatch(client, actor);
+      const role = await authorizeLedgerActor(client, actor, "ledger:view");
+      requireWatch(role);
+      const { items } = await dealMarks(client, actor, [], role);
       await client.query("COMMIT");
       return { items };
     } catch (error) {

@@ -25,7 +25,7 @@ const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
 const STR = ["administrator", "branch_manager", "compliance_officer"];
 const WATCH = [...STR, "supervisor"];
-const HIDDEN = ["strTag", "strLink", "structuring", "structuringTotal", "ackStr", "ackStrInfo"];
+const HIDDEN = [...roles.STR_KEYS, ...roles.WATCH_KEYS];
 
 describe("str and watch role sets", () => {
   it("keeps STR to the three roles and the watch to those three plus supervisor", () => {
@@ -95,6 +95,30 @@ async function cookie(staffId = "m.costa") {
 async function asRole(role: string) {
   await handle.db.update(schema.staffUsers).set({ role: role as "teller" }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:m.costa`));
   return cookie();
+}
+
+function isWatchQuery(sql: string) {
+  return /make_interval\s*\(\s*days/i.test(sql) || /ledger_structuring_acks/i.test(sql);
+}
+
+async function captureSql(run: () => Promise<void>) {
+  const seen: string[] = [];
+  const proto = pg.Client.prototype as unknown as {
+    query: (...args: unknown[]) => unknown;
+  };
+  const original = proto.query;
+  proto.query = function (this: unknown, ...args: unknown[]) {
+    const first = args[0];
+    const text = typeof first === "string" ? first : (first as { text?: string } | null)?.text;
+    if (typeof text === "string") seen.push(text);
+    return original.apply(this, args);
+  };
+  try {
+    await run();
+  } finally {
+    proto.query = original;
+  }
+  return seen;
 }
 
 function filing(code: string, mark: string) {
@@ -300,5 +324,53 @@ postgres("str filing and the transaction field strip", () => {
     expect(again.statusCode).toBe(403);
     const still = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
     expect(still.rows[0].n).toBe(1);
+  });
+
+  it("runs no watch query for a teller or an auditor, and returns no watch keys", async () => {
+    for (const role of ["teller", "auditor"] as const) {
+      const seen = await captureSql(async () => {
+        const res = await app.inject({
+          method: "GET",
+          url: "/api/ledger/transactions",
+          cookies: await asRole(role),
+        });
+        expect(res.statusCode, role).toBe(200);
+        for (const key of roles.WATCH_KEYS) {
+          expect(res.body, `${role} ${key}`).not.toContain(`"${key}"`);
+        }
+        expect(res.body, role).toContain("Travel money");
+      });
+      expect(seen.filter(isWatchQuery), role).toEqual([]);
+    }
+  });
+
+  it("shows a supervisor the watch and none of the STR keys", async () => {
+    const saved = await app.inject({
+      method: "POST",
+      url: "/api/ledger/structuring-watch/acknowledge",
+      cookies: await asRole("supervisor"),
+      payload: { customerId: "cust-watch" },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const seen = await captureSql(async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/ledger/transactions",
+        cookies: await asRole("supervisor"),
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      const row = res.json().transactions.find(
+        (item: { transactionRef: string }) => item.transactionRef === "YFX-STR-1",
+      );
+      expect(row.structuring).toBe(true);
+      expect(row.structuringTotal).toBe("12000.00");
+      expect(row.ackStr).toBe(true);
+      for (const key of roles.WATCH_KEYS) expect(row, key).toHaveProperty(key);
+      for (const key of roles.STR_KEYS) {
+        expect(row, key).not.toHaveProperty(key);
+        expect(res.body, key).not.toContain(`"${key}"`);
+      }
+    });
+    expect(seen.some(isWatchQuery)).toBe(true);
   });
 });
