@@ -34,12 +34,12 @@ export type BackendPermission =
   | "desk:tills"
   /* Signing a report in the desk's name and sending it to the regulator.
      Not a question about the book, which is why it is its own permission
-     rather than a shade of `ledger:view`: an auditor may read every report
-     the desk has ever filed and may never file one, and that has nothing to
-     do with whether they can move money. Everybody who works the counter or
-     the compliance queue may file — the person who took the cash is very
-     often the person who has to report it before they go home. */
+     rather than a shade of `ledger:view`. An auditor does not file.
+     A teller does not file. A supervisor does not file.
+     `filing:view` is who may open the filing record. Which report
+     they may see is shared/str-role.js. */
   | "compliance:file"
+  | "filing:view"
   /* Moving the line the desk reports and identifies at.
      Rarer than filing, and a different act entirely: filing discharges an
      obligation the rules created, this decides which deals create one at
@@ -49,8 +49,7 @@ export type BackendPermission =
      a constraint, for the reasons in thresholds.ts.
 
      So this is the OWNER's, and nobody else's. Narrower than
-     `compliance:file`, which everybody at the counter has because the
-     person who took the cash is often the person who reports it, and
+     `compliance:file`, which a teller does not hold, and
      narrower than `accounting:cost_method`, which a branch manager shares.
      Where the reporting line sits is not a day's work at a branch — it is
      the standing policy of the registered business, and the registered
@@ -68,11 +67,11 @@ export type BackendPermission =
   | "report:earnings";
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {
-  teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view", "till:count", "vault:view", "compliance:file"],
-  supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "compliance:file"],
-  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file"],
-  branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file"],
-  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "compliance:thresholds"],
+  teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view", "till:count", "vault:view"],
+  supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "filing:view"],
+  compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file", "filing:view"],
+  branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file", "filing:view"],
+  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "filing:view", "compliance:thresholds"],
   auditor: ["quote:view", "customer:view", "ledger:view", "vault:view"],
 };
 
