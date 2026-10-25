@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -21,6 +21,73 @@ describe("public marketing claims", () => {
   it("served pages do not repeat banned claims", () => {
     const out = execFileSync(process.execPath, [script], { encoding: "utf8" });
     expect(out).toMatch(/^ok /);
+  });
+
+  it("does not claim a midnight reset or a calendar-day window on a public page", () => {
+    const root = path.resolve(import.meta.dirname, "../..");
+    const pages = readdirSync(path.join(root, "web")).filter((name) => name.endsWith(".html")).map((name) => path.join("web", name));
+    const help = readdirSync(path.join(root, "os-src")).filter((name) => name.endsWith(".jsx") || name.endsWith(".js")).sort().map((name) => path.join("os-src", name));
+    help.push("web/app/os.js");
+    expect(pages.length).toBeGreaterThan(0);
+    expect(help.length).toBeGreaterThan(1);
+    const midnight = probe("Cash received is added across a static 24 hours that starts at midnight in the branch time zone. Not a rolling day.");
+    expect(midnight.ok).toBe(false);
+    expect(midnight.out).toMatch(/static 24 hours/);
+    expect(probe("Cash received is added from midnight in the branch time zone.").ok).toBe(false);
+    expect(probe("Static window").ok).toBe(false);
+    expect(probe("The total resets at midnight.").ok).toBe(false);
+    expect(probe("Cash is added on a calendar-day window.").ok).toBe(false);
+    expect(probe("Cash is added per calendar day.").ok).toBe(false);
+    expect(probe("CASH IS ADDED PER CALENDAR DAY.").ok).toBe(false);
+    expect(probe("each calendar day and the count resets at 12:00 am.").ok).toBe(false);
+    expect(probe("Each calendar day and the count resets at 12:00 A.M.").ok).toBe(false);
+    expect(probe("The count resets each day.").ok).toBe(false);
+    expect(probe("Cash is added each day.").ok).toBe(false);
+    expect(probe("Open the desk each day.").ok).toBe(true);
+    expect(probe("Cash received is added over the rolling 24 hours before each deal. The total does not reset at midnight.").ok).toBe(true);
+    expect(probe("The total never resets at midnight.").ok).toBe(true);
+    expect(probe("LCTR within 15 calendar days.", "web/compliance.html").ok).toBe(true);
+    expect(probe("24-hour rule").ok).toBe(true);
+    expect(probe("SMR within 24 hours for terrorism financing", "web/compliance.html").ok).toBe(true);
+    const banned = [
+      /midnight in the branch time zone/,
+      /starts at midnight/,
+      /from midnight/,
+      /static 24 hours/,
+      /static window/,
+      /not a rolling day/,
+      /calendar-?day window/,
+      /(?<!\b(?:does not|never) )reset(?:s)? at midnight/,
+      /\bcalendar day\b/,
+      /\bmid[\s-]?night\b/,
+      /\b12(?::00)?\s*a\.?\s*m\.?\b/,
+    ];
+    const hits: string[] = [];
+    for (const rel of [...pages, ...help]) {
+      let text = readFileSync(path.join(root, rel), "utf8");
+      if (rel.endsWith(".jsx") || rel.endsWith(".js")) {
+        text = text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1");
+      }
+      text = text
+        .toLowerCase()
+        .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+        .replace(/\s+/g, " ")
+        .replace(/\bdoes not reset at midnight\b/g, " ")
+        .replace(/\bnever resets at midnight\b/g, " ")
+        .replace(/\bnever reset at midnight\b/g, " ");
+      for (const pattern of banned) {
+        const found = text.match(pattern);
+        if (found) hits.push(`${rel}: ${found[0]}`);
+      }
+      const eachDay = /\beach day\b/g;
+      const context = /\b(?:resets?|aggregat\w*|added|totals?)\b/;
+      for (const match of text.matchAll(eachDay)) {
+        const from = Math.max(0, match.index - 80);
+        const to = Math.min(text.length, match.index + match[0].length + 80);
+        if (context.test(text.slice(from, to))) hits.push(`${rel}: each day`);
+      }
+    }
+    expect(hits).toEqual([]);
   });
 
   it("flags a non-breaking space between desks and claimed", () => {
@@ -325,7 +392,7 @@ describe("public marketing claims", () => {
   });
 
   it("allows an exact regulator deadline only on the compliance and FAQ pages", () => {
-    const line = "SMR within 24 hours for terrorism financing. LCTR within 15 calendar days. SAR within 30 days. Cash is added across a static 24 hours. A worksheet within 3 business days.";
+    const line = "SMR within 24 hours for terrorism financing. LCTR within 15 calendar days. SAR within 30 days. A worksheet within 3 business days.";
     expect(probe(line).ok).toBe(false);
     expect(probe(line, "web/index.html").ok).toBe(false);
     expect(probe(line, "web/compliance.html").ok).toBe(true);
@@ -498,6 +565,38 @@ describe("public marketing claims", () => {
     }, 0);
     expect(fg && bg, `${token} ${fg} on ${bg}`).toBeTruthy();
     expect((Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps the public rule label at 12px and 4.5 to 1", () => {
+    const lum = (hex: string) => [0, 1, 2].reduce((sum, n) => {
+      const c = parseInt(hex.slice(1 + n * 2, 3 + n * 2), 16) / 255;
+      const lin = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      return sum + [0.2126, 0.7152, 0.0722][n]! * lin;
+    }, 0);
+    const ratio = (fg: string, bg: string) => (Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05);
+    const root = path.resolve(import.meta.dirname, "../..");
+    const rule = /\.cd-rule-meta\s*\{[^}]*font-size:\s*12px;[^}]*color:\s*var\(--mute\)/;
+    const site = readFileSync(path.join(root, "design/site/CurrencyDesk Site.dc.html"), "utf8");
+    const complianceSrc = readFileSync(path.join(root, "design/site/CurrencyDesk Compliance.dc.html"), "utf8");
+    expect(site).toMatch(rule);
+    expect(complianceSrc).toMatch(rule);
+    const mute = site.match(/--mute:\s*(#[0-9A-Fa-f]{6})/)?.[1] ?? "";
+    const complianceMute = complianceSrc.match(/--mute:\s*(#[0-9A-Fa-f]{6})/)?.[1] ?? "";
+    expect(mute).toBe(complianceMute);
+    expect(ratio(mute, "#FFFFFF"), `${mute} on the white card`).toBeGreaterThanOrEqual(4.5);
+    expect(site).not.toMatch(/prefers-color-scheme/);
+    expect(complianceSrc).not.toMatch(/prefers-color-scheme/);
+    const home = readFileSync(path.join(root, "web/index.html"), "utf8");
+    const compliance = readFileSync(path.join(root, "web/compliance.html"), "utf8");
+    const faq = readFileSync(path.join(root, "web/faq.html"), "utf8");
+    expect(home).toContain('class="cd-rule-meta"');
+    expect(compliance).toContain('class="cd-rule-meta"');
+    expect(home).not.toContain("font-size:10px;color:var(--mute)");
+    expect(compliance).not.toContain("font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint);");
+    expect(compliance).toContain('class="cd-rule-meta" style="letter-spacing: 0.07em; text-transform: uppercase;"');
+    expect(compliance).toContain("font-size: 14px; font-weight: 600;");
+    expect(faq).not.toContain("cd-rule-meta");
+    expect(faq).toContain('font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin-top: 4px;">Answers');
   });
 
   it("keeps a one-row pill clear of the 44px watermark", () => {
