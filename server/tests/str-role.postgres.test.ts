@@ -17,6 +17,9 @@ const roles = createRequire(import.meta.url)("../../shared/str-role.js") as {
   canSeeStr: (role: string) => boolean;
   canSeeStructuringWatch: (role: string) => boolean;
   canReleaseFiling: (role: string, code: string) => boolean;
+  presentDeal: (role: string, deal: Record<string, unknown>) => Record<string, unknown>;
+  STR_KEYS: readonly string[];
+  WATCH_KEYS: readonly string[];
 };
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -54,6 +57,23 @@ describe("str and watch role sets", () => {
     for (const role of WATCH) expect(hasBackendPermission(role, "filing:view"), role).toBe(true);
     for (const role of STR) expect(hasBackendPermission(role, "compliance:file"), role).toBe(true);
     expect(hasBackendPermission("supervisor", "compliance:file")).toBe(false);
+  });
+
+  it("freezes the key lists and strips exactly those keys", () => {
+    expect(Object.isFrozen(roles.STR_KEYS)).toBe(true);
+    expect(Object.isFrozen(roles.WATCH_KEYS)).toBe(true);
+    const deal = () => {
+      const row: Record<string, unknown> = { purpose: "Travel money" };
+      for (const key of [...roles.STR_KEYS, ...roles.WATCH_KEYS]) row[key] = key;
+      return row;
+    };
+    const teller = roles.presentDeal("teller", deal());
+    expect(Object.keys(teller).sort()).toEqual(["purpose"]);
+    const supervisor = roles.presentDeal("supervisor", deal());
+    expect(Object.keys(supervisor).sort()).toEqual([...roles.WATCH_KEYS, "purpose"].sort());
+    for (const key of roles.WATCH_KEYS) expect(supervisor[key]).toBe(key);
+    const admin = roles.presentDeal("administrator", deal());
+    expect(Object.keys(admin).sort()).toEqual([...roles.STR_KEYS, ...roles.WATCH_KEYS, "purpose"].sort());
   });
 });
 

@@ -13,12 +13,14 @@
     cdos.canViewFiling = api.canViewFiling;
     cdos.canReleaseFiling = api.canReleaseFiling;
     cdos.presentDeal = api.presentDeal;
+    cdos.STR_KEYS = api.STR_KEYS;
+    cdos.WATCH_KEYS = api.WATCH_KEYS;
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   var STR = { administrator: 1, branch_manager: 1, compliance_officer: 1 };
   var WATCH = { administrator: 1, branch_manager: 1, compliance_officer: 1, supervisor: 1 };
-  var STR_KEYS = ["strTag", "strLink"];
-  var WATCH_KEYS = ["structuring", "structuringTotal", "ackStr", "ackStrInfo"];
+  var STR_KEYS = Object.freeze(["strTag", "strLink"]);
+  var WATCH_KEYS = Object.freeze(["structuring", "structuringTotal", "ackStr", "ackStrInfo"]);
 
   function named(set, role) {
     return !!set[String(role || "").trim()];
@@ -50,5 +52,7 @@
     canViewFiling: canViewFiling,
     canReleaseFiling: canReleaseFiling,
     presentDeal: presentDeal,
+    STR_KEYS: STR_KEYS,
+    WATCH_KEYS: WATCH_KEYS,
   };
 });
