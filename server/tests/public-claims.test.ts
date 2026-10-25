@@ -537,6 +537,38 @@ describe("public marketing claims", () => {
     expect((Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("keeps the public rule label at 12px and 4.5 to 1", () => {
+    const lum = (hex: string) => [0, 1, 2].reduce((sum, n) => {
+      const c = parseInt(hex.slice(1 + n * 2, 3 + n * 2), 16) / 255;
+      const lin = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      return sum + [0.2126, 0.7152, 0.0722][n]! * lin;
+    }, 0);
+    const ratio = (fg: string, bg: string) => (Math.max(lum(fg), lum(bg)) + 0.05) / (Math.min(lum(fg), lum(bg)) + 0.05);
+    const root = path.resolve(import.meta.dirname, "../..");
+    const rule = /\.cd-rule-meta\s*\{[^}]*font-size:\s*12px;[^}]*color:\s*var\(--mute\)/;
+    const site = readFileSync(path.join(root, "design/site/CurrencyDesk Site.dc.html"), "utf8");
+    const complianceSrc = readFileSync(path.join(root, "design/site/CurrencyDesk Compliance.dc.html"), "utf8");
+    expect(site).toMatch(rule);
+    expect(complianceSrc).toMatch(rule);
+    const mute = site.match(/--mute:\s*(#[0-9A-Fa-f]{6})/)?.[1] ?? "";
+    const complianceMute = complianceSrc.match(/--mute:\s*(#[0-9A-Fa-f]{6})/)?.[1] ?? "";
+    expect(mute).toBe(complianceMute);
+    expect(ratio(mute, "#FFFFFF"), `${mute} on the white card`).toBeGreaterThanOrEqual(4.5);
+    expect(site).not.toMatch(/prefers-color-scheme/);
+    expect(complianceSrc).not.toMatch(/prefers-color-scheme/);
+    const home = readFileSync(path.join(root, "web/index.html"), "utf8");
+    const compliance = readFileSync(path.join(root, "web/compliance.html"), "utf8");
+    const faq = readFileSync(path.join(root, "web/faq.html"), "utf8");
+    expect(home).toContain('class="cd-rule-meta"');
+    expect(compliance).toContain('class="cd-rule-meta"');
+    expect(home).not.toContain("font-size:10px;color:var(--mute)");
+    expect(compliance).not.toContain("font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint);");
+    expect(compliance).toContain('class="cd-rule-meta" style="letter-spacing: 0.07em; text-transform: uppercase;"');
+    expect(compliance).toContain("font-size: 14px; font-weight: 600;");
+    expect(faq).not.toContain("cd-rule-meta");
+    expect(faq).toContain('font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin-top: 4px;">Answers');
+  });
+
   it("keeps a one-row pill clear of the 44px watermark", () => {
     const src = readFileSync(path.resolve(import.meta.dirname, "../../design/site/CurrencyDesk Site.dc.html"), "utf8");
     const pad = Number(src.match(/padding-right:' \+ \(tall \? '12' : '(\d+)'\)/)?.[1]);

@@ -16,6 +16,8 @@
     a { color: #1D6B45; text-decoration: none; }
     a:hover { color: #17140F; }
     button { font-family: inherit; cursor: pointer; }
+    /* Small label on a public rule. 12px in the mute ink, which clears 4.5:1 on the white card. */
+    .cd-rule-meta { font-family: var(--m); font-size: 12px; color: var(--mute); }
     html { scroll-behavior: smooth; scroll-snap-type: y proximity; }
 
     @media (max-width: 720px) {
@@ -202,7 +204,7 @@
                   <span style="display: block; font-size: 12.5px; color: var(--mute); line-height: 1.45; margin-top: 5px;">{{ r.spec }}</span>
                   <div style="display: flex; align-items: center; gap: 8px; margin-top: 13px; padding-top: 10px; border-top: 1px solid var(--hair);">
                     <span style="{{ r.dotStyle }}"></span>
-                    <span style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint);">{{ r.when }}</span>
+                    <span class="cd-rule-meta" style="letter-spacing: 0.07em; text-transform: uppercase;">{{ r.when }}</span>
                   </div>
                 </div>
               </sc-for>

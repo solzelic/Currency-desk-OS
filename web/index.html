@@ -32,6 +32,8 @@
     a:hover { color: #17583A; }
     html { scroll-behavior: smooth; scroll-snap-type: y proximity; }
     button { font-family: inherit; }
+    /* Small label on a public rule. 12px in the mute ink, which clears 4.5:1 on the white card. */
+    .cd-rule-meta { font-family: var(--m); font-size: 12px; color: var(--mute); }
     [data-rail] [data-more] { opacity: 0; transform: translateY(4px); max-height: 0; margin-top: 0; overflow: hidden; transition: opacity .25s ease, transform .25s ease, max-height .3s ease, margin-top .3s ease; pointer-events: none; }
     [data-rail]:hover [data-more] { opacity: 1; transform: translateY(0); max-height: 42px; margin-top: 9px; pointer-events: auto; }
     [data-rail][data-active="true"] [data-more] { opacity: 1; transform: translateY(0); max-height: 42px; margin-top: 9px; pointer-events: auto; }
@@ -442,7 +444,7 @@
                   </div>
                   <div style="position: relative; min-width: 0;">
                     <b style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; font-weight: 600; line-height: 1.2; color: var(--ink); letter-spacing: -0.005em;">{{ r.name }}</b>
-                    <span style="display: block; font-family: var(--m); font-size: 10.5px; color: var(--mute); margin-top: 5px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.spec }}</span>
+                    <span class="cd-rule-meta" style="display: block; margin-top: 5px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.spec }}</span>
                   </div>
                 </div>
               </sc-if>
@@ -452,7 +454,7 @@
                   <span style="{{ r.chipStyle }}">{{ r.icon }}</span>
                   <span style="flex: 1; min-width: 0;">
                     <b style="display: block; font-size: 13.5px; font-weight: 600; line-height: 1.2; color: var(--ink); letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.name }}</b>
-                    <span style="{{ r.specStyle }}">{{ r.spec }}</span>
+                    <span class="cd-rule-meta" style="{{ r.specStyle }}">{{ r.spec }}</span>
                   </span>
                   <span style="{{ r.tagPill }}">{{ r.tag }}</span>
                 </div>
@@ -1429,7 +1431,7 @@ class Component extends DCLogic {
         const tall = sp[1] > 1;
         const wraps = r.name === '24-hour rule';
         return { slot: i, name: r.name, spec: r.spec, tag: r.tag, tall: tall, flat: !tall,
-          specStyle: 'display:block;font-family:var(--m);font-size:10px;color:var(--mute);margin-top:3px;line-height:1.2;white-space:' + (wraps ? 'normal' : 'nowrap') + ';overflow:' + (wraps ? 'visible' : 'hidden') + ';text-overflow:' + (wraps ? 'clip' : 'ellipsis') + ';',
+          specStyle: 'display:block;margin-top:3px;line-height:1.2;white-space:' + (wraps ? 'normal' : 'nowrap') + ';overflow:' + (wraps ? 'visible' : 'hidden') + ';text-overflow:' + (wraps ? 'clip' : 'ellipsis') + ';',
           icon: this.ic(ico, tall ? 17 : 15, acc, 1.9),
           bigIcon: this.ic(ico, tall ? 76 : 44, acc, 1.5),
           wmStyle: 'position:absolute;top:50%;transform:translateY(-50%);right:' + (tall ? '14px' : '8px') + ';opacity:' + (tall ? '0.17' : '0.15') + ';color:currentColor;pointer-events:none;line-height:0;z-index:0;',
