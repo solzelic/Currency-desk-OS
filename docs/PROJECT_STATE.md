@@ -15,7 +15,7 @@ is not automated), till/vault cash, and reports. CurrencyDesk also hosts
 each customer's public storefront (live rates, converter, SMS rate quotes)
 on their own domain, and runs a growth pipeline (lead research + outbound
 calling) for its own sales funnel.
-Deployed as **one Render web service** (`render.yaml`), auto-deploying `main`.
+Deployed as **one Render web service** (`render.yaml`). Live auto-deploys from `release`.
 
 ## Current product milestone — Shop-Ready Core v1
 

@@ -21,7 +21,7 @@ Fail cites a path.
 ## Understanding (what this system is)
 
 CurrencyDesk is a multi-tenant SaaS operating system for currency-exchange
-houses, deployed as **one Render web service** that auto-deploys `main`.
+houses, deployed as **one Render web service**. Live auto-deploys from `release` and staging deploys from `main`.
 One Fastify process serves every surface from the repository root behind
 an allow-list (`server/src/app.ts`).
 
@@ -345,7 +345,7 @@ durable doc, not inferred taste.
 | Browser deps | React, ReactDOM, Babel standalone, Tailwind **pinned exactly** | Root `package.json` comment: a caret would serve a version the committed `web/` was never built with. |
 | Server deps | Caret ranges + lockfile | Weaker than the standard’s “pinned”. Overrides exist for a handful of CVEs. |
 | Tests | vitest (server, `--no-file-parallelism`); Playwright seams; `check:parse` | Money changes require a seam (`CASH_OWNERSHIP_INVARIANTS.md`). Fresh DB per full run. |
-| Deploy | Render Blueprint, auto-deploy `main`, free plan | `render.yaml`. One process, static + API. |
+| Deploy | Render Blueprint, live auto-deploys from `release`, staging deploys from `main`, free plan | `render.yaml`. One process, static + API. |
 | Secrets | Render dashboard / `server/.env` (gitignored) | `ARCHITECTURE.md` §5. No secret manager, no workload identity. |
 | Email | Resend, or log-if-unset | `server/src/email.ts`. Codes are logged when the key is missing — that is how e2e reads them. |
 | Sessions | Opaque token, httpOnly, SHA-256 at rest, 12h TTL | `server/README.md`. Revocable; JWT refused on purpose. |
