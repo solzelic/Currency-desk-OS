@@ -852,6 +852,7 @@
       idNum: primary && !isHealthCardType(primary.docType) ? (primary.docNumber || "") : "",
       idIssued: primary ? (primary.issuedOn || "") : "",
       idExpiry: primary ? (primary.expiresOn || "") : "",
+      secureCard: !!(primary && primary.secureCard),
       primaryDocumentId: primary ? primary.documentId : null,
       primaryHasScan: serverHasPrimaryScan,
       /* NOT the bytes. A covered placeholder is drawn from `hasScan`, and
@@ -949,7 +950,7 @@
      rather than to the person. Keeping the two apart is the point of the
      whole change; this is where a screen that still edits them as one
      object gets routed to the right place. */
-  var DOCUMENT_FIELDS = { idType: "docType", idNum: "docNumber", idIssued: "issuedOn", idExpiry: "expiresOn" };
+  var DOCUMENT_FIELDS = { idType: "docType", idNum: "docNumber", idIssued: "issuedOn", idExpiry: "expiresOn", secureCard: "secureCard" };
 
   window.CDOS.Backend.Clients = {
     RISK_IN: RISK_IN,

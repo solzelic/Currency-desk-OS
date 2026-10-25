@@ -1,11 +1,11 @@
 /* ============================================================
    Settings → Accepted IDs, the pack side, without a database.
 
-   What a pack says about the catalogue's ID types: every type the
-   catalogue accepts is on by default in every pack, so no desk loses a
-   type it records today. The health card is locked off everywhere, and
-   Canada's lock names the law. A later pack can lock another type with
-   its own note.
+   What a pack says about the catalogue's ID types. A type the
+   catalogue accepts is on by default, except the pre-2012 citizenship
+   card, which starts off. The health card is locked off everywhere,
+   and Canada's lock names the law. A later pack can lock another type
+   with its own note.
    ============================================================ */
 import { describe, expect, it } from "vitest";
 import {
@@ -29,18 +29,37 @@ import {
    that is missing altogether (jurisdiction ""). */
 const JURISDICTIONS = ["CA", "US", "GB", "EU", "AU", "AE", "RS", "IN", "PH", "INTL", ""];
 
-const ACCEPTED_TODAY = ID_DOCUMENT_TYPES.filter((row) => row.acceptedAsId).map((row) => row.code);
+const ACCEPTED_TODAY = ID_DOCUMENT_TYPES.filter(
+  (row) => row.acceptedAsId && row.defaultOn !== false,
+).map((row) => row.code);
 
 describe("pack defaults", () => {
-  it("switches on every type the catalogue accepts, in every pack", () => {
+  it("switches on every accepted type except the pre-2012 citizenship card, in every pack", () => {
     for (const jurisdiction of JURISDICTIONS) {
       const rules = idTypeRulesFor(jurisdiction);
       expect(rules.map((rule) => rule.code), jurisdiction).toEqual(ID_DOCUMENT_TYPES.map((row) => row.code));
       expect(acceptedCodes(rules, null), jurisdiction).toEqual(ACCEPTED_TODAY);
       expect(rules.filter((rule) => rule.packDefault).map((rule) => rule.code), jurisdiction).toEqual(ACCEPTED_TODAY);
     }
-    /* Seven person types and four business types. */
+    expect(ACCEPTED_TODAY).not.toContain("citizenship_card");
+    expect(ACCEPTED_TODAY).toContain("secure_certificate_of_indian_status");
+    /* Secure status on, citizenship off, four business types, and the other person photo types. */
     expect(ACCEPTED_TODAY).toHaveLength(11);
+  });
+
+  it("records the ruling categories", () => {
+    const rules = idTypeRulesFor("CA");
+    const row = (code: string) => rules.find((rule) => rule.code === code)!;
+    expect(row("secure_certificate_of_indian_status")).toMatchObject({
+      category: "A", packDefault: true, locked: false, photo: true,
+    });
+    expect(row("citizenship_card")).toMatchObject({
+      category: "B", packDefault: false, locked: false, warning: "No expiry date. Old photo. Counter check only.",
+    });
+    expect(row("provincial_photo_id")).toMatchObject({ category: "A", packDefault: true, photo: true });
+    expect(row("national_id_card")).toMatchObject({ category: "A", packDefault: true, photo: true });
+    expect(row("bc_services_card")).toMatchObject({ category: "A", packDefault: true, photo: true });
+    expect(row("health_card")).toMatchObject({ category: "C", packDefault: false, locked: true });
   });
 
   it("locks the health card off everywhere, and only the health card", () => {

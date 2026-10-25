@@ -18,6 +18,11 @@ export type IdDocumentType = {
   readonly mayLackExpiry: boolean;
   readonly acceptedAsId: boolean;
   readonly aliases: readonly string[];
+  /** A, B, or C. Absent means A when the type is accepted, C when it is not. */
+  readonly category?: "A" | "B" | "C";
+  /** Absent means on when the type is accepted as ID. */
+  readonly defaultOn?: boolean;
+  readonly warning?: string;
 };
 
 export type WriteNormalisation =

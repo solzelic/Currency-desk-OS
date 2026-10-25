@@ -141,6 +141,7 @@
         docNumber: rec.idNum || null,
         issuedOn: rec.idIssued || null,
         expiresOn: rec.idExpiry || null,
+        secureCard: rec.secureCard === true,
         isPrimary: true,
         scanDataUrl: rec.photo || null,
       });
@@ -275,7 +276,7 @@
       if (!onServer) return localSet(k, v);
       const DOC = api.DOCUMENT_FIELDS;
       if (DOC[k]) {
-        const patch = {}; patch[DOC[k]] = v || null;
+        const patch = {}; patch[DOC[k]] = typeof v === "boolean" ? v : (v || null);
         if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
         /* Typing a document's details when the file has none is how a
            document gets created — the same gesture the old flat editor
@@ -655,11 +656,14 @@
        type records a new ID. */
     const health = isHealthType(rec.idType);
     const editDoc = canEdit && !health;
+    const typeRow = rec.idType && IDT.resolveIdType(rec.idType);
+    const secureType = !!(typeRow && typeRow.code === "secure_certificate_of_indian_status");
     return (<div className="grid grid-cols-2 gap-3">
       <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}<SwitchedOffNote text={rec.idNotice} /></EditField>
       {!health && <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
       <EditField label="Issued"><input disabled={!editDoc} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Expiry"><input disabled={!editDoc} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
+      {secureType && <EditField label="Secure card" full><label className="flex items-center gap-2 text-[12.5px]" style={{ color: CD.ink, minHeight: 44 }}><input type="checkbox" disabled={!editDoc} checked={rec.secureCard === true} onChange={e => set('secureCard', e.target.checked)} />This is the secure card, not the laminated one.</label></EditField>}
       <EditField label="ID document scan" full>
         {(rec.photo || rec.primaryHasScan)
           ? <div className="flex items-center gap-3"><IdScan src={rec.photo} clientId={rec.clientId} documentId={rec.primaryDocumentId} hasScan={rec.primaryHasScan} height={64} who={who} what={IDT.shownIdType(rec.idType) || 'primary ID'} log={log} />{canEdit && <button onClick={() => set('photo', null)} className="text-xs font-medium" style={{ color: CD.flag }}>Remove scan</button>}</div>
@@ -1620,6 +1624,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       idNum: (!startsFresh && rec && rec.idNum) || '',
       idIssued: (!startsFresh && rec && rec.idIssued) || '',
       idExpiry: (!startsFresh && rec && rec.idExpiry) || '',
+      secureCard: !!(rec && rec.secureCard),
       photo: (!startsFresh && rec && rec.photo) || null,
     });
     const [err, setErr] = useState('');
@@ -1679,6 +1684,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               idNum: fresh ? '' : (desk.idNum || ''),
               idIssued: fresh ? '' : (desk.idIssued || ''),
               idExpiry: fresh ? '' : (desk.idExpiry || ''),
+              secureCard: fresh ? false : desk.secureCard === true,
               photo: fresh ? null : (desk.photo || null),
             });
           } else {
@@ -1693,10 +1699,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       })();
       return () => { live = false; };
     }, [name]);
-    const ready = !!(draft.idType && String(draft.idNum || '').trim() && draft.idExpiry);
+    const typeRow = draft.idType && IDT.resolveIdType(draft.idType);
+    const noExpiry = !!(typeRow && typeRow.mayLackExpiry);
+    const needsSecure = !!(typeRow && typeRow.code === "secure_certificate_of_indian_status");
+    const ready = !!(draft.idType && String(draft.idNum || '').trim() && (noExpiry ? draft.idIssued : draft.idExpiry) && (!needsSecure || draft.secureCard === true));
     const save = async () => {
       if (leaving || phase !== 'edit') return;
-      if (!ready) { setErr('Type, number, and expiry are required.'); return; }
+      if (!ready) { setErr(noExpiry ? 'Type, number, and issue date are required.' : needsSecure && !draft.secureCard ? 'Confirm this is the secure card.' : 'Type, number, and expiry are required.'); return; }
       if (isHealthType(draft.idType)) { setErr(IDT.HEALTH_CARD_REFUSAL); return; }
       setLeaving(true);
       setErr('');
@@ -1705,6 +1714,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         idNum: String(draft.idNum).trim(),
         idIssued: draft.idIssued || null,
         idExpiry: draft.idExpiry,
+        secureCard: draft.secureCard === true,
         photo: draft.photo || null,
         kind: (file && file.kind) || (rec && rec.kind) || 'individual',
       };
@@ -1724,6 +1734,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
               docNumber: payload.idNum,
               issuedOn: payload.idIssued,
               expiresOn: payload.idExpiry,
+              secureCard: payload.secureCard === true,
               ...(payload.photo ? { scanDataUrl: payload.photo } : {}),
             });
             await shared.load(true);

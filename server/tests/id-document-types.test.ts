@@ -28,6 +28,7 @@ const PERSON = [
   "Passport",
   "Provincial/Territorial Photo ID",
   "Permanent Resident Card",
+  "Secure Certificate of Indian Status",
   "Citizenship Card",
   "BC Services Card",
   "National Identity Card",
@@ -100,7 +101,7 @@ describe("the catalogue", () => {
     }
     expect(NOT_IN_CATALOGUE).toBe(
       "That ID type isn't on this desk's list. Use one of: Driver's Licence, Passport, Provincial/Territorial Photo ID, " +
-        "Permanent Resident Card, Citizenship Card, BC Services Card, National Identity Card, Business Number, " +
+        "Permanent Resident Card, Secure Certificate of Indian Status, Citizenship Card, BC Services Card, National Identity Card, Business Number, " +
         "Incorporation Certificate, Master Business Licence, or Articles of Incorporation.",
     );
     expect(NOT_IN_CATALOGUE).not.toContain("Health");
@@ -131,6 +132,9 @@ describe("health cards", () => {
     "Northwest Territories Health Care Card",
     "Nunavut Health Care Card",
     "Yukon Health Care Card",
+    "BC Services Card without photo",
+    "Non-photo BC Services Card",
+    "BC Services Card health only",
   ];
 
   it("resolves every health-card name to the one row, which is not accepted", () => {

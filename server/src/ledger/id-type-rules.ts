@@ -6,9 +6,10 @@
    chooses inside it, in Settings → Accepted IDs
    (server/src/clients/accepted-id-types.ts).
 
-   THE DEFAULT. Every type the catalogue accepts as ID is on, in every
-   pack. A desk that has never opened the setting keeps every type it
-   could record before the setting existed.
+   THE DEFAULT. A type the catalogue accepts is on, unless that type
+   says defaultOn: false. The pre-2012 citizenship card is the one
+   that starts off. A desk that has never opened the setting keeps
+   every other accepted type.
 
    A LOCK. A pack can lock a type off, with a short legal note. A locked
    type is off whatever the owner stored, cannot be switched on, and the
@@ -64,12 +65,16 @@ export type IdTypeRule = {
   label: string;
   kind: IdDocumentKind;
   photo: boolean;
+  /** A is free, B warns, C is locked off */
+  category: "A" | "B" | "C";
   /** on for a shop that has not stated its own list */
   packDefault: boolean;
   /** off, and the owner cannot switch it on */
   locked: boolean;
   /** why it is locked; null when it is not */
   note: string | null;
+  /** shown when the owner turns a category B type on */
+  warning: string | null;
 };
 
 /**
@@ -87,14 +92,18 @@ export function idTypeRulesFor(
   return ID_DOCUMENT_TYPES.map((row) => {
     const note = notes.get(row.code) ?? (row.acceptedAsId ? null : NEVER_ID_NOTE);
     const locked = note !== null;
+    const category = row.category ?? (row.acceptedAsId ? "A" : "C");
+    const packDefault = locked ? false : (typeof row.defaultOn === "boolean" ? row.defaultOn : row.acceptedAsId);
     return {
       code: row.code,
       label: row.label,
       kind: row.kind,
       photo: row.photo,
-      packDefault: row.acceptedAsId && !locked,
+      category,
+      packDefault,
       locked,
       note,
+      warning: row.warning ?? null,
     };
   });
 }
