@@ -2945,6 +2945,7 @@
         "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
+      if (typeof body.next === "string" && body.next) error.next = body.next;
       throw error;
     }
     return body;
@@ -42966,11 +42967,6 @@ var CDOS_CHEQUE_FEE = (function () {
     }), " ", busy ? 'Posting…' : 'Cash & hold')))));
   }
 
-  /* Compliance owns this sentence. One string, so a wording change
-     does not hunt through the buttons. A teller may open the next
-     session: the open route allows till:count, which a teller holds. */
-  const CHEQUE_DAY_CLOSED_NEXT = "Open a new session on the till that paid this cheque out, then reverse it there.";
-
   /* ===================== DETAIL DRAWER ===================== */
   function ChequeDetail({
     c,
@@ -42984,6 +42980,7 @@ var CDOS_CHEQUE_FEE = (function () {
     const [busy, setBusy] = useState('');
     const [err, setErr] = useState('');
     const [errCode, setErrCode] = useState('');
+    const [next, setNext] = useState('');
     const dayClosed = errCode === 'CHEQUE_DAY_CLOSED';
     /* The three postings the closed day refuses. Mark cleared stays,
        because clearance still posts on a closed day. The hit target
@@ -43017,6 +43014,7 @@ var CDOS_CHEQUE_FEE = (function () {
       setBusy(kind);
       setErr('');
       setErrCode('');
+      setNext('');
       try {
         const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
         /* The status and the timeline come back from the register rather
@@ -43031,6 +43029,7 @@ var CDOS_CHEQUE_FEE = (function () {
       } catch (error) {
         setErr(error.message || 'The ledger refused this. Nothing was posted.');
         setErrCode(error && error.code || '');
+        setNext(error && error.next || '');
       } finally {
         setBusy('');
       }
@@ -43323,7 +43322,7 @@ var CDOS_CHEQUE_FEE = (function () {
       style: {
         color: CD.ink
       }
-    }, CHEQUE_DAY_CLOSED_NEXT))), err && !dayClosed && /*#__PURE__*/React.createElement("div", {
+    }, next))), err && !dayClosed && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.flag

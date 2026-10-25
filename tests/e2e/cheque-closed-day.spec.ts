@@ -7,8 +7,10 @@ import type { Page } from "@playwright/test";
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
 
 const REFUSAL = "This day is closed. Reversals and returns can't be posted to it.";
-const NEXT_STEP =
-  "Open a new session on the till that paid this cheque out, then reverse it there.";
+const RETURN_NEXT =
+  "Open a new session on the till that paid this cheque out. Then post the return there.";
+const REVERSAL_NEXT =
+  "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.";
 
 /* Same reading as the other desk specs. The closed-day title sits on
    the pink box and has to clear 4.5:1. */
@@ -111,7 +113,7 @@ async function closeOpenSession(page: Page) {
   });
 }
 
-test("a closed day disables return, fraud and reversal and shows the next step", async ({ page }) => {
+async function openClosedCheque(page: Page) {
   await signInAtDesk(page);
   await dismissTour(page);
 
@@ -142,11 +144,17 @@ test("a closed day disables return, fraud and reversal and shows the next step",
 
   const closed = await closeOpenSession(page);
   expect(closed, `the day would not close: ${closed}`).toBe("ok");
+  return { returnNsf, flagFraud, reverse };
+}
+
+test("a closed day disables return, fraud and reversal and shows the next step", async ({ page }) => {
+  const { returnNsf, flagFraud, reverse } = await openClosedCheque(page);
 
   await returnNsf.click();
   const alert = page.getByRole("alert");
   await expect(alert).toContainText(REFUSAL);
-  await expect(alert).toContainText(NEXT_STEP);
+  await expect(alert).toContainText(RETURN_NEXT);
+  await expect(alert).not.toContainText("supervisor or manager");
   await expect(returnNsf).toBeDisabled();
   await expect(flagFraud).toBeDisabled();
   await expect(reverse).toBeDisabled();
@@ -166,4 +174,14 @@ test("a closed day disables return, fraud and reversal and shows the next step",
   });
   const ratio = contrastOf(ink.fg, ink.bg);
   expect(ratio, `${ink.fg} on ${ink.bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+});
+
+test("a closed-day reversal names a supervisor or manager", async ({ page }) => {
+  const { reverse } = await openClosedCheque(page);
+  page.once("dialog", (dialog) => dialog.accept("Wrong day"));
+  await reverse.click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(REFUSAL);
+  await expect(alert).toContainText(REVERSAL_NEXT);
+  await expect(alert).not.toContainText("Then post the return there.");
 });

@@ -49,6 +49,7 @@
    see `CHEQUE_CURRENCY_NOT_HOME` below — rather than mis-posted quietly.
    ============================================================ */
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { civilDate } from "../civil-date.js";
 import Decimal from "decimal.js";
 import { chequeScheduleFee } from "./chequeFee.js";
@@ -80,18 +81,30 @@ Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 const CHEQUE_DAY_CLOSED =
   "This day is closed. Reversals and returns can't be posted to it.";
 
+/* One copy of each next step, shared with the desk through the 422.
+   A return uses the sentence a teller can carry out. A reversal names
+   a supervisor or manager, because that post needs transaction:reverse. */
+const chequeDayClosedNext = createRequire(import.meta.url)("../../../shared/cheque-day-closed.js") as {
+  reversal: string;
+  returned: string;
+};
+
 /* A reversal and a return post onto the till session this call is
    signed in at. Every other drawer write asks the same question
    through requireOpenTill: the latest session for that till is open,
    or it is not. A day close sets that session to closed, and the
    signed close-out is that same closed session plus its close count.
    The teller hears a day sentence. Clearance does not call this. */
-async function refuseClosedChequeDay(client: pg.PoolClient, actor: LedgerActor) {
+async function refuseClosedChequeDay(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  next: string,
+) {
   try {
     await requireOpenTill(client, actor, { held: false });
   } catch (error) {
     if (error instanceof LedgerError && error.code === "TILL_NOT_OPEN") {
-      throw new LedgerError("CHEQUE_DAY_CLOSED", CHEQUE_DAY_CLOSED);
+      throw new LedgerError("CHEQUE_DAY_CLOSED", CHEQUE_DAY_CLOSED, next);
     }
     throw error;
   }
@@ -795,7 +808,7 @@ export class ChequeService {
         await client.query("COMMIT");
         return existing.rows[0].response;
       }
-      if (returning) await refuseClosedChequeDay(client, actor);
+      if (returning) await refuseClosedChequeDay(client, actor, chequeDayClosedNext.returned);
       if (!existing.rowCount) {
         const claimed = await client.query(
           "INSERT INTO ledger_idempotency (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING",
@@ -1008,7 +1021,7 @@ export class ChequeService {
         await client.query("COMMIT");
         return existing.rows[0].response;
       }
-      await refuseClosedChequeDay(client, actor);
+      await refuseClosedChequeDay(client, actor, chequeDayClosedNext.reversal);
       if (!existing.rowCount) {
         const claimed = await client.query(
           "INSERT INTO ledger_idempotency (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key) VALUES ($1,$2,$3,$4,$5,'cheque-reverse',$6) ON CONFLICT DO NOTHING",

@@ -789,10 +789,20 @@ postgres("cheque cashing on the ledger", () => {
 
   /* A closed session is the day close. A close count on that session is
      the signed close-out. Neither may take a reversal or a return. */
-  const dayClosedBody = {
-    code: "CHEQUE_DAY_CLOSED",
-    message: "This day is closed. Reversals and returns can't be posted to it.",
-  };
+  const dayClosedRefusal =
+    "This day is closed. Reversals and returns can't be posted to it.";
+  const dayClosedReversalNext =
+    "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.";
+  const dayClosedReturnNext =
+    "Open a new session on the till that paid this cheque out. Then post the return there.";
+
+  function dayClosedBody(leg: "reversal" | "return") {
+    return {
+      code: "CHEQUE_DAY_CLOSED",
+      message: dayClosedRefusal,
+      next: leg === "reversal" ? dayClosedReversalNext : dayClosedReturnNext,
+    };
+  }
 
   async function bookSnapshot() {
     return {
@@ -837,7 +847,7 @@ postgres("cheque cashing on the ledger", () => {
       ...(leg === "return" ? { nsf: true } : {}),
     });
     expect(refused.statusCode, refused.body).toBe(422);
-    expect(refused.json()).toEqual(dayClosedBody);
+    expect(refused.json()).toEqual(dayClosedBody(leg));
     expect(await tillCad()).toBe(till);
     expect(await chequeStatus(cashed.cheque.chequeId)).toBe("held");
     expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held"]);
@@ -846,6 +856,10 @@ postgres("cheque cashing on the ledger", () => {
   }
 
   it("refuses a reversal on a closed day and leaves the till where it was", async () => {
+    await expectDayRefused("reversal", false);
+  });
+
+  it("names a supervisor or manager when a reversal is refused on a closed day", async () => {
     await expectDayRefused("reversal", false);
   });
 

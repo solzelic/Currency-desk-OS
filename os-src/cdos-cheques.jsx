@@ -349,18 +349,13 @@
     </div></Portal>);
   }
 
-  /* Compliance owns this sentence. One string, so a wording change
-     does not hunt through the buttons. A teller may open the next
-     session: the open route allows till:count, which a teller holds. */
-  const CHEQUE_DAY_CLOSED_NEXT =
-    "Open a new session on the till that paid this cheque out, then reverse it there.";
-
   /* ===================== DETAIL DRAWER ===================== */
   function ChequeDetail({ c, me, log, setCheques, onClose, onTillChanged }) {
     const overdue = c.status === 'held' && c.holdUntil < TODAY;
     const [busy, setBusy] = useState('');
     const [err, setErr] = useState('');
     const [errCode, setErrCode] = useState('');
+    const [next, setNext] = useState('');
     const dayClosed = errCode === 'CHEQUE_DAY_CLOSED';
     /* The three postings the closed day refuses. Mark cleared stays,
        because clearance still posts on a closed day. The hit target
@@ -379,7 +374,7 @@
       const book = ledger();
       if (!book) { setErr('This desk has no ledger to post to. Nothing was recorded.'); return; }
       if (busy) return;
-      setBusy(kind); setErr(''); setErrCode('');
+      setBusy(kind); setErr(''); setErrCode(''); setNext('');
       try {
         const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
         /* The status and the timeline come back from the register rather
@@ -394,6 +389,7 @@
       } catch (error) {
         setErr(error.message || 'The ledger refused this. Nothing was posted.');
         setErrCode(error && error.code || '');
+        setNext(error && error.next || '');
       } finally {
         setBusy('');
       }
@@ -483,7 +479,7 @@
               <button onClick={reverse} disabled={stopped} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={heldStyle({ border: `1px dashed ${CD.line}`, color: CD.mute })}><Ic n="x" s={15} c={stopped ? CD.faint : CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>
             </div>
           )}
-          {err && dayClosed && <div className="p-3 flex items-start gap-2" role="alert" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: onFlagSoft }}>{err}</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{CHEQUE_DAY_CLOSED_NEXT}</div></div></div>}
+          {err && dayClosed && <div className="p-3 flex items-start gap-2" role="alert" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: onFlagSoft }}>{err}</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{next}</div></div></div>}
           {err && !dayClosed && <div className="text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
           {c.txRef && <div className="text-[11px]" style={{ color: CD.faint }}>Ledger {c.txRef}</div>}
         </div>
