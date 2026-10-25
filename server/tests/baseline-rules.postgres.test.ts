@@ -8,7 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { BASELINE_NOTICE } from "../src/ledger/jurisdiction.js";
-import { fileCurrentPhotoId } from "./current-photo-id.js";
+import { clearPhotoId, fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -386,6 +386,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='verified' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await fileCurrentPhotoId(pool, gbp.customerId);
     const verified = await cheque(gbp, "10.00", "gbp-stale-verified");
     expect(verified.statusCode, verified.body).toBe(201);
     const staleStamp = (
@@ -401,6 +402,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await clearPhotoId(pool, gbp.customerId);
     const missing = await cheque(gbp, "10.00", "gbp-missing");
     expect(missing.statusCode, missing.body).toBe(422);
     expect(missing.json().code).toBe("COMPLIANCE_BLOCKED");
@@ -416,6 +418,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await clearPhotoId(pool, gbp.customerId);
 
     const lines = await app.inject({
       method: "GET",
@@ -504,6 +507,7 @@ postgres("the international baseline", () => {
       "UPDATE ledger_customers SET id_status='missing' WHERE customer_id=$1",
       [gbp.customerId],
     );
+    await clearPhotoId(pool, gbp.customerId);
     const staleId = await cheque(gbp, "10.00", "gbp-stale-id-2");
     expect(staleId.statusCode, staleId.body).toBe(422);
     expect(staleId.json().code).toBe("COMPLIANCE_BLOCKED");

@@ -14,6 +14,7 @@ import { hashPassword } from "../src/auth/password.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { CHEQUE_FEE_REFUSAL, CHEQUE_FEE_SCHEDULE_KEY, DEFAULT_CHEQUE_SCHEDULE } from "../src/routes/tenantState.js";
+import { fileCurrentPhotoId } from "./current-photo-id.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -62,6 +63,7 @@ async function desk() {
   await pool.query("TRUNCATE ledger_cheque_events,ledger_cheques,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_sessions,ledger_till_balances,ledger_customers,ledger_audit_events,audit_events CASCADE");
   await pool.query("INSERT INTO tenant_state (tenant_id, state, version) VALUES ($1, $2::jsonb, 1)", [DEMO.tenantId, JSON.stringify({ [CHEQUE_FEE_SCHEDULE_KEY]: JSON.stringify(DEFAULT_CHEQUE_SCHEDULE) })]);
   await pool.query("INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status) VALUES ('customer-demo',$1,$2,$3,$4,'Jakob Miller','Normal','verified')", scope.slice(0, 4));
+  await fileCurrentPhotoId(pool, "customer-demo");
   await pool.query("INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'CAD',5000)", scope);
   await pool.query("INSERT INTO ledger_till_sessions (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,session_number,business_date,status,opened_by,opened_at) VALUES ('fee-session',$1,$2,$3,$4,$5,1,DATE '2026-06-18','open',$6,now())", [...scope, `${DEMO.tenantId}:m.costa`]);
 }

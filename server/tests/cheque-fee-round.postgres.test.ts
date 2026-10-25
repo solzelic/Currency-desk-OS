@@ -41,6 +41,8 @@ async function desk(feePct: unknown = 2, feeMin: unknown = 5) {
     "INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status) VALUES ('customer-demo',$1,$2,$3,$4,'Jakob Miller','Normal','verified')",
     scope.slice(0, 4),
   );
+  const { fileCurrentPhotoId } = await import("./current-photo-id.js");
+  await fileCurrentPhotoId(pool, "customer-demo");
   await pool.query(
     "INSERT INTO ledger_till_balances (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,currency,available_amount) VALUES ($1,$2,$3,$4,$5,'CAD',5000)",
     scope,
