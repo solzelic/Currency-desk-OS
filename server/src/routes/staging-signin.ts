@@ -7,7 +7,10 @@
    member. It lasts three days. A desk sign-in stays twelve hours. */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import { audit } from "../audit.js";
+import { clientIp } from "../auth/client-ip.js";
+import { stagingAddressLimited } from "../auth/signin-guard.js";
 import { isStagingRuntime, requestHost } from "../auth/staging-runtime.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { isDemoDeskTenant } from "../demo-desk.js";
@@ -29,11 +32,9 @@ const ROLE_STAFF = {
   auditor: "l.berg",
 } as const;
 
-type DeskRole = keyof typeof ROLE_STAFF;
-
-function isDeskRole(value: unknown): value is DeskRole {
-  return typeof value === "string" && Object.prototype.hasOwnProperty.call(ROLE_STAFF, value);
-}
+const enterBody = z.object({
+  role: z.enum(["administrator", "branch_manager", "supervisor", "compliance_officer", "teller", "auditor"]),
+}).strict();
 
 function cookieOpts(secure: boolean) {
   return { httpOnly: true, sameSite: "lax" as const, secure, path: "/" };
@@ -43,7 +44,7 @@ export function clearStagingCookie(reply: FastifyReply, secure: boolean): void {
   reply.clearCookie(STAGING_COOKIE, cookieOpts(secure));
 }
 
-async function doorOpen(db: Db, host: string | string[] | undefined): Promise<boolean> {
+async function doorOpen(db: Db, host: string): Promise<boolean> {
   if (!isStagingRuntime(host)) return false;
   const row = await db
     .select({ id: schema.tenants.id, siteSlug: schema.tenants.siteSlug })
@@ -60,19 +61,25 @@ export function registerStagingSignInRoutes(app: FastifyInstance, db: Db): void 
   app.get("/api/staging/signin", async (req, reply) => {
     /* 404, not 403, and enabled is false. The login page treats
        anything other than 200 { enabled: true } as no buttons. */
-    if (!(await doorOpen(db, req.headers.host))) {
+    if (!(await doorOpen(db, req.headers.host ?? ""))) {
       return reply.code(404).send({ enabled: false });
     }
     return { enabled: true };
   });
 
   app.post("/api/staging/enter", async (req, reply) => {
-    if (!(await doorOpen(db, req.headers.host))) {
+    if (!(await doorOpen(db, req.headers.host ?? ""))) {
       return reply.code(404).send({ error: "not_found" });
     }
-    const body = (req.body ?? {}) as { role?: unknown };
-    if (!isDeskRole(body.role)) return reply.code(404).send({ error: "not_found" });
-    const role = body.role;
+    if (await stagingAddressLimited(db, clientIp(req))) {
+      return reply.code(429).send({ error: "too_many_attempts" });
+    }
+    const type = req.headers["content-type"];
+    const media = (Array.isArray(type) ? type[0] : type)?.split(";")[0]?.trim().toLowerCase();
+    if (media !== "application/json") return reply.code(415).send({ error: "unsupported_media_type" });
+    const parsed = enterBody.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const role = parsed.data.role;
     /* The shop id is not read from the body. The row has to be this
        role, on the demo tenant, and active. */
     const user = await db

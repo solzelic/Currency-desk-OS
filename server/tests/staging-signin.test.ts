@@ -1,6 +1,4 @@
-/* Staging quick sign-in. The door is 404 unless STAGING is exactly
-   "1", Render's hostname and the request Host are staging hosts, and
-   the shop is tnt-yorkfx. A live host stays 404. */
+/* Staging quick sign-in. 404 unless STAGING is exactly "1", both hosts are staging, and the shop is tnt-yorkfx. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -64,26 +62,29 @@ function configOn(res: { statusCode: number; json: () => { enabled?: boolean } }
 }
 
 describe("quick sign-in refused without the flag", () => {
-  let app: FastifyInstance;
-  let handle: DbHandle;
-  beforeAll(async () => {
-    const booted = await boot(false);
-    app = booted.app;
-    handle = booted.handle;
-  });
-  afterAll(async () => {
-    restoreEnv();
-    await app.close();
-    await handle.close();
-  });
+  afterAll(restoreEnv);
 
-  it("does not mount the door", async () => {
-    const cfg = await app.inject({ method: "GET", url: "/api/staging/signin", headers: { host: HOST } });
-    const enter = await app.inject({ method: "POST", url: "/api/staging/enter", headers: { host: HOST }, payload: { role: "teller" } });
-    expect(cfg.statusCode).toBe(404);
-    expect(enter.statusCode).toBe(404);
-    expect(configOn(cfg)).toBe(false);
-    expect(enter.cookies.find((c) => c.name === "cdos_session")).toBeUndefined();
+  it("does not mount the door unless STAGING is exactly 1", async () => {
+    for (const flag of [undefined, "true", " 1", "0", "1 "] as const) {
+      if (flag === undefined) delete process.env.STAGING;
+      else process.env.STAGING = flag;
+      process.env.PGLITE_MEMORY = "1";
+      process.env.SEED_PASSWORD = "yorkville";
+      process.env.RENDER_EXTERNAL_HOSTNAME = HOST;
+      const handle = await createDb();
+      await seed(handle.db);
+      const app = await buildApp(handle.db);
+      try {
+        expect(app.hasRoute({ method: "GET", url: "/api/staging/signin" }), JSON.stringify(flag)).toBe(false);
+        expect(app.hasRoute({ method: "POST", url: "/api/staging/enter" }), JSON.stringify(flag)).toBe(false);
+        const cfg = await app.inject({ method: "GET", url: "/api/staging/signin", headers: { host: HOST } });
+        expect(cfg.statusCode, JSON.stringify(flag)).toBe(404);
+        expect(configOn(cfg), JSON.stringify(flag)).toBe(false);
+      } finally {
+        await app.close();
+        await handle.close();
+      }
+    }
   });
 });
 
@@ -94,6 +95,9 @@ describe("quick sign-in on the demo shop", () => {
     const booted = await boot(true);
     app = booted.app;
     handle = booted.handle;
+    app.addHook("onRequest", async (req) => {
+      if (req.headers["x-strip-host"] === "1") delete req.headers.host;
+    });
   });
   afterAll(async () => {
     restoreEnv();
@@ -115,19 +119,15 @@ describe("quick sign-in on the demo shop", () => {
       expect((await enter("teller", host)).statusCode, host).toBe(404);
       expect(configOn(cfg), host).toBe(false);
     }
-    const spoofed = await app.inject({
-      method: "POST",
-      url: "/api/staging/enter",
-      headers: { host: "currencydeskos.com", "x-forwarded-host": HOST },
-      payload: { role: "administrator" },
-    });
+    const spoofed = await app.inject({ method: "POST", url: "/api/staging/enter", headers: { host: "currencydeskos.com", "x-forwarded-host": HOST }, payload: { role: "administrator" } });
     expect(spoofed.statusCode).toBe(404);
 
-    delete process.env.STAGING;
-    expect((await enter("teller")).statusCode).toBe(404);
-    process.env.STAGING = "true";
-    expect((await enter("teller")).statusCode).toBe(404);
-    process.env.STAGING = "1";
+    for (const host of ["evil.example.com", "currencydesk-pr-5.onrender.com"]) {
+      expect((await enter("teller", host)).statusCode, host).toBe(404);
+    }
+    const bare = await app.inject({ method: "GET", url: "/api/staging/signin", headers: { host: HOST, "x-strip-host": "1" } });
+    expect(bare.statusCode).toBe(404);
+    expect(configOn(bare)).toBe(false);
 
     await handle.db.update(schema.tenants).set({ siteSlug: "real-shop" }).where(eq(schema.tenants.id, DEMO.tenantId));
     try {
@@ -146,11 +146,15 @@ describe("quick sign-in on the demo shop", () => {
     expect(configOn(cfg)).toBe(true);
 
     for (const [role, id] of Object.entries(PEOPLE)) {
-      const res = await enter(role, HOST, { tenantId: "tnt-other" });
+      const res = await enter(role);
       expect(res.statusCode, role).toBe(200);
       expect(res.json().user, role).toMatchObject({ id, role, tenantId: DEMO.tenantId });
       expect(res.json().staging).toBe(true);
     }
+    expect((await enter("owner")).statusCode).toBe(400);
+    expect((await enter("teller", HOST, { tenantId: "tnt-other" })).statusCode).toBe(400);
+    const form = await app.inject({ method: "POST", url: "/api/staging/enter", headers: { host: HOST, "content-type": "application/x-www-form-urlencoded" }, payload: "role=teller" });
+    expect(form.statusCode).toBe(415);
 
     const teller = await enter("teller");
     const session = teller.cookies.find((c) => c.name === "cdos_session");
@@ -165,22 +169,14 @@ describe("quick sign-in on the demo shop", () => {
     expect(left).toBeGreaterThan(2 * DAY);
     expect(left).toBeLessThan(4 * DAY);
 
-    const publish = await app.inject({
-      method: "POST",
-      url: "/api/rates/publish",
-      cookies: { cdos_session: session!.value },
-      payload: {},
-    });
+    const publish = await app.inject({ method: "POST", url: "/api/rates/publish", cookies: { cdos_session: session!.value }, payload: {} });
     expect(publish.statusCode).toBe(403);
 
-    const me = await app.inject({
-      method: "GET",
-      url: "/api/auth/me",
-      headers: { host: HOST },
-      cookies: { cdos_session: session!.value, cdos_staging: "1" },
-    });
+    const me = await app.inject({ method: "GET", url: "/api/auth/me", headers: { host: HOST }, cookies: { cdos_session: session!.value, cdos_staging: "1" } });
     expect(me.json().staging).toBe(true);
     expect(me.json().user.role).toBe("teller");
+    const bareMe = await app.inject({ method: "GET", url: "/api/auth/me", headers: { host: HOST, "x-strip-host": "1" }, cookies: { cdos_session: session!.value, cdos_staging: "1" } });
+    expect(bareMe.json().staging).toBe(false);
 
     process.env.IS_PULL_REQUEST = "true";
     process.env.RENDER_EXTERNAL_HOSTNAME = PREVIEW;
@@ -199,16 +195,19 @@ describe("quick sign-in on the demo shop", () => {
       expect(JSON.stringify(event.detail)).not.toMatch(/password|token|cookie|secret|yorkville/i);
     }
 
-    const normal = await app.inject({
-      method: "POST",
-      url: "/api/auth/login",
-      headers: { host: HOST },
-      payload: { staffId: "j.masri", password: "yorkville", tenantId: DEMO.tenantId },
-    });
+    const normal = await app.inject({ method: "POST", url: "/api/auth/login", headers: { host: HOST }, payload: { staffId: "j.masri", password: "yorkville", tenantId: DEMO.tenantId } });
     expect(normal.statusCode).toBe(200);
     const normalLife = new Date(normal.cookies.find((c) => c.name === "cdos_session")!.expires!).getTime() - Date.now();
     expect(normalLife).toBeGreaterThan(11 * 60 * 60 * 1000);
     expect(normalLife).toBeLessThan(13 * 60 * 60 * 1000);
     expect(normal.cookies.find((c) => c.name === "cdos_staging" && c.value === "1")).toBeUndefined();
+
+    const limitedIp = "203.0.113.50";
+    let last = 0;
+    for (let n = 0; n < 21; n++) {
+      last = (await app.inject({ method: "POST", url: "/api/staging/enter", headers: { host: HOST }, payload: { role: "teller" }, remoteAddress: limitedIp })).statusCode;
+      if (n < 20) expect(last, String(n + 1)).toBe(200);
+    }
+    expect(last).toBe(429);
   });
 });

@@ -655,7 +655,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     return {
       /* A label for the banner. It is not a permission. The cookie is
          set only by quick sign-in, and only a staging host may read it. */
-      staging: req.cookies[STAGING_COOKIE] === "1" && isStagingRuntime(req.headers.host),
+      staging: req.cookies[STAGING_COOKIE] === "1" && isStagingRuntime(req.headers.host ?? ""),
       user: {
         id: who.staffId,
         name: who.name,
