@@ -20,7 +20,6 @@ import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { civilDate, civilTodayInZone } from "../src/civil-date.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { isoMinorUnits } from "../src/ledger/currencies.js";
 import { DEMO, seed } from "../src/seed.js";
@@ -161,6 +160,9 @@ const summary = async (query = "") =>
     })
   ).json();
 
+/* Day 1 is a past window. Day 2 runs from its end through 2027, so a
+   reversal posted at now lands on day 2. The cashing route stamps now
+   and the book is append-only, so the fixture moves only that posted_at. */
 const DAY1_FROM = "2026-10-01T00:00:00.000Z";
 const DAY1_TO = "2026-10-02T00:00:00.000Z";
 const DAY1_AT = "2026-10-01T15:00:00.000Z";
@@ -168,6 +170,7 @@ const DAY2_TO = "2027-01-01T00:00:00.000Z";
 const daySummary = (from: string, to: string) =>
   summary(`?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 const opposite = (figure: string) => (figure.startsWith("-") ? figure.slice(1) : `-${figure}`);
+const onDay2 = (stamp: string) => stamp >= DAY1_TO && stamp < DAY2_TO;
 
 async function cashBusinessCheque(idempotencyKey: string, chequeNumber: string) {
   await tillHolds("CAD", 50000);
@@ -218,31 +221,6 @@ async function openNextSession() {
     method: "POST", url: "/api/ledger/till-sessions/open", cookies: await cookie(),
   });
   expect(opened.statusCode, opened.body).toBe(201);
-}
-
-async function branchBusinessDay(at: Date) {
-  const zone = String((await pool.query(
-    "SELECT COALESCE(NULLIF(trim(timezone), ''), 'America/Toronto') AS timezone FROM branches WHERE id=$1",
-    [DEMO.branchId],
-  )).rows[0].timezone);
-  return civilTodayInZone(at, zone);
-}
-
-async function openSessionDay() {
-  const day = civilDate((await pool.query(
-    "SELECT business_date FROM ledger_till_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1",
-  )).rows[0].business_date);
-  if (!day) throw new Error("The open session has no business date.");
-  return day;
-}
-
-async function day2Cheque(key: string, number: string) {
-  const cashed = await cashBusinessCheque(key, number);
-  await backdateDeal(cashed.transactionId);
-  await closeAndSignOff(`${key}-close`);
-  const signed = await signedOffBook(cashed.transactionId);
-  await openNextSession();
-  return { cashed, signed, openDay: await openSessionDay(), day1: await branchBusinessDay(new Date(DAY1_AT)) };
 }
 
 async function signedOffBook(transactionId: string) {
@@ -365,10 +343,15 @@ postgres("the ledger answers for its own headline figures", () => {
   });
 
   it("keeps a signed-off day when its cheque is reversed the next day", async () => {
-    const { cashed, signed: before } = await day2Cheque("rev-day-cash", "004821");
+    const cashed = await cashBusinessCheque("rev-day-cash", "004821");
+    await backdateDeal(cashed.transactionId);
+    await closeAndSignOff("rev-day-close");
+    const before = await signedOffBook(cashed.transactionId);
     expect(before.book.posted).toBe(1);
     expect(before.counts.length).toBeGreaterThan(0);
     expect(before.journals.length).toBeGreaterThan(0);
+
+    await openNextSession();
     const reversal = await app.inject({
       method: "POST",
       url: `/api/ledger/cheques/${cashed.cheque.chequeId}/reversal`,
@@ -376,6 +359,26 @@ postgres("the ledger answers for its own headline figures", () => {
       payload: { idempotencyKey: "rev-day-undo", reason: "Wrong cheque" },
     });
     expect(reversal.statusCode, reversal.body).toBe(201);
+    const undone = reversal.json() as { transactionId: string; postedAt: string; reversalId: string };
+    expect(undone.transactionId).toBe(cashed.transactionId);
+    expect(onDay2(undone.postedAt)).toBe(true);
+    const stored = (
+      await pool.query(
+        "SELECT transaction_id, posted_at FROM ledger_reversals WHERE reversal_id=$1",
+        [undone.reversalId],
+      )
+    ).rows[0];
+    const storedAt = new Date(stored.posted_at).toISOString();
+    expect(stored.transaction_id).toBe(cashed.transactionId);
+    expect(onDay2(storedAt)).toBe(true);
+    const link = (
+      await pool.query(
+        "SELECT reversal_id FROM ledger_cheques WHERE cheque_id=$1 AND cashing_transaction_id=$2",
+        [cashed.cheque.chequeId, cashed.transactionId],
+      )
+    ).rows[0];
+    expect(link.reversal_id).toBe(undone.reversalId);
+
     const after = await signedOffBook(cashed.transactionId);
     expect.soft(after.book).toEqual(before.book);
     expect.soft(after.counts).toEqual(before.counts);
@@ -383,17 +386,21 @@ postgres("the ledger answers for its own headline figures", () => {
 
     const day2 = await daySummary(DAY1_TO, DAY2_TO);
     const paidBack = before.book.movement[0].paidOut as string;
-    expect.soft(day2).toMatchObject({
-      posted: 0, reversed: 1,
-      volumeHome: opposite(before.book.volumeHome),
-      feesHome: opposite(before.book.feesHome),
-      movement: [{ currency: "CAD", received: paidBack, paidOut: "0.00", net: paidBack }],
-      byActor: [expect.objectContaining({
-        actorId: `${DEMO.tenantId}:r.haddad`, deals: 0,
+    expect.soft(day2.posted).toBe(0);
+    expect.soft(day2.reversed).toBe(1);
+    expect.soft(day2.volumeHome).toBe(opposite(before.book.volumeHome));
+    expect.soft(day2.feesHome).toBe(opposite(before.book.feesHome));
+    expect.soft(day2.movement).toEqual([
+      { currency: "CAD", received: paidBack, paidOut: "0.00", net: paidBack },
+    ]);
+    expect.soft(day2.byActor).toEqual([
+      expect.objectContaining({
+        actorId: `${DEMO.tenantId}:r.haddad`,
+        deals: 0,
         volumeHome: opposite(before.book.volumeHome),
         feesHome: opposite(before.book.feesHome),
-      })],
-    });
+      }),
+    ]);
   });
 
   it("nets a same-day cheque reversal out of that day's money", async () => {
@@ -407,14 +414,21 @@ postgres("the ledger answers for its own headline figures", () => {
     });
     expect(reversal.statusCode, reversal.body).toBe(201);
     const day = await daySummary(from, DAY2_TO);
-    expect(day).toMatchObject({
-      posted: 0, reversed: 1, volumeHome: null, feesHome: null,
-      realizedPnlHome: null, movement: [], byCurrency: [],
-    });
+    expect(day.posted).toBe(0);
+    expect(day.reversed).toBe(1);
+    expect(day.volumeHome).toBeNull();
+    expect(day.feesHome).toBeNull();
+    expect(day.realizedPnlHome).toBeNull();
+    expect(day.movement).toEqual([]);
+    expect(day.byCurrency).toEqual([]);
   });
 
   it("leaves a signed-off day unchanged when its cheque is returned the next day", async () => {
-    const { cashed, signed: before } = await day2Cheque("ret-day-cash", "004823");
+    const cashed = await cashBusinessCheque("ret-day-cash", "004823");
+    await backdateDeal(cashed.transactionId);
+    await closeAndSignOff("ret-day-close");
+    const before = await signedOffBook(cashed.transactionId);
+    await openNextSession();
     const returned = await app.inject({
       method: "POST",
       url: `/api/ledger/cheques/${cashed.cheque.chequeId}/return`,
@@ -429,48 +443,17 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(
       (await pool.query("SELECT count(*)::int AS n FROM ledger_reversals")).rows[0].n,
     ).toBe(0);
-    expect(await daySummary(DAY1_TO, DAY2_TO)).toMatchObject({
-      posted: 0, reversed: 0, volumeHome: null, movement: [],
-    });
-  });
-
-  it("dates a day-2 cheque reversal on that business day and links the original deal", async () => {
-    const { cashed, openDay, day1 } = await day2Cheque("rev-row-cash", "004824");
-    const reversal = await app.inject({
-      method: "POST", url: `/api/ledger/cheques/${cashed.cheque.chequeId}/reversal`,
-      cookies: await cookie(),
-      payload: { idempotencyKey: "rev-row", reason: "Wrong cheque" },
-    });
-    expect(reversal.statusCode, reversal.body).toBe(201);
-    const row = (await pool.query(
-      "SELECT transaction_id, posted_at FROM ledger_reversals WHERE reversal_id=$1",
-      [reversal.json().reversalId],
-    )).rows[0];
-    const businessDay = await branchBusinessDay(new Date(row.posted_at));
-    expect.soft(businessDay).toBe(openDay);
-    expect.soft(businessDay).not.toBe(day1);
-    expect.soft(row.transaction_id).toBe(cashed.transactionId);
-  });
-
-  it("dates a day-2 cheque return on that business day and links the original deal", async () => {
-    const { cashed, openDay, day1 } = await day2Cheque("ret-row-cash", "004825");
-    const returned = await app.inject({
-      method: "POST", url: `/api/ledger/cheques/${cashed.cheque.chequeId}/return`,
-      cookies: await cookie(),
-      payload: { idempotencyKey: "ret-row", reason: "NSF", nsf: true },
-    });
-    expect(returned.statusCode, returned.body).toBe(201);
-    const row = (await pool.query(
-      `SELECT t.posted_at, c.cashing_transaction_id
-         FROM ledger_transactions t
-         JOIN ledger_cheques c ON c.settlement_transaction_id = t.transaction_id
-        WHERE c.cheque_id=$1 AND t.deal_kind='cheque_return'`,
-      [cashed.cheque.chequeId],
-    )).rows[0];
-    const businessDay = await branchBusinessDay(new Date(row.posted_at));
-    expect.soft(businessDay).toBe(openDay);
-    expect.soft(businessDay).not.toBe(day1);
-    expect.soft(row.cashing_transaction_id).toBe(cashed.transactionId);
+    const day2 = await daySummary(DAY1_TO, DAY2_TO);
+    expect(day2.posted).toBe(0);
+    expect(day2.reversed).toBe(0);
+    expect(day2.volumeHome).toBeNull();
+    expect(day2.movement).toEqual([]);
+    const settlement = (
+      await pool.query(
+        "SELECT posted_at FROM ledger_transactions WHERE deal_kind='cheque_return'",
+      )
+    ).rows[0];
+    expect(onDay2(new Date(settlement.posted_at).toISOString())).toBe(true);
   });
 
   it("keeps the original day's exchange when it is reversed the next day", async () => {
@@ -479,26 +462,28 @@ postgres("the ledger answers for its own headline figures", () => {
     const transactionId = await sellAThousandDollars("rev-fx-cash");
     await backdateDeal(transactionId);
     const before = await daySummary(DAY1_FROM, DAY1_TO);
+    expect(before.posted).toBe(1);
     const reversal = await app.inject({
-      method: "POST", url: `/api/ledger/transactions/${transactionId}/reversal`,
+      method: "POST",
+      url: `/api/ledger/transactions/${transactionId}/reversal`,
       cookies: await cookie(),
       payload: { idempotencyKey: "rev-fx-undo", reason: "Wrong customer" },
     });
     expect(reversal.statusCode, reversal.body).toBe(201);
     expect.soft(await daySummary(DAY1_FROM, DAY1_TO)).toEqual(before);
     const day2 = await daySummary(DAY1_TO, DAY2_TO);
+    expect(day2.posted).toBe(0);
+    expect(day2.reversed).toBe(1);
+    expect(day2.volumeHome).toBe(opposite(before.volumeHome));
+    expect(day2.feesHome).toBe(opposite(before.feesHome));
+    expect(day2.realizedPnlHome).toBe(opposite(before.realizedPnlHome));
+    expect(day2.costOfSaleHome).toBe(opposite(before.costOfSaleHome));
     const cad = before.movement.find((row: { currency: string }) => row.currency === "CAD");
     const usd = before.movement.find((row: { currency: string }) => row.currency === "USD");
-    expect(day2).toMatchObject({
-      posted: 0, reversed: 1,
-      volumeHome: opposite(before.volumeHome), feesHome: opposite(before.feesHome),
-      realizedPnlHome: opposite(before.realizedPnlHome),
-      costOfSaleHome: opposite(before.costOfSaleHome),
-      movement: [
-        { currency: "CAD", received: "0.00", paidOut: cad.received, net: opposite(cad.received) },
-        { currency: "USD", received: usd.paidOut, paidOut: "0.00", net: usd.paidOut },
-      ],
-    });
+    expect(day2.movement).toEqual([
+      { currency: "CAD", received: "0.00", paidOut: cad.received, net: opposite(cad.received) },
+      { currency: "USD", received: usd.paidOut, paidOut: "0.00", net: usd.paidOut },
+    ]);
   });
 
   it("shows a stored yen amount on a closed day, and rounds each open-day row before adding", async () => {
