@@ -3030,11 +3030,17 @@
   if (root) {
     var cdos = root.CDOS || (root.CDOS = {});
     cdos.lctrReversal = api;
+    /* A missing rule cannot prove the booking-error exception, so the reversal stays in the total. */
+    cdos.countsForLctr = function (row) {
+      var rule = cdos.lctrReversal;
+      if (!rule || typeof rule.countsTowardLctr !== "function") return true;
+      return !row || row.status !== "void" || !!rule.countsTowardLctr(row.voidReason);
+    };
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   var BOOKING_ERROR_REASON = "booking error, cash not received";
   var LEFT_OUT_LINE = "left out: booking error, cash not received";
-  var IN_REPORT_MESSAGE = "This deal is in a filed report. Ask your compliance officer.";
+  var IN_REPORT_MESSAGE = "This deal is already in a report. Ask your compliance officer.";
 
   function isBookingErrorReason(reason) {
     return String(reason == null ? "" : reason).trim().toLowerCase() === BOOKING_ERROR_REASON;
@@ -4398,8 +4404,9 @@ if (typeof window !== "undefined") {
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
-    const lctrRule = window.CDOS.lctrReversal;
-    const countsForLctr = r => r.status !== 'void' || lctrRule && lctrRule.countsTowardLctr(r.voidReason);
+    const countsForLctr = window.CDOS.countsForLctr || function () {
+      return true;
+    };
     const posted = rows.filter(r => r.status !== 'void');
     const lctrRows = rows.filter(countsForLctr);
     /* The 24h window comes from the active jurisdiction pack (regime) so the
@@ -4458,7 +4465,7 @@ if (typeof window !== "undefined") {
     const aggregate = regime.aggregate !== false;
     const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
-      if (row.status === 'void' && !(lctrRule && lctrRule.countsTowardLctr(row.voidReason))) {
+      if (row.status === 'void' && !countsForLctr(row)) {
         map[row.id] = {
           void: true,
           single: false,
@@ -45204,8 +45211,7 @@ var CDOS_CHEQUE_FEE = (function () {
   }
   // LCTR: cash received. The policy comes from the large-cash report.
   function countsForLctr(row) {
-    const rule = window.CDOS.lctrReversal;
-    return !row || row.status !== 'void' || !!(rule && rule.countsTowardLctr(row.voidReason));
+    return window.CDOS.countsForLctr ? window.CDOS.countsForLctr(row) : true;
   }
   function branchWhen(raw, zone) {
     const text = raw == null ? '' : String(raw).trim();
@@ -47000,7 +47006,7 @@ ${(filing.map || []).map(blockHTML).join('')}
        Filing it again on its own would be the second copy FINTRAC says
        not to send. A lone receipt at the line is not in a cluster. */
     const covered = new Set(includeAllCoveredRefs ? includeAllCoveredRefs(rows, regime, settings) : []);
-    rows.filter(r => r.status !== 'void' || window.CDOS.lctrReversal && window.CDOS.lctrReversal.countsTowardLctr(r.voidReason)).forEach(r => {
+    rows.filter(r => window.CDOS.countsForLctr ? window.CDOS.countsForLctr(r) : true).forEach(r => {
       const f = flags[r.id] || {};
       if (f.single && !covered.has(r.ref)) out.push({
         id: 'L-' + r.ref,

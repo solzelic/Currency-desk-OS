@@ -24,8 +24,7 @@
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
-    const lctrRule = window.CDOS.lctrReversal;
-    const countsForLctr = (r) => r.status !== 'void' || (lctrRule && lctrRule.countsTowardLctr(r.voidReason));
+    const countsForLctr = window.CDOS.countsForLctr || function () { return true; };
     const posted = rows.filter(r => r.status !== 'void');
     const lctrRows = rows.filter(countsForLctr);
     /* The 24h window comes from the active jurisdiction pack (regime) so the
@@ -71,7 +70,7 @@
     const aggregate = regime.aggregate !== false;
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
-      if (row.status === 'void' && !(lctrRule && lctrRule.countsTowardLctr(row.voidReason))) {
+      if (row.status === 'void' && !countsForLctr(row)) {
         map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 };
         return;
       }

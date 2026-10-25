@@ -621,8 +621,7 @@
   }
   // LCTR: cash received. The policy comes from the large-cash report.
   function countsForLctr(row) {
-    const rule = window.CDOS.lctrReversal;
-    return !row || row.status !== 'void' || !!(rule && rule.countsTowardLctr(row.voidReason));
+    return window.CDOS.countsForLctr ? window.CDOS.countsForLctr(row) : true;
   }
   function branchWhen(raw, zone) {
     const text = raw == null ? '' : String(raw).trim();

@@ -80,7 +80,7 @@ shows "left out: booking error, cash not received." then
 "16 Jun 2026, 4:00 pm". A reversed deal that still counts shows a reversed
 tag on its row. The same reason is refused when the deal is already
 on a prepared or filed LCTR. Prepared is a draft filing. The message
-is "This deal is in a filed report. Ask your compliance officer."
+is "This deal is already in a report. Ask your compliance officer."
 Nothing is reversed and the report row stays as it was. The
 left-out line still shows when dropping that deal leaves no cluster.
 A sealed filing is not removed.

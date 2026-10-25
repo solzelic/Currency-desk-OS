@@ -8,11 +8,17 @@
   if (root) {
     var cdos = root.CDOS || (root.CDOS = {});
     cdos.lctrReversal = api;
+    /* A missing rule cannot prove the booking-error exception, so the reversal stays in the total. */
+    cdos.countsForLctr = function (row) {
+      var rule = cdos.lctrReversal;
+      if (!rule || typeof rule.countsTowardLctr !== "function") return true;
+      return !row || row.status !== "void" || !!rule.countsTowardLctr(row.voidReason);
+    };
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   var BOOKING_ERROR_REASON = "booking error, cash not received";
   var LEFT_OUT_LINE = "left out: booking error, cash not received";
-  var IN_REPORT_MESSAGE = "This deal is in a filed report. Ask your compliance officer.";
+  var IN_REPORT_MESSAGE = "This deal is already in a report. Ask your compliance officer.";
 
   function isBookingErrorReason(reason) {
     return String(reason == null ? "" : reason).trim().toLowerCase() === BOOKING_ERROR_REASON;

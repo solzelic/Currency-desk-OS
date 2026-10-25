@@ -91,6 +91,21 @@ describe("desk paths use the shared LCTR reversal rule", () => {
     expect(listed(BOOKING)).toBe(false);
   });
 
+  it("counts a reversed deal in flags, singles, and clusters when the shared rule is missing", () => {
+    const saved = g.window.CDOS.lctrReversal;
+    g.window.CDOS.lctrReversal = null;
+    try {
+      const rows = pair("Customer changed their mind");
+      const big = [deal({ id: "s", ref: "R-BIG", inAmt: 10000, outAmt: 10000, date: "2026-06-16", time: "12:00", status: "void", voidReason: "Customer changed their mind" })];
+      const total = engine.aggClusters(rows, regime, SETTINGS).reduce((sum: number, c: { total: number }) => sum + c.total, 0);
+      const listed = g.window.CDOS.computeReportables(big, {}, SETTINGS, [], {}).some((item: { refs: string[] }) => item.refs.includes("R-BIG"));
+      expect({
+        flags: g.window.CDOS.computeFlags(rows, {}, SETTINGS).b.agg24,
+        clusters: total, singles: listed,
+      }).toEqual({ flags: true, clusters: 11000, singles: true });
+    } finally { g.window.CDOS.lctrReversal = saved; }
+  });
+
   it("shows the left-out line for CAD 6000 left out and CAD 5000 kept, with the staff name and the branch clock", () => {
     const rows = pair(BOOKING);
     expect(engine.aggClusters(rows, regime, SETTINGS)).toEqual([]);

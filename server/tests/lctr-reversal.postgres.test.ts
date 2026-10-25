@@ -21,7 +21,7 @@ const ZONE = "America/Toronto", DAY1 = "2026-06-15", DAY2 = "2026-06-16";
 const TENANT = "tnt-lctr319", ENTITY = "le-lctr319", BRANCH = "br-lctr319";
 const WORKSPACE = "ws-lctr319", TILL = "till-lctr319";
 const SUPERVISOR = "lctr-supervisor", TELLER = "lctr-teller";
-const IN_REPORT = "This deal is in a filed report. Ask your compliance officer.";
+const IN_REPORT = "This deal is already in a report. Ask your compliance officer.";
 const TELLER_MSG = "Only a supervisor, branch manager, or administrator can record a booking error. Nothing was reversed.";
 const scope = [TENANT, ENTITY, BRANCH, WORKSPACE, TILL];
 let handle: DbHandle, pool: pg.Pool, service: LedgerService;
