@@ -2,7 +2,8 @@
    A teller, an auditor, and a supervisor may not file. A supervisor
    may read an LCTR. The three compliance roles may file and read.
    A deal keeps its plain fields and drops the STR fields a role
-   may not see. The watch list and acknowledge stop at supervisor. */
+   may not see. The watch query runs only for the watch roles.
+   ackStr stays false. */
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { createRequire } from "node:module";
@@ -98,7 +99,7 @@ async function asRole(role: string) {
 }
 
 function isWatchQuery(sql: string) {
-  return /make_interval\s*\(\s*days/i.test(sql) || /ledger_structuring_acks/i.test(sql);
+  return /make_interval\s*\(\s*days/i.test(sql);
 }
 
 async function captureSql(run: () => Promise<void>) {
@@ -159,7 +160,7 @@ postgres("str filing and the transaction field strip", () => {
 
   afterAll(async () => {
     await pool.query(
-      `TRUNCATE ledger_structuring_acks, ledger_filing_flags,
+      `TRUNCATE ledger_filing_flags,
               ledger_report_filings, ledger_audit_events, ledger_transactions,
               ledger_customers, ledger_principals CASCADE`,
     );
@@ -171,7 +172,7 @@ postgres("str filing and the transaction field strip", () => {
 
   beforeEach(async () => {
     await pool.query(
-      `TRUNCATE ledger_structuring_acks, ledger_filing_flags,
+      `TRUNCATE ledger_filing_flags,
               ledger_report_filings, ledger_audit_events, ledger_transactions,
               ledger_customers, ledger_principals CASCADE`,
     );
@@ -265,134 +266,6 @@ postgres("str filing and the transaction field strip", () => {
     expect(seen.structuring).toBe(true);
   });
 
-  it("serves the watch list to supervisor and up, and refuses a teller", async () => {
-    for (const role of ["teller", "auditor"] as const) {
-      const refused = await app.inject({
-        method: "GET",
-        url: "/api/ledger/structuring-watch",
-        cookies: await asRole(role),
-      });
-      expect(refused.statusCode, role).toBe(403);
-      expect(refused.body.toLowerCase()).not.toContain("str");
-      expect(refused.body.toLowerCase()).not.toContain("structur");
-      expect(refused.body.toLowerCase()).not.toContain("suspicious");
-    }
-    for (const role of WATCH) {
-      const opened = await app.inject({
-        method: "GET",
-        url: "/api/ledger/structuring-watch",
-        cookies: await asRole(role),
-      });
-      expect(opened.statusCode, opened.body).toBe(200);
-      expect(opened.json().items).toEqual([
-        expect.objectContaining({
-          customerId: "cust-watch",
-          name: "Nora Quinn",
-          count: 2,
-          total: "12000.00",
-          acknowledged: false,
-        }),
-      ]);
-    }
-  });
-
-  it("refuses a teller acknowledge before any write", async () => {
-    const refused = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("teller"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(refused.statusCode).toBe(403);
-    const none = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
-    expect(none.rows[0].n).toBe(0);
-    const saved = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(saved.statusCode, saved.body).toBe(200);
-    const once = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
-    expect(once.rows[0].n).toBe(1);
-    const again = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("teller"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(again.statusCode).toBe(403);
-    const still = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
-    expect(still.rows[0].n).toBe(1);
-  });
-
-  it("a second acknowledge of the same customer adds a row and the read shows the newest", async () => {
-    const newestId = `${DEMO.tenantId}:j.masri`;
-    const first = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(first.statusCode, first.body).toBe(200);
-    const second = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await cookie("j.masri"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(second.statusCode, second.body).toBe(200);
-    const rows = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_structuring_acks WHERE customer_id = $1",
-      ["cust-watch"],
-    );
-    expect(rows.rows[0].n).toBe(2);
-    const list = await app.inject({
-      method: "GET",
-      url: "/api/ledger/structuring-watch",
-      cookies: await asRole("supervisor"),
-    });
-    expect(list.statusCode, list.body).toBe(200);
-    const item = list.json().items.find(
-      (row: { customerId: string }) => row.customerId === "cust-watch",
-    );
-    expect(item.count).toBe(2);
-    expect(item.total).toBe("12000.00");
-    expect(item.actorId).toBe(newestId);
-    expect(item.acknowledged).toBe(true);
-    const deals = await app.inject({
-      method: "GET",
-      url: "/api/ledger/transactions",
-      cookies: await asRole("supervisor"),
-    });
-    expect(deals.statusCode, deals.body).toBe(200);
-    const deal = deals.json().transactions.find(
-      (row: { transactionRef: string }) => row.transactionRef === "YFX-STR-1",
-    );
-    expect(deal.ackStr).toBe(true);
-    expect(deal.ackStrInfo.by).toBe(newestId);
-  });
-
-  it("refuses an update or a delete of a structuring acknowledgement", async () => {
-    const saved = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(saved.statusCode, saved.body).toBe(200);
-    await expect(
-      pool.query("UPDATE ledger_structuring_acks SET actor_id = actor_id"),
-    ).rejects.toThrow(/append-only/);
-    await expect(
-      pool.query("DELETE FROM ledger_structuring_acks"),
-    ).rejects.toThrow(/append-only/);
-    const kept = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_structuring_acks",
-    );
-    expect(kept.rows[0].n).toBe(1);
-  });
-
   it("runs no watch query for a teller or an auditor, and returns no watch keys", async () => {
     for (const role of ["teller", "auditor"] as const) {
       const seen = await captureSql(async () => {
@@ -412,13 +285,6 @@ postgres("str filing and the transaction field strip", () => {
   });
 
   it("shows a supervisor the watch and none of the STR keys", async () => {
-    const saved = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(saved.statusCode, saved.body).toBe(200);
     const seen = await captureSql(async () => {
       const res = await app.inject({
         method: "GET",
@@ -431,7 +297,7 @@ postgres("str filing and the transaction field strip", () => {
       );
       expect(row.structuring).toBe(true);
       expect(row.structuringTotal).toBe("12000.00");
-      expect(row.ackStr).toBe(true);
+      expect(row.ackStr).toBe(false);
       for (const key of roles.WATCH_KEYS) expect(row, key).toHaveProperty(key);
       for (const key of roles.STR_KEYS) {
         expect(row, key).not.toHaveProperty(key);
@@ -439,5 +305,27 @@ postgres("str filing and the transaction field strip", () => {
       }
     });
     expect(seen.some(isWatchQuery)).toBe(true);
+  });
+
+  it("keeps ackStr false for every role", async () => {
+    for (const role of ["teller", "auditor", ...WATCH]) {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/ledger/transactions",
+        cookies: await asRole(role),
+      });
+      expect(res.statusCode, role).toBe(200);
+      expect(res.body, role).not.toContain('"ackStr":true');
+      const row = res.json().transactions.find(
+        (item: { transactionRef: string }) => item.transactionRef === "YFX-STR-1",
+      );
+      if (roles.canSeeStructuringWatch(role)) {
+        expect(row.ackStr, role).toBe(false);
+        expect(row.ackStrInfo, role).toBe(null);
+      } else {
+        expect(row, role).not.toHaveProperty("ackStr");
+        expect(row, role).not.toHaveProperty("ackStrInfo");
+      }
+    }
   });
 });
