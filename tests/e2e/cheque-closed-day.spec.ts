@@ -11,6 +11,7 @@ const RETURN_NEXT =
   "Open a new session on the till that paid this cheque out. Then post the return there.";
 const REVERSAL_NEXT =
   "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.";
+const STAYS = "The closed day stays as it was.";
 
 /* Same reading as the other desk specs. The closed-day title sits on
    the pink box and has to clear 4.5:1. */
@@ -212,6 +213,23 @@ async function closeOpenSession(page: Page) {
   });
 }
 
+/* HoD shots of the refusal. Off unless CHEQUE_CLOSED_LINE_SHOTS=1, so a
+   normal run does not write files. */
+async function shootClosedDay(page: Page, alert: Locator, kind: "return" | "reversal") {
+  if (process.env.CHEQUE_CLOSED_LINE_SHOTS !== "1") return;
+  const dir = "docs/pr-shots/cheque-closed-day-line";
+  for (const theme of ["light", "dark"] as const) {
+    await useTheme(page, theme);
+    for (const width of [360, 390, 430, 600, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await alert.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${dir}/${kind}-${theme}-${width}.png` });
+    }
+  }
+  await useTheme(page, "light");
+  await page.setViewportSize({ width: 1280, height: 900 });
+}
+
 async function openClosedCheque(page: Page) {
   await signInAtDesk(page);
   await dismissTour(page);
@@ -253,6 +271,8 @@ test("a closed day disables return, fraud and reversal and shows the next step",
   const alert = page.getByRole("alert");
   await expect(alert).toContainText(REFUSAL);
   await expect(alert).toContainText(RETURN_NEXT);
+  await expect(alert).toContainText(STAYS);
+  await expect(alert.getByText(STAYS, { exact: true })).toBeVisible();
   await expect(alert).not.toContainText("supervisor or manager");
   await expect(returnNsf).toBeDisabled();
   await expect(flagFraud).toBeDisabled();
@@ -273,6 +293,14 @@ test("a closed day disables return, fraud and reversal and shows the next step",
   });
   const ratio = contrastOf(ink.fg, ink.bg);
   expect(ratio, `${ink.fg} on ${ink.bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+
+  const staysInk = await alert.getByText(STAYS, { exact: true }).evaluate((node) => ({
+    fg: getComputedStyle(node).color,
+    bg: getComputedStyle(node.closest("[role='alert']") || node).backgroundColor,
+  }));
+  const staysRatio = contrastOf(staysInk.fg, staysInk.bg);
+  expect(staysRatio, `${staysInk.fg} on ${staysInk.bg} is ${staysRatio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+  await shootClosedDay(page, alert, "return");
 });
 
 test("a closed-day reversal names a supervisor or manager", async ({ page }) => {
@@ -282,7 +310,10 @@ test("a closed-day reversal names a supervisor or manager", async ({ page }) => 
   const alert = page.getByRole("alert");
   await expect(alert).toContainText(REFUSAL);
   await expect(alert).toContainText(REVERSAL_NEXT);
+  await expect(alert).toContainText(STAYS);
+  await expect(alert.getByText(STAYS, { exact: true })).toBeVisible();
   await expect(alert).not.toContainText("Then post the return there.");
+  await shootClosedDay(page, alert, "reversal");
 });
 
 test("dark theme cheque titles and the returned subtitle clear 4.5:1", async ({ page }) => {
@@ -291,7 +322,9 @@ test("dark theme cheque titles and the returned subtitle clear 4.5:1", async ({ 
   await returnNsf.click();
   const alert = page.getByRole("alert");
   await expect(alert).toContainText(REFUSAL);
+  await expect(alert).toContainText(STAYS);
   const closed = await paintedContrast(alert.locator(".font-semibold"));
+  const staysPainted = await paintedContrast(alert.getByText(STAYS, { exact: true }));
 
   if (process.env.CHEQUE_CLOSED_SHOTS === "1") {
     for (const width of [360, 390, 1280]) {
@@ -326,10 +359,12 @@ test("dark theme cheque titles and the returned subtitle clear 4.5:1", async ({ 
 
   const report = [
     `closed title ${closed.ratio.toFixed(2)}:1 (${closed.fgCss} on ${closed.bgCss})`,
+    `stays line ${staysPainted.ratio.toFixed(2)}:1 (${staysPainted.fgCss} on ${staysPainted.bgCss})`,
     `returned title ${returned.ratio.toFixed(2)}:1 (${returned.fgCss} on ${returned.bgCss})`,
     `returned subtitle ${sub.ratio.toFixed(2)}:1 (${sub.fgCss} on ${sub.bgCss})`,
   ].join("; ");
   expect(closed.ratio, report).toBeGreaterThanOrEqual(4.5);
+  expect(staysPainted.ratio, report).toBeGreaterThanOrEqual(4.5);
   expect(returned.ratio, report).toBeGreaterThanOrEqual(4.5);
   expect(sub.ratio, report).toBeGreaterThanOrEqual(4.5);
 });

@@ -85,6 +85,7 @@
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       if (typeof body.next === "string" && body.next) error.next = body.next;
+      if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
       throw error;
     }
     return body;

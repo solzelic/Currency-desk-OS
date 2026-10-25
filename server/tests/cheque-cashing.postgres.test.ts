@@ -795,12 +795,14 @@ postgres("cheque cashing on the ledger", () => {
     "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.";
   const dayClosedReturnNext =
     "Open a new session on the till that paid this cheque out. Then post the return there.";
+  const dayClosedStays = "The closed day stays as it was.";
 
   function dayClosedBody(leg: "reversal" | "return") {
     return {
       code: "CHEQUE_DAY_CLOSED",
       message: dayClosedRefusal,
       next: leg === "reversal" ? dayClosedReversalNext : dayClosedReturnNext,
+      stays: dayClosedStays,
     };
   }
 
@@ -847,6 +849,8 @@ postgres("cheque cashing on the ledger", () => {
       ...(leg === "return" ? { nsf: true } : {}),
     });
     expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.body).toContain(dayClosedStays);
+    expect(refused.json().stays).toBe(dayClosedStays);
     expect(refused.json()).toEqual(dayClosedBody(leg));
     expect(await tillCad()).toBe(till);
     expect(await chequeStatus(cashed.cheque.chequeId)).toBe("held");

@@ -22,7 +22,7 @@ say.
 | `server/src/db/migrations/` | checksummed SQL migrations — **immutable once merged** | add-only |
 | `server/tests/` | vitest suites; `*.postgres.test.ts` need `TEST_DATABASE_URL` | ✅ |
 | `os-src/` | the OS source: domain `.jsx` screens, `cdos-backend.js`, `cdos-persist.js`, `cdos-tour.js` (first-run tour), `york-os.css` | ✅ |
-| `shared/` | plain scripts the server `require`s. The shell loads `id-document-types.js` (the ID-type catalogue), `counter-cash.js` (which legs of a deal are cash), `rolling-24h.js` (the rolling 24 hours before a deal), and `lctr-reversal.js` (which reversal still counts toward an LCTR). `cheque-day-closed.js` is the closed-day next step: the server puts it on the 422 and the desk prints that field. The shell does not load it, and it is not served | ✅ |
+| `shared/` | plain scripts the server `require`s. The shell loads `id-document-types.js` (the ID-type catalogue), `counter-cash.js` (which legs of a deal are cash), `rolling-24h.js` (the rolling 24 hours before a deal), and `lctr-reversal.js` (which reversal still counts toward an LCTR). `cheque-day-closed.js` is the closed-day next step and the line "The closed day stays as it was." The server puts both on the 422 and the desk prints those fields. The shell does not load it, and it is not served | ✅ |
 | `CurrencyDesk OS.html` | OS shell. Lists every `os-src` script, `shared/id-document-types.js`, `shared/counter-cash.js`, `shared/rolling-24h.js`, and `shared/lctr-reversal.js`. Also the production fallback when `web/app` is absent | ✅ |
 | `admin.html` | admin-panel shell (one inline Babel script) + production fallback | ✅ |
 | `design/site/` | marketing design sources (`*.dc.html` + `support.js`, `image-slot.js`) | ✅ |

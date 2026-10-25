@@ -83,10 +83,12 @@ const CHEQUE_DAY_CLOSED =
 
 /* One copy of each next step, shared with the desk through the 422.
    A return uses the sentence a teller can carry out. A reversal names
-   a supervisor or manager, because that post needs transaction:reverse. */
+   a supervisor or manager, because that post needs transaction:reverse.
+   Both refusals also carry stays, the closed-day line from that file. */
 const chequeDayClosedNext = createRequire(import.meta.url)("../../../shared/cheque-day-closed.js") as {
   reversal: string;
   returned: string;
+  stays: string;
 };
 
 /* A reversal and a return post onto the till session this call is
@@ -104,7 +106,12 @@ async function refuseClosedChequeDay(
     await requireOpenTill(client, actor, { held: false });
   } catch (error) {
     if (error instanceof LedgerError && error.code === "TILL_NOT_OPEN") {
-      throw new LedgerError("CHEQUE_DAY_CLOSED", CHEQUE_DAY_CLOSED, next);
+      throw new LedgerError(
+        "CHEQUE_DAY_CLOSED",
+        CHEQUE_DAY_CLOSED,
+        next,
+        chequeDayClosedNext.stays,
+      );
     }
     throw error;
   }
