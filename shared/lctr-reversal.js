@@ -19,6 +19,8 @@
   var BOOKING_ERROR_REASON = "booking error, cash not received";
   var LEFT_OUT_LINE = "left out: booking error, cash not received";
   var IN_REPORT_MESSAGE = "This deal is already in a report. Ask your compliance officer.";
+  var FILING_FLAG_FILED = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
+  var FILING_FLAG_PREPARED = "A deal in this report was later marked booking error. Check the report before you file it.";
 
   function isBookingErrorReason(reason) {
     return String(reason == null ? "" : reason).trim().toLowerCase() === BOOKING_ERROR_REASON;
@@ -56,6 +58,8 @@
     BOOKING_ERROR_REASON: BOOKING_ERROR_REASON,
     LEFT_OUT_LINE: LEFT_OUT_LINE,
     IN_REPORT_MESSAGE: IN_REPORT_MESSAGE,
+    FILING_FLAG_FILED: FILING_FLAG_FILED,
+    FILING_FLAG_PREPARED: FILING_FLAG_PREPARED,
     isBookingErrorReason: isBookingErrorReason,
     countsTowardLctr: countsTowardLctr,
     reversedTag: reversedTag,

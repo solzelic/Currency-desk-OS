@@ -3041,6 +3041,8 @@
   var BOOKING_ERROR_REASON = "booking error, cash not received";
   var LEFT_OUT_LINE = "left out: booking error, cash not received";
   var IN_REPORT_MESSAGE = "This deal is already in a report. Ask your compliance officer.";
+  var FILING_FLAG_FILED = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
+  var FILING_FLAG_PREPARED = "A deal in this report was later marked booking error. Check the report before you file it.";
 
   function isBookingErrorReason(reason) {
     return String(reason == null ? "" : reason).trim().toLowerCase() === BOOKING_ERROR_REASON;
@@ -3078,6 +3080,8 @@
     BOOKING_ERROR_REASON: BOOKING_ERROR_REASON,
     LEFT_OUT_LINE: LEFT_OUT_LINE,
     IN_REPORT_MESSAGE: IN_REPORT_MESSAGE,
+    FILING_FLAG_FILED: FILING_FLAG_FILED,
+    FILING_FLAG_PREPARED: FILING_FLAG_PREPARED,
     isBookingErrorReason: isBookingErrorReason,
     countsTowardLctr: countsTowardLctr,
     reversedTag: reversedTag,
@@ -46852,7 +46856,6 @@ ${(filing.map || []).map(blockHTML).join('')}
      it — which is also what proves it survived the browser. */
   function subFromFiling(f) {
     return {
-      status: 'submitted',
       ackNo: f.acknowledgementRef || '',
       submittedAt: (f.filedAt || '').replace('T', ' ').slice(0, 19),
       kind: f.reportCode,
@@ -46865,8 +46868,24 @@ ${(filing.map || []).map(blockHTML).join('')}
       refs: f.transactionRefs || [],
       subject: f.subjectName || '',
       amount: f.reportedAmount == null ? 0 : Number(f.reportedAmount),
-      server: true
+      server: true,
+      status: f.status === 'draft' ? 'prepared' : 'submitted',
+      bookingErrorFlag: f.bookingErrorFlag || ''
     };
+  }
+  function FilingFlag({
+    text
+  }) {
+    if (!text) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-1",
+      style: {
+        color: CD.onFlagSoft,
+        background: CD.flagSoft,
+        borderRadius: 8,
+        padding: '6px 8px'
+      }
+    }, text);
   }
 
   /* What has already been filed over this obligation's GROUP — the same
@@ -48015,7 +48034,7 @@ ${(filing.map || []).map(blockHTML).join('')}
          still filings, so they belong on this page. */
       Object.keys(subs || {}).forEach(id => {
         const s = subs[id];
-        if (s && s.status === 'submitted' && !out.some(o => o.id === id)) {
+        if (s && (s.status === 'submitted' || s.status === 'prepared') && !out.some(o => o.id === id)) {
           const seal = s.sealed || {};
           out.push({
             id,
@@ -48023,7 +48042,7 @@ ${(filing.map || []).map(blockHTML).join('')}
             kind: s.kind || regime.strCode,
             subject: seal.subject || s.subject || id.replace(/^STR-/, '').replace(/-[0-9A-Z]{6}$/, ''),
             amount: seal.amount != null ? seal.amount : s.amount || 0,
-            detail: s.kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report',
+            detail: s.status === 'prepared' ? 'Prepared report' : s.kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report',
             date: (s.submittedAt || '').slice(0, 10),
             refs: seal.refs || s.refs || [],
             basis: 'structuring',
@@ -48193,6 +48212,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "space-y-1.5 mb-5"
     }, drafts.map(r => {
       const note = coverageNote(r);
+      const sub = subs[r.id];
       return /*#__PURE__*/React.createElement("div", {
         key: r.id,
         className: "flex items-center gap-3 px-3 py-2.5",
@@ -48223,7 +48243,9 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, r.detail, " \xB7 ", fmt(r.amount, regime.currency)), note && /*#__PURE__*/React.createElement("div", {
+      }, r.detail, " \xB7 ", fmt(r.amount, regime.currency)), /*#__PURE__*/React.createElement(FilingFlag, {
+        text: sub && sub.bookingErrorFlag
+      }), note && /*#__PURE__*/React.createElement("div", {
         className: "text-[11px] mt-0.5 flex items-center gap-1",
         style: {
           color: CD.flag
@@ -48350,7 +48372,9 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: CD.green,
           fontFamily: 'Space Mono'
         }
-      }, sub.ackNo), " \xB7 ", sub.by, " \xB7 ", sub.submittedAt)), /*#__PURE__*/React.createElement("button", {
+      }, sub.ackNo), " \xB7 ", sub.by, " \xB7 ", sub.submittedAt), /*#__PURE__*/React.createElement(FilingFlag, {
+        text: sub && sub.bookingErrorFlag
+      })), /*#__PURE__*/React.createElement("button", {
         onClick: () => viewSealed(r),
         className: "flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none",
         style: {
@@ -49155,7 +49179,9 @@ ${(filing.map || []).map(blockHTML).join('')}
   window.CDOS = Object.assign(window.CDOS || {}, {
     Compliance,
     computeReportables,
-    openReportables
+    openReportables,
+    subFromFiling,
+    FilingFlag
   });
 })();
 

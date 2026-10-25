@@ -5,6 +5,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { cashReceived } from "../src/ledger/canada-rules.js";
+import { ReportFilingService } from "../src/ledger/report-filings.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -13,15 +14,18 @@ const require = createRequire(import.meta.url);
 const { wallInstant } = require("../../shared/rolling-24h.js") as {
   wallInstant: (date: string, time: string, zone: string) => Date | null;
 };
-const { BOOKING_ERROR_REASON, countsTowardLctr } = require("../../shared/lctr-reversal.js") as {
+const { BOOKING_ERROR_REASON, countsTowardLctr, FILING_FLAG_FILED, FILING_FLAG_PREPARED } = require("../../shared/lctr-reversal.js") as {
   BOOKING_ERROR_REASON: string;
   countsTowardLctr: (reason: unknown) => boolean;
+  FILING_FLAG_FILED: string;
+  FILING_FLAG_PREPARED: string;
 };
+const FILED_FLAG = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
+const PREPARED_FLAG = "A deal in this report was later marked booking error. Check the report before you file it.";
 const ZONE = "America/Toronto", DAY1 = "2026-06-15", DAY2 = "2026-06-16";
 const TENANT = "tnt-lctr319", ENTITY = "le-lctr319", BRANCH = "br-lctr319";
 const WORKSPACE = "ws-lctr319", TILL = "till-lctr319";
 const SUPERVISOR = "lctr-supervisor", TELLER = "lctr-teller";
-const IN_REPORT = "This deal is already in a report. Ask your compliance officer.";
 const TELLER_MSG = "Only a supervisor, branch manager, or administrator can record a booking error. Nothing was reversed.";
 const scope = [TENANT, ENTITY, BRANCH, WORKSPACE, TILL];
 let handle: DbHandle, pool: pg.Pool, service: LedgerService;
@@ -61,17 +65,22 @@ async function kept(prefix: string, customerId: string, reason: string, postedAt
   await reversal(`${prefix}-1`, reason, postedAt);
   expect(await cashOf(customerId)).toBe("11000.00");
 }
-async function placeFiling(id: string, status: "draft" | "filed", ref: string, payload: object) {
+async function placeFiling(id: string, status: "draft" | "filed", ref: string | string[], payload: object) {
+  const refs = Array.isArray(ref) ? ref : [ref];
   await pool.query(
     `INSERT INTO ledger_report_filings (filing_id, tenant_id, legal_entity_id, branch_id, report_id, pack_id, pack_version,
         report_code, status, payload, subject_transaction_ids, acknowledgement_ref, created_by)
      VALUES ($1,$2,$3,$4,'rpt-ca-lctr-v2','pack-ca-v2',2,'LCTR',$5,$6::jsonb,$7::jsonb,$8,$9)`,
-    [id, TENANT, ENTITY, BRANCH, status, JSON.stringify(payload), JSON.stringify([ref]), status === "filed" ? `ACK-${id}` : null, SUPERVISOR],
+    [id, TENANT, ENTITY, BRANCH, status, JSON.stringify(payload), JSON.stringify(refs), status === "filed" ? `ACK-${id}` : null, SUPERVISOR],
   );
 }
-async function filingSnap(id: string) {
-  const found = await pool.query("SELECT filing_id, status, report_code, acknowledgement_ref, payload, subject_transaction_ids FROM ledger_report_filings WHERE filing_id=$1", [id]);
-  return found.rows[0];
+async function filingBytes(id: string) {
+  const found = await pool.query("SELECT * FROM ledger_report_filings WHERE filing_id=$1", [id]);
+  return JSON.stringify(found.rows[0]);
+}
+async function flagRows(id: string) {
+  const found = await pool.query("SELECT flag_text FROM ledger_filing_flags WHERE filing_id=$1 ORDER BY flag_text", [id]);
+  return found.rows.map((row) => row.flag_text);
 }
 async function bookingError(transactionId: string, key: string) {
   try {
@@ -123,23 +132,48 @@ postgres("LCTR total keeps reversed cash unless it was a booking error", () => {
   it("still counts a reversal posted inside the window", async () => {
     await kept("lctr-i", "lctr-inside", "Customer changed their mind", at(DAY1, "15:00:00"));
   });
-  it("refuses a booking error when the deal is in a prepared LCTR", async () => {
+  it("keeps the prepared and filed report bytes unchanged after the booking error", async () => {
     await deal("lctr-prep", "lctr-prep", "100.00", at(DAY1, "12:00:00"));
-    await placeFiling("fil-prep", "draft", "ref-lctr-prep", { mark: "prepared" });
-    expect(await bookingError("lctr-prep", "prep-booking")).toMatchObject({ code: "COMPLIANCE_BLOCKED", message: IN_REPORT });
-  });
-  it("refuses a booking error when the deal is in a filed LCTR", async () => {
     await deal("lctr-filed", "lctr-filed", "100.00", at(DAY1, "12:00:00"));
-    await placeFiling("fil-filed", "filed", "ref-lctr-filed", { mark: "filed" });
-    expect(await bookingError("lctr-filed", "filed-booking")).toMatchObject({ code: "COMPLIANCE_BLOCKED", message: IN_REPORT });
+    await placeFiling("fil-prep", "draft", "ref-lctr-prep", { mark: "prepared", total: "100.00" });
+    await placeFiling("fil-filed", "filed", "ref-lctr-filed", { mark: "filed", total: "100.00" });
+    const beforePrep = await filingBytes("fil-prep");
+    const beforeFiled = await filingBytes("fil-filed");
+    expect(await bookingError("lctr-prep", "prep-booking")).toBeNull();
+    expect(await bookingError("lctr-filed", "filed-booking")).toBeNull();
+    expect(await filingBytes("fil-prep")).toBe(beforePrep);
+    expect(await filingBytes("fil-filed")).toBe(beforeFiled);
+    expect(await reversals("lctr-prep")).toBe(1);
+    expect(await reversals("lctr-filed")).toBe(1);
   });
-  it("leaves the report unchanged and writes no reversal when the booking error is refused", async () => {
-    await deal("lctr-hold", "lctr-hold", "100.00", at(DAY1, "12:00:00"));
-    await placeFiling("fil-hold", "filed", "ref-lctr-hold", { mark: "hold", total: "11000.00" });
-    const before = await filingSnap("fil-hold");
-    expect(await bookingError("lctr-hold", "hold-booking")).toMatchObject({ message: IN_REPORT });
-    expect(await filingSnap("fil-hold")).toEqual(before);
-    expect(await reversals("lctr-hold")).toBe(0);
+  it("stores the prepared flag and the filed flag on the server", async () => {
+    expect(await flagRows("fil-prep")).toEqual([PREPARED_FLAG]);
+    expect(await flagRows("fil-filed")).toEqual([FILED_FLAG]);
+    const listed = await new ReportFilingService(pool).list(actor(SUPERVISOR, "supervisor"));
+    const byId = Object.fromEntries(listed.filings.map((row) => [row.filingId, row.bookingErrorFlag]));
+    expect(byId["fil-prep"]).toBe(PREPARED_FLAG);
+    expect(byId["fil-filed"]).toBe(FILED_FLAG);
+    expect(FILING_FLAG_PREPARED).toBe(PREPARED_FLAG);
+    expect(FILING_FLAG_FILED).toBe(FILED_FLAG);
+  });
+  it("stores no flag when the deal was not in any report", async () => {
+    await deal("lctr-free", "lctr-free", "100.00", at(DAY1, "12:00:00"));
+    expect(await bookingError("lctr-free", "free-booking")).toBeNull();
+    const found = await pool.query(
+      `SELECT count(*)::int AS n FROM ledger_filing_flags g
+         JOIN ledger_report_filings f ON f.filing_id = g.filing_id
+        WHERE f.subject_transaction_ids @> jsonb_build_array('ref-lctr-free')`,
+    );
+    expect(found.rows[0].n).toBe(0);
+  });
+  it("stores one flag when the same filing is marked twice", async () => {
+    await deal("lctr-2a", "lctr-2", "100.00", at(DAY1, "11:00:00"));
+    await deal("lctr-2b", "lctr-2", "100.00", at(DAY1, "11:30:00"));
+    await placeFiling("fil-2", "filed", ["ref-lctr-2a", "ref-lctr-2b"], { mark: "twice" });
+    expect(await bookingError("lctr-2a", "twice-a")).toBeNull();
+    expect(await bookingError("lctr-2b", "twice-b")).toBeNull();
+    expect(await bookingError("lctr-2a", "twice-again")).toMatchObject({ code: "REVERSAL_ALREADY_EXISTS" });
+    expect(await flagRows("fil-2")).toEqual([FILED_FLAG]);
   });
   it("refuses a teller who sets the booking-error reason, and the deal stays in the total", async () => {
     await deal("lctr-t-1", "lctr-teller", "6000.00", at(DAY1, "14:00:00"));

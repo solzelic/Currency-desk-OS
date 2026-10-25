@@ -38,11 +38,13 @@ const { rollingWindow } = require("../../../shared/rolling-24h.js") as {
 };
 const lctrRule = require("../../../shared/lctr-reversal.js") as {
   BOOKING_ERROR_REASON: string; LEFT_OUT_LINE: string; IN_REPORT_MESSAGE: string;
+  FILING_FLAG_FILED: string; FILING_FLAG_PREPARED: string;
   isBookingErrorReason: (reason: unknown) => boolean;
   countsTowardLctr: (reason: unknown) => boolean;
 };
 export const {
   BOOKING_ERROR_REASON, LEFT_OUT_LINE, IN_REPORT_MESSAGE, isBookingErrorReason,
+  FILING_FLAG_FILED, FILING_FLAG_PREPARED,
 } = lctrRule;
 const { countsTowardLctr } = lctrRule;
 

@@ -149,6 +149,36 @@ describe("desk paths use the shared LCTR reversal rule", () => {
   });
 });
 
+describe("a booking-error flag on the filing view", () => {
+  const FILED_FLAG = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
+  const PREPARED_FLAG = "A deal in this report was later marked booking error. Check the report before you file it.";
+  const ReactDOMServer = require("react-dom/server") as { renderToStaticMarkup: (node: unknown) => string };
+
+  it("shows the prepared text and the filed text, and neither text is on the receipt", () => {
+    const rule = g.window.CDOS.lctrReversal;
+    expect(rule.FILING_FLAG_PREPARED).toBe(PREPARED_FLAG);
+    expect(rule.FILING_FLAG_FILED).toBe(FILED_FLAG);
+    const view = g.window.CDOS.subFromFiling({ status: "draft", bookingErrorFlag: PREPARED_FLAG, reportCode: "LCTR", filingId: "fil-p" });
+    const filed = g.window.CDOS.subFromFiling({ status: "filed", bookingErrorFlag: FILED_FLAG, reportCode: "LCTR", filingId: "fil-f" });
+    expect(view.bookingErrorFlag).toBe(PREPARED_FLAG);
+    expect(filed.bookingErrorFlag).toBe(FILED_FLAG);
+    const html = ReactDOMServer.renderToStaticMarkup(React.createElement("div", null,
+      React.createElement(g.window.CDOS.FilingFlag, { text: view.bookingErrorFlag }),
+      React.createElement(g.window.CDOS.FilingFlag, { text: filed.bookingErrorFlag }),
+    ));
+    expect(html).toContain(PREPARED_FLAG);
+    expect(html).toContain(FILED_FLAG);
+    expect(html).toContain("text-[12px]");
+    const card = readFileSync(resolve(root, "os-src/cdos-compliance-app.jsx"), "utf8");
+    expect(card).toContain("<FilingFlag text={sub && sub.bookingErrorFlag} />");
+    expect(card).toContain("color: CD.onFlagSoft");
+    const slip = readFileSync(resolve(root, "os-src/cdos-modules.jsx"), "utf8");
+    const receipt = slip.slice(slip.indexOf("function ReceiptModal"), slip.indexOf("window.CDOS = Object.assign", slip.indexOf("function ReceiptModal")));
+    expect(receipt).not.toContain(PREPARED_FLAG);
+    expect(receipt).not.toContain(FILED_FLAG);
+  });
+});
+
 describe("cashReceived follows the shared rule", () => {
   it("does not keep a second copy of the booking-error reason in SQL", () => {
     const src = readFileSync(resolve(root, "server/src/ledger/canada-rules.ts"), "utf8");

@@ -58,7 +58,6 @@
      it — which is also what proves it survived the browser. */
   function subFromFiling(f) {
     return {
-      status: 'submitted',
       ackNo: f.acknowledgementRef || '',
       submittedAt: (f.filedAt || '').replace('T', ' ').slice(0, 19),
       kind: f.reportCode,
@@ -72,7 +71,13 @@
       subject: f.subjectName || '',
       amount: f.reportedAmount == null ? 0 : Number(f.reportedAmount),
       server: true,
+      status: f.status === 'draft' ? 'prepared' : 'submitted',
+      bookingErrorFlag: f.bookingErrorFlag || '',
     };
+  }
+  function FilingFlag({ text }) {
+    if (!text) return null;
+    return <div className="text-[12px] mt-1" style={{ color: CD.onFlagSoft, background: CD.flagSoft, borderRadius: 8, padding: '6px 8px' }}>{text}</div>;
   }
 
   /* What has already been filed over this obligation's GROUP — the same
@@ -475,7 +480,7 @@
          anything filed on a day whose transactions this browser has not
          loaded — which is every filing made at the other till. They are
          still filings, so they belong on this page. */
-      Object.keys(subs || {}).forEach(id => { const s = subs[id]; if (s && s.status === 'submitted' && !out.some(o => o.id === id)) { const seal = s.sealed || {}; out.push({ id, groupId: s.groupId || id, kind: s.kind || regime.strCode, subject: seal.subject || s.subject || id.replace(/^STR-/, '').replace(/-[0-9A-Z]{6}$/, ''), amount: seal.amount != null ? seal.amount : (s.amount || 0), detail: s.kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report', date: (s.submittedAt || '').slice(0, 10), refs: seal.refs || s.refs || [], basis: 'structuring', reportRef: (seal.reportRef) || reportRefFor(s.kind || regime.strCode, id) }); } });
+      Object.keys(subs || {}).forEach(id => { const s = subs[id]; if (s && (s.status === 'submitted' || s.status === 'prepared') && !out.some(o => o.id === id)) { const seal = s.sealed || {}; out.push({ id, groupId: s.groupId || id, kind: s.kind || regime.strCode, subject: seal.subject || s.subject || id.replace(/^STR-/, '').replace(/-[0-9A-Z]{6}$/, ''), amount: seal.amount != null ? seal.amount : (s.amount || 0), detail: s.status === 'prepared' ? 'Prepared report' : (s.kind === regime.strCode ? 'Suspicious transaction report' : 'Filed report'), date: (s.submittedAt || '').slice(0, 10), refs: seal.refs || s.refs || [], basis: 'structuring', reportRef: (seal.reportRef) || reportRefFor(s.kind || regime.strCode, id) }); } });
       return out.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     }, [rows, clients, settings, beneficiaries, subs]);
 
@@ -534,9 +539,10 @@
       {/* NEEDS FILING */}
       <div className="flex items-center gap-2 mb-2"><span className="text-[12px] font-semibold" style={{ color: CD.ink }}>Needs filing</span><span className="text-[10px] px-1.5 py-0.5" style={{ background: drafts.length ? CD.amber : CD.lineSoft, color: drafts.length ? 'var(--cd-on-ink)' : CD.mute, borderRadius: 999, fontFamily: 'Space Mono' }}>{drafts.length}</span></div>
       <div className="space-y-1.5 mb-5">
-        {drafts.map(r => { const note = coverageNote(r); return (
+        {drafts.map(r => { const note = coverageNote(r); const sub = subs[r.id]; return (
           <div key={r.id} className="flex items-center gap-3 px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${note ? CD.flag : CD.line}`, borderRadius: 11 }}>
             <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><KindTag k={r.kind} /><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.subject}</span><span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>{r.reportRef}</span></div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{r.detail} · {fmt(r.amount, regime.currency)}</div>
+              <FilingFlag text={sub && sub.bookingErrorFlag} />
               {/* the sentence a desk needed and did not get */}
               {note && <div className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: CD.flag }}><Ic n="alert" s={11} c={CD.flag} /> {note}</div>}
             </div>
@@ -551,7 +557,7 @@
         {filed.map(r => { const sub = subs[r.id]; return (
           <div key={r.id} className="flex items-center gap-3 px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${CD.greenSoft}`, borderRadius: 11 }}>
             <span className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, background: CD.greenSoft }}><Ic n="lock" s={14} c={CD.green} /></span>
-            <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><KindTag k={r.kind} /><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.subject}</span><span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>{r.reportRef}</span>{sub.amendsFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 4, fontFamily: 'Space Mono' }}>CORRECTION</span>}{sub.amendedByFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 4, fontFamily: 'Space Mono' }}>SUPERSEDED</span>}</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>Sealed · FWR <b style={{ color: CD.green, fontFamily: 'Space Mono' }}>{sub.ackNo}</b> · {sub.by} · {sub.submittedAt}</div></div>
+            <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><KindTag k={r.kind} /><span className="text-[13px] font-semibold" style={{ color: CD.ink }}>{r.subject}</span><span className="text-[10px]" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>{r.reportRef}</span>{sub.amendsFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 4, fontFamily: 'Space Mono' }}>CORRECTION</span>}{sub.amendedByFilingId && <span className="text-[9px] px-1.5 py-0.5 font-semibold" style={{ background: CD.lineSoft, color: CD.mute, borderRadius: 4, fontFamily: 'Space Mono' }}>SUPERSEDED</span>}</div><div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>Sealed · FWR <b style={{ color: CD.green, fontFamily: 'Space Mono' }}>{sub.ackNo}</b> · {sub.by} · {sub.submittedAt}</div><FilingFlag text={sub && sub.bookingErrorFlag} /></div>
             <button onClick={() => viewSealed(r)} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}><Ic n="printer" s={14} /> Sealed PDF</button>
           </div>); })}
         {!filed.length && <div className="text-center py-8 text-[12px]" style={{ border: `1px dashed ${CD.line}`, borderRadius: 11, color: CD.faint }}>No filed records yet — they appear here, sealed, once you file.</div>}
@@ -859,5 +865,5 @@
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { Compliance, computeReportables, openReportables });
+  window.CDOS = Object.assign(window.CDOS || {}, { Compliance, computeReportables, openReportables, subFromFiling, FilingFlag });
 })();

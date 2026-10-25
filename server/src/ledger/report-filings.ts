@@ -101,6 +101,8 @@ export type Filing = {
   /* Filled in by the reader, not stored: the filing that supersedes this
      one, if any. Derived because the sealed row cannot be told. */
   amendedByFilingId: string | null;
+  /* Read from ledger_filing_flags. Not a column of the sealed row. */
+  bookingErrorFlag: string | null;
   payload?: unknown;
 };
 
@@ -141,6 +143,8 @@ function toFiling(row: Record<string, unknown>, withPayload: boolean): Filing {
       row.amends_filing_id == null ? null : String(row.amends_filing_id),
     amendedByFilingId:
       row.amended_by_filing_id == null ? null : String(row.amended_by_filing_id),
+    bookingErrorFlag:
+      row.booking_error_flag == null ? null : String(row.booking_error_flag),
   };
   if (withPayload) filing.payload = row.payload;
   return filing;
@@ -156,7 +160,8 @@ const LIST_COLUMNS = `f.filing_id, f.report_id, f.report_code, f.pack_id, f.pack
         f.filed_by, f.filed_at, f.branch_id, f.amends_filing_id,
         (SELECT a.filing_id FROM ledger_report_filings a
           WHERE a.amends_filing_id = f.filing_id
-          ORDER BY a.created_at DESC LIMIT 1) AS amended_by_filing_id`;
+          ORDER BY a.created_at DESC LIMIT 1) AS amended_by_filing_id,
+        (SELECT g.flag_text FROM ledger_filing_flags g WHERE g.filing_id = f.filing_id) AS booking_error_flag`;
 
 export class ReportFilingService {
   constructor(private readonly pool: pg.Pool) {}

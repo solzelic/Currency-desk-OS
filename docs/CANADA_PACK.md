@@ -78,12 +78,15 @@ branch manager, or an administrator can set that reason. The cluster
 shows "left out: booking error, cash not received." then
 "Set by" the staff name and the branch clock, 12-hour, as in
 "16 Jun 2026, 4:00 pm". A reversed deal that still counts shows a reversed
-tag on its row. The same reason is refused when the deal is already
-on a prepared or filed LCTR. Prepared is a draft filing. The message
-is "This deal is already in a report. Ask your compliance officer."
-Nothing is reversed and the report row stays as it was. The
-left-out line still shows when dropping that deal leaves no cluster.
-A sealed filing is not removed.
+tag on its row. The same reason on a deal already in a prepared or
+filed LCTR drops that deal from the live total. The filing stays
+byte for byte unchanged. A prepared filing shows "A deal in this
+report was later marked booking error. Check the report before you
+file it." A filed filing shows "A deal in this report was later
+marked booking error. Check if the filed report needs a correction."
+The flag is stored once, beside the filing. Neither sentence is on
+a receipt. The left-out line still shows when dropping that deal
+leaves no cluster. A sealed filing is not removed.
 
 Identity when a large cash report is required, s.84, including one
 that exists only because the window adds up. The gate can refuse the
