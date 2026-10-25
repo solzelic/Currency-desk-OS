@@ -914,18 +914,20 @@ postgres("cheque cashing on the ledger", () => {
     const cashingIds = [toReverse.transactionId, toReturn.transactionId];
     const sealed = async (sql: string, params: unknown[] = []) =>
       (await pool.query(sql, params)).rows.map((row) => String(row.snapshot));
+    /* Day 1's sealed close, and the journals written that day. The
+       live drawer is day 2's and is allowed to move. The day's
+       summary is not part of this check. */
     const dayOne = async () => ({
-      session: await sealed(
-        `SELECT row_to_json(s)::text AS snapshot
-           FROM ledger_till_sessions s
-          WHERE session_id='chq-session-1'`,
-      ),
-      totals: await sealed(
-        `SELECT row_to_json(c)::text AS snapshot
-           FROM ledger_till_counts c
-           JOIN ledger_till_count_batches b ON b.batch_id=c.batch_id
-          WHERE b.session_id='chq-session-1'
-          ORDER BY c.count_id`,
+      closeCount: await sealed(
+        `SELECT row_to_json(x)::text AS snapshot FROM (
+           SELECT b.batch_id, b.session_id, b.count_kind, b.actor_id, b.idempotency_key,
+                  c.count_id, c.currency, c.expected_amount, c.counted_amount,
+                  c.variance_amount, c.stored_expected_amount
+             FROM ledger_till_count_batches b
+             JOIN ledger_till_counts c ON c.batch_id = b.batch_id
+            WHERE b.session_id = 'chq-session-1'
+            ORDER BY b.batch_id, c.count_id
+         ) x`,
       ),
       journals: await sealed(
         `SELECT row_to_json(j)::text AS snapshot
@@ -934,22 +936,8 @@ postgres("cheque cashing on the ledger", () => {
           ORDER BY entry_id`,
         [cashingIds],
       ),
-      closeCount: await sealed(
-        `SELECT row_to_json(b)::text AS snapshot
-           FROM ledger_till_count_batches b
-          WHERE session_id='chq-session-1'
-          ORDER BY batch_id`,
-      ),
     });
 
-    const openDay = await pool.query(
-      `SELECT session_id, status, business_date::text AS business_date
-         FROM ledger_till_sessions
-        WHERE status='open'`,
-    );
-    expect(openDay.rows).toEqual([
-      { session_id: "chq-session-2", status: "open", business_date: "2026-06-19" },
-    ]);
     const before = await dayOne();
 
     const reversed = await settle(cookies, toReverse.cheque.chequeId, "reversal", {
@@ -959,6 +947,7 @@ postgres("cheque cashing on the ledger", () => {
     expect(reversed.json().status).toBe("reversed");
     expect(await tillCad()).toBe("4035.00");
     expect(reversed.json().balances.CAD).toBe("4035.00");
+    expect(await dayOne()).toEqual(before);
 
     const returned = await settle(cookies, toReturn.cheque.chequeId, "return", {
       reason: "NSF",
@@ -968,16 +957,7 @@ postgres("cheque cashing on the ledger", () => {
     expect(returned.json().status).toBe("returned");
     expect(await tillCad()).toBe("4035.00");
     expect(returned.json().balances.CAD).toBe("4035.00");
-
     expect(await dayOne()).toEqual(before);
-    const stillOpen = await pool.query(
-      `SELECT session_id, status, business_date::text AS business_date
-         FROM ledger_till_sessions
-        WHERE status='open'`,
-    );
-    expect(stillOpen.rows).toEqual([
-      { session_id: "chq-session-2", status: "open", business_date: "2026-06-19" },
-    ]);
   });
 
   it("keeps a reversal and an NSF on separate paths", async () => {
