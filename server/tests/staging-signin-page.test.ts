@@ -25,5 +25,6 @@ describe("login page render", () => {
     const page = readFileSync(new URL("../../os-src/cdos-signin.jsx", import.meta.url), "utf8");
     expect(page).toContain("stagingEnterButtons(true)");
     expect(page).toContain("quick ?");
+    expect(page.includes("height: 44, minHeight: 44") && page.includes("border: '1px solid var(--si-mute)'") && page.includes("cdos-staging-door") && readFileSync(new URL("../../os-src/cdos-os.jsx", import.meta.url), "utf8").includes("stagingDoor") && readFileSync(new URL("../../os-src/york-os.css", import.meta.url), "utf8").includes("font: 600 12px") && readFileSync(new URL("../../os-src/york-os.css", import.meta.url), "utf8").includes("body:has(#cdos-staging-banner) #lock")).toBe(true);
   });
 });

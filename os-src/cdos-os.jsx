@@ -795,7 +795,7 @@
     const [signup, setSignup] = useState(null);     // { email } while verifying a new-desk signup
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
-    const [stagingOn, setStagingOn] = useState(false);
+    const [stagingOn, setStagingOn] = useState(false); const [stagingDoor, setStagingDoor] = useState(false);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -1633,12 +1633,12 @@
        the station picker, and the desktop all show it. A password
        sign-in, a sign-out, and a 401 take it down. */
     useEffect(() => {
-      const id = 'cdos-staging-banner';
-      if (!stagingOn) {
+      const id = 'cdos-staging-banner'; const onDoor = () => setStagingDoor(true); document.addEventListener('cdos-staging-door', onDoor);
+      if (!(stagingOn || (stagingDoor && stage === 'lock'))) {
         const gone = document.getElementById(id);
         if (gone) gone.remove();
-        document.body.style.paddingTop = '';
-        return undefined;
+        document.body.style.paddingTop = ''; document.documentElement.style.removeProperty('--cdos-banner');
+        return () => document.removeEventListener('cdos-staging-door', onDoor);
       }
       let node = document.getElementById(id);
       if (!node) {
@@ -1648,13 +1648,13 @@
         node.textContent = 'Staging. Demo data only. Never enter a real customer.';
         document.body.appendChild(node);
       }
-      document.body.style.paddingTop = node.offsetHeight + 'px';
+      document.body.style.paddingTop = node.offsetHeight + 'px'; document.documentElement.style.setProperty('--cdos-banner', node.offsetHeight + 'px');
       return () => {
         const el = document.getElementById(id);
         if (el) el.remove();
-        document.body.style.paddingTop = '';
+        document.body.style.paddingTop = ''; document.documentElement.style.removeProperty('--cdos-banner'); document.removeEventListener('cdos-staging-door', onDoor);
       };
-    }, [stagingOn]);
+    }, [stagingOn, stagingDoor, stage]);
 
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is

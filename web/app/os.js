@@ -62166,7 +62166,10 @@ ${snap}`;
       fetch('/api/staging/signin', {
         credentials: 'same-origin'
       }).then(r => r.ok ? r.json() : null).then(d => {
-        if (live && d && d.enabled === true) setQuick(true);
+        if (live && d && d.enabled === true) {
+          setQuick(true);
+          document.dispatchEvent(new Event("cdos-staging-door"));
+        }
       }).catch(() => {});
       return () => {
         live = false;
@@ -62617,12 +62620,12 @@ ${snap}`;
         display: 'grid',
         placeItems: 'center',
         overflow: 'auto',
-        padding: '28px 0'
+        padding: quick ? '56px 0 28px' : '28px 0'
       }
     }, /*#__PURE__*/React.createElement("style", null, '@keyframes cdWinIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}@keyframes cdSpin{to{transform:rotate(360deg)}}'), /*#__PURE__*/React.createElement("div", {
       style: {
         position: 'absolute',
-        top: 26,
+        top: quick ? 40 : 26,
         left: 30,
         display: 'flex',
         alignItems: 'center',
@@ -62812,9 +62815,11 @@ ${snap}`;
       onClick: () => enterAs(b.role),
       style: {
         width: '100%',
+        height: 44,
         minHeight: 44,
+        boxSizing: 'border-box',
         borderRadius: 12,
-        border: '1px solid var(--si-line)',
+        border: '1px solid var(--si-mute)',
         background: 'var(--si-panel)',
         color: 'var(--si-ink)',
         fontFamily: 'Archivo, system-ui, sans-serif',
@@ -67680,6 +67685,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [newDesk, setNewDesk] = useState(null); // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null); // server user (carries tenantId) — drives per-tenant persistence
     const [stagingOn, setStagingOn] = useState(false);
+    const [stagingDoor, setStagingDoor] = useState(false);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null); // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -69156,11 +69162,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        sign-in, a sign-out, and a 401 take it down. */
     useEffect(() => {
       const id = 'cdos-staging-banner';
-      if (!stagingOn) {
+      const onDoor = () => setStagingDoor(true);
+      document.addEventListener('cdos-staging-door', onDoor);
+      if (!(stagingOn || stagingDoor && stage === 'lock')) {
         const gone = document.getElementById(id);
         if (gone) gone.remove();
         document.body.style.paddingTop = '';
-        return undefined;
+        document.documentElement.style.removeProperty('--cdos-banner');
+        return () => document.removeEventListener('cdos-staging-door', onDoor);
       }
       let node = document.getElementById(id);
       if (!node) {
@@ -69171,12 +69180,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         document.body.appendChild(node);
       }
       document.body.style.paddingTop = node.offsetHeight + 'px';
+      document.documentElement.style.setProperty('--cdos-banner', node.offsetHeight + 'px');
       return () => {
         const el = document.getElementById(id);
         if (el) el.remove();
         document.body.style.paddingTop = '';
+        document.documentElement.style.removeProperty('--cdos-banner');
+        document.removeEventListener('cdos-staging-door', onDoor);
       };
-    }, [stagingOn]);
+    }, [stagingOn, stagingDoor, stage]);
 
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is

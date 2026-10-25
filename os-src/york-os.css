@@ -3544,3 +3544,4 @@ html[data-cdtheme="dark"] #cdos-staging-banner {
   color: #1a1404;
   background: #e0a106;
 }
+body:has(#cdos-staging-banner) #lock { top: var(--cdos-banner, 28px); overflow: auto; }

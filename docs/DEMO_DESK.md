@@ -70,7 +70,7 @@ The routes pass the request Host into `isStagingRuntime`. It has to agree with `
 
 The people are `j.masri`, `r.haddad`, `a.singh`, `c.adebayo`, `m.costa`, and `l.berg`. A boot with `STAGING` exactly `1` adds the compliance officer and the auditor when they are missing, including on a database that already has the other demo staff. An existing row is not overwritten.
 
-The banner reads "Staging. Demo data only. Never enter a real customer." and stays on every screen for that session. A later password sign-in clears it. The audit row for `auth.staging_enter` records the role, the host, the time, the client address from `clientIp`, and the user agent capped at 500 characters.
+The banner reads "Staging. Demo data only. Never enter a real customer." It is on the sign-in page while the staging door is open, and on every screen for that session. A later password sign-in clears it. The audit row for `auth.staging_enter` records the role, the host, the time, the client address from `clientIp`, and the user agent capped at 500 characters.
 
 `isStagingRuntime` in `server/src/auth/staging-runtime.ts` is the flag-plus-host check. A follow-up can reuse it to force sandbox mode for email, SMS, and identity checks. Those calls are not changed here. They live in `server/src/routes/onboarding-public.ts` (verify send), `server/src/onboarding/pipeline.ts` (invite and review mail), `server/src/routes/signup.ts` (signup mail), `server/src/email.ts`, `server/src/sms.ts`, and `server/src/idv/` (identity checks).
 

@@ -161,7 +161,7 @@
       let live = true;
       fetch('/api/staging/signin', { credentials: 'same-origin' })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (live && d && d.enabled === true) setQuick(true); })
+        .then((d) => { if (live && d && d.enabled === true) { setQuick(true); document.dispatchEvent(new Event("cdos-staging-door")); } })
         .catch(() => {});
       return () => { live = false; };
     }, []);
@@ -411,9 +411,9 @@
     );
 
     const shell = (children) => (
-      <div id="lock" style={{ ...(night ? NIGHT : VARS), ...(night ? {} : PAPER_BG), position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', overflow: 'auto', padding: '28px 0' }}>
+      <div id="lock" style={{ ...(night ? NIGHT : VARS), ...(night ? {} : PAPER_BG), position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', overflow: 'auto', padding: quick ? '56px 0 28px' : '28px 0' }}>
         <style>{'@keyframes cdWinIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}@keyframes cdSpin{to{transform:rotate(360deg)}}'}</style>
-        <div style={{ position: 'absolute', top: 26, left: 30, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ position: 'absolute', top: quick ? 40 : 26, left: 30, display: 'flex', alignItems: 'center', gap: 10 }}>
           <Mark w={30} h={21} cut={night ? '#161512' : '#e7e4dd'} />
           <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 13, letterSpacing: '0.12em' }}>CURRENCYDESK</span>
           <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: '0.2em', color: 'var(--si-mute)' }}>OS</span>
@@ -460,7 +460,7 @@
         <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
           {window.CDOS.stagingEnterButtons(true).map((b) => (
             <button key={b.role} type="button" disabled={busy} onClick={() => enterAs(b.role)}
-              style={{ width: '100%', minHeight: 44, borderRadius: 12, border: '1px solid var(--si-line)', background: 'var(--si-panel)', color: 'var(--si-ink)', fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }}>
+              style={{ width: '100%', height: 44, minHeight: 44, boxSizing: 'border-box', borderRadius: 12, border: '1px solid var(--si-mute)', background: 'var(--si-panel)', color: 'var(--si-ink)', fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }}>
               {b.label}
             </button>
           ))}
