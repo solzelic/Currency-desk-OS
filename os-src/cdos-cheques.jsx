@@ -356,6 +356,7 @@
     const [err, setErr] = useState('');
     const [errCode, setErrCode] = useState('');
     const [next, setNext] = useState('');
+    const [stays, setStays] = useState('');
     const dayClosed = errCode === 'CHEQUE_DAY_CLOSED';
     /* The three postings the closed day refuses. Mark cleared stays,
        because clearance still posts on a closed day. The hit target
@@ -374,7 +375,7 @@
       const book = ledger();
       if (!book) { setErr('This desk has no ledger to post to. Nothing was recorded.'); return; }
       if (busy) return;
-      setBusy(kind); setErr(''); setErrCode(''); setNext('');
+      setBusy(kind); setErr(''); setErrCode(''); setNext(''); setStays('');
       try {
         const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
         /* The status and the timeline come back from the register rather
@@ -390,6 +391,7 @@
         setErr(error.message || 'The ledger refused this. Nothing was posted.');
         setErrCode(error && error.code || '');
         setNext(error && error.next || '');
+        setStays(error && error.stays || '');
       } finally {
         setBusy('');
       }
@@ -476,7 +478,7 @@
               <button onClick={reverse} disabled={stopped} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium" style={heldStyle({ border: `1px dashed ${CD.line}`, color: CD.mute })}><Ic n="x" s={15} c={stopped ? CD.faint : CD.mute} /> {busy === 'reverse' ? 'Posting…' : 'Reverse cashing'}</button>
             </div>
           )}
-          {err && dayClosed && <div className="p-3 flex items-start gap-2" role="alert" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.onFlagSoft }}>{err}</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{next}</div></div></div>}
+          {err && dayClosed && <div className="p-3 flex items-start gap-2" role="alert" style={{ background: CD.flagSoft, borderRadius: 11 }}><Ic n="alert" s={18} c={CD.flag} /><div><div className="text-[13px] font-semibold" style={{ color: CD.onFlagSoft }}>{err}</div><div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{next}</div>{stays ? <div className="text-[12px] mt-0.5" style={{ color: CD.ink }}>{stays}</div> : null}</div></div>}
           {err && !dayClosed && <div className="text-[12px]" style={{ color: CD.flag }} role="alert">{err}</div>}
           {c.txRef && <div className="text-[11px]" style={{ color: CD.faint }}>Ledger {c.txRef}</div>}
         </div>

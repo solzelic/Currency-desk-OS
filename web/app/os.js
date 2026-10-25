@@ -3107,6 +3107,7 @@
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
       if (typeof body.next === "string" && body.next) error.next = body.next;
+      if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
       throw error;
     }
     return body;
@@ -43160,6 +43161,7 @@ var CDOS_CHEQUE_FEE = (function () {
     const [err, setErr] = useState('');
     const [errCode, setErrCode] = useState('');
     const [next, setNext] = useState('');
+    const [stays, setStays] = useState('');
     const dayClosed = errCode === 'CHEQUE_DAY_CLOSED';
     /* The three postings the closed day refuses. Mark cleared stays,
        because clearance still posts on a closed day. The hit target
@@ -43194,6 +43196,7 @@ var CDOS_CHEQUE_FEE = (function () {
       setErr('');
       setErrCode('');
       setNext('');
+      setStays('');
       try {
         const answer = await call(book, `web-chq-${kind}:${c.chequeId}:${Date.now()}`);
         /* The status and the timeline come back from the register rather
@@ -43209,6 +43212,7 @@ var CDOS_CHEQUE_FEE = (function () {
         setErr(error.message || 'The ledger refused this. Nothing was posted.');
         setErrCode(error && error.code || '');
         setNext(error && error.next || '');
+        setStays(error && error.stays || '');
       } finally {
         setBusy('');
       }
@@ -43498,7 +43502,12 @@ var CDOS_CHEQUE_FEE = (function () {
       style: {
         color: CD.ink
       }
-    }, next))), err && !dayClosed && /*#__PURE__*/React.createElement("div", {
+    }, next), stays ? /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-0.5",
+      style: {
+        color: CD.ink
+      }
+    }, stays) : null)), err && !dayClosed && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px]",
       style: {
         color: CD.flag
