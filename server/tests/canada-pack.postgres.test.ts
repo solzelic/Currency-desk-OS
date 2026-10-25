@@ -180,6 +180,9 @@ async function priorCash(
     beneficiary?: string | null;
     reversed?: boolean;
     postedAt?: Date | null;
+    receivedInstrument?: string;
+    disbursedInstrument?: string;
+    cashOutHome?: string | null;
   },
 ) {
   const scope = scopeOf(entityId);
@@ -190,9 +193,9 @@ async function priorCash(
         customer_id, actor_id, from_currency, to_currency, input_amount, output_amount, rate,
         fee_cad, spread_cad, purpose, source_of_funds, posted_at,
         deal_kind, received_instrument, disbursed_instrument,
-        cash_in_home, home_currency, third_party, third_party_name)
+        cash_in_home, cash_out_home, home_currency, third_party, third_party_name)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11,$12,1,0,0,'Travel','Salary',COALESCE($18::timestamptz, now()),
-             $13,'cash','cash',$14,$15,$16,$17)`,
+             $13,$19,$20,$14,$21,$15,$16,$17)`,
     [
       id,
       `ref-${id}`,
@@ -212,6 +215,9 @@ async function priorCash(
       !!third,
       third,
       opts.postedAt ?? null,
+      opts.receivedInstrument ?? "cash",
+      opts.disbursedInstrument ?? "cash",
+      opts.cashOutHome ?? null,
     ],
   );
   if (opts.beneficiary) {
@@ -754,12 +760,21 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
     prior: Date,
     dealAt: Date,
     current: string,
+    priorOpts: {
+      dealKind?: string;
+      fromCurrency?: string;
+      cashInHome?: string | null;
+      cashOutHome?: string | null;
+      receivedInstrument?: string;
+      disbursedInstrument?: string;
+    } = {},
   ) {
     return withTx(async (client) => {
       await priorCash(client, V2, id, {
         amount,
         customerId,
         postedAt: prior,
+        ...priorOpts,
       });
       const pack = await resolvePack(client, V2);
       return requireIdentification(
@@ -820,6 +835,41 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
     const prior = new Date(dealAt.getTime() - 24 * 60 * 60 * 1000 - 1);
     await expect(
       cashAt("ca2-outside-8000", "8000.00", customer, prior, dealAt, "2500.00"),
+    ).resolves.toBeTruthy();
+  });
+
+  /* cash_out_home is a payout. It is not cash the desk received.
+     An electronic funds transfer pay-in is not cash either. Neither
+     may push a CAD 2,500.00 deal over CAD 10,000.00. */
+  it("does not let a payout-only row push CAD 2500 over the line", async () => {
+    const customer = "ca2-payout-only";
+    const dealAt = toronto("2026-06-16", "12:00:00.000");
+    const prior = new Date(dealAt.getTime() - 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-payout-8000", "8000.00", customer, prior, dealAt, "2500.00", {
+        dealKind: "remittance_send",
+        fromCurrency: "CAD",
+        cashInHome: null,
+        cashOutHome: "8000.00",
+        receivedInstrument: "bank_credit",
+        disbursedInstrument: "cash",
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  it("does not let an electronic funds transfer pay-in push CAD 2500 over the line", async () => {
+    const customer = "ca2-eft-payin";
+    const dealAt = toronto("2026-06-16", "13:00:00.000");
+    const prior = new Date(dealAt.getTime() - 60 * 60 * 1000);
+    await expect(
+      cashAt("ca2-eft-8000", "8000.00", customer, prior, dealAt, "2500.00", {
+        dealKind: "remittance_receive",
+        fromCurrency: "CAD",
+        cashInHome: null,
+        cashOutHome: null,
+        receivedInstrument: "electronic_funds_transfer",
+        disbursedInstrument: "cash",
+      }),
     ).resolves.toBeTruthy();
   });
 });

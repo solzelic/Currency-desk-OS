@@ -329,6 +329,7 @@ async function cashReceived(
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
            LEFT JOIN ledger_obligations o ON o.transaction_id = t.transaction_id
           WHERE t.legal_entity_id = $1
+            /* Start inclusive, end exclusive. The deal is not posted yet. */
             AND t.posted_at >= $2
             AND t.posted_at < $3
             AND r.reversal_id IS NULL

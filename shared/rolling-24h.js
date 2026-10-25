@@ -10,8 +10,8 @@
    back by elapsed milliseconds, so a daylight-saving night is
    still 24 hours and not 23 or 25.
 
-   The start and the end both count. A receipt one millisecond
-   older than the start does not.
+   The start is inclusive and the end is exclusive. A receipt
+   one millisecond older than the start does not.
    ============================================================ */
 (function (root, factory) {
   var api = factory();
@@ -129,7 +129,7 @@
     return parsed;
   }
 
-  /* [at - hours, at], both ends included. hours defaults to 24. */
+  /* [at - hours, at). Start inclusive, end exclusive. hours defaults to 24. */
   function rollingWindow(at, hours) {
     var end = asDate(at);
     if (isNaN(end.getTime())) return null;
