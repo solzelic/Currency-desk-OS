@@ -65,6 +65,8 @@ export const migrations: readonly Migration[] = [
   ["052_idv_credit_ledger", "src/db/migrations/052_idv_credit_ledger.sql"],
   /* 053 is the booking-error flag beside a prepared or filed LCTR. The filing row is not updated. */
   ["053_lctr_filing_flag", "src/db/migrations/053_lctr_filing_flag.sql"],
+  /* 054 is a supervisor's acknowledgement of one customer on the structuring watch. */
+  ["054_structuring_ack", "src/db/migrations/054_structuring_ack.sql"],
 ] as const;
 
 export async function runMigrations(

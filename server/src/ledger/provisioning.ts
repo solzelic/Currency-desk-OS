@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import type pg from "pg";
 import { LedgerError, type LedgerActor } from "./service.js";
 import { redactDeskEarnings } from "./earnings-redaction.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { withSerializationRetry } from "./retry.js";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
+import { dealMarks } from "./structuring-watch.js";
+
+const { presentDeal } = createRequire(import.meta.url)("../../../shared/str-role.js") as {
+  presentDeal: (role: string, deal: Record<string, unknown>) => Record<string, unknown>;
+};
 
 const scope = (actor: LedgerActor) => [
   actor.tenantId,
@@ -298,9 +304,10 @@ export class LedgerProvisioningService {
           LIMIT $6`,
         [...scope(actor), limit],
       );
+      const marks = await dealMarks(client, actor, result.rows);
       await client.query("COMMIT");
       return redactDeskEarnings(role, {
-        transactions: result.rows.map((row) => ({
+        transactions: result.rows.map((row) => presentDeal(role, {
           transactionId: row.transaction_id,
           transactionRef: row.transaction_ref,
           quoteId: row.quote_id ?? null,
@@ -350,6 +357,12 @@ export class LedgerProvisioningService {
                 postedAt: new Date(row.reversed_at).toISOString(),
               }
             : null,
+          strTag: marks.get(row.transaction_ref)?.strTag ?? null,
+          strLink: marks.get(row.transaction_ref)?.strLink ?? null,
+          structuring: marks.get(row.transaction_ref)?.structuring ?? false,
+          structuringTotal: marks.get(row.transaction_ref)?.structuringTotal ?? null,
+          ackStr: marks.get(row.transaction_ref)?.ackStr ?? false,
+          ackStrInfo: null,
         })),
       });
     } catch (error) {

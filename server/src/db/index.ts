@@ -690,18 +690,20 @@ CREATE TABLE IF NOT EXISTS idv_shop_config (
 );
 `;
 
+/** App schema plus ledger migrations, on the connection string the caller passes. */
+export async function provisionPostgres(connectionString: string) {
+  const pool = new pg.Pool({ connectionString });
+  const typeExists = await pool.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
+  if (typeExists.rows.length === 0) await pool.query(ENUM_DDL);
+  await pool.query(DDL);
+  await runMigrations(pool);
+  return pool;
+}
+
 export async function createDb(): Promise<DbHandle> {
   const url = process.env.DATABASE_URL;
   if (url) {
-    const pool = new pg.Pool({ connectionString: url });
-    // same idempotent bootstrap as the embedded path — a fresh managed
-    // Postgres (Neon) gets its schema on first boot, existing ones no-op
-    const typeExists = await pool.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
-    if (typeExists.rows.length === 0) {
-      await pool.query(ENUM_DDL);
-    }
-    await pool.query(DDL);
-    await runMigrations(pool);
+    const pool = await provisionPostgres(url);
     const db = drizzlePg(pool, { schema });
     return { db, close: () => pool.end() };
   }

@@ -403,7 +403,7 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
     expect(reach.statusCode).toBe(404);
   });
 
-  it("lets an auditor read what the desk filed and not file in its name", async () => {
+  it("refuses an auditor the filings and a filing in the desk's name", async () => {
     await file(AGGREGATE);
     await handle.db
       .update(schema.staffUsers)
@@ -414,8 +414,8 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
       url: "/api/ledger/report-filings",
       cookies: await cookie(),
     });
-    expect(listed.statusCode).toBe(200);
-    expect(listed.json().filings).toHaveLength(1);
+    expect(listed.statusCode).toBe(403);
+    expect(listed.body).not.toContain("Rachel Carter");
     const refused = await file({
       ...AGGREGATE,
       obligationId: `${AGGREGATE.obligationId}-x`,
