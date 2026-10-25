@@ -104,7 +104,7 @@ export function registerStagingSignInRoutes(app: FastifyInstance, db: Db): void 
       branchId: user.branchId,
       actorId: user.id,
       action: "auth.staging_enter",
-      detail: { role: user.role, host, at: new Date().toISOString() },
+      detail: { role: user.role, host, at: new Date().toISOString(), ip: clientIp(req), userAgent: (typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : "").slice(0, 500) },
     });
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts(secure), expires: expiresAt });
     reply.setCookie(STAGING_COOKIE, "1", { ...cookieOpts(secure), expires: expiresAt });

@@ -187,10 +187,15 @@ describe("quick sign-in on the demo shop", () => {
     expect((await enter("auditor", PREVIEW)).statusCode).toBe(404);
     process.env.RENDER_EXTERNAL_HOSTNAME = HOST;
 
+    const agent = `${"DeskBrowser/1 ".repeat(40)}tail`;
+    const traced = await app.inject({ method: "POST", url: "/api/staging/enter", headers: { host: HOST, "user-agent": agent, "x-forwarded-for": "198.51.100.9, 203.0.113.21" }, payload: { role: "supervisor" }, remoteAddress: "10.21.0.8" });
+    expect(traced.statusCode).toBe(200);
     const events = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "auth.staging_enter"));
     expect(events.length).toBeGreaterThanOrEqual(Object.keys(PEOPLE).length);
+    const tracedDetail = events.map((event) => event.detail).find((detail) => detail.role === "supervisor" && detail.ip === "203.0.113.21");
+    expect(tracedDetail).toMatchObject({ role: "supervisor", host: HOST, ip: "203.0.113.21", at: expect.any(String), userAgent: agent.slice(0, 500) });
     for (const event of events) {
-      expect(event.detail).toMatchObject({ host: expect.any(String), role: expect.any(String), at: expect.any(String) });
+      expect(event.detail).toMatchObject({ host: expect.any(String), role: expect.any(String), at: expect.any(String), ip: expect.any(String), userAgent: expect.any(String) });
       expect(event.at).toBeInstanceOf(Date);
       expect(JSON.stringify(event.detail)).not.toMatch(/password|token|cookie|secret|yorkville/i);
     }

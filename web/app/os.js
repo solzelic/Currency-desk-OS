@@ -69167,10 +69167,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         node = document.createElement('div');
         node.id = id;
         node.setAttribute('role', 'status');
-        node.textContent = 'Staging';
+        node.textContent = 'Staging. Demo data only. Never enter a real customer.';
         document.body.appendChild(node);
       }
-      document.body.style.paddingTop = '22px';
+      document.body.style.paddingTop = node.offsetHeight + 'px';
       return () => {
         const el = document.getElementById(id);
         if (el) el.remove();
